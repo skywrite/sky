@@ -1,0 +1,43 @@
+{
+  "name": "sky",
+  "version": "0.0.5",
+  "description": "",
+  "homepage": [
+    ""
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "keywords": [],
+  "author": "JP Richardson <jprichardson@gmail.com>",
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": ""
+    }
+  ],
+  "dependencies": {
+    "fs-extra": "~0.3.2",
+    "open": "0.0.2",
+    "string": "~1.2.0",
+    "rock": "~0.2.0",
+    "win-fork": "~1.0.0",
+    "autoresolve": "0.0.3",
+    "markdown-page": "~0.1.0",
+    "commander": "~1.1.1",
+    "osenv": "0.0.3"
+  },
+  "devDependencies": {
+    "mocha": "*",
+    "testutil": "~0.4.0"
+  },
+  "main": "./lib/sky.js",
+  "scripts": {
+    "test": "mocha test"
+  },
+  "bin": {
+    "sky": "./bin/sky"
+  },
+  "preferGlobal": true
+}

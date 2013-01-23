@@ -1,0 +1,41 @@
+#!/usr/bin/env node
+
+var program = require('commander')
+  , spawn = require('win-fork')
+  , fs = require('fs-extra')
+  , path = require('path')
+
+program
+  .version(require('../package').version)
+  .usage('<command> [options]')
+
+
+program.on('--help', function(){
+  console.log('  Commands:');
+  console.log();
+  console.log('    article <title> [--tags]      install one or more components')
+  console.log();
+  process.exit();
+})
+
+program.parse(process.argv)
+
+
+var args = process.argv.slice(3)
+  , cmd = program.args[0];
+
+
+if (!cmd) {
+  process.stdout.write(program.helpInformation())
+  program.emit('--help')
+  process.exit()
+}
+
+var bin = path.join(__dirname, 'sky-' + cmd)
+
+if (!fs.existsSync(bin)) {
+  console.error("Can't locate command %s at path %s. Did it get deleted?", 'sky-' + cmd, bin)
+  process.exit(1)
+}
+
+var proc = spawn(bin, args, { stdio: 'inherit', customFds: [0, 1, 2] })

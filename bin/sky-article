@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , MarkdownPage = require('markdown-page').MarkdownPage
+  , cli = require('../lib/cli')
+  , spawn = require('win-fork')
+  , osenv = require('osenv')
+
+program
+  .version(require('../package').version)
+  .option('-t, --tags <tags>', 'Article tags.')
+  .option('-e, --edit', 'Open newly created article in your default editor.')
+  .parse(process.argv)
+
+var title = program.args[0]
+  , tags = program.tags
+  , mdp = MarkdownPage.create()
+
+if (!title) {
+  title = 'article-' + Date.now() 
+  mdp.markdown = "**Don't forget to rename this file and to assign it a title.**"
+}
+
+articleFile = path.join(process.cwd(), 'articles', getDateMonthPath())
+
+mdp.title = title
+articleFile = path.join(articleFile, mdp.slug() + '.md')
+
+fs.exists(articleFile, function(itExists) {
+  if (itExists) cli.exit(1, "Article file %s already exists. Aborting.", articleFile)
+
+  fs.touch(articleFile, function(err) {
+    if (err) cli.exit(2, err)
+
+    mdp.metadata.publish = ''
+    if (tags)
+      mdp.metadata.tags = tags instanceof Array ? tags : mdp.metadataConversions['tags'].deserialize(tags)
+    
+    mdp.writeFile(articleFile, function(err) {
+      if (err) cli.exit(3, err)
+      console.log("%s created.", articleFile)
+      if (program.edit)
+        spawn(osenv.editor(), [articleFile])
+    })
+  })
+})
+
+
+function getDateMonthPath() {
+  var date = new Date();
+  return path.join(date.getFullYear().toString(), ('0' + (date.getMonth() + 1)).slice(-2));
+}
+
