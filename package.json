@@ -1,15 +1,26 @@
 {
   "name": "sky",
   "version": "0.0.5",
-  "description": "",
+  "description": "A markdown static site generator.",
   "homepage": [
     ""
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git@github.com:skywrite/sky.git"
   },
-  "keywords": [],
+  "keywords": [
+    "blog",
+    "static",
+    "markdown",
+    "git",
+    "github",
+    "octopress",
+    "jekyl",
+    "cms",
+    "content",
+    "static"
+  ],
   "author": "JP Richardson <jprichardson@gmail.com>",
   "licenses": [
     {
