@@ -5,31 +5,10 @@ var testutil = require('testutil')
   , spawn = require('win-fork')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , S = require('string')
-  //, spawn = require('child_process').spawn
+  , runSky = require(P('test/test-lib/testsky')).runSky
 
 
 var TEST_DIR = ''
-  , SKY_BIN = P('bin/sky')
-
-function runSky () {
-  var args = Array.prototype.slice.call(arguments, 0)
-    , stdout = ''
-    , stderr = ''
-    , callback = args[args.length-1]
-
-  args.splice(args.length - 1, 1) //cut callback
-
-  var sky = spawn(SKY_BIN, args)
-  sky.stdout.on('data', function(data) {
-    stdout += data.toString()
-  }) 
-  sky.stderr.on('data', function(data) {
-    stderr += stderr.toString()
-  })
-  sky.on('exit', function(code) {
-    callback(code, stdout, stderr)
-  })
-}
 
 describe('bin/', function() {
   var title = 'Global Thermal Nuclear War'
