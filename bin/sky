@@ -31,10 +31,16 @@ if (!cmd) {
   process.exit()
 }
 
+// aliases
+
+switch (cmd) {
+  case 'a': cmd = 'article'; break;
+}
+
 var bin = path.join(__dirname, 'sky-' + cmd)
 
 if (!fs.existsSync(bin)) {
-  console.error("Can't locate command %s at path %s. Did it get deleted?", 'sky-' + cmd, bin)
+  console.error("Can't locate command %s at path %s Did it get deleted?", 'sky-' + cmd, bin)
   process.exit(1)
 }
 
