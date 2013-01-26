@@ -1,2 +1,56 @@
 #!/usr/bin/env node
 
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , rock = require('rock')
+  , cli = require('../lib/cli')
+  , S = require('string')
+  , walker = require('walker');
+
+
+program
+  .version(require('../package').version)
+  .option('-r, --rock [rock]', 'Sky rock, Github repo, or local file system path.')
+  .parse(process.argv)
+
+
+if (!program.rock) cli.exit(1, 'Must specify the sky rock, Github repo, or path on file system to local rock. See -r or --rock.')
+
+var outdir = program.args[0];
+
+if (!outdir) cli.exit(2, 'Must specify the output directory. Example: sky new -r personal-blog myblog')
+
+var rck = normalizeRock(program.rock)
+if (!rck) cli.exit(3, '%s is not a valid rock path.', program.rock)
+
+outdir = path.resolve(outdir)
+rock.create(outdir, rck, function(err) {
+  if (err) cli.exit(4, err)
+
+  walker(outdir)
+  .on('file', function(file) {
+    if (S(file).endsWith('.gitkeep'))
+      fs.remove(file) //delete .gitkeep files
+  })
+  .on('end', function() {
+    console.log("Successfully created %s", outdir)
+  })
+})
+
+
+function normalizeRock (rockPath) {
+  if (!S(rockPath).contains('/')) return 'skywrite/rock-' + rockPath; //fetch rock from Github sky organization
+  if (fs.existsSync(rockPath)) return path.resolve(rockPath); //local rock on filesystem
+  if (count(rockPath, '/') === 1) return rockPath; //some repo on Github
+  return null; //can't find it
+}
+
+function count (str, ch) {
+  var x = 0;
+  str.split('').forEach(function(c) {
+    if (c === ch)
+      x += 1
+  })
+  return x;
+}
