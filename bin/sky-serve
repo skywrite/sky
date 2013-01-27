@@ -1,1 +1,45 @@
 #!/usr/bin/env node
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , rock = require('rock')
+  , cli = require('../lib/cli')
+  , buffet = require('buffet')
+  , pp = require('parentpath')
+  , http = require('http')
+
+program.version(require('../package'))
+  .option('-p, --port <port>', 'The port to serve your site. Defaults to port 2222.')
+  .option('-d, --dir <dir>', 'The directory to serve as the root. Defaults to the "public" directory of the site.')
+  .parse(process.argv)
+
+
+pp('sky/config.json', function(dir) {
+  if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json and a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
+  serve(dir)
+})
+
+function serve (baseDir) {
+  var config = null
+  if (baseDir) {
+    var configFile = path.join(baseDir, 'sky', 'config.json')
+    if (!fs.existsSync(configFile)) cli.exit(2, "Can not find sky/config.json. Are you sure you're in a Sky site?")
+    config = fs.readJSONFileSync(configFile)
+  }
+
+  var port = program.port || process.env.PORT || (config && config.blog && config.blog.port) || 2222
+  var serveDir = program.dir || path.join(baseDir, 'public')
+
+  var server = http.createServer()
+    , fileServer = buffet({root: serveDir})
+  
+  server.on('request', function(req, res) {
+    fileServer(req, res)
+  })
+  
+  server.on('request', fileServer.notFound);
+  server.listen(port, function() {
+    console.log("Serving up %s on port %s...", serveDir, port)
+  })
+}

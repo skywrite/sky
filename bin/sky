@@ -4,6 +4,7 @@ var program = require('commander')
   , spawn = require('win-fork')
   , fs = require('fs-extra')
   , path = require('path')
+  , ON_DEATH = require('death')
 
 program
   .version(require('../package').version)
@@ -45,3 +46,9 @@ if (!fs.existsSync(bin)) {
 }
 
 var proc = spawn(bin, args, { stdio: 'inherit', customFds: [0, 1, 2] })
+proc.on('exit', process.exit) //hook up exit code to shell output
+
+ON_DEATH(function() {
+  proc.removeAllListeners('exit')
+  proc.kill()
+})
