@@ -27,8 +27,7 @@ describe('bin/', function() {
       if (err) done(err)
 
       var htmlFile = path.join(TEST_DIR, 'public', 'index.html')
-      fs.touchSync(htmlFile)
-      fs.writeFileSync(htmlFile, '<h1 class="msg">hello!</h1>')
+      fs.outputFileSync(htmlFile, '<h1 class="msg">hello!</h1>')
       done()
     })
   })

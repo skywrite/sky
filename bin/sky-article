@@ -28,25 +28,20 @@ articleFile = path.join(process.cwd(), 'articles', getDateMonthPath())
 mdp.title = title
 articleFile = path.join(articleFile, mdp.slug() + '.md')
 
-fs.exists(articleFile, function(itExists) {
-  if (itExists) cli.exit(1, "Article file %s already exists. Aborting.", articleFile)
-
-  fs.touch(articleFile, function(err) {
-    if (err) cli.exit(2, err)
-
-    mdp.metadata.publish = ''
-    if (tags)
-      mdp.metadata.tags = tags instanceof Array ? tags : mdp.metadataConversions['tags'].deserialize(tags)
+if (fs.existsSync(articleFile)) 
+  cli.exit(100, "Article file %s already exists. Aborting.", articleFile)
     
-    mdp.writeFile(articleFile, function(err) {
-      if (err) cli.exit(3, err)
-      console.log("%s created.", articleFile)
-      if (program.edit)
-        spawn(osenv.editor(), [articleFile])
-    })
-  })
-})
+mdp.metadata.publish = ''
+if (tags)
+  mdp.metadata.tags = tags instanceof Array ? tags : mdp.metadataConversions['tags'].deserialize(tags)
+    
+var output = mdp.genOutput()
+fs.outputFileSync(articleFile, output)
 
+console.log("%s created.", articleFile)
+if (program.edit)
+  spawn(osenv.editor(), [articleFile])
+   
 
 function getDateMonthPath() {
   var date = new Date();

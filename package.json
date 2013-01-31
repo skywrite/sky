@@ -29,13 +29,12 @@
     }
   ],
   "dependencies": {
-    "fs-extra": "~0.3.2",
     "open": "0.0.2",
     "string": "~1.2.0",
     "rock": "~0.2.0",
     "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
-    "markdown-page": "~0.1.0",
+    "markdown-page": "~0.1.1",
     "commander": "~1.1.1",
     "osenv": "0.0.3",
     "underscore": "~1.4.3",
@@ -45,7 +44,10 @@
     "buffet": "~0.4.6",
     "parentpath": "~0.1.1",
     "scrap": "~0.1.0",
-    "death": "0.0.1"
+    "death": "0.0.1",
+    "markdown-walker": "0.0.2",
+    "date-tokens": "0.0.2",
+    "fs-extra": "~0.4.0"
   },
   "devDependencies": {
     "mocha": "*",

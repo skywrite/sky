@@ -6,7 +6,7 @@ var program = require('commander')
   , rock = require('rock')
   , cli = require('../lib/cli')
   , buffet = require('buffet')
-  , pp = require('parentpath')
+  , sky = require('../lib/sky')
   , http = require('http')
 
 program.version(require('../package'))
@@ -15,7 +15,7 @@ program.version(require('../package'))
   .parse(process.argv)
 
 
-pp('sky/config.json', function(dir) {
+sky.findBaseDir(function(dir) {
   if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json and a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
   serve(dir)
 })
