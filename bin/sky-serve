@@ -8,10 +8,12 @@ var program = require('commander')
   , buffet = require('buffet')
   , sky = require('../lib/sky')
   , http = require('http')
+  , open = require('open')
 
 program.version(require('../package'))
   .option('-p, --port <port>', 'The port to serve your site. Defaults to port 2222.')
   .option('-d, --dir <dir>', 'The directory to serve as the root. Defaults to the "public" directory of the site.')
+  .option('-b, --browser', 'Open it up in the browser.')
   .parse(process.argv)
 
 
@@ -21,14 +23,9 @@ sky.findBaseDir(function(dir) {
 })
 
 function serve (baseDir) {
-  var config = null
-  if (baseDir) {
-    var configFile = path.join(baseDir, 'sky', 'config.json')
-    if (!fs.existsSync(configFile)) cli.exit(2, "Can not find sky/config.json. Are you sure you're in a Sky site?")
-    config = fs.readJSONFileSync(configFile)
-  }
+  var configs = sky.loadConfigs(baseDir)
 
-  var port = program.port || process.env.PORT || (config && config.blog && config.blog.port) || 2222
+  var port = program.port || process.env.PORT || configs.get('config:blog.port') || 2222
   var serveDir = program.dir || path.join(baseDir, 'public')
 
   var server = http.createServer()
@@ -43,5 +40,7 @@ function serve (baseDir) {
   //server.on('request', fileServer.notFound);
   server.listen(port, function() {
     console.log("Serving up %s on port %s...", serveDir, port)
+    if (program.browser)
+      open("http://localhost:" + port)
   })
 }
