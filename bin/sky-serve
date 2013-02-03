@@ -35,10 +35,12 @@ function serve (baseDir) {
     , fileServer = buffet({root: serveDir})
   
   server.on('request', function(req, res) {
-    fileServer(req, res)
+    fileServer(req, res, function() {
+      fileServer.notFound(req, res)
+    })
   })
   
-  server.on('request', fileServer.notFound);
+  //server.on('request', fileServer.notFound);
   server.listen(port, function() {
     console.log("Serving up %s on port %s...", serveDir, port)
   })

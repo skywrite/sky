@@ -41,13 +41,14 @@
     "ejs": "~0.8.3",
     "handlebars": "~1.0.8",
     "walker": "~1.0.3",
-    "buffet": "~0.4.6",
+    "buffet": "~0.5.0",
     "parentpath": "~0.1.1",
     "scrap": "~0.1.0",
     "death": "0.0.1",
     "markdown-walker": "0.0.2",
     "date-tokens": "0.0.2",
-    "fs-extra": "~0.4.0"
+    "fs-extra": "~0.4.0",
+    "jsoncfg": "0.0.3"
   },
   "devDependencies": {
     "mocha": "*",
