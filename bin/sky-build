@@ -1,1 +1,125 @@
 #!/usr/bin/env node
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , next = require('nextflow')
+  , sky = require('../lib/sky')
+  , cli = require('../lib/cli')
+  , ejs = require('ejs')
+  , _ = require('underscore')
+  , S = require('string')
+  , mdwalker = require('markdown-walker')
+  , batch = require('batchflow')
+  , MarkdownPage = require('markdown-page').MarkdownPage
+  , dt = require('date-tokens')
+
+var BATCH_LIMIT = 32
+  , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .parse(process.argv)
+
+sky.findBaseDir(function(dir) {
+  if (!dir) cli.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+  buildAllArticles()
+})
+
+function buildAllArticles (baseDir) {
+  var confgFile = path.join(baseDir, 'sky', 'config.json')
+    , config = fs.readJSONFileSync(configFile)
+    , outputDir = ''
+    , outputVendorDir = path.join(outputDir, 'vendor')
+    , blogTemplate = (config && config.blog && config.blog.template) || 'basic'
+
+  if (program.dir)
+    outputDir = program.dir
+  else if (config && config.build && config.build.outputDir) 
+    outputDir = path.join(baseDir, config.build.outputDir)
+  else
+    outputDir = path.join(baseDir, 'public')
+
+  if (!fs.existsSync(outputDir)) fs.mkdirsSync(outputDir)
+  if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
+
+  var files = []
+    , fileStats = [];
+    , data = {S: S, _: _, sky: config, self: {}}
+
+  //set homepage
+  config.homepage = 'https://github.com/skywrite'
+
+  //url formats
+  var articleUrlFormat = (config && config.articles && config.articles.urlFormat) || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
+  var indexFile = (config && config.articles && config.articles.index) || "articles/index.html"
+
+  var outputArticles = {}
+
+  var flow = {};
+  next(flow = {
+    ERROR: function(err) {
+      console.error(err)
+    },
+    copyVendor: function() {
+      fs.copy(P('vendor'), outputVendorDir, this.next)
+    },
+    iterateArticles: function() {
+      mdwalker(path.join(baseDir, 'articles')).on('markdown', function(file, stat) {
+        files.push(file); fileStats.push(stat)
+      })
+      .end(function() {
+        batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
+          MarkdownPage.readFile(function(err, mdp) {
+            if (err) return flow.error(err)
+            
+            if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
+              data.self = {
+                publish: mdp.metadata.publish, 
+                title: mdp.title,
+                slug: mdp.metadata.slug || S(mdp.title).slugify() //use slug in file if specified
+                author: mdp.metadata.author || (config && config.blog && config.blog.author)
+                content: mdp.html
+              }
+              data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
+
+              var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
+              var absOutFile = path.join(outputDir, relOutFile)
+
+              data.self.relativePath = relOutFile
+
+              //render templates
+              var articleTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'article.ejs.html')
+              var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
+              //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
+
+              //data.filename = absOutFile //ejs option
+              data.sky.content = ejs.render(fs.readTextFileSync(articleTemplateFile), data)
+
+              //data.filename 
+              var html = ejs.render(fs.readTextFileSync(layoutTemplateFile), data)
+              fs.outputFileSync(absOutFile, html)
+              outputArticles[file] = data.self
+            }
+          })
+        })
+        .error(flow.error)
+        .end(function() {
+          flow.next()
+        })
+      })
+    },
+    generateIndex: function() {
+      var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
+      var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
+     
+      data.self = outputArticles
+      //data.filename = 
+      data.sky.content = ejs.render(fs.readTextFileSync(indexTemplateFile), data)
+
+      var absIndexFile = path.join(outputDir, indexFile)
+      var html = ejs.render(fs.readTextFileSync(indexTemplateFile), data)
+      fs.outputFileSync(absIndexFile, html)
+    }
+  })
+}
