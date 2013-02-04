@@ -48,7 +48,8 @@
     "markdown-walker": "0.0.2",
     "date-tokens": "0.0.2",
     "fs-extra": "~0.5.0",
-    "jsoncfg": "~0.1.2"
+    "jsoncfg": "~0.1.2",
+    "batchflow": "~0.3.1"
   },
   "devDependencies": {
     "mocha": "*",

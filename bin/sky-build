@@ -13,6 +13,7 @@ var program = require('commander')
   , batch = require('batchflow')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , dt = require('date-tokens')
+  , P = require('autoresolve')
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
@@ -23,12 +24,12 @@ program.version(require('../package'))
 
 sky.findBaseDir(function(dir) {
   if (!dir) cli.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
-  buildAllArticles()
+  buildAllArticles(dir)
 })
 
 function buildAllArticles (baseDir) {
-  var confgFile = path.join(baseDir, 'sky', 'config.json')
-    , config = fs.readJSONFileSync(configFile)
+  var configFile = path.join(baseDir, 'sky', 'config.json')
+    , config = fs.readJsonSync(configFile)
     , outputDir = ''
     , outputVendorDir = path.join(outputDir, 'vendor')
     , blogTemplate = (config && config.blog && config.blog.template) || 'basic'
@@ -44,11 +45,11 @@ function buildAllArticles (baseDir) {
   if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
 
   var files = []
-    , fileStats = [];
-    , data = {S: S, _: _, sky: config, self: {}}
+    , fileStats = []
+    , data = {S: S, _: _, sky: config, self: {}, cache: false}
 
   //set homepage
-  config.homepage = 'https://github.com/skywrite'
+  data.sky.homepage = 'https://github.com/skywrite'
 
   //url formats
   var articleUrlFormat = (config && config.articles && config.articles.urlFormat) || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
@@ -60,6 +61,7 @@ function buildAllArticles (baseDir) {
   next(flow = {
     ERROR: function(err) {
       console.error(err)
+      console.error(err.stack)
     },
     copyVendor: function() {
       fs.copy(P('vendor'), outputVendorDir, this.next)
@@ -68,17 +70,21 @@ function buildAllArticles (baseDir) {
       mdwalker(path.join(baseDir, 'articles')).on('markdown', function(file, stat) {
         files.push(file); fileStats.push(stat)
       })
-      .end(function() {
+      .on('end', function() {
         batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
-          MarkdownPage.readFile(function(err, mdp) {
+          MarkdownPage.readFile(file, function(err, mdp) {
             if (err) return flow.error(err)
             
             if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
+              console.log('Building %s...', file)
               data.self = {
+                createdAt: fileStats[i].ctime,
+                modifiedAt: fileStats[i].mtime,
+                publishedAt: new Date(mdp.metadata.publish),
                 publish: mdp.metadata.publish, 
                 title: mdp.title,
-                slug: mdp.metadata.slug || S(mdp.title).slugify() //use slug in file if specified
-                author: mdp.metadata.author || (config && config.blog && config.blog.author)
+                slug: mdp.metadata.slug || S(mdp.title).slugify(), //use slug in file if specified
+                author: mdp.metadata.author || (config && config.blog && config.blog.author),
                 content: mdp.html
               }
               data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
@@ -93,32 +99,36 @@ function buildAllArticles (baseDir) {
               var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
               //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
 
-              //data.filename = absOutFile //ejs option
-              data.sky.content = ejs.render(fs.readTextFileSync(articleTemplateFile), data)
+              data.filename = articleTemplateFile//absOutFile //ejs option
+              data.sky.view = ejs.render(fs.readFileSync(articleTemplateFile, 'utf8'), data)
 
-              //data.filename 
-              var html = ejs.render(fs.readTextFileSync(layoutTemplateFile), data)
+              //data.filename
+              data.filename = layoutTemplateFile 
+              var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
               fs.outputFileSync(absOutFile, html)
               outputArticles[file] = data.self
+              next()
             }
           })
         })
         .error(flow.error)
         .end(function() {
           flow.next()
-        })
+        });
       })
     },
     generateIndex: function() {
       var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
       var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
      
-      data.self = outputArticles
-      //data.filename = 
-      data.sky.content = ejs.render(fs.readTextFileSync(indexTemplateFile), data)
+      data.self = outputArticles;
+      //console.dir(outputArticles)
+      data.filename = indexTemplateFile
+      data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
 
       var absIndexFile = path.join(outputDir, indexFile)
-      var html = ejs.render(fs.readTextFileSync(indexTemplateFile), data)
+      data.filename = layoutTemplateFile
+      var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
       fs.outputFileSync(absIndexFile, html)
     }
   })
