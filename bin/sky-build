@@ -28,6 +28,7 @@ sky.findBaseDir(function(dir) {
 })
 
 function buildAllArticles (baseDir) {
+  console.log('Starting to build...')
   var configFile = path.join(baseDir, 'sky', 'config.json')
     , config = fs.readJsonSync(configFile)
     , outputDir = ''
@@ -64,6 +65,7 @@ function buildAllArticles (baseDir) {
       console.error(err.stack)
     },
     copyVendor: function() {
+      console.log('Copying vendor directory...')
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
@@ -118,6 +120,7 @@ function buildAllArticles (baseDir) {
       })
     },
     generateIndex: function() {
+      console.log('Generating index...')
       var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
       var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
      
