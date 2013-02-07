@@ -1,6 +1,6 @@
 {
   "name": "sky",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A markdown static site generator.",
   "homepage": [
     ""
@@ -49,7 +49,8 @@
     "date-tokens": "0.0.2",
     "fs-extra": "~0.5.0",
     "jsoncfg": "~0.1.2",
-    "batchflow": "~0.3.1"
+    "batchflow": "~0.3.2",
+    "colors": "~0.6.0-1"
   },
   "devDependencies": {
     "mocha": "*",

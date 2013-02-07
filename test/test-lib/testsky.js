@@ -1,5 +1,7 @@
 var spawn = require('win-fork')
   , P = require('autoresolve')
+  , colors = require('colors')
+
 
 var SKY_BIN = P('bin/sky')
 
@@ -15,14 +17,20 @@ function runSky () {
   
   args.splice(args.length - 1, 1) //cut callback
 
+  //console.dir(args)
+
+  if (args[0] === 'new' && args[2] === 'personal-blog') {
+    args[2] = P('test/resources/personal-blog') //inject testing rock
+  }
+
   var sky = spawn(SKY_BIN, args)
   if (!skipEvents) {
     sky.stdout.on('data', function(data) {
-      //console.log('FO: ' + data)
+      //console.log('FO: ' + colors.cyan(data))
       stdout += data.toString()
     }) 
     sky.stderr.on('data', function(data) {
-      //console.log('FE: ' + data)
+      //console.log('FE: ' + colors.red(data))
       stderr += stderr.toString()
     })
     sky.on('exit', function(code) {

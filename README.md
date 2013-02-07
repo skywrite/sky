@@ -36,6 +36,6 @@ License
 
 MIT Licensed
 
-Copyright (c) 2013 JP Richardson
+Copyright (c) 2012-2013 JP Richardson
 
 

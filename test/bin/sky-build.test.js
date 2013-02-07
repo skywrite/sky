@@ -68,16 +68,24 @@ describe('bin/', function() {
           })
         },
         verify: function() {
-          T (fs.existsSync(path.join(TEST_DIR, 'public', 'index.html')))
+          var indexFile = path.join(TEST_DIR, 'public', 'index.html')
+          T (fs.existsSync(indexFile))
 
           var a1 = path.basename(markdownArticles.shift(), '.md')
           a1 = path.join(TEST_DIR, 'public', a1 + '.html')
-          console.log(a1)
           var a2 = path.basename(markdownArticles.shift(), '.md')
           a2 = path.join(TEST_DIR, 'public', a2 + '.html')
 
           T (fs.existsSync(a1))
           T (fs.existsSync(a2))
+
+          //verify content got produced
+          T (fs.readFileSync(a1, 'utf8').indexOf('<strong>Preface') > 0)
+          T (fs.readFileSync(a2, 'utf8').indexOf('<strong>Preface') > 0)
+
+          //verify content in index page was created
+          T (fs.readFileSync(indexFile, 'utf8').indexOf(title1) > 0)
+          T (fs.readFileSync(indexFile, 'utf8').indexOf(title2) > 0)
 
           done()
         }

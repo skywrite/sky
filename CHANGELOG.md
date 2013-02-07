@@ -1,6 +1,7 @@
-0.0.6 / 2013-01-xx
+0.0.6 / 2013-02-07
 -------------------
 * First usable release under the new name.
+* A lot has changed since it was named `potter`.
 
 
 0.0.5 / 2013-01-24

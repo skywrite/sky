@@ -1,0 +1,5 @@
+{
+  "name": "sky-personal-blog",
+  "description": "Initial Sky personal blog template.",
+  "ignoreDirs": ["./sky"]
+}
