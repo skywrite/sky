@@ -18,12 +18,12 @@ program.version(require('../package'))
 
 
 sky.findBaseDir(function(dir) {
-  if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json and a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
+  if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json or a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
   serve(dir)
 })
 
 function serve (baseDir) {
-  var configs = sky.loadConfigs(baseDir)
+  var configs = sky.loadConfigsSync(baseDir)
 
   var port = program.port || process.env.PORT || configs.get('config:blog.port') || 2222
   var serveDir = program.dir || path.join(baseDir, 'public')

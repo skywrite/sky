@@ -22,22 +22,24 @@ program.version(require('../package'))
   .option('-d, --dir [outputDir]', 'The output directory for the files.')
   .parse(process.argv)
 
+if (program.dir) process.chdir(program.dir)
+
 sky.findBaseDir(function(dir) {
   if (!dir) cli.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
-  buildAllArticles(dir)
+  
+  var configs = sky.loadConfigsSync(dir)
+  if (configs.errors['config']) cli.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+
+  buildAllArticles(dir, configs)
 })
 
-function buildAllArticles (baseDir) {
+function buildAllArticles (baseDir, configs) {
   console.log('Starting to build...')
-  var configFile = path.join(baseDir, 'sky', 'config.json')
-    , config = fs.readJsonSync(configFile)
-    , outputDir = ''
+  var outputDir = ''
     , outputVendorDir = path.join(outputDir, 'vendor')
-    , blogTemplate = (config && config.blog && config.blog.template) || 'basic'
+    , blogTemplate =  configs.get('config:blog.template') || 'basic'
 
-  if (program.dir)
-    outputDir = program.dir
-  else if (config && config.build && config.build.outputDir) 
+  if (configs.get('config:config.build.outputDir')) 
     outputDir = path.join(baseDir, config.build.outputDir)
   else
     outputDir = path.join(baseDir, 'public')
@@ -47,14 +49,14 @@ function buildAllArticles (baseDir) {
 
   var files = []
     , fileStats = []
-    , data = {S: S, _: _, sky: config, self: {}, cache: false}
+    , data = {S: S, _: _, sky: configs.config, self: {}, cache: false}
 
   //set homepage
   data.sky.homepage = 'https://github.com/skywrite'
 
   //url formats
-  var articleUrlFormat = (config && config.articles && config.articles.urlFormat) || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
-  var indexFile = (config && config.articles && config.articles.index) || "articles/index.html"
+  var articleUrlFormat = configs.get('config:articles.urlFormat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
+  var indexFile = configs.get("config:articles.index") || "articles/index.html"
 
   var outputArticles = {}
 
@@ -80,15 +82,16 @@ function buildAllArticles (baseDir) {
             if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
               console.log('Building %s...', file)
               data.self = {
-                createdAt: fileStats[i].ctime,
-                modifiedAt: fileStats[i].mtime,
-                publishedAt: new Date(mdp.metadata.publish),
-                publish: mdp.metadata.publish, 
                 title: mdp.title,
-                slug: mdp.metadata.slug || S(mdp.title).slugify(), //use slug in file if specified
-                author: mdp.metadata.author || (config && config.blog && config.blog.author),
                 content: mdp.html
               }
+              data.self = _(data.self).extend(mdp.metadata)
+              data.self.createdAt = fileStats[i].ctime
+              data.self.modifiedAt = fileStats[i].mtime
+              data.self.publishedAt = new Date(data.self.publish)
+              data.self.slug = data.self.slug || S(mdp.title).slugify()
+              data.self.author = data.self.author || (configs.get('config:blog.author'))
+
               data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
 
               var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
@@ -133,6 +136,7 @@ function buildAllArticles (baseDir) {
       data.filename = layoutTemplateFile
       var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
       fs.outputFileSync(absIndexFile, html)
+      console.log('Done.')
     }
   })
 }
