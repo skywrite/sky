@@ -5,7 +5,6 @@ var program = require('commander')
   , path = require('path')
   , next = require('nextflow')
   , sky = require('../lib/sky')
-  , cli = require('../lib/cli')
   , ejs = require('ejs')
   , _ = require('underscore')
   , S = require('string')
@@ -14,6 +13,8 @@ var program = require('commander')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , dt = require('date-tokens')
   , P = require('autoresolve')
+  , sutil = require(P('lib/util'))
+  , cl = require('cl')
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
@@ -25,10 +26,10 @@ program.version(require('../package'))
 if (program.dir) process.chdir(program.dir)
 
 sky.findBaseDir(function(dir) {
-  if (!dir) cli.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+  if (!dir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
   
   var configs = sky.loadConfigsSync(dir)
-  if (configs.errors['config']) cli.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+  if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
 
   buildAllArticles(dir, configs)
 })
@@ -57,6 +58,10 @@ function buildAllArticles (baseDir, configs) {
   //url formats
   var articleUrlFormat = configs.get('config:articles.urlFormat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
   var indexFile = configs.get("config:articles.index") || "articles/index.html"
+
+  //check existence of templateDir
+  var templateDir = path.join(baseDir, 'sky', 'templates', blogTemplate)
+  if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
 
   var outputArticles = {}
 
@@ -93,15 +98,18 @@ function buildAllArticles (baseDir, configs) {
               data.self.author = data.self.author || (configs.get('config:blog.author'))
 
               data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
+              console.dir(data.self)
+              console.log(data.self['date-year'])
 
-              var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
+              //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
+              var relOutFile = sutil.template(articleUrlFormat, data.self)
               var absOutFile = path.join(outputDir, relOutFile)
 
               data.self.relativePath = relOutFile
 
               //render templates
-              var articleTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'article.ejs.html')
-              var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
+              var articleTemplateFile = path.join(templateDir, 'article', 'article.ejs.html')
+              var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
               //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
 
               data.filename = articleTemplateFile//absOutFile //ejs option
@@ -124,8 +132,8 @@ function buildAllArticles (baseDir, configs) {
     },
     generateIndex: function() {
       console.log('Generating index...')
-      var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
-      var layoutTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'layout.ejs.html')
+      var indexTemplateFile = path.join(templateDir, 'article', 'index.ejs.html')
+      var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
      
       data.self = outputArticles;
       //console.dir(outputArticles)

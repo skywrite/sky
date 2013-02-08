@@ -51,7 +51,8 @@
     "jsoncfg": "~0.1.2",
     "batchflow": "~0.3.2",
     "colors": "~0.6.0-1",
-    "nextflow": "~0.3.0"
+    "nextflow": "~0.3.0",
+    "cl": "0.0.1"
   },
   "devDependencies": {
     "mocha": "*",
