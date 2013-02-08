@@ -57,7 +57,7 @@ function buildAllArticles (baseDir, configs) {
 
   //url formats
   var articleUrlFormat = configs.get('config:articles.urlFormat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
-  var indexFile = configs.get("config:articles.index") || "articles/index.html"
+  var indexFile = configs.get("config:articles.indexUrl") || "articles/index.html"
 
   //check existence of templateDir
   var templateDir = path.join(baseDir, 'sky', 'templates', blogTemplate)
@@ -98,8 +98,8 @@ function buildAllArticles (baseDir, configs) {
               data.self.author = data.self.author || (configs.get('config:blog.author'))
 
               data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
-              console.dir(data.self)
-              console.log(data.self['date-year'])
+              //console.dir(data.self)
+              //console.log(data.self['date-year'])
 
               //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
               var relOutFile = sutil.template(articleUrlFormat, data.self)
