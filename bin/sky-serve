@@ -29,7 +29,7 @@ function serve (baseDir) {
   var serveDir = program.dir || path.join(baseDir, 'public')
 
   var server = http.createServer()
-    , fileServer = buffet({root: serveDir})
+    , fileServer = buffet({root: serveDir, defaultContentType: 'text/html'})
   
   server.on('request', function(req, res) {
     fileServer(req, res, function() {
