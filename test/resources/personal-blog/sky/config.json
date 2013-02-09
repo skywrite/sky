@@ -8,8 +8,8 @@
     "author": "<YOUR NAME>"
   },
   "articles": {
-    "oldUrlformat": "articles/{{date-year}}/{{date-month}}/{{slug}}",
-    "urlFormat": "{{slug}}.html",
+    "oldurlformat": "articles/{{date-year}}/{{date-month}}/{{slug}}",
+    "urlformat": "{{slug}}.html",
     "index": "index.html"
   },
   "build": {

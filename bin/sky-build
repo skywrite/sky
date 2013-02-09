@@ -37,13 +37,13 @@ sky.findBaseDir(function(dir) {
 function buildAllArticles (baseDir, configs) {
   console.log('Starting to build...')
   var outputDir = ''
-    , outputVendorDir = path.join(outputDir, 'vendor')
     , blogTemplate =  configs.get('config:blog.template') || 'basic'
 
   if (configs.get('config:config.build.outputDir')) 
     outputDir = path.join(baseDir, config.build.outputDir)
   else
     outputDir = path.join(baseDir, 'public')
+  outputVendorDir = path.join(outputDir, 'vendor')
 
   if (!fs.existsSync(outputDir)) fs.mkdirsSync(outputDir)
   if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
@@ -56,8 +56,8 @@ function buildAllArticles (baseDir, configs) {
   data.sky.homepage = 'https://github.com/skywrite'
 
   //url formats
-  var articleUrlFormat = configs.get('config:articles.urlFormat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
-  var indexFile = configs.get("config:articles.indexUrl") || "articles/index.html"
+  var articleUrlFormat = configs.get('config:articles.urlformat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
+  var indexFile = configs.get("config:articles.index") || "articles/index.html"
 
   //check existence of templateDir
   var templateDir = path.join(baseDir, 'sky', 'templates', blogTemplate)
@@ -103,7 +103,9 @@ function buildAllArticles (baseDir, configs) {
 
               //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
               var relOutFile = sutil.template(articleUrlFormat, data.self)
+              console.log(relOutFile)
               var absOutFile = path.join(outputDir, relOutFile)
+              console.log(absOutFile)
 
               data.self.relativePath = relOutFile
 

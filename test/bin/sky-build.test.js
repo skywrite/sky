@@ -80,7 +80,7 @@ describe('bin/', function() {
           T (fs.existsSync(a2))
 
           //verify vendor directory exists
-          T (fs.existsSync(path.join(TEST_DIR, 'vendor')))
+          T (fs.existsSync(path.join(TEST_DIR, 'public', 'vendor')))
 
           //verify content got produced
           T (fs.readFileSync(a1, 'utf8').indexOf('<strong>Preface') > 0)
