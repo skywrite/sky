@@ -30,7 +30,6 @@
   ],
   "dependencies": {
     "open": "0.0.2",
-    "string": "~1.2.0",
     "rock": "~0.2.0",
     "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
@@ -52,7 +51,8 @@
     "batchflow": "~0.3.2",
     "colors": "~0.6.0-1",
     "nextflow": "~0.3.0",
-    "cl": "0.0.1"
+    "cl": "0.0.1",
+    "string": "~1.2.1"
   },
   "devDependencies": {
     "mocha": "*",

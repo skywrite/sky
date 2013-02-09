@@ -102,7 +102,8 @@ function buildAllArticles (baseDir, configs) {
               //console.log(data.self['date-year'])
 
               //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
-              var relOutFile = sutil.template(articleUrlFormat, data.self)
+              //var relOutFile = sutil.template(articleUrlFormat, data.self)
+              var relOutFile = S(articleUrlFormat).template(data.self).s
               console.log(relOutFile)
               var absOutFile = path.join(outputDir, relOutFile)
               console.log(absOutFile)
