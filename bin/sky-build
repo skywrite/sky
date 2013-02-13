@@ -14,6 +14,7 @@ var program = require('commander')
   , dt = require('date-tokens')
   , P = require('autoresolve')
   , cl = require('cl')
+  , RSS = require('rss')
 
 
 var BATCH_LIMIT = 32
@@ -104,9 +105,9 @@ function buildAllArticles (baseDir, configs) {
               //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
               //var relOutFile = sutil.template(articleUrlFormat, data.self)
               var relOutFile = S(articleUrlFormat).template(data.self).s
-              console.log(relOutFile)
+              //console.log(relOutFile)
               var absOutFile = path.join(outputDir, relOutFile)
-              console.log(absOutFile)
+              //console.log(absOutFile)
 
               data.self.relativePath = relOutFile
 
@@ -156,6 +157,44 @@ function buildAllArticles (baseDir, configs) {
       //console.dir(outputArticles)
       data.filename = indexTemplateFile
       data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
+
+      //generate RSS
+      var articles = []
+      Object.keys(outputArticles).forEach(function(file) {
+        articles.push(outputArticles[file])
+      })
+      articles = _(articles).chain().sortBy(function(a) {
+        return -a.publishedAt
+      }).take(10).value()
+
+      var feed = new RSS({
+        title: configs.get('config:blog.name'),
+        description: configs.get('config:blog.tagline'),
+        feed_url: configs.get('config:blog.url') + '/rss.xml',
+        site_url: configs.get('config:blog.url'),
+        //image_url: 'http://example.com/icon.png',
+        author: configs.get('config:blog.author')
+      });
+
+    
+      articles.forEach(function(a) {
+        feed.item({
+          title:  a.title,
+          description: a.content,
+          url: configs.get('config:blog.url') + '/' + a.relativePath, // link to the item
+          //guid: '1123', // optional - defaults to url
+          author: a.author,
+          date: a.publish
+        });
+      })
+      
+      // cache the xml
+      var xml = feed.xml()
+
+      fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
+
+
+
 
       var absIndexFile = path.join(outputDir, indexFile)
       data.filename = layoutTemplateFile

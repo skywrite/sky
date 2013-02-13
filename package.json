@@ -52,7 +52,8 @@
     "colors": "~0.6.0-1",
     "nextflow": "~0.3.0",
     "cl": "0.0.1",
-    "string": "~1.2.1"
+    "string": "~1.2.1",
+    "rss": "0.0.4"
   },
   "devDependencies": {
     "mocha": "*",
