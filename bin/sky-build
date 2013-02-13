@@ -13,8 +13,8 @@ var program = require('commander')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , dt = require('date-tokens')
   , P = require('autoresolve')
-  , sutil = require(P('lib/util'))
   , cl = require('cl')
+
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
@@ -93,7 +93,7 @@ function buildAllArticles (baseDir, configs) {
               data.self = _(data.self).extend(mdp.metadata)
               data.self.createdAt = fileStats[i].ctime
               data.self.modifiedAt = fileStats[i].mtime
-              data.self.publishedAt = new Date(data.self.publish)
+              data.self.publishedAt = new Date(data.self.publish).getTime()
               data.self.slug = data.self.slug || S(mdp.title).slugify()
               data.self.author = data.self.author || (configs.get('config:blog.author'))
 
@@ -121,8 +121,12 @@ function buildAllArticles (baseDir, configs) {
               //data.filename
               data.filename = layoutTemplateFile 
               var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
+
+              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+              html = S(html).template(data.self).s
+
               fs.outputFileSync(absOutFile, html)
-              outputArticles[file] = data.self
+              outputArticles[file] = JSON.parse(JSON.stringify(data.self)) //poor mans clone
               next()
             }
           })
@@ -138,7 +142,17 @@ function buildAllArticles (baseDir, configs) {
       var indexTemplateFile = path.join(templateDir, 'article', 'index.ejs.html')
       var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
      
-      data.self = outputArticles;
+      data.self.author = data.self.author || (configs.get('config:blog.author'))
+      delete data.self.title
+
+      if (configs.get('config:blog.name')) {
+        data.self.title = configs.get('config:blog.name')
+        if (configs.get('config:blog.tagline'))
+          data.self.title += ': ' + configs.get('config:blog.tagline')
+      }
+      data.self.title = data.self.title || 'Sky Blog'
+
+      data.self.outputArticles = outputArticles;
       //console.dir(outputArticles)
       data.filename = indexTemplateFile
       data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
