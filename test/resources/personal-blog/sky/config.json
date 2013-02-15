@@ -18,6 +18,9 @@
   "partials": {
     "googleAnalytics": {
       "id": ""
+    },
+    "disqus": {
+      "shortname": ""
     }
   },
   "user": {
