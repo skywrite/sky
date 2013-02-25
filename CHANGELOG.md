@@ -1,3 +1,7 @@
+0.0.8 / 2013-02-25
+------------------
+* Fixed bug when an article only had one tag.
+
 0.0.7 / 2013-02-07
 ------------------
 * Forgot `nextflow` dep.

@@ -38,6 +38,22 @@ describe('bin/', function() {
       })
     })
 
+    describe('> when article title and one tag is specified', function() {
+      it('should create the article file with the proper slug including the title and tag', function(done) {
+        runSky('article', title, '--tags', "war", function(code, stdout, stderr) {
+          EQ (code, 0)
+          var filePath = stdout.replace('created.', '').trim()
+          var mdp = MarkdownPage.create(fs.readFileSync(filePath, 'utf8').trim())
+          mdp.parse(function(err) {
+            F (err)
+            EQ (mdp.title, title)
+            EQ (mdp.metadata.tags[0], "war")
+            done()
+          })
+        })
+      })
+    })
+
     describe('> when only article title specified', function() {
       it('should create the article file with the proper slug including the title', function(done) {
         runSky('article', title, function(code, stdout, stderr) {

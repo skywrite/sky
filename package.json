@@ -1,6 +1,6 @@
 {
   "name": "sky",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "A markdown static site generator.",
   "homepage": [
     ""
@@ -33,7 +33,7 @@
     "rock": "~0.2.0",
     "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
-    "markdown-page": "~0.1.1",
+    "markdown-page": "~0.1.2",
     "commander": "~1.1.1",
     "osenv": "0.0.3",
     "underscore": "~1.4.3",
