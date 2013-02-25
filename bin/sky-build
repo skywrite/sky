@@ -40,8 +40,8 @@ function buildAllArticles (baseDir, configs) {
   var outputDir = ''
     , blogTemplate =  configs.get('config:blog.template') || 'basic'
 
-  if (configs.get('config:config.build.outputDir')) 
-    outputDir = path.join(baseDir, config.build.outputDir)
+  if (configs.get('config:build.outputDir')) 
+    outputDir = path.join(baseDir, configs.get('config:build.outputDir'))
   else
     outputDir = path.join(baseDir, 'public')
   outputVendorDir = path.join(outputDir, 'vendor')
@@ -58,7 +58,7 @@ function buildAllArticles (baseDir, configs) {
 
   //url formats
   var articleUrlFormat = configs.get('config:articles.urlformat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
-  var indexFile = configs.get("config:articles.index") || "articles/index.html"
+  var indexFile = configs.get("config:articles.index") || "index.html"
 
   //check existence of templateDir
   var templateDir = path.join(baseDir, 'sky', 'templates', blogTemplate)
@@ -81,12 +81,12 @@ function buildAllArticles (baseDir, configs) {
         files.push(file); fileStats.push(stat)
       })
       .on('end', function() {
-        batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
+        batch(files)./*par(BATCH_LIMIT)*/seq().each(function(i, file, next) {
           MarkdownPage.readFile(file, function(err, mdp) {
             if (err) return flow.error(err)
             
             if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
-              console.log('Building %s...', file)
+              console.log('Building %s...', path.basename(file))
               data.self = {
                 title: mdp.title,
                 content: mdp.html
@@ -134,6 +134,7 @@ function buildAllArticles (baseDir, configs) {
         })
         .error(flow.error)
         .end(function() {
+          console.log('next...')
           flow.next()
         });
       })
@@ -197,6 +198,7 @@ function buildAllArticles (baseDir, configs) {
 
 
       var absIndexFile = path.join(outputDir, indexFile)
+      console.log(absIndexFile)
       data.filename = layoutTemplateFile
       var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
       fs.outputFileSync(absIndexFile, html)

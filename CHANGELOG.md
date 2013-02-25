@@ -1,3 +1,7 @@
+0.0.9 / 2013-02-25
+------------------
+* Fixed bug that prevented `sky-build` from fetching the proper output directory.
+
 0.0.8 / 2013-02-25
 ------------------
 * Fixed bug when an article only had one tag.
