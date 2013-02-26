@@ -127,6 +127,11 @@ function buildAllArticles (baseDir, configs) {
               html = S(html).template(data.self).s
 
               fs.outputFileSync(absOutFile, html)
+
+              //for nice urls in github pages
+              if (S(data.self.relativePath).endsWith('index.html'))
+                data.self.relativePath = data.self.relativePath.replace('index.html', '')
+
               outputArticles[file] = JSON.parse(JSON.stringify(data.self)) //poor mans clone
             }
             next()
