@@ -1,6 +1,10 @@
 0.0.9 / 2013-02-25
 ------------------
 * Fixed bug that prevented `sky-build` from fetching the proper output directory.
+* Serve command serves from proper output directory.
+* Fixed building bug.
+* Made some small tweaks for pretty Github page urls.
+
 
 0.0.8 / 2013-02-25
 ------------------
