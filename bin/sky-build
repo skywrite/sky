@@ -15,7 +15,7 @@ var program = require('commander')
   , P = require('autoresolve')
   , cl = require('cl')
   , RSS = require('rss')
-
+  , colors = require('colors')
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
@@ -81,7 +81,7 @@ function buildAllArticles (baseDir, configs) {
         files.push(file); fileStats.push(stat)
       })
       .on('end', function() {
-        batch(files)./*par(BATCH_LIMIT)*/seq().each(function(i, file, next) {
+        batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
           MarkdownPage.readFile(file, function(err, mdp) {
             if (err) return flow.error(err)
             
@@ -128,13 +128,15 @@ function buildAllArticles (baseDir, configs) {
 
               fs.outputFileSync(absOutFile, html)
               outputArticles[file] = JSON.parse(JSON.stringify(data.self)) //poor mans clone
-              next()
             }
+            next()
           })
         })
-        .error(flow.error)
+        .error(function(err) {
+          console.log('ERROR')
+          flow.error(err)
+        })
         .end(function() {
-          console.log('next...')
           flow.next()
         });
       })
