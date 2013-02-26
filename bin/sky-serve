@@ -26,7 +26,14 @@ function serve (baseDir) {
   var configs = sky.loadConfigsSync(baseDir)
 
   var port = program.port || process.env.PORT || configs.get('config:blog.port') || 2222
-  var serveDir = program.dir || path.join(baseDir, 'public')
+  //var serveDir = program.dir || path.join(baseDir, 'public')
+  var outputDir;
+  if (configs.get('config:build.outputDir')) 
+    outputDir = path.join(baseDir, configs.get('config:build.outputDir'))
+  else
+    outputDir = path.join(baseDir, 'public')
+
+  var serveDir = program.dir || outputDir
 
   var server = http.createServer()
     , fileServer = buffet({root: serveDir, defaultContentType: 'text/html', watch: false})
