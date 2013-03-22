@@ -1,14 +1,16 @@
 Node.js - sky
 ==================
 
+[![build status](https://secure.travis-ci.org/skywrite/sky.png)](http://travis-ci.org/skywrite/sky)
+
 A markdown static site generator. Renamed from Potter.
 
 As I eat my own dogfood more and it stabilizes, I'll post more documentation. Until, wade at your own peril.
 
 You can see two examples of it live right now: 
 
-http://loudjet.com (hosted on Github pages)
-http://procbits.com (hosted on Amazon S3)
+- http://loudjet.com (hosted on Github pages)
+- http://procbits.com (hosted on Amazon S3)
 
 
 Why?
