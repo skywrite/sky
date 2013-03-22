@@ -1,3 +1,11 @@
+0.1.0 / 2013-03-22
+------------------
+* added Travis-CI support
+* temporarily removed Node v0.10 support
+* upgraded to `fs-extra` to `v0.6.x`
+* upgraded latest `parentpath` to get sync
+* created `SkyEnv` class
+
 0.0.9 / 2013-02-25
 ------------------
 * Fixed bug that prevented `sky-build` from fetching the proper output directory.

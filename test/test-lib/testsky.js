@@ -27,11 +27,11 @@ function runSky () {
   var prog = path.basename(SKY_BIN + '-' + args[0])
   if (!skipEvents) {
     sky.stdout.on('data', function(data) {
-      //process.stdout.write(prog + ': ' + colors.cyan(data))
+      process.stdout.write(prog + ': ' + colors.cyan(data))
       stdout += data.toString()
     }) 
     sky.stderr.on('data', function(data) {
-      //process.stderr.write(prog + ': ' + colors.red(data))
+      process.stderr.write(prog + ': ' + colors.red(data))
       stderr += stderr.toString()
     })
     sky.on('exit', function(code) {
