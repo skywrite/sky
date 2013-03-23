@@ -19,6 +19,7 @@ program.version(require('../package'))
 
 sky.findBaseDir(function(dir) {
   if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json or a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
+  dir = dir || program.dir
   serve(dir)
 })
 
