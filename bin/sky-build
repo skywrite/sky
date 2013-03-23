@@ -16,9 +16,12 @@ var program = require('commander')
   , cl = require('cl')
   , RSS = require('rss')
   , colors = require('colors')
+  , SkyEnv = require('../lib/sky_env').SkyEnv
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
+  , _skyEnv = null
+  , _baseDir = null
 
 program.version(require('../package'))
   .option('-d, --dir [outputDir]', 'The output directory for the files.')
@@ -26,24 +29,22 @@ program.version(require('../package'))
 
 if (program.dir) process.chdir(program.dir)
 
-sky.findBaseDir(function(dir) {
-  if (!dir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+_baseDir = sky.findBaseDirSync()
+if (!_baseDir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+_skyEnv = new SkyEnv(_baseDir)
+_skyEnv.loadConfigsSync()
   
-  var configs = sky.loadConfigsSync(dir)
-  if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
+if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
 
-  buildAllArticles(dir, configs)
-})
+buildAllArticles(_baseDir, configs)
+
 
 function buildAllArticles (baseDir, configs) {
   console.log('Starting to build...')
   var outputDir = ''
-    , blogTemplate =  configs.get('config:blog.template') || 'basic'
 
-  if (configs.get('config:build.outputDir')) 
-    outputDir = path.join(baseDir, configs.get('config:build.outputDir'))
-  else
-    outputDir = path.join(baseDir, 'public')
+  outputDir = _skyEnv.getOutputDir()
   outputVendorDir = path.join(outputDir, 'vendor')
 
   if (!fs.existsSync(outputDir)) fs.mkdirsSync(outputDir)
@@ -61,7 +62,7 @@ function buildAllArticles (baseDir, configs) {
   var indexFile = configs.get("config:articles.index") || "index.html"
 
   //check existence of templateDir
-  var templateDir = path.join(baseDir, 'sky', 'templates', blogTemplate)
+  var templateDir = _skyEnv.getTemplateDir()
   if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
 
   var outputArticles = {}
