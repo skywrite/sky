@@ -56,7 +56,8 @@
   },
   "devDependencies": {
     "mocha": "*",
-    "testutil": "~0.4.0"
+    "testutil": "~0.4.0",
+    "scrap": "~0.1.0"
   },
   "main": "./lib/sky.js",
   "scripts": {
