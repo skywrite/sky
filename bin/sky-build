@@ -47,7 +47,6 @@ function buildAllArticles (baseDir, configs) {
   outputDir = _skyEnv.getOutputDir()
   outputVendorDir = path.join(outputDir, 'vendor')
 
-  if (!fs.existsSync(outputDir)) fs.mkdirsSync(outputDir)
   if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
 
   var files = []
@@ -58,7 +57,6 @@ function buildAllArticles (baseDir, configs) {
   data.sky.homepage = 'https://github.com/skywrite'
 
   //url formats
-  var articleUrlFormat = configs.get('config:articles.urlformat') || "articles/{{date-year}}/{{date-month}}/{{slug}}.html"
   var indexFile = configs.get("config:articles.index") || "index.html"
 
   //check existence of templateDir
@@ -100,15 +98,9 @@ function buildAllArticles (baseDir, configs) {
               data.self.author = data.self.author || (configs.get('config:blog.author'))
 
               data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
-              //console.dir(data.self)
-              //console.log(data.self['date-year'])
 
-              //var relOutFile = _(articleUrlFormat).template(data.self, _tmplSettings)
-              //var relOutFile = sutil.template(articleUrlFormat, data.self)
-              var relOutFile = S(articleUrlFormat).template(data.self).s
-              //console.log(relOutFile)
-              var absOutFile = path.join(outputDir, relOutFile)
-              //console.log(absOutFile)
+              var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.self)
+                , relOutFile = _skyEnv.mdArticleToOutputFile(file, data.self) 
 
               data.self.relativePath = relOutFile
 
@@ -201,8 +193,6 @@ function buildAllArticles (baseDir, configs) {
       var xml = feed.xml()
 
       fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
-
-
 
 
       var absIndexFile = path.join(outputDir, indexFile)
