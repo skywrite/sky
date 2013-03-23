@@ -6,6 +6,7 @@
 * upgraded latest `parentpath` to get sync
 * created `SkyEnv` class
 * fixed bug in `sky-serve`
+* only build files if the last modified time on the markdown is greater than the last build time
 
 0.0.9 / 2013-02-25
 ------------------

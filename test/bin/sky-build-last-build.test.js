@@ -7,6 +7,7 @@ var testutil = require('testutil')
   , S = require('string')
   , runSky = require(P('test/test-lib/testsky')).runSky
   , next = require('nextflow')
+  , SkyEnv = require(P('lib/sky_env')).SkyEnv
 
 
 var TEST_DIR = ''
@@ -25,8 +26,9 @@ describe('bin/', function() {
         , tags1 = ['war', 'politics']
         , title2 = 'Slavery in the Contemporary Era'
         , tags2 = ['politics', 'slavery']
-        , markdownArticles = []
-        , mtimes = []
+        , md1 = '' , md2 = '', o1 = '', o2 = '', t1 = -1, t2 = -2
+        , lastBuildTime = null
+        , skyEnv = null
 
       var flow;
       next(flow = {
@@ -42,6 +44,9 @@ describe('bin/', function() {
           fs.mkdirsSync(TEST_DIR)
           process.chdir(TEST_DIR)
 
+          skyEnv = new SkyEnv(TEST_DIR)
+          skyEnv.loadConfigsSync()
+
           flow.next()
         },
         createSomeArticles: function() {
@@ -50,13 +55,13 @@ describe('bin/', function() {
             var file = stdout.replace('created.', '').trim()
             fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
             fs.appendFileSync(file, '\n**Preface:**\nBlah blah')
-            markdownArticles.push(file)
+            md1 = file
             runSky('article', title2, '--tags', tags2.join(','), function(code, stdout, stderr) {
               EQ (code, 0)
               var file = stdout.replace('created.', '').trim()
               fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
               fs.appendFileSync(file, '\n**Preface:**\nBlah blah')
-              markdownArticles.push(file)
+              md2 = file
               flow.next()
             })
           })
@@ -65,19 +70,51 @@ describe('bin/', function() {
           runSky('build', function(code, stdout, stderr) {
             EQ (stderr, '')
             EQ (code, 0)
+            skyEnv.loadConfigsSync()
             flow.next()
           })
         },
         verify: function() {
-          /*var now = new Date()
+          o1 = skyEnv.mdArticleToOutputFileWithPath(md1)
+          o2 = skyEnv.mdArticleToOutputFileWithPath(md2)
 
-          var configFile = path.join(TEST_DIR, 'sky', 'config.json')
-          T (fs.existsSync(configFile))
-          var configJson = fs.readJsonSync(configFile)
-          configJson.blog.lastBuild = now.toISOString()
+          T (fs.existsSync(o1))
+          T (fs.existsSync(o2))
+          
+          t1 = fs.lstatSync(o1).mtime
+          t2 = fs.lstatSync(o2).mtime
+          
+          lastBuildTime = new Date(skyEnv.configs.get('config:build.lastBuild'))
 
-          mtimes.push()*/
+          setTimeout(flow.next, 1000)
+        },
+        modifyFile: function() {
+          fs.appendFileSync(md1, '\n\n more text')
 
+          flow.next()
+        },
+        runBuildAgain: function() {
+          runSky('build', function(code, stdout, stderr) {
+            EQ (stderr, '')
+            EQ (code, 0)
+
+            skyEnv.loadConfigsSync()
+
+            //verify only modified file is in output
+            T (S(stdout).contains(path.basename(md1)))
+            F (S(stdout).contains(path.basename(md2)))
+
+            flow.next()
+          })
+        },
+        verifyAgain: function() {
+          var nt1 = fs.lstatSync(o1).mtime
+            , nt2 = fs.lstatSync(o2).mtime
+            , newLastBuildTime = new Date(skyEnv.configs.get('config:build.lastBuild'))
+
+          T (nt1.getTime() > t1.getTime())
+          T (nt2.getTime() === t2.getTime()) //output file not modified
+          T (newLastBuildTime.getTime() > lastBuildTime.getTime())
 
           done()
         }

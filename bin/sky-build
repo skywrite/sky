@@ -76,7 +76,12 @@ function buildAllArticles (baseDir, configs) {
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
-      mdwalker(path.join(baseDir, 'articles')).on('markdown', function(file, stat) {
+      var lastBuild = new Date(0)
+      if (configs.get('config:build.lastBuild'))
+        lastBuild = new Date(configs.get('config:build.lastBuild'))
+
+      mdwalker(path.join(baseDir, 'articles'), {lastModified: lastBuild})
+      .on('markdown', function(file, stat) {
         files.push(file); fileStats.push(stat)
       })
       .on('end', function() {
@@ -135,6 +140,9 @@ function buildAllArticles (baseDir, configs) {
           flow.error(err)
         })
         .end(function() {
+          var cfgObj = configs.config
+          cfgObj.set('build.lastBuild', (new Date()).toISOString())
+          fs.writeJsonSync(_skyEnv.configFile, cfgObj)
           flow.next()
         });
       })
