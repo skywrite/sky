@@ -47,12 +47,12 @@ describe('SkyEnv', function() {
     })
   })
 
-  describe('- mdArticleToOutput(mdfile, [data])', function() {
+  describe('- mdArticleToOutputFileWithPath(mdfile, [data])', function() {
     describe('> when no data is passed as an arg', function() {
       it('should return a file with slug based upon markdown file name', function() {
         var se = new SkyEnv('/tmp')
         se.configs = {get: function() { return ''}} //mock it up
-        EQ (se.mdArticleToOutput('/tmp/articles/bitcoin-economics.md'), '/tmp/public/bitcoin-economics.html')
+        EQ (se.mdArticleToOutputFileWithPath('/tmp/articles/bitcoin-economics.md'), '/tmp/public/bitcoin-economics.html')
       })
     })
 
@@ -67,7 +67,7 @@ describe('SkyEnv', function() {
         var data = {
           slug: 'burt-and-ernie'
         }
-        EQ (se.mdArticleToOutput(path.join(articlesDir, 'bitcoin-economics.md'), data), path.join(se.getOutputDir(), data.slug))
+        EQ (se.mdArticleToOutputFileWithPath(path.join(articlesDir, 'bitcoin-economics.md'), data), path.join(se.getOutputDir(), data.slug))
       })
     })
 
@@ -86,7 +86,7 @@ describe('SkyEnv', function() {
         }
 
         var expected = "articles/2011/04/burt-and-ernie.html"
-        EQ (se.mdArticleToOutput(path.join(articlesDir, 'bitcoin-economics.md'), data), path.join(se.getOutputDir(), expected))
+        EQ (se.mdArticleToOutputFileWithPath(path.join(articlesDir, 'bitcoin-economics.md'), data), path.join(se.getOutputDir(), expected))
       })
     })
   })
