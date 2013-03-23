@@ -90,6 +90,32 @@ describe('SkyEnv', function() {
       })
     })
   })
+
+  describe('- getTemplate()', function() {
+    describe('> when specified in config', function() {
+      it('it should return the proper template', function() {
+        process.chdir(TEST_DIR)
+        var articlesDir = path.join(TEST_DIR, 'articles')
+        fs.writeJsonSync(CFG_FILE, {blog: {template: 'shiny'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getTemplate(), 'shiny')
+      })
+    })
+
+    describe('> when its not specified in config', function() {
+      it('it should return the proper template', function() {
+        process.chdir(TEST_DIR)
+        var articlesDir = path.join(TEST_DIR, 'articles')
+        fs.writeJsonSync(CFG_FILE, {})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getTemplate(), 'basic')
+      })
+    })
+  })
 })
 
 
