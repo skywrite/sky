@@ -56,9 +56,6 @@ function buildAllArticles (baseDir, configs) {
   //set homepage
   data.sky.homepage = 'https://github.com/skywrite'
 
-  //url formats
-  var indexFile = configs.get("config:articles.index") || "index.html"
-
   //check existence of templateDir
   var templateDir = _skyEnv.getTemplateDir()
   if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
@@ -203,7 +200,7 @@ function buildAllArticles (baseDir, configs) {
       fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
 
 
-      var absIndexFile = path.join(outputDir, indexFile)
+      var absIndexFile = path.join(outputDir, _skyEnv.getArticleIndex())
       console.log(absIndexFile)
       data.filename = layoutTemplateFile
       var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
