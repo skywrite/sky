@@ -89,7 +89,7 @@ describe('bin/', function() {
           setTimeout(flow.next, 1000)
         },
         modifyFile: function() {
-          fs.appendFileSync(md1, '\n\n more text')
+          fs.appendFileSync(md1, '\n\n more text') //modify first file
 
           flow.next()
         },
@@ -116,7 +116,18 @@ describe('bin/', function() {
           T (nt2.getTime() === t2.getTime()) //output file not modified
           T (newLastBuildTime.getTime() > lastBuildTime.getTime())
 
-          done()
+          flow.next()
+        },
+        verifyThatIndexBuiltPropery: function() {
+          var indexFile = path.join(TEST_DIR, 'public', 'index.html')
+          T (fs.existsSync(indexFile))
+
+          var indexContents = fs.readFileSync(indexFile, 'utf8')
+
+          T (S(indexContents).contains(title1))
+          T (S(indexContents).contains(title2)) //<--- regression bug here
+
+          done() 
         }
       })
     })
