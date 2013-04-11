@@ -73,13 +73,22 @@ function buildAllArticles (baseDir, configs) {
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
+      var mfiles = {}
+
       var lastBuild = new Date(0)
       if (configs.get('config:build.lastBuild'))
         lastBuild = new Date(configs.get('config:build.lastBuild'))
 
       mdwalker(path.join(baseDir, 'articles'), {lastModified: lastBuild})
       .on('markdown', function(file, stat) {
+        mfiles[file] = true //if lastBuild is 0, this needs to be here
         files.push(file); fileStats.push(stat)
+      })
+      .on('notModified', function(file) {
+        mfiles[file] = false
+      })
+      .on('modified', function(file) {
+        mfiles[file] = true
       })
       .on('end', function() {
         batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
@@ -87,7 +96,6 @@ function buildAllArticles (baseDir, configs) {
             if (err) return flow.error(err)
             
             if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
-              console.log('Building %s...', path.basename(file))
               data.self = {
                 title: mdp.title,
                 content: mdp.html
@@ -121,7 +129,10 @@ function buildAllArticles (baseDir, configs) {
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
               html = S(html).template(data.self).s
 
-              fs.outputFileSync(absOutFile, html)
+              if (mfiles[file]) {
+                console.log('Building %s...', path.basename(file))
+                fs.outputFileSync(absOutFile, html)
+              }
 
               //for nice urls in github pages
               if (S(data.self.relativePath).endsWith('index.html'))

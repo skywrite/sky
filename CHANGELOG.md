@@ -1,3 +1,8 @@
+0.1.1 / 2013-04-11
+------------------
+* when `lastBuild` was used, it didn't output the all of the files for index, only the ones that 
+  met the `lastBuild` criteria. Closes #[8](https://github.com/skywrite/sky/issues/8). Closes #[5](https://github.com/skywrite/sky/issues/5)
+
 0.1.0 / 2013-03-22
 ------------------
 * added Travis-CI support
