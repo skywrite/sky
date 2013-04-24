@@ -19,7 +19,7 @@ describe('bin/', function() {
     process.chdir(TEST_DIR)
   })
 
-  describe('sky-build', function() {
+  describe('sky-build-articles', function() {
     it('should build the site', function(done) {
       var title1 = 'Global Thermal Nuclear Warfare'
         , tags1 = ['war', 'politics']
@@ -61,7 +61,7 @@ describe('bin/', function() {
           })
         },
         runBuild: function() {
-          runSky('build', function(code, stdout, stderr) {
+          runSky('build-articles', function(code, stdout, stderr) {
             EQ (stderr, '')
             EQ (code, 0)
             flow.next()

@@ -67,7 +67,7 @@ describe('bin/', function() {
           })
         },
         runBuild: function() {
-          runSky('build', function(code, stdout, stderr) {
+          runSky('build-articles', function(code, stdout, stderr) {
             EQ (stderr, '')
             EQ (code, 0)
             skyEnv.loadConfigsSync()
@@ -94,7 +94,7 @@ describe('bin/', function() {
           flow.next()
         },
         runBuildAgain: function() {
-          runSky('build', function(code, stdout, stderr) {
+          runSky('build-articles', function(code, stdout, stderr) {
             EQ (stderr, '')
             EQ (code, 0)
 
