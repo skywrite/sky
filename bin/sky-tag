@@ -1,3 +1,67 @@
 #!/usr/bin/env node
 
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , next = require('nextflow')
+  , sky = require('../lib/sky')
+  , ejs = require('ejs')
+  , _ = require('underscore')
+  , S = require('string')
+  , mdwalker = require('markdown-walker')
+  , batch = require('batchflow')
+  , MarkdownPage = require('markdown-page').MarkdownPage
+  , dt = require('date-tokens')
+  , P = require('autoresolve')
+  , cl = require('cl')
+  , RSS = require('rss')
+  , colors = require('colors')
+  , SkyEnv = require('../lib/sky_env').SkyEnv
 
+var BATCH_LIMIT = 32
+
+program.version(require('../package'))
+  .option('-l, --list', 'The output directory for the files.')
+  .parse(process.argv)
+
+var _baseDir = sky.findBaseDirSync()
+if (!_baseDir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+var _skyEnv = new SkyEnv(_baseDir)
+_skyEnv.loadConfigsSync()
+  
+var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
+if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+
+if (program.list) return list()
+
+
+function list () {
+  var files = []
+    , tags = {}
+
+  mdwalker(path.join(_baseDir, 'articles'))
+  .on('markdown', function(file, stat) {
+    files.push(file)
+  })
+  .on('end', function() {
+    batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
+      MarkdownPage.readFile(file, function(err, mdp) {
+        if (err) return flow.error(err)
+
+        if (mdp.metadata.tags) {
+          mdp.metadata.tags.forEach(function(tag) {
+            if (tags[tag])
+              tags[tag] += 1
+            else
+              tags[tag] = 0
+          })
+        }
+
+        next()    
+      })
+    })
+    .end(function() {
+      console.dir(tags)
+    })
+  })
+}
