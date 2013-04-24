@@ -53,7 +53,7 @@ function list () {
             if (tags[tag])
               tags[tag] += 1
             else
-              tags[tag] = 0
+              tags[tag] = 1
           })
         }
 
@@ -65,3 +65,4 @@ function list () {
     })
   })
 }
+
