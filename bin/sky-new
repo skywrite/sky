@@ -25,7 +25,7 @@ var rck = normalizeRock(program.rock)
 if (!rck) cli.exit(3, '%s is not a valid rock path.', program.rock)
 
 outdir = path.resolve(outdir)
-rock.create(outdir, rck, function(err) {
+rock.fetchRepo(outdir, rck, function(err) {
   if (err) cli.exit(4, err)
 
   walker(outdir)

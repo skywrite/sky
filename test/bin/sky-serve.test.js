@@ -23,7 +23,7 @@ describe('bin/', function() {
     if (!fs.existsSync(TEST_DIR)) fs.mkdirsSync(TEST_DIR)
     process.chdir(TEST_DIR)
 
-    rock.create(TEST_DIR, P('test/resources/faux-rock'), function(err) {
+    rock.fetchRepo(TEST_DIR, P('test/resources/faux-rock'), function(err) {
       if (err) done(err)
 
       var htmlFile = path.join(TEST_DIR, 'public', 'index.html')

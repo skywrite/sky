@@ -30,7 +30,7 @@
   ],
   "dependencies": {
     "open": "0.0.2",
-    "rock": "~0.2.0",
+    "rock": "~0.3.0",
     "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
     "markdown-page": "~0.1.2",
@@ -47,7 +47,7 @@
     "date-tokens": "0.0.2",
     "fs-extra": "~0.6.0",
     "jsoncfg": "~0.1.2",
-    "batchflow": "~0.3.2",
+    "batchflow": "~0.4.0",
     "colors": "~0.6.0-1",
     "nextflow": "~0.3.0",
     "cl": "0.0.1",
