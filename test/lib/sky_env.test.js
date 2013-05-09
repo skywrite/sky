@@ -115,7 +115,7 @@ describe('SkyEnv', function() {
     })
   })
 
-  describe('- getTemplate()', function() {
+  describe('- getTemplateName()', function() {
     describe('> when specified in config', function() {
       it('it should return the proper template', function() {
         process.chdir(TEST_DIR)
@@ -123,7 +123,7 @@ describe('SkyEnv', function() {
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplate(), 'shiny')
+        EQ (se.getTemplateName(), 'shiny')
       })
     })
 
@@ -134,18 +134,18 @@ describe('SkyEnv', function() {
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplate(), 'basic')
+        EQ (se.getTemplateName(), 'basic')
       })
     })
   })
 
-  describe('- getTemplate()', function() {
+  describe('- getTemplateDir()', function() {
     it('should retrieve the template dir', function() {
       process.chdir(TEST_DIR)
         
       var se = new SkyEnv(libsky.findBaseDirSync())
       se.loadConfigsSync()
-      EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplate()))
+      EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplateName()))
     })
   })
 
