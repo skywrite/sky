@@ -37,6 +37,7 @@ if (!cmd) {
 switch (cmd) {
   case 'a': cmd = 'article'; break;
   case 'b': cmd = 'build'; break;
+  case 't': cmd = 'tag'; break;
 }
 
 var bin = path.join(__dirname, 'sky-' + cmd)

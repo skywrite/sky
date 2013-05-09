@@ -3,25 +3,21 @@
 var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
-  , next = require('nextflow')
   , sky = require('../lib/sky')
-  , ejs = require('ejs')
   , _ = require('underscore')
   , S = require('string')
-  , mdwalker = require('markdown-walker')
-  , batch = require('batchflow')
-  , MarkdownPage = require('markdown-page').MarkdownPage
-  , dt = require('date-tokens')
   , P = require('autoresolve')
   , cl = require('cl')
-  , RSS = require('rss')
   , colors = require('colors')
   , SkyEnv = require('../lib/sky_env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , sorto = require('sorto')
 
 var BATCH_LIMIT = 32
 
 program.version(require('../package'))
-  .option('-l, --list', 'The output directory for the files.')
+  .option('-n, --list-by-name', 'Output tags with their counts sorted by name.')
+  .option('-c, --list-by-count', 'Output tags with ther counts sorted by count.')
   .parse(process.argv)
 
 var _baseDir = sky.findBaseDirSync()
@@ -32,37 +28,77 @@ _skyEnv.loadConfigsSync()
 var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
 if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
 
-if (program.list) return list()
+if (program.listByName) return list(printByTag)
+if (program.listByCount) return list(printByCount)
 
+//no args
+return list(printByTag)
 
-function list () {
-  var files = []
-    , tags = {}
+function list (fn) {
+  var tags = {}
 
-  mdwalker(path.join(_baseDir, 'articles'))
-  .on('markdown', function(file, stat) {
-    files.push(file)
-  })
-  .on('end', function() {
-    batch(files).par(BATCH_LIMIT).each(function(i, file, next) {
-      MarkdownPage.readFile(file, function(err, mdp) {
-        if (err) return flow.error(err)
+  DocIter({path: _skyEnv.path('articles')})
+  .document(function(err, res, next) {
+    if (err) {
+      console.error(err)
+      return next()
+    }
 
-        if (mdp.metadata.tags) {
-          mdp.metadata.tags.forEach(function(tag) {
-            if (tags[tag])
-              tags[tag] += 1
-            else
-              tags[tag] = 1
-          })
-        }
-
-        next()    
+    var mdp = res.document
+    if (mdp.metadata.tags) {
+      mdp.metadata.tags.forEach(function(tag) {
+        tags[tag] ? tags[tag] += 1 : tags[tag] = 1   
       })
-    })
-    .end(function() {
-      console.dir(tags)
-    })
+    }
+    next()
+  })
+  .end(function() {
+    fn(tags)
   })
 }
+
+function printByTag (tags) {
+  tags = sorto.bykey(tags, function(s) { return s.toLowerCase() })
+
+  console.log('')
+  var max = tags.reduce(function(m, cur) {
+    return m > keyo(cur).length ? m : keyo(cur).length
+  }, keyo(tags[0]).length)
+  
+  tags.forEach(function(tag) {
+    var tagName = keyo(tag)
+      , count = valo(tag)
+    prettyPrintItem(max, tagName, count)
+  }) 
+
+  console.log('')
+}
+
+function printByCount (tags) {
+  tags = sorto.byval(tags, function(n) { return -1 * parseInt(n) })
+
+  console.log('')  
+  tags.forEach(function(tag) {
+    var tagName = keyo(tag)
+      , count = valo(tag)
+    prettyPrintItem(4, count, tagName)
+  }) 
+
+  console.log('')
+}
+
+function prettyPrintItem (maxLeftLen, left, right) {
+  var offsetLeft = 4 + maxLeftLen
+  console.log(colors.cyan(S(left).padLeft(offsetLeft).s) + ' : ' + colors.green(right) )
+}
+
+function keyo (obj) {
+  return Object.keys(obj)[0]
+}
+
+function valo (obj) {
+  return obj[keyo(obj)]
+}
+
+
 
