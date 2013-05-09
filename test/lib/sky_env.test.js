@@ -148,6 +148,16 @@ describe('SkyEnv', function() {
       EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplate()))
     })
   })
+
+  describe('- path()', function() {
+    it('should join all the arguments with the base directory', function() {
+      process.chdir(TEST_DIR)
+      var baseDir = libsky.findBaseDirSync()
+      var se = new SkyEnv(baseDir)
+      var cfgFile = se.path('sky', 'config.json')
+      EQ (cfgFile, path.join(baseDir, 'sky', 'config.json'))
+    })
+  })
 })
 
 
