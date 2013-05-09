@@ -90,6 +90,12 @@ describe('bin/', function() {
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title1) > 0)
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title2) > 0)
 
+          //regression
+          var cfg = fs.readJsonSync(path.join(TEST_DIR, 'sky', 'config.json'))
+          T (cfg.blog) //just verify that it actually loaded
+          F (cfg.homepage) //should not be here
+          F (cfg.view) //should not be here
+
           done()
         }
       })

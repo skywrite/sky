@@ -20,6 +20,7 @@ var program = require('commander')
   , colors = require('colors')
   , SkyEnv = require('../lib/sky_env').SkyEnv
   , DocIter = require('../lib/doc_iterator')
+  , sutil = require('../lib/util')
 
 var BATCH_LIMIT = 32
   , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
@@ -52,7 +53,7 @@ function buildAllArticles (baseDir, configs) {
 
   if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
 
-  var data = {S: S, _: _, sky: configs.config, self: {}, cache: false}
+  var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
 
   //set homepage
   data.sky.homepage = 'https://github.com/skywrite'
