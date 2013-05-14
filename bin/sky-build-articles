@@ -18,10 +18,9 @@ var program = require('commander')
   , SkyEnv = require('../lib/sky_env').SkyEnv
   , DocIter = require('../lib/doc_iterator')
   , sutil = require('../lib/util')
+  , tmpl = require('../lib/template_file')
 
-var BATCH_LIMIT = 32
-  , _tmplSettings = {interpolate : /\{\{(.+?)\}\}/g} //parse Sky config
-  , _skyEnv = null
+var _skyEnv = null
   , _baseDir = null
 
 program.version(require('../package'))
@@ -50,11 +49,6 @@ function buildAllArticles (baseDir, configs) {
 
   if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
 
-  var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
-
-  //set homepage
-  data.sky.homepage = 'https://github.com/skywrite'
-
   //check existence of templateDir
   var templateDir = _skyEnv.getTemplateDir()
   if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
@@ -79,6 +73,10 @@ function buildAllArticles (baseDir, configs) {
       DocIter({path: path.join(baseDir, 'articles'), lastModified: lastBuild})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
+
+        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
+        //set homepage
+        data.sky.homepage = 'https://github.com/skywrite'
 
         var mdp = res.document
           , file = res.file
@@ -111,28 +109,38 @@ function buildAllArticles (baseDir, configs) {
           //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
 
           data.filename = articleTemplateFile//absOutFile //ejs option
-          data.sky.view = ejs.render(fs.readFileSync(articleTemplateFile, 'utf8'), data)
+          //fs.readFile(articleTemplateFile, 'utf8', function(err, html) {
+            //data.sky.view = ejs.render(html, data)
+          tmpl(articleTemplateFile, data, function(err, html) {
+            if (err) flow.error(err)
+            data.sky.view = html
 
-          //data.filename
-          data.filename = layoutTemplateFile 
-          var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
+            //data.filename
+            data.filename = layoutTemplateFile 
 
-          //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
-          html = S(html).template(data.self).s
+            //var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
+            tmpl(layoutTemplateFile, data, function(err, html) {
+              if (err) flow.error(err)
 
-          if (modified) {
-            console.log('Building %s...', path.basename(file))
-            fs.outputFileSync(absOutFile, html)
-          }
+              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+              //html = S(html).template(data.self).s
 
-          //for nice urls in github pages
-          if (S(data.self.relativePath).endsWith('index.html'))
-            data.self.relativePath = data.self.relativePath.replace('index.html', '')
+              if (modified) {
+                console.log('Building %s...', path.basename(file))
+                fs.outputFileSync(absOutFile, html)
+              }
 
-          outputArticles[file] = JSON.parse(JSON.stringify(data.self)) //poor mans clone
-        }
-            
-        next()
+              //for nice urls in github pages
+              if (S(data.self.relativePath).endsWith('index.html'))
+                data.self.relativePath = data.self.relativePath.replace('index.html', '')
+
+              outputArticles[file] = JSON.parse(JSON.stringify(data.self)) //poor mans clone
+
+              next()
+            })
+          })
+        } else 
+          next()
       })
       .end(function() {
         var cfgObj = configs.config
@@ -146,6 +154,10 @@ function buildAllArticles (baseDir, configs) {
       var indexTemplateFile = path.join(templateDir, 'article', 'index.ejs.html')
       var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
      
+      var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
+      //set homepage
+      data.sky.homepage = 'https://github.com/skywrite'
+
       data.self.author = data.self.author || (configs.get('config:blog.author'))
       delete data.self.title
 
@@ -167,6 +179,7 @@ function buildAllArticles (baseDir, configs) {
         articles.push(outputArticles[file])
       })
       articles = _(articles).chain().sortBy(function(a) {
+        console.log(new Date(a.publishedAt).toISOString() + ' : ' + a.title)
         return -a.publishedAt
       }).take(10).value()
 
