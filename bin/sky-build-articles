@@ -7,7 +7,6 @@ var program = require('commander')
   , path = require('path')
   , next = require('nextflow')
   , sky = require('../lib/sky')
-  , ejs = require('ejs')
   , _ = require('underscore')
   , S = require('string')
   , dt = require('date-tokens')
@@ -171,22 +170,25 @@ function buildAllArticles (baseDir, configs) {
       data.self.outputArticles = outputArticles;
       //console.dir(outputArticles)
       data.filename = indexTemplateFile
+
       tmpl(indexTemplateFile, data, function(err, html) {
-        // body...
+        data.sky.view = html
+        //data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
+
+        var xml = rss(configs, outputArticles)
+
+        fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
+
+
+        var absIndexFile = path.join(outputDir, _skyEnv.getArticleIndex())
+        console.log(absIndexFile)
+        data.filename = layoutTemplateFile
+
+        tmpl(layoutTemplateFile, data, function(err, html) {
+          fs.outputFileSync(absIndexFile, html)
+          console.log('Done')
+        })
       })
-      data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
-
-      var xml = rss(configs, outputArticles)
-
-      fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
-
-
-      var absIndexFile = path.join(outputDir, _skyEnv.getArticleIndex())
-      console.log(absIndexFile)
-      data.filename = layoutTemplateFile
-      var html = ejs.render(fs.readFileSync(layoutTemplateFile, 'utf8'), data)
-      fs.outputFileSync(absIndexFile, html)
-      console.log('Done.')
     }
   })
 }
