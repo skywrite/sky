@@ -160,12 +160,7 @@ function buildAllArticles (baseDir, configs) {
       data.self.author = data.self.author || (configs.get('config:blog.author'))
       delete data.self.title
 
-      if (configs.get('config:blog.name')) {
-        data.self.title = configs.get('config:blog.name')
-        if (configs.get('config:blog.tagline'))
-          data.self.title += ': ' + configs.get('config:blog.tagline')
-      }
-      data.self.title = data.self.title || 'Sky Blog'
+      data.self.title = data.self.title = _skyEnv.getIndexTitle()
 
       data.self.outputArticles = outputArticles;
       //console.dir(outputArticles)
@@ -178,7 +173,6 @@ function buildAllArticles (baseDir, configs) {
         var xml = rss(configs, outputArticles)
 
         fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
-
 
         var absIndexFile = path.join(outputDir, _skyEnv.getArticleIndex())
         console.log(absIndexFile)
