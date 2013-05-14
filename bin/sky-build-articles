@@ -13,12 +13,12 @@ var program = require('commander')
   , dt = require('date-tokens')
   , P = require('autoresolve')
   , cl = require('cl')
-  , RSS = require('rss')
   , colors = require('colors')
   , SkyEnv = require('../lib/sky_env').SkyEnv
   , DocIter = require('../lib/doc_iterator')
   , sutil = require('../lib/util')
   , tmpl = require('../lib/template_file')
+  , rss = require('../lib/rss')
 
 var _skyEnv = null
   , _baseDir = null
@@ -74,7 +74,7 @@ function buildAllArticles (baseDir, configs) {
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
-        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
+        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), skyenv: _skyEnv, self: {}, cache: false}
         //set homepage
         data.sky.homepage = 'https://github.com/skywrite'
 
@@ -154,7 +154,7 @@ function buildAllArticles (baseDir, configs) {
       var indexTemplateFile = path.join(templateDir, 'article', 'index.ejs.html')
       var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
      
-      var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, cache: false}
+      var data = {S: S, _: _, sky: sutil.deepClone(configs.config), self: {}, skyenv: _skyEnv, cache: false}
       //set homepage
       data.sky.homepage = 'https://github.com/skywrite'
 
@@ -171,41 +171,12 @@ function buildAllArticles (baseDir, configs) {
       data.self.outputArticles = outputArticles;
       //console.dir(outputArticles)
       data.filename = indexTemplateFile
+      tmpl(indexTemplateFile, data, function(err, html) {
+        // body...
+      })
       data.sky.view = ejs.render(fs.readFileSync(indexTemplateFile, 'utf8'), data);
 
-      //generate RSS
-      var articles = []
-      Object.keys(outputArticles).forEach(function(file) {
-        articles.push(outputArticles[file])
-      })
-      articles = _(articles).chain().sortBy(function(a) {
-        console.log(new Date(a.publishedAt).toISOString() + ' : ' + a.title)
-        return -a.publishedAt
-      }).take(10).value()
-
-      var feed = new RSS({
-        title: configs.get('config:blog.name'),
-        description: configs.get('config:blog.tagline'),
-        feed_url: configs.get('config:blog.url') + '/rss.xml',
-        site_url: configs.get('config:blog.url'),
-        //image_url: 'http://example.com/icon.png',
-        author: configs.get('config:blog.author')
-      });
-
-    
-      articles.forEach(function(a) {
-        feed.item({
-          title:  a.title,
-          description: a.content,
-          url: configs.get('config:blog.url') + '/' + a.relativePath, // link to the item
-          //guid: '1123', // optional - defaults to url
-          author: a.author,
-          date: a.publish
-        });
-      })
-      
-      // cache the xml
-      var xml = feed.xml()
+      var xml = rss(configs, outputArticles)
 
       fs.outputFileSync(path.join(outputDir, 'rss.xml'), xml)
 
