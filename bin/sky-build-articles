@@ -18,6 +18,7 @@ var program = require('commander')
   , sutil = require('../lib/util')
   , tmpl = require('../lib/template_file')
   , genIndex = require('../lib/genindex')
+  , util = require('util')
 
 var _skyEnv = null
   , _baseDir = null
@@ -40,7 +41,7 @@ buildAllArticles(_baseDir, configs)
 
 
 function buildAllArticles (baseDir, configs) {
-  console.log('Starting to build...')
+  console.log('\n  building articles...')
   var outputDir = ''
 
   outputDir = _skyEnv.getOutputDir()
@@ -61,7 +62,7 @@ function buildAllArticles (baseDir, configs) {
       console.error(err.stack)
     },
     copyVendor: function() {
-      console.log('Copying vendor directory...')
+      //console.log('Copying vendor directory...')
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
@@ -91,7 +92,7 @@ function buildAllArticles (baseDir, configs) {
           data.self = _(data.self).extend(mdp.metadata)
           data.self.createdAt = stat.ctime
           data.self.modifiedAt = stat.mtime
-          data.self.publishedAt = new Date(data.self.publish).getTime()
+          data.self.publishedAt = new Date(data.self.publish)
           data.self.slug = data.self.slug || S(mdp.title).slugify()
           data.self.author = data.self.author || (configs.get('config:blog.author'))
 
@@ -119,10 +120,11 @@ function buildAllArticles (baseDir, configs) {
               if (err) flow.error(err)
 
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
-              //html = S(html).template(data.self).s
+              html = S(html).template(data.self).s
 
               if (modified) {
-                console.log('Building %s...', path.basename(file))
+                //console.log('Building %s...', path.basename(file))
+                prettyPrint(data.self)
                 fs.outputFileSync(absOutFile, html)
               }
 
@@ -154,3 +156,9 @@ function buildAllArticles (baseDir, configs) {
     }
   })
 }
+
+function prettyPrint (article) {
+  var date = sutil.datefmt(article.publishedAt)
+  console.log("    %s : %s", colors.green(date), colors.cyan(article.title))
+}
+

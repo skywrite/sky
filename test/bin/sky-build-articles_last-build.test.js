@@ -101,8 +101,8 @@ describe('bin/', function() {
             skyEnv.loadConfigsSync()
 
             //verify only modified file is in output
-            T (S(stdout).contains(path.basename(md1)))
-            F (S(stdout).contains(path.basename(md2)))
+            T (S(stdout).contains(title1))
+            F (S(stdout).contains(title2))
 
             flow.next()
           })
@@ -134,7 +134,7 @@ describe('bin/', function() {
   })
 })
 
-function getDate () {
+function getDate () { //todo: delete this in place of sutil.datefmt
   var d = new Date()
   return d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2)
 }
