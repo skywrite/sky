@@ -161,6 +161,30 @@ describe('SkyEnv', function() {
     })
   })
 
+  describe('- getLastBuild()', function() {
+    describe('> when not set', function() {
+      it('should return the default 0 date', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getLastBuild().getTime(), new Date(0).getTime())
+      })
+    })
+
+    describe('> when set', function() {
+      it('should return the  date', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {build: {lastBuild: '2013-04-01'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getLastBuild().getTime(), new Date('2013-04-01').getTime())
+      })
+    })
+  })
+
   describe('- getTemplateName()', function() {
     describe('> when specified in config', function() {
       it('it should return the proper template', function() {

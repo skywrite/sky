@@ -66,11 +66,7 @@ function buildAllArticles (baseDir, configs) {
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
-      var lastBuild = new Date(0)
-      if (configs.get('config:build.lastBuild'))
-        lastBuild = new Date(configs.get('config:build.lastBuild'))
-
-      DocIter({path: path.join(baseDir, 'articles'), lastModified: lastBuild})
+      DocIter({path: path.join(baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
@@ -148,10 +144,10 @@ function buildAllArticles (baseDir, configs) {
       });
     },
     generateIndex: function() {
-      console.log('Generating index...')
+      console.log('\n  generating article index...')
       genIndex({skyEnv: _skyEnv, outputArticles: outputArticles, genRSS: true}, function(err) {
         if (err) return flow.error(err)
-        console.log('Done')
+        console.log('\n  done\n')
       })
     }
   })
