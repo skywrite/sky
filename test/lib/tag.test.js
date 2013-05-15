@@ -23,4 +23,22 @@ describe('tag', function() {
       })
     })
   })
+
+  describe('+ tagCount(counts, arr)', function() {
+    it('should keep a persistent count of tags', function() {
+      var counts = {}
+      
+      tag.tagCount(counts, ['java', 'ruby'])
+      EQ (counts['java'], 1)
+      EQ (counts['ruby'], 1)
+      EQ (Object.keys(counts).length, 2)
+
+      tag.tagCount(counts, ['javascript', 'c', 'java'])
+      EQ (counts['java'], 2)
+      EQ (counts['ruby'], 1)
+      EQ (counts['c'], 1)
+      EQ (counts['javascript'], 1)
+      EQ (Object.keys(counts).length, 4)
+    })
+  })
 })
