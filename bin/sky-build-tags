@@ -35,6 +35,7 @@ program.version(require('../package'))
 if (program.dir) process.chdir(program.dir)
 
 var _skyEnv = bin.initSync()
+_skyEnv.loadTemplatePathsSync()
 
 buildAllTags(_skyEnv.configs)
 
@@ -67,43 +68,20 @@ function buildAllTags (configs) {
           , modified = res.modified
 
         if (mdp.metadata.publish && mdp.metadata.tags) { 
-          data.self = {title: mdp.title, content: mdp.html}
-          data.self = _(data.self).extend(mdp.metadata)
-          data.self.createdAt = stat.ctime
-          data.self.modifiedAt = stat.mtime
-          data.self.publishedAt = new Date(data.self.publish)
-          data.self.slug = data.self.slug || S(mdp.title).slugify()
-          data.self.author = data.self.author || (configs.get('config:blog.author'))
-
-          data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
+          di(data, res)
 
           var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.self)
-            , relOutFile = _skyEnv.mdArticleToOutputFile(file, data.self) 
 
-          data.self.relativePath = relOutFile
-
-          //render templates
-          var articleTemplateFile = path.join(templateDir, 'article', 'article.ejs.html')
-          var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
-          //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
-
-          data.filename = articleTemplateFile//absOutFile 
-          tmpl(articleTemplateFile, data, function(err, html) {
+          tmpl(_skyEnv.templatePaths.article, data, function(err, html) {
             if (err) flow.error(err)
             data.sky.view = html
 
-            //data.filename
-            data.filename = layoutTemplateFile 
 
-            tmpl(layoutTemplateFile, data, function(err, html) {
+            tmpl(_skyEnv.templatePaths.layout, data, function(err, html) {
               if (err) flow.error(err)
 
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
               html = S(html).template(data.self).s
-
-              //for nice urls in github pages
-              if (S(data.self.relativePath).endsWith('index.html'))
-                data.self.relativePath = data.self.relativePath.replace('index.html', '')
 
               mdp.metadata.tags.forEach(function(tag) {
                 if (!outputTags[tag]) outputTags[tag] = {}
