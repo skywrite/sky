@@ -54,7 +54,7 @@
     "rss": "0.0.4",
     "scrap": "~0.1.0",
     "underscore": "~1.4.4",
-    "sorto": "0.0.1",
+    "sorto": "0.0.2",
     "consolidate": "~0.9.1"
   },
   "devDependencies": {
