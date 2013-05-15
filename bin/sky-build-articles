@@ -67,36 +67,15 @@ function buildAllArticles (configs) {
 
         var data = di.initViewData(_skyEnv)
 
-        var mdp = res.document
-          , file = res.file
-          , stat = res.stat
-          , modified = res.modified
-
-        if (mdp.metadata.publish) { //don't wont to publish drafts, thus -> no build either
-          data.self = {
-            title: mdp.title,
-            content: mdp.html
-          }
-
-          data.self = _(data.self).extend(mdp.metadata)
-          data.self.createdAt = stat.ctime
-          data.self.modifiedAt = stat.mtime
-          data.self.publishedAt = new Date(data.self.publish)
-          data.self.slug = data.self.slug || S(mdp.title).slugify()
-          data.self.author = data.self.author || (configs.get('config:blog.author'))
-
-          data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
-
-          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.self)
-            , relOutFile = _skyEnv.mdArticleToOutputFile(file, data.self) 
-
-          data.self.relativePath = relOutFile
+        if (res.document.metadata.publish) { //don't wont to publish drafts, thus -> no build either
+          di(data, res) //attach more doc info
 
           //render templates
           var articleTemplateFile = path.join(templateDir, 'article', 'article.ejs.html')
           var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
           //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
 
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.self)
           data.filename = articleTemplateFile//absOutFile 
           tmpl(articleTemplateFile, data, function(err, html) {
             if (err) flow.error(err)
@@ -111,17 +90,13 @@ function buildAllArticles (configs) {
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
               html = S(html).template(data.self).s
 
-              if (modified) {
+              if (res.modified) {
                 //console.log('Building %s...', path.basename(file))
                 prettyPrint(data.self)
                 fs.outputFileSync(absOutFile, html)
               }
 
-              //for nice urls in github pages
-              if (S(data.self.relativePath).endsWith('index.html'))
-                data.self.relativePath = data.self.relativePath.replace('index.html', '')
-
-              outputArticles[file] = data.self
+              outputArticles[res.file] = data.self
 
               next()
             })
