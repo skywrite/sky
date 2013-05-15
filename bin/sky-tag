@@ -46,11 +46,9 @@ function list (fn) {
     }
 
     var mdp = res.document
-    if (mdp.metadata.tags) {
-      mdp.metadata.tags.forEach(function(tag) {
-        tags[tag] ? tags[tag] += 1 : tags[tag] = 1   
-      })
-    }
+    if (mdp.metadata.tags) 
+      tag.tagCount(tags, mdp.metadata.tags)
+    
     next()
   })
   .end(function() {

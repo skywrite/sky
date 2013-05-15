@@ -41,12 +41,12 @@ next(flow = {
   },
   done: function() {
     var delta = (new Date()) - start
-    console.log('\n  done (%s)\n', secs(delta))
+    console.log('\n  done %s\n', secs(delta))
   }
 })
 
 
 function secs (millis) {
   var secs = millis / 1000
-  return colors.blue(S(secs).toFloat(1) + ' secs')
+  return colors.grey('(' + S(secs).toFloat(1) + ' secs)')
 }

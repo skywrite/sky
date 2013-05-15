@@ -33,7 +33,7 @@ program.version(require('../package'))
 if (program.dir) process.chdir(program.dir)
 
 var _skyEnv = bin.initSync()
-  , templateFiles = _skyEnv.findTemplateFilesSync()
+  , templateFiles = _skyEnv.loadTemplatePathsSync()
 
 buildAllArticles(_skyEnv.configs)
 
