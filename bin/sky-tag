@@ -65,8 +65,8 @@ function printByTag (tags) {
   var max = tag.maxTagLen(tags)
   
   tags.forEach(function(tag) {
-    var tagName = keyo(tag)
-      , count = valo(tag)
+    var tagName = sorto.k(tag)
+      , count = sorto.v(tag)
     prettyPrintItem(max, tagName, count)
   }) 
 
@@ -78,8 +78,8 @@ function printByCount (tags) {
 
   console.log('')  
   tags.forEach(function(tag) {
-    var tagName = keyo(tag)
-      , count = valo(tag)
+    var tagName = sorto.k(tag)
+      , count = sorto.v(tag)
     prettyPrintItem(4, count, tagName)
   }) 
 
@@ -91,13 +91,7 @@ function prettyPrintItem (maxLeftLen, left, right) {
   console.log(colors.cyan(S(left).padLeft(offsetLeft).s) + ' : ' + colors.green(right) )
 }
 
-function keyo (obj) {
-  return Object.keys(obj)[0]
-}
 
-function valo (obj) {
-  return obj[keyo(obj)]
-}
 
 
 
