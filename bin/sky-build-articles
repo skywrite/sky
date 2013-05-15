@@ -19,6 +19,7 @@ var program = require('commander')
   , tmpl = require('../lib/template_file')
   , genIndex = require('../lib/genindex')
   , util = require('util')
+  , di = require(P('lib/doc_info'))
 
 var _skyEnv = null
   , _baseDir = null
@@ -70,9 +71,7 @@ function buildAllArticles (baseDir, configs) {
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
-        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), skyenv: _skyEnv, self: {}, cache: false}
-        //set homepage
-        data.sky.homepage = 'https://github.com/skywrite'
+        var data = di.initViewData(_skyEnv)
 
         var mdp = res.document
           , file = res.file

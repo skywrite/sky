@@ -21,6 +21,8 @@ var program = require('commander')
   , genIndex = require('../lib/genindex')
   , util = require('util')
   , sorto = require('sorto')
+  , tag = require('../lib/tag')
+  , di = require(P('lib/doc_info'))
 
 var _skyEnv = null
   , _baseDir = null
@@ -63,9 +65,7 @@ function buildAllTags (baseDir, configs) {
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
-        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), skyenv: _skyEnv, self: {}, cache: false}
-        //set homepage
-        data.sky.homepage = 'https://github.com/skywrite'
+        var data = di.initViewData(_skyEnv)
 
         var mdp = res.document
           , file = res.file
@@ -126,12 +126,14 @@ function buildAllTags (baseDir, configs) {
     },
     generateIndexes: function() {
       var tags = sorto.bykey(outputTags, function(t) { return t.toLowerCase() })
+      var maxTagLen = tag.maxTagLen(tags)
+
       console.log('\n  generating tags...')
       batch(tags).par(32).each(function(i, val, next) {
         var tag = sorto.k(val)
           , outputArticles = sorto.v(val)
 
-        console.log(tag)
+        prettyPrintItem(maxTagLen, tag, Object.keys(outputArticles).length)
         var outputFile = path.join(_skyEnv.getOutputDir(), 'tag', S(tag).slugify().s)
         genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
           if (err) return flow.error(err)
@@ -145,8 +147,8 @@ function buildAllTags (baseDir, configs) {
   })
 }
 
-function prettyPrint (article) {
-  var date = sutil.datefmt(article.publishedAt)
-  console.log("    %s : %s", colors.green(date), colors.cyan(article.title))
+function prettyPrintItem (maxLeftLen, left, right) {
+  var offsetLeft = 4 + maxLeftLen
+  console.log(colors.green(S(left).padLeft(offsetLeft).s) + ' : ' + colors.cyan(right) )
 }
 
