@@ -1,2 +1,152 @@
 #!/usr/bin/env node
 
+"use strict"
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , next = require('nextflow')
+  , sky = require('../lib/sky')
+  , _ = require('underscore')
+  , S = require('string')
+  , dt = require('date-tokens')
+  , P = require('autoresolve')
+  , cl = require('cl')
+  , batch = require('batchflow')
+  , colors = require('colors')
+  , SkyEnv = require('../lib/sky_env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , sutil = require('../lib/util')
+  , tmpl = require('../lib/template_file')
+  , genIndex = require('../lib/genindex')
+  , util = require('util')
+  , sorto = require('sorto')
+
+var _skyEnv = null
+  , _baseDir = null
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .parse(process.argv)
+
+if (program.dir) process.chdir(program.dir)
+
+_baseDir = sky.findBaseDirSync()
+if (!_baseDir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
+_skyEnv = new SkyEnv(_baseDir)
+_skyEnv.loadConfigsSync()
+  
+var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
+if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+
+buildAllTags(_baseDir, configs)
+
+
+function buildAllTags (baseDir, configs) {
+  console.log('\n  building tags...')
+  var outputDir = _skyEnv.getOutputDir()
+
+  //check existence of templateDir
+  var templateDir = _skyEnv.getTemplateDir()
+  if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
+
+  var outputTags= {}
+
+  var flow = {};
+  next(flow = {
+    ERROR: function(err) {
+      console.error(err)
+      console.error(err.stack)
+    },
+    iterateArticles: function() {
+      DocIter({path: path.join(baseDir, 'articles')})
+      .document(function(err, res, next) {
+        if (err) return flow.error(err)
+
+        var data = {S: S, _: _, sky: sutil.deepClone(configs.config), skyenv: _skyEnv, self: {}, cache: false}
+        //set homepage
+        data.sky.homepage = 'https://github.com/skywrite'
+
+        var mdp = res.document
+          , file = res.file
+          , stat = res.stat
+          , modified = res.modified
+
+        if (mdp.metadata.publish && mdp.metadata.tags) { 
+          data.self = {title: mdp.title, content: mdp.html}
+          data.self = _(data.self).extend(mdp.metadata)
+          data.self.createdAt = stat.ctime
+          data.self.modifiedAt = stat.mtime
+          data.self.publishedAt = new Date(data.self.publish)
+          data.self.slug = data.self.slug || S(mdp.title).slugify()
+          data.self.author = data.self.author || (configs.get('config:blog.author'))
+
+          data.self = _(data.self).extend(dt.eval(mdp.metadata.publish, 'date-')) //add date-tokens
+
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.self)
+            , relOutFile = _skyEnv.mdArticleToOutputFile(file, data.self) 
+
+          data.self.relativePath = relOutFile
+
+          //render templates
+          var articleTemplateFile = path.join(templateDir, 'article', 'article.ejs.html')
+          var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
+          //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
+
+          data.filename = articleTemplateFile//absOutFile 
+          tmpl(articleTemplateFile, data, function(err, html) {
+            if (err) flow.error(err)
+            data.sky.view = html
+
+            //data.filename
+            data.filename = layoutTemplateFile 
+
+            tmpl(layoutTemplateFile, data, function(err, html) {
+              if (err) flow.error(err)
+
+              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+              html = S(html).template(data.self).s
+
+              //for nice urls in github pages
+              if (S(data.self.relativePath).endsWith('index.html'))
+                data.self.relativePath = data.self.relativePath.replace('index.html', '')
+
+              mdp.metadata.tags.forEach(function(tag) {
+                if (!outputTags[tag]) outputTags[tag] = {}
+                outputTags[tag][file] = data.self
+              })
+
+              next()
+            })
+          })
+        } else 
+          next()
+      })
+      .end(flow.next)
+    },
+    generateIndexes: function() {
+      var tags = sorto.bykey(outputTags, function(t) { return t.toLowerCase() })
+      console.log('\n  generating tags...')
+      batch(tags).par(32).each(function(i, val, next) {
+        var tag = sorto.k(val)
+          , outputArticles = sorto.v(val)
+
+        console.log(tag)
+        var outputFile = path.join(_skyEnv.getOutputDir(), 'tag', S(tag).slugify().s)
+        genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
+          if (err) return flow.error(err)
+          next()
+        })
+      })
+      .end(function() {
+        console.log('done')
+      })
+    }
+  })
+}
+
+function prettyPrint (article) {
+  var date = sutil.datefmt(article.publishedAt)
+  console.log("    %s : %s", colors.green(date), colors.cyan(article.title))
+}
+
