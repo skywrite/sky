@@ -20,6 +20,7 @@ var program = require('commander')
   , genIndex = require('../lib/genindex')
   , util = require('util')
   , di = require(P('lib/doc_info'))
+  , bin = require(P('lib/bin'))
 
 var _skyEnv = null
   , _baseDir = null
@@ -30,18 +31,11 @@ program.version(require('../package'))
 
 if (program.dir) process.chdir(program.dir)
 
-_baseDir = sky.findBaseDirSync()
-if (!_baseDir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
-_skyEnv = new SkyEnv(_baseDir)
-_skyEnv.loadConfigsSync()
-  
-var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
-if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+var _skyEnv = bin.initSync()
 
-buildAllArticles(_baseDir, configs)
+buildAllArticles(_skyEnv.configs)
 
-
-function buildAllArticles (baseDir, configs) {
+function buildAllArticles (configs) {
   console.log('\n  building articles...')
   var outputDir = ''
 
@@ -67,7 +61,7 @@ function buildAllArticles (baseDir, configs) {
       fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
-      DocIter({path: path.join(baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
+      DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
@@ -146,7 +140,7 @@ function buildAllArticles (baseDir, configs) {
       console.log('\n  generating article index...')
       genIndex({skyEnv: _skyEnv, outputArticles: outputArticles, genRSS: true}, function(err) {
         if (err) return flow.error(err)
-        console.log('\n  done\n')
+        //console.log('\n  done\n')
       })
     }
   })

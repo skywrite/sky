@@ -1,1 +1,52 @@
 #!/usr/bin/env node
+
+var program = require('commander')
+  , next = require('nextflow')
+  , P = require('autoresolve')
+  , bin = require(P('lib/bin'))
+  , spawn = require('win-fork')
+  , path = require('path')
+  , fs = require('fs-extra')
+  , colors = require('colors')
+  , S = require('string')
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .parse(process.argv)
+
+if (program.dir) process.chdir(program.dir)
+
+var _skyEnv = bin.initSync()
+
+var start = new Date()
+
+var flow = {}
+next(flow = {
+  ERROR: function(err) {
+    console.error(err)
+    console.error(err.stack)
+  },
+  copyVendor: function() {
+    outputDir = _skyEnv.getOutputDir()
+    var outputVendorDir = path.join(outputDir, 'vendor')
+    fs.copy(P('vendor'), outputVendorDir, this.next)
+  },
+  buildArticles: function() {
+    var proc = spawn(path.join(__dirname, 'sky-build-articles'), [], { stdio: 'inherit', customFds: [0, 1, 2] })
+    proc.on('exit', flow.next)
+  },
+  buildTags: function() {
+    var proc = spawn(path.join(__dirname, './sky-build-tags'), [], { stdio: 'inherit', customFds: [0, 1, 2] })
+    proc.on('exit', flow.next)
+  },
+  done: function() {
+    var delta = (new Date()) - start
+    console.log('\n  done (%s)\n', secs(delta))
+  }
+})
+
+
+function secs (millis) {
+  var secs = millis / 1000
+  return colors.blue(S(secs).toFloat(1) + ' secs')
+}

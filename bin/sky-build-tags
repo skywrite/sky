@@ -23,6 +23,7 @@ var program = require('commander')
   , sorto = require('sorto')
   , tag = require('../lib/tag')
   , di = require(P('lib/doc_info'))
+  , bin = require(P('lib/bin'))
 
 var _skyEnv = null
   , _baseDir = null
@@ -33,18 +34,11 @@ program.version(require('../package'))
 
 if (program.dir) process.chdir(program.dir)
 
-_baseDir = sky.findBaseDirSync()
-if (!_baseDir) cl.exit(100,"Can't find the sky/config.json. Are you sure you're in a Sky site?")
-_skyEnv = new SkyEnv(_baseDir)
-_skyEnv.loadConfigsSync()
-  
-var configs = _skyEnv.configs//sky.loadConfigsSync(_baseDir)
-if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is there an error in the JSON?')
+var _skyEnv = bin.initSync()
 
-buildAllTags(_baseDir, configs)
+buildAllTags(_skyEnv.configs)
 
-
-function buildAllTags (baseDir, configs) {
+function buildAllTags (configs) {
   console.log('\n  building tags...')
   var outputDir = _skyEnv.getOutputDir()
 
@@ -61,7 +55,7 @@ function buildAllTags (baseDir, configs) {
       console.error(err.stack)
     },
     iterateArticles: function() {
-      DocIter({path: path.join(baseDir, 'articles')})
+      DocIter({path: _skyEnv.path('articles')})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 
@@ -141,7 +135,7 @@ function buildAllTags (baseDir, configs) {
         })
       })
       .end(function() {
-        console.log('done')
+        //console.log('done')
       })
     }
   })
