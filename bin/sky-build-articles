@@ -21,6 +21,7 @@ var program = require('commander')
   , util = require('util')
   , di = require(P('lib/doc_info'))
   , bin = require(P('lib/bin'))
+  , tag = require(P('lib/tag'))
 
 var _skyEnv = null
   , _baseDir = null
@@ -32,6 +33,7 @@ program.version(require('../package'))
 if (program.dir) process.chdir(program.dir)
 
 var _skyEnv = bin.initSync()
+  , templateFiles = _skyEnv.findTemplateFilesSync()
 
 buildAllArticles(_skyEnv.configs)
 
@@ -49,6 +51,7 @@ function buildAllArticles (configs) {
   if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
 
   var outputArticles = {}
+    , tagCounts = {}
 
   var flow = {};
   next(flow = {
@@ -70,21 +73,14 @@ function buildAllArticles (configs) {
         if (res.document.metadata.publish) { //don't wont to publish drafts, thus -> no build either
           di(data, res) //attach more doc info
 
-          //render templates
-          var articleTemplateFile = path.join(templateDir, 'article', 'article.ejs.html')
-          var layoutTemplateFile = path.join(templateDir, 'layout.ejs.html')
-          //var indexTemplateFile = path.join(baseDir, 'sky', 'templates', blogTemplate, 'article', 'index.ejs.html')
+          tag.tagCount(tagCounts, res.document.metadata.tags)
 
           var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.self)
-          data.filename = articleTemplateFile//absOutFile 
-          tmpl(articleTemplateFile, data, function(err, html) {
+          tmpl(templateFiles.article, data, function(err, html) {
             if (err) flow.error(err)
             data.sky.view = html
 
-            //data.filename
-            data.filename = layoutTemplateFile 
-
-            tmpl(layoutTemplateFile, data, function(err, html) {
+            tmpl(templateFiles.layout, data, function(err, html) {
               if (err) flow.error(err)
 
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
