@@ -4,7 +4,7 @@ var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
   , MarkdownPage = require('markdown-page').MarkdownPage
-  , cli = require('../lib/cli')
+  , cl = require('cl')
   , spawn = require('win-fork')
   , osenv = require('osenv')
 
@@ -29,7 +29,7 @@ mdp.title = title
 articleFile = path.join(articleFile, mdp.slug() + '.md')
 
 if (fs.existsSync(articleFile)) 
-  cli.exit(100, "Article file %s already exists. Aborting.", articleFile)
+  cl.exit(100, "Article file %s already exists. Aborting.", articleFile)
     
 mdp.metadata.publish = ''
 if (tags)

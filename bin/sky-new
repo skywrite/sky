@@ -4,7 +4,7 @@ var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
   , rock = require('rock')
-  , cli = require('../lib/cli')
+  , cl = require('cl')
   , S = require('string')
   , walker = require('walker');
 
@@ -15,18 +15,18 @@ program
   .parse(process.argv)
 
 
-if (!program.rock) cli.exit(1, 'Must specify the sky rock, Github repo, or path on file system to local rock. See -r or --rock.')
+if (!program.rock) cl.exit(1, 'Must specify the sky rock, Github repo, or path on file system to local rock. See -r or --rock.')
 
 var outdir = program.args[0];
 
-if (!outdir) cli.exit(2, 'Must specify the output directory. Example: sky new -r personal-blog myblog')
+if (!outdir) cl.exit(2, 'Must specify the output directory. Example: sky new -r personal-blog myblog')
 
 var rck = normalizeRock(program.rock)
-if (!rck) cli.exit(3, '%s is not a valid rock path.', program.rock)
+if (!rck) cl.exit(3, '%s is not a valid rock path.', program.rock)
 
 outdir = path.resolve(outdir)
 rock.fetchRepo(outdir, rck, function(err) {
-  if (err) cli.exit(4, err)
+  if (err) cl.exit(4, err)
 
   walker(outdir)
   .on('file', function(file) {
