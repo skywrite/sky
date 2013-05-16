@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+
+'use strict'
+
+// THIS WILL BE IN ITS OWN MODULE SOMETIME
+
+var SkyEnv = require('../lib/sky_env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , bin = require('../lib/bin')
+  , mde = require('markdown-extra')
+  , S = require('string')
+  , fs = require('fs')
+
+var _skyEnv = bin.initSync()
+
+DocIter({path: _skyEnv.path('articles')})
+.document(function(err, res, next) {
+  if (err) {
+    console.error(err)
+    return next()
+  }
+
+  var mdp = res.document
+
+  fs.readFile(res.file, 'utf8', function(err, data) {
+    if (err) {
+      console.error(err)
+      return next()
+    }
+
+    var metadata = S(mde.metadata(data)).lines()
+    if (!metadata.some(function(line) {return S(line).startsWith('title:') })) {
+      metadata.push('title: ' + mdp.title)
+    }
+
+    var content = mde.content(data).split('\n')
+    var ndx = content.indexOf(mdp.title)
+    if (S(content[ndx+1]).startsWith('=')) { //yup, we found our heading
+      content.splice(ndx+1, 1) //get rid of the '===='
+      content.splice(ndx, 1) //get rid of the actual heading
+    }
+
+    var output = '<!--\n' + metadata.join('\n') + '\n-->\n\n\n' + content.join('\n')
+    fs.writeFile(res.file, output, next)
+  })
+
+})
+.end(function() {
+  console.log('done')
+})

@@ -115,7 +115,77 @@ describe('SkyEnv', function() {
     })
   })
 
-  describe('- getTemplate()', function() {
+  describe('- getIndexTitle()', function() {
+    describe('> when nothing is set', function() {
+      it('should return basic title', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getIndexTitle(), 'Sky Site')
+      })
+    })
+
+    describe('> when name is set', function() {
+      it('should return name', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getIndexTitle(), 'Cool Blog')
+      })
+    })
+
+    describe('> when name and tagline are set', function() {
+      it('should return name and tagline', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog', tagline: 'where cool people visit'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getIndexTitle(), 'Cool Blog: where cool people visit')
+      })
+    })
+
+    describe('> when name, tagline, and title are set', function() {
+      it('should return title', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog', tagline: 'where cool people visit', title: 'TITLE'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getIndexTitle(), 'TITLE')
+      })
+    })
+  })
+
+  describe('- getLastBuild()', function() {
+    describe('> when not set', function() {
+      it('should return the default 0 date', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getLastBuild().getTime(), new Date(0).getTime())
+      })
+    })
+
+    describe('> when set', function() {
+      it('should return the  date', function() {
+        process.chdir(TEST_DIR)
+        fs.writeJsonSync(CFG_FILE, {build: {lastBuild: '2013-04-01'}})
+        
+        var se = new SkyEnv(libsky.findBaseDirSync())
+        se.loadConfigsSync()
+        EQ (se.getLastBuild().getTime(), new Date('2013-04-01').getTime())
+      })
+    })
+  })
+
+  describe('- getTemplateName()', function() {
     describe('> when specified in config', function() {
       it('it should return the proper template', function() {
         process.chdir(TEST_DIR)
@@ -123,7 +193,7 @@ describe('SkyEnv', function() {
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplate(), 'shiny')
+        EQ (se.getTemplateName(), 'shiny')
       })
     })
 
@@ -134,18 +204,28 @@ describe('SkyEnv', function() {
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplate(), 'basic')
+        EQ (se.getTemplateName(), 'basic')
       })
     })
   })
 
-  describe('- getTemplate()', function() {
+  describe('- getTemplateDir()', function() {
     it('should retrieve the template dir', function() {
       process.chdir(TEST_DIR)
         
       var se = new SkyEnv(libsky.findBaseDirSync())
       se.loadConfigsSync()
-      EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplate()))
+      EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplateName()))
+    })
+  })
+
+  describe('- path()', function() {
+    it('should join all the arguments with the base directory', function() {
+      process.chdir(TEST_DIR)
+      var baseDir = libsky.findBaseDirSync()
+      var se = new SkyEnv(baseDir)
+      var cfgFile = se.path('sky', 'config.json')
+      EQ (cfgFile, path.join(baseDir, 'sky', 'config.json'))
     })
   })
 })

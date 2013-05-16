@@ -19,7 +19,7 @@ describe('bin/', function() {
     process.chdir(TEST_DIR)
   })
 
-  describe('sky-build', function() {
+  describe('sky-build-articles', function() {
     it('should build the site', function(done) {
       var title1 = 'Global Thermal Nuclear Warfare'
         , tags1 = ['war', 'politics']
@@ -61,7 +61,7 @@ describe('bin/', function() {
           })
         },
         runBuild: function() {
-          runSky('build', function(code, stdout, stderr) {
+          runSky('build-articles', function(code, stdout, stderr) {
             EQ (stderr, '')
             EQ (code, 0)
             flow.next()
@@ -89,6 +89,12 @@ describe('bin/', function() {
           //verify content in index page was created
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title1) > 0)
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title2) > 0)
+
+          //regression
+          var cfg = fs.readJsonSync(path.join(TEST_DIR, 'sky', 'config.json'))
+          T (cfg.blog) //just verify that it actually loaded
+          F (cfg.homepage) //should not be here
+          F (cfg.view) //should not be here
 
           done()
         }

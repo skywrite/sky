@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+
+"use strict"
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , next = require('nextflow')
+  , sky = require('../lib/sky')
+  , _ = require('underscore')
+  , S = require('string')
+  , dt = require('date-tokens')
+  , P = require('autoresolve')
+  , cl = require('cl')
+  , batch = require('batchflow')
+  , colors = require('colors')
+  , SkyEnv = require('../lib/sky_env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , sutil = require('../lib/util')
+  , tmpl = require('../lib/template_file')
+  , genIndex = require('../lib/genindex')
+  , util = require('util')
+  , sorto = require('sorto')
+  , tag = require('../lib/tag')
+  , di = require(P('lib/doc_info'))
+  , bin = require(P('lib/bin'))
+
+var _skyEnv = null
+  , _baseDir = null
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .parse(process.argv)
+
+if (program.dir) process.chdir(program.dir)
+
+var _skyEnv = bin.initSync()
+_skyEnv.loadTemplatePathsSync()
+
+buildAllTags(_skyEnv.configs)
+
+function buildAllTags (configs) {
+  console.log('\n  building tags...')
+  var outputDir = _skyEnv.getOutputDir()
+
+  //check existence of templateDir
+  var templateDir = _skyEnv.getTemplateDir()
+  if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
+
+  var outputTags= {}
+
+  var flow = {};
+  next(flow = {
+    ERROR: function(err) {
+      console.error(err)
+      console.error(err.stack)
+    },
+    iterateArticles: function() {
+      DocIter({path: _skyEnv.path('articles')})
+      .document(function(err, res, next) {
+        if (err) return flow.error(err)
+
+        var data = di.initViewData(_skyEnv)
+
+        var mdp = res.document
+          , file = res.file
+          , stat = res.stat
+          , modified = res.modified
+
+        if (mdp.metadata.publish && mdp.metadata.tags) { 
+          di(data, res)
+
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.ctx)
+
+          tmpl(_skyEnv.templatePaths.article, data, function(err, html) {
+            if (err) flow.error(err)
+            data.sky.view = html
+
+            tmpl(_skyEnv.templatePaths.layout, data, function(err, html) {
+              if (err) flow.error(err)
+
+              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+              html = S(html).template(data.ctx).s
+
+              mdp.metadata.tags.forEach(function(tag) {
+                if (!outputTags[tag]) outputTags[tag] = {}
+                outputTags[tag][file] = data.ctx
+              })
+
+              next()
+            })
+          })
+        } else 
+          next()
+      })
+      .end(flow.next)
+    },
+    generateTagIndexes: function() {
+      var tags = sorto.bykey(outputTags, function(t) { return t.toLowerCase() })
+      var maxTagLen = tag.maxTagLen(tags)
+
+      console.log('\n  generating tags...')
+      batch(tags).par(32).each(function(i, val, next) {
+        var tag = sorto.k(val)
+          , outputArticles = sorto.v(val)
+
+        prettyPrintItem(maxTagLen, tag, Object.keys(outputArticles).length)
+        var outputFile = path.join(_skyEnv.getOutputDir(), 'tags', S(tag).slugify().s)
+        genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
+          if (err) return flow.error(err)
+          next()
+        })
+      })
+      .end(function() {
+        flow.next(tags)
+      })
+    },
+    generateTagIndex: function(tags) {
+      //temporary
+      var htmlString = "<h2>Tags:</h2><br/>\n\n"
+
+      htmlString += '<ul>\n'
+      tags.forEach(function(tag) {
+        htmlString += '  <li><a href="/tags/' + S(sorto.k(tag)).slugify().s + '">' + sorto.k(tag) + '</a></li>\n'   
+      })
+      htmlString += '\n'
+
+      var data = di.initViewData(_skyEnv)
+      data.sky.view = htmlString
+
+      tmpl(_skyEnv.templatePaths.layout, data, function(err, html) {
+        if (err) flow.error(err)
+        fs.outputFile(path.join(_skyEnv.getOutputDir(), 'tags', 'index.html'), html)
+      })
+    }
+  })
+}
+
+function prettyPrintItem (maxLeftLen, left, right) {
+  var offsetLeft = 4 + maxLeftLen
+  console.log(colors.green(S(left).padLeft(offsetLeft).s) + ' : ' + colors.cyan(right) )
+}
+

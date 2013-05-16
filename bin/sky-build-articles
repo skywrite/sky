@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+
+"use strict"
+
+var program = require('commander')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , next = require('nextflow')
+  , sky = require('../lib/sky')
+  , _ = require('underscore')
+  , S = require('string')
+  , dt = require('date-tokens')
+  , P = require('autoresolve')
+  , cl = require('cl')
+  , colors = require('colors')
+  , SkyEnv = require('../lib/sky_env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , sutil = require('../lib/util')
+  , tmpl = require('../lib/template_file')
+  , genIndex = require('../lib/genindex')
+  , util = require('util')
+  , di = require(P('lib/doc_info'))
+  , bin = require(P('lib/bin'))
+  , tag = require(P('lib/tag'))
+
+var _skyEnv = null
+  , _baseDir = null
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .parse(process.argv)
+
+if (program.dir) process.chdir(program.dir)
+
+var _skyEnv = bin.initSync()
+  , templateFiles = _skyEnv.loadTemplatePathsSync()
+
+buildAllArticles(_skyEnv.configs)
+
+function buildAllArticles (configs) {
+  console.log('\n  building articles...')
+  var outputDir = ''
+
+  outputDir = _skyEnv.getOutputDir()
+  var outputVendorDir = path.join(outputDir, 'vendor')
+
+  if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
+
+  //check existence of templateDir
+  var templateDir = _skyEnv.getTemplateDir()
+  if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
+
+  var outputArticles = {}
+    , tagCounts = {}
+
+  var flow = {};
+  next(flow = {
+    ERROR: function(err) {
+      console.error(err)
+      console.error(err.stack)
+    },
+    copyVendor: function() {
+      //console.log('Copying vendor directory...')
+      fs.copy(P('vendor'), outputVendorDir, this.next)
+    },
+    iterateArticles: function() {
+      DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
+      .document(function(err, res, next) {
+        if (err) return flow.error(err)
+
+        var data = di.initViewData(_skyEnv)
+
+        if (res.document.metadata.publish) { //don't wont to publish drafts, thus -> no build either
+          di(data, res) //attach more doc info
+
+          tag.tagCount(tagCounts, res.document.metadata.tags)
+
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.ctx)
+          tmpl(templateFiles.article, data, function(err, html) {
+            if (err) flow.error(err)
+            data.sky.view = html
+
+            tmpl(templateFiles.layout, data, function(err, html) {
+              if (err) flow.error(err)
+
+              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+              html = S(html).template(data.ctx).s
+
+              if (res.modified) {
+                //console.log('Building %s...', path.basename(file))
+                prettyPrint(data.ctx)
+                fs.outputFileSync(absOutFile, html)
+              }
+
+              outputArticles[res.file] = data.ctx
+
+              next()
+            })
+          })
+        } else 
+          next()
+      })
+      .end(function() {
+        var cfgObj = configs.config
+        cfgObj.set('build.lastBuild', (new Date()).toISOString())
+        fs.writeJsonSync(_skyEnv.configFile, cfgObj)
+        flow.next()
+      });
+    },
+    generateIndex: function() {
+      console.log('\n  generating article index...')
+      genIndex({skyEnv: _skyEnv, outputArticles: outputArticles, genRSS: true}, function(err) {
+        if (err) return flow.error(err)
+        //console.log('\n  done\n')
+      })
+    }
+  })
+}
+
+function prettyPrint (article) {
+  var date = sutil.datefmt(article.publishedAt)
+  console.log("    %s : %s", colors.green(date), colors.cyan(article.title))
+}
+

@@ -4,7 +4,7 @@ var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
   , rock = require('rock')
-  , cli = require('../lib/cli')
+  , cl = require('cl')
   , buffet = require('buffet')
   , sky = require('../lib/sky')
   , http = require('http')
@@ -18,7 +18,7 @@ program.version(require('../package'))
 
 
 sky.findBaseDir(function(dir) {
-  if (!dir && !program.dir) cli.exit(1, "Can not find the sky/config.json or a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
+  if (!dir && !program.dir) cl.exit(1, "Can not find the sky/config.json or a directory was not explicity specified via command line args. If you're not in a Sky site directory, see --dir.")
   dir = dir || program.dir
   serve(dir)
 })
