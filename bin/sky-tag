@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+'use strict'
+
 var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
@@ -13,12 +15,14 @@ var program = require('commander')
   , DocIter = require('../lib/doc_iterator')
   , sorto = require('sorto')
   , tag = require('../lib/tag')
+  , mde = require('markdown-extra')
 
 var BATCH_LIMIT = 32
 
 program.version(require('../package'))
   .option('-n, --list-by-name', 'Output tags with their counts sorted by name.')
   .option('-c, --list-by-count', 'Output tags with ther counts sorted by count.')
+  .option('-r, --rename', 'Rename tags.')
   .parse(process.argv)
 
 var _baseDir = sky.findBaseDirSync()
@@ -31,6 +35,7 @@ if (configs.errors['config']) cl.exit(101, 'Could not parse sky/config.json. Is 
 
 if (program.listByName) return list(printByTag)
 if (program.listByCount) return list(printByCount)
+if (program.rename) return rename()
 
 //no args
 return list(printByTag)
@@ -55,6 +60,59 @@ function list (fn) {
     fn(tags)
   })
 }
+
+function rename () {
+  if (program.args.length != 2) {
+    console.error(colors.red("\nInvalid number of parameters for tag renaming.\n"))
+    console.error("  example:\n")
+    console.error("    to rename all tags from visual_basic to Visual Basic:\n")
+    console.error('    sky tag --rename visual_basic "Visual Basic"\n')
+    return
+  }
+
+  var find = program.args[0]
+    , replace = program.args[1]
+
+
+  DocIter({path: _skyEnv.path('articles')})
+  .document(function(err, res, next) {
+    if (err) {
+      console.error(err)
+      return next()
+    }
+
+    var mdp = res.document
+    if (mdp.metadata.tags) {
+      var ndx = mdp.metadata.tags.indexOf(find)
+      if (ndx >= 0) {
+        //would use mdp.writeFile, but it sucks shit
+        fs.readFile(res.file, 'utf8', function(err, data) {
+          if (err) {
+            console.error(err)
+            return next()
+          }
+
+          var metadata = mde.metadata(data)
+          var pos1 = metadata.indexOf('tags:')
+          pos1 = metadata.lastIndexOf('\n', pos1)
+          var pos2 = metadata.indexOf('\n', pos1+1)
+          var tagLine = metadata.substring(pos1, pos2)
+          tagLine = tagLine.trim()
+          var replaceLine = tagLine.replace(find, replace)
+
+          var data = data.replace(tagLine, replaceLine)
+          fs.writeFile(res.file, data, next)
+        })
+      }
+    }
+    
+    next()
+  })
+  .end(function() {
+    console.log('done')
+  })
+}
+
 
 function printByTag (tags) {
   tags = sorto.bykey(tags, function(s) { return s.toLowerCase() })
