@@ -95,7 +95,7 @@ function buildAllTags (configs) {
       })
       .end(flow.next)
     },
-    generateIndexes: function() {
+    generateTagIndexes: function() {
       var tags = sorto.bykey(outputTags, function(t) { return t.toLowerCase() })
       var maxTagLen = tag.maxTagLen(tags)
 
@@ -105,14 +105,32 @@ function buildAllTags (configs) {
           , outputArticles = sorto.v(val)
 
         prettyPrintItem(maxTagLen, tag, Object.keys(outputArticles).length)
-        var outputFile = path.join(_skyEnv.getOutputDir(), 'tagged', S(tag).slugify().s)
+        var outputFile = path.join(_skyEnv.getOutputDir(), 'tags', S(tag).slugify().s)
         genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
           if (err) return flow.error(err)
           next()
         })
       })
       .end(function() {
-        //console.log('done')
+        flow.next(tags)
+      })
+    },
+    generateTagIndex: function(tags) {
+      //temporary
+      var htmlString = "<h2>Tags:</h2><br/>\n\n"
+
+      htmlString += '<ul>\n'
+      tags.forEach(function(tag) {
+        htmlString += '  <li><a href="/tags/' + S(sorto.k(tag)).slugify().s + '">' + sorto.k(tag) + '</a></li>\n'   
+      })
+      htmlString += '\n'
+
+      var data = di.initViewData(_skyEnv)
+      data.sky.view = htmlString
+
+      tmpl(_skyEnv.templatePaths.layout, data, function(err, html) {
+        if (err) flow.error(err)
+        fs.outputFile(path.join(_skyEnv.getOutputDir(), 'tags', 'index.html'), html)
       })
     }
   })

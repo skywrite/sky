@@ -33,7 +33,7 @@
     "rock": "~0.3.0",
     "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
-    "markdown-page": "~0.1.2",
+    "markdown-page": "~0.2.0",
     "commander": "~1.1.1",
     "osenv": "0.0.3",
     "ejs": "~0.8.3",
