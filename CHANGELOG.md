@@ -1,3 +1,16 @@
+0.2.0 / 2013-05-16
+------------------
+* fixed bug that outputs unrelated data to sky/config.json
+* updated from rock `0.2.0` to `0.3.0`
+* working display of tags, `sky tag --help`
+* added support for `jade` as well as `ejs`
+* made a prettier output when building articles
+* building of tag index files
+* view now has access to `node` and `fn` functions for richer view
+* partial type agnosticism... `html`, `ejs`, or `jade` sky don't care
+* Implemented utility to move titles into metadata. Closes #6
+* tag renaming utility
+
 0.1.1 / 2013-04-11
 ------------------
 * when `lastBuild` was used, it didn't output the all of the files for index, only the ones that 
