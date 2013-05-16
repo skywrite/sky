@@ -70,7 +70,7 @@ function buildAllTags (configs) {
         if (mdp.metadata.publish && mdp.metadata.tags) { 
           di(data, res)
 
-          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.self)
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.ctx)
 
           tmpl(_skyEnv.templatePaths.article, data, function(err, html) {
             if (err) flow.error(err)
@@ -80,11 +80,11 @@ function buildAllTags (configs) {
               if (err) flow.error(err)
 
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
-              html = S(html).template(data.self).s
+              html = S(html).template(data.ctx).s
 
               mdp.metadata.tags.forEach(function(tag) {
                 if (!outputTags[tag]) outputTags[tag] = {}
-                outputTags[tag][file] = data.self
+                outputTags[tag][file] = data.ctx
               })
 
               next()
@@ -105,7 +105,7 @@ function buildAllTags (configs) {
           , outputArticles = sorto.v(val)
 
         prettyPrintItem(maxTagLen, tag, Object.keys(outputArticles).length)
-        var outputFile = path.join(_skyEnv.getOutputDir(), 'tag', S(tag).slugify().s)
+        var outputFile = path.join(_skyEnv.getOutputDir(), 'tagged', S(tag).slugify().s)
         genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
           if (err) return flow.error(err)
           next()

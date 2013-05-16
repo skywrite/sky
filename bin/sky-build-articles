@@ -75,7 +75,7 @@ function buildAllArticles (configs) {
 
           tag.tagCount(tagCounts, res.document.metadata.tags)
 
-          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.self)
+          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.ctx)
           tmpl(templateFiles.article, data, function(err, html) {
             if (err) flow.error(err)
             data.sky.view = html
@@ -84,15 +84,15 @@ function buildAllArticles (configs) {
               if (err) flow.error(err)
 
               //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
-              html = S(html).template(data.self).s
+              html = S(html).template(data.ctx).s
 
               if (res.modified) {
                 //console.log('Building %s...', path.basename(file))
-                prettyPrint(data.self)
+                prettyPrint(data.ctx)
                 fs.outputFileSync(absOutFile, html)
               }
 
-              outputArticles[res.file] = data.self
+              outputArticles[res.file] = data.ctx
 
               next()
             })
