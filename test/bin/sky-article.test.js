@@ -30,7 +30,7 @@ describe('bin/', function() {
           var mdp = MarkdownPage.create(fs.readFileSync(filePath, 'utf8').trim())
           mdp.parse(function(err) {
             F (err)
-            EQ (mdp.title, title)
+            EQ (mdp.metadata.title, title)
             EQ (mdp.metadata.tags.join(','), tags.join(','))
             done()
           })
@@ -46,7 +46,7 @@ describe('bin/', function() {
           var mdp = MarkdownPage.create(fs.readFileSync(filePath, 'utf8').trim())
           mdp.parse(function(err) {
             F (err)
-            EQ (mdp.title, title)
+            EQ (mdp.metadata.title, title)
             EQ (mdp.metadata.tags[0], "war")
             done()
           })
@@ -62,7 +62,7 @@ describe('bin/', function() {
           var mdp = MarkdownPage.create(fs.readFileSync(filePath, 'utf8').trim())
           mdp.parse(function(err) {
             F (err)
-            EQ (mdp.title, title)
+            EQ (mdp.metadata.title, title)
             F (mdp.metadata.tags)
             done()
           })
@@ -78,7 +78,7 @@ describe('bin/', function() {
           var mdp = MarkdownPage.create(fs.readFileSync(filePath, 'utf8').trim())
           mdp.parse(function(err) {
             F (err)
-            T (mdp.title.length > 0)
+            T (mdp.metadata.title.length > 0)
             T (mdp.markdown.length > 0)
             done()
           })
