@@ -47,13 +47,13 @@ describe('bin/', function() {
           runSky('article', title1, '--tags', tags1.join(','), function(code, stdout, stderr) {
             EQ (code, 0)
             var file = stdout.replace('created.', '').trim()
-            fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
+            //fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
             fs.appendFileSync(file, '\n**Preface:**\nBlah blah')
             markdownArticles.push(file)
             runSky('article', title2, '--tags', tags2.join(','), function(code, stdout, stderr) {
               EQ (code, 0)
               var file = stdout.replace('created.', '').trim()
-              fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
+              //fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('publish: ', 'publish: ' + getDate()))
               fs.appendFileSync(file, '\n**Preface:**\nBlah blah')
               markdownArticles.push(file)
               flow.next()
