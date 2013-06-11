@@ -89,7 +89,7 @@ describe('bin/', function() {
 
           //regression
           var cfg = fs.readJsonSync(path.join(TEST_DIR, 'sky', 'config.json'))
-          T (cfg.blog) //just verify that it actually loaded
+          T (cfg.site) //just verify that it actually loaded
           F (cfg.homepage) //should not be here
           F (cfg.view) //should not be here
 

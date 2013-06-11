@@ -130,7 +130,7 @@ describe('SkyEnv', function() {
     describe('> when name is set', function() {
       it('should return name', function() {
         process.chdir(TEST_DIR)
-        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog'}})
+        fs.writeJsonSync(CFG_FILE, {site: {name: 'Cool Blog'}})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
@@ -141,7 +141,7 @@ describe('SkyEnv', function() {
     describe('> when name and tagline are set', function() {
       it('should return name and tagline', function() {
         process.chdir(TEST_DIR)
-        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog', tagline: 'where cool people visit'}})
+        fs.writeJsonSync(CFG_FILE, {site: {name: 'Cool Blog', tagline: 'where cool people visit'}})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
@@ -152,7 +152,7 @@ describe('SkyEnv', function() {
     describe('> when name, tagline, and title are set', function() {
       it('should return title', function() {
         process.chdir(TEST_DIR)
-        fs.writeJsonSync(CFG_FILE, {blog: {name: 'Cool Blog', tagline: 'where cool people visit', title: 'TITLE'}})
+        fs.writeJsonSync(CFG_FILE, {site: {name: 'Cool Blog', tagline: 'where cool people visit', title: 'TITLE'}})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
@@ -189,7 +189,7 @@ describe('SkyEnv', function() {
     describe('> when specified in config', function() {
       it('it should return the proper template', function() {
         process.chdir(TEST_DIR)
-        fs.writeJsonSync(CFG_FILE, {blog: {template: 'shiny'}})
+        fs.writeJsonSync(CFG_FILE, {site: {template: 'shiny'}})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
