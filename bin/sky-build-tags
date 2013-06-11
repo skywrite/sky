@@ -104,6 +104,8 @@ function buildAllTags (configs) {
         var tag = sorto.k(val)
           , outputArticles = sorto.v(val)
 
+        if (!tag) return next(); //empty tag, i.e. ''
+
         prettyPrintItem(maxTagLen, tag, Object.keys(outputArticles).length)
         var outputFile = path.join(_skyEnv.getOutputDir(), 'tags', S(tag).slugify().s)
         genIndex({skyEnv: _skyEnv, outputFile: outputFile, outputArticles: outputArticles, genRSS: false}, function(err) {
