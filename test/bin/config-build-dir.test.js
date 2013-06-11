@@ -73,9 +73,6 @@ describe('config', function() {
           a1 = path.join(TEST_DIR, 'boo', a1 + '.html')
          
           T (fs.existsSync(a1))
-          
-          //verify vendor directory exists
-          T (fs.existsSync(path.join(TEST_DIR, 'boo', 'vendor')))
 
           //verify content got produced
           T (fs.readFileSync(a1, 'utf8').indexOf('<strong>Preface') > 0)

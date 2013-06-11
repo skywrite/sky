@@ -42,9 +42,6 @@ function buildAllArticles (configs) {
   var outputDir = ''
 
   outputDir = _skyEnv.getOutputDir()
-  var outputVendorDir = path.join(outputDir, 'vendor')
-
-  if (!fs.existsSync(outputVendorDir)) fs.mkdirsSync(outputVendorDir)
 
   //check existence of templateDir
   var templateDir = _skyEnv.getTemplateDir()
@@ -58,10 +55,6 @@ function buildAllArticles (configs) {
     ERROR: function(err) {
       console.error(err)
       console.error(err.stack)
-    },
-    copyVendor: function() {
-      //console.log('Copying vendor directory...')
-      fs.copy(P('vendor'), outputVendorDir, this.next)
     },
     iterateArticles: function() {
       DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
