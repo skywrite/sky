@@ -1,3 +1,10 @@
+0.3.0 / 2013-06-11
+------------------
+* when creating a new article, the title is now in the metadata. Closes #13
+* when creating a new article, put today's date by default as the publish date. Closes #14
+* replace highlight.js with Pygments. Closes #1
+* Fix empty tag bug. Closes #11
+
 0.2.0 / 2013-05-16
 ------------------
 * fixed bug that outputs unrelated data to sky/config.json
