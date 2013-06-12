@@ -28,7 +28,7 @@ DocIter({path: _skyEnv.path('articles')})
       return next()
     }
 
-    var metadata = S(mde.metadata(data)).lines()
+    var metadata = S(mde.metadata(data)).split('\n')
     if (!metadata.some(function(line) {return S(line).startsWith('title:') })) {
       metadata.push('title: ' + mdp.title)
     }
