@@ -185,37 +185,37 @@ describe('SkyEnv', function() {
     })
   })
 
-  describe('- getTemplateName()', function() {
+  describe('- getThemeName()', function() {
     describe('> when specified in config', function() {
-      it('it should return the proper template', function() {
+      it('it should return the proper theme', function() {
         process.chdir(TEST_DIR)
-        fs.writeJsonSync(CFG_FILE, {site: {template: 'shiny'}})
+        fs.writeJsonSync(CFG_FILE, {site: {theme: 'shiny'}})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplateName(), 'shiny')
+        EQ (se.getThemeName(), 'shiny')
       })
     })
 
     describe('> when its not specified in config', function() {
-      it('it should return the proper template', function() {
+      it('it should return the proper theme', function() {
         process.chdir(TEST_DIR)
         fs.writeJsonSync(CFG_FILE, {})
         
         var se = new SkyEnv(libsky.findBaseDirSync())
         se.loadConfigsSync()
-        EQ (se.getTemplateName(), 'basic')
+        EQ (se.getThemeName(), 'basic')
       })
     })
   })
 
-  describe('- getTemplateDir()', function() {
-    it('should retrieve the template dir', function() {
+  describe('- getThemeDir()', function() {
+    it('should retrieve the theme dir', function() {
       process.chdir(TEST_DIR)
         
       var se = new SkyEnv(libsky.findBaseDirSync())
       se.loadConfigsSync()
-      EQ (removePrivate(se.getTemplateDir()), path.join(TEST_DIR, 'sky', 'templates', se.getTemplateName()))
+      EQ (removePrivate(se.getThemeDir()), path.join(TEST_DIR, 'sky', 'themes', se.getThemeName()))
     })
   })
 
