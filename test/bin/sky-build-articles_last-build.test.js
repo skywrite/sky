@@ -7,7 +7,7 @@ var testutil = require('testutil')
   , S = require('string')
   , runSky = require(P('test/test-lib/testsky')).runSky
   , next = require('nextflow')
-  , SkyEnv = require(P('lib/sky_env')).SkyEnv
+  , SkyEnv = require('sky-env').SkyEnv
 
 
 var TEST_DIR = ''

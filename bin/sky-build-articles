@@ -13,7 +13,7 @@ var program = require('commander')
   , P = require('autoresolve')
   , cl = require('cl')
   , colors = require('colors')
-  , SkyEnv = require('../lib/sky_env').SkyEnv
+  , SkyEnv = require('sky-env').SkyEnv
   , DocIter = require('../lib/doc_iterator')
   , sutil = require('../lib/util')
   , tmpl = require('../lib/template_file')
@@ -33,7 +33,7 @@ program.version(require('../package'))
 if (program.dir) process.chdir(program.dir)
 
 var _skyEnv = bin.initSync()
-  , templateFiles = _skyEnv.loadTemplatePathsSync()
+  , templateFiles = sutil.loadThemePathsSync(_skyEnv)
 
 buildAllArticles(_skyEnv.configs)
 
@@ -41,11 +41,11 @@ function buildAllArticles (configs) {
   console.log('\n  building articles...')
   var outputDir = ''
 
-  outputDir = _skyEnv.getOutputDir()
+  outputDir = _skyEnv.outputDir
 
-  //check existence of templateDir
-  var templateDir = _skyEnv.getTemplateDir()
-  if (!fs.existsSync(templateDir)) cl.exit(102, 'Could not find template. %s does not exist.', templateDir)
+  //check existence of themeDir
+  var themeDir = _skyEnv.themeDir
+  if (!fs.existsSync(themeDir)) cl.exit(102, 'Could not find template. %s does not exist.', themeDir)
 
   var outputArticles = {}
     , tagCounts = {}
@@ -57,7 +57,7 @@ function buildAllArticles (configs) {
       console.error(err.stack)
     },
     iterateArticles: function() {
-      DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.getLastBuild()})
+      DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.lastBuild})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
 

@@ -1,4 +1,4 @@
-var spawn = require('win-fork')
+var spawn = require('win-spawn')
   , P = require('autoresolve')
   , colors = require('colors')
   , path = require('path')
