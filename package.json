@@ -33,7 +33,7 @@
     "open": "0.0.2",
     "rock": "~0.3.0",
     "autoresolve": "0.0.3",
-    "markdown-page": "~0.2.0",
+    "markdown-page": "~0.2.1",
     "commander": "~1.1.1",
     "ejs": "~0.8.3",
     "walker": "~1.0.3",
