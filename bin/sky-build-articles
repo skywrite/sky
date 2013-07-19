@@ -22,6 +22,7 @@ var program = require('commander')
   , di = require(P('lib/doc_info'))
   , bin = require(P('lib/bin'))
   , tag = require(P('lib/tag'))
+  , fs = require('fs-extra')
 
 var _skyEnv = null
   , _baseDir = null
@@ -53,6 +54,14 @@ function buildAllArticles (configs) {
       console.error(err.stack)
     },
     iterateArticles: function() {
+      var lastBuild = _skyEnv.lastBuild
+      var moddate1 = fs.lstatSync(templateFiles.layout).mtime
+      var moddate2 = fs.lstatSync(templateFiles.article).mtime
+      if (moddate1 > lastBuild) //theme file modified, invalidate and rebuild everything
+        lastBuild = 0
+      if (moddate2 > lastBuild)
+        lastBuild = 0
+
       DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.lastBuild})
       .document(function(err, res, next) {
         if (err) return flow.error(err)
