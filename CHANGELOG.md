@@ -1,3 +1,11 @@
+0.4.0 / 2013-0
+------------------
+* implemented themes, `templates` dir in `sky` is gone. Closes #18
+* switched from `win-fork` to `win-spawn`
+* refactored out `SkyEnv` into its own module named `sky-env`. Closes #15
+* removed ability to automatically open newly created article in an editor
+* upgraded `markdown-page`, fixes `:` in metadata bug. Closes #20
+
 0.3.0 / 2013-06-11
 ------------------
 * when creating a new article, the title is now in the metadata. Closes #13
