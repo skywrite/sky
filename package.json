@@ -35,7 +35,6 @@
     "autoresolve": "0.0.3",
     "markdown-page": "~0.2.0",
     "commander": "~1.1.1",
-    "osenv": "0.0.3",
     "ejs": "~0.8.3",
     "walker": "~1.0.3",
     "buffet": "~0.5.0",

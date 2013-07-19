@@ -6,14 +6,12 @@ var program = require('commander')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , cl = require('cl')
   , spawn = require('win-spawn')
-  , osenv = require('osenv')
   , sutil = require('../lib/util')
   , S = require('string')
 
 program
   .version(require('../package').version)
   .option('-t, --tags <tags>', 'Article tags.')
-  .option('-e, --edit', 'Open newly created article in your default editor.')
   .parse(process.argv)
 
 var title = program.args[0]
@@ -41,10 +39,7 @@ if (tags)
 var output = mdp.genOutput()
 fs.outputFileSync(articleFile, output)
 
-console.log("%s created.", articleFile)
-if (program.edit)
-  spawn(osenv.editor(), [articleFile])
-   
+console.log("%s created.", articleFile)   
 
 function getDateMonthPath() {
   var date = new Date();
