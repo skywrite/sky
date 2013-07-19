@@ -27,7 +27,7 @@ var _skyEnv = null
   , _baseDir = null
 
 program.version(require('../package'))
-  .option('-d, --dir [outputDir]', 'The output directory for the files.')
+  .option('-d, --dir [outputDir]', 'The output directory for the files.') //<--- TODO: not so sure this description is correct
   .parse(process.argv)
 
 if (program.dir) process.chdir(program.dir)
@@ -42,10 +42,6 @@ function buildAllArticles (configs) {
   var outputDir = ''
 
   outputDir = _skyEnv.outputDir
-
-  //check existence of themeDir
-  var themeDir = _skyEnv.themeDir
-  if (!fs.existsSync(themeDir)) cl.exit(102, 'Could not find template. %s does not exist.', themeDir)
 
   var outputArticles = {}
     , tagCounts = {}
