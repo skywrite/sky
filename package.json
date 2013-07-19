@@ -19,7 +19,8 @@
     "jekyl",
     "cms",
     "content",
-    "static"
+    "static",
+    "sky"
   ],
   "author": "JP Richardson <jprichardson@gmail.com>",
   "licenses": [
@@ -31,7 +32,6 @@
   "dependencies": {
     "open": "0.0.2",
     "rock": "~0.3.0",
-    "win-fork": "~1.0.0",
     "autoresolve": "0.0.3",
     "markdown-page": "~0.2.0",
     "commander": "~1.1.1",
@@ -57,7 +57,10 @@
     "consolidate": "~0.9.1",
     "jade": "~0.30.0",
     "markdown-extra": "~0.1.0",
-    "brucedown": "0.0.1"
+    "brucedown": "0.0.1",
+    "ymd": "0.0.1",
+    "win-spawn": "~1.1.2",
+    "sky-env": "0.4.x"
   },
   "devDependencies": {
     "mocha": "*",

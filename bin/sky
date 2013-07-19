@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 var program = require('commander')
-  , spawn = require('win-fork')
+  , spawn = require('win-spawn')
   , fs = require('fs-extra')
   , path = require('path')
   , ON_DEATH = require('death')
