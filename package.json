@@ -2,9 +2,7 @@
   "name": "sky",
   "version": "0.3.0",
   "description": "A markdown static site generator.",
-  "homepage": [
-    ""
-  ],
+  "homepage": "",
   "repository": {
     "type": "git",
     "url": "git@github.com:skywrite/sky.git"
@@ -48,7 +46,7 @@
     "colors": "~0.6.0-1",
     "nextflow": "~0.3.0",
     "cl": "0.0.1",
-    "string": "~1.4.0",
+    "string": "~1.5.0",
     "rss": "0.0.4",
     "scrap": "~0.1.0",
     "underscore": "~1.4.4",

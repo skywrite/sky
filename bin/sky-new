@@ -42,15 +42,6 @@ rock.fetchRepo(outdir, rck, function(err) {
 function normalizeRock (rockPath) {
   if (!S(rockPath).contains('/')) return 'skywrite/rock-' + rockPath; //fetch rock from Github sky organization
   if (fs.existsSync(rockPath)) return path.resolve(rockPath); //local rock on filesystem
-  if (count(rockPath, '/') === 1) return rockPath; //some repo on Github
+  if (S(rockPath).count('/') === 1) return rockPath; //some repo on Github
   return null; //can't find it
-}
-
-function count (str, ch) {
-  var x = 0;
-  str.split('').forEach(function(c) {
-    if (c === ch)
-      x += 1
-  })
-  return x;
 }
