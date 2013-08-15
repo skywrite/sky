@@ -40,9 +40,6 @@ buildAllArticles(_skyEnv.configs)
 
 function buildAllArticles (configs) {
   console.log('\n  building articles...')
-  var outputDir = ''
-
-  outputDir = _skyEnv.outputDir
 
   var outputArticles = {}
     , tagCounts = {}
