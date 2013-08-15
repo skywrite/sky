@@ -1,6 +1,6 @@
-0.4.0 / 2013-0
+0.4.0 / 2013-08-15
 ------------------
-* implemented themes, `templates` dir in `sky` is gone. Closes #18
+* start of theme implementation, `templates` dir in `sky` is gone. Closes #18
 * switched from `win-fork` to `win-spawn`
 * refactored out `SkyEnv` into its own module named `sky-env`. Closes #15
 * removed ability to automatically open newly created article in an editor
