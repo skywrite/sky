@@ -5,6 +5,7 @@
 * refactored out `SkyEnv` into its own module named `sky-env`. Closes #15
 * removed ability to automatically open newly created article in an editor
 * upgraded `markdown-page`, fixes `:` in metadata bug. Closes #20
+* if article theme file or layout theme file are modified, rebuilds all articles. Closes #17
 
 0.3.0 / 2013-06-11
 ------------------
