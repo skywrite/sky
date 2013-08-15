@@ -5,13 +5,8 @@
 var program = require('commander')
   , fs = require('fs-extra')
   , path = require('path')
-  , next = require('nextflow')
   , sky = require('../lib/sky')
-  , _ = require('underscore')
-  , S = require('string')
-  , dt = require('date-tokens')
   , P = require('autoresolve')
-  , cl = require('cl')
   , colors = require('colors')
   , SkyEnv = require('sky-env').SkyEnv
   , DocIter = require('../lib/doc_iterator')
@@ -22,10 +17,12 @@ var program = require('commander')
   , di = require(P('lib/doc_info'))
   , bin = require(P('lib/bin'))
   , tag = require(P('lib/tag'))
-  , fs = require('fs-extra')
+  , S = require('string')
 
 var _skyEnv = null
   , _baseDir = null
+  , _outputArticles = {}
+  , _tagCounts = {}
 
 program.version(require('../package'))
   .option('-d, --dir [outputDir]', 'The output directory for the files.') //<--- TODO: not so sure this description is correct
@@ -36,79 +33,62 @@ if (program.dir) process.chdir(program.dir)
 var _skyEnv = bin.initSync()
   , templateFiles = sutil.loadThemePathsSync(_skyEnv)
 
-buildAllArticles(_skyEnv.configs)
+console.log('\n  building articles...')
 
-function buildAllArticles (configs) {
-  console.log('\n  building articles...')
+var lastBuild = _skyEnv.lastBuild
+var moddate1 = fs.lstatSync(templateFiles.layout).mtime
+var moddate2 = fs.lstatSync(templateFiles.article).mtime
+if (moddate1 > lastBuild) //theme file modified, invalidate and rebuild everything
+  lastBuild = 0
+if (moddate2 > lastBuild)
+  lastBuild = 0
 
-  var outputArticles = {}
-    , tagCounts = {}
+DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: lastBuild})
+.document(eachDoc)
+.end(function() {
+  var cfgObj = _skyEnv.configs.config
+  cfgObj.set('build.lastBuild', (new Date()).toISOString())
+  fs.writeJsonSync(_skyEnv.configFile, cfgObj)
+  generateIndex()
+});
 
-  var flow = {};
-  next(flow = {
-    ERROR: function(err) {
-      console.error(err)
-      console.error(err.stack)
-    },
-    iterateArticles: function() {
-      var lastBuild = _skyEnv.lastBuild
-      var moddate1 = fs.lstatSync(templateFiles.layout).mtime
-      var moddate2 = fs.lstatSync(templateFiles.article).mtime
-      if (moddate1 > lastBuild) //theme file modified, invalidate and rebuild everything
-        lastBuild = 0
-      if (moddate2 > lastBuild)
-        lastBuild = 0
 
-      DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: _skyEnv.lastBuild})
-      .document(function(err, res, next) {
-        if (err) return flow.error(err)
+function generateIndex() {
+  console.log('\n  generating article index...')
+  genIndex({skyEnv: _skyEnv, outputArticles: _outputArticles, genRSS: true}, function(err) {
+    if (err) console.error(err)
+  })
+}
 
-        var data = di.initViewData(_skyEnv)
+function eachDoc (err, res, next) {
+  if (err) return console.error(err)
+  if (!res.document.metadata.publish) return next()
 
-        if (res.document.metadata.publish) { //don't wont to publish drafts, thus -> no build either
-          di(data, res) //attach more doc info
+  var data = di.initViewData(_skyEnv)
+  di(data, res) //attach more doc info
 
-          tag.tagCount(tagCounts, res.document.metadata.tags)
+  tag.tagCount(_tagCounts, res.document.metadata.tags)
 
-          var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.ctx)
-          tmpl(templateFiles.article, data, function(err, html) {
-            if (err) flow.error(err)
-            data.sky.view = html
+  var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(res.file, data.ctx)
+  tmpl(templateFiles.article, data, function(err, html) {
+    if (err) return console.error(err)
+    data.sky.view = html
 
-            tmpl(templateFiles.layout, data, function(err, html) {
-              if (err) flow.error(err)
+    tmpl(templateFiles.layout, data, function(err, html) {
+      if (err) return console.error(err)
 
-              //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
-              html = S(html).template(data.ctx).s
+      //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+      html = S(html).template(data.ctx).s
 
-              if (res.modified) {
-                //console.log('Building %s...', path.basename(file))
-                prettyPrint(data.ctx)
-                fs.outputFileSync(absOutFile, html)
-              }
+      if (res.modified) {
+        //console.log('Building %s...', path.basename(file))
+        prettyPrint(data.ctx)
+        fs.outputFileSync(absOutFile, html)
+      }
 
-              outputArticles[res.file] = data.ctx
-
-              next()
-            })
-          })
-        } else 
-          next()
-      })
-      .end(function() {
-        var cfgObj = configs.config
-        cfgObj.set('build.lastBuild', (new Date()).toISOString())
-        fs.writeJsonSync(_skyEnv.configFile, cfgObj)
-        flow.next()
-      });
-    },
-    generateIndex: function() {
-      console.log('\n  generating article index...')
-      genIndex({skyEnv: _skyEnv, outputArticles: outputArticles, genRSS: true}, function(err) {
-        if (err) return flow.error(err)
-        //console.log('\n  done\n')
-      })
-    }
+      _outputArticles[res.file] = data.ctx
+      next()
+    })
   })
 }
 
