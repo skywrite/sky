@@ -26,11 +26,6 @@ next(flow = {
     console.error(err)
     console.error(err.stack)
   },
-  copyVendor: function() {
-    outputDir = _skyEnv.getOutputDir()
-    var outputVendorDir = path.join(outputDir, 'vendor')
-    fs.copy(P('vendor'), outputVendorDir, this.next)
-  },
   buildArticles: function() {
     var proc = spawn(path.join(__dirname, 'sky-build-articles'), [], { stdio: 'inherit', customFds: [0, 1, 2] })
     proc.on('exit', flow.next)
