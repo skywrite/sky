@@ -37,7 +37,10 @@ var _skyEnv = bin.initSync()
 
 var assetsDir = path.join(_skyEnv.themeDir, 'assets')
 if (test('-d', assetsDir)) {
-  console.log('\n  copying theme assets...')    
+  console.log('\n  copying theme assets...')
+  var outputAssetsDir = path.join(_skyEnv.outputDir, 'assets') 
+  if (test('-d', outputAssetsDir))
+    rm('-rf', outputAssetsDir)  
   cp('-r', assetsDir, _skyEnv.outputDir)  
 }
 
