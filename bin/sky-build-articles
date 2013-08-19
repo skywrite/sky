@@ -19,6 +19,8 @@ var program = require('commander')
   , tag = require(P('lib/tag'))
   , S = require('string')
 
+require('shelljs/global')
+
 var _skyEnv = null
   , _baseDir = null
   , _outputArticles = {}
@@ -32,6 +34,12 @@ if (program.dir) process.chdir(program.dir)
 
 var _skyEnv = bin.initSync()
   , templateFiles = sutil.loadThemePathsSync(_skyEnv)
+
+var assetsDir = path.join(_skyEnv.themeDir, 'assets')
+if (test('-d', assetsDir)) {
+  console.log('\n  copying theme assets...')    
+  cp('-r', assetsDir, _skyEnv.outputDir)  
+}
 
 console.log('\n  building articles...')
 

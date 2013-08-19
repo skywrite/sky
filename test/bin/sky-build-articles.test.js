@@ -7,7 +7,7 @@ var testutil = require('testutil')
   , S = require('string')
   , runSky = require(P('test/test-lib/testsky')).runSky
   , next = require('nextflow')
-
+  , shell = testutil.shell
 
 var TEST_DIR = ''
 
@@ -16,7 +16,7 @@ describe('bin/', function() {
     TEST_DIR = testutil.createTestDir('sky')
     TEST_DIR = path.join(TEST_DIR, 'build')
     if (!fs.existsSync(TEST_DIR)) fs.mkdirsSync(TEST_DIR)
-    process.chdir(TEST_DIR)
+    shell.cd(TEST_DIR)
   })
 
   describe('sky-build-articles', function() {
@@ -86,6 +86,11 @@ describe('bin/', function() {
           //verify content in index page was created
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title1) > 0)
           T (fs.readFileSync(indexFile, 'utf8').indexOf(title2) > 0)
+
+          //verify theme assets are copied over
+          T (shell.test('-d', path.join(TEST_DIR, 'public', 'assets')))
+          T (shell.test('-f', path.join(TEST_DIR, 'public', 'assets', 'css', 'styles.css')))
+          T (shell.test('-f', path.join(TEST_DIR, 'public', 'assets', 'js', 'effects.js')))
 
           //regression
           var cfg = fs.readJsonSync(path.join(TEST_DIR, 'sky', 'config.json'))
