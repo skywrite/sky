@@ -1,3 +1,7 @@
+0.4.1 / 2013-08-15
+------------------
+* themes can now have assets
+
 0.4.0 / 2013-08-15
 ------------------
 * start of theme implementation, `templates` dir in `sky` is gone. Closes #18
