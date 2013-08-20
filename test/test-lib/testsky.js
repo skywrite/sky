@@ -3,9 +3,13 @@ var spawn = require('win-spawn')
   , colors = require('colors')
   , path = require('path')
 
+require('shelljs/global')
+
 var SKY_BIN = P('bin/sky')
 
-function runSky () {
+var me = module.exports
+
+me.runSky = function () {
   var args = Array.prototype.slice.call(arguments, 0)
     , stdout = ''
     , stderr = ''
@@ -42,4 +46,20 @@ function runSky () {
   return sky
 }
 
-module.exports.runSky = runSky
+me.runSkySync = function (/* args */) {
+  var args = [].slice.call(arguments)
+
+  if (args[0] === 'new' && args[2] === 'personal-blog') {
+    args[2] = P('test/resources/personal-blog') //inject testing rock
+  }
+
+  var prog = path.basename(SKY_BIN + '-' + args[0])
+  var res = exec(SKY_BIN + ' ' + args.join(' '), {silent: true})
+  process.stdout.write(prog + ': ' + colors.cyan(res.output))
+
+  if (res.code !== 0)
+    process.stderr.write(prog + ': ' + colors.red("returned " + res.code))
+
+  return res
+}
+
