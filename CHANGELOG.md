@@ -1,3 +1,7 @@
+0.5.0 / 2013-08-20
+------------------
+* implemented page support. Closes #4
+
 0.4.1 / 2013-08-15
 ------------------
 * themes can now have assets
