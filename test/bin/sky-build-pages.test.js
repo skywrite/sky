@@ -23,22 +23,30 @@ describe('bin/', function() {
       TEST_DIR = path.join(TEST_DIR, 'myblog')
       shell.cd(TEST_DIR)
 
-      var content = [
+      var content1H = [
         "<--",
         "author: JP Richardson",
         "publish: 2013-08-20",
-        "title: something",
+        "title: About",
+        "-->"
+      ].join("\n")
+
+      var content2H = [
+        "<--",
+        "author: JP Richardson",
+        "publish: 2013-08-20",
+        "title: Tesla",
         "-->"
       ].join("\n")
 
       //create some pages
-      var content1 = "Hi, I'm JP and I write code...."
+      var content1 = "Hi, I am JP and I write code...."
       var content2 = "This project is super **secret** and cool..."
 
       var md1 = path.join(TEST_DIR, 'pages', 'about.md')
       var md2 = path.join(TEST_DIR, 'pages', 'secret-project', 'tesla.md')
-      fs.outputFileSync(md1, content + "\n\n" + content1)
-      fs.outputFileSync(md2, content + "\n\n" + content2)
+      fs.outputFileSync(md1, content1H + "\n\n" + content1)
+      fs.outputFileSync(md2, content2H + "\n\n" + content2)
 
       res = runSkySync('build-pages')
       EQ (res.code, 0)

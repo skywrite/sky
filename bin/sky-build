@@ -22,6 +22,7 @@ var _skyEnv = bin.initSync()
 var start = new Date()
 
 exec(path.join(__dirname, 'sky-build-articles'))
+exec(path.join(__dirname, 'sky-build-pages'))
 exec(path.join(__dirname, 'sky-build-tags'))
 
 var delta = (new Date()) - start

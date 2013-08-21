@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+'use strict'
+
+var program = require('commander')
+  , P = require('autoresolve')
+  , bin = require(P('lib/bin'))
+  , colors = require('colors')
+  , SkyEnv = require('sky-env').SkyEnv
+  , DocIter = require('../lib/doc_iterator')
+  , sutil = require('../lib/util')
+  , tmpl = require('../lib/template_file')
+  , fs = require('fs-extra')
+  , path = require('path')
+  , di = require(P('lib/doc_info'))
+  , S = require('string')
+
+require('shelljs/global')
+
+program.version(require('../package'))
+  .option('-d, --dir [outputDir]', 'The output directory for the files.') //<--- TODO: not so sure this description is correct
+  .parse(process.argv)
+
+if (program.dir) cd(program.dir)
+
+var _skyEnv = bin.initSync()
+  , themeFiles = sutil.loadThemePathsSync(_skyEnv)
+  , _outputPages = {}
+
+console.log('\n  building pages...')
+
+var lastBuild = _skyEnv.lastBuild
+var moddate1 = fs.lstatSync(themeFiles.layout).mtime
+var moddate2 = fs.lstatSync(themeFiles.page).mtime
+if (moddate1 > lastBuild) //theme file modified, invalidate and rebuild everything
+  lastBuild = 0
+if (moddate2 > lastBuild)
+  lastBuild = 0
+
+DocIter({path: path.join(_skyEnv.baseDir, 'pages'), lastModified: lastBuild})
+.document(eachDoc)
+.end(function() {})
+
+function eachDoc (err, res, next) {
+  if (err) return console.error(err)
+  if (!res.document.metadata.publish) return next()
+
+  var data = di.initViewData(_skyEnv)
+  di(data, res) //attach more doc info
+
+  //tag.tagCount(_tagCounts, res.document.metadata.tags)
+
+  var absOutFile = _skyEnv.mdPageToOutputFileWithPath(res.file, data.ctx)
+  tmpl(themeFiles.page, data, function(err, html) {
+    if (err) return console.error(err)
+    data.sky.view = html
+
+    tmpl(themeFiles.layout, data, function(err, html) {
+      if (err) return console.error(err)
+
+      //fill in mustache templates if exist, this method is a bit hacky, but it helps self-reference disqus slugs
+      html = S(html).template(data.ctx).s
+
+      if (res.modified) {
+        //console.log('Building %s...', path.basename(file))
+        prettyPrint(data.ctx)
+        fs.outputFileSync(absOutFile, html)
+      }
+
+      _outputPages[res.file] = data.ctx
+      next()
+    })
+  })
+}
+
+function prettyPrint (page) {
+  var date = sutil.datefmt(page.publishedAt)
+  console.log("    %s : %s", colors.green(date), colors.cyan(page.title))
+}
