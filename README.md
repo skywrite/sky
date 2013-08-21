@@ -30,7 +30,7 @@ Installation
 Usage
 -----
 
-Don't. Still in major flux. As of version 0.4, it's getting closer to stability. Pages still need to be implemented and then usage for approximately 3-6 months. As of 2013-08, it's at least six months out from stability.
+Don't. Still in major flux. As of 2013-08, it's at least five months out from stability.
 
 
 
