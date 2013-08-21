@@ -1,6 +1,6 @@
 {
   "name": "sky",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "A markdown static site generator.",
   "homepage": "",
   "repository": {
@@ -57,7 +57,7 @@
     "brucedown": "0.0.1",
     "ymd": "0.0.1",
     "win-spawn": "~1.1.2",
-    "sky-env": "0.4.x",
+    "sky-env": "0.5.x",
     "shelljs": "~0.1.4"
   },
   "devDependencies": {
