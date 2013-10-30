@@ -59,6 +59,7 @@ DocIter({path: path.join(_skyEnv.baseDir, 'articles'), lastModified: lastBuild})
 .end(function() {
   var cfgObj = _skyEnv.configs.config
   cfgObj.set('build.lastBuild', (new Date()).toISOString())
+  cfgObj.set('sky.version', require('../package').version)
   fs.writeJsonSync(_skyEnv.configFile, cfgObj)
   generateIndex()
 });

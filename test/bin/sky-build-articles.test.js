@@ -96,6 +96,8 @@ describe('bin/', function() {
           F (cfg.homepage) //should not be here
           F (cfg.view) //should not be here
 
+          EQ (cfg.sky.version, require('../../package').version)
+
           done()
         }
       })
