@@ -32,7 +32,7 @@ articleFile = path.join(articleFile, S(title).slugify() + '.md')
 if (fs.existsSync(articleFile)) 
   cl.exit(100, "Article file %s already exists. Aborting.", articleFile)
     
-mdp.metadata.publish = sutil.datefmt(new Date()) //by default set the date pulish to today, else if pub date forgotten, article won't be generated
+mdp.metadata.pubdate = sutil.datefmt(new Date()) //by default set the date pulish to today, else if pub date forgotten, article won't be generated
 if (tags)
   mdp.metadata.tags = tags instanceof Array ? tags : mdp.metadataConversions['tags'].deserialize(tags)
     

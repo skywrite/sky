@@ -67,7 +67,7 @@ function buildAllTags (configs) {
           , stat = res.stat
           , modified = res.modified
 
-        if (mdp.metadata.publish && mdp.metadata.tags) { 
+        if (mdp.metadata.pubdate && mdp.metadata.tags) { 
           di(data, res)
 
           var absOutFile = _skyEnv.mdArticleToOutputFileWithPath(file, data.ctx)

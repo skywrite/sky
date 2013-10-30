@@ -26,7 +26,7 @@ describe('bin/', function() {
       var content1H = [
         "<--",
         "author: JP Richardson",
-        "publish: 2013-08-20",
+        "pubdate: 2013-08-20",
         "title: About",
         "-->"
       ].join("\n")
@@ -34,7 +34,7 @@ describe('bin/', function() {
       var content2H = [
         "<--",
         "author: JP Richardson",
-        "publish: 2013-08-20",
+        "pubdate: 2013-08-20",
         "title: Tesla",
         "-->"
       ].join("\n")

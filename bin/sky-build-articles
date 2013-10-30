@@ -73,7 +73,7 @@ function generateIndex() {
 
 function eachDoc (err, res, next) {
   if (err) return console.error(err)
-  if (!res.document.metadata.publish) return next()
+  if (!res.document.metadata.pubdate) return next()
 
   var data = di.initViewData(_skyEnv)
   di(data, res) //attach more doc info

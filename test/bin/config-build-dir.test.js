@@ -53,7 +53,7 @@ describe('config', function() {
           runSky('article', title1, '--tags', tags1.join(','), function(code, stdout, stderr) {
             EQ (code, 0)
             articleFile = stdout.replace('created.', '').trim()
-            //fs.writeFileSync(articleFile, fs.readFileSync(articleFile, 'utf8').replace('publish: ', 'publish: ' + getDate()))
+
             fs.appendFileSync(articleFile, '\n**Preface:**\nBlah blah')
             flow.next()
           })
