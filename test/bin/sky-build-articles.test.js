@@ -5,7 +5,10 @@ var testutil = require('testutil')
   , spawn = require('win-spawn')
   , MarkdownPage = require('markdown-page').MarkdownPage
   , S = require('string')
-  , runSky = require(P('test/test-lib/testsky')).runSky
+  , testsky = require(P('test/test-lib/testsky')) 
+  , runSky = testsky.runSky
+  , dquote = testsky.dquote
+  , stripcolors = testsky.stripcolors
   , next = require('nextflow')
   , shell = testutil.shell
 

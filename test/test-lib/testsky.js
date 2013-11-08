@@ -2,6 +2,7 @@ var spawn = require('win-spawn')
   , P = require('autoresolve')
   , colors = require('colors')
   , path = require('path')
+  , fs = require('fs-extra')
 
 require('shelljs/global')
 
@@ -62,4 +63,9 @@ me.runSkySync = function (/* args */) {
 
   return res
 }
+
+me.dquote = function(str) { return '"' + str + '"' }
+me.readText = function(file) { return fs.readFileSync(file, 'utf8') }
+me.stripcolors = require('stripcolorcodes')
+
 

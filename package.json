@@ -63,7 +63,8 @@
   "devDependencies": {
     "mocha": "*",
     "scrap": "~0.1.0",
-    "testutil": "~0.6.0"
+    "testutil": "~0.6.0",
+    "stripcolorcodes": "~0.1.0"
   },
   "main": "./lib/sky.js",
   "scripts": {
