@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    // Match deno lint disabled rules
+    "no-explicit-any": "off",
+    "no-unused-vars": "off",
+    "prefer-const": "off",
+    "no-constant-condition": "off",
+    "require-await": "off",
+
+    // oxlint equivalents of deno lint's "ban-types" and "no-empty-interface"
+    "no-wrapper-object-types": "off",
+    "no-empty-interface": "off",
+
+    // Deno lint compatibility: existing code uses deno-lint-ignore comments that
+    // oxlint doesn't recognize. These rules are disabled globally to match.
+    // Remove these overrides when deno-lint-ignore comments are cleaned up.
+    "no-useless-escape": "off",
+    "no-control-regex": "off",
+    "no-this-alias": "off",
+    "require-yield": "off",
+    "triple-slash-reference": "off",
+    "no-new-array": "off"
+  },
+  "ignorePatterns": ["node_modules", "_build", "dist", "deps/", "extensions/", "**/*.md", "**/*.min.js", "vendor"]
+}

@@ -1,0 +1,263 @@
+/**
+ * Server factory for the notebook service.
+ *
+ * Creates an HTTP/GraphQL server that can be configured with custom
+ * markdown directories, port, and store instance. This enables:
+ * - Isolated testing with mock data directories
+ * - Multiple server instances on different ports
+ * - Deterministic scoring tests
+ *
+ * ## Scoring Limitation
+ *
+ * Person/org scores are computed at scan time using the current date (or
+ * referenceDate for tests). The recency multiplier is baked into the score
+ * when recordInteraction() is called, so scores become stale if the server
+ * runs for extended periods without rescanning.
+ *
+ * Example: An interaction from 7 days ago scores 1.0× (week tier) at startup.
+ * If the server runs for another week without rescanning, it still shows 1.0×
+ * even though it should now be 0.5× (month tier).
+ *
+ * TODO: Add a heartbeat/timer to periodically rescan or recompute scores
+ * so they stay fresh relative to the current date.
+ */
+
+import * as path from 'node:path'
+import { serve } from '@hono/node-server'
+import type { ServerType } from '@hono/node-server'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Store } from './store.ts'
+import { createYogaInstance } from './graphql/schema.ts'
+import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
+import { createScanners } from './scanner/scan.ts'
+import { scanDirectories } from './scanner/walkDirs.ts'
+import { createHttpApp } from './handler/http.ts'
+import { createWebSocketHandler } from './handler/websocket.ts'
+import dirnameFilename from '#lib/util/dirnameFilename.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import type { MarkdownStoreConfig } from './stores/mod.ts'
+
+const { __dirname } = dirnameFilename(import.meta.url)
+
+// Re-export PathConfig for consumers
+export type { PathConfig } from './scanner/entities.ts'
+
+/**
+ * Options for creating a server instance.
+ */
+export interface ServerOptions {
+  /** Port to listen on */
+  port: number
+  /** Directories containing markdown files to scan */
+  markdownDirs: string[]
+  /** Path configuration for entity detection */
+  paths: PathConfig
+  /** Store instance (creates new if not provided) */
+  store?: Store
+  /** Enable file watching for live updates (default: true) */
+  enableFileWatcher?: boolean
+  /** Custom route handlers */
+  customRoutes?: Map<string, (req: Request) => Promise<Response>>
+  /** Reference date for recency calculations (for deterministic testing) */
+  referenceDate?: PlainDate
+  /** Configuration for MarkdownStore (enables rich document queries) */
+  markdownStoreConfig?: MarkdownStoreConfig
+}
+
+/**
+ * Server instance returned by createServer.
+ */
+export interface Server {
+  /** Start the HTTP server */
+  start(): Promise<void>
+  /** Stop the HTTP server */
+  stop(): void
+  /** The store instance used by this server */
+  store: Store
+  /** MarkdownStore for rich document queries (null if not configured) */
+  markdownStore: MarkdownStore | null
+  /** The port the server is listening on (actual port after start, configured port before) */
+  port: number
+  /** Manually trigger a scan of all markdown directories */
+  scan(): Promise<void>
+  /** Build/rebuild MarkdownStore (call after scan for fresh data) */
+  buildMarkdownStore(): Promise<MarkdownStore | null>
+  /** Entity detector for path-based type checks */
+  entityDetector: ReturnType<typeof createEntityDetector>
+  /** Scanner functions for processing files */
+  scanners: ReturnType<typeof createScanners>
+}
+
+/**
+ * Create a new server instance.
+ *
+ * @example
+ * // Production usage
+ * const server = createServer({
+ *   port: 9999,
+ *   markdownDirs: config.DIRS_MARKDOWN,
+ *   paths: {
+ *     people: config.DIR_PEOPLE,
+ *     peopleOld: config.DIR_PEOPLE_OLD,
+ *     orgs: config.DIR_ORGS,
+ *     projects: config.DIR_PROJECTS,
+ *     time: config.DIR_TIME,
+ *   },
+ * })
+ * await server.start()
+ *
+ * @example
+ * // Test usage with mock directories
+ * const store = new Store()
+ * const server = createServer({
+ *   port: 0, // Let OS assign port
+ *   markdownDirs: ['/tmp/test-data'],
+ *   paths: {
+ *     people: '/tmp/test-data/people',
+ *     peopleOld: '/tmp/test-data/people-old',
+ *     orgs: '/tmp/test-data/orgs',
+ *     projects: '/tmp/test-data/projects',
+ *     time: '/tmp/test-data/time',
+ *   },
+ *   store,
+ *   enableFileWatcher: false,
+ * })
+ */
+export function createServer(options: ServerOptions): Server {
+  const {
+    port,
+    markdownDirs,
+    paths,
+    store = new Store(),
+    enableFileWatcher = true,
+    customRoutes,
+    referenceDate,
+    markdownStoreConfig,
+  } = options
+
+  let httpServer: ServerType | null = null
+  let markdownStore: MarkdownStore | null = null
+  let hasScanned = false
+
+  // Entity detection using shared module
+  const entityDetector = createEntityDetector(paths)
+
+  // File scanning helpers using shared module
+  const scanners = createScanners(store, { isTimeFile: entityDetector.isTimeFile }, { referenceDate })
+
+  // Scan all markdown directories
+  async function scan() {
+    await scanDirectories({
+      dirs: markdownDirs,
+      store,
+      entityDetector,
+      scanners,
+    })
+    hasScanned = true
+  }
+
+  // Build MarkdownStore for rich document queries
+  async function buildMarkdownStore(): Promise<MarkdownStore | null> {
+    const t0 = Date.now()
+    console.log('[MarkdownStore] Building...')
+    markdownStore = markdownStoreConfig
+      ? await MarkdownStore.build(markdownStoreConfig)
+      : await MarkdownStore.buildFromAll()
+    console.log(
+      `[MarkdownStore] Built in ${Date.now() - t0}ms with ${markdownStore.people.size} people, ` +
+        `${markdownStore.orgs.size} orgs, ${markdownStore.projects.size} projects`,
+    )
+    // Pre-warm DomainCollection resolvers (builds Collection from all 20k docs, ~6s cold)
+    const t1 = Date.now()
+    await executeQuery('{ __typename }', markdownStore)
+    console.log(`[DomainCollection] Warmed resolvers in ${Date.now() - t1}ms`)
+    return markdownStore
+  }
+
+  // Create Hono app (called after markdownStore is ready)
+  function createApp() {
+    const yoga = createYogaInstance(store, markdownStore)
+    return createHttpApp({
+      store,
+      yoga,
+      markdownStore,
+      staticDir: __dirname + '/client',
+      markdownBaseDir: findCommonAncestor(markdownDirs.map((dir) => path.dirname(dir))),
+      markdownDirs,
+      customRoutes,
+    })
+  }
+
+  let actualPort = port
+
+  return {
+    get port() {
+      return actualPort
+    },
+    store,
+    get markdownStore() {
+      return markdownStore
+    },
+    scan,
+    buildMarkdownStore,
+    entityDetector,
+    scanners,
+
+    async start() {
+      console.log('Server starting...')
+      if (!hasScanned) await scan()
+
+      // Build MarkdownStore on startup
+      // Tests pass markdownStoreConfig with fixture dirs; production omits it to use buildFromAll()
+      await buildMarkdownStore()
+
+      // Create Hono app after markdownStore is ready
+      const app = createApp()
+
+      // TODO: Add file watcher support when enableFileWatcher is true
+
+      // Attach WebSocket handler to the node:http server's upgrade event
+      const wsHandler = createWebSocketHandler(store)
+
+      await new Promise<void>((resolve) => {
+        httpServer = serve({ fetch: app.fetch, port }, () => {
+          const addr = httpServer?.address()
+          if (addr && typeof addr === 'object') {
+            actualPort = addr.port
+          }
+          console.log(`Server running at http://localhost:${actualPort}/`)
+          resolve()
+        })
+        httpServer.on('upgrade', wsHandler.handleUpgrade)
+      })
+    },
+
+    stop() {
+      if (httpServer) {
+        httpServer.close()
+        httpServer = null
+        console.log('Server stopped')
+      }
+    },
+  }
+}
+
+function findCommonAncestor(paths: string[]): string {
+  if (paths.length === 0) return path.resolve('.')
+
+  const resolvedPaths = paths.map((value) => path.resolve(value))
+  const root = path.parse(resolvedPaths[0]!).root
+  let segments = resolvedPaths[0]!.slice(root.length).split(path.sep).filter(Boolean)
+
+  for (const value of resolvedPaths.slice(1)) {
+    const nextSegments = value.slice(root.length).split(path.sep).filter(Boolean)
+    let idx = 0
+    while (idx < segments.length && idx < nextSegments.length && segments[idx] === nextSegments[idx]) {
+      idx++
+    }
+    segments = segments.slice(0, idx)
+  }
+
+  return segments.length === 0 ? root : path.join(root, ...segments)
+}

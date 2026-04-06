@@ -1,0 +1,32 @@
+import { assert, test } from '#test'
+import { fetchWeather } from './open-weather-map.ts'
+import isOnline from '#shared/network/isOnline.ts'
+
+const ignore = !(await isOnline())
+
+test({ name: fetchWeather.name, ignore }, async () => {
+  const given = 'lat and lon' // has no parameters
+  const should = 'return an object with weather fields'
+
+  const location = {
+    latitude: 40.8258,
+    longitude: -96.6852,
+  }
+
+  const result = await fetchWeather(location)
+
+  assert({
+    given,
+    should,
+    expected: true,
+    actual: result.name.includes('Lincoln'),
+  })
+
+  assert({
+    given,
+    should,
+    expected: true,
+    // fucking hot or fucking cold in Lincoln, NE
+    actual: result.main.temp > -30 && result.main.temp < 120,
+  })
+})

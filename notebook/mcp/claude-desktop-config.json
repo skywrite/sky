@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notebook": {
+      "command": "<SKY_CODE_DIR>/notebook/mcp/server.ts",
+      "args": [],
+      "env": {
+        "SKY_DIR": "~/Sky",
+        "SKY_CODE_DIR": "~/sky/notebook"
+      }
+    }
+  }
+}

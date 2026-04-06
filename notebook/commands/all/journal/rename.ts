@@ -1,0 +1,130 @@
+import * as path from 'node:path'
+import { generateObject } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { z } from 'zod'
+import { readDir, readTextFile, rename, writeTextFile } from '#shared/fs/mod.ts'
+import { DIR_TIME } from '#shared/config.ts'
+import { dayDir } from '#shared/nbfs/mod.ts'
+import JournalDocument from '#shared/models/Journal/document/mod.ts'
+import slugify from '#lib/string/slugify.ts'
+import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+
+const MODEL = 'claude-opus-4-6'
+
+const params = {
+  day: dayNoFutureArg(),
+  dryRun: Flag.boolean('Preview renames without executing', { short: 'd', default: false }),
+}
+
+type Params = InferParams<typeof params>
+
+declare module '#commands/lib/core/CommandTypesRegistry.ts' {
+  interface CommandTypesRegistry {
+    'journal:rename': { params: Params; result: undefined }
+  }
+}
+
+interface JournalFile {
+  fileName: string
+  prefix: string
+  typeSlug: string
+  content: string
+}
+
+const SummarySchema = z.object({
+  summaries: z.array(
+    z.object({
+      fileName: z.string(),
+      summary: z.string().describe('5-7 word summary capturing the emotional/thematic essence'),
+    }),
+  ),
+})
+
+export default class JournalRenameTask extends Command {
+  static override description: CommandDescription = {
+    name: 'journal:rename',
+    description: 'Rename journal files with AI-generated summaries.',
+    params,
+  }
+
+  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult> {
+    const { output } = context
+    const { day, dryRun } = args
+
+    const journalDir = path.join(DIR_TIME, dayDir(day), 'journal')
+
+    // Collect journal files that need renaming
+    const journals: JournalFile[] = []
+    for await (const entry of readDir(journalDir)) {
+      if (!entry.isFile || !entry.name.endsWith('.md')) continue
+
+      const content = await readTextFile(path.join(journalDir, entry.name))
+      const doc = JournalDocument.fromMarkdown(content)
+      if (doc.yaml['summary']) continue // already renamed
+      if (doc.questions.length === 0 || doc.questions.every((q) => !q.answer.trim())) continue
+
+      const parts = entry.name.replace('.md', '').split('_')
+
+      journals.push({
+        fileName: entry.name,
+        prefix: parts[0],
+        typeSlug: parts[1],
+        content,
+      })
+    }
+
+    if (journals.length === 0) {
+      output.log('No journals to rename.')
+      return CommandResult.success()
+    }
+
+    output.log(`Generating summaries for ${journals.length} journal(s)...`)
+
+    const result = await generateObject({
+      model: anthropic(MODEL),
+      schema: SummarySchema,
+      prompt: buildPrompt(journals),
+    })
+
+    for (const { fileName, summary } of result.object.summaries) {
+      const journal = journals.find((j) => j.fileName === fileName)
+      if (!journal) continue
+
+      const slug = slugify(summary, { preserveCase: true })
+      const newName = `${journal.prefix}_${journal.typeSlug}_${slug}.md`
+
+      if (dryRun) {
+        output.log(`  ${fileName} -> ${newName}`)
+      } else {
+        // Insert summary into YAML frontmatter
+        const doc = JournalDocument.fromMarkdown(journal.content)
+        const updated = doc.updateYaml({ summary })
+        await writeTextFile(path.join(journalDir, fileName), updated.toMarkdown())
+
+        await rename(path.join(journalDir, fileName), path.join(journalDir, newName))
+        output.log(`  ${fileName} -> ${newName}`)
+      }
+    }
+
+    return CommandResult.success()
+  }
+}
+
+function buildPrompt(journals: JournalFile[]): string {
+  const parts: string[] = []
+
+  parts.push('Generate a 5-7 word Title Case summary for each journal entry below.')
+  parts.push('Capture the emotional or thematic essence. Be specific, not generic.')
+  parts.push('Do NOT use filler words like "Reflections on" or "Thoughts about".')
+  parts.push('Use Title Case (capitalize each word).')
+  parts.push('')
+
+  for (const j of journals) {
+    parts.push(`--- ${j.fileName} ---`)
+    parts.push(j.content)
+    parts.push('')
+  }
+
+  return parts.join('\n')
+}

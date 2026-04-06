@@ -1,0 +1,1141 @@
+import * as path from 'node:path'
+import process from 'node:process'
+import colors from 'picocolors'
+import { generateText, jsonSchema, stepCountIs } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { PORT_SERVER } from '#shared/config.ts'
+import { mkdir } from 'node:fs/promises'
+import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
+import ChatDocument from '#shared/models/Chat/document/mod.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
+import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import * as p from '@clack/prompts'
+import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
+import { getLanguageModel, type Provider, PROVIDER_DEFAULTS } from '../_lib/getLanguageModel.ts'
+import { promptWithInk } from './ui/promptWithInk.tsx'
+import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
+
+// -----------------------------------------------------------------------------
+// Params & Types
+// -----------------------------------------------------------------------------
+
+const params = {
+  message: Flag.string('Initial message to start the conversation', {
+    short: 'm',
+    optional: true,
+  }),
+  provider: Flag.string('AI provider (claude, openai, ollama, lm-studio)', {
+    short: 'p',
+    default: () => 'claude',
+  }),
+  model: Flag.string('Model name (defaults based on provider)', {
+    short: 'M',
+    optional: true,
+  }),
+  days: Flag.number('Number of days to look back for context', {
+    short: 'd',
+    default: () => 7,
+  }),
+  inspectInitialContext: Flag.boolean('List initial context file paths and exit', {
+    default: false,
+  }),
+  category: Flag.string('Category for the chat (e.g., reflection, planning)', {
+    short: 'c',
+    optional: true,
+  }),
+  log: Flag.boolean('Log chat to day file as complete item', {
+    default: false,
+  }),
+  ephemeral: Flag.boolean('Chat without saving conversation to file', {
+    short: 'E',
+    default: true,
+  }),
+  server: Flag.boolean('Use the running notebook service instead of building MarkdownStore locally', {
+    short: 'S',
+    default: true,
+  }),
+  when: whenNBTime(),
+}
+
+type Params = InferParams<typeof params>
+
+import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+
+type Message = { role: 'user' | 'assistant'; content: string }
+
+type Result = { saved?: string; turns?: number }
+
+declare module '#commands/lib/core/CommandTypesRegistry.ts' {
+  interface CommandTypesRegistry {
+    'ai:chat': { params: Params; result: Result }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+const PROMPT_FILE = new URL('./prompts/chat.prompt.md', import.meta.url).pathname
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+function formatHealthSection(health: AIContext['health']): string {
+  if (health.length === 0) return '(No health data available)'
+
+  const lines: string[] = []
+  for (const { date, data } of health) {
+    const parts: string[] = []
+    if (data.sleep) parts.push(`Sleep: ${data.sleep.range} (${data.sleep.duration} hrs)`)
+    if (data.weight) parts.push(`Weight: ${data.weight} lbs`)
+    if (data.strength) {
+      const sessions = data.strength.map((s) => `${s.lbs} lbs${s.duration ? `, ${s.duration} mins` : ''}`).join('; ')
+      parts.push(`Strength: ${sessions}`)
+    }
+    if (data.work) parts.push(`Work: ${data.work.duration} hrs`)
+    if (parts.length > 0) lines.push(`- **${date}**: ${parts.join(' | ')}`)
+  }
+  return lines.join('\n')
+}
+
+function formatPriceSection(prices: AIContext['prices']): string {
+  if (prices.length === 0) return '(No price data available)'
+
+  const lines: string[] = []
+  for (const { date, data } of prices) {
+    const parts = data.prices.map((p) => {
+      const formatted =
+        p.value >= 1000 ? p.value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : p.value.toFixed(2)
+      return `${p.symbol}: $${formatted}`
+    })
+    if (parts.length > 0) lines.push(`- **${date}**: ${parts.join(' | ')}`)
+  }
+  return lines.join('\n')
+}
+
+interface ContextInput {
+  ctx: AIContext
+  days: number
+  activityMarkdown: string | null
+}
+
+function buildContextPrompt({ ctx, days, activityMarkdown }: ContextInput): string {
+  const parts: string[] = []
+
+  parts.push(`# Context for ${ctx.today.date} (${ctx.today.dayOfWeek})`)
+  parts.push('')
+
+  // 1. Prices
+  parts.push('## Prices')
+  parts.push('')
+  parts.push(formatPriceSection(ctx.prices))
+  parts.push('')
+
+  // 2. Health
+  parts.push('## Health')
+  parts.push('')
+  parts.push(formatHealthSection(ctx.health))
+  parts.push('')
+
+  // 3. Activity (goals, summaries, today's docs, previous days' journals via DomainCollection)
+  parts.push('## Activity')
+  parts.push('')
+  if (activityMarkdown) {
+    parts.push(activityMarkdown)
+  } else {
+    parts.push('(No activity recorded)')
+  }
+
+  return parts.join('\n')
+}
+
+function formatDate(dt: PlainDateTime): string {
+  return dt.plainDate.ymd
+}
+
+function slugify(text: string, maxWords = 7): string {
+  // Take first N words, preserve case, replace non-alphanumeric with dashes
+  const words = text.trim().split(/\s+/).slice(0, maxWords).join(' ')
+
+  return words
+    .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except spaces
+    .replace(/\s+/g, '-') // Replace spaces with dashes
+    .replace(/-+/g, '-') // Collapse multiple dashes
+    .replace(/^-|-$/g, '') // Trim leading/trailing dashes
+}
+
+function formatFilename(dt: PlainDateTime, summary: string): string {
+  // Format: HH-MM_Slugified-Summary.md
+  const timeStr = dt.time.replace(':', '-')
+  const slug = slugify(summary)
+  return `${timeStr}_${slug}.md`
+}
+
+async function mergePathsIntoCollection(
+  paths: string[],
+  existing: DomainCollection | null,
+  store: MarkdownStore,
+): Promise<DomainCollection | null> {
+  const docs: Array<{ doc: Document; path: string }> = []
+  for (const filePath of paths) {
+    try {
+      const content = await readTextFile(filePath)
+      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      docs.push({ doc, path: filePath })
+    } catch {
+      // Skip unreadable files
+    }
+  }
+  if (docs.length === 0) return existing
+  const newCollection = DomainCollection.fromDocuments(docs, store, { depth: 1 })
+  return existing ? existing.merge(newCollection) : newCollection
+}
+
+/**
+ * Fetch documents from the running notebook service via POST /context.
+ * The server executes the GraphQL query, resolves relationships to the given depth,
+ * and returns {path, type, markdown} triples.
+ */
+async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{ doc: Document; path: string }>> {
+  const url = `http://localhost:${PORT_SERVER}/context`
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, depth }),
+  })
+  if (!resp.ok) return []
+
+  const json = await resp.json()
+  const documents = json?.data?.documents ?? []
+  const docs: Array<{ doc: Document; path: string }> = []
+  for (const d of documents) {
+    if (d.path && d.markdown) {
+      const doc = Document.fromMarkdown(d.markdown).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      docs.push({ doc, path: d.path })
+    }
+  }
+  return docs
+}
+
+/**
+ * Server-mode version of mergePathsIntoCollection.
+ * Reads files from disk, builds DomainCollection without a local MarkdownStore.
+ */
+async function mergePathsIntoCollectionViaServer(
+  paths: string[],
+  existing: DomainCollection | null,
+): Promise<DomainCollection | null> {
+  if (paths.length === 0) return existing
+  const docs: Array<{ doc: Document; path: string }> = []
+  for (const filePath of paths) {
+    try {
+      const content = await readTextFile(filePath)
+      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      docs.push({ doc, path: filePath })
+    } catch {
+      // Skip unreadable files
+    }
+  }
+  if (docs.length === 0) return existing
+  const newCollection = DomainCollection.fromDocuments(docs, null, { depth: 0 })
+  return existing ? existing.merge(newCollection) : newCollection
+}
+
+const SUMMARY_PATTERN = /<!--\s*SUMMARY:\s*(.+?)\s*-->/
+
+/**
+ * Extract the running summary from the last assistant response.
+ * Falls back to first 10 words of the first user message.
+ */
+function extractSummary(turns: ConversationMessage[]): string {
+  // Walk backwards through assistant turns to find the latest summary
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === 'assistant') {
+      const match = turns[i].content.match(SUMMARY_PATTERN)
+      if (match) return match[1].trim()
+    }
+  }
+  // Fallback: first 10 words of first user message
+  const first = turns.find((t) => t.role === 'user')?.content ?? ''
+  return first.trim().split(/\s+/).slice(0, 10).join(' ')
+}
+
+// -----------------------------------------------------------------------------
+// Web Search Tool (Perplexity Search API)
+// -----------------------------------------------------------------------------
+
+interface SearchResult {
+  title: string
+  url: string
+  snippet: string
+}
+
+/** Strip HTML tags and collapse whitespace to get readable text. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const MAX_FETCH_CHARS = 20000
+
+function createWebTools() {
+  return {
+    web_search: {
+      description:
+        'Search the web for current information. Use this when the user asks about recent events, news, facts you are unsure about, or anything that requires up-to-date information beyond the notebook context.',
+      inputSchema: jsonSchema<{ query: string }>({
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The search query' },
+        },
+        required: ['query'],
+      }),
+      execute: async ({ query }: { query: string }): Promise<SearchResult[]> => {
+        const apiKey = globalThis.process?.env?.PERPLEXITY_API_KEY
+        if (!apiKey) return []
+
+        const resp = await fetch('https://api.perplexity.ai/search', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query, max_results: 5 }),
+        })
+
+        if (!resp.ok) return []
+
+        const data = await resp.json()
+        const results: SearchResult[] = (data.results ?? []).map(
+          (r: { title?: string; url?: string; snippet?: string }) => ({
+            title: r.title ?? '',
+            url: r.url ?? '',
+            snippet: r.snippet ?? '',
+          }),
+        )
+        return results
+      },
+    },
+    web_fetch: {
+      description:
+        'Fetch the full content of a web page by URL. Use this after web_search to read the full text of a promising result.',
+      inputSchema: jsonSchema<{ url: string }>({
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The URL to fetch' },
+        },
+        required: ['url'],
+      }),
+      execute: async ({ url }: { url: string }): Promise<string> => {
+        try {
+          const resp = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotebookBot/1.0)' },
+            signal: AbortSignal.timeout(10000),
+          })
+          if (!resp.ok) return `Error: ${resp.status} ${resp.statusText}`
+
+          const contentType = resp.headers.get('content-type') ?? ''
+          const raw = await resp.text()
+
+          const text = contentType.includes('html') ? htmlToText(raw) : raw
+          if (text.length > MAX_FETCH_CHARS) {
+            return text.slice(0, MAX_FETCH_CHARS) + '\n\n[Content truncated...]'
+          }
+          return text
+        } catch (err) {
+          return `Error fetching URL: ${(err as Error).message}`
+        }
+      },
+    },
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Command
+// -----------------------------------------------------------------------------
+
+export default class AiChatTask extends Command {
+  static override description: CommandDescription = {
+    name: 'ai:chat',
+    description: 'Start a conversational AI session with full Notebook context.',
+    descriptionLong: [
+      'Starts an interactive conversation with Claude, loaded with context from your Notebook:',
+      '- Last N days of summaries and journals',
+      '- Personal and professional goals',
+      '- Health data (sleep, weight, strength, work)',
+      '- Price data (BTC, SPY, EXOD)',
+      '',
+      'The conversation continues until you press Ctrl+C or submit empty input.',
+      'Conversations are automatically saved to {day}/actions/ai-chats/ folder.',
+    ],
+    usage: [
+      'sky ai:chat                              # Claude Opus (default)',
+      'sky ai:chat -m "What should I focus on?" # Start with initial message',
+      'sky ai:chat -p openai                    # Use OpenAI GPT-4o',
+      'sky ai:chat -p ollama                    # Use local Ollama',
+      'sky ai:chat -p lm-studio                 # Use LM Studio',
+      'sky ai:chat -p ollama -M deepseek-r1     # Ollama with specific model',
+      'sky ai:chat --days 14                    # Include 14 days of context',
+      'sky ai:chat --ephemeral                   # Chat without saving to file',
+    ],
+    params,
+  }
+
+  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    const { output, config, env } = context
+    const { provider, model, days, inspectInitialContext, category, when, server } = args
+    let { log, ephemeral } = args
+    let { message: initialMessage } = args
+
+    const timeDir = <string>config.DIR_TIME
+    const dataDir = <string>config.DIR_TRACKING
+
+    // Resolve provider and model
+    const resolvedProvider = (provider || 'claude').toLowerCase() as Provider
+    const resolvedModel = model || PROVIDER_DEFAULTS[resolvedProvider]
+    const languageModel = getLanguageModel(resolvedProvider, resolvedModel)
+
+    output.log(`Gathering context from last ${days} days...`)
+
+    // Get current notebook time
+    let t0 = performance.now()
+    const now = await fetchNow()
+    const today = when?.plainDate ?? now.plainDateTime.plainDate
+    const startTime = now.plainDateTime
+    if (server) output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
+
+    // Gather all context (summaries, health, prices)
+    t0 = performance.now()
+    const ctx = await gatherContext(today, timeDir, dataDir, days)
+    if (server) output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
+
+    const baseDir = <string>config.DIR_BASE
+
+    // Build context: either from the running server or by building MarkdownStore locally
+    let store: MarkdownStore | null = null
+    let initialCollection: DomainCollection | null = null
+    let allFiles: string[] = []
+
+    if (server) {
+      // Server mode: POST /context executes GraphQL + resolves relationships on the
+      // server (which already has MarkdownStore built), returning documents with markdown.
+      // Skips local MarkdownStore.build() (~20k files).
+      output.log(colors.dim(`[server] Fetching context from server...`))
+
+      const prevStart = today.addDays(-(days - 1))
+      const yesterday = today.addDays(-1)
+
+      // Parallel: fetch all four sets of documents from server at once
+      t0 = performance.now()
+      const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
+        fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
+        fetchContextFromServer(
+          `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
+          0,
+        ),
+        fetchContextFromServer(`{ goals { path } }`, 0),
+        fetchContextFromServer(`{ decisions(where: { status: "pending" }) { path } }`, 0),
+      ])
+      output.log(
+        colors.dim(
+          `[server] POST /context x4: ${(performance.now() - t0).toFixed(
+            0,
+          )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
+        ),
+      )
+
+      // Group previous docs by date and apply per-day strategy
+      const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
+      for (const d of prevDocsRaw) {
+        if (!d.path.includes('/time/')) continue
+        const date = parseDateFromDayPath(d.path)?.toString()
+        if (!date) continue
+        const list = byDate.get(date) ?? []
+        list.push(d)
+        byDate.set(date, list)
+      }
+
+      const prevDocs: Array<{ doc: Document; path: string }> = []
+      for (const [, files] of byDate) {
+        const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
+        if (hasSummary) {
+          prevDocs.push(...files.filter((f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/')))
+        } else {
+          prevDocs.push(...files)
+        }
+      }
+
+      // Deduplicate all docs by path
+      const seen = new Set<string>()
+      const allDocs: Array<{ doc: Document; path: string }> = []
+      for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
+        if (!seen.has(d.path)) {
+          seen.add(d.path)
+          allDocs.push(d)
+        }
+      }
+
+      allFiles = allDocs.map((d) => d.path)
+
+      if (inspectInitialContext) {
+        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+        for (const f of sorted) {
+          output.log(f)
+        }
+        return CommandResult.success({ turns: 0 })
+      }
+
+      t0 = performance.now()
+      initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
+      output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
+    } else {
+      // Local mode: build MarkdownStore and query locally
+      store = await MarkdownStore.build({
+        peopleDirs: [<string>config.DIR_PEOPLE, <string>config.DIR_PEOPLE_OLD],
+        orgDirs: [<string>config.DIR_ORGS],
+        projectsDir: <string>config.DIR_PROJECTS,
+        decisionsDir: <string>config.DIR_DECISIONS,
+        goalsDir: <string>config.DIR_GOALS,
+        ideasDir: <string>config.DIR_IDEAS,
+        timeDirs: [timeDir],
+      })
+
+      // Gather activity via GraphQL queries on the store
+      output.log(`Loading documents...`)
+
+      // Today: all files
+      const todayResult = await executeQuery<{ documents: Array<{ path: string }> }>(
+        `{ documents(where: { date: "${today}" }) { path } }`,
+        store,
+      )
+      const todayPaths = todayResult.data?.documents?.map((d) => d.path) ?? []
+
+      // Previous days: get all files, then apply per-day strategy
+      const prevStart = today.addDays(-(days - 1))
+      const yesterday = today.addDays(-1)
+      const prevResult = await executeQuery<{ documents: Array<{ path: string }> }>(
+        `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
+        store,
+      )
+      const prevDocs = prevResult.data?.documents?.map((d) => d.path) ?? []
+
+      // Group previous docs by date
+      const byDate = new Map<string, string[]>()
+      for (const p of prevDocs) {
+        if (!p.includes('/time/')) continue
+        const date = parseDateFromDayPath(p)?.toString()
+        if (!date) continue
+        const list = byDate.get(date) ?? []
+        list.push(p)
+        byDate.set(date, list)
+      }
+
+      // Per-day strategy: if summary exists, use journals + summary; otherwise all files (excluding ai-chats)
+      const prevPaths: string[] = []
+      for (const [, files] of byDate) {
+        const hasSummary = files.some((f) => f.endsWith('/summary.md'))
+        if (hasSummary) {
+          prevPaths.push(...files.filter((f) => f.endsWith('/summary.md') || f.includes('/journal/')))
+        } else {
+          // Include ai-chats: tagged chats represent significant conversations worth referencing
+          // prevPaths.push(...files.filter((f) => !f.includes('/ai-chats/')))
+          prevPaths.push(...files)
+        }
+      }
+
+      allFiles = [...new Set([...todayPaths, ...prevPaths])]
+
+      if (inspectInitialContext) {
+        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+        for (const f of sorted) {
+          output.log(f)
+        }
+        return CommandResult.success({ turns: 0 })
+      }
+
+      // Load documents from files
+      const docs: Array<{ doc: Document; path: string }> = []
+      for (const file of allFiles) {
+        try {
+          const content = await readTextFile(file)
+          if (content.length < 50) continue
+          const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+          docs.push({ doc, path: file })
+        } catch {
+          // Skip unreadable files
+        }
+      }
+
+      // Add goals and pending decisions from store
+      for (const item of store.goals.getAll()) {
+        docs.push({ doc: item.doc, path: item.path })
+      }
+      for (const item of store.decisions.getPending()) {
+        docs.push({ doc: item.doc, path: item.path })
+      }
+
+      initialCollection = docs.length > 0 ? DomainCollection.fromDocuments(docs, store, { depth: 1 }) : null
+    }
+
+    output.log(`Found:`)
+    output.log(`  - ${allFiles.length} documents (including summaries)`)
+    output.log(`  - ${ctx.health.length} days of health data`)
+    output.log(`  - ${ctx.prices.length} days of price data`)
+
+    // Load system prompt
+    const promptContent = await readTextFile(PROMPT_FILE)
+    const renderInput: RenderInput = {
+      context: {
+        notebookDate: context.notebookNow.date,
+        notebookTime: context.notebookNow.time,
+        systemDate: context.systemNow.date,
+        systemTime: context.systemNow.time,
+        notebookTimezone: context.notebookNow.timezone,
+        systemTimezone: context.systemNow.timezone,
+      },
+    }
+    const { output: baseSystemPrompt } = renderPromptFile(promptContent, 'chat.prompt.md', renderInput)
+    let systemPrompt = baseSystemPrompt
+
+    // Conversation state
+    const turns: ConversationMessage[] = []
+    const messages: Message[] = []
+    const createdDate = formatDate(startTime)
+    let isFirstTurn = true
+    let contextPaths: string[] = initialCollection?.paths ?? []
+    let contextQueries: string[] = []
+    let queryRelevantPaths: ReadonlySet<string> = new Set()
+    let splitViewEnabled = false
+    let contextScrollOffset = 0
+
+    // Per-turn context log
+    interface ContextTurnLog {
+      turn: number
+      queries: string[]
+      context?: string[] // full context list (turn 1 only)
+      diff?: string[] // files added to universe
+      pruned: string[] // files cut by scorer
+    }
+    const contextLog: ContextTurnLog[] = []
+    let turnNumber = 0
+
+    function relPath(p: string): string {
+      return p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p
+    }
+
+    // Rebuild system prompt with latest context and record the turn log
+    function rebuildContext(newPaths?: string[]) {
+      const prevPaths = new Set(contextPaths)
+      contextPaths = initialCollection?.paths ?? []
+
+      let activityMarkdown: string | null = null
+      const turnPruned: string[] = []
+
+      if (initialCollection) {
+        const assembler = ContextAssembler.from(initialCollection, {
+          scorer: createRecencyTypeScorer(today, { priorityPaths: queryRelevantPaths }),
+          maxTokens: 300_000,
+        })
+        activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true })
+        output.log(
+          colors.dim(
+            `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ~${assembler.totalTokens} tokens`,
+          ),
+        )
+        for (const s of assembler.pruned) {
+          turnPruned.push(`${relPath(s.item.path)} (score=${s.score}, ~${s.tokens} tokens)`)
+        }
+      }
+
+      // Compute diff: files new to the universe this turn
+      const turnDiff: string[] = []
+      if (newPaths) {
+        for (const p of newPaths) {
+          if (!prevPaths.has(p)) turnDiff.push(relPath(p))
+        }
+      }
+
+      // Record turn log
+      const entry: ContextTurnLog = {
+        turn: turnNumber,
+        queries: [...contextQueries],
+        pruned: turnPruned,
+      }
+      if (turnNumber === 1) {
+        entry.context = contextPaths.map(relPath).sort()
+      }
+      if (turnDiff.length > 0) {
+        entry.diff = turnDiff
+      }
+      contextLog.push(entry)
+
+      // Changelog UI
+      if (turnNumber > 1 && (turnDiff.length > 0 || turnPruned.length > 0)) {
+        output.log(colors.dim('Context changed:'))
+        for (const d of turnDiff) {
+          output.log(colors.dim(`  + ${d}`))
+        }
+        for (const p of turnPruned) {
+          output.log(colors.dim(`  - ${p}`))
+        }
+      }
+
+      const contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
+      systemPrompt = baseSystemPrompt + '\n\n' + contextPrompt
+    }
+
+    output.log('')
+    output.log(colors.bold('Ready.'))
+    output.log(
+      colors.dim(
+        '(Enter adds newline. Empty line + Enter sends. Ctrl+S save. Ctrl+L log. Ctrl+B split. Arrows scroll context.)',
+      ),
+    )
+    output.log('')
+
+    // Format user message with gray background for visual distinction
+    const BG_GRAY = '\x1b[48;5;237m'
+    const RESET = '\x1b[0m'
+    const cols = process.stdout.columns || 120
+    const formatUserMsg = (msg: string): string => {
+      const lines = msg.split('\n')
+      return lines
+        .map((line, i) => {
+          const prefix = i === 0 ? 'You: ' : '      '
+          const content = ` ${prefix}${line}`
+          const pad = Math.max(0, cols - content.length)
+          const coloredPrefix = i === 0 ? ` ${colors.cyan('You: ')}` : '       '
+          return `${BG_GRAY}${coloredPrefix}${line}${' '.repeat(pad)}${RESET}`
+        })
+        .join('\n')
+    }
+
+    // Conversation loop
+    while (true) {
+      // Get user input
+      let userMessage: string
+
+      if (initialMessage) {
+        userMessage = initialMessage
+        initialMessage = undefined // Only use once
+        output.log(formatUserMsg(userMessage))
+        output.log('')
+      } else {
+        const contextFiles = contextPaths.map((p) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p)).sort()
+
+        const promptResult = await promptWithInk({
+          saveOnExit: !ephemeral,
+          logToDay: log,
+          splitViewEnabled,
+          contextScrollOffset,
+          conversation: turns,
+          contextFiles,
+          summarizePaste: async (text) => {
+            const { text: summary } = await generateText({
+              model: anthropic('claude-haiku-4-5-20251001'),
+              prompt: `Summarize this pasted text in 5-7 words. Reply with ONLY the summary, no quotes or punctuation:\n\n${text.slice(
+                0,
+                2000,
+              )}`,
+            })
+            return summary.trim()
+          },
+        })
+        ephemeral = !promptResult.saveOnExit
+        log = promptResult.logToDay
+        splitViewEnabled = promptResult.splitViewEnabled
+        contextScrollOffset = promptResult.contextScrollOffset
+        const response = promptResult.message
+        if (!response || response.trim() === '') {
+          break
+        }
+        output.log(formatUserMsg(response))
+        output.log('')
+        userMessage = response.trim()
+      }
+
+      // Handle slash commands
+      if (userMessage === '/save') {
+        ephemeral = false
+        log = false
+        output.log(colors.green('Mode: [SAVE ON] [LOG OFF]'))
+        continue
+      }
+      if (userMessage === '/nosave') {
+        ephemeral = true
+        log = false
+        output.log(colors.yellow('Mode: [SAVE OFF] [LOG OFF]'))
+        continue
+      }
+      if (userMessage === '/log') {
+        log = true
+        ephemeral = false
+        output.log(colors.green('Mode: [SAVE ON] [LOG ON]'))
+        continue
+      }
+      if (userMessage === '/no-context') {
+        isFirstTurn = false
+        initialCollection = null
+        contextPaths = []
+        contextScrollOffset = 0
+        output.log(colors.dim('Context gathering skipped.'))
+        continue
+      }
+
+      // On first turn, gather targeted context via ai:context:files and merge
+      if (isFirstTurn) {
+        isFirstTurn = false
+        turnNumber = 1
+
+        output.log(colors.dim('Gathering context...'))
+
+        let newPaths: string[] | undefined
+        try {
+          const filesResult = await tasks.run<{ paths: string[]; query: string }>('ai:context:files', {
+            _: ['ai:context:files', userMessage],
+            provider: resolvedProvider,
+            model: resolvedModel,
+            ...(server ? { server: true } : {}),
+          })
+
+          if (filesResult.status === 'success' && filesResult.data?.paths?.length) {
+            if (filesResult.data.query) contextQueries.push(filesResult.data.query)
+            queryRelevantPaths = new Set(filesResult.data.paths)
+            newPaths = filesResult.data.paths
+            initialCollection = server
+              ? await mergePathsIntoCollectionViaServer(filesResult.data.paths, initialCollection)
+              : await mergePathsIntoCollection(filesResult.data.paths, initialCollection, store!)
+          }
+        } catch {
+          // ai:context:files failed — continue with initial context only
+        }
+
+        rebuildContext(newPaths)
+        output.log(colors.dim(`Context loaded (${initialCollection?.size ?? 0} documents)`))
+      } else {
+        // Subsequent turns — evolve queries if conversation direction shifted
+        turnNumber++
+        try {
+          const evolveResult = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
+            _: ['ai:context:evolve', userMessage],
+            queries: JSON.stringify(contextQueries),
+            conversation: JSON.stringify(turns.slice(-6)),
+          })
+
+          if (evolveResult.status === 'success' && evolveResult.data?.changed && evolveResult.data.queries.length > 0) {
+            output.log(colors.dim('Context shifting...'))
+            const prevQuerySet = new Set(contextQueries)
+            contextQueries = evolveResult.data.queries
+
+            // Only execute queries that are actually new or modified
+            const newQueries = evolveResult.data.queries.filter((q) => !prevQuerySet.has(q))
+            if (newQueries.length === 0) {
+              output.log(colors.dim('Queries unchanged, skipping re-execution.'))
+            }
+
+            const allNewPaths: string[] = []
+            for (const query of newQueries) {
+              try {
+                const execResult = await tasks.run('markdown:sel', {
+                  graphql: query,
+                  raw: true,
+                  ...(server ? { server: 'true' } : {}),
+                })
+                if (execResult.status === 'success' && execResult.data?.paths?.length) {
+                  allNewPaths.push(...execResult.data.paths)
+                  initialCollection = server
+                    ? await mergePathsIntoCollectionViaServer(execResult.data.paths, initialCollection)
+                    : await mergePathsIntoCollection(execResult.data.paths, initialCollection, store!)
+                }
+              } catch {
+                // Skip failed queries
+              }
+            }
+
+            // Update priority paths to latest query results
+            queryRelevantPaths = new Set(initialCollection?.paths ?? [])
+            rebuildContext(allNewPaths)
+          }
+        } catch {
+          // evolve failed — continue with existing context
+        }
+      }
+
+      // Every turn — add the user's actual message
+      messages.push({ role: 'user', content: userMessage })
+
+      // Record user turn (always just the user's actual message, not context)
+      turns.push({ role: 'user', content: userMessage })
+
+      // Get AI response
+      output.log(colors.dim('Thinking...'))
+
+      try {
+        const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
+        const notebookTools = await createNotebookTools(tasks)
+        const allTools = { ...webTools, ...notebookTools }
+
+        const onStepFinish = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
+          for (const tc of toolCalls ?? []) {
+            if (tc.toolName === 'web_search') {
+              const input = tc.input as { query: string }
+              output.log(colors.dim(`Searching: "${input.query}"...`))
+            } else if (tc.toolName === 'web_fetch') {
+              const input = tc.input as { url: string }
+              output.log(colors.dim(`Reading: ${input.url}`))
+            } else {
+              output.log(colors.dim(`Running: ${tc.toolName}...`))
+            }
+          }
+        }
+
+        let result = await generateText({
+          model: languageModel,
+          system: systemPrompt.trim(),
+          messages,
+          tools: allTools,
+          stopWhen: stepCountIs(5),
+          onStepFinish,
+        })
+
+        // Handle tool approval requests (e.g., slack_post with needsApproval)
+        const deniedTools = new Set<string>()
+        const maxApprovalRounds = 3
+        let approvalRound = 0
+        // deno-lint-ignore no-explicit-any
+        while (result.content?.some((part: any) => part.type === 'tool-approval-request')) {
+          if (++approvalRound > maxApprovalRounds) {
+            output.log(colors.dim('Too many approval requests, moving on.'))
+            break
+          }
+
+          // deno-lint-ignore no-explicit-any
+          messages.push(...(result.response.messages as any))
+
+          // deno-lint-ignore no-explicit-any
+          const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
+          const approvals: Array<{
+            type: 'tool-approval-response'
+            approvalId: string
+            approved: boolean
+            reason?: string
+          }> = []
+
+          for (const request of approvalRequests) {
+            // deno-lint-ignore no-explicit-any
+            const { approvalId, toolCall } = request as any
+
+            // Auto-deny tools the user already rejected this turn
+            if (deniedTools.has(toolCall.toolName)) {
+              approvals.push({
+                type: 'tool-approval-response',
+                approvalId,
+                approved: false,
+                reason: `User already denied ${toolCall.toolName}. Do not request it again.`,
+              })
+              continue
+            }
+
+            // Use task-specific formatter if available, generic fallback otherwise
+            const formatter = getApprovalFormatter(toolCall.toolName)
+            if (formatter) {
+              formatter(toolCall.input as Record<string, unknown>, output)
+            } else {
+              output.log('')
+              output.log(colors.bold(`Approve ${toolCall.toolName}?`))
+              const input = toolCall.input as Record<string, unknown>
+              for (const [key, value] of Object.entries(input)) {
+                if (typeof value === 'string' && value.includes('\n')) {
+                  output.log(colors.dim(`${key}:`))
+                  output.log(value)
+                } else {
+                  output.log(colors.dim(`${key}: `) + String(value))
+                }
+              }
+            }
+
+            const approved = await p.confirm({ message: 'Approve?' })
+            if (p.isCancel(approved)) {
+              deniedTools.add(toolCall.toolName)
+              approvals.push({
+                type: 'tool-approval-response',
+                approvalId,
+                approved: false,
+                reason: 'User cancelled. Do not request this tool again.',
+              })
+            } else if (!approved) {
+              deniedTools.add(toolCall.toolName)
+              approvals.push({
+                type: 'tool-approval-response',
+                approvalId,
+                approved: false,
+                reason: 'User declined. Do not request this tool again.',
+              })
+            } else {
+              approvals.push({
+                type: 'tool-approval-response',
+                approvalId,
+                approved: true,
+                reason: 'User approved',
+              })
+            }
+          }
+
+          // deno-lint-ignore no-explicit-any
+          messages.push({ role: 'tool', content: approvals } as any)
+
+          result = await generateText({
+            model: languageModel,
+            system: systemPrompt.trim(),
+            messages,
+            tools: allTools,
+            stopWhen: stepCountIs(5),
+            onStepFinish,
+          })
+        }
+
+        // Collect source URLs from web search tool results
+        const sourceUrls: string[] = []
+        for (const step of result.steps ?? []) {
+          for (const tr of step.toolResults ?? []) {
+            if (tr.toolName === 'web_search' && Array.isArray(tr.output)) {
+              for (const r of tr.output as SearchResult[]) {
+                if (r.url) sourceUrls.push(r.url)
+              }
+            }
+          }
+        }
+
+        // Build assistant content with optional sources
+        let assistantContent = result.text
+        if (sourceUrls.length > 0) {
+          const uniqueUrls = [...new Set(sourceUrls)]
+          assistantContent += '\n\nSources:\n' + uniqueUrls.map((u) => `- ${u}`).join('\n')
+        }
+
+        turns.push({ role: 'assistant', content: assistantContent })
+        // Push all response messages (including tool_use/tool_result pairs) to preserve valid conversation history
+        // deno-lint-ignore no-explicit-any
+        messages.push(...(result.response.messages as any))
+
+        output.log('')
+        output.log(result.text)
+        if (sourceUrls.length > 0) {
+          const uniqueUrls = [...new Set(sourceUrls)]
+          output.log('')
+          output.log(colors.dim('Sources:'))
+          for (const url of uniqueUrls) {
+            output.log(colors.dim(`  - ${url}`))
+          }
+        }
+        output.log('')
+      } catch (err) {
+        output.log(colors.red(`Error: ${(err as Error).message}`))
+      }
+    }
+
+    // Save conversation if there were any turns (unless --ephemeral)
+    if (turns.length > 0 && !ephemeral) {
+      const endTime = (await fetchNow()).plainDateTime
+      const updatedDate = formatDate(endTime)
+
+      // Create save path: {timeDir}/{dayDir}/actions/ai-chats/{filename}.md
+      const aiDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
+      if (!(await exists(aiDir))) {
+        await mkdir(aiDir, { recursive: true })
+      }
+
+      const summary = extractSummary(turns)
+      const filename = formatFilename(startTime, summary)
+      const savePath = path.join(aiDir, filename)
+
+      const chatDoc = ChatDocument.create({
+        summary,
+        messages: turns,
+        created: createdDate,
+        updated: updatedDate,
+        provider: resolvedProvider,
+        model: resolvedModel,
+      })
+      let markdown = chatDoc.toMarkdown()
+
+      // Append per-turn context log as hidden comment
+      if (contextLog.length > 0) {
+        let comment = '\n\n\n\n\n\n\n\n'
+        for (const entry of contextLog) {
+          comment += `<!-- TURN ${entry.turn}\n`
+          if (entry.queries.length > 0) {
+            comment += 'QUERIES:\n' + entry.queries.map((q) => ` - ${q}`).join('\n') + '\n'
+          }
+          if (entry.context) {
+            comment += 'CONTEXT:\n' + entry.context.map((p) => ` - ${p}`).join('\n') + '\n'
+          }
+          if (entry.diff && entry.diff.length > 0) {
+            comment += 'DIFF:\n' + entry.diff.map((p) => ` + ${p}`).join('\n') + '\n'
+          }
+          if (entry.pruned.length > 0) {
+            comment += 'PRUNED:\n' + entry.pruned.map((p) => ` - ${p}`).join('\n') + '\n'
+          }
+          comment += '-->\n\n'
+        }
+        markdown += comment
+      }
+
+      await writeTextFile(savePath, markdown)
+
+      output.log('')
+      output.log(colors.green(`Conversation saved to ${savePath}`))
+      const exchangeCount = Math.floor(turns.length / 2)
+      output.log(colors.dim(`${exchangeCount} turn${exchangeCount !== 1 ? 's' : ''} recorded`))
+
+      // Optionally log to day file
+      if (log) {
+        try {
+          const relativePath = `actions/ai-chats/${filename}`
+          const key = `${startTime.time} > AI Chat`
+          const value = `[${summary}](${relativePath})`
+          const cat = category || 'Professional'
+
+          let dayDoc = await readDay(today)
+          dayDoc = dayDoc.setCompleteItem(key, value, { time: startTime.time, category: cat })
+          await writeDay(dayDoc)
+
+          output.log(colors.dim(`Logged to day file under "${cat} Complete"`))
+        } catch (err) {
+          output.log(colors.yellow(`Warning: Failed to log to day file: ${(err as Error).message}`))
+        }
+      }
+
+      return CommandResult.success({ saved: savePath, turns: exchangeCount })
+    }
+
+    output.log('')
+    if (ephemeral && turns.length > 0) {
+      output.log(colors.dim(`${Math.floor(turns.length / 2)} turns (not saved)`))
+    } else {
+      output.log(colors.dim('No conversation to save.'))
+    }
+    return CommandResult.success({ turns: Math.floor(turns.length / 2) })
+  }
+}

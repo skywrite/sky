@@ -1,0 +1,30 @@
+/**
+ * Filter predicates for DomainCollection query.
+ *
+ * These functions test whether a document matches various criteria.
+ * They are the core filtering logic, independent of GraphQL or selectors.
+ */
+
+// Duration parsing
+export { parseDuration } from './duration.ts'
+
+// Date filters
+export { getDateFromPath, getDocumentDate, matchesDate, matchesDateRange, matchesRecent } from './date.ts'
+
+// Tag filters
+export { matchesTagContains, matchesTagContainsAll, matchesTagContainsAny, matchesTagPrefix } from './tags.ts'
+
+// Involvement filter
+export { matchesInvolves, type NameResolver } from './involves.ts'
+
+// Decision filters
+export { matchesDecided, matchesPending } from './decision.ts'
+
+// Generic field filters
+export { matchesContains, matchesExact, matchesNull, matchesPrefix, matchesSubstring, matchesSuffix } from './field.ts'
+
+// Body/content filters
+export { matchesBodyContains, matchesBodyMatches } from './body.ts'
+
+// Rel (relationship) filters
+export { matchesRelContains, matchesRelPrefix } from './rel.ts'

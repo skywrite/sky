@@ -1,0 +1,581 @@
+/**
+ * Generate GraphQL schema from document models.
+ *
+ * Usage: sky dev:schema:generate
+ *
+ * Outputs to: _shared-ts/models/DomainCollection/query/schema.graphql
+ */
+
+import { writeTextFile } from '#shared/fs/mod.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+
+// -----------------------------------------------------------------------------
+// Schema Definition (derived from document models)
+// -----------------------------------------------------------------------------
+
+interface FieldDef {
+  type: string
+  description?: string
+  nullable?: boolean
+}
+
+interface TypeDef {
+  description?: string
+  fields: Record<string, FieldDef>
+}
+
+interface FilterDef {
+  description?: string
+  fields: Record<string, string>
+}
+
+// Document types derived from _shared-ts/models/*/document/mod.ts
+const DOCUMENT_TYPES: Record<string, TypeDef> = {
+  Meeting: {
+    description: 'Meeting notes with attendees and outcomes',
+    fields: {
+      who: { type: 'String', description: 'Attendees (comma-separated names)' },
+      when: { type: 'String', description: 'Time of meeting (HH:MM)' },
+      medium: { type: 'String', description: 'Meeting type: Zoom, Phone, In Person, etc.' },
+      context: { type: 'String', description: 'Context or purpose', nullable: true },
+      summary: { type: 'String', description: 'Brief summary', nullable: true },
+      where: { type: 'String', description: 'Location (for in-person)', nullable: true },
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this meeting occurred on', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Video: {
+    description: 'Video recording with transcript and summary',
+    fields: {
+      from: { type: 'String', description: 'Presenter/creator', nullable: true },
+      to: { type: 'String', description: 'Intended audience', nullable: true },
+      when: { type: 'String', description: 'Time (HH:MM)' },
+      medium: { type: 'String', description: 'Video platform: Video, Loom, YouTube, etc.' },
+      summary: { type: 'String', description: 'Brief summary', nullable: true },
+      url: { type: 'String', description: 'Video URL', nullable: true },
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this video was recorded on', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Message: {
+    description: 'Messages from Slack, email, text, etc.',
+    fields: {
+      from: { type: 'String', description: 'Sender name', nullable: true },
+      to: { type: 'String', description: 'Recipient(s)', nullable: true },
+      when: { type: 'String', description: 'Time (HH:MM)' },
+      medium: { type: 'String', description: 'Channel: Slack, Email, iMessage, etc.' },
+      summary: { type: 'String', description: 'Brief summary', nullable: true },
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this message was sent on', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Person: {
+    description: 'Contact/person record',
+    fields: {
+      name: { type: 'String!', description: 'Primary name' },
+      names: { type: '[String!]!', description: 'All known names/aliases' },
+      org: { type: 'String', description: 'Primary current organization', nullable: true },
+      orgs: { type: 'PersonOrgs!', description: 'Current and past organizations' },
+      title: { type: 'String', description: 'Job title', nullable: true },
+      location: { type: 'String', description: 'Location', nullable: true },
+      met: { type: 'String', description: 'When first met (date or year)', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Org: {
+    description: 'Organization/company record',
+    fields: {
+      name: { type: 'String!', description: 'Organization name' },
+      slug: { type: 'String', description: 'URL-friendly identifier', nullable: true },
+      site: { type: 'String', description: 'Website URL', nullable: true },
+      sector: { type: 'String', description: 'Industry sector', nullable: true },
+      subcategory: { type: 'String', description: 'Subcategory', nullable: true },
+      description: { type: 'String', description: 'Brief description', nullable: true },
+      kind: { type: 'String', description: 'Type: company, government, nonprofit' },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Project: {
+    description: 'Project with status tracking',
+    fields: {
+      name: { type: 'String!', description: 'Project name' },
+      status: { type: 'String!', description: 'Status: open, hold, completed, canceled, whiteboard' },
+      closedReason: { type: 'String', description: 'Reason for closure', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Decision: {
+    description: 'Decision record with pending/resolved status',
+    fields: {
+      name: { type: 'String!', description: 'Decision identifier/slug' },
+      summary: { type: 'String', description: 'Human-readable summary', nullable: true },
+      identified: { type: 'String', description: 'When identified (ISO datetime)', nullable: true },
+      target: { type: 'String', description: 'Target decision date', nullable: true },
+      resolved: { type: 'String', description: 'When resolved (null if pending)', nullable: true },
+      isPending: { type: 'Boolean!', description: 'True if not yet resolved' },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Goal: {
+    description: 'Goal/objective',
+    fields: {
+      name: { type: 'String!', description: 'Goal name' },
+      status: { type: 'String', description: 'Goal status', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Place: {
+    description: 'Place/location record',
+    fields: {
+      name: { type: 'String!', description: 'Place name' },
+      type: { type: 'String!', description: 'Place type: eat, drink, stay, visit, etc.' },
+      address: { type: 'String', description: 'Full address', nullable: true },
+      site: { type: 'String', description: 'Website URL', nullable: true },
+      googleMapsUrl: { type: 'String', description: 'Google Maps URL', nullable: true },
+      country: { type: 'String', description: 'Country code', nullable: true },
+      city: { type: 'String', description: 'City name', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Idea: {
+    description: 'Idea with lifecycle tracking (draft/exploring/actioned/archived)',
+    fields: {
+      name: { type: 'String!', description: 'Idea identifier/slug' },
+      status: { type: 'String!', description: 'Status: draft, exploring, actioned, archived (derived from path)' },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Day: {
+    description: 'Daily note/log',
+    fields: {
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      year: { type: 'Int!', description: 'Year' },
+      month: { type: 'Int!', description: 'Month (1-12)' },
+      started: { type: 'String', description: 'Day start time', nullable: true },
+      ended: { type: 'String', description: 'Day end time', nullable: true },
+      location: { type: 'String', description: 'Location', nullable: true },
+      tz: { type: 'String', description: 'Timezone', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Journal: {
+    description: 'Journal entry',
+    fields: {
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this journal entry was written on', nullable: true },
+      time: { type: 'String', description: 'Time (HH:MM)', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+}
+
+// Auxiliary types (nested objects)
+const AUXILIARY_TYPES: Record<string, TypeDef> = {
+  PersonOrgs: {
+    description: 'Current and past organizations for a person',
+    fields: {
+      current: { type: '[String!]!', description: 'Current organizations' },
+      past: { type: '[String!]!', description: 'Past organizations' },
+    },
+  },
+}
+
+// Filter inputs for each type
+const FILTER_TYPES: Record<string, FilterDef> = {
+  MeetingFilter: {
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      recent: 'String',
+      year: 'Int',
+      month: 'Int',
+      who_contains: 'String',
+      who_not_contains: 'String',
+      medium: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      tags_not_contains: 'String',
+      body_contains: 'String',
+      involves: 'String',
+      rel_contains: 'String',
+    },
+  },
+  VideoFilter: {
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      recent: 'String',
+      from_contains: 'String',
+      medium: 'String',
+      summary_contains: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      body_contains: 'String',
+      involves: 'String',
+      rel_contains: 'String',
+    },
+  },
+  MessageFilter: {
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      recent: 'String',
+      from: 'String',
+      from_not: 'String',
+      to_contains: 'String',
+      to_not_contains: 'String',
+      medium: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      body_contains: 'String',
+      involves: 'String',
+      rel_contains: 'String',
+    },
+  },
+  PersonFilter: {
+    fields: {
+      name: 'String',
+      name_contains: 'String',
+      org: 'String',
+      org_contains: 'String',
+      title_contains: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+    },
+  },
+  OrgFilter: {
+    fields: {
+      name: 'String',
+      name_contains: 'String',
+      sector: 'String',
+      kind: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+    },
+  },
+  ProjectFilter: {
+    fields: {
+      name: 'String',
+      name_contains: 'String',
+      status: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      involves: 'String',
+    },
+  },
+  DecisionFilter: {
+    fields: {
+      name_contains: 'String',
+      pending: 'Boolean',
+      decided: 'Boolean',
+      identified_gte: 'String',
+      identified_lte: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      involves: 'String',
+    },
+  },
+  GoalFilter: {
+    fields: {
+      name_contains: 'String',
+      status: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      involves: 'String',
+    },
+  },
+  IdeaFilter: {
+    fields: {
+      name_contains: 'String',
+      status: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      involves: 'String',
+    },
+  },
+  PlaceFilter: {
+    fields: {
+      name_contains: 'String',
+      type: 'String',
+      country: 'String',
+      city_contains: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+    },
+  },
+  DayFilter: {
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      recent: 'String',
+      year: 'Int',
+      month: 'Int',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+    },
+  },
+  JournalFilter: {
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      recent: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      body_contains: 'String',
+      involves: 'String',
+      rel_contains: 'String',
+    },
+  },
+  DocumentFilter: {
+    description: 'Filter for querying across all document types',
+    fields: {
+      date: 'String',
+      date_gte: 'String',
+      date_lte: 'String',
+      type: 'String',
+      involves: 'String',
+      tags_contains: 'String',
+      tags_contains_any: '[String!]',
+      tags_contains_all: '[String!]',
+      tags_starts_with: 'String',
+      body_contains: 'String',
+      recent: 'String',
+      rel_contains: 'String',
+    },
+  },
+}
+
+// -----------------------------------------------------------------------------
+// Schema Generation
+// -----------------------------------------------------------------------------
+
+function generateSchema(): string {
+  const lines: string[] = []
+
+  // Header
+  lines.push('# ' + '='.repeat(77))
+  lines.push('# DO NOT EDIT THIS FILE DIRECTLY!')
+  lines.push('# ' + '='.repeat(77))
+  lines.push('#')
+  lines.push('# This file is auto-generated by: sky dev:schema:generate')
+  lines.push('# Source of truth: notebook/commands/all/dev/schema-generate.ts')
+  lines.push('#')
+  lines.push('# To modify the schema, edit schema-generate.ts and re-run the generator.')
+  lines.push('#')
+  lines.push(`# Generated at: ${new Date().toISOString()}`)
+  lines.push('# ' + '='.repeat(77))
+  lines.push('')
+
+  // Query type
+  lines.push('type Query {')
+  lines.push('  # Document queries')
+  for (const typeName of Object.keys(DOCUMENT_TYPES)) {
+    const pluralName = pluralize(typeName)
+    const filterName = `${typeName}Filter`
+    lines.push(`  ${pluralName}(where: ${filterName}, limit: Int): [${typeName}!]!`)
+  }
+  lines.push('')
+  lines.push('  # Generic query across all document types')
+  lines.push('  documents(where: DocumentFilter, limit: Int): [Document!]!')
+  lines.push('}')
+  lines.push('')
+
+  // Separator
+  lines.push('# ' + '='.repeat(77))
+  lines.push('# Document Types')
+  lines.push('# ' + '='.repeat(77))
+  lines.push('')
+
+  // Document types
+  for (const [typeName, typeDef] of Object.entries(DOCUMENT_TYPES)) {
+    if (typeDef.description) {
+      lines.push(`"""${typeDef.description}"""`)
+    }
+    lines.push(`type ${typeName} {`)
+    for (const [fieldName, fieldDef] of Object.entries(typeDef.fields)) {
+      const typeStr = fieldDef.nullable ? fieldDef.type : fieldDef.type.replace(/!$/, '') + '!'
+      const desc = fieldDef.description ? `  # ${fieldDef.description}` : ''
+      // Make nullable fields not have !
+      const finalType = fieldDef.nullable ? fieldDef.type.replace(/!$/, '') : typeStr
+      lines.push(`  ${fieldName}: ${finalType}${desc}`)
+    }
+    lines.push('}')
+    lines.push('')
+  }
+
+  // Generic Document type
+  lines.push('"""Generic document for cross-type queries"""')
+  lines.push('type Document {')
+  lines.push('  type: String!  # Document type: meeting, message, person, etc.')
+  lines.push('  markdown: String!  # Full document content')
+  lines.push('  path: String!  # File path')
+  lines.push('}')
+  lines.push('')
+
+  // Auxiliary types (nested objects)
+  if (Object.keys(AUXILIARY_TYPES).length > 0) {
+    lines.push('# ' + '='.repeat(77))
+    lines.push('# Auxiliary Types')
+    lines.push('# ' + '='.repeat(77))
+    lines.push('')
+
+    for (const [typeName, typeDef] of Object.entries(AUXILIARY_TYPES)) {
+      if (typeDef.description) {
+        lines.push(`"""${typeDef.description}"""`)
+      }
+      lines.push(`type ${typeName} {`)
+      for (const [fieldName, fieldDef] of Object.entries(typeDef.fields)) {
+        const typeStr = fieldDef.nullable ? fieldDef.type : fieldDef.type.replace(/!$/, '') + '!'
+        const desc = fieldDef.description ? `  # ${fieldDef.description}` : ''
+        const finalType = fieldDef.nullable ? fieldDef.type.replace(/!$/, '') : typeStr
+        lines.push(`  ${fieldName}: ${finalType}${desc}`)
+      }
+      lines.push('}')
+      lines.push('')
+    }
+  }
+
+  // Separator
+  lines.push('# ' + '='.repeat(77))
+  lines.push('# Filter Inputs')
+  lines.push('# ' + '='.repeat(77))
+  lines.push('')
+
+  // Filter types
+  for (const [filterName, filterDef] of Object.entries(FILTER_TYPES)) {
+    if (filterDef.description) {
+      lines.push(`"""${filterDef.description}"""`)
+    }
+    lines.push(`input ${filterName} {`)
+    for (const [fieldName, fieldType] of Object.entries(filterDef.fields)) {
+      lines.push(`  ${fieldName}: ${fieldType}`)
+    }
+    lines.push('}')
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+function pluralize(typeName: string): string {
+  switch (typeName) {
+    case 'Person':
+      return 'people'
+    case 'Day':
+      return 'days'
+    default:
+      return typeName.toLowerCase() + 's'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Output path
+// -----------------------------------------------------------------------------
+
+// TODO: BUG — needs ../../../../ (4 levels up from commands/all/dev/schema/), not ../../../
+// Currently resolves to commands/_shared-ts/ instead of notebook/_shared-ts/
+const OUTPUT_PATH = new URL('../../../_shared-ts/models/DomainCollection/query/schema.graphql', import.meta.url)
+  .pathname
+
+// -----------------------------------------------------------------------------
+// Command
+// -----------------------------------------------------------------------------
+
+export default class DevGenerateSchemaTask extends Command {
+  static override description: CommandDescription = {
+    name: 'dev:schema:generate',
+    description: 'Generate GraphQL schema from document models',
+    descriptionLong: [
+      'Generates a GraphQL schema file from the document model definitions.',
+      '',
+      'Output: _shared-ts/models/DomainCollection/query/schema.graphql',
+      '',
+      'The schema is derived from the typed accessors in each document class:',
+      '- Meeting, Video, Message, Person, Org, Project, Decision, Goal, Day, Journal',
+    ],
+    usage: ['sky dev:schema:generate'],
+  }
+
+  async run({ context }: CommandArgs): Promise<CommandResult> {
+    const { output } = context
+
+    output.log('Generating GraphQL schema from document models...')
+
+    const schema = generateSchema()
+
+    await writeTextFile(OUTPUT_PATH, schema)
+
+    output.log(`Written to: ${OUTPUT_PATH}`)
+    output.log(`Generated ${Object.keys(DOCUMENT_TYPES).length} types and ${Object.keys(FILTER_TYPES).length} filters`)
+
+    return CommandResult.success()
+  }
+}

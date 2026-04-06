@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "strict": true,
+    "noImplicitAny": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "allowArbitraryExtensions": true,
+    "types": ["bun-types"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": [
+    "node_modules",
+    "_build",
+    "dist",
+    "deps/cache.ts",
+    "_shared-ts/fs/watch.ts",
+    "mcp/transports/StdioTransport.ts"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "U0123LOCALX",
+  "name": "jsmith",
+  "real_name": "Jane Smith",
+  "display_name": "Jane",
+  "email": "jane@acme.io",
+  "title": "Product Manager",
+  "tz": "America/New_York",
+  "is_bot": false,
+  "deleted": false
+}

@@ -1,0 +1,235 @@
+import * as path from 'node:path'
+import { DIR_BASE, DIR_HEARTBEAT_FOLLOW } from '#config'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { computePreviousRef, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import MessageDocument from '#shared/models/Message/mod.ts'
+import Follow from '#shared/models/Follow/mod.ts'
+import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import { resolveRecipient } from '#commands/all/slack/cli/export/helpers/mod.ts'
+import { copySlackFilesToAttachments } from '#commands/all/slack/lib/copyToAttachments.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+
+const params = {
+  file: Flag.string('Check a specific follow by filename (skip due filtering)', { short: 'f' }),
+}
+
+type Params = InferParams<typeof params>
+
+type CheckSummary = { fileName: string; newReplies: number }
+type Result = { checked: number; skipped: string[]; errors: string[]; withActivity: CheckSummary[] }
+
+declare module '#commands/lib/core/CommandTypesRegistry.ts' {
+  interface CommandTypesRegistry {
+    'follow:slack:check': {
+      params: Params
+      result: Result
+    }
+  }
+}
+
+export default class FollowSlackCheckTask extends Command {
+  static override description: CommandDescription = {
+    name: 'follow:slack:check',
+    description: 'Poll due follows for new activity.',
+    descriptionLong: [
+      'Loads the follow registry, finds follows past their check interval,',
+      'polls Slack for new thread replies, saves new messages, and updates lastChecked.',
+    ],
+    usage: ['sky follow:slack:check', 'sky follow:slack:check --file slack_dm-with-jp_1771210504_352289'],
+    params,
+  }
+
+  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    const { output } = context
+
+    if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
+      output.log('No follow directory found.')
+      return CommandResult.success({ checked: 0, skipped: [], errors: [], withActivity: [] })
+    }
+
+    const now = fetchNowSync()
+    const nowDt = now.plainDateTime
+    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
+
+    // Get entries to check
+    let entries = args.file
+      ? (() => {
+          const found = registry.findByFileName(args.file)
+          return found ? [{ ...found, fileName: args.file }] : []
+        })()
+      : registry.getDue(nowDt)
+
+    if (entries.length === 0) {
+      return CommandResult.success({ checked: 0, skipped: [], errors: [], withActivity: [] })
+    }
+
+    // Filter to Slack-only for now
+    entries = entries.filter((e) => e.follow.source === 'Slack')
+
+    const withActivity: CheckSummary[] = []
+    const skipped: string[] = []
+    const errors: string[] = []
+
+    for (const entry of entries) {
+      try {
+        let { follow } = entry
+        const { path: followPath, fileName } = entry
+
+        if (!follow.ref.link) {
+          output.log(`[check] ${fileName}: no link in ref, skipping`)
+          skipped.push(`${fileName}: no link`)
+          continue
+        }
+
+        // 1. Poll Slack
+        const exportResult = await tasks.run('slack:cli:export', { link: follow.ref.link })
+        if (!exportResult.ok || !exportResult.data) {
+          output.log(`[check] ${fileName}: export failed — ${exportResult.message}`)
+          skipped.push(`${fileName}: ${exportResult.message}`)
+          continue
+        }
+
+        const data = exportResult.data
+
+        // 2. Detect new replies since lastChecked
+        // Normalize extended hours (e.g. 2026-02-24 31:04 → 2026-02-25 07:04)
+        // so the string comparison matches Slack's wall-clock timeLabel format
+        const lastCheckedNorm = follow.lastChecked?.normalize()
+        const lastCheckedStr = lastCheckedNorm ? `${lastCheckedNorm.date} ${lastCheckedNorm.time}` : ''
+
+        const newReplies = (data.thread?.replies ?? []).filter((r) =>
+          r.timeLabel ? r.timeLabel > lastCheckedStr : false,
+        )
+
+        // 3. If new replies, create message via slack:new (handles merge, day entry, YAML preservation)
+        if (newReplies.length > 0) {
+          const latestReply = newReplies[newReplies.length - 1]
+          const from = latestReply.userName || latestReply.userId || '-'
+          const to = resolveRecipient(data, from)
+          const summary = `${follow.summary} (${newReplies.length} new)`
+
+          // Collect file attachments from new replies
+          const newReplyFiles = newReplies.flatMap((r) => r.files ?? [])
+
+          // Build markdown body: ## datetime - **name** for each new reply
+          const replyParts: string[] = []
+          for (const reply of newReplies) {
+            const who = reply.userName || reply.userId || '-'
+            replyParts.push(`## ${reply.timeLabel || reply.ts} - **${who}**`, '')
+            replyParts.push(reply.text || '(empty)', '', '')
+          }
+
+          // Compute previous as a time ref (DD/subpath, MM-DD/subpath, or YYYY-MM-DD/subpath)
+          const lastMsg = follow.messages.length > 0 ? follow.messages[follow.messages.length - 1] : undefined
+          const previous = lastMsg ? computePreviousRef(lastMsg.path, nowDt.plainDate) : undefined
+
+          // Inherit tags and rel from previous message file
+          let inheritedTags: string | undefined
+          let inheritedRel: unknown // rel can be string or array in YAML
+          if (lastMsg) {
+            try {
+              const prevDoc = MessageDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, lastMsg.path)))
+              inheritedTags = prevDoc.yaml['tags'] as string | undefined
+              inheritedRel = prevDoc.yaml['rel']
+            } catch {
+              /* previous file may not exist */
+            }
+          }
+
+          // Check if we already have a message file for today (same-day update)
+          const todayStr = nowDt.plainDate.toString()
+          const todayMessage = follow.messages.find((m) => m.date === todayStr)
+
+          if (todayMessage) {
+            // Same-day update: append new replies to existing file, don't touch day entry
+            const fullPath = path.join(DIR_BASE, todayMessage.path)
+            const oldDoc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
+            // Copy any new file attachments and merge with existing
+            const newAttachments =
+              newReplyFiles.length > 0 ? await copySlackFilesToAttachments(newReplyFiles, nowDt.plainDate, output) : []
+            const existingAttachments = oldDoc.attachments
+            const mergedAttachments = [...existingAttachments, ...newAttachments]
+            const updatedDoc = new MessageDocument(
+              {
+                ...oldDoc.yaml,
+                summary,
+                ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
+              },
+              oldDoc.markdown,
+            )
+            await writeTextFile(fullPath, updatedDoc.toMarkdown() + replyParts.join('\n'))
+          } else {
+            // New day: create file + day entry via slack:new, inherit tags/rel from previous
+            const markdown = `# ${follow.summary}\n\n` + replyParts.join('\n')
+            const slackResult = await tasks.run('slack:new', {
+              from,
+              to,
+              summary,
+              when: nowDt,
+              markdown,
+              follow: fileName,
+              previous,
+              noEditor: true,
+              ...(inheritedTags ? { tags: inheritedTags } : {}),
+              ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
+              ...(newReplyFiles.length > 0 ? { slackFiles: JSON.stringify(newReplyFiles) } : {}),
+            })
+
+            // Append message path to follow
+            const ddfw = new DayDirFileWriter(nowDt.plainDate)
+            const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
+            if (relPath) {
+              const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
+              follow = follow.addMessage(todayStr, fullTimePath)
+
+              // Patch array rel into the created file (slack:new only accepts string params)
+              if (Array.isArray(inheritedRel)) {
+                const fullPath = path.join(DIR_BASE, fullTimePath)
+                const content = await readTextFile(fullPath)
+                const doc = MessageDocument.fromMarkdown(content)
+                await writeTextFile(
+                  fullPath,
+                  new MessageDocument({ ...doc.yaml, rel: inheritedRel }, doc.markdown).toMarkdown(),
+                )
+              }
+            }
+          }
+
+          output.log(`[check] ${fileName}: ${newReplies.length} new replies`)
+          withActivity.push({ fileName, newReplies: newReplies.length })
+
+          // 4a. Update lastChecked + lastActivity, reset checkInterval (activity resets backoff)
+          const checkedAt = (await fetchNow()).plainDateTime
+          const newInterval = Follow.backoffInterval(checkedAt, checkedAt)
+          const updated = follow
+            .updateLastActivity(checkedAt)
+            .updateLastChecked(checkedAt)
+            .updateCheckInterval(newInterval)
+          await writeTextFile(followPath, updated.toYaml())
+        } else {
+          output.log(`[check] ${fileName}: no new activity`)
+
+          // 4b. Update lastChecked + backoff checkInterval
+          const checkedAt = (await fetchNow()).plainDateTime
+          const anchor = follow.lastActivity ?? follow.followSince
+          const newInterval = Follow.backoffInterval(checkedAt, anchor)
+          const updated = follow.updateLastChecked(checkedAt).updateCheckInterval(newInterval)
+          await writeTextFile(followPath, updated.toYaml())
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        output.log(`[check] ${entry.fileName}: ERROR — ${errMsg}`)
+        errors.push(`${entry.fileName}: ${errMsg}`)
+      }
+    }
+
+    if (withActivity.length > 0) {
+      output.log('')
+      output.log(`Checked ${entries.length} follow(s), ${withActivity.length} with new activity.`)
+    }
+
+    return CommandResult.success({ checked: entries.length, skipped, errors, withActivity })
+  }
+}

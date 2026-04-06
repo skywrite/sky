@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "D0ABC123GH",
+    "is_im": true,
+    "is_archived": false,
+    "is_shared": false,
+    "is_ext_shared": false,
+    "is_org_shared": false,
+    "user": "U0123LOCALX"
+  }
+}
