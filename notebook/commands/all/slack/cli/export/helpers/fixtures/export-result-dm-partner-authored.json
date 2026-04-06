@@ -1,0 +1,37 @@
+{
+  "link": "https://acme.slack.com/archives/D0ABC12XDEF/p1700000000000100",
+  "channelId": "D0ABC12XDEF",
+  "channelName": "DM with Sarah Chen",
+  "channelMembers": ["Sarah Chen"],
+  "conversationType": "dm",
+  "messageTs": "1700000000.000100",
+  "threadTs": "1700000000.000100",
+  "message": {
+    "ts": "1700000000.000100",
+    "timeLabel": "2023-11-14 09:00",
+    "text": "Synthetic sample message body.",
+    "userId": "U0456SARAHX",
+    "userName": "Sarah Chen",
+    "threadTs": "1700000000.000100",
+    "permalink": "https://acme.slack.com/archives/D0ABC12XDEF/p1700000000000100?thread_ts=1700000000.000100&cid=D0ABC12XDEF"
+  },
+  "thread": {
+    "threadTs": "1700000000.000100",
+    "replies": [
+      {
+        "ts": "1700003600.000200",
+        "timeLabel": "2023-11-14 10:00",
+        "text": "Thanks - will respond to this today.",
+        "userId": "U0123LOCALX",
+        "userName": "Jane Smith"
+      },
+      {
+        "ts": "1700007200.000300",
+        "timeLabel": "2023-11-14 11:00",
+        "text": "Initial thought - reuse the outline from the last sync.",
+        "userId": "U0123LOCALX",
+        "userName": "Jane Smith"
+      }
+    ]
+  }
+}

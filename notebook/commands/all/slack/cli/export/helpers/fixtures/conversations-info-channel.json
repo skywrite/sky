@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "C0789CHANEF",
+    "name": "engineering",
+    "is_channel": true,
+    "is_im": false,
+    "is_mpim": false,
+    "is_archived": false,
+    "is_shared": false,
+    "is_ext_shared": false,
+    "is_org_shared": false
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "D012ABC3DEF",
+    "created": 1700000000,
+    "is_org_shared": true,
+    "is_im": true,
+    "is_archived": false,
+    "context_team_id": "E0123TEAMAB",
+    "updated": 1700000000000,
+    "is_shared": true,
+    "is_frozen": false,
+    "user": "U0456CONNEX",
+    "last_read": "1700000000.000100",
+    "is_open": true,
+    "connected_team_ids": ["E0123TEAMAB", "T0456TEAMCD"],
+    "shared_team_ids": ["T0456TEAMCD"],
+    "is_ext_shared": true,
+    "unread_count": 0,
+    "unread_count_display": 0
+  }
+}

@@ -1,0 +1,12 @@
+Icon?
+.DS_Store
+**/*.env
+**/.env.*
+!**/.env.example
+.claude/
+.vscode/
+AGENTS.md
+docs/
+extensions/
+notebook/node_modules/
+notebook/commands/extras

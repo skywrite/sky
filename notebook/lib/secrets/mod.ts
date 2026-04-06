@@ -1,0 +1,5 @@
+export type { SecretsProvider } from './SecretsProvider.ts'
+export { KeychainSecretsProvider } from './KeychainSecretsProvider.ts'
+export { TestSecretsProvider } from './TestSecretsProvider.ts'
+export { createLogin, createSecret, marshal, unmarshal, updateEntry } from './marshal.ts'
+export type { EntityType, IndexEntry, LoginEntry, SecretEntry, SecretValueEntry } from './types.ts'

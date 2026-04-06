@@ -1,0 +1,108 @@
+import { setTimeout as delay } from 'node:timers/promises'
+import * as path from 'node:path'
+import openEditor from 'open-editor'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import EventDocument from '#shared/models/Event/mod.ts'
+import slugify from '#lib/string/slugify.ts'
+import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { MCPTool } from '#mcp/decorators.ts'
+
+const params = {
+  what: Arg.string('Event summary/description (optional with --from-audio)', { optional: true }),
+  fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
+    short: 'a',
+    optional: true,
+  }),
+  when: whenNBTime(),
+  category: categoryComplete(),
+}
+
+type Params = InferParams<typeof params>
+type Result = { file: string }
+
+@MCPTool()
+export default class EventNewTask extends Command {
+  static override description: CommandDescription = {
+    name: 'event:new',
+    description: 'Create new Event.',
+    params,
+  }
+
+  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    const { output } = context
+    let { what, when, category, fromAudio } = args
+    let body: string | undefined
+    let rel: string[] | undefined
+    let who: string | string[] | undefined
+
+    // Handle --from-audio pipeline via audio:transcript:summary
+    const useAudioPipeline = fromAudio !== undefined
+
+    if (useAudioPipeline) {
+      const summaryResult = await tasks.run('audio:transcript:summary', {
+        fromAudio,
+      })
+      if (!summaryResult.ok || !summaryResult.data) {
+        return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)
+      }
+
+      const data = summaryResult.data
+
+      what = data.title
+      body = data.body
+      rel = data.rel.length > 0 ? data.rel : undefined
+      who = data.who.length > 0 ? data.who : undefined
+
+      if (data.time) {
+        when = new PlainDateTime(data.time)
+      }
+
+      output.log(`\nExtracted: what="${what}", who="${who ?? ''}", when="${when}"`)
+      if (rel && rel.length > 0) {
+        output.log(`  Related: ${rel.join(', ')}`)
+      }
+      output.log('')
+    }
+
+    // Validate required fields for non-audio path
+    if (!what) {
+      return CommandResult.fail('Missing required argument: what (or use --from-audio)')
+    }
+
+    const whenDate = when.plainDate
+    const entryWhen = when.time
+    const whatSlug = slugify(what, { suggestedLength: 60, preserveCase: true })
+
+    const eventFileName = `actions/events/${whatSlug}.md`
+
+    const ddfw = new DayDirFileWriter(whenDate)
+    const whoVal = Array.isArray(who) && who.length > 4 ? who : Array.isArray(who) ? who.join(', ') : who
+    const relVal: string | string[] | undefined = rel && rel.length > 4 ? rel : rel ? rel.join(', ') : undefined
+    const event = EventDocument.create({ what, when, who: whoVal, rel: relVal, body })
+
+    const data = event.toMarkdown()
+
+    let file: string
+    try {
+      file = await ddfw.write(eventFileName, data)
+    } catch (err) {
+      return CommandResult.error(err as Error, 'Failed to write event file')
+    }
+
+    try {
+      const dayItem = `${entryWhen} > Event -> [${what}](${file})`
+      await writeDayItems(whenDate, category, dayItem)
+    } catch (err) {
+      return CommandResult.error(err as Error, 'Failed to write day item')
+    }
+
+    openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
+    await delay(500)
+
+    output.log(`\n  Successfully created event ${file}.\n`)
+
+    return CommandResult.success({ file })
+  }
+}

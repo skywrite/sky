@@ -1,0 +1,7 @@
+name: Mixed Example
+items:
+  - simple_string
+  - - nested
+    - array
+  - key: value
+    another_key: another_value
