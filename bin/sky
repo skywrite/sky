@@ -24,14 +24,12 @@ pushd () { command pushd "$@" > /dev/null; }
 popd () { command popd "$@" > /dev/null; }
 
 export SKY_USER_CWD="$PWD"
-# Bridge legacy env vars until .zshrc is updated
-[ -z "$SKY_DIR" ] && [ -n "$NB_DIR" ] && export SKY_DIR="$NB_DIR"
-[ -z "$SKY_CODE_DIR" ] && [ -n "$NB_CODE_DIR" ] && export SKY_CODE_DIR="$(dirname "$NB_CODE_DIR")"
-# SKY_CODE_DIR points to sky/, NB_CODE_DIR (legacy) points to sky/notebook/
+
 if [ -n "$SKY_CODE_DIR" ]; then
   pushd "$SKY_CODE_DIR/notebook"
 else
-  pushd "$NB_CODE_DIR"
+  # Derive from this script's location: bin/sky → sky/
+  pushd "$(cd "$(dirname "$0")/.." && pwd)/notebook"
 fi
 
 bun run commands/command-runner.ts "$command_path" "$@"
