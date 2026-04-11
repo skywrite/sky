@@ -218,7 +218,7 @@ Sky is configured via `~/.sky/config.jsonc`:
 
 Environment variables (`SKY_DIR`, `SKY_CODE_DIR`) override config file values.
 
-API keys go in `notebook/.env` (never in config):
+API keys go in `src/.env` (never in config):
 
 ```bash
 ANTHROPIC_API_KEY=sk-...
@@ -229,7 +229,7 @@ OPENAI_API_KEY=sk-...
 
 ```
 sky/
-  notebook/              # Core application (TypeScript, runs on Bun)
+  src/                   # Core application (TypeScript, runs on Bun)
     _shared-ts/          # Shared models, parsers, utilities
     commands/            # CLI commands (convention-based: path = name)
       all/

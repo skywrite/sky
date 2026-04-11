@@ -1,4 +1,4 @@
-import { FILE_NOTEBOOK_CODE_ENV } from '../config.ts'
+import { FILE_SKY_CODE_ENV } from '../config.ts'
 import process from 'node:process'
 
 declare const Bun: unknown
@@ -10,9 +10,9 @@ if (!process.env.ENV_FILE_LOADED) {
   } else if (typeof (process as any).loadEnvFile === 'function') {
     // deno-lint-ignore no-explicit-any
     try {
-      ;(process as any).loadEnvFile(FILE_NOTEBOOK_CODE_ENV) // deno-lint-ignore no-explicit-any
+      ;(process as any).loadEnvFile(FILE_SKY_CODE_ENV) // deno-lint-ignore no-explicit-any
     } catch {
-      console.warn(`Could not load .env file: ${FILE_NOTEBOOK_CODE_ENV}`)
+      console.warn(`Could not load .env file: ${FILE_SKY_CODE_ENV}`)
     }
   }
 }
