@@ -66,4 +66,4 @@ function main(): void {
   console.log('✅ Schema validation passed!')
 }
 
-main()
+if (import.meta.main) main()
