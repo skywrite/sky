@@ -8,5 +8,5 @@ Icon?
 AGENTS.md
 docs/
 extensions/
-notebook/node_modules/
-notebook/commands/extras
+src/node_modules/
+src/commands/extras

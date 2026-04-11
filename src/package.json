@@ -1,5 +1,5 @@
 {
-  "name": "notebook",
+  "name": "sky",
   "type": "module",
   "scripts": {
     "dev:fmt": "oxfmt --write .",

@@ -55,7 +55,7 @@ export default class WeekNewTask extends Command {
     // tracking csvs
 
     // const trackingDirs = ['health', 'other']
-    const tmplDir = path.join(DIR_CODE, 'notebook', 'tmpl')
+    const tmplDir = path.join(DIR_CODE, 'src', 'tmpl')
     const trackingDirs = ['health']
 
     for (let trackingDir of trackingDirs) {

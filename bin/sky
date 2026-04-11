@@ -25,9 +25,9 @@ popd () { command popd "$@" > /dev/null; }
 
 export SKY_USER_CWD="$PWD"
 
-# Derive code directory from this script's real location: bin/sky → sky/notebook/
+# Derive code directory from this script's real location: bin/sky → sky/src/
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-pushd "$SCRIPT_DIR/../notebook"
+pushd "$SCRIPT_DIR/../src"
 
 bun --env-file=.env run commands/command-runner.ts "$command_path" "$@"
 exit_code=$?

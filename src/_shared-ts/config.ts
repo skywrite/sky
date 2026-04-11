@@ -33,8 +33,8 @@ export const DIR_ATTACHMENTS = path.join(DIR_USER_DATA, 'attachments')
 export const DIR_STATE = path.join(DIR_USER_DATA, 'state')
 export const DIR_TMP_USER = path.join(DIR_USER_DATA, 'tmp')
 
-export const DIR_CODE_NOTEBOOK = path.join(DIR_CODE, 'notebook')
-export const DIR_CODE_NOTEBOOK_COMMANDS = path.join(DIR_CODE_NOTEBOOK, 'commands')
+export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')
+export const DIR_CODE_SRC_COMMANDS = path.join(DIR_CODE_SRC, 'commands')
 export const DIR_CODE_SERVICES = path.join(DIR_CODE, 'services')
 
 export const DIR_TRACKING = path.join(DIR_BASE, 'data')
@@ -71,7 +71,7 @@ export const DIRS_MARKDOWN = [
   DIR_TIME,
 ]
 
-export const FILE_NOTEBOOK_CODE_ENV = path.join(DIR_CODE_NOTEBOOK, '.env')
+export const FILE_SKY_CODE_ENV = path.join(DIR_CODE_SRC, '.env')
 
 export const FILE_TIMEZONE = path.join(DIR_TRACKING, 'timezone.csv')
 

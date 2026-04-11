@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import { mkdir, stat } from 'node:fs/promises'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { walk } from '#shared/fs/mod.ts'
-import { DIR_CODE_NOTEBOOK, DIR_HOME, COMMAND_DIRS } from '#config'
+import { DIR_CODE_SRC, DIR_HOME, COMMAND_DIRS } from '#config'
 import { existsSync } from 'node:fs'
 import type { ParamDef, ParamKind, ParamType, ParamsRecord } from '#commands/lib/params.ts'
 
@@ -32,7 +32,7 @@ export interface CommandsManifest {
   }
 }
 
-const COMMANDS_DIR = path.join(DIR_CODE_NOTEBOOK, 'commands', 'all')
+const COMMANDS_DIR = path.join(DIR_CODE_SRC, 'commands', 'all')
 const SKY_DIR = path.join(DIR_HOME, '.sky')
 const MANIFEST_PATH = path.join(SKY_DIR, 'sky.commands.json')
 

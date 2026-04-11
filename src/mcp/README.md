@@ -31,29 +31,12 @@ Add to your Claude Desktop settings (`~/Library/Application Support/Claude/claud
 ```json
 {
   "mcpServers": {
-    "notebook": {
-      "command": "/path/to/notebook/mcp/server.ts",
-      "args": [],
-      "env": {
-        "NB_DIR": "~/Sky",
-        "NB_CODE_DIR": "~/path/to/sky"
-      }
-    }
-  }
-}
-```
-
-Or use the `nb` command:
-
-```json
-{
-  "mcpServers": {
-    "notebook": {
-      "command": "nb",
+    "sky": {
+      "command": "sky",
       "args": ["mcp:start"],
       "env": {
-        "NB_DIR": "~/Sky",
-        "NB_CODE_DIR": "~/path/to/sky"
+        "SKY_DIR": "~/Sky",
+        "SKY_CODE_DIR": "~/path/to/sky"
       }
     }
   }
@@ -65,7 +48,7 @@ Or use the `nb` command:
 Run the server manually to see registered tools:
 
 ```bash
-nb mcp:start
+sky mcp:start
 ```
 
 ## Currently Exposed Tasks

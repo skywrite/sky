@@ -9,7 +9,7 @@ export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
 
 function detectCodeDir(): string {
-  // Walk up from this file: config/ → _shared-ts/ → notebook/ → sky/
+  // Walk up from this file: config/ → _shared-ts/ → src/ → sky/
   // Use realpathSync to canonicalize case (macOS is case-insensitive but
   // Bun's module cache keys on exact path strings — mismatched case causes
   // duplicate module instances and broken instanceof checks)
