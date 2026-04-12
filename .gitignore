@@ -5,7 +5,6 @@ Icon?
 !**/.env.example
 .claude/
 .vscode/
-AGENTS.md
 docs/
 extensions/
 src/node_modules/
