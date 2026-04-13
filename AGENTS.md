@@ -176,5 +176,11 @@ Fix any errors before proceeding. Run them after creating/editing TypeScript fil
 
 - Never stage or commit files without explicit permission
 - Always check `git diff --staged` before committing
-- Commit message format: Conventional Commits — `type(scope?): subject`
+- Commit message format: [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope?): subject`
 - Types: feat, fix, docs, style, refactor, perf, test, chore, revert, build, ci
+- Examples:
+  - `feat(journal): add weekly reflection summary`
+  - `fix(service): prevent server starting on import`
+  - `refactor(commands): move releases to sky-extras`
+  - `docs(agents): add conventional commit examples`
+  - `test(day): add recurring pattern matcher tests`
