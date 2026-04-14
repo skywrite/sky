@@ -1,0 +1,21 @@
+{
+  "name": "@skywrite/commands",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir dist --target node"
+  },
+  "files": ["src", "dist", "README.md"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jprichardson/sky.git",
+    "directory": "packages/commands"
+  },
+  "description": "Command framework for writing Sky CLI commands"
+}

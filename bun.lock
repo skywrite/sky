@@ -1,0 +1,25 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "devDependencies": {
+        "@skywrite/commands": "workspace:*",
+        "@skywrite/core": "workspace:*",
+      },
+    },
+    "packages/commands": {
+      "name": "@skywrite/commands",
+      "version": "1.0.0",
+    },
+    "packages/core": {
+      "name": "@skywrite/core",
+      "version": "0.1.0",
+    },
+  },
+  "packages": {
+    "@skywrite/commands": ["@skywrite/commands@workspace:packages/commands"],
+
+    "@skywrite/core": ["@skywrite/core@workspace:packages/core"],
+  }
+}

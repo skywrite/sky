@@ -1,0 +1,32 @@
+{
+  "name": "@skywrite/core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./dates": "./src/dates.ts",
+    "./dates/utils": "./src/dates-utils.ts",
+    "./fs": "./src/fs.ts",
+    "./models": "./src/models.ts",
+    "./csv": "./src/csv.ts",
+    "./yaml": "./src/yaml.ts",
+    "./string": "./src/string.ts",
+    "./sys": "./src/sys.ts",
+    "./prompts": "./src/prompts.ts",
+    "./config": "./src/config.ts",
+    "./secrets": "./src/secrets.ts",
+    "./ai/claude": "./src/ai-claude.ts",
+    "./ai/openai": "./src/ai-openai.ts",
+    "./ai/ollama": "./src/ai-ollama.ts"
+  },
+  "scripts": {
+    "build": "echo 'TODO: bundle for publishing'"
+  },
+  "files": ["src", "dist", "README.md"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jprichardson/sky.git",
+    "directory": "packages/core"
+  },
+  "description": "Shared utilities for the Sky ecosystem — dates, filesystem, models, and more"
+}
