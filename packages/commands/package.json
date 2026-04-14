@@ -14,7 +14,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jprichardson/sky.git",
+    "url": "https://github.com/skywrite/sky.git",
     "directory": "packages/commands"
   },
   "description": "Command framework for writing Sky CLI commands"
