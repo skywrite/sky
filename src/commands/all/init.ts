@@ -1,10 +1,10 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import type { CommandDescription } from '#commands/mod.ts'
 import { SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
 import { buildManifest } from './cli/_commandsManifest.ts'
 
@@ -38,19 +38,23 @@ const STARTER_FILES: Record<string, string> = {
 
 function generateConfig(opts: { dir: string; userDataDir: string; editor: string; categories: string[] }): string {
   const cats = JSON.stringify(opts.categories)
+  const dir = JSON.stringify(opts.dir)
+  const userDataDir = JSON.stringify(opts.userDataDir)
+  const editor = JSON.stringify(opts.editor)
+
   return `{
   // Sky configuration — https://github.com/skynotebook/sky
   // Config version (do not change manually)
   "version": 1,
 
   // Root directory for your notebook (notes, journal, projects, etc.)
-  "dir": "${opts.dir}",
+  "dir": ${dir},
 
   // Operational data directory (attachments, state — not git-tracked)
-  "userDataDir": "${opts.userDataDir}",
+  "userDataDir": ${userDataDir},
 
   // Preferred editor for opening files after creation
-  "editor": "${opts.editor}",
+  "editor": ${editor},
 
   // Life domains — become section headers in day files (e.g., "Professional Todos")
   "categories": ${cats}
@@ -70,9 +74,25 @@ function generateConfig(opts: { dir: string; userDataDir: string; editor: string
 `
 }
 
-function toTildePath(p: string): string {
-  const home = os.homedir()
-  return p.startsWith(home) ? '~' + p.slice(home.length) : p
+function resolvePromptPath(input: string): string {
+  if (input === '~') return os.homedir()
+  if (input.startsWith('~/')) return path.join(os.homedir(), input.slice(2))
+  return path.resolve(input)
+}
+
+function normalizeDirectoryInput(input: string): string {
+  const trimmed = input.trim()
+  if (trimmed === '~') return trimmed
+  if (/^\/+$/.test(trimmed)) return '/'
+  return trimmed.replace(/\/+$/, '')
+}
+
+async function ensureDirectory(dir: string, label: string): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  const info = await stat(dir)
+  if (!info.isDirectory()) {
+    throw new Error(`${label} path is not a directory: ${dir}`)
+  }
 }
 
 export default class InitCommand extends Command {
@@ -81,9 +101,7 @@ export default class InitCommand extends Command {
     description: 'Initialize a new Sky notebook',
   }
 
-  async run({ context }: CommandArgs): Promise<CommandResult> {
-    const { output } = context
-
+  async run(): Promise<CommandResult> {
     p.intro('Sky — initialize your notebook')
 
     if (await exists(SKY_CONFIG_PATH)) {
@@ -99,20 +117,28 @@ export default class InitCommand extends Command {
 
     const defaultDir = path.join(os.homedir(), 'Sky')
 
-    const dir = await p.text({
+    let dir = await p.text({
       message: 'Where should Sky store your notebook?',
       placeholder: defaultDir,
       defaultValue: defaultDir,
     })
     if (p.isCancel(dir)) return CommandResult.success()
+    const normalizedDir = normalizeDirectoryInput(dir)
+    if (!normalizedDir) throw new Error('Notebook path cannot be empty.')
+    dir = normalizedDir
+    const resolvedDir = resolvePromptPath(dir)
 
     const defaultDataDir = dir + '-Data'
-    const userDataDir = await p.text({
+    let userDataDir = await p.text({
       message: 'Where should Sky store data files?',
       placeholder: defaultDataDir,
       defaultValue: defaultDataDir,
     })
     if (p.isCancel(userDataDir)) return CommandResult.success()
+    const normalizedUserDataDir = normalizeDirectoryInput(userDataDir)
+    if (!normalizedUserDataDir) throw new Error('User data path cannot be empty.')
+    userDataDir = normalizedUserDataDir
+    const resolvedUserDataDir = resolvePromptPath(userDataDir)
 
     const editor = await p.text({ message: 'Preferred editor?', placeholder: 'code', defaultValue: 'code' })
     if (p.isCancel(editor)) return CommandResult.success()
@@ -131,30 +157,19 @@ export default class InitCommand extends Command {
 
     const s = p.spinner()
 
-    // Write config
-    s.start('Writing config...')
-    await mkdir(SKY_CONFIG_DIR, { recursive: true })
-    const configContent = generateConfig({
-      dir: toTildePath(dir),
-      userDataDir: toTildePath(userDataDir),
-      editor,
-      categories,
-    })
-    await writeTextFile(SKY_CONFIG_PATH, configContent)
-    s.stop(`Config written to ${SKY_CONFIG_PATH}`)
-
     // Create content directories
     s.start('Creating notebook directories...')
+    await ensureDirectory(resolvedDir, 'Notebook')
     for (const d of CONTENT_DIRS) {
-      await mkdir(path.join(dir, d), { recursive: true })
+      await mkdir(path.join(resolvedDir, d), { recursive: true })
     }
-    s.stop(`Created ${CONTENT_DIRS.length} directories in ${dir}`)
+    s.stop(`Created ${CONTENT_DIRS.length} directories in ${resolvedDir}`)
 
     // Create starter files
     s.start('Creating starter files...')
     let starterCount = 0
     for (const [relPath, content] of Object.entries(STARTER_FILES)) {
-      const fullPath = path.join(dir, relPath)
+      const fullPath = path.join(resolvedDir, relPath)
       if (!(await exists(fullPath))) {
         await writeTextFile(fullPath, content)
         starterCount++
@@ -164,10 +179,23 @@ export default class InitCommand extends Command {
 
     // Create user data directories
     s.start('Creating data directories...')
+    await ensureDirectory(resolvedUserDataDir, 'User data')
     for (const d of ['attachments', 'state', 'tmp']) {
-      await mkdir(path.join(userDataDir, d), { recursive: true })
+      await mkdir(path.join(resolvedUserDataDir, d), { recursive: true })
     }
-    s.stop(`Created data directories in ${userDataDir}`)
+    s.stop(`Created data directories in ${resolvedUserDataDir}`)
+
+    // Write config
+    s.start('Writing config...')
+    await mkdir(SKY_CONFIG_DIR, { recursive: true })
+    const configContent = generateConfig({
+      dir,
+      userDataDir,
+      editor,
+      categories,
+    })
+    await writeTextFile(SKY_CONFIG_PATH, configContent)
+    s.stop(`Config written to ${SKY_CONFIG_PATH}`)
 
     // Build command manifest
     s.start('Building command manifest...')
