@@ -42,8 +42,16 @@ const params = {
     short: 't',
     default: () => 'Transcript Summary',
   }),
-  template: Flag.string('Summary template: meeting or message', {
+  template: Flag.string('Built-in summary template: meeting or audio-message', {
     default: () => 'meeting',
+    hidden: true,
+  }),
+  summaryPrompt: Flag.string('Path to a custom summary prompt file (overrides template)', {
+    optional: true,
+    hidden: true,
+  }),
+  extractPrompt: Flag.string('Path to a custom extract prompt file (overrides template)', {
+    optional: true,
     hidden: true,
   }),
 }
@@ -131,8 +139,22 @@ export default class AudioTranscriptSummaryTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, text, fromAudio, title, output: outputArg, save: saveArg, template } = args
-    const prompts = PROMPT_FILES[template as keyof typeof PROMPT_FILES] ?? PROMPT_FILES.meeting
+    const {
+      file,
+      text,
+      fromAudio,
+      title,
+      output: outputArg,
+      save: saveArg,
+      template,
+      summaryPrompt: summaryPromptPath,
+      extractPrompt: extractPromptPath,
+    } = args
+    const builtin = PROMPT_FILES[template as keyof typeof PROMPT_FILES] ?? PROMPT_FILES.meeting
+    const prompts = {
+      summary: summaryPromptPath ?? builtin.summary,
+      extract: extractPromptPath ?? builtin.extract,
+    }
 
     // Handle --from-audio pipeline: delegate to clean --from-audio, then summarize
     const useAudioPipeline = fromAudio !== undefined
