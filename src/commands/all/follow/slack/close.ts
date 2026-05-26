@@ -5,7 +5,7 @@ import { exists } from '#shared/fs/mod.ts'
 import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -50,7 +50,7 @@ export default class FollowSlackCloseTask extends Command {
       return CommandResult.fail('No follow directory found.')
     }
 
-    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
+    const registry = await SlackFollowRegistry.build()
 
     // Bulk close: --older-than
     if (olderThan) {
@@ -61,7 +61,7 @@ export default class FollowSlackCloseTask extends Command {
 
       const now = fetchNowSync().plainDateTime
       const nowMs = now.toTimeDateValue().getTime()
-      const entries = registry.getActive().filter((e) => e.follow.source === 'Slack')
+      const entries = registry.getActive()
       const stale = entries.filter((e) => {
         // Use last message date as primary staleness indicator (matches what follow:list shows)
         const lastMsgDate = e.follow.messages.at(-1)?.date

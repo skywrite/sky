@@ -1,6 +1,4 @@
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
-import { exists } from '#shared/fs/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { fetchFromLabel, findInboxReplies, parseMessage } from './imap-client.ts'
 import type { EmailMessage } from './imap-client.ts'
 import type { ImapFlow } from 'imapflow'
@@ -135,16 +133,13 @@ export async function getInboxThreads(
   // Load follow registry to determine saved status
   const followMessages = new Map<string, { date: string; path: string }[]>()
   const followLastActivity = new Map<string, Date>()
-  if (await exists(DIR_HEARTBEAT_FOLLOW)) {
-    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
-    for (const entry of registry.getAll()) {
-      if (entry.follow.source === 'Email' && entry.follow.ref.threadId) {
-        const tid = entry.follow.ref.threadId
-        followMessages.set(tid, entry.follow.messages)
-        if (entry.follow.lastActivity) {
-          followLastActivity.set(tid, new Date(entry.follow.lastActivity.toString().replace(' ', 'T')))
-        }
-      }
+  const registry = await EmailFollowRegistry.build()
+  for (const entry of registry.getAll()) {
+    const tid = entry.follow.ref.threadId
+    if (!tid) continue
+    followMessages.set(tid, entry.follow.messages)
+    if (entry.follow.lastActivity) {
+      followLastActivity.set(tid, new Date(entry.follow.lastActivity.toString().replace(' ', 'T')))
     }
   }
 

@@ -6,7 +6,7 @@ import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import slugify from '#lib/string/slugify.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
@@ -55,7 +55,7 @@ export default class FollowSlackNewTask extends Command {
 
     // 0. Check for duplicate follow
     if (await exists(DIR_HEARTBEAT_FOLLOW)) {
-      const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
+      const registry = await SlackFollowRegistry.build()
       const dupe = registry.getAll().find((e) => e.follow.ref.link === link)
       if (dupe) {
         output.log(`Already following this link: ${dupe.follow.summary} (${dupe.fileName})`)
