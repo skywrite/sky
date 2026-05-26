@@ -2,7 +2,7 @@ import { assert, test } from '#test'
 import * as path from 'node:path'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import FollowRegistry from './FollowRegistry.ts'
+import SlackFollowRegistry from './SlackFollowRegistry.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const ACTIVE_YAML = `\
@@ -18,29 +18,51 @@ lastActivity: 2026-02-15 10:30
 status: active`
 
 const PAUSED_YAML = `\
-source: Email
+source: Slack
 ref:
-  messageId: msg-001
+  channel: C02
+  thread_ts: "1234567890.999999"
 reason: On hold
 checkInterval: 1h
 status: paused`
 
+const EMAIL_YAML = `\
+source: Email
+ref:
+  account: jp@example.com
+  threadId: thread-1
+  label: Sky/Follow
+summary: test
+status: active`
+
 async function makeTempDir(): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), 'follow-registry-test-'))
+  return mkdtemp(path.join(tmpdir(), 'slack-follow-registry-test-'))
 }
 
 async function writeYaml(dir: string, name: string, content: string): Promise<void> {
   await writeFile(path.join(dir, name), content, 'utf-8')
 }
 
-test('build() loads all .yaml files from directory', async () => {
+test('build() loads slack follows from directory', async () => {
   const dir = await makeTempDir()
   await writeYaml(dir, 'slack_thread.yaml', ACTIVE_YAML)
-  await writeYaml(dir, 'email_reply.yaml', PAUSED_YAML)
+  await writeYaml(dir, 'slack_paused.yaml', PAUSED_YAML)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
 
-  assert({ given: 'two yaml files', should: 'load both', expected: 2, actual: registry.size })
+  assert({ given: 'two slack yaml files', should: 'load both', expected: 2, actual: registry.size })
+
+  await rm(dir, { recursive: true })
+})
+
+test('build() filters out non-slack follows', async () => {
+  const dir = await makeTempDir()
+  await writeYaml(dir, 'slack_thread.yaml', ACTIVE_YAML)
+  await writeYaml(dir, 'email_reply.yaml', EMAIL_YAML)
+
+  const registry = await SlackFollowRegistry.build(dir)
+
+  assert({ given: 'one slack and one email yaml', should: 'load only slack', expected: 1, actual: registry.size })
 
   await rm(dir, { recursive: true })
 })
@@ -51,7 +73,7 @@ test('build() skips non-yaml files', async () => {
   await writeFile(path.join(dir, 'README.md'), '# Follows', 'utf-8')
   await writeFile(path.join(dir, 'notes.txt'), 'some notes', 'utf-8')
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
 
   assert({ given: 'one yaml and two non-yaml files', should: 'load only yaml', expected: 1, actual: registry.size })
 
@@ -63,7 +85,7 @@ test('build() collects errors for malformed files', async () => {
   await writeYaml(dir, 'good.yaml', ACTIVE_YAML)
   await writeYaml(dir, 'bad.yaml', 'source: Slack\nfollowSince: not-a-date')
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
 
   assert({ given: 'one good and one bad yaml', should: 'load the good one', expected: 1, actual: registry.size })
   assert({ given: 'one malformed file', should: 'collect one error', expected: 1, actual: registry.errors.length })
@@ -76,21 +98,19 @@ test('getActive() filters by status', async () => {
   await writeYaml(dir, 'active.yaml', ACTIVE_YAML)
   await writeYaml(dir, 'paused.yaml', PAUSED_YAML)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
   const active = registry.getActive()
 
   assert({ given: 'one active and one paused', should: 'return only active', expected: 1, actual: active.length })
-  assert({ given: 'active follow', should: 'be the Slack one', expected: 'Slack', actual: active[0].follow.source })
 
   await rm(dir, { recursive: true })
 })
 
 test('getDue() returns overdue follows', async () => {
   const dir = await makeTempDir()
-  // lastChecked was 10:30, interval is 5m, so by 10:36 it's overdue
   await writeYaml(dir, 'overdue.yaml', ACTIVE_YAML)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
   const now = PlainDateTime.fromString('2026-02-15 10:36')
   const due = registry.getDue(now)
 
@@ -108,8 +128,7 @@ test('getDue() skips follows that are not due yet', async () => {
   const dir = await makeTempDir()
   await writeYaml(dir, 'not-due.yaml', ACTIVE_YAML)
 
-  const registry = await FollowRegistry.build(dir)
-  // Only 2 minutes after last check (10:30), interval is 5m
+  const registry = await SlackFollowRegistry.build(dir)
   const now = PlainDateTime.fromString('2026-02-15 10:32')
   const due = registry.getDue(now)
 
@@ -134,7 +153,7 @@ checkInterval: 1h
 status: active`
   await writeYaml(dir, 'never-checked.yaml', neverChecked)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
   const now = PlainDateTime.fromString('2026-02-15 10:00')
   const due = registry.getDue(now)
 
@@ -147,7 +166,7 @@ test('findByFileName() returns matching follow', async () => {
   const dir = await makeTempDir()
   await writeYaml(dir, 'slack_sarah.yaml', ACTIVE_YAML)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
   const result = registry.findByFileName('slack_sarah')
 
   assert({
@@ -164,10 +183,18 @@ test('findByFileName() returns undefined for missing name', async () => {
   const dir = await makeTempDir()
   await writeYaml(dir, 'slack_sarah.yaml', ACTIVE_YAML)
 
-  const registry = await FollowRegistry.build(dir)
+  const registry = await SlackFollowRegistry.build(dir)
   const result = registry.findByFileName('nonexistent')
 
   assert({ given: 'nonexistent name', should: 'return undefined', expected: undefined, actual: result })
 
   await rm(dir, { recursive: true })
+})
+
+test('build() returns empty registry when directory does not exist', async () => {
+  const dir = path.join(tmpdir(), 'slack-follow-registry-test-missing-' + Date.now())
+
+  const registry = await SlackFollowRegistry.build(dir)
+
+  assert({ given: 'missing directory', should: 'return size 0', expected: 0, actual: registry.size })
 })

@@ -5,7 +5,7 @@ import { computePreviousRef, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { resolveRecipient } from '#commands/all/slack/cli/export/helpers/mod.ts'
 import { copySlackFilesToAttachments } from '#commands/all/slack/lib/copyToAttachments.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -51,7 +51,7 @@ export default class FollowSlackCheckTask extends Command {
 
     const now = fetchNowSync()
     const nowDt = now.plainDateTime
-    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
+    const registry = await SlackFollowRegistry.build()
 
     // Get entries to check
     let entries = args.file
@@ -64,9 +64,6 @@ export default class FollowSlackCheckTask extends Command {
     if (entries.length === 0) {
       return CommandResult.success({ checked: 0, skipped: [], errors: [], withActivity: [] })
     }
-
-    // Filter to Slack-only for now
-    entries = entries.filter((e) => e.follow.source === 'Slack')
 
     const withActivity: CheckSummary[] = []
     const skipped: string[] = []

@@ -1,10 +1,10 @@
 import * as path from 'node:path'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
-import { exists, outputFile, writeTextFile } from '#shared/fs/mod.ts'
+import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import { outputFile, writeTextFile } from '#shared/fs/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { createImapClient } from '../../lib/imap-client.ts'
 import type { FetchedThread } from '../fetch.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -56,7 +56,7 @@ export default class EmailInboxFollowSyncTask extends Command {
     }
 
     // ── Phase 1: Load follow registry ────────────────────────────────────
-    const registry = (await exists(DIR_HEARTBEAT_FOLLOW)) ? await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW) : null
+    const registry = await EmailFollowRegistry.build()
 
     // ── Phase 2: Fetch unsaved messages (delegates to email:inbox:fetch) ──
     // fetch derives per-thread `previous` from follow savedMessages via getInboxThreads
@@ -79,9 +79,7 @@ export default class EmailInboxFollowSyncTask extends Command {
     for (const thread of fetchResult.data.threads) {
       if (thread.messages.length === 0) continue
 
-      const existingFollow = registry
-        ? registry.getAll().find((e) => e.follow.source === 'Email' && e.follow.ref.threadId === thread.threadId)
-        : undefined
+      const existingFollow = registry.findByThreadId(thread.threadId)
 
       if (existingFollow) {
         let follow = existingFollow.follow
@@ -115,7 +113,7 @@ export default class EmailInboxFollowSyncTask extends Command {
         const summarySlug = slugify(thread.subject, { preserveCase: true, suggestedLength: 40 })
         const datePrefix = now.plainDateTime.plainDate.toString()
         const fileName = `${datePrefix}_email_${fromSlug}_${summarySlug}`
-        const filePath = path.join(DIR_HEARTBEAT_FOLLOW, `${fileName}.yaml`)
+        const filePath = path.join(DIR_STATE_FOLLOW_EMAIL_ACTIVE, `${fileName}.yaml`)
 
         await outputFile(filePath, follow.toYaml())
         output.log(`  Created follow: ${fileName}`)

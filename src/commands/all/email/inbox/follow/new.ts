@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
 import { outputFile } from '#shared/fs/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -243,7 +243,7 @@ export default class FollowEmailNewTask extends Command {
       const summarySlug = slugify(thread.subject, { preserveCase: true, suggestedLength: 40 })
       const datePrefix = now.plainDateTime.plainDate.toString()
       const fileName = `${datePrefix}_email_${fromSlug}_${summarySlug}`
-      const filePath = path.join(DIR_HEARTBEAT_FOLLOW, `${fileName}.yaml`)
+      const filePath = path.join(DIR_STATE_FOLLOW_EMAIL_ACTIVE, `${fileName}.yaml`)
 
       await outputFile(filePath, follow.toYaml())
       created.push(fileName)

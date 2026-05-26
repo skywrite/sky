@@ -4,7 +4,7 @@ import { exists } from '#shared/fs/mod.ts'
 import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -72,7 +72,7 @@ export default class FollowSlackListTask extends Command {
       return CommandResult.success({ follows: [] })
     }
 
-    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
+    const registry = await SlackFollowRegistry.build()
 
     if (registry.errors.length > 0) {
       for (const err of registry.errors) {
@@ -80,8 +80,7 @@ export default class FollowSlackListTask extends Command {
       }
     }
 
-    const allEntries = all ? registry.getAll() : registry.getActive()
-    const entries = allEntries.filter((e) => e.follow.source === 'Slack')
+    const entries = all ? registry.getAll() : registry.getActive()
 
     // Sort by last message date descending (most recent first, no messages last)
     entries.sort((a, b) => {

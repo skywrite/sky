@@ -1,9 +1,7 @@
 import * as p from '@clack/prompts'
 import { unlink } from 'node:fs/promises'
-import { exists } from '#shared/fs/mod.ts'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { createImapClient, removeLabel } from '#commands/all/email/lib/imap-client.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -41,14 +39,8 @@ export default class FollowEmailCloseTask extends Command {
     const { output, secrets } = context
     const { file, dryRun } = args
 
-    if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
-      return CommandResult.fail('No follow directory found.')
-    }
-
-    const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
-
-    // Filter to email-only follows
-    const emailFollows = registry.getAll().filter((e) => e.follow.source === 'Email')
+    const registry = await EmailFollowRegistry.build()
+    const emailFollows = registry.getAll()
 
     if (emailFollows.length === 0) {
       output.log('No email follows found.')
@@ -84,10 +76,6 @@ export default class FollowEmailCloseTask extends Command {
     const entry = registry.findByFileName(selectedFile)
     if (!entry) {
       return CommandResult.fail(`Follow not found: ${selectedFile}`)
-    }
-
-    if (entry.follow.source !== 'Email') {
-      return CommandResult.fail(`Not an email follow: ${selectedFile}`)
     }
 
     if (dryRun) {

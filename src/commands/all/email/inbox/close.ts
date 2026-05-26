@@ -1,8 +1,6 @@
 import * as p from '@clack/prompts'
 import { unlink } from 'node:fs/promises'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
-import { exists } from '#shared/fs/mod.ts'
-import FollowRegistry from '#shared/models/Follow/FollowRegistry.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { createImapClient } from '../lib/imap-client.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
@@ -166,11 +164,9 @@ export default class EmailInboxCloseTask extends Command {
     }
 
     // 4. Delete the follow YAML if it exists
-    if (thread.saved && (await exists(DIR_HEARTBEAT_FOLLOW))) {
-      const registry = await FollowRegistry.build(DIR_HEARTBEAT_FOLLOW)
-      const followEntry = registry
-        .getAll()
-        .find((e) => e.follow.source === 'Email' && e.follow.ref.threadId === threadId)
+    if (thread.saved) {
+      const registry = await EmailFollowRegistry.build()
+      const followEntry = registry.findByThreadId(threadId)
       if (followEntry) {
         await unlink(followEntry.path)
         output.log(`  Deleted follow: ${followEntry.fileName}`)
