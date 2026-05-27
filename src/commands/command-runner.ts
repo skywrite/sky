@@ -203,23 +203,26 @@ class CommandRunnerError extends Error {
   }
 }
 
-function outputError(error: CommandRunnerError) {
+function outputError(error: unknown) {
+  const runnerError = error instanceof CommandRunnerError ? error : undefined
+  const message = error instanceof Error ? error.message : String(error)
+
   console.log('')
 
   console.group()
   console.log(colors.red('ERROR:'))
   console.group()
   console.log('')
-  console.log(error.message)
+  console.log(message)
   console.groupEnd()
   console.groupEnd()
 
-  if (error?.commandDesc?.params) {
+  if (runnerError?.commandDesc?.params) {
     console.group()
     console.log('')
     console.log(colors.cyan('Parameters:'))
     console.group()
-    for (const [name, def] of Object.entries(error.commandDesc.params)) {
+    for (const [name, def] of Object.entries(runnerError.commandDesc.params)) {
       const kind = def.kind === 'arg' ? 'arg' : def.kind === 'flag' ? 'flag' : 'arg/flag'
       console.log(colors.magenta(`${name}:`) + ` ${def.description} (${kind})`)
     }
@@ -227,27 +230,30 @@ function outputError(error: CommandRunnerError) {
     console.groupEnd()
   }
 
-  console.log('')
+  if (runnerError?.args) {
+    console.log('')
 
-  console.group()
-  console.log(colors.yellow('Raw Arguments:'))
-  console.group()
-  console.log('')
-  console.dir(error.args)
-  console.groupEnd()
-  console.groupEnd()
+    console.group()
+    console.log(colors.yellow('Raw Arguments:'))
+    console.group()
+    console.log('')
+    console.dir(runnerError.args)
+    console.groupEnd()
+    console.groupEnd()
+  }
 
   console.log('')
 
   // Show stack trace without dumping entire error object (which includes verbose Zod schemas)
-  if (error.childError?.stack) {
-    console.error(colors.gray(error.childError.stack))
+  const stack = runnerError?.childError?.stack ?? (error instanceof Error ? error.stack : undefined)
+  if (stack) {
+    console.error(colors.gray(stack))
   }
 }
 
 try {
   await run()
 } catch (err) {
-  outputError(err as CommandRunnerError)
+  outputError(err)
   exit(1)
 }
