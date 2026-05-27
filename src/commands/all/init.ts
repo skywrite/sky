@@ -2,7 +2,8 @@ import * as path from 'node:path'
 import * as os from 'node:os'
 import { mkdir, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
-import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { parse as parseJSONC } from 'jsonc-parser'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
 import { SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
@@ -36,11 +37,21 @@ const STARTER_FILES: Record<string, string> = {
   'goals/professional.md': '---\ntitle: Professional Goals\n---\n\n',
 }
 
-function generateConfig(opts: { dir: string; userDataDir: string; editor: string; categories: string[] }): string {
+function generateConfig(opts: {
+  dir: string
+  userDataDir: string
+  editor: string
+  categories: string[]
+  commandDirs?: string[]
+}): string {
   const cats = JSON.stringify(opts.categories)
   const dir = JSON.stringify(opts.dir)
   const userDataDir = JSON.stringify(opts.userDataDir)
   const editor = JSON.stringify(opts.editor)
+  const commandsBlock =
+    opts.commandDirs && opts.commandDirs.length > 0
+      ? `,\n\n  // Additional command directories (e.g., sky-extras)\n  "commands": {\n    "dirs": ${JSON.stringify(opts.commandDirs)}\n  }`
+      : ''
 
   return `{
   // Sky configuration — https://github.com/skynotebook/sky
@@ -57,7 +68,7 @@ function generateConfig(opts: { dir: string; userDataDir: string; editor: string
   "editor": ${editor},
 
   // Life domains — become section headers in day files (e.g., "Professional Todos")
-  "categories": ${cats}
+  "categories": ${cats}${commandsBlock}
 
   // AI model preferences (uncomment to override defaults)
   // "ai": {
@@ -104,6 +115,7 @@ export default class InitCommand extends Command {
   async run(): Promise<CommandResult> {
     p.intro('Sky — initialize your notebook')
 
+    let preservedCommandDirs: string[] = []
     if (await exists(SKY_CONFIG_PATH)) {
       const overwrite = await p.confirm({
         message: `${SKY_CONFIG_PATH} already exists. Overwrite?`,
@@ -113,6 +125,10 @@ export default class InitCommand extends Command {
         p.outro('Cancelled.')
         return CommandResult.success()
       }
+      try {
+        const parsed = parseJSONC(await readTextFile(SKY_CONFIG_PATH)) as { commands?: { dirs?: string[] } }
+        if (Array.isArray(parsed.commands?.dirs)) preservedCommandDirs = parsed.commands.dirs
+      } catch {}
     }
 
     const defaultDir = path.join(os.homedir(), 'Sky')
@@ -193,6 +209,7 @@ export default class InitCommand extends Command {
       userDataDir,
       editor,
       categories,
+      commandDirs: preservedCommandDirs,
     })
     await writeTextFile(SKY_CONFIG_PATH, configContent)
     s.stop(`Config written to ${SKY_CONFIG_PATH}`)

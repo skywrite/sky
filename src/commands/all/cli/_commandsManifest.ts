@@ -157,27 +157,21 @@ export async function getManifest(): Promise<CommandsManifest> {
   }
 }
 
-/** Incrementally update: only re-import commands whose files are newer than the manifest */
-export async function updateManifest(): Promise<CommandsManifest> {
-  let existing: CommandsManifest | null = null
-  let manifestMtime = 0
-  try {
-    const [text, s] = await Promise.all([readTextFile(MANIFEST_PATH), stat(MANIFEST_PATH)])
-    existing = JSON.parse(text) as CommandsManifest
-    manifestMtime = s.mtimeMs
-  } catch {
-    return buildManifest()
-  }
-
+/** Incrementally walk a base dir, reusing cached entries when files haven't changed since manifestMtime. */
+async function walkIncremental(
+  baseDir: string,
+  prevEntries: CommandEntry[],
+  manifestMtime: number,
+): Promise<{ commands: CommandEntry[]; changed: boolean }> {
   const cached = new Map<string, CommandEntry>()
-  for (const cmd of existing.commands.core) cached.set(cmd.file, cmd)
+  for (const cmd of prevEntries) cached.set(cmd.file, cmd)
 
   const commands: CommandEntry[] = []
   let changed = false
 
-  for await (const entry of walk(COMMANDS_DIR)) {
+  for await (const entry of walk(baseDir)) {
     if (!entry.isFile || !entry.path.endsWith('.ts')) continue
-    const relPath = path.relative(COMMANDS_DIR, entry.path)
+    const relPath = path.relative(baseDir, entry.path)
     if (relPath.includes('_test.')) continue
     if (relPath.split('/').some((seg) => seg.startsWith('_'))) continue
     if (relPath.split('/').includes('lib')) continue
@@ -207,10 +201,58 @@ export async function updateManifest(): Promise<CommandsManifest> {
   }
 
   if (cached.size > 0) changed = true
-  if (!changed) return existing
+  return { commands, changed }
+}
 
-  commands.sort((a, b) => a.name.localeCompare(b.name))
-  const manifest: CommandsManifest = { version: 1, commands: { core: commands, local: [], global: [] } }
+/** Incrementally update: only re-import commands whose files are newer than the manifest */
+export async function updateManifest(): Promise<CommandsManifest> {
+  let existing: CommandsManifest | null = null
+  let manifestMtime = 0
+  try {
+    const [text, s] = await Promise.all([readTextFile(MANIFEST_PATH), stat(MANIFEST_PATH)])
+    existing = JSON.parse(text) as CommandsManifest
+    manifestMtime = s.mtimeMs
+  } catch {
+    return buildManifest()
+  }
+
+  const coreResult = await walkIncremental(COMMANDS_DIR, existing.commands.core, manifestMtime)
+
+  const localCommands: CommandEntry[] = []
+  let localChanged = false
+  // Track which configured dirs actually exist so removals trigger a rewrite.
+  const prevLocalDirs = new Set<string>()
+  for (const cmd of existing.commands.local) {
+    for (const dir of COMMAND_DIRS) {
+      if (cmd.file.startsWith(dir + path.sep)) prevLocalDirs.add(dir)
+    }
+  }
+  for (const dir of COMMAND_DIRS) {
+    if (!existsSync(dir)) {
+      if (prevLocalDirs.has(dir)) localChanged = true
+      continue
+    }
+    const prevForDir = existing.commands.local.filter((c) => c.file.startsWith(dir + path.sep))
+    const result = await walkIncremental(dir, prevForDir, manifestMtime)
+    localCommands.push(...result.commands)
+    if (result.changed) localChanged = true
+  }
+  // Detect entries from dirs no longer in COMMAND_DIRS.
+  if (existing.commands.local.length !== localCommands.length && !localChanged) {
+    const knownFiles = new Set(localCommands.map((c) => c.file))
+    if (existing.commands.local.some((c) => !knownFiles.has(c.file))) localChanged = true
+  }
+
+  const global = existing.commands.global ?? []
+
+  if (!coreResult.changed && !localChanged) return existing
+
+  coreResult.commands.sort((a, b) => a.name.localeCompare(b.name))
+  localCommands.sort((a, b) => a.name.localeCompare(b.name))
+  const manifest: CommandsManifest = {
+    version: 1,
+    commands: { core: coreResult.commands, local: localCommands, global },
+  }
   await mkdir(SKY_DIR, { recursive: true })
   await writeTextFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n')
   return manifest

@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename)
 
 async function resolveCommandFile(input: string): Promise<string> {
   // First check manifest (supports core + local/global from commands.dirs)
-  const commandName = input.replace(/\//g, ':')
+  const commandName = input.replace(/\/+/g, ':')
   const manifest = await getManifest()
   const all = [...manifest.commands.local, ...manifest.commands.global, ...manifest.commands.core]
   const entry = all.find((c) => c.name === commandName)
