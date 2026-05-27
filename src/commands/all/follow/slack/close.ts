@@ -11,8 +11,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 
 const params = {
   file: Arg.string('Follow file name (without .yaml extension)', { optional: true }),
-  olderThan: Flag.string('Close all follows with no activity older than duration (e.g. 7d, 2w)', {
-    short: 'o',
+  inactiveThan: Flag.string('Close all follows inactive for longer than duration (e.g. 7d, 2w)', {
+    short: 'i',
   }),
   dryRun: Flag.boolean('Show what would be closed without deleting', { default: false }),
 }
@@ -36,15 +36,15 @@ export default class FollowSlackCloseTask extends Command {
     usage: [
       'sky follow:slack:close                                              # Pick from list',
       'sky follow:slack:close slack_core-four_Person-wants-weekly-meetings  # By name',
-      'sky follow:slack:close --older-than 7d                              # Close inactive > 7 days',
-      'sky follow:slack:close --older-than 7d --dry-run                    # Preview without deleting',
+      'sky follow:slack:close --inactive-than 7d                           # Close inactive > 7 days',
+      'sky follow:slack:close --inactive-than 7d --dry-run                 # Preview without deleting',
     ],
     params,
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, olderThan, dryRun } = args
+    const { file, inactiveThan, dryRun } = args
 
     if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
       return CommandResult.fail('No follow directory found.')
@@ -52,11 +52,11 @@ export default class FollowSlackCloseTask extends Command {
 
     const registry = await SlackFollowRegistry.build()
 
-    // Bulk close: --older-than
-    if (olderThan) {
-      const thresholdMs = ms(olderThan as ms.StringValue)
+    // Bulk close: --inactive-than
+    if (inactiveThan) {
+      const thresholdMs = ms(inactiveThan as ms.StringValue)
       if (thresholdMs === undefined) {
-        return CommandResult.fail(`Invalid duration: ${olderThan}`)
+        return CommandResult.fail(`Invalid duration: ${inactiveThan}`)
       }
 
       const now = fetchNowSync().plainDateTime
@@ -77,7 +77,7 @@ export default class FollowSlackCloseTask extends Command {
       })
 
       if (stale.length === 0) {
-        output.log(`No active follows older than ${olderThan}.`)
+        output.log(`No active follows inactive longer than ${inactiveThan}.`)
         return CommandResult.success({ closed: [] })
       }
 
@@ -92,7 +92,9 @@ export default class FollowSlackCloseTask extends Command {
       }
 
       output.log('')
-      output.log(`${dryRun ? 'Would close' : 'Closed'} ${closed.length} follow(s) older than ${olderThan}.`)
+      output.log(
+        `${dryRun ? 'Would close' : 'Closed'} ${closed.length} follow(s) inactive longer than ${inactiveThan}.`,
+      )
       return CommandResult.success({ closed })
     }
 
