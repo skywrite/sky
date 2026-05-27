@@ -116,7 +116,10 @@ test('CommandContext.server() creates server context', () => {
 
 test('CommandContext.console() sets notebookNow and systemNow', () => {
   const env = { TEST: 'value' }
-  const context = CommandContext.console(config, env)
+  const mockNotebookNow = new ZonedDateTime('2025-03-15 10:30', 'America/New_York')
+  const context = CommandContext.console(config, env, undefined, true, {
+    notebookNow: mockNotebookNow,
+  })
 
   assert({
     given: 'console factory',
@@ -130,6 +133,39 @@ test('CommandContext.console() sets notebookNow and systemNow', () => {
     should: 'have systemNow as ZonedDateTime',
     actual: context.systemNow instanceof ZonedDateTime,
     expected: true,
+  })
+})
+
+test('CommandContext.console() defers notebookNow computation until accessed', () => {
+  let calls = 0
+  const context = CommandContext.console(config, {}, undefined, true, {
+    notebookNowProvider: () => {
+      calls += 1
+      return new ZonedDateTime('2025-03-15 10:30', 'America/New_York')
+    },
+  })
+
+  assert({
+    given: 'console factory with notebookNow provider',
+    should: 'not call provider during construction',
+    actual: calls,
+    expected: 0,
+  })
+
+  assert({
+    given: 'first notebookNow access',
+    should: 'call provider once',
+    actual: context.notebookNow.plainDateTime.toString(),
+    expected: '2025-03-15 10:30',
+  })
+
+  const secondAccess = context.notebookNow
+
+  assert({
+    given: 'second notebookNow access',
+    should: 'reuse cached notebookNow',
+    actual: [calls, secondAccess.plainDateTime.toString()],
+    expected: [1, '2025-03-15 10:30'],
   })
 })
 
