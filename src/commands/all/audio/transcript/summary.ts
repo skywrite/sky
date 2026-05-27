@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -27,6 +27,12 @@ const params = {
     'Run full audio pipeline: transcribe, clean, then summarize. Optional path to audio file, or omit to search Desktop.',
     {
       short: 'a',
+      optional: true,
+    },
+  ),
+  fromTranscript: Flag.string(
+    'Run transcript pipeline: clean, then summarize. Optional path to transcript file, or omit to use the first .vtt on the Desktop.',
+    {
       optional: true,
     },
   ),
@@ -133,6 +139,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     usage: [
       'sky audio:transcript:summary --file input.txt  # Read from file',
       'sky audio:transcript:summary                   # Paste via stdin',
+      'sky audio:transcript:summary --from-transcript # Clean + summarize first .vtt on Desktop',
     ],
     params,
   }
@@ -143,6 +150,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       file,
       text,
       fromAudio,
+      fromTranscript,
       title,
       output: outputArg,
       save: saveArg,
@@ -156,20 +164,22 @@ export default class AudioTranscriptSummaryTask extends Command {
       extract: extractPromptPath ?? builtin.extract,
     }
 
-    // Handle --from-audio pipeline: delegate to clean --from-audio, then summarize
+    // Handle pipeline: delegate to clean (audio transcribes first), then summarize
     const useAudioPipeline = fromAudio !== undefined
+    const useCleanPipeline = useAudioPipeline || fromTranscript !== undefined
 
     let transcript: string
     let pipelineWho: string[] = []
     let pipelineAudioFilePath: string | null = null
 
-    if (useAudioPipeline) {
-      // Delegate to clean --from-audio which handles: transcribe → clean
-      const cleanResult = await tasks.run('audio:transcript:clean', {
-        fromAudio,
-      })
+    if (useCleanPipeline) {
+      // --from-audio: transcribe → clean. --from-transcript: clean an existing transcript.
+      const cleanResult = await tasks.run(
+        'audio:transcript:clean',
+        useAudioPipeline ? { fromAudio } : { fromTranscript },
+      )
       if (!cleanResult.ok || !cleanResult.data) {
-        return CommandResult.fail(`Audio pipeline failed: ${cleanResult.message}`)
+        return CommandResult.fail(`Transcript pipeline failed: ${cleanResult.message}`)
       }
       transcript = cleanResult.data.cleanedText
       pipelineWho = cleanResult.data.who
@@ -221,6 +231,8 @@ export default class AudioTranscriptSummaryTask extends Command {
       const result = await generateText({
         model: anthropic('claude-sonnet-4-20250514'),
         prompt: summaryPrompt,
+        maxRetries: 0,
+        timeout: 20 * 60 * 1000, // 20 min
       })
       summary = result.text
     } catch (err) {
@@ -254,6 +266,8 @@ export default class AudioTranscriptSummaryTask extends Command {
       const result = await generateText({
         model: anthropic('claude-sonnet-4-20250514'),
         prompt: extractPrompt,
+        maxRetries: 0,
+        timeout: 20 * 60 * 1000, // 20 min
       })
 
       // Parse JSON response
@@ -397,8 +411,8 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
         return CommandResult.error(new Error('HOME not set'), 'Could not determine home directory')
       }
       outputPath = path.join(home, 'Desktop', filename)
-    } else if (useAudioPipeline && isStandalone) {
-      // Standalone --from-audio: save to /tmp and open in VSCode
+    } else if (useCleanPipeline && isStandalone) {
+      // Standalone pipeline: save to /tmp and open in VSCode
       outputPath = `/tmp/transcript-summary-${slugify(correctedTitle)}.md`
     }
 
@@ -416,8 +430,8 @@ ${summary}
       await writeTextFile(outputPath, content)
       output.log(colors.green(`\nSaved to ${outputPath}`))
 
-      // Open in VSCode when running standalone with --from-audio
-      if (useAudioPipeline && isStandalone) {
+      // Open in VSCode when running standalone with a pipeline
+      if (useCleanPipeline && isStandalone) {
         openEditor([{ file: outputPath, line: 1 }])
       }
     } else if (isStandalone) {

@@ -10,9 +10,13 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { MCPTool } from '#mcp/decorators.ts'
 
 const params = {
-  who: Arg.string('Person or group (optional with --from-audio)', { optional: true }),
+  who: Arg.string('Person or group (optional with --from-audio/--from-transcript)', { optional: true }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
     short: 'a',
+    optional: true,
+  }),
+  fromTranscript: Flag.string('Path to transcript file, or omit to use the first .vtt on the Desktop', {
+    short: 't',
     optional: true,
   }),
   when: whenNBTime(),
@@ -40,21 +44,26 @@ export default class MeetingNewTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    let { when, medium, who, summary, category, fromAudio } = args
+    let { when, medium, who, summary, category, fromAudio, fromTranscript } = args
     let body: string | undefined
     let rel: string[] | undefined
 
-    // Handle --from-audio pipeline via audio:transcript:summary
-    const useAudioPipeline = fromAudio !== undefined
+    if (fromAudio !== undefined && fromTranscript !== undefined) {
+      return CommandResult.fail('Use either --from-audio or --from-transcript, not both')
+    }
 
-    if (useAudioPipeline) {
-      // Delegate to audio:transcript:summary --from-audio which handles:
-      // transcribe → clean → summarize with user corrections
-      const summaryResult = await tasks.run('audio:transcript:summary', {
-        fromAudio,
-      })
+    // Handle --from-audio / --from-transcript pipeline via audio:transcript:summary
+    const usePipeline = fromAudio !== undefined || fromTranscript !== undefined
+
+    if (usePipeline) {
+      // Delegate to audio:transcript:summary which handles:
+      // (audio: transcribe →) clean → summarize with user corrections
+      const summaryResult = await tasks.run(
+        'audio:transcript:summary',
+        fromAudio !== undefined ? { fromAudio } : { fromTranscript },
+      )
       if (!summaryResult.ok || !summaryResult.data) {
-        return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)
+        return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
       }
 
       const data = summaryResult.data
@@ -82,9 +91,9 @@ export default class MeetingNewTask extends Command {
       output.log('')
     }
 
-    // Validate required fields for non-audio path
+    // Validate required fields for manual path
     if (!who) {
-      return CommandResult.fail('Missing required argument: who (or use --from-audio)')
+      return CommandResult.fail('Missing required argument: who (or use --from-audio/--from-transcript)')
     }
 
     const whenDate = when.plainDate
