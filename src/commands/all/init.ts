@@ -3,10 +3,10 @@ import * as os from 'node:os'
 import { mkdir, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import { parse as parseJSONC } from 'jsonc-parser'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
-import { SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
+import { DIR_CODE, DIR_CODE_SERVICES, DIR_USER_SERVICES, SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
 import { buildManifest } from './cli/_commandsManifest.ts'
 
 const CONTENT_DIRS = [
@@ -104,6 +104,48 @@ async function ensureDirectory(dir: string, label: string): Promise<void> {
   if (!info.isDirectory()) {
     throw new Error(`${label} path is not a directory: ${dir}`)
   }
+}
+
+function escapePlistString(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function renderServicePlistTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_match, key: string) => {
+    const value = vars[key]
+    if (value === undefined) throw new Error(`Unknown service template variable: ${key}`)
+    return escapePlistString(value)
+  })
+}
+
+async function installServicePlists(editor: string): Promise<number> {
+  if (!(await exists(DIR_CODE_SERVICES))) return 0
+
+  await mkdir(DIR_USER_SERVICES, { recursive: true })
+
+  const vars = {
+    HOME: os.homedir(),
+    EDITOR: editor,
+    SKY_SERVICE_BIN: path.join(DIR_CODE, 'bin', 'sky-service'),
+  }
+
+  let count = 0
+  for await (const entry of readDir(DIR_CODE_SERVICES)) {
+    if (!entry.isFile || !entry.name.endsWith('.plist')) continue
+
+    const templatePath = path.join(DIR_CODE_SERVICES, entry.name)
+    const installPath = path.join(DIR_USER_SERVICES, entry.name)
+    const rendered = renderServicePlistTemplate(await readTextFile(templatePath), vars)
+    await writeTextFile(installPath, rendered)
+    count++
+  }
+
+  return count
 }
 
 export default class InitCommand extends Command {
@@ -213,6 +255,15 @@ export default class InitCommand extends Command {
     })
     await writeTextFile(SKY_CONFIG_PATH, configContent)
     s.stop(`Config written to ${SKY_CONFIG_PATH}`)
+
+    // Install launchd service plists
+    s.start('Installing service plists...')
+    const serviceCount = await installServicePlists(editor)
+    s.stop(
+      serviceCount > 0
+        ? `Installed ${serviceCount} service plist${serviceCount === 1 ? '' : 's'} to ${DIR_USER_SERVICES}`
+        : 'No service plists to install',
+    )
 
     // Build command manifest
     s.start('Building command manifest...')

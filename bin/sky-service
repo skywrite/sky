@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+FILE_LOCK=/tmp/sky-service.lock
+
+if test -f "$FILE_LOCK"; then
+    echo "  sky-service running. Exiting."
+    exit 0
+fi
+
+touch $FILE_LOCK
+
+cleanup () {
+  rm $FILE_LOCK
+}
+
+trap cleanup EXIT
+
+
+## launchd doesn't source shell profiles, so ensure bun is in PATH
+export PATH="$HOME/.bun/bin:$HOME/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+if ! command -v bun &> /dev/null
+then
+  echo "bun could not be found. Exiting."
+  exit 1
+fi
+
+# Derive repo root from this script's real location: bin/sky-service → repo/
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SKY_ROOT="$SCRIPT_DIR/.."
+
+# Log directory and timestamped files
+LOG_DIR="/tmp/sky-service"
+mkdir -p "$LOG_DIR"
+TIMESTAMP=$(date +"%Y-%m-%dT%H-%M-%S")
+STDOUT_LOG="$LOG_DIR/$TIMESTAMP.stdout.log"
+STDERR_LOG="$LOG_DIR/$TIMESTAMP.stderr.log"
+
+echo "Sky service logs: $STDOUT_LOG"
+
+cd "$SKY_ROOT/src"
+bun --env-file=.env run --watch commands/all/service/start.ts > "$STDOUT_LOG" 2> "$STDERR_LOG"
