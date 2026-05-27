@@ -1,12 +1,12 @@
 import * as path from 'node:path'
 import { generateObject, generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -25,6 +25,12 @@ const params = {
     'Run audio pipeline: transcribe first, then clean. Optional path to audio file, or omit to search Desktop.',
     {
       short: 'a',
+      optional: true,
+    },
+  ),
+  fromTranscript: Flag.string(
+    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the first .vtt on the Desktop.',
+    {
       optional: true,
     },
   ),
@@ -71,6 +77,26 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 const ANALYSIS_PROMPT_FILE = new URL('./prompts/transcript-analysis.prompt.md', import.meta.url).pathname
 const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.md', import.meta.url).pathname
 const GRAPHQL_URL = 'http://localhost:9999/graphql'
+
+async function findFirstVttOnDesktop(): Promise<string | null> {
+  const home = env.get('HOME')
+  if (!home) return null
+
+  const desktopPath = path.join(home, 'Desktop')
+  if (!(await exists(desktopPath))) return null
+
+  const entries: string[] = []
+  for await (const entry of readDir(desktopPath)) {
+    if (entry.isFile && path.extname(entry.name).toLowerCase() === '.vtt') {
+      entries.push(path.join(desktopPath, entry.name))
+    }
+  }
+
+  if (entries.length === 0) return null
+
+  entries.sort()
+  return entries[0]
+}
 
 interface PersonWithScore {
   name: string
@@ -187,6 +213,7 @@ export default class AudioTranscriptCleanTask extends Command {
     usage: [
       'sky audio:transcript:clean                    # Paste transcript via stdin',
       'sky audio:transcript:clean --file input.txt  # Read from file',
+      'sky audio:transcript:clean --from-transcript # Clean first .vtt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -194,11 +221,13 @@ export default class AudioTranscriptCleanTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, fromAudio, title, output: outputArg, save: saveArg } = args
+    const { file, fromAudio, fromTranscript, title, output: outputArg, save: saveArg } = args
 
     // Handle --from-audio: transcribe first, then clean
     const useAudioPipeline = fromAudio !== undefined
     const audioFilePath = typeof fromAudio === 'string' && fromAudio !== 'true' ? fromAudio : undefined
+    // Handle --from-transcript: clean an existing transcript file (skip transcription)
+    const useTranscriptFile = fromTranscript !== undefined
 
     // 1. Get transcript input
     let transcript: string
@@ -222,6 +251,18 @@ export default class AudioTranscriptCleanTask extends Command {
       }
       output.log(`Saved transcript: ${transcriptPath}\n`)
 
+      try {
+        transcript = await readTextFile(transcriptPath)
+      } catch (err) {
+        return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
+      }
+    } else if (useTranscriptFile) {
+      const transcriptPath =
+        typeof fromTranscript === 'string' && fromTranscript !== 'true' ? fromTranscript : await findFirstVttOnDesktop()
+      if (!transcriptPath) {
+        return CommandResult.fail('No .vtt file found on Desktop. Please specify a transcript file path.')
+      }
+      output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
       try {
         transcript = await readTextFile(transcriptPath)
       } catch (err) {
@@ -320,6 +361,8 @@ ${transcript}
       const result = await generateText({
         model: anthropic('claude-opus-4-6'),
         prompt: jsonPrompt,
+        maxRetries: 0,
+        timeout: 20 * 60 * 1000, // 20 min — long transcripts are slow to analyze
       })
 
       // Extract JSON from response (strip any markdown fences if present)
@@ -411,6 +454,8 @@ ${transcript}
       const result = await generateText({
         model: anthropic('claude-opus-4-6'),
         messages: [{ role: 'user', content: correctionPrompt }],
+        maxRetries: 0,
+        timeout: 20 * 60 * 1000, // 20 min — rewriting a long transcript is slow
       })
       cleanedTranscript = result.text
     } catch (err) {
@@ -431,8 +476,8 @@ ${transcript}
         return CommandResult.error(new Error('HOME not set'), 'Could not determine home directory')
       }
       outputPath = path.join(home, 'Desktop', filename)
-    } else if (useAudioPipeline && isStandalone) {
-      // Standalone --from-audio: save to /tmp and open in VSCode
+    } else if ((useAudioPipeline || useTranscriptFile) && isStandalone) {
+      // Standalone pipeline: save to /tmp and open in VSCode
       const slug = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -464,8 +509,8 @@ ${cleanedTranscript}
       await writeTextFile(outputPath, content)
       output.log(colors.green(`\nSaved to ${outputPath}`))
 
-      // Open in VSCode when running standalone with --from-audio
-      if (useAudioPipeline && isStandalone) {
+      // Open in VSCode when running standalone with a pipeline
+      if ((useAudioPipeline || useTranscriptFile) && isStandalone) {
         openEditor([{ file: outputPath, line: 1 }])
       }
     }
