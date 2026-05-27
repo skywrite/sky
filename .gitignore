@@ -7,5 +7,5 @@ Icon?
 .vscode/
 docs/
 extensions/
-src/node_modules/
+node_modules/
 src/commands/extras
