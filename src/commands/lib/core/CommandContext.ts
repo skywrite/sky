@@ -37,7 +37,12 @@ export interface CommandContextOptions {
    * This can differ from system time because notebook days can extend past midnight.
    * For example, at 2 AM system time, notebook time might be "26:00" of the previous day.
    */
-  notebookNow: ZonedDateTime
+  notebookNow?: ZonedDateTime
+  /**
+   * Lazy notebook time provider. CLI/server contexts use this so commands that
+   * do not need notebook time can still run when no notebook day is started.
+   */
+  notebookNowProvider?: () => ZonedDateTime
   /**
    * System/wall-clock time - the actual current time from the system clock.
    */
@@ -89,11 +94,21 @@ export default class CommandContext {
   readonly config: typeof ConfigModule
   readonly env: Record<string, string>
   readonly output: OutputHandler
+  private _notebookNow?: ZonedDateTime
+  private readonly notebookNowProvider?: () => ZonedDateTime
   /**
    * Notebook time - the current time in the notebook's concept of "now".
    * This can differ from system time because notebook days can extend past midnight.
    */
-  readonly notebookNow: ZonedDateTime
+  get notebookNow(): ZonedDateTime {
+    if (!this._notebookNow) {
+      if (!this.notebookNowProvider) {
+        throw new Error('Unable to compute the current date / time.')
+      }
+      this._notebookNow = this.notebookNowProvider()
+    }
+    return this._notebookNow
+  }
   /**
    * System/wall-clock time - the actual current time from the system clock.
    */
@@ -131,7 +146,8 @@ export default class CommandContext {
     this.config = options.config
     this.env = options.env
     this.output = options.output
-    this.notebookNow = options.notebookNow
+    this._notebookNow = options.notebookNow
+    this.notebookNowProvider = options.notebookNowProvider
     this.systemNow = options.systemNow
     this.compositionDepth = options.compositionDepth ?? 0
     this.parentTaskName = options.parentTaskName
@@ -154,7 +170,8 @@ export default class CommandContext {
       config: overrides.config ?? this.config,
       env: overrides.env ?? this.env,
       output: overrides.output ?? this.output,
-      notebookNow: overrides.notebookNow ?? this.notebookNow,
+      notebookNow: overrides.notebookNow ?? this._notebookNow,
+      notebookNowProvider: overrides.notebookNowProvider ?? this.notebookNowProvider,
       systemNow: overrides.systemNow ?? this.systemNow,
       compositionDepth: overrides.compositionDepth ?? this.compositionDepth,
       parentTaskName: overrides.parentTaskName ?? this.parentTaskName,
@@ -178,15 +195,19 @@ export default class CommandContext {
     env: Record<string, string>,
     commandName?: string,
     disablePrefix = true,
+    options?: {
+      notebookNow?: ZonedDateTime
+      notebookNowProvider?: () => ZonedDateTime
+    },
   ): CommandContext {
     const systemNow = new ZonedDateTime()
-    const notebookNow = fetchNowSync({ now: systemNow })
     return new CommandContext({
       platform: CommandPlatform.Console,
       config,
       env,
       output: new ConsoleOutput(commandName, disablePrefix, 0),
-      notebookNow,
+      notebookNow: options?.notebookNow,
+      notebookNowProvider: options?.notebookNowProvider ?? (() => fetchNowSync({ now: systemNow })),
       systemNow,
       secrets: new KeychainSecretsProvider(),
     })
@@ -231,13 +252,12 @@ export default class CommandContext {
    */
   static server(config: typeof ConfigModule, env: Record<string, string>): CommandContext {
     const systemNow = new ZonedDateTime()
-    const notebookNow = fetchNowSync({ now: systemNow })
     return new CommandContext({
       platform: CommandPlatform.Server,
       config,
       env,
       output: new BufferedOutput(),
-      notebookNow,
+      notebookNowProvider: () => fetchNowSync({ now: systemNow }),
       systemNow,
       secrets: new KeychainSecretsProvider(),
     })

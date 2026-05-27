@@ -1,6 +1,5 @@
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
 
 export default class NowTask extends Command {
   static override description: CommandDescription = {
@@ -10,8 +9,12 @@ export default class NowTask extends Command {
 
   async run({ context }: CommandArgs): Promise<CommandResult> {
     const { output } = context
-    const now = fetchNowSync()
-    output.log(now.plainDateTime.toString())
+    try {
+      const now = context.notebookNow
+      output.log(now.plainDateTime.toString())
+    } catch {
+      return CommandResult.fail('Unable to compute notebook time. Start a day first with `sky day:start`.')
+    }
 
     return CommandResult.success()
   }
