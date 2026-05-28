@@ -97,7 +97,7 @@ export async function resolveContext(query: string, depth: number, store: Markdo
   const documents: ContextDocument[] = collection.allItems.map((item) => ({
     path: item.path,
     type: item.type,
-    markdown: item.doc.toMarkdown(),
+    markdown: item.doc.stripHtmlComments().toMarkdown(),
   }))
   const t4 = performance.now()
 

@@ -122,7 +122,9 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
   for (const filePath of filteredPaths) {
     try {
       const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      const doc = Document.fromMarkdown(content)
+        .stripHtmlComments()
+        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
       docs.push({ doc, path: filePath })
     } catch {
       /* skip unreadable files */
