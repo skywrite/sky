@@ -1,48 +1,28 @@
 /**
  * Auto-discover @AIChatTool decorated tasks and generate Vercel AI SDK tools.
  *
- * Uses the same regex-scan discovery pattern as MCP (mcp/discovery.ts) to find
- * decorated tasks without importing every file. Schemas are derived from task
- * params via the MCP adapter - zero duplication.
+ * Reads the on-disk command manifest (built by the command-runner) which already
+ * enumerates every command across `commands/all` + `commands.dirs` and stores an
+ * `aiChatTool` flag set via runtime `isAIChatTool()` during manifest build. Schemas
+ * are derived from task params via the shared jsonSchema module — zero duplication.
  */
 
-import process from 'node:process'
-import { join } from 'node:path'
 import { jsonSchema, tool } from 'ai'
-import readTextFile from '#shared/fs/readTextFile.ts'
-import { walk } from '#shared/fs/mod.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
+import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 
 // -----------------------------------------------------------------------------
 // Discovery
 // -----------------------------------------------------------------------------
 
-const DECORATOR_PATTERN = /@AIChatTool\s*(?:\([^)]*\))?\s*(?:export\s+)?(?:default\s+)?class/
-
-async function hasAIChatToolDecorator(filePath: string): Promise<boolean> {
-  try {
-    const content = await readTextFile(filePath)
-    return DECORATOR_PATTERN.test(content)
-  } catch {
-    return false
-  }
-}
-
 async function findAIChatToolFiles(): Promise<string[]> {
-  const tasksDir = join(process.cwd(), 'commands', 'all')
-  const files: string[] = []
-
-  for await (const entry of walk(tasksDir, { exts: ['.ts'], includeDirs: false })) {
-    if (entry.path.includes('_test.ts')) continue
-    if (await hasAIChatToolDecorator(entry.path)) {
-      files.push(entry.path)
-    }
-  }
-
-  return files
+  const manifest = await getManifest()
+  return [...manifest.commands.core, ...manifest.commands.local, ...manifest.commands.global]
+    .filter((c) => c.aiChatTool)
+    .map((c) => c.file)
 }
 
 // -----------------------------------------------------------------------------
@@ -99,8 +79,8 @@ export async function discoverAIChatTools(): Promise<DiscoveredTool[]> {
 /**
  * Discover @AIChatTool decorated tasks and create Vercel AI SDK tools.
  *
- * Scans task files with a regex (no import), then imports only matching files
- * to read their CommandDescription params and decorator options.
+ * Filters the on-disk command manifest by `aiChatTool`, then imports each
+ * matching file to read its CommandDescription params and decorator options.
  */
 export async function createNotebookTools(tasks: CommandService): Promise<Record<string, unknown>> {
   const discovered = await discoverAIChatTools()
