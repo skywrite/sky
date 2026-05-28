@@ -450,7 +450,7 @@ export default class AiChatTask extends Command {
         0,
       ),
       fetchContextFromServer(`{ goals { path } }`, 0),
-      fetchContextFromServer(`{ decisions(where: { status: "pending" }) { path } }`, 0),
+      fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
     ])
     output.log(
       colors.dim(

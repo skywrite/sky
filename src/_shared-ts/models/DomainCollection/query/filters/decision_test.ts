@@ -11,8 +11,8 @@ function md(yaml: string): Document {
 // =============================================================================
 
 const pendingFixtures = [
-  { yaml: 'name: Hire CTO\nidentified: 2025-01-01', expected: true, description: 'no decided field' },
-  { yaml: 'name: Hire CTO\ndecided: 2025-01-15', expected: false, description: 'has decided field' },
+  { yaml: 'name: Hire CTO\nidentified: 2025-01-01', expected: true, description: 'no resolved field' },
+  { yaml: 'name: Hire CTO\nresolved: 2025-01-15', expected: false, description: 'has resolved field' },
 ]
 
 for (const { yaml, expected, description } of pendingFixtures) {
@@ -32,8 +32,8 @@ for (const { yaml, expected, description } of pendingFixtures) {
 // =============================================================================
 
 const decidedFixtures = [
-  { yaml: 'name: Hire CTO\ndecided: 2025-01-15', expected: true, description: 'has decided field' },
-  { yaml: 'name: Hire CTO\nidentified: 2025-01-01', expected: false, description: 'no decided field' },
+  { yaml: 'name: Hire CTO\nresolved: 2025-01-15', expected: true, description: 'has resolved field' },
+  { yaml: 'name: Hire CTO\nidentified: 2025-01-01', expected: false, description: 'no resolved field' },
 ]
 
 for (const { yaml, expected, description } of decidedFixtures) {
