@@ -49,7 +49,9 @@ export async function gatherContext(today: PlainDate): Promise<MIContext> {
     try {
       const content = await readTextFile(filePath)
       if (content.length < 50) continue
-      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      const doc = Document.fromMarkdown(content)
+        .stripHtmlComments()
+        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
       docs.push({ doc, path: filePath })
     } catch {
       /* skip unreadable files */

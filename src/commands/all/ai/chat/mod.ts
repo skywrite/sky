@@ -213,9 +213,9 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
   for (const d of documents) {
     if (d.path && d.markdown) {
       try {
-        const doc = Document.fromMarkdown(d.markdown).filterSections(
-          (h) => !h.text.toLowerCase().includes('transcript'),
-        )
+        const doc = Document.fromMarkdown(d.markdown)
+          .stripHtmlComments()
+          .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
         docs.push({ doc, path: d.path })
       } catch (err) {
         console.warn(`[ai:chat] failed to parse context doc ${d.path}: ${(err as Error).message}`)
@@ -227,7 +227,7 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
 
 /**
  * Read the given files from disk and merge them into the collection,
- * stripping transcript sections. Builds DomainCollection without a local MarkdownStore.
+ * stripping chat metadata comments and transcript sections. Builds DomainCollection without a local MarkdownStore.
  */
 async function mergePathsIntoCollection(
   paths: string[],
@@ -238,7 +238,9 @@ async function mergePathsIntoCollection(
   for (const filePath of paths) {
     try {
       const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      const doc = Document.fromMarkdown(content)
+        .stripHtmlComments()
+        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
       docs.push({ doc, path: filePath })
     } catch (err) {
       // Skip unreadable files
