@@ -7,6 +7,7 @@ import { fetchLinksFromTokensList, Link, linkMapToTokenLinks } from '../Link/mod
 import { parseWithError, stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type Attachment, attachmentsToYaml, parseAttachments } from './attachment.ts'
+import _stripHtmlComments from './_stripHtmlComments.ts'
 
 export default class Document {
   public readonly markdown: string
@@ -256,6 +257,28 @@ export default class Document {
 
     // Fix up reference links - only include links that are used in filtered content
     const neededLinks = this.referenceLinks(markdown)
+    return newDoc.updateLinks(neededLinks) as this
+  }
+
+  public stripHtmlComments(): this {
+    const markdown = _stripHtmlComments(this.markdown)
+
+    // Create YAML string with key ordering
+    const keyOrder = (this.constructor as typeof Document).yamlKeyOrder
+    const yamlLines = ['---', stringify(this.yaml, keyOrder.length > 0 ? { keyOrder } : undefined), '---']
+    if (Object.keys(this.yaml).length === 0) yamlLines.splice(1, 1)
+    const yamlStr = yamlLines.join('\n')
+
+    // Re-parse into new Document
+    const fullMarkdown = Object.keys(this.yaml).length > 0 ? yamlStr + '\n\n' + markdown : markdown
+    const newDoc = (<typeof Document>this.constructor).fromMarkdown(fullMarkdown) as this
+
+    // Fix up reference links - only include links that are used in stripped content
+    const neededLinks = new Map<string, Link>()
+    for (const label of Document.extractReferenceLabels(markdown)) {
+      const link = this.links.get(label)
+      if (link) neededLinks.set(label, link)
+    }
     return newDoc.updateLinks(neededLinks) as this
   }
 
