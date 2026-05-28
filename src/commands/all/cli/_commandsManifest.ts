@@ -5,6 +5,7 @@ import { walk } from '#shared/fs/mod.ts'
 import { DIR_CODE_SRC, DIR_HOME, COMMAND_DIRS } from '#config'
 import { existsSync } from 'node:fs'
 import type { ParamDef, ParamKind, ParamType, ParamsRecord } from '#commands/lib/params.ts'
+import { isAIChatTool } from '#commands/lib/AIChatTool.ts'
 
 export interface FlagEntry {
   name: string
@@ -21,10 +22,12 @@ export interface CommandEntry {
   file: string
   description: string
   flags: FlagEntry[]
+  /** True if the command class is decorated with @AIChatTool() */
+  aiChatTool: boolean
 }
 
 export interface CommandsManifest {
-  version: 1
+  version: 2
   commands: {
     core: CommandEntry[]
     local: CommandEntry[]
@@ -86,6 +89,7 @@ async function discoverCommands(): Promise<CommandEntry[]> {
 
     let description = ''
     let flags: FlagEntry[] = []
+    let aiChatTool = false
     try {
       const mod = await import(entry.path)
       const cmd = mod.default
@@ -93,11 +97,12 @@ async function discoverCommands(): Promise<CommandEntry[]> {
         description = cmd.description.description ?? ''
         flags = extractFlags(cmd.description.params)
       }
+      if (cmd) aiChatTool = isAIChatTool(cmd)
     } catch {
       // Command may have import errors — still include it with empty description
     }
 
-    commands.push({ name, file: entry.path, description, flags })
+    commands.push({ name, file: entry.path, description, flags, aiChatTool })
   }
 
   commands.sort((a, b) => a.name.localeCompare(b.name))
@@ -119,6 +124,7 @@ async function discoverExtraCommands(): Promise<CommandEntry[]> {
       const name = pathToCommandName(relPath)
       let description = ''
       let flags: FlagEntry[] = []
+      let aiChatTool = false
       try {
         const mod = await import(entry.path)
         const cmd = mod.default
@@ -126,8 +132,9 @@ async function discoverExtraCommands(): Promise<CommandEntry[]> {
           description = cmd.description.description ?? ''
           flags = extractFlags(cmd.description.params)
         }
+        if (cmd) aiChatTool = isAIChatTool(cmd)
       } catch {}
-      commands.push({ name, file: entry.path, description, flags })
+      commands.push({ name, file: entry.path, description, flags, aiChatTool })
     }
   }
   commands.sort((a, b) => a.name.localeCompare(b.name))
@@ -140,7 +147,7 @@ export async function buildManifest(): Promise<CommandsManifest> {
   const core = await discoverCommands()
   const local = await discoverExtraCommands()
   const manifest: CommandsManifest = {
-    version: 1,
+    version: 2,
     commands: { core, local, global: [] },
   }
   await writeTextFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n')
@@ -151,7 +158,9 @@ export async function buildManifest(): Promise<CommandsManifest> {
 export async function getManifest(): Promise<CommandsManifest> {
   try {
     const text = await readTextFile(MANIFEST_PATH)
-    return JSON.parse(text) as CommandsManifest
+    const manifest = JSON.parse(text) as CommandsManifest
+    if (manifest.version !== 2) return buildManifest()
+    return manifest
   } catch {
     return buildManifest()
   }
@@ -189,6 +198,7 @@ async function walkIncremental(
     const name = pathToCommandName(relPath)
     let description = ''
     let flags: FlagEntry[] = []
+    let aiChatTool = false
     try {
       const mod = await import(entry.path)
       const cmd = mod.default
@@ -196,8 +206,9 @@ async function walkIncremental(
         description = cmd.description.description ?? ''
         flags = extractFlags(cmd.description.params)
       }
+      if (cmd) aiChatTool = isAIChatTool(cmd)
     } catch {}
-    commands.push({ name, file: entry.path, description, flags })
+    commands.push({ name, file: entry.path, description, flags, aiChatTool })
   }
 
   if (cached.size > 0) changed = true
@@ -215,6 +226,8 @@ export async function updateManifest(): Promise<CommandsManifest> {
   } catch {
     return buildManifest()
   }
+
+  if (existing.version !== 2) return buildManifest()
 
   const coreResult = await walkIncremental(COMMANDS_DIR, existing.commands.core, manifestMtime)
 
@@ -250,7 +263,7 @@ export async function updateManifest(): Promise<CommandsManifest> {
   coreResult.commands.sort((a, b) => a.name.localeCompare(b.name))
   localCommands.sort((a, b) => a.name.localeCompare(b.name))
   const manifest: CommandsManifest = {
-    version: 1,
+    version: 2,
     commands: { core: coreResult.commands, local: localCommands, global },
   }
   await mkdir(SKY_DIR, { recursive: true })
