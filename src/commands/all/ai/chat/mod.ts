@@ -183,20 +183,43 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
  */
 async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{ doc: Document; path: string }>> {
   const url = `http://localhost:${PORT_SERVER}/context`
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, depth }),
-  })
-  if (!resp.ok) return []
+  let resp: Response
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, depth }),
+    })
+  } catch (err) {
+    console.warn(`[ai:chat] notebook service unreachable at ${url}: ${(err as Error).message}`)
+    return []
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '')
+    console.warn(`[ai:chat] context fetch failed (${resp.status} ${resp.statusText}): ${body.slice(0, 200)}`)
+    return []
+  }
 
-  const json = await resp.json()
-  const documents = json?.data?.documents ?? []
+  let json: unknown
+  try {
+    json = await resp.json()
+  } catch (err) {
+    console.warn(`[ai:chat] context response not valid JSON: ${(err as Error).message}`)
+    return []
+  }
+  const documents =
+    (json as { data?: { documents?: Array<{ path?: string; markdown?: string }> } })?.data?.documents ?? []
   const docs: Array<{ doc: Document; path: string }> = []
   for (const d of documents) {
     if (d.path && d.markdown) {
-      const doc = Document.fromMarkdown(d.markdown).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-      docs.push({ doc, path: d.path })
+      try {
+        const doc = Document.fromMarkdown(d.markdown).filterSections(
+          (h) => !h.text.toLowerCase().includes('transcript'),
+        )
+        docs.push({ doc, path: d.path })
+      } catch (err) {
+        console.warn(`[ai:chat] failed to parse context doc ${d.path}: ${(err as Error).message}`)
+      }
     }
   }
   return docs
@@ -217,8 +240,9 @@ async function mergePathsIntoCollection(
       const content = await readTextFile(filePath)
       const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
       docs.push({ doc, path: filePath })
-    } catch {
+    } catch (err) {
       // Skip unreadable files
+      console.warn(`[ai:chat] skipping context file ${filePath}: ${(err as Error).message}`)
     }
   }
   if (docs.length === 0) return existing
