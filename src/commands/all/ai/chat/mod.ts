@@ -12,11 +12,9 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -58,10 +56,6 @@ const params = {
   }),
   ephemeral: Flag.boolean('Chat without saving conversation to file', {
     short: 'E',
-    default: true,
-  }),
-  server: Flag.boolean('Use the running notebook service instead of building MarkdownStore locally', {
-    short: 'S',
     default: true,
   }),
   when: whenNBTime(),
@@ -182,26 +176,6 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   return `${timeStr}_${slug}.md`
 }
 
-async function mergePathsIntoCollection(
-  paths: string[],
-  existing: DomainCollection | null,
-  store: MarkdownStore,
-): Promise<DomainCollection | null> {
-  const docs: Array<{ doc: Document; path: string }> = []
-  for (const filePath of paths) {
-    try {
-      const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-      docs.push({ doc, path: filePath })
-    } catch {
-      // Skip unreadable files
-    }
-  }
-  if (docs.length === 0) return existing
-  const newCollection = DomainCollection.fromDocuments(docs, store, { depth: 1 })
-  return existing ? existing.merge(newCollection) : newCollection
-}
-
 /**
  * Fetch documents from the running notebook service via POST /context.
  * The server executes the GraphQL query, resolves relationships to the given depth,
@@ -229,10 +203,10 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
 }
 
 /**
- * Server-mode version of mergePathsIntoCollection.
- * Reads files from disk, builds DomainCollection without a local MarkdownStore.
+ * Read the given files from disk and merge them into the collection,
+ * stripping transcript sections. Builds DomainCollection without a local MarkdownStore.
  */
-async function mergePathsIntoCollectionViaServer(
+async function mergePathsIntoCollection(
   paths: string[],
   existing: DomainCollection | null,
 ): Promise<DomainCollection | null> {
@@ -404,7 +378,7 @@ export default class AiChatTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, env } = context
-    const { provider, model, days, inspectInitialContext, category, when, server } = args
+    const { provider, model, days, inspectInitialContext, category, when } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
 
@@ -423,180 +397,89 @@ export default class AiChatTask extends Command {
     const now = await fetchNow()
     const today = when?.plainDate ?? now.plainDateTime.plainDate
     const startTime = now.plainDateTime
-    if (server) output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
+    output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
 
     // Gather all context (summaries, health, prices)
     t0 = performance.now()
     const ctx = await gatherContext(today, timeDir, dataDir, days)
-    if (server) output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
+    output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
 
     const baseDir = <string>config.DIR_BASE
 
-    // Build context: either from the running server or by building MarkdownStore locally
-    let store: MarkdownStore | null = null
+    // Build context from the running notebook service: POST /context executes GraphQL +
+    // resolves relationships on the server (which already has MarkdownStore built),
+    // returning documents with markdown. Skips a local MarkdownStore.build() (~20k files).
     let initialCollection: DomainCollection | null = null
     let allFiles: string[] = []
 
-    if (server) {
-      // Server mode: POST /context executes GraphQL + resolves relationships on the
-      // server (which already has MarkdownStore built), returning documents with markdown.
-      // Skips local MarkdownStore.build() (~20k files).
-      output.log(colors.dim(`[server] Fetching context from server...`))
+    output.log(colors.dim(`[server] Fetching context from server...`))
 
-      const prevStart = today.addDays(-(days - 1))
-      const yesterday = today.addDays(-1)
+    const prevStart = today.addDays(-(days - 1))
+    const yesterday = today.addDays(-1)
 
-      // Parallel: fetch all four sets of documents from server at once
-      t0 = performance.now()
-      const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
-        fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
-        fetchContextFromServer(
-          `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
-          0,
-        ),
-        fetchContextFromServer(`{ goals { path } }`, 0),
-        fetchContextFromServer(`{ decisions(where: { status: "pending" }) { path } }`, 0),
-      ])
-      output.log(
-        colors.dim(
-          `[server] POST /context x4: ${(performance.now() - t0).toFixed(
-            0,
-          )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
-        ),
-      )
-
-      // Group previous docs by date and apply per-day strategy
-      const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
-      for (const d of prevDocsRaw) {
-        if (!d.path.includes('/time/')) continue
-        const date = parseDateFromDayPath(d.path)?.toString()
-        if (!date) continue
-        const list = byDate.get(date) ?? []
-        list.push(d)
-        byDate.set(date, list)
-      }
-
-      const prevDocs: Array<{ doc: Document; path: string }> = []
-      for (const [, files] of byDate) {
-        const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
-        if (hasSummary) {
-          prevDocs.push(...files.filter((f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/')))
-        } else {
-          prevDocs.push(...files)
-        }
-      }
-
-      // Deduplicate all docs by path
-      const seen = new Set<string>()
-      const allDocs: Array<{ doc: Document; path: string }> = []
-      for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
-        if (!seen.has(d.path)) {
-          seen.add(d.path)
-          allDocs.push(d)
-        }
-      }
-
-      allFiles = allDocs.map((d) => d.path)
-
-      if (inspectInitialContext) {
-        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
-        for (const f of sorted) {
-          output.log(f)
-        }
-        return CommandResult.success({ turns: 0 })
-      }
-
-      t0 = performance.now()
-      initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
-      output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
-    } else {
-      // Local mode: build MarkdownStore and query locally
-      store = await MarkdownStore.build({
-        peopleDirs: [<string>config.DIR_PEOPLE, <string>config.DIR_PEOPLE_OLD],
-        orgDirs: [<string>config.DIR_ORGS],
-        projectsDir: <string>config.DIR_PROJECTS,
-        decisionsDir: <string>config.DIR_DECISIONS,
-        goalsDir: <string>config.DIR_GOALS,
-        ideasDir: <string>config.DIR_IDEAS,
-        timeDirs: [timeDir],
-      })
-
-      // Gather activity via GraphQL queries on the store
-      output.log(`Loading documents...`)
-
-      // Today: all files
-      const todayResult = await executeQuery<{ documents: Array<{ path: string }> }>(
-        `{ documents(where: { date: "${today}" }) { path } }`,
-        store,
-      )
-      const todayPaths = todayResult.data?.documents?.map((d) => d.path) ?? []
-
-      // Previous days: get all files, then apply per-day strategy
-      const prevStart = today.addDays(-(days - 1))
-      const yesterday = today.addDays(-1)
-      const prevResult = await executeQuery<{ documents: Array<{ path: string }> }>(
+    // Parallel: fetch all four sets of documents from server at once
+    t0 = performance.now()
+    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
+      fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
+      fetchContextFromServer(
         `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
-        store,
-      )
-      const prevDocs = prevResult.data?.documents?.map((d) => d.path) ?? []
+        0,
+      ),
+      fetchContextFromServer(`{ goals { path } }`, 0),
+      fetchContextFromServer(`{ decisions(where: { status: "pending" }) { path } }`, 0),
+    ])
+    output.log(
+      colors.dim(
+        `[server] POST /context x4: ${(performance.now() - t0).toFixed(
+          0,
+        )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
+      ),
+    )
 
-      // Group previous docs by date
-      const byDate = new Map<string, string[]>()
-      for (const p of prevDocs) {
-        if (!p.includes('/time/')) continue
-        const date = parseDateFromDayPath(p)?.toString()
-        if (!date) continue
-        const list = byDate.get(date) ?? []
-        list.push(p)
-        byDate.set(date, list)
-      }
-
-      // Per-day strategy: if summary exists, use journals + summary; otherwise all files (excluding ai-chats)
-      const prevPaths: string[] = []
-      for (const [, files] of byDate) {
-        const hasSummary = files.some((f) => f.endsWith('/summary.md'))
-        if (hasSummary) {
-          prevPaths.push(...files.filter((f) => f.endsWith('/summary.md') || f.includes('/journal/')))
-        } else {
-          // Include ai-chats: tagged chats represent significant conversations worth referencing
-          // prevPaths.push(...files.filter((f) => !f.includes('/ai-chats/')))
-          prevPaths.push(...files)
-        }
-      }
-
-      allFiles = [...new Set([...todayPaths, ...prevPaths])]
-
-      if (inspectInitialContext) {
-        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
-        for (const f of sorted) {
-          output.log(f)
-        }
-        return CommandResult.success({ turns: 0 })
-      }
-
-      // Load documents from files
-      const docs: Array<{ doc: Document; path: string }> = []
-      for (const file of allFiles) {
-        try {
-          const content = await readTextFile(file)
-          if (content.length < 50) continue
-          const doc = Document.fromMarkdown(content).filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-          docs.push({ doc, path: file })
-        } catch {
-          // Skip unreadable files
-        }
-      }
-
-      // Add goals and pending decisions from store
-      for (const item of store.goals.getAll()) {
-        docs.push({ doc: item.doc, path: item.path })
-      }
-      for (const item of store.decisions.getPending()) {
-        docs.push({ doc: item.doc, path: item.path })
-      }
-
-      initialCollection = docs.length > 0 ? DomainCollection.fromDocuments(docs, store, { depth: 1 }) : null
+    // Group previous docs by date and apply per-day strategy
+    const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
+    for (const d of prevDocsRaw) {
+      if (!d.path.includes('/time/')) continue
+      const date = parseDateFromDayPath(d.path)?.toString()
+      if (!date) continue
+      const list = byDate.get(date) ?? []
+      list.push(d)
+      byDate.set(date, list)
     }
+
+    const prevDocs: Array<{ doc: Document; path: string }> = []
+    for (const [, files] of byDate) {
+      const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
+      if (hasSummary) {
+        prevDocs.push(...files.filter((f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/')))
+      } else {
+        prevDocs.push(...files)
+      }
+    }
+
+    // Deduplicate all docs by path
+    const seen = new Set<string>()
+    const allDocs: Array<{ doc: Document; path: string }> = []
+    for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
+      if (!seen.has(d.path)) {
+        seen.add(d.path)
+        allDocs.push(d)
+      }
+    }
+
+    allFiles = allDocs.map((d) => d.path)
+
+    if (inspectInitialContext) {
+      const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+      for (const f of sorted) {
+        output.log(f)
+      }
+      return CommandResult.success({ turns: 0 })
+    }
+
+    t0 = performance.now()
+    initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
+    output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
 
     output.log(`Found:`)
     output.log(`  - ${allFiles.length} documents (including summaries)`)
@@ -816,16 +699,14 @@ export default class AiChatTask extends Command {
             _: ['ai:context:files', userMessage],
             provider: resolvedProvider,
             model: resolvedModel,
-            ...(server ? { server: true } : {}),
+            server: true,
           })
 
           if (filesResult.status === 'success' && filesResult.data?.paths?.length) {
             if (filesResult.data.query) contextQueries.push(filesResult.data.query)
             queryRelevantPaths = new Set(filesResult.data.paths)
             newPaths = filesResult.data.paths
-            initialCollection = server
-              ? await mergePathsIntoCollectionViaServer(filesResult.data.paths, initialCollection)
-              : await mergePathsIntoCollection(filesResult.data.paths, initialCollection, store!)
+            initialCollection = await mergePathsIntoCollection(filesResult.data.paths, initialCollection)
           }
         } catch {
           // ai:context:files failed — continue with initial context only
@@ -860,13 +741,11 @@ export default class AiChatTask extends Command {
                 const execResult = await tasks.run('markdown:sel', {
                   graphql: query,
                   raw: true,
-                  ...(server ? { server: 'true' } : {}),
+                  server: 'true',
                 })
                 if (execResult.status === 'success' && execResult.data?.paths?.length) {
                   allNewPaths.push(...execResult.data.paths)
-                  initialCollection = server
-                    ? await mergePathsIntoCollectionViaServer(execResult.data.paths, initialCollection)
-                    : await mergePathsIntoCollection(execResult.data.paths, initialCollection, store!)
+                  initialCollection = await mergePathsIntoCollection(execResult.data.paths, initialCollection)
                 }
               } catch {
                 // Skip failed queries
