@@ -163,4 +163,42 @@ test(slugify.name, () => {
     actual: slugify('Łukasz Żółć'),
     expected: 'lukasz-zolc',
   })
+
+  assert({
+    given: 'suggestedWords with more words than limit',
+    should: 'truncate at word boundary',
+    actual: slugify('one two three four five six seven eight', { suggestedWords: 3 }),
+    expected: 'one-two-three',
+  })
+
+  assert({
+    given: 'suggestedWords with fewer words than limit',
+    should: 'return all words (no truncation)',
+    actual: slugify('one two three', { suggestedWords: 7 }),
+    expected: 'one-two-three',
+  })
+
+  assert({
+    given: 'suggestedWords with preserveCase (chat filename use case)',
+    should: 'truncate by words and preserve case',
+    actual: slugify('Jane Projects Marathon Training Timeline to 26 miles by Spring', {
+      suggestedWords: 7,
+      preserveCase: true,
+    }),
+    expected: 'Jane-Projects-Marathon-Training-Timeline-to-26',
+  })
+
+  assert({
+    given: 'suggestedWords combined with suggestedLength',
+    should: 'apply word slice first, then char slice',
+    actual: slugify('one two three four five six', { suggestedWords: 5, suggestedLength: 11 }),
+    expected: 'one-two-three',
+  })
+
+  assert({
+    given: 'suggestedWords with hyphenated token',
+    should: 'count hyphenated as single word (chat-local behavior)',
+    actual: slugify('foo-bar baz qux', { suggestedWords: 2 }),
+    expected: 'foo-bar-baz',
+  })
 })

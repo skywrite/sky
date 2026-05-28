@@ -3,6 +3,7 @@ import latinize from './latinize.ts'
 
 export interface SlugifyOptions {
   suggestedLength?: number
+  suggestedWords?: number
   preserveCase?: boolean
 }
 
@@ -11,12 +12,20 @@ export default function slugify(input: string, opts?: SlugifyOptions | number): 
 
   // maintain backwards compatibility for now
   let suggestedLen
+  let suggestedWords: number | undefined
   if (typeof opts === 'number') suggestedLen = opts
   if (typeof opts === 'object') {
     suggestedLen = opts.suggestedLength
+    suggestedWords = opts.suggestedWords
   }
 
   if (typeof opts === 'undefined') opts = {}
+
+  // pre-truncate by words before the char-level pipeline (so hyphenated
+  // tokens like 'foo-bar' count as one word, matching word-boundary intent)
+  if (suggestedWords) {
+    input = input.trim().split(/\s+/).slice(0, suggestedWords).join(' ')
+  }
 
   // hack to keep the '-' and not get stripped
   input = input.replaceAll('-', ' ')
