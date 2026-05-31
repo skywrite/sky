@@ -10,7 +10,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
-import { getLanguageModel, resolveModel, resolveProvider } from '../_lib/getLanguageModel.ts'
+import { aiModel } from '#shared/ai/models.ts'
 
 // -----------------------------------------------------------------------------
 // File Paths
@@ -26,14 +26,6 @@ const SCHEMA_FILE = new URL('../../../../_shared-ts/models/DomainCollection/quer
 
 const params = {
   question: Arg.string('Question to gather context for'),
-  provider: Flag.string('AI provider (claude, openai, ollama, lm-studio)', {
-    short: 'p',
-    default: () => 'claude',
-  }),
-  model: Flag.string('Model to use', {
-    short: 'M',
-    optional: true,
-  }),
   since: Flag.string('Limit time-based queries to this period (e.g., 1y, 6mo)', {
     short: 's',
     optional: true,
@@ -74,9 +66,7 @@ export default class AIContextSelectorTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { config, output } = context
-    const { question, provider, model: modelFlag, since } = args
-    const resolvedProvider = resolveProvider(provider)
-    const model = resolveModel(resolvedProvider, modelFlag)
+    const { question, since } = args
 
     // Load prompt, schema, and entity context in parallel
     const [promptContent, schema, entityCtx] = await Promise.all([
@@ -112,7 +102,7 @@ export default class AIContextSelectorTask extends Command {
 Write the GraphQL query to gather context for answering this question.`
 
     const result = await generateText({
-      model: getLanguageModel(resolvedProvider, model),
+      ...aiModel('reasoning'),
       system: systemPrompt,
       prompt: userPrompt,
     })

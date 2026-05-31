@@ -2,7 +2,6 @@ import * as path from 'node:path'
 import process from 'node:process'
 import colors from 'picocolors'
 import { generateText, jsonSchema, stepCountIs } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { mkdir } from 'node:fs/promises'
@@ -19,7 +18,7 @@ import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
-import { getLanguageModel, type Provider, PROVIDER_DEFAULTS } from '../_lib/getLanguageModel.ts'
+import { aiModel, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
 
@@ -30,14 +29,6 @@ import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
 const params = {
   message: Flag.string('Initial message to start the conversation', {
     short: 'm',
-    optional: true,
-  }),
-  provider: Flag.string('AI provider (claude, openai, ollama, lm-studio)', {
-    short: 'p',
-    default: () => 'claude',
-  }),
-  model: Flag.string('Model name (defaults based on provider)', {
-    short: 'M',
     optional: true,
   }),
   days: Flag.number('Number of days to look back for context', {
@@ -404,17 +395,16 @@ export default class AiChatTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, env } = context
-    const { provider, model, days, inspectInitialContext, category, when } = args
+    const { days, inspectInitialContext, category, when } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
 
     const timeDir = <string>config.DIR_TIME
     const dataDir = <string>config.DIR_TRACKING
 
-    // Resolve provider and model
-    const resolvedProvider = (provider || 'claude').toLowerCase() as Provider
-    const resolvedModel = model || PROVIDER_DEFAULTS[resolvedProvider]
-    const languageModel = getLanguageModel(resolvedProvider, resolvedModel)
+    // Resolve models from the registry: a thinking model for turns, a fast model for summaries.
+    const reasoning = aiModel('reasoning')
+    const reasoningProfile = PROFILES[ROLES.reasoning]
 
     output.log(`Gathering context from last ${days} days...`)
 
@@ -662,7 +652,7 @@ export default class AiChatTask extends Command {
           contextFiles,
           summarizePaste: async (text) => {
             const { text: summary } = await generateText({
-              model: anthropic('claude-haiku-4-5-20251001'),
+              ...aiModel('fast'),
               prompt: `Summarize this pasted text in 5-7 words. Reply with ONLY the summary, no quotes or punctuation:\n\n${text.slice(
                 0,
                 2000,
@@ -723,8 +713,6 @@ export default class AiChatTask extends Command {
         try {
           const filesResult = await tasks.run<{ paths: string[]; query: string }>('ai:context:files', {
             _: ['ai:context:files', userMessage],
-            provider: resolvedProvider,
-            model: resolvedModel,
             server: true,
           })
 
@@ -816,7 +804,7 @@ export default class AiChatTask extends Command {
         }
 
         let result = await generateText({
-          model: languageModel,
+          ...reasoning,
           system: systemPrompt.trim(),
           messages,
           tools: allTools,
@@ -911,7 +899,7 @@ export default class AiChatTask extends Command {
           messages.push({ role: 'tool', content: approvals } as any)
 
           result = await generateText({
-            model: languageModel,
+            ...reasoning,
             system: systemPrompt.trim(),
             messages,
             tools: allTools,
@@ -980,8 +968,8 @@ export default class AiChatTask extends Command {
         messages: turns,
         created: createdDate,
         updated: updatedDate,
-        provider: resolvedProvider,
-        model: resolvedModel,
+        provider: reasoningProfile.provider,
+        model: reasoningProfile.model,
       })
       let markdown = chatDoc.toMarkdown()
 
