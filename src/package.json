@@ -25,8 +25,8 @@
     "#test": "./test/mod.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "3.0.44",
-    "@ai-sdk/openai": "3.0.29",
+    "@ai-sdk/anthropic": "3.0.81",
+    "@ai-sdk/openai": "3.0.67",
     "@anthropic-ai/sdk": "0.62.0",
     "chokidar": "5.0.0",
     "cross-keychain": "1.1.0",
@@ -37,7 +37,7 @@
     "@ngrok/ngrok": "1.5.2",
     "@slack/web-api": "7.11.0",
     "@supabase/supabase-js": "2.49.1",
-    "ai": "6.0.86",
+    "ai": "6.0.193",
     "diff": "5.2.0",
     "execa": "7.1.1",
     "graphql": "16.12.0",
