@@ -8,7 +8,7 @@ import type { InboxThread } from '../lib/getInboxThreads.ts'
 const params = {
   account: Flag.string('Account name from secrets (e.g. personal, work)'),
   label: Flag.string('Gmail label / IMAP folder to read', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max messages to fetch', { default: () => 50 }),
+  limit: Flag.number('Max messages to fetch', { default: () => 250 }),
   since: Flag.string('Only fetch messages since this date (YYYY-MM-DD)'),
   debug: Flag.boolean('Show debug info for message discovery'),
 }

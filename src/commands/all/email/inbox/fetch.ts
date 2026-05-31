@@ -18,9 +18,13 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),
   label: Flag.string('Gmail label to fetch from', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max new messages to fetch', { default: () => 50 }),
+  limit: Flag.number('Max new messages to fetch', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   threadId: Flag.string('Fetch a specific thread by ID', { hidden: true }),
+  collapseNewThreads: Flag.boolean('Collapse first-time (unfollowed) threads into one file dated today', {
+    default: false,
+    hidden: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -55,7 +59,7 @@ export default class EmailInboxFetchTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<FetchResult>> {
     const { output, secrets } = context
-    const { account, label, limit, when: whenOverride, threadId: filterThreadId } = args
+    const { account, label, limit, when: whenOverride, threadId: filterThreadId, collapseNewThreads } = args
 
     if (!account) {
       return CommandResult.fail('--account is required')
@@ -144,12 +148,19 @@ export default class EmailInboxFetchTask extends Command {
         byThread.set(tid, group)
       }
 
-      // Build previous-path map from follow's saved messages (per thread)
+      // Build previous-path map from follow's saved messages (per thread).
+      // A thread with no saved messages has no follow yet → it's a first-time capture.
       const previousByThread = new Map<string, string>()
+      const newThreadIds = new Set<string>()
       for (const thread of threads) {
         const lastSaved = thread.savedMessages.at(-1)
         if (lastSaved) previousByThread.set(thread.threadId, lastSaved.path)
+        else newThreadIds.add(thread.threadId)
       }
+
+      // First-time threads collapse into one file dated today (when the caller enables it,
+      // e.g. follow:sync). Already-followed threads stream each new message onto its own date.
+      const today = fetchNowSync().plainDateTime
 
       const createdEntries = new Map<string, { date: string; path: string }>()
       const resultThreads: FetchedThread[] = []
@@ -159,6 +170,8 @@ export default class EmailInboxFetchTask extends Command {
         const threadEntries: { date: string; path: string }[] = []
         const priorMarkdown: string[] = []
         const previousPath = previousByThread.get(threadId)
+        // --when (manual) wins; else collapse a first-time thread to today; else use real dates.
+        const effectiveWhen = whenOverride ?? (collapseNewThreads && newThreadIds.has(threadId) ? today : undefined)
 
         // Inherit tags/rel from previous message file (propagate across syncs)
         let inheritedTags: string | undefined
@@ -182,7 +195,7 @@ export default class EmailInboxFetchTask extends Command {
             previousPath,
             inheritedTags,
             inheritedRel,
-            whenOverride,
+            effectiveWhen,
             tasks,
             output,
           )
