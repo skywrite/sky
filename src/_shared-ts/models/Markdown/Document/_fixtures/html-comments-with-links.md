@@ -8,4 +8,3 @@ Visible [link][keep].
 
 [keep]: https://example.com
 [drop]: https://removed.example.com
-

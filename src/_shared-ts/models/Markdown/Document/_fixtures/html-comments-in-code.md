@@ -10,4 +10,3 @@ Before.
 ```
 
 After.
-
