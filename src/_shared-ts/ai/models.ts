@@ -132,11 +132,16 @@ export function aiModel(role: Role): ResolvedModel {
   return resolveProfile(PROFILES[ROLES[role]])
 }
 
-/** Resolve a model profile by name — for direct addressing (e.g. an A/B compare UI). */
-export function aiModelByProfile(name: string): ResolvedModel {
+/** Look up a model profile by name; throws if unknown. */
+export function getProfile(name: string): ModelProfile {
   const profile = (PROFILES as Record<string, ModelProfile>)[name]
   if (!profile) {
     throw new Error(`Unknown model profile: "${name}". Known profiles: ${Object.keys(PROFILES).join(', ')}`)
   }
-  return resolveProfile(profile)
+  return profile
+}
+
+/** Resolve a model profile by name — for direct addressing (e.g. a --reasoning flag or an A/B compare UI). */
+export function aiModelByProfile(name: string): ResolvedModel {
+  return resolveProfile(getProfile(name))
 }

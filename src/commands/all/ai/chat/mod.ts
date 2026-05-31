@@ -18,7 +18,7 @@ import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
-import { aiModel, PROFILES, ROLES } from '#shared/ai/models.ts'
+import { aiModel, getProfile, resolveProfile } from '#shared/ai/models.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
 
@@ -30,6 +30,10 @@ const params = {
   message: Flag.string('Initial message to start the conversation', {
     short: 'm',
     optional: true,
+  }),
+  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-gpt-5.5)', {
+    short: 'r',
+    default: () => 'default-opus-4.6',
   }),
   days: Flag.number('Number of days to look back for context', {
     short: 'd',
@@ -395,16 +399,16 @@ export default class AiChatTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, env } = context
-    const { days, inspectInitialContext, category, when } = args
+    const { reasoning: reasoningProfileName, days, inspectInitialContext, category, when } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
 
     const timeDir = <string>config.DIR_TIME
     const dataDir = <string>config.DIR_TRACKING
 
-    // Resolve models from the registry: a thinking model for turns, a fast model for summaries.
-    const reasoning = aiModel('reasoning')
-    const reasoningProfile = PROFILES[ROLES.reasoning]
+    // Resolve the chosen reasoning profile (--reasoning) for turns; a fast model for summaries.
+    const reasoningProfile = getProfile(reasoningProfileName)
+    const reasoning = resolveProfile(reasoningProfile)
 
     output.log(`Gathering context from last ${days} days...`)
 
