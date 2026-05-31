@@ -10,4 +10,3 @@ metadata:
 -->
 
 Visible text <!-- hidden inline metadata --> still visible.
-
