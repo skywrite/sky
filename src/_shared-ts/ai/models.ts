@@ -64,7 +64,7 @@ export interface ResolvedModel {
   providerOptions?: Record<string, Record<string, JSONValue>>
 }
 
-export type Role = 'reasoning' | 'chat' | 'fast' | 'balanced' | 'vision'
+export type Role = 'reasoning' | 'fast' | 'balanced' | 'vision'
 
 /** Identity builder — infers the provider literal so `options` is checked per-provider. */
 export function defineProfile<P extends Provider>(profile: ModelProfile<P>): ModelProfile<P> {
@@ -88,7 +88,6 @@ export type ProfileName = keyof typeof PROFILES
 /** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
 export const ROLES = {
   reasoning: 'opus-4-6',
-  chat: 'opus-4-6',
   fast: 'haiku-4-5',
   balanced: 'sonnet-4-6',
   vision: 'gpt-4o',
