@@ -15,7 +15,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),
   label: Flag.string('Gmail label', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to follow', { default: () => 50 }),
+  limit: Flag.number('Max threads to follow', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
 }
 

@@ -5,7 +5,9 @@ import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import * as p from '@clack/prompts'
 import { createImapClient } from '../../lib/imap-client.ts'
+import { getInboxThreads } from '../../lib/getInboxThreads.ts'
 import type { FetchedThread } from '../fetch.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -13,7 +15,10 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),
   label: Flag.string('Gmail label to sync', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max messages to fetch', { default: () => 50 }),
+  limit: Flag.number('Max messages to fetch', { default: () => 250 }),
+  pick: Flag.boolean('Interactively pick a single tagged thread to sync (for testing/triage)', {
+    default: false,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -31,18 +36,21 @@ export default class EmailInboxFollowSyncTask extends Command {
     description: 'Sync all email threads: create follows for new, fetch new messages for existing.',
     descriptionLong: [
       'Composes email:inbox:fetch to download unsaved messages, then:',
-      '  - Threads without follows: creates follow files',
-      '  - Threads with follows but new messages: updates follow files',
+      '  - First-time threads: captures the whole thread as ONE entry dated today, creates follow file',
+      '  - Already-followed threads: appends each new message on its own date, updates follow file',
       '  - Archives processed threads from inbox',
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
     ],
-    usage: ['sky email:inbox:follow:sync --account user@example.com'],
+    usage: [
+      'sky email:inbox:follow:sync --account user@example.com',
+      'sky email:inbox:follow:sync --account user@example.com --pick   # choose one thread',
+    ],
     params,
   }
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<SyncResult>> {
     const { output, secrets } = context
-    const { account, label, limit } = args
+    const { account, label, limit, pick } = args
 
     if (!account) {
       return CommandResult.fail('--account is required')
@@ -58,9 +66,26 @@ export default class EmailInboxFollowSyncTask extends Command {
     // ── Phase 1: Load follow registry ────────────────────────────────────
     const registry = await EmailFollowRegistry.build()
 
+    // ── Optional: interactive single-thread pick (testing/triage) ─────────
+    let pickedThreadId: string | undefined
+    if (pick) {
+      pickedThreadId = await this.promptForThread({ user: entry.user, pass: entry.pass }, label, limit, output)
+      if (!pickedThreadId) {
+        return CommandResult.success({ newFollows: 0, updatedFollows: 0, fetchedMessages: 0 })
+      }
+    }
+
     // ── Phase 2: Fetch unsaved messages (delegates to email:inbox:fetch) ──
-    // fetch derives per-thread `previous` from follow savedMessages via getInboxThreads
-    const fetchResult = await tasks.run('email:inbox:fetch', { account, label, limit })
+    // fetch derives per-thread `previous` from follow savedMessages via getInboxThreads.
+    // collapseNewThreads: a first-time follow captures the whole backlog as one entry dated
+    // today; once followed, later replies stream onto their own dates.
+    const fetchResult = await tasks.run('email:inbox:fetch', {
+      account,
+      label,
+      limit,
+      collapseNewThreads: true,
+      ...(pickedThreadId ? { threadId: pickedThreadId } : {}),
+    })
 
     if (!fetchResult.ok || !fetchResult.data) {
       return CommandResult.fail('email:inbox:fetch failed')
@@ -128,6 +153,61 @@ export default class EmailInboxFollowSyncTask extends Command {
     const fetched = fetchResult.data.fetched
     output.log(`\n  Sync complete: ${newFollows} new, ${updatedFollows} updated, ${fetched} message(s).\n`)
     return CommandResult.success({ newFollows, updatedFollows, fetchedMessages: fetched })
+  }
+
+  /** List unsaved tagged threads and let the user pick one. Returns its threadId, or undefined. */
+  private async promptForThread(
+    creds: { user: string; pass: string },
+    label: string,
+    limit: number,
+    output: { log: (msg: string) => void },
+  ): Promise<string | undefined> {
+    const client = createImapClient(creds)
+    client.on('error', () => {})
+
+    let unsaved: { threadId: string; from: string; subject: string; count: number; followed: boolean }[] = []
+    try {
+      await client.connect()
+      const { threads } = await getInboxThreads(client, label, { limit })
+      unsaved = threads
+        .filter((t) => !t.saved)
+        .map((t) => {
+          const first = t.messages[0]
+          return {
+            threadId: t.threadId,
+            from: first?.from?.name || first?.from?.address || '(unknown)',
+            subject: first?.subject || '(no subject)',
+            count: t.messages.length,
+            followed: t.savedMessages.length > 0,
+          }
+        })
+    } catch (err) {
+      output.log(`  Warning: could not list threads: ${(err as Error).message}`)
+      return undefined
+    } finally {
+      await client.logout().catch(() => {})
+    }
+
+    if (unsaved.length === 0) {
+      output.log('  No unsaved tagged threads to sync.\n')
+      return undefined
+    }
+
+    const selected = await p.select({
+      message: 'Which thread to sync?',
+      options: unsaved.map((t) => ({
+        value: t.threadId,
+        label: t.subject,
+        hint: `${t.from} · ${t.count} msg${t.count === 1 ? '' : 's'} · ${t.followed ? 'new replies' : 'new'}`,
+      })),
+    })
+
+    if (p.isCancel(selected)) {
+      p.cancel('Cancelled')
+      return undefined
+    }
+
+    return selected as string
   }
 
   /** Remove processed threads from inbox (archive = remove \\Inbox label via messageDelete) */

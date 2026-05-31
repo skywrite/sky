@@ -35,7 +35,7 @@ export async function getInboxThreads(
   label: string,
   opts: { since?: Date; limit?: number; debug?: boolean } = {},
 ): Promise<InboxThreadsResult> {
-  const { since, limit = 50, debug = false } = opts
+  const { since, limit = 250, debug = false } = opts
   const log = debug ? (msg: string) => console.error(`  [debug] ${msg}`) : (_msg: string) => {}
 
   // Fetch metadata from label (fast, no body)
