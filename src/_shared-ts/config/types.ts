@@ -1,3 +1,9 @@
+export interface AiProfileConfig {
+  provider: string
+  model: string
+  options?: Record<string, unknown>
+}
+
 export interface SkyConfig {
   version: number
   dir: string
@@ -19,6 +25,7 @@ export interface SkyConfig {
       fast: string
       transcription: string
     }
+    profiles?: Record<string, AiProfileConfig>
   }
   server: {
     port: number
