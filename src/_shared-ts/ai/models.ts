@@ -1,8 +1,9 @@
 import type { JSONValue, LanguageModel } from 'ai'
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
-import { createOpenAI, openai } from '@ai-sdk/openai'
+import { createOpenAI, openai, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { PROFILES } from './defaultProfiles.ts'
 
 /**
  * Central registry for AI model selection.
@@ -41,7 +42,7 @@ export interface CommonOptions {
 /** Provider-specific option bags. Only anthropic is strongly typed for now. */
 interface ProviderOptionsByProvider {
   anthropic: AnthropicProviderOptions
-  openai: Record<string, JSONValue>
+  openai: OpenAIResponsesProviderOptions
   ollama: Record<string, JSONValue>
   'lm-studio': Record<string, JSONValue>
 }
@@ -71,26 +72,17 @@ export function defineProfile<P extends Provider>(profile: ModelProfile<P>): Mod
   return profile
 }
 
-/**
- * Built-in model profiles. Names are simple model-version keys — rename freely.
- * The baseline is behaviour-preserving: these mirror the models call sites use today,
- * with no `options`, so nothing changes when call sites migrate to roles.
- */
-export const PROFILES = {
-  'opus-4-6': defineProfile({ provider: 'anthropic', model: 'claude-opus-4-6' }),
-  'sonnet-4-6': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-4-6' }),
-  'haiku-4-5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
-  'gpt-4o': defineProfile({ provider: 'openai', model: 'gpt-4o' }),
-} satisfies Record<string, ModelProfile>
+/** Built-in model profiles live in ./defaultProfiles.ts; re-exported here as part of the registry's public surface. */
+export { PROFILES }
 
 export type ProfileName = keyof typeof PROFILES
 
 /** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
 export const ROLES = {
-  reasoning: 'opus-4-6',
-  fast: 'haiku-4-5',
-  balanced: 'sonnet-4-6',
-  vision: 'gpt-4o',
+  reasoning: 'default-opus-4.6',
+  fast: 'default-haiku-4.5',
+  balanced: 'default-sonnet-4.6',
+  vision: 'default-gpt-4o',
 } satisfies Record<Role, ProfileName>
 
 const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', 'topK', 'maxRetries'])

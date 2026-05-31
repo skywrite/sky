@@ -75,11 +75,43 @@ test('resolveProfile demuxes generic settings from provider-specific options', (
   })
 })
 
+test('default-opus-4.8 profile resolves to opus 4.8 with effort/thinking options', () => {
+  const resolved = aiModelByProfile('default-opus-4.8')
+  assert({
+    given: 'the default-opus-4.8 profile',
+    should: 'resolve to claude-opus-4-8',
+    actual: modelId(resolved.model),
+    expected: 'claude-opus-4-8',
+  })
+  assert({
+    given: 'its effort option',
+    should: 'land under providerOptions.anthropic',
+    actual: resolved.providerOptions?.['anthropic']?.['effort'],
+    expected: 'xhigh',
+  })
+})
+
+test('default-gpt-5.5 routes openai options under providerOptions.openai', () => {
+  const resolved = aiModelByProfile('default-gpt-5.5')
+  assert({
+    given: 'the default-gpt-5.5 profile',
+    should: 'resolve to gpt-5.5',
+    actual: modelId(resolved.model),
+    expected: 'gpt-5.5',
+  })
+  assert({
+    given: 'its reasoningEffort + serviceTier options',
+    should: 'land under providerOptions.openai',
+    actual: resolved.providerOptions?.['openai'],
+    expected: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+  })
+})
+
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({
     given: 'a known profile name',
     should: 'resolve its model',
-    actual: modelId(aiModelByProfile('haiku-4-5').model),
+    actual: modelId(aiModelByProfile('default-haiku-4.5').model),
     expected: 'claude-haiku-4-5',
   })
 
