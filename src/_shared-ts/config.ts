@@ -1,8 +1,9 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { loadSkyConfig } from './config/loader.ts'
+import type { AiProfileConfig } from './config/types.ts'
 
-export type { SkyConfig } from './config/types.ts'
+export type { AiProfileConfig, SkyConfig } from './config/types.ts'
 export { SKY_CONFIG_DIR, SKY_CONFIG_PATH } from './config/loader.ts'
 
 const skyConfig = loadSkyConfig()
@@ -20,6 +21,7 @@ export const DAY_START_COMMANDS = skyConfig.commands.day.start
 export const DAY_END_COMMANDS = skyConfig.commands.day.end
 export const BINS = skyConfig.bins
 export const AI_MODELS = skyConfig.ai.models
+export const AI_PROFILES: Record<string, AiProfileConfig> = skyConfig.ai.profiles ?? {}
 export const PORT_SERVER = skyConfig.server.port
 
 // ── Derived from config (convention) ───────────────────────────

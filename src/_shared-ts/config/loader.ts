@@ -76,6 +76,7 @@ function defaults(): SkyConfig {
         fast: 'openai/gpt-4o-mini',
         transcription: 'openai/gpt-4o-transcribe',
       },
+      profiles: {},
     },
     server: { port: 9999 },
   }
@@ -104,6 +105,7 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
+    if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.server?.port) config.server.port = parsed.server.port
   }
 

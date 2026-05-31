@@ -4,6 +4,7 @@ import { createOpenAI, openai, type OpenAIResponsesProviderOptions } from '@ai-s
 import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { PROFILES } from './defaultProfiles.ts'
+import { AI_PROFILES } from '#config'
 
 /**
  * Central registry for AI model selection.
@@ -132,11 +133,36 @@ export function aiModel(role: Role): ResolvedModel {
   return resolveProfile(PROFILES[ROLES[role]])
 }
 
+const PROVIDERS = new Set<string>(['anthropic', 'openai', 'ollama', 'lm-studio'])
+
+let configProfilesCache: Record<string, ModelProfile> | null = null
+
+/** User-defined profiles from ~/.sky/config.jsonc (ai.profiles), validated and converted. */
+function configProfiles(): Record<string, ModelProfile> {
+  if (configProfilesCache) return configProfilesCache
+  const out: Record<string, ModelProfile> = {}
+  for (const [name, def] of Object.entries(AI_PROFILES)) {
+    if (!def || typeof def.model !== 'string' || !PROVIDERS.has(def.provider)) {
+      console.warn(`Skipping invalid AI profile "${name}" in ~/.sky/config.jsonc (needs a known provider + a model)`)
+      continue
+    }
+    out[name] = { provider: def.provider, model: def.model, options: def.options } as ModelProfile
+  }
+  configProfilesCache = out
+  return out
+}
+
+/** All profiles: the built-in defaults plus user profiles from config (config wins on a name clash). */
+export function getAllProfiles(): Record<string, ModelProfile> {
+  return { ...PROFILES, ...configProfiles() }
+}
+
 /** Look up a model profile by name; throws if unknown. */
 export function getProfile(name: string): ModelProfile {
-  const profile = (PROFILES as Record<string, ModelProfile>)[name]
+  const all = getAllProfiles()
+  const profile = all[name]
   if (!profile) {
-    throw new Error(`Unknown model profile: "${name}". Known profiles: ${Object.keys(PROFILES).join(', ')}`)
+    throw new Error(`Unknown model profile: "${name}". Known profiles: ${Object.keys(all).sort().join(', ')}`)
   }
   return profile
 }
