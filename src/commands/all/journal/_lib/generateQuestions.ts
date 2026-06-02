@@ -1,12 +1,12 @@
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { aiModelByProfile } from '#shared/ai/models.ts'
 import type { JournalContext } from './gatherContext.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
 
-const MODEL = 'claude-opus-4-6'
+const PROFILE = 'default-opus-4.8'
 const PROMPT_FILE = new URL('../prompts/generate-questions.prompt.md', import.meta.url).pathname
 
 export interface GeneratedQuestion {
@@ -40,7 +40,7 @@ export async function generateQuestions(context: JournalContext): Promise<Genera
   })
 
   const result = await generateObject({
-    model: anthropic(MODEL),
+    ...aiModelByProfile(PROFILE),
     schema: QuestionSchema,
     prompt,
   })
