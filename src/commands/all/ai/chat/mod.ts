@@ -31,7 +31,7 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-gpt-5.5)', {
+  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-lm-studio)', {
     short: 'r',
     default: () => 'default-opus-4.6',
   }),
@@ -387,12 +387,11 @@ export default class AiChatTask extends Command {
     usage: [
       'sky ai:chat                              # Claude Opus (default)',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
-      'sky ai:chat -p openai                    # Use OpenAI GPT-4o',
-      'sky ai:chat -p ollama                    # Use local Ollama',
-      'sky ai:chat -p lm-studio                 # Use LM Studio',
-      'sky ai:chat -p ollama -M deepseek-r1     # Ollama with specific model',
+      'sky ai:chat -r default-lm-studio         # Use LM Studio local model',
+      'sky ai:chat -r my-lm-studio              # Use custom config profile',
+      'sky ai:chat -r default-gpt-5.5           # Use OpenAI GPT-5.5',
       'sky ai:chat --days 14                    # Include 14 days of context',
-      'sky ai:chat --ephemeral                   # Chat without saving to file',
+      'sky ai:chat --ephemeral                  # Chat without saving to file',
     ],
     params,
   }

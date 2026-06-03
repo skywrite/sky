@@ -1,6 +1,7 @@
 export interface AiProfileConfig {
   provider: string
   model: string
+  baseUrl?: string
   options?: Record<string, unknown>
 }
 
