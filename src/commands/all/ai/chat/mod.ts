@@ -821,7 +821,7 @@ export default class AiChatTask extends Command {
           onStepFinish,
         })
 
-        // Handle tool approval requests (e.g., slack_post with needsApproval)
+        // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
         const deniedTools = new Set<string>()
         const maxApprovalRounds = 3
         let approvalRound = 0
