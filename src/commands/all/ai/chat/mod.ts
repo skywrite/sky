@@ -35,6 +35,10 @@ const params = {
     short: 'r',
     default: () => 'default-opus-4.6',
   }),
+  fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5)', {
+    short: 'f',
+    default: () => 'default-haiku-4.5',
+  }),
   days: Flag.number('Number of days to look back for context', {
     short: 'd',
     default: () => 7,
@@ -385,11 +389,11 @@ export default class AiChatTask extends Command {
       'Conversations are automatically saved to {day}/actions/ai-chats/ folder.',
     ],
     usage: [
-      'sky ai:chat                              # Claude Opus (default)',
+      'sky ai:chat                              # Claude Opus (default), Haiku for fast',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
       'sky ai:chat -r default-lm-studio         # Use LM Studio local model',
+      'sky ai:chat -r default-lm-studio -f default-sonnet-4.6  # LM Studio + Sonnet for fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
-      'sky ai:chat -r default-gpt-5.5           # Use OpenAI GPT-5.5',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --ephemeral                  # Chat without saving to file',
     ],
@@ -398,7 +402,7 @@ export default class AiChatTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, env } = context
-    const { reasoning: reasoningProfileName, days, inspectInitialContext, category, when } = args
+    const { reasoning: reasoningProfileName, fast: fastProfileName, days, inspectInitialContext, category, when } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
 
@@ -408,6 +412,8 @@ export default class AiChatTask extends Command {
     // Resolve the chosen reasoning profile (--reasoning) for turns; a fast model for summaries.
     const reasoningProfile = getProfile(reasoningProfileName)
     const reasoning = resolveProfile(reasoningProfile)
+    const fastProfile = getProfile(fastProfileName)
+    const fast = resolveProfile(fastProfile)
 
     output.log(`Gathering context from last ${days} days...`)
 
@@ -655,7 +661,7 @@ export default class AiChatTask extends Command {
           contextFiles,
           summarizePaste: async (text) => {
             const { text: summary } = await generateText({
-              ...aiModel('fast'),
+              ...fast,
               prompt: `Summarize this pasted text in 5-7 words. Reply with ONLY the summary, no quotes or punctuation:\n\n${text.slice(
                 0,
                 2000,
