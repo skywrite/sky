@@ -28,8 +28,12 @@ export const PROFILES = {
     model: 'gpt-5.5',
     options: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
   }),
-  'default-lm-studio': defineProfile({
+  'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',
+  }),
+  'default-local-fast': defineProfile({
+    provider: 'lm-studio',
+    model: 'google/gemma-4-e4b',
   }),
 } satisfies Record<string, ModelProfile>
