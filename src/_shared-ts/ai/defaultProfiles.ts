@@ -28,4 +28,8 @@ export const PROFILES = {
     model: 'gpt-5.5',
     options: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
   }),
+  'default-lm-studio': defineProfile({
+    provider: 'lm-studio',
+    model: 'qwen3.6-35b-a3b',
+  }),
 } satisfies Record<string, ModelProfile>

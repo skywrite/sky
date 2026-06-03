@@ -52,6 +52,7 @@ interface ProviderOptionsByProvider {
 export interface ModelProfile<P extends Provider = Provider> {
   provider: P
   model: string
+  baseUrl?: string
   options?: CommonOptions & ProviderOptionsByProvider[P]
 }
 
@@ -88,7 +89,18 @@ export const ROLES = {
 
 const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', 'topK', 'maxRetries'])
 
-const lmStudio = createOpenAI({ baseURL: 'http://localhost:1234/v1', apiKey: 'lm-studio' })
+let _lmStudioProvider: { baseUrl: string; provider: ReturnType<typeof createOpenAI> } | null = null
+
+function getLmStudioProvider(): ReturnType<typeof createOpenAI> {
+  return getLmStudioProviderWith('http://localhost:1234/v1')
+}
+
+function getLmStudioProviderWith(baseUrl: string): ReturnType<typeof createOpenAI> {
+  if (!_lmStudioProvider || _lmStudioProvider.baseUrl !== baseUrl) {
+    _lmStudioProvider = { baseUrl, provider: createOpenAI({ baseURL: baseUrl, apiKey: 'lm-studio' }) }
+  }
+  return _lmStudioProvider.provider
+}
 
 function languageModelFor(profile: ModelProfile): LanguageModel {
   switch (profile.provider) {
@@ -97,7 +109,7 @@ function languageModelFor(profile: ModelProfile): LanguageModel {
     case 'ollama':
       return ollama(profile.model)
     case 'lm-studio':
-      return lmStudio(profile.model)
+      return getLmStudioProviderWith(profile.baseUrl ?? process.env.LM_STUDIO_BASE_URL ?? 'http://localhost:1234/v1')(profile.model)
     case 'anthropic':
     default:
       return anthropic(profile.model)
@@ -146,7 +158,7 @@ function configProfiles(): Record<string, ModelProfile> {
       console.warn(`Skipping invalid AI profile "${name}" in ~/.sky/config.jsonc (needs a known provider + a model)`)
       continue
     }
-    out[name] = { provider: def.provider, model: def.model, options: def.options } as ModelProfile
+    out[name] = { provider: def.provider, model: def.model, baseUrl: def.baseUrl, options: def.options } as ModelProfile
   }
   configProfilesCache = out
   return out
