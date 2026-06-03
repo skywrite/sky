@@ -31,11 +31,11 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-lm-studio)', {
+  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-local-reasoning)', {
     short: 'r',
     default: () => 'default-opus-4.6',
   }),
-  fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5)', {
+  fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5, default-local-fast)', {
     short: 'f',
     default: () => 'default-haiku-4.5',
   }),
@@ -391,8 +391,8 @@ export default class AiChatTask extends Command {
     usage: [
       'sky ai:chat                              # Claude Opus (default), Haiku for fast',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
-      'sky ai:chat -r default-lm-studio         # Use LM Studio local model',
-      'sky ai:chat -r default-lm-studio -f default-sonnet-4.6  # LM Studio + Sonnet for fast',
+      'sky ai:chat -r default-local-reasoning   # Use local LM Studio model',
+      'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --ephemeral                  # Chat without saving to file',
