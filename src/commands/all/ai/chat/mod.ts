@@ -33,7 +33,7 @@ const params = {
   }),
   reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-local-reasoning)', {
     short: 'r',
-    default: () => 'default-opus-4.6',
+    default: () => 'default-fable-5',
   }),
   fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5, default-local-fast)', {
     short: 'f',
@@ -389,7 +389,7 @@ export default class AiChatTask extends Command {
       'Conversations are automatically saved to {day}/actions/ai-chats/ folder.',
     ],
     usage: [
-      'sky ai:chat                              # Claude Opus (default), Haiku for fast',
+      'sky ai:chat                              # Claude Fable 5 (default), Haiku for fast',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
       'sky ai:chat -r default-local-reasoning   # Use local LM Studio model',
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
