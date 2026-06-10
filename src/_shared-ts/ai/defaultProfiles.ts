@@ -10,10 +10,15 @@ import { defineProfile, type ModelProfile } from './models.ts'
  *
  * Model ids stay in their canonical API form (claude-opus-4-8, gpt-5.5); the profile
  * key is just a label. Sampling params (temperature/topP) belong only on profiles
- * whose model accepts them — thinking/reasoning models (Opus 4.7/4.8, GPT-5.x) 400 on
+ * whose model accepts them — thinking/reasoning models (Fable 5, Opus 4.7/4.8, GPT-5.x) 400 on
  * them, so those carry effort/thinking instead.
  */
 export const PROFILES = {
+  'default-fable-5': defineProfile({
+    provider: 'anthropic',
+    model: 'claude-fable-5',
+    options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
+  }),
   'default-opus-4.8': defineProfile({
     provider: 'anthropic',
     model: 'claude-opus-4-8',
