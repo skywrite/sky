@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import process from 'node:process'
 import colors from 'picocolors'
-import { generateText, jsonSchema, stepCountIs } from 'ai'
+import { generateText, jsonSchema, stepCountIs, streamText } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { mkdir } from 'node:fs/promises'
@@ -812,14 +812,33 @@ export default class AiChatTask extends Command {
           }
         }
 
-        let result = await generateText({
-          ...reasoning,
-          system: systemPrompt.trim(),
-          messages,
-          tools: allTools,
-          stopWhen: stepCountIs(5),
-          onStepFinish,
-        })
+        // Stream the reasoning turn rather than issuing a single blocking
+        // request. A non-streaming call holds an idle socket for the entire
+        // (potentially many-minute) generation; on flaky networks or past
+        // Anthropic's ~10-min non-streaming ceiling that connection gets
+        // dropped ("socket connection was closed unexpectedly"). Streaming
+        // keeps SSE bytes flowing the whole time. Awaiting the result promises
+        // consumes the stream and rejects on a mid-stream error, which the
+        // surrounding try/catch handles. Shape mirrors the old generateText
+        // result so the approval loop and downstream rendering are unchanged.
+        const runTurn = async () => {
+          const stream = streamText({
+            ...reasoning,
+            system: systemPrompt.trim(),
+            messages,
+            tools: allTools,
+            stopWhen: stepCountIs(5),
+            onStepFinish,
+          })
+          return {
+            text: await stream.text,
+            content: await stream.content,
+            steps: await stream.steps,
+            response: await stream.response,
+          }
+        }
+
+        let result = await runTurn()
 
         // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
         const deniedTools = new Set<string>()
@@ -907,14 +926,7 @@ export default class AiChatTask extends Command {
           // deno-lint-ignore no-explicit-any
           messages.push({ role: 'tool', content: approvals } as any)
 
-          result = await generateText({
-            ...reasoning,
-            system: systemPrompt.trim(),
-            messages,
-            tools: allTools,
-            stopWhen: stepCountIs(5),
-            onStepFinish,
-          })
+          result = await runTurn()
         }
 
         // Collect source URLs from web search tool results
