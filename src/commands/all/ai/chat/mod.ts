@@ -18,6 +18,7 @@ import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
+import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { aiModel, getProfile, resolveProfile } from '#shared/ai/models.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
@@ -442,9 +443,10 @@ export default class AiChatTask extends Command {
     const prevStart = today.addDays(-(days - 1))
     const yesterday = today.addDays(-1)
 
-    // Parallel: fetch all four sets of documents from server at once
+    // Parallel: fetch all four sets of documents from server at once,
+    // plus the interaction-ranked people list for system prompt grounding
     t0 = performance.now()
-    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
+    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, peopleEntities] = await Promise.all([
       fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
       fetchContextFromServer(
         `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
@@ -452,6 +454,7 @@ export default class AiChatTask extends Command {
       ),
       fetchContextFromServer(`{ goals { path } }`, 0),
       fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
+      gatherPeopleEntities(config as Record<string, unknown>),
     ])
     output.log(
       colors.dim(
@@ -508,6 +511,7 @@ export default class AiChatTask extends Command {
 
     output.log(`Found:`)
     output.log(`  - ${allFiles.length} documents (including summaries)`)
+    output.log(`  - ${peopleEntities.length} active people`)
     output.log(`  - ${ctx.health.length} days of health data`)
     output.log(`  - ${ctx.prices.length} days of price data`)
 
@@ -522,6 +526,7 @@ export default class AiChatTask extends Command {
         notebookTimezone: context.notebookNow.timezone,
         systemTimezone: context.systemNow.timezone,
       },
+      entities: { block: formatPeopleBlock(peopleEntities) },
     }
     const { output: baseSystemPrompt } = renderPromptFile(promptContent, 'chat.prompt.md', renderInput)
     let systemPrompt = baseSystemPrompt
