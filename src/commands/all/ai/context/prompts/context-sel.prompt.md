@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-02-07
+updated: 2026-06-10
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -37,6 +37,8 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 **People** → `involves: "<person-name>"`
 - Works on: meetings, messages, journals, documents, projects, decisions, goals
 - Searches who/from/to fields and body text for the person's name
+- Use the person's canonical name — aliases are resolved automatically
+- When the question centers on a specific person, ALSO fetch their profile document: `people(where: { name_contains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
 
 **Tags** → `tags_contains`, `tags_contains_any`, `tags_contains_all`, or `tags_starts_with`
 - `tags_contains: "<exact-tag>"` — match a single exact tag
@@ -65,6 +67,9 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 Match informal user phrasing to the closest entity name above. For example:
 - "Acme Pay GTM" → project `Camino-Acme-Pay` + tag `Acme/Product/GTM`
 - "hiring decisions" → check Pending Decisions list for hiring-related names
+- "Bob" → Active People lists `Bob Smith (aka Bob)` → `involves: "Bob Smith"` + `people(where: { name_contains: "Bob Smith" })`
+
+People are listed as `Canonical Name (aka Alias1, Alias2)` — always filter by the canonical name, not the alias.
 
 Always use the exact entity name from the lists above in your filters. Do NOT invent names.
 {{/if}}
