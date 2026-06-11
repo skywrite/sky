@@ -53,7 +53,10 @@ export default class EmailInboxFetchTask extends Command {
       'downloads body content + attachments, and saves to day files.',
       'Same-day messages for a thread are appended to a single file.',
     ],
-    usage: ['sky email:inbox:fetch --account user@example.com', 'sky email:inbox:fetch --account user@example.com --limit 5'],
+    usage: [
+      'sky email:inbox:fetch --account user@example.com',
+      'sky email:inbox:fetch --account user@example.com --limit 5',
+    ],
     params,
   }
 

@@ -95,13 +95,7 @@ export default class NotesNewTask extends Command {
     const ddfw = new DayDirFileWriter(whenDate)
     const entryWhen = when.time
 
-    const yamlLines: string[] = [
-      '---',
-      `summary: ${summary}`,
-      `when: ${entryWhen}`,
-      `type: Notes`,
-      'context:',
-    ]
+    const yamlLines: string[] = ['---', `summary: ${summary}`, `when: ${entryWhen}`, `type: Notes`, 'context:']
 
     if (rel && rel.length > 0) {
       yamlLines.push('rel:')

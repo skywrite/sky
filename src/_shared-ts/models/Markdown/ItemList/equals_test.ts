@@ -14,10 +14,7 @@ test(`${ItemList.name}.equals(): DayItem arrays`, () => {
 
   const dic3 = ItemList.fromArray('Professional Complete', ['16:00 > acme/bob Slack -> make super app'])
 
-  const dic4 = ItemList.fromArray('Google Complete', [
-    '15:00 > Inbox zero',
-    '16:00 > acme/bob Slack -> make super app',
-  ])
+  const dic4 = ItemList.fromArray('Google Complete', ['15:00 > Inbox zero', '16:00 > acme/bob Slack -> make super app'])
 
   const dic5 = ItemList.fromArray('Professional Complete', [
     '15:00 > Inbox zero',

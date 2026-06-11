@@ -109,7 +109,9 @@ function languageModelFor(profile: ModelProfile): LanguageModel {
     case 'ollama':
       return ollama(profile.model)
     case 'lm-studio':
-      return getLmStudioProviderWith(profile.baseUrl ?? process.env.LM_STUDIO_BASE_URL ?? 'http://localhost:1234/v1')(profile.model)
+      return getLmStudioProviderWith(profile.baseUrl ?? process.env.LM_STUDIO_BASE_URL ?? 'http://localhost:1234/v1')(
+        profile.model,
+      )
     case 'anthropic':
     default:
       return anthropic(profile.model)
