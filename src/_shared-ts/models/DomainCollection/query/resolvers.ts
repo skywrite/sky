@@ -28,6 +28,7 @@ import {
   matchesTagPrefix,
   type NameResolver,
 } from './filters/mod.ts'
+import { createNameResolver } from './nameResolver.ts'
 
 // =============================================================================
 // Filter Types (match schema.graphql inputs)
@@ -776,28 +777,31 @@ function matchesDocumentFilter(
 // Resolver factory
 // =============================================================================
 
+export interface DomainResolverOptions {
+  /**
+   * Interaction-score lookup for fuzzy person-name resolution (raw name in,
+   * score out). The notebook service supplies this from its ScoringStore so
+   * informal references ("James") resolve to the most-interacted-with match.
+   */
+  scoreFor?: (name: string) => number
+}
+
 /**
  * Create GraphQL resolvers for DomainCollection queries.
  *
  * Note: These use the buildSchema + rootValue signature where functions
  * receive (args, context, info) directly, NOT (parent, args, context, info).
  */
-export function createDomainResolvers(store: MarkdownStore) {
+export function createDomainResolvers(store: MarkdownStore, options: DomainResolverOptions = {}) {
   const domain = DomainCollection.fromStore(store)
 
   // Create day lookup for resolving meeting.day, message.day, journal.day
   const lookupDay = createDayLookup(domain)
 
-  // Resolve a name to all known aliases via PeopleStore.
-  // e.g., "JW" → ["James Robert Wheeler", "JW", "Jim Wheeler"]
-  const resolveNames: NameResolver = (name: string): string[] => {
-    const person = store.people.find(name)
-    if (!person) return [name]
-    const names = new Set(person.value.names)
-    if (person.value.alt) names.add(person.value.alt)
-    names.add(name) // always include the original query
-    return Array.from(names)
-  }
+  // Resolve a name to all known aliases via PeopleStore, with token + score
+  // fallback for informal references. e.g., "JW" → ["James Robert Wheeler",
+  // "JW", "Jim Wheeler"]; "James" → the highest-scored James's names.
+  const resolveNames: NameResolver = createNameResolver(store.people, { scoreFor: options.scoreFor })
 
   /** Sort entries by date descending (most recent first) using path-derived date. */
   function sortByDateDesc(entries: Array<{ doc: Document; path: string }>): Array<{ doc: Document; path: string }> {
