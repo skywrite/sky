@@ -12,6 +12,7 @@ import { readTextFileSync } from '#shared/fs/mod.ts'
 import type { Store } from '../store.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers.ts'
+import { normalizeName } from '#shared/models/Store/normalize.ts'
 import * as resolvers from './resolvers/mod.ts'
 
 /**
@@ -97,11 +98,34 @@ type Subscription {
 `
 
 /**
+ * Interaction-score lookup for fuzzy person-name resolution, keyed by
+ * normalized name. Rebuilt lazily so score updates flow through without
+ * event wiring; scores shift slowly, so brief staleness is harmless.
+ */
+function createScoreLookup(store: Store): (name: string) => number {
+  const TTL_MS = 60_000
+  let cache: Map<string, number> | null = null
+  let builtAt = 0
+
+  return (name: string): number => {
+    if (!cache || Date.now() - builtAt > TTL_MS) {
+      cache = new Map()
+      for (const p of store.getPeopleWithScores()) {
+        const key = normalizeName(p.name)
+        cache.set(key, (cache.get(key) ?? 0) + p.score)
+      }
+      builtAt = Date.now()
+    }
+    return cache.get(normalizeName(name)) ?? 0
+  }
+}
+
+/**
  * Create GraphQL resolvers bound to store instances.
  */
 export function createResolvers(store: Store, markdownStore: MarkdownStore | null) {
   // Create DomainCollection resolvers when MarkdownStore is available
-  const dc = markdownStore ? createDomainResolvers(markdownStore) : null
+  const dc = markdownStore ? createDomainResolvers(markdownStore, { scoreFor: createScoreLookup(store) }) : null
 
   return {
     Query: {
