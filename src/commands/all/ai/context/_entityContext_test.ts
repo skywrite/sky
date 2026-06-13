@@ -1,6 +1,7 @@
 import { assert, test } from '#test'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import {
+  dedupeTags,
   type EntityContext,
   formatEntityContext,
   formatPeopleBlock,
@@ -312,5 +313,47 @@ test('formatPeopleBlock - empty returns empty string', () => {
     should: 'return empty string',
     actual: formatPeopleBlock([]),
     expected: '',
+  })
+})
+
+// ---------------------------------------------------------------------------
+// dedupeTags
+// ---------------------------------------------------------------------------
+
+test('dedupeTags - flattens across collections, dedupes, and sorts', () => {
+  const data = {
+    meetings: [{ tags: ['Atlas/Finance', 'Blockchains/Stellar'] }, { tags: ['Atlas/Finance'] }],
+    messages: [{ tags: ['Assets/Crypto/BTC'] }],
+    journals: [{ tags: ['Blockchains/Stellar'] }],
+  }
+
+  assert({
+    given: 'tag arrays across three document types with duplicates',
+    should: 'return a sorted, deduplicated list',
+    actual: dedupeTags(data),
+    expected: ['Assets/Crypto/BTC', 'Blockchains/Stellar', 'Atlas/Finance'],
+  })
+})
+
+test('dedupeTags - tolerates missing and non-array tag fields', () => {
+  const data = {
+    meetings: [{ tags: ['A/One'] }, {}, { tags: undefined }],
+    messages: [],
+  } as Record<string, Array<{ tags?: string[] }>>
+
+  assert({
+    given: 'documents with absent or undefined tags',
+    should: 'skip them without throwing',
+    actual: dedupeTags(data),
+    expected: ['A/One'],
+  })
+})
+
+test('dedupeTags - empty input returns empty list', () => {
+  assert({
+    given: 'no collections',
+    should: 'return an empty array',
+    actual: dedupeTags({}),
+    expected: [],
   })
 })

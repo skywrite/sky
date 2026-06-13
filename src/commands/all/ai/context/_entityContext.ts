@@ -47,6 +47,44 @@ const TAGS_QUERY = `{
   journals(where: {recent: "6mo"}, limit: 2000) { tags }
 }`
 
+/** Tag arrays grouped by document type, as returned by either the service or markdown:sel. */
+type TagCollections = Record<string, Array<{ tags?: string[] }>>
+
+/**
+ * Fetch recent-document tags from the running notebook service.
+ *
+ * The service answers from its in-memory store (~0.2s); running the same
+ * query locally rebuilds the full ~20k-file MarkdownStore from scratch
+ * (~20s). Returns null when unreachable so the caller can fall back to a
+ * local build.
+ */
+async function fetchTagsFromServer(): Promise<TagCollections | null> {
+  try {
+    const resp = await fetch(`http://localhost:${PORT_SERVER}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: TAGS_QUERY }),
+    })
+    if (!resp.ok) return null
+    const json = (await resp.json()) as { data?: TagCollections }
+    return json?.data ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Flatten tag arrays across document types into a sorted, deduplicated list. */
+export function dedupeTags(data: TagCollections): string[] {
+  const allTags: string[] = []
+  for (const collection of Object.values(data)) {
+    if (!Array.isArray(collection)) continue
+    for (const doc of collection) {
+      if (Array.isArray(doc.tags)) allTags.push(...doc.tags)
+    }
+  }
+  return [...new Set(allTags)].sort()
+}
+
 // ---------------------------------------------------------------------------
 // People (interaction-scored via notebook service)
 // ---------------------------------------------------------------------------
@@ -146,17 +184,17 @@ export async function gatherPeopleEntities(
  * Gather active entity context from the notebook.
  *
  * @param config - Notebook config (needs DIR_PROJECTS, DIR_DECISIONS, DIR_GOALS)
- * @param tasks  - CommandService for running sub-tasks (markdown:sel)
+ * @param tasks  - CommandService for the local tags fallback when the service is down
  */
 export async function gatherEntityContext(
   config: Record<string, unknown>,
   tasks: CommandService,
 ): Promise<EntityContext> {
-  const [projectStore, decisionStore, goalStore, tagResult, people] = await Promise.all([
+  const [projectStore, decisionStore, goalStore, serverTags, people] = await Promise.all([
     ProjectStore.build(config.DIR_PROJECTS as string),
     DecisionStore.build(config.DIR_DECISIONS as string),
     GoalStore.build(config.DIR_GOALS as string),
-    tasks.run('markdown:sel', { graphql: TAGS_QUERY, json: true }),
+    fetchTagsFromServer(),
     gatherPeopleEntities(config),
   ])
 
@@ -177,21 +215,16 @@ export async function gatherEntityContext(
   // Goals — "Area: Outcome"
   const goals = goalStore.getAllGoals().map((g) => `${g.area}: ${g.outcome}`)
 
-  // Tags — deduplicated from recent documents
-  let recentTags: string[] = []
-  if (tagResult.ok && tagResult.data?.data) {
-    const data = tagResult.data.data as Record<string, Array<{ tags?: string[] }>>
-    const allTags: string[] = []
-    for (const collection of Object.values(data)) {
-      if (!Array.isArray(collection)) continue
-      for (const doc of collection) {
-        if (Array.isArray(doc.tags)) {
-          allTags.push(...doc.tags)
-        }
-      }
+  // Tags — prefer the running service; fall back to a local build only when
+  // it's down (the slow path that used to run on every call).
+  let tagData = serverTags
+  if (!tagData) {
+    const tagResult = await tasks.run('markdown:sel', { graphql: TAGS_QUERY, json: true })
+    if (tagResult.ok && tagResult.data?.data) {
+      tagData = tagResult.data.data as TagCollections
     }
-    recentTags = [...new Set(allTags)].sort()
   }
+  const recentTags = tagData ? dedupeTags(tagData) : []
 
   return { people, projects, decisions, goals, recentTags }
 }
