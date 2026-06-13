@@ -101,8 +101,10 @@ export default class AIContextSelectorTask extends Command {
 
 Write the GraphQL query to gather context for answering this question.`
 
+    // Query generation runs on the balanced role (Sonnet 4.6): it matches Opus
+    // on query quality at lower cost/latency for this task (eval 2026-06-13).
     const result = await generateText({
-      ...aiModel('reasoning'),
+      ...aiModel('balanced'),
       system: systemPrompt,
       prompt: userPrompt,
     })
