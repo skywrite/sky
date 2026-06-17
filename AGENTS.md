@@ -135,7 +135,29 @@ import { runCommand } from '#lib/sys/mod.ts'
 
 ## Dependencies
 
-Install with `bun add <package>` from `src/`. Always install the latest stable version — check with `npm view <package> version` first.
+**Adding a dep:** `bun add <package>` from `src/`. Always install the latest stable version — check with `npm view <package> version` first.
+
+### This repo has multiple independent installs
+
+There is no single install that sets up the whole repo. Each project has its own lockfile and its own (gitignored) `node_modules`:
+
+| Project dir | Lockfile | Manager | Contents |
+|---|---|---|---|
+| `src/` | `bun.lock` | bun | **The real app (`sky`)** — all runtime deps, incl. the Vercel AI SDK (`ai`, `@ai-sdk/*`), `@anthropic-ai/sdk`, `openai`. **This is the install that matters.** |
+| `./` (root) | `bun.lock` | bun | Thin `packages/*` workspace (`@skywrite/commands`, `@skywrite/core`) only — **no third-party deps**, so installing here is nearly a no-op. |
+
+**Trap:** installing only at the repo root does NOT install the app — the app's deps live in `src/`. Always install from `src/`.
+
+### Restoring deps (fresh checkout, or a machine move where `node_modules` didn't come along)
+
+`node_modules/` is gitignored, so it never syncs (Tresorit/Dropbox) and a fresh checkout has none. Restore at the exact locked versions **without modifying any lockfile**:
+
+```bash
+cd src && bun install --frozen-lockfile      # ← the one that matters (app + AI SDK)
+cd .. && bun install --frozen-lockfile       # root workspace (near-noop)
+```
+
+`bun install --frozen-lockfile` installs strictly from `bun.lock` and fails instead of rewriting it — it never modifies the lockfile. Note it still *installs missing* packages (it just won't *change versions*), so it's the right tool after a partial sync.
 
 ## Configuration
 
