@@ -73,7 +73,7 @@ function generateConfig(opts: {
   // AI model preferences (uncomment to override defaults)
   // "ai": {
   //   "models": {
-  //     "strong": "anthropic/claude-sonnet-4-20250514",
+  //     "strong": "anthropic/claude-sonnet-4-6",
   //     "fast": "openai/gpt-4o-mini",
   //     "transcription": "openai/gpt-4o-transcribe"
   //   }

@@ -178,7 +178,7 @@ export default class UtilTzConvertTask extends Command {
     let parsed: z.infer<typeof TimezoneParseSchema>
     try {
       const result = await generateObject({
-        model: anthropic('claude-sonnet-4-20250514'),
+        model: anthropic('claude-sonnet-4-6'),
         schema: TimezoneParseSchema,
         system: systemPrompt,
         prompt: query,

@@ -281,7 +281,7 @@ export default class MessageNewTask extends Command {
         const { output: correctionPrompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
 
         const parsed = await generateObject({
-          model: anthropic('claude-sonnet-4-20250514'),
+          model: anthropic('claude-sonnet-4-6'),
           schema: z.object({
             from: z.string().nullable().optional().describe('Updated from field, only if user changed it'),
             to: z.string().nullable().optional().describe('Updated to field, only if user changed it'),
