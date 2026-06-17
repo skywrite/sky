@@ -104,7 +104,7 @@ export default class JournalNewTask extends Command {
 
           try {
             const parseResult = await generateText({
-              model: anthropic('claude-sonnet-4-20250514'),
+              model: anthropic('claude-sonnet-4-6'),
               prompt: `Parse these user corrections for journal metadata. Extract any fields the user is updating.
 
 Current metadata:

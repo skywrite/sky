@@ -229,7 +229,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     let summary: string
     try {
       const result = await generateText({
-        model: anthropic('claude-sonnet-4-20250514'),
+        model: anthropic('claude-sonnet-4-6'),
         prompt: summaryPrompt,
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min
@@ -264,7 +264,7 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     try {
       const result = await generateText({
-        model: anthropic('claude-sonnet-4-20250514'),
+        model: anthropic('claude-sonnet-4-6'),
         prompt: extractPrompt,
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min
@@ -338,7 +338,7 @@ export default class AudioTranscriptSummaryTask extends Command {
             : '- who and rel must be arrays of strings\n- Only include fields the user explicitly mentioned'
 
           const parseResult = await generateText({
-            model: anthropic('claude-sonnet-4-20250514'),
+            model: anthropic('claude-sonnet-4-6'),
             prompt: `Parse these user corrections for metadata. Extract any fields the user is updating.
 
 Current metadata:
