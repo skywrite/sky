@@ -6,7 +6,7 @@ import { aiModelByProfile } from '#shared/ai/models.ts'
 import type { JournalContext } from './gatherContext.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
 
-const PROFILE = 'default-fable-5'
+const PROFILE = 'default-opus-4.8'
 const PROMPT_FILE = new URL('../prompts/generate-questions.prompt.md', import.meta.url).pathname
 
 export interface GeneratedQuestion {
