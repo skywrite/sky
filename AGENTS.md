@@ -86,6 +86,23 @@ bun run dev:test:unit    # Run tests (bun test)
 - Run specific tests: `bun test path/to/file_test.ts`
 - Run all unit tests: `bun run dev:test:unit`
 
+## Never Hard-Code Real User Data — Use Mock Data
+
+Data the user shares in conversation (names, addresses, coordinates, share/Maps links, emails, phone numbers, account IDs, API keys, etc.) is for completing the task at hand — it must **NOT** be baked into anything committed to the repo:
+
+- Test fixtures, sample data, and expected values
+- Command `usage` examples, flag descriptions, and `descriptionLong` text
+- Code comments, doc examples, and templates (`tmpl/`)
+
+Substitute clearly fake / mock data instead — real personal data (e.g. someone's home coordinates or a link to their house) does not belong in source control. Good substitutes:
+
+- Names → `"Jane Doe"`, `"Beach house"`, `"Joe's Cafe"`
+- Coordinates → public landmarks (e.g. Eiffel Tower `48.85837, 2.294481`)
+- Links / URLs → placeholders like `<google-maps-link>` or `https://example.com/...`
+- Emails → `jane@example.com`
+
+It's fine to use a real value transiently to **verify** behavior (run the command, resolve a link), but scrub it from every committed file afterward and delete any throwaway script that captured it.
+
 ## Key Conventions
 
 ### Imports
