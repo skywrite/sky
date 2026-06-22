@@ -14,6 +14,7 @@ export const JournalTypes: JournalType[] = [
   'Misc',
   'Mood',
   'News',
+  'Priorities',
   'Relationships',
   'Self Improvement',
   'Surprises',

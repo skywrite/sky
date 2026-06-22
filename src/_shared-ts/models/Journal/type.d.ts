@@ -14,6 +14,7 @@ export type JournalType =
   | 'Misc'
   | 'Mood'
   | 'News'
+  | 'Priorities'
   | 'Relationships'
   | 'Self Improvement'
   | 'Surprises'

@@ -21,6 +21,7 @@ const typeToFilename: Record<string, string> = {
   Misc: 'Misc.md',
   Mood: 'Mood.md',
   News: 'News.md',
+  Priorities: 'Priorities.md',
   Relationships: 'Relationships.md',
   'Self Improvement': 'Self-Improvement.md',
   Surprises: 'Surprises.md',
