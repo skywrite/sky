@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import colors from 'picocolors'
 import { mkdir, stat } from 'node:fs/promises'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { walk } from '#shared/fs/mod.ts'
@@ -70,6 +71,31 @@ function extractFlags(params: ParamsRecord | undefined): FlagEntry[] {
   return flags
 }
 
+/**
+ * Import a command file and build its manifest entry. Warns loudly to stderr on
+ * import failure (never throws) and returns a stub entry. Without this, a broken
+ * command — e.g. an external command whose group `node_modules` aren't installed,
+ * so `@skywrite/*` can't resolve — vanishes silently from discovery, including
+ * from ai:chat tool exposure (where `aiChatTool` would be stuck false).
+ */
+async function buildCommandEntry(name: string, file: string): Promise<CommandEntry> {
+  let description = ''
+  let flags: FlagEntry[] = []
+  let aiChatTool = false
+  try {
+    const mod = await import(file)
+    const cmd = mod.default
+    if (cmd?.description) {
+      description = cmd.description.description ?? ''
+      flags = extractFlags(cmd.description.params)
+    }
+    if (cmd) aiChatTool = isAIChatTool(cmd)
+  } catch (err) {
+    console.warn(colors.yellow(`⚠ [sky] command scan: failed to import "${name}" (${file}) — ${(err as Error).message}`))
+  }
+  return { name, file, description, flags, aiChatTool }
+}
+
 /** Walk commands/all/ and discover all command entry points */
 async function discoverCommands(): Promise<CommandEntry[]> {
   const commands: CommandEntry[] = []
@@ -86,23 +112,7 @@ async function discoverCommands(): Promise<CommandEntry[]> {
     if (relPath.split('/').includes('lib')) continue
 
     const name = pathToCommandName(relPath)
-
-    let description = ''
-    let flags: FlagEntry[] = []
-    let aiChatTool = false
-    try {
-      const mod = await import(entry.path)
-      const cmd = mod.default
-      if (cmd?.description) {
-        description = cmd.description.description ?? ''
-        flags = extractFlags(cmd.description.params)
-      }
-      if (cmd) aiChatTool = isAIChatTool(cmd)
-    } catch {
-      // Command may have import errors — still include it with empty description
-    }
-
-    commands.push({ name, file: entry.path, description, flags, aiChatTool })
+    commands.push(await buildCommandEntry(name, entry.path))
   }
 
   commands.sort((a, b) => a.name.localeCompare(b.name))
@@ -122,19 +132,7 @@ async function discoverExtraCommands(): Promise<CommandEntry[]> {
       if (relPath.split('/').includes('lib')) continue
 
       const name = pathToCommandName(relPath)
-      let description = ''
-      let flags: FlagEntry[] = []
-      let aiChatTool = false
-      try {
-        const mod = await import(entry.path)
-        const cmd = mod.default
-        if (cmd?.description) {
-          description = cmd.description.description ?? ''
-          flags = extractFlags(cmd.description.params)
-        }
-        if (cmd) aiChatTool = isAIChatTool(cmd)
-      } catch {}
-      commands.push({ name, file: entry.path, description, flags, aiChatTool })
+      commands.push(await buildCommandEntry(name, entry.path))
     }
   }
   commands.sort((a, b) => a.name.localeCompare(b.name))
@@ -195,20 +193,7 @@ async function walkIncremental(
     }
 
     changed = true
-    const name = pathToCommandName(relPath)
-    let description = ''
-    let flags: FlagEntry[] = []
-    let aiChatTool = false
-    try {
-      const mod = await import(entry.path)
-      const cmd = mod.default
-      if (cmd?.description) {
-        description = cmd.description.description ?? ''
-        flags = extractFlags(cmd.description.params)
-      }
-      if (cmd) aiChatTool = isAIChatTool(cmd)
-    } catch {}
-    commands.push({ name, file: entry.path, description, flags, aiChatTool })
+    commands.push(await buildCommandEntry(pathToCommandName(relPath), entry.path))
   }
 
   if (cached.size > 0) changed = true
