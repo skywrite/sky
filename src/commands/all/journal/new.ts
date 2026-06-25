@@ -16,8 +16,8 @@ import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import type { JournalType, Question } from '#shared/models/Journal/type.d.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import createQuestions from '#shared/models/Journal/createQuestions.ts'
-import { gatherContext } from './_lib/gatherContext.ts'
-import { type GeneratedQuestion, generateQuestions } from './_lib/generateQuestions.ts'
+import { gatherContext, type JournalContext } from './_lib/gatherContext.ts'
+import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
 
 const typesDescription = `Journal types: ${JournalTypes.join(', ')} (or any custom type with --from-audio)`
 
@@ -184,9 +184,10 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
 
     // Gather AI questions if --ai flag is set
     let aiQuestions: GeneratedQuestion[] = []
+    let journalContext: JournalContext | undefined
     if (ai || inspectInitialContext) {
       output.log('Gathering context for AI questions...')
-      const journalContext = await gatherContext(when.plainDate, when.time)
+      journalContext = await gatherContext(when.plainDate, when.time)
 
       output.log(
         `Context: ${journalContext.documentCount} kept, ${journalContext.prunedCount} pruned, ~${journalContext.totalTokens} tokens`,
@@ -239,7 +240,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
       typesToCreate.add(type)
     }
 
-    const docs = await Promise.all(
+    const typeQuestions = await Promise.all(
       Array.from(typesToCreate).map(async (journalType: JournalType) => {
         let questions = await createQuestions(journalType, when.plainDate)
         const aiQuestionsForType = aiQuestionsByType.get(journalType)
@@ -247,9 +248,36 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
           const aiQuestionTuples: Question[] = aiQuestionsForType.map((q) => ['EVERY-DAY', 1.0, q])
           questions = [...aiQuestionTuples, ...questions]
         }
-        return { type: journalType, doc: JournalDocument.create({ type: journalType, date: when, questions }) }
+        return { type: journalType, questions }
       }),
     )
+
+    // A journal type with no static questions is AI-generated. Under --ai, fill
+    // each empty type with at least one goal-linked question (reusing the context
+    // gathered above) instead of skipping it. An empty <Type>.md = AI-only type.
+    if (ai && journalContext) {
+      const emptyTypes = typeQuestions.filter((t) => t.questions.length === 0).map((t) => t.type)
+      if (emptyTypes.length > 0) {
+        output.log(`Generating goal-based questions for: ${emptyTypes.join(', ')}`)
+        const generated = await generateQuestionsForTypes(emptyTypes, journalContext)
+        const generatedByType = new Map<JournalType, Question[]>()
+        for (const q of generated) {
+          const tuple: Question = ['EVERY-DAY', 1.0, `(AI) ${q.question}`]
+          const tuples = generatedByType.get(q.type) ?? []
+          tuples.push(tuple)
+          generatedByType.set(q.type, tuples)
+        }
+        for (const t of typeQuestions) {
+          const generatedTuples = generatedByType.get(t.type)
+          if (generatedTuples && t.questions.length === 0) t.questions = generatedTuples
+        }
+      }
+    }
+
+    const docs = typeQuestions.map(({ type, questions }) => ({
+      type,
+      doc: JournalDocument.create({ type, date: when, questions }),
+    }))
 
     // I've noticed I have journaling bias by the first journal entry
     // which is usual gratitude or health, so I focus on these more
