@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-15
-updated: 2026-01-26
+updated: 2026-06-25
 description: Generate a structured summary from a meeting transcript
 ---
 
@@ -44,17 +44,21 @@ Create additional ## headers to group related categories, misc points, observati
 (only include if explicitly stated)
 
 ## Action Items
-(only those explicitly stated by the speaker)
+(Only items explicitly stated — never inferred. One imperative bullet each. Note the owner, mark items the speaker is responsible for with "(me)", and include a due date or timeframe if one was mentioned.)
 
 ## Important Questions
 (notable questions raised during the meeting and who asked them)
 
+## Loose Ends
+(Anything ambiguous, or where you can't tell whether it was a decision or just thinking aloud. Preserve it here verbatim rather than dropping it or resolving it yourself. Omit this section only if nothing is unclear.)
+
 ## Guidelines
 
-- Be concise and focused
-- Do not use tables
-- Keep key quotes in "quotes"
+- Capture every fact, figure, name, date, decision, and commitment — omit nothing substantive. Concision is about wording, not coverage.
+- Keep prose tight: don't pad, restate the transcript, or editorialize.
 - Preserve specific names, dates, numbers, and technical terms exactly as stated
-- If speakers are identified, attribute points to them where relevant
-- Skip filler content and tangents
-- Professional, formal tone
+- Attribute points, decisions, and questions to the person who made them when stated
+- Keep key quotes in "quotes"; do not use tables
+- Skip verbal filler and repetition — but never content
+- Output only the structured notes: no preamble or closing remarks
+- Clear, direct, plain language — these are personal notes, not a formal document
