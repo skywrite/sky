@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { aiModel, aiModelByProfile } from '#shared/ai/models.ts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -92,6 +92,10 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+// The summary IS the meeting notes — pin the strongest profile for the deliverable.
+// Metadata extraction and correction-parsing are lighter and use baseline roles.
+const SUMMARY_MODEL = 'default-opus-4.8'
 
 const PROMPT_FILES = {
   meeting: {
@@ -229,7 +233,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     let summary: string
     try {
       const result = await generateText({
-        model: anthropic('claude-sonnet-4-6'),
+        ...aiModelByProfile(SUMMARY_MODEL),
         prompt: summaryPrompt,
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min
@@ -264,7 +268,7 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     try {
       const result = await generateText({
-        model: anthropic('claude-sonnet-4-6'),
+        ...aiModel('balanced'),
         prompt: extractPrompt,
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min
@@ -338,7 +342,7 @@ export default class AudioTranscriptSummaryTask extends Command {
             : '- who and rel must be arrays of strings\n- Only include fields the user explicitly mentioned'
 
           const parseResult = await generateText({
-            model: anthropic('claude-sonnet-4-6'),
+            ...aiModel('fast'),
             prompt: `Parse these user corrections for metadata. Extract any fields the user is updating.
 
 Current metadata:

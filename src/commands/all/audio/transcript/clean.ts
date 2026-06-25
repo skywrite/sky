@@ -1,6 +1,6 @@
 import * as path from 'node:path'
-import { generateObject, generateText } from 'ai'
-import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { generateText } from 'ai'
+import { aiModelByProfile } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
@@ -77,6 +77,10 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 const ANALYSIS_PROMPT_FILE = new URL('./prompts/transcript-analysis.prompt.md', import.meta.url).pathname
 const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.md', import.meta.url).pathname
 const GRAPHQL_URL = 'http://localhost:9999/graphql'
+
+// Analysis + correction run on the raw transcript and set the quality ceiling for the
+// notes built on it — pin the strongest profile (not the baseline `reasoning` role).
+const TRANSCRIPT_MODEL = 'default-opus-4.8'
 
 async function findFirstVttOnDesktop(): Promise<string | null> {
   const home = env.get('HOME')
@@ -359,7 +363,7 @@ ${transcript}
       // because generateObject's tool mode has issues with Anthropic
       const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
       const result = await generateText({
-        model: anthropic('claude-opus-4-6'),
+        ...aiModelByProfile(TRANSCRIPT_MODEL),
         prompt: jsonPrompt,
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min — long transcripts are slow to analyze
@@ -452,7 +456,7 @@ ${transcript}
     let cleanedTranscript: string
     try {
       const result = await generateText({
-        model: anthropic('claude-opus-4-6'),
+        ...aiModelByProfile(TRANSCRIPT_MODEL),
         messages: [{ role: 'user', content: correctionPrompt }],
         maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min — rewriting a long transcript is slow
