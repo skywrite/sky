@@ -398,8 +398,10 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
     // Recalculate finalTitle after potential corrections
     const correctedTitle = title !== 'Transcript Summary' ? title : extractedTitle
 
-    // Merge who: prefer summary-extracted attendees (more refined), fall back to pipeline
-    const finalWho = extractedWho.length > 0 ? extractedWho : pipelineWho
+    // Merge who: prefer the analysis step's attendees — it phonetically matched names
+    // against known contacts (canonical full names), so it's the authoritative source.
+    // Fall back to the summary-extracted list on the paste/file path (no analysis step).
+    const finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
 
     // 5. Determine output destination
     let outputPath: string | null = null
