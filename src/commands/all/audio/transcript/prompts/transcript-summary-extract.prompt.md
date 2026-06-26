@@ -28,7 +28,7 @@ Return ONLY valid JSON (no markdown fences):
 }
 ```
 
-- **title**: The title from the ## Title section
+- **title**: The meeting title — the text of the top-level `#` heading in the summary
 - **time**: The meeting time as local wall-clock time (NOT UTC). Format: YYYY-MM-DD HH:MM (24-hour, space separator). Example: "9:45 AM on January 18th" → "2026-01-18 09:45"
 - **durationMinutes**: Number of minutes if mentioned (e.g., "7 minute call"), otherwise null
 - **medium**: The call/meeting medium if stated (e.g., "Zoom", "Phone", "Google Meet", "Teams", "In Person"). null if not mentioned.

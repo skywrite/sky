@@ -20,10 +20,9 @@ Summarize the following meeting notes from dictated audio transcription.
 
 ## Output Format
 
-Use this structure with markdown headers:
+Use this structure with markdown headers. Begin with the meeting title as a single top-level `#` heading — the title text itself, not the literal word "Title" (e.g. `# Renewal Terms for the Acme Account`). Every other section is a `##` heading beneath it:
 
-## Title
-(5-7 words reflecting content only - not attendees, location, or meeting medium)
+# <title — 5-7 words reflecting content only, not attendees, location, or meeting medium>
 
 ## Time/Date
 
