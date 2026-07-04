@@ -34,7 +34,7 @@ const params = {
   follow: Flag.string('Follow file name', { hidden: true }),
   previous: Flag.string('Previous message ref', { hidden: true }),
   noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
-  slackFiles: Flag.string('Slack file attachments as JSON (used by follow:slack:new)', { hidden: true }),
+  slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:new)', { hidden: true }),
 }
 
 type Params = InferParams<typeof params>

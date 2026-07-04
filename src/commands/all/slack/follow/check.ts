@@ -23,16 +23,16 @@ type Result = { checked: number; expired: string[]; skipped: string[]; errors: s
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'follow:slack:check': {
+    'slack:follow:check': {
       params: Params
       result: Result
     }
   }
 }
 
-export default class FollowSlackCheckTask extends Command {
+export default class SlackFollowCheckTask extends Command {
   static override description: CommandDescription = {
-    name: 'follow:slack:check',
+    name: 'slack:follow:check',
     description: 'Poll due follows for new activity.',
     descriptionLong: [
       'Loads the follow registry and first auto-expires dead follows — past their',
@@ -40,7 +40,7 @@ export default class FollowSlackCheckTask extends Command {
       'Then finds follows past their check interval, polls Slack for new thread',
       'replies, saves new messages, and updates lastChecked.',
     ],
-    usage: ['sky follow:slack:check', 'sky follow:slack:check --file slack_dm-with-jp_1771210504_352289'],
+    usage: ['sky slack:follow:check', 'sky slack:follow:check --file slack_dm-with-jp_1771210504_352289'],
     params,
   }
 

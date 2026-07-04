@@ -133,7 +133,7 @@ export default async function run() {
       const commandService = new CommandService(ctx)
 
       // Slack follow check (every tick — has its own per-follow backoff)
-      const result = await commandService.run('follow:slack:check', {})
+      const result = await commandService.run('slack:follow:check', {})
 
       if (result.status === 'success') {
         const data = result.data as

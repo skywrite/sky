@@ -21,22 +21,22 @@ type Result = { closed: string[] }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'follow:slack:close': {
+    'slack:follow:close': {
       params: Params
       result: Result
     }
   }
 }
 
-export default class FollowSlackCloseTask extends Command {
+export default class SlackFollowCloseTask extends Command {
   static override description: CommandDescription = {
-    name: 'follow:slack:close',
+    name: 'slack:follow:close',
     description: 'Close follows by deleting their files.',
     usage: [
-      'sky follow:slack:close                                              # Pick from list',
-      'sky follow:slack:close slack_core-four_Person-wants-weekly-meetings  # By name',
-      'sky follow:slack:close --inactive-than 7d                           # Close inactive > 7 days',
-      'sky follow:slack:close --inactive-than 7d --dry-run                 # Preview without deleting',
+      'sky slack:follow:close                                              # Pick from list',
+      'sky slack:follow:close slack_core-four_Person-wants-weekly-meetings  # By name',
+      'sky slack:follow:close --inactive-than 7d                           # Close inactive > 7 days',
+      'sky slack:follow:close --inactive-than 7d --dry-run                 # Preview without deleting',
     ],
     params,
   }
