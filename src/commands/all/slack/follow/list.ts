@@ -37,7 +37,7 @@ type Result = { follows: FollowInfo[] }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'follow:slack:list': {
+    'slack:follow:list': {
       params: Params
       result: Result
     }
@@ -48,17 +48,17 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Command
 // -----------------------------------------------------------------------------
 
-export default class FollowSlackListTask extends Command {
+export default class SlackFollowListTask extends Command {
   static override description: CommandDescription = {
-    name: 'follow:slack:list',
+    name: 'slack:follow:list',
     description: 'List active follows.',
     descriptionLong: [
       'Lists follows from the follow directory.',
       'By default shows only active follows. Use --all to include paused.',
     ],
     usage: [
-      'sky follow:slack:list          # List active follows',
-      'sky follow:slack:list --all    # List all follows including paused',
+      'sky slack:follow:list          # List active follows',
+      'sky slack:follow:list --all    # List all follows including paused',
     ],
     params,
   }

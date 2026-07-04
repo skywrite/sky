@@ -32,26 +32,26 @@ type Result = { file: string }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'follow:slack:new': {
+    'slack:follow:new': {
       params: Params
       result: Result
     }
   }
 }
 
-export default class FollowSlackNewTask extends Command {
+export default class SlackFollowNewTask extends Command {
   static override description: CommandDescription = {
-    name: 'follow:slack:new',
+    name: 'slack:follow:new',
     description: 'Create a new follow from a Slack message link.',
     descriptionLong: [
       'Resolves channel name, message details, and thread info from a Slack link',
       'via slack:cli:export, then writes a Follow YAML file to the follow directory.',
     ],
     usage: [
-      'sky follow:slack:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
-      'sky follow:slack:new "https://..." --interval 4h',
-      'sky follow:slack:new "https://..." --expires 7d',
-      'sky follow:slack:new "https://..." --expires "2026-07-20 09:00"',
+      'sky slack:follow:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
+      'sky slack:follow:new "https://..." --interval 4h',
+      'sky slack:follow:new "https://..." --expires 7d',
+      'sky slack:follow:new "https://..." --expires "2026-07-20 09:00"',
     ],
     params,
   }
