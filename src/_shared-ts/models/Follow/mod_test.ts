@@ -228,3 +228,133 @@ status: active`
   assert({ given, should: 'have no expires', expected: undefined, actual: f.expires })
   assert({ given, should: 'have no lastChecked', expected: undefined, actual: f.lastChecked })
 })
+
+test('inactivityMs() anchors on last message date, then lastActivity/followSince', () => {
+  const given = 'follows with different activity anchors'
+  const now = PlainDateTime.fromString('2026-03-01 12:00')
+  const DAY = 86_400_000
+  const HOUR = 3_600_000
+
+  const withMsg = Follow.create({
+    source: 'Slack',
+    ref: {},
+    summary: 'msg anchor',
+    lastActivity: PlainDateTime.fromString('2026-01-01 00:00'),
+    messages: [{ date: '2026-02-27', path: 'time/2026/02/23-01/27/msg.md' }],
+  })
+  assert({
+    given,
+    should: 'prefer last message date (day granularity) over lastActivity',
+    expected: 2 * DAY,
+    actual: withMsg.inactivityMs(now),
+  })
+
+  const withActivity = Follow.create({
+    source: 'Slack',
+    ref: {},
+    summary: 'activity anchor',
+    lastActivity: PlainDateTime.fromString('2026-02-27 06:00'),
+  })
+  assert({
+    given,
+    should: 'fall back to lastActivity when no messages',
+    expected: 2 * DAY + 6 * HOUR,
+    actual: withActivity.inactivityMs(now),
+  })
+
+  const withSince = Follow.create({
+    source: 'Slack',
+    ref: {},
+    summary: 'since anchor',
+    followSince: PlainDateTime.fromString('2026-03-01 02:00'),
+  })
+  assert({
+    given,
+    should: 'fall back to followSince when no lastActivity',
+    expected: 10 * HOUR,
+    actual: withSince.inactivityMs(now),
+  })
+
+  const bare = Follow.create({ source: 'Slack', ref: {}, summary: 'no anchor' })
+  assert({
+    given,
+    should: 'return Infinity when no anchor exists',
+    expected: Infinity,
+    actual: bare.inactivityMs(now),
+  })
+})
+
+test('isExpired() honors an explicit expires deadline over activity', () => {
+  const given = 'follow with explicit expires'
+  const f = Follow.create({
+    source: 'Slack',
+    ref: {},
+    summary: 'deadline',
+    messages: [{ date: '2026-02-28', path: 'time/2026/02/23-01/28/msg.md' }],
+    expires: PlainDateTime.fromString('2026-03-01 09:00'),
+  })
+
+  assert({
+    given,
+    should: 'not be expired before the deadline',
+    expected: false,
+    actual: f.isExpired(PlainDateTime.fromString('2026-03-01 08:59')),
+  })
+  assert({
+    given,
+    should: 'be expired at the deadline despite recent activity',
+    expected: true,
+    actual: f.isExpired(PlainDateTime.fromString('2026-03-01 09:00')),
+  })
+
+  const slow = Follow.create({
+    source: 'Slack',
+    ref: {},
+    summary: 'slow thread',
+    messages: [{ date: '2025-12-01', path: 'time/2025/12/01-07/01/msg.md' }],
+    expires: PlainDateTime.fromString('2026-06-01 09:00'),
+  })
+  assert({
+    given,
+    should: 'let a future expires keep a long-inactive follow alive',
+    expected: false,
+    actual: slow.isExpired(PlainDateTime.fromString('2026-03-01 12:00')),
+  })
+})
+
+test('isExpired() falls back to the inactivity window when no expires is set', () => {
+  const given = 'follow without expires'
+  const now = PlainDateTime.fromString('2026-03-01 12:00')
+  const withLastMsg = (date: string) =>
+    Follow.create({
+      source: 'Slack',
+      ref: {},
+      summary: 'inactivity',
+      messages: [{ date, path: 'time/msg.md' }],
+    })
+
+  assert({
+    given,
+    should: 'stay alive under the default window (9d < 14d)',
+    expected: false,
+    actual: withLastMsg('2026-02-20').isExpired(now),
+  })
+  assert({
+    given,
+    should: 'expire past the default window (15d >= 14d)',
+    expected: true,
+    actual: withLastMsg('2026-02-14').isExpired(now),
+  })
+  assert({
+    given,
+    should: 'respect a custom window (9d >= 7d)',
+    expected: true,
+    actual: withLastMsg('2026-02-20').isExpired(now, '7d'),
+  })
+  assert({
+    given,
+    should: 'expire when no activity anchor exists at all',
+    expected: true,
+    actual: Follow.create({ source: 'Slack', ref: {}, summary: 'bare' }).isExpired(now),
+  })
+})

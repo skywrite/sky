@@ -137,10 +137,19 @@ export default async function run() {
 
       if (result.status === 'success') {
         const data = result.data as
-          | { checked: number; skipped: string[]; errors: string[]; withActivity: { fileName: string }[] }
+          | {
+              checked: number
+              expired: string[]
+              skipped: string[]
+              errors: string[]
+              withActivity: { fileName: string }[]
+            }
           | undefined
         if (data && data.checked > 0) {
           console.log(`[heartbeat] Checked ${data.checked} follow(s), ${data.withActivity.length} with activity`)
+        }
+        if (data && data.expired && data.expired.length > 0) {
+          console.log(`[heartbeat] Expired ${data.expired.length} follow(s): ${data.expired.join(', ')}`)
         }
         if (data && data.skipped && data.skipped.length > 0) {
           console.log(`[heartbeat] Skipped: ${data.skipped.join(', ')}`)
