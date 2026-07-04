@@ -1,5 +1,6 @@
+import ms from 'ms'
 import { parse, stringify } from '#shared/yaml/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { MediumMessage } from '#shared/models/Message/document/mod.ts'
 
 const YAML_KEY_ORDER = [
@@ -146,6 +147,41 @@ export default class Follow {
 
   updateCheckInterval(interval: string): Follow {
     return new Follow({ ...this.fields(), checkInterval: interval })
+  }
+
+  /** Inactivity window after which a follow with no explicit `expires` auto-expires */
+  static readonly DEFAULT_MAX_INACTIVE = '14d'
+
+  /**
+   * Milliseconds since the last sign of life. Anchored on the last saved
+   * message's date (day granularity — matches what follow:list shows), falling
+   * back to lastActivity/followSince. Infinity when no anchor exists at all,
+   * since such a follow can never become active on its own.
+   */
+  inactivityMs(now: PlainDateTime): number {
+    const lastMsgDate = this.messages.at(-1)?.date
+    if (lastMsgDate) {
+      const msgMs = PlainDate.fromString(lastMsgDate).toDate().getTime()
+      const todayMs = now.plainDate.toDate().getTime()
+      return Math.max(0, todayMs - msgMs)
+    }
+    const anchor = this.lastActivity ?? this.followSince
+    if (!anchor) return Infinity
+    return Math.max(0, now.toTimeDateValue().getTime() - anchor.toTimeDateValue().getTime())
+  }
+
+  /**
+   * Whether this follow should be closed. An explicit `expires` deadline alone
+   * governs when set — a far-future expires deliberately keeps a slow thread
+   * alive past the default inactivity window.
+   */
+  isExpired(now: PlainDateTime, maxInactive: string = Follow.DEFAULT_MAX_INACTIVE): boolean {
+    if (this.expires) {
+      return now.toTimeDateValue().getTime() >= this.expires.toTimeDateValue().getTime()
+    }
+    const maxMs = ms(maxInactive as ms.StringValue)
+    if (maxMs === undefined) return false
+    return this.inactivityMs(now) >= maxMs
   }
 
   /** Compute the check interval based on time since last activity */

@@ -4,7 +4,6 @@ import { unlink } from 'node:fs/promises'
 import { exists } from '#shared/fs/mod.ts'
 import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -60,21 +59,8 @@ export default class FollowSlackCloseTask extends Command {
       }
 
       const now = fetchNowSync().plainDateTime
-      const nowMs = now.toTimeDateValue().getTime()
       const entries = registry.getActive()
-      const stale = entries.filter((e) => {
-        // Use last message date as primary staleness indicator (matches what follow:list shows)
-        const lastMsgDate = e.follow.messages.at(-1)?.date
-        if (lastMsgDate) {
-          const msgMs = PlainDate.fromString(lastMsgDate).toDate().getTime()
-          const todayMs = now.plainDate.toDate().getTime()
-          return todayMs - msgMs >= thresholdMs
-        }
-        // No messages: fall back to lastActivity or followSince
-        const anchor = e.follow.lastActivity ?? e.follow.followSince
-        if (!anchor) return true
-        return nowMs - anchor.toTimeDateValue().getTime() >= thresholdMs
-      })
+      const stale = entries.filter((e) => e.follow.inactivityMs(now) >= thresholdMs)
 
       if (stale.length === 0) {
         output.log(`No active follows inactive longer than ${inactiveThan}.`)

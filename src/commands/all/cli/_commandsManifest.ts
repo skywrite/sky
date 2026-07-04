@@ -91,7 +91,9 @@ async function buildCommandEntry(name: string, file: string): Promise<CommandEnt
     }
     if (cmd) aiChatTool = isAIChatTool(cmd)
   } catch (err) {
-    console.warn(colors.yellow(`⚠ [sky] command scan: failed to import "${name}" (${file}) — ${(err as Error).message}`))
+    console.warn(
+      colors.yellow(`⚠ [sky] command scan: failed to import "${name}" (${file}) — ${(err as Error).message}`),
+    )
   }
   return { name, file, description, flags, aiChatTool }
 }

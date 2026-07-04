@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import ms from 'ms'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { DIR_HEARTBEAT_FOLLOW, DIR_TIME } from '#config'
@@ -19,6 +20,10 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
   interval: Flag.string('Check interval (e.g. 10m, 4h, 1d)', { short: 'i', default: () => '10m' }),
+  expires: Flag.string(
+    `Auto-expire deadline: duration from now (e.g. 7d, 2w) or datetime (YYYY-MM-DD [HH:mm]). Without it, the follow expires after ${Follow.DEFAULT_MAX_INACTIVE} of inactivity`,
+    { short: 'e' },
+  ),
   when: whenNBTime(),
 }
 
@@ -45,6 +50,8 @@ export default class FollowSlackNewTask extends Command {
     usage: [
       'sky follow:slack:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
       'sky follow:slack:new "https://..." --interval 4h',
+      'sky follow:slack:new "https://..." --expires 7d',
+      'sky follow:slack:new "https://..." --expires "2026-07-20 09:00"',
     ],
     params,
   }
@@ -52,6 +59,17 @@ export default class FollowSlackNewTask extends Command {
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
     const { link, interval } = args
+
+    // Validate --expires up front, before any Slack work
+    let expires: PlainDateTime | undefined
+    if (args.expires) {
+      expires = parseExpires(args.expires, fetchNowSync().plainDateTime)
+      if (!expires) {
+        return CommandResult.fail(
+          `Invalid --expires: "${args.expires}" (use a duration like 7d, or a datetime like 2026-07-20 09:00)`,
+        )
+      }
+    }
 
     // 0. Check for duplicate follow
     if (await exists(DIR_HEARTBEAT_FOLLOW)) {
@@ -239,6 +257,7 @@ export default class FollowSlackNewTask extends Command {
       summary,
       checkInterval: interval,
       followSince: now,
+      expires,
       lastChecked: now,
       lastActivity: now,
       messages: initialMessages,
@@ -257,12 +276,30 @@ export default class FollowSlackNewTask extends Command {
     output.log(`  Channel:  ${to}`)
     output.log(`  Summary:  ${summary}`)
     output.log(`  Interval: ${interval}`)
+    if (expires) output.log(`  Expires:  ${expires.date} ${expires.time}`)
     output.log(`  Messages: ${initialMessages.length} day${initialMessages.length !== 1 ? 's' : ''}`)
     output.log(`  Follow:   ${filePath}`)
     output.log('')
 
     return CommandResult.success({ file: filePath })
   }
+}
+
+/**
+ * Parse an --expires value: a bare date means end of that day; durations
+ * require a unit (a bare number would be milliseconds — reject it).
+ */
+function parseExpires(value: string, now: PlainDateTime): PlainDateTime | undefined {
+  const trimmed = value.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return PlainDateTime.fromString(`${trimmed} 23:59`)
+  if (/^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/.test(trimmed)) return PlainDateTime.fromString(trimmed)
+  if (/[a-z]/i.test(trimmed)) {
+    const durationMs = ms(trimmed as ms.StringValue)
+    if (durationMs !== undefined && durationMs > 0) {
+      return now.addHours(durationMs / 3_600_000).normalize()
+    }
+  }
+  return undefined
 }
 
 // TODO: extract convertToNotebookTimezone and getDayTimezone into shared helpers (duplicated in service/handler/siteHtml.ts)

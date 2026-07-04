@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { unlink } from 'node:fs/promises'
 import { DIR_BASE, DIR_HEARTBEAT_FOLLOW } from '#config'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -18,7 +19,7 @@ const params = {
 type Params = InferParams<typeof params>
 
 type CheckSummary = { fileName: string; newReplies: number }
-type Result = { checked: number; skipped: string[]; errors: string[]; withActivity: CheckSummary[] }
+type Result = { checked: number; expired: string[]; skipped: string[]; errors: string[]; withActivity: CheckSummary[] }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -34,8 +35,10 @@ export default class FollowSlackCheckTask extends Command {
     name: 'follow:slack:check',
     description: 'Poll due follows for new activity.',
     descriptionLong: [
-      'Loads the follow registry, finds follows past their check interval,',
-      'polls Slack for new thread replies, saves new messages, and updates lastChecked.',
+      'Loads the follow registry and first auto-expires dead follows — past their',
+      `expires deadline, or inactive longer than ${Follow.DEFAULT_MAX_INACTIVE} when no expires is set.`,
+      'Then finds follows past their check interval, polls Slack for new thread',
+      'replies, saves new messages, and updates lastChecked.',
     ],
     usage: ['sky follow:slack:check', 'sky follow:slack:check --file slack_dm-with-jp_1771210504_352289'],
     params,
@@ -46,23 +49,45 @@ export default class FollowSlackCheckTask extends Command {
 
     if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
       output.log('No follow directory found.')
-      return CommandResult.success({ checked: 0, skipped: [], errors: [], withActivity: [] })
+      return CommandResult.success({ checked: 0, expired: [], skipped: [], errors: [], withActivity: [] })
     }
 
     const now = fetchNowSync()
     const nowDt = now.plainDateTime
     const registry = await SlackFollowRegistry.build()
 
+    // Auto-expire dead follows before polling (--file skips this: it's the
+    // escape hatch to force-check a specific follow regardless of expiry)
+    const expired: string[] = []
+    if (!args.file) {
+      for (const entry of registry.getActive()) {
+        const { follow } = entry
+        if (!follow.isExpired(nowDt)) continue
+
+        const inactiveMs = follow.inactivityMs(nowDt)
+        const reason = follow.expires
+          ? `expires ${follow.expires.date} ${follow.expires.time} passed`
+          : inactiveMs === Infinity
+            ? 'no activity recorded'
+            : `inactive ${Math.floor(inactiveMs / 86_400_000)}d >= ${Follow.DEFAULT_MAX_INACTIVE}`
+
+        await unlink(entry.path)
+        output.log(`[expire] ${entry.fileName}: ${reason}`)
+        expired.push(entry.fileName)
+      }
+    }
+
     // Get entries to check
+    const expiredSet = new Set(expired)
     let entries = args.file
       ? (() => {
           const found = registry.findByFileName(args.file)
           return found ? [{ ...found, fileName: args.file }] : []
         })()
-      : registry.getDue(nowDt)
+      : registry.getDue(nowDt).filter((e) => !expiredSet.has(e.fileName))
 
     if (entries.length === 0) {
-      return CommandResult.success({ checked: 0, skipped: [], errors: [], withActivity: [] })
+      return CommandResult.success({ checked: 0, expired, skipped: [], errors: [], withActivity: [] })
     }
 
     const withActivity: CheckSummary[] = []
@@ -227,6 +252,6 @@ export default class FollowSlackCheckTask extends Command {
       output.log(`Checked ${entries.length} follow(s), ${withActivity.length} with new activity.`)
     }
 
-    return CommandResult.success({ checked: entries.length, skipped, errors, withActivity })
+    return CommandResult.success({ checked: entries.length, expired, skipped, errors, withActivity })
   }
 }
