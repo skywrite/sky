@@ -7,16 +7,79 @@ import {
 import type DomainCollection from '#shared/models/DomainCollection/mod.ts'
 
 /**
- * Scores a single document for relevance/priority.
- * Higher = more important = kept first when budget is tight.
- * See `scorers.ts` for the default implementation.
+ * A scorer's decision for a single document. Intent is explicit — there are
+ * no sentinel scores:
+ *
+ * - `scored` — eligible for context; competes for the token budget by score
+ * - `always` — kept unconditionally (pinned), regardless of budget
+ * - `never`  — excluded unconditionally, regardless of available room
+ *
+ * `always`/`never` carry an optional human-readable `reason` that flows into
+ * logs (e.g. ai:chat's per-turn context log).
  */
-export type Scorer = (item: CollectionItem<Document>) => number
+export type ScoreVerdict =
+  | { keep: 'scored'; score: number }
+  | { keep: 'always'; reason?: string }
+  | { keep: 'never'; reason?: string }
 
-/** A document annotated with its computed score and estimated token cost. */
+const ALWAYS: ScoreVerdict = Object.freeze({ keep: 'always' })
+const NEVER: ScoreVerdict = Object.freeze({ keep: 'never' })
+
+/** Verdict constructor: eligible, competes for budget by score. */
+export function scored(score: number): ScoreVerdict {
+  return { keep: 'scored', score }
+}
+
+/** Verdict constructor: keep unconditionally (pinned). */
+export function keepAlways(reason?: string): ScoreVerdict {
+  return reason === undefined ? ALWAYS : { keep: 'always', reason }
+}
+
+/** Verdict constructor: exclude unconditionally. */
+export function keepNever(reason?: string): ScoreVerdict {
+  return reason === undefined ? NEVER : { keep: 'never', reason }
+}
+
+/**
+ * Canonical numeric projection of a verdict, for sorting scored items and for
+ * numeric surfaces like logs (`score=Infinity` / `score=-Infinity`). Derived
+ * from intent — never stored alongside it — so the two cannot disagree.
+ */
+export function verdictScore(v: ScoreVerdict): number {
+  switch (v.keep) {
+    case 'always':
+      return Infinity
+    case 'never':
+      return -Infinity
+    case 'scored':
+      return v.score
+  }
+}
+
+/**
+ * Compatibility net: a `scored` verdict carrying an infinite score is a
+ * sentinel from unmigrated code — normalize it to the explicit intent.
+ */
+function normalizeVerdict(v: ScoreVerdict): ScoreVerdict {
+  if (v.keep === 'scored') {
+    if (v.score === Infinity) return ALWAYS
+    if (v.score === -Infinity) return NEVER
+  }
+  return v
+}
+
+/**
+ * Scores a single document for relevance/priority.
+ * Returns a ScoreVerdict — see `scorers.ts` for the default implementations.
+ */
+export type Scorer = (item: CollectionItem<Document>) => ScoreVerdict
+
+/** A document annotated with its verdict, projected score, and token cost. */
 export interface ScoredItem {
   item: CollectionItem<Document>
-  /** Relevance score from the Scorer function. Higher = more important. */
+  /** The scorer's decision — source of truth, honored by every (re)partition. */
+  verdict: ScoreVerdict
+  /** Numeric projection of the verdict (see verdictScore). Higher = more important. */
   score: number
   /** Estimated token count for this document's markdown. */
   tokens: number
@@ -37,13 +100,14 @@ export function estimateTokens(text: string): number {
  * ## What it does
  *
  * Given a DomainCollection (a bag of related documents), ContextAssembler:
- * 1. **Scores** each document using a pluggable Scorer function
- * 2. **Sorts** by score descending (ties broken by smaller doc first)
- * 3. **Partitions** into "kept" and "pruned" lists based on a token budget
+ * 1. **Scores** each document using a pluggable Scorer (verdict per document)
+ * 2. **Partitions** by verdict: `always` → kept, `never` → excluded,
+ *    `scored` → sorted by score and budget-walked into kept or pruned
  *
- * The result is two lists:
- * - `kept`   — the highest-scored documents that fit within the token budget
- * - `pruned` — everything that didn't fit, in score order
+ * The result is three lists:
+ * - `kept`     — pinned documents plus the highest-scored ones that fit the budget
+ * - `pruned`   — eligible documents that didn't fit (budget's fault; recoverable)
+ * - `excluded` — documents the scorer banned outright (intent's fault; never recovered)
  *
  * ## Immutability
  *
@@ -51,16 +115,18 @@ export function estimateTokens(text: string): number {
  * with the changed parameter — the original is never modified.
  *
  * - `withBudget(n)` — re-partitions the SAME scored items with a new budget
- *   (cheap: no re-scoring, just re-splitting the sorted list)
+ *   (cheap: no re-scoring). Verdicts are honored again: pruned items can be
+ *   recovered by a looser budget, excluded items never come back.
  * - `withCollection(c)` / `withScorer(s)` — re-scores from scratch
  *   (scores depend on the collection/scorer, so they must be recomputed)
  *
  * ## Token budget
  *
- * The budget is a soft cap. The first item is ALWAYS kept regardless of size
- * so that the assembler never produces empty output for a non-empty collection.
- * After the first item, documents are greedily added until the budget is
- * exceeded, then the rest go into `pruned`.
+ * The budget is a soft cap. `always` items are kept first and count against
+ * the budget. Among `scored` items, at least one is kept even if it alone
+ * exceeds the budget, so the assembler never produces empty output when
+ * eligible documents exist. (A collection whose documents are ALL excluded
+ * correctly produces empty output.) Check `overBudget` for the oversized case.
  *
  * ## Usage
  *
@@ -70,10 +136,10 @@ export function estimateTokens(text: string): number {
  *   maxTokens: 4000,
  * })
  *
- * asm.kept       // highest-priority docs that fit
- * asm.pruned     // docs that didn't fit
- * asm.overBudget // true if even the kept items exceed maxTokens
- *                // (only happens when a single item is bigger than the budget)
+ * asm.kept       // pinned + highest-priority docs that fit
+ * asm.pruned     // eligible docs that didn't fit the budget
+ * asm.excluded   // docs the scorer banned (with reasons)
+ * asm.overBudget // true if kept items exceed maxTokens
  * asm.toMarkdown() // render kept docs as markdown for an AI prompt
  * ```
  */
@@ -82,6 +148,7 @@ export default class ContextAssembler {
 
   private readonly _kept: readonly ScoredItem[]
   private readonly _pruned: readonly ScoredItem[]
+  private readonly _excluded: readonly ScoredItem[]
   private readonly _totalTokens: number
 
   // These are stored so with*() methods can derive new instances
@@ -89,16 +156,11 @@ export default class ContextAssembler {
   private readonly _maxTokens: number
   private readonly _collection: DomainCollection
 
-  private constructor(
-    kept: readonly ScoredItem[],
-    pruned: readonly ScoredItem[],
-    scorer: Scorer,
-    maxTokens: number,
-    collection: DomainCollection,
-  ) {
-    this._kept = kept
-    this._pruned = pruned
-    this._totalTokens = kept.reduce((sum, s) => sum + s.tokens, 0)
+  private constructor(parts: Partitioned, scorer: Scorer, maxTokens: number, collection: DomainCollection) {
+    this._kept = parts.kept
+    this._pruned = parts.pruned
+    this._excluded = parts.excluded
+    this._totalTokens = parts.kept.reduce((sum, s) => sum + s.tokens, 0)
     this._scorer = scorer
     this._maxTokens = maxTokens
     this._collection = collection
@@ -111,30 +173,34 @@ export default class ContextAssembler {
   /**
    * Build a ContextAssembler from a DomainCollection.
    *
-   * This is the main entry point. It scores every document, sorts them,
-   * and splits into kept/pruned based on the token budget.
+   * This is the main entry point. It scores every document, partitions by
+   * verdict, and budget-walks the scored bucket.
    *
-   * @param maxTokens - Token budget. Defaults to Infinity (keep everything).
+   * @param maxTokens - Token budget. Defaults to Infinity (keep everything eligible).
    */
   static from(collection: DomainCollection, opts: { scorer: Scorer; maxTokens?: number }): ContextAssembler {
     const { scorer, maxTokens = Infinity } = opts
-    const scored = scoreAndSort(collection, scorer)
-    const [kept, pruned] = splitByBudget(scored, maxTokens)
-    return new ContextAssembler(kept, pruned, scorer, maxTokens, collection)
+    const items = scoreItems(collection, scorer)
+    return new ContextAssembler(partition(items, maxTokens), scorer, maxTokens, collection)
   }
 
   // ---------------------------------------------------------------------------
   // Read state
   // ---------------------------------------------------------------------------
 
-  /** Documents that fit within the token budget, sorted by score descending. */
+  /** Pinned documents plus scored documents that fit the budget, by score descending. */
   get kept(): readonly ScoredItem[] {
     return this._kept
   }
 
-  /** Documents that were cut to stay within budget, in score order. */
+  /** Eligible documents that were cut to stay within budget, in score order. */
   get pruned(): readonly ScoredItem[] {
     return this._pruned
+  }
+
+  /** Documents excluded by scorer verdict (`keep: 'never'`), regardless of budget. */
+  get excluded(): readonly ScoredItem[] {
+    return this._excluded
   }
 
   /** Sum of estimated tokens across all kept documents. */
@@ -143,9 +209,9 @@ export default class ContextAssembler {
   }
 
   /**
-   * True if totalTokens exceeds maxTokens.
-   * This only happens when even a single document is larger than the budget
-   * (because we always keep at least one).
+   * True if totalTokens exceeds maxTokens. Happens when pinned documents
+   * exceed the budget on their own, or when a single scored document is
+   * larger than the budget (at least one eligible document is always kept).
    */
   get overBudget(): boolean {
     return this._totalTokens > this._maxTokens
@@ -163,14 +229,14 @@ export default class ContextAssembler {
   /**
    * Return a new ContextAssembler with a different token budget.
    *
-   * Re-partitions the same scored items — does NOT re-score. This means
-   * tightening the budget prunes more items, loosening it recovers them.
+   * Re-partitions the same scored items — does NOT re-score. Tightening the
+   * budget prunes more items, loosening it recovers them. Excluded items stay
+   * excluded at any budget: their verdict is stored on the item and honored
+   * by every re-partition.
    */
   withBudget(maxTokens: number): ContextAssembler {
-    // Recombine kept + pruned, re-sort, re-split with the new budget
-    const all = [...this._kept, ...this._pruned].sort(byScoreDescThenSizeAsc)
-    const [kept, pruned] = splitByBudget(all, maxTokens)
-    return new ContextAssembler(kept, pruned, this._scorer, maxTokens, this._collection)
+    const all = [...this._kept, ...this._pruned, ...this._excluded]
+    return new ContextAssembler(partition(all, maxTokens), this._scorer, maxTokens, this._collection)
   }
 
   /**
@@ -210,29 +276,35 @@ export default class ContextAssembler {
 // Helpers
 // ---------------------------------------------------------------------------
 
+interface Partitioned {
+  kept: readonly ScoredItem[]
+  pruned: readonly ScoredItem[]
+  excluded: readonly ScoredItem[]
+}
+
 /**
- * Score every item in the collection and sort by relevance.
- * Each item gets its score from the scorer and its token cost estimated
- * from the rendered markdown length.
+ * Run the scorer over every item in the collection. Each item stores the
+ * (normalized) verdict, its numeric projection, and its estimated token cost.
  */
-function scoreAndSort(collection: DomainCollection, scorer: Scorer): ScoredItem[] {
-  return collection.allItems
-    .map((item) => ({
+function scoreItems(collection: DomainCollection, scorer: Scorer): ScoredItem[] {
+  return collection.allItems.map((item) => {
+    const verdict = normalizeVerdict(scorer(item))
+    return {
       item,
-      score: scorer(item),
+      verdict,
+      score: verdictScore(verdict),
       tokens: estimateTokens(item.doc.toMarkdown()),
-    }))
-    .sort(byScoreDescThenSizeAsc)
+    }
+  })
 }
 
 /**
  * Sort comparator: highest score first. On ties, prefer the smaller document
  * (fewer tokens) since it preserves more budget for other items.
  *
- * Compares with explicit inequality rather than subtraction: `b.score - a.score`
- * is NaN when both scores are Infinity (two pinned items, see withPinnedPaths)
- * or both -Infinity (two always-prune items), and a NaN comparator result is
- * undefined behavior for Array.prototype.sort.
+ * Compares with explicit inequality rather than subtraction so equal infinite
+ * projections (all `always` items are Infinity, all `never` items -Infinity)
+ * fall through to the size tie-break instead of producing NaN.
  */
 function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
   if (a.score !== b.score) return a.score < b.score ? 1 : -1
@@ -240,33 +312,56 @@ function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
 }
 
 /**
- * Split a sorted list of scored items into [kept, pruned] based on a token budget.
+ * Partition scored items by verdict, then budget-walk the scored bucket.
  *
- * Greedy algorithm: walk the list in score order, accumulating tokens.
- * Each item is kept if adding it stays within budget, otherwise pruned.
+ * The single partition implementation shared by `from()` and `withBudget()`,
+ * so construction and re-budgeting cannot disagree about verdict semantics:
+ * - `always` → kept unconditionally, first, counted against the budget
+ * - `never`  → excluded unconditionally, regardless of available room
+ * - `scored` → sorted by score desc, kept while the budget allows
  *
- * Special rule: the FIRST item is always kept regardless of size. This
- * prevents returning empty output when a single document exceeds the budget.
- * (The caller can check `overBudget` to detect this case.)
- *
- * Both returned arrays are frozen to enforce immutability.
+ * Among scored items, at least one is kept even if it alone exceeds the
+ * budget (never produce empty output when eligible items exist).
  */
-function splitByBudget(sorted: ScoredItem[], maxTokens: number): [readonly ScoredItem[], readonly ScoredItem[]] {
-  if (sorted.length === 0) return [Object.freeze([]), Object.freeze([])]
+function partition(items: ScoredItem[], maxTokens: number): Partitioned {
+  const always: ScoredItem[] = []
+  const eligible: ScoredItem[] = []
+  const excluded: ScoredItem[] = []
 
-  const kept: ScoredItem[] = []
-  const pruned: ScoredItem[] = []
-  let usedTokens = 0
-
-  for (const item of sorted) {
-    // Always keep at least one item, even if it alone exceeds the budget
-    if (kept.length === 0 || usedTokens + item.tokens <= maxTokens) {
-      kept.push(item)
-      usedTokens += item.tokens
-    } else {
-      pruned.push(item)
+  for (const s of items) {
+    switch (s.verdict.keep) {
+      case 'always':
+        always.push(s)
+        break
+      case 'never':
+        excluded.push(s)
+        break
+      case 'scored':
+        eligible.push(s)
+        break
     }
   }
 
-  return [Object.freeze(kept), Object.freeze(pruned)]
+  always.sort(byScoreDescThenSizeAsc)
+  eligible.sort(byScoreDescThenSizeAsc)
+  excluded.sort(byScoreDescThenSizeAsc)
+
+  const kept: ScoredItem[] = [...always]
+  const pruned: ScoredItem[] = []
+  let usedTokens = kept.reduce((sum, s) => sum + s.tokens, 0)
+
+  for (const s of eligible) {
+    if (kept.length === 0 || usedTokens + s.tokens <= maxTokens) {
+      kept.push(s)
+      usedTokens += s.tokens
+    } else {
+      pruned.push(s)
+    }
+  }
+
+  return {
+    kept: Object.freeze(kept),
+    pruned: Object.freeze(pruned),
+    excluded: Object.freeze(excluded),
+  }
 }
