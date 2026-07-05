@@ -228,10 +228,14 @@ function scoreAndSort(collection: DomainCollection, scorer: Scorer): ScoredItem[
 /**
  * Sort comparator: highest score first. On ties, prefer the smaller document
  * (fewer tokens) since it preserves more budget for other items.
+ *
+ * Compares with explicit inequality rather than subtraction: `b.score - a.score`
+ * is NaN when both scores are Infinity (two pinned items, see withPinnedPaths)
+ * or both -Infinity (two always-prune items), and a NaN comparator result is
+ * undefined behavior for Array.prototype.sort.
  */
 function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
-  const scoreDiff = b.score - a.score
-  if (scoreDiff !== 0) return scoreDiff
+  if (a.score !== b.score) return a.score < b.score ? 1 : -1
   return a.tokens - b.tokens
 }
 
