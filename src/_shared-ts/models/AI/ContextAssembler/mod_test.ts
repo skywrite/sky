@@ -212,3 +212,74 @@ test('toMarkdown — delegates to Collection, respects opts', () => {
     expected: false,
   })
 })
+
+// ---------------------------------------------------------------------------
+// sort — infinite scores (pinned / always-prune items)
+// ---------------------------------------------------------------------------
+
+test('from — two Infinity-scored items still tie-break by size', () => {
+  // Regression: `b.score - a.score` was NaN for two pinned (Infinity) items,
+  // which is undefined comparator behavior — the size tie-break never applied.
+  const bigDoc = makeDoc('x'.repeat(400))
+  const smallDoc = makeDoc('y'.repeat(20))
+
+  // Insert the big one first so a NaN-as-equal (stable) sort would keep it first
+  const domain = makeDomain([
+    { doc: bigDoc, path: '/goals/professional.md' },
+    { doc: smallDoc, path: '/goals/personal.md' },
+  ])
+
+  const pinnedScorer: Scorer = () => Infinity
+
+  const asm = ContextAssembler.from(domain, { scorer: pinnedScorer, maxTokens: 10000 })
+
+  assert({
+    given: 'two pinned (Infinity) items, larger inserted first',
+    should: 'sort the smaller one first',
+    actual: asm.kept[0].item.path,
+    expected: '/goals/personal.md',
+  })
+})
+
+test('from — mixed Infinity, finite, and -Infinity scores order correctly', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('always pruned A'), path: '/orgs/A.md' },
+    { doc: makeDoc('normal'), path: '/people/Alice.md' },
+    { doc: makeDoc('always pruned B'), path: '/orgs/B.md' },
+    { doc: makeDoc('pinned'), path: '/goals/personal.md' },
+  ])
+
+  const scorer: Scorer = (item) => {
+    if (item.path.startsWith('/goals/')) return Infinity
+    if (item.path.startsWith('/orgs/')) return -Infinity
+    return 5
+  }
+
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 10000 })
+
+  assert({
+    given: 'pinned, normal, and always-prune items (two -Infinity ties)',
+    should: 'order pinned > normal > always-prune',
+    actual: asm.kept.map((s) => s.item.path),
+    expected: ['/goals/personal.md', '/people/Alice.md', '/orgs/A.md', '/orgs/B.md'],
+  })
+})
+
+test('from — pinned items survive a tight budget ahead of higher-volume items', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('z'.repeat(4000)), path: '/time/big-boosted.md' },
+    { doc: makeDoc('goal text'), path: '/goals/personal.md' },
+  ])
+
+  // Mirrors ai:chat: a boosted document scores high but finite; the pin wins
+  const scorer: Scorer = (item) => (item.path.startsWith('/goals/') ? Infinity : 15)
+
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 100 })
+
+  assert({
+    given: 'a 1000-token boosted doc and a pinned goal under a 100-token budget',
+    should: 'keep the pinned goal first',
+    actual: asm.kept[0].item.path,
+    expected: '/goals/personal.md',
+  })
+})
