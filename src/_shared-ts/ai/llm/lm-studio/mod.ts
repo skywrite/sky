@@ -1,5 +1,7 @@
 import OpenAI from 'openai'
 
+export const DEFAULT_MODEL = 'qwen/qwen3.6-35b-a3b'
+
 export interface LMStudioPromptOptions {
   prompt: string
   model?: string
@@ -28,7 +30,7 @@ export async function prompt(options: LMStudioPromptOptions): Promise<string> {
   messages.push({ role: 'user', content: options.prompt })
 
   const completion = await client.chat.completions.create({
-    model: options.model || 'deepseek/deepseek-r1-0528-qwen3-8b',
+    model: options.model || DEFAULT_MODEL,
     messages: messages as any,
     temperature: options.temperature ?? 0,
     max_tokens: options.maxTokens ?? 2000,
@@ -59,7 +61,7 @@ export async function* promptStream(options: LMStudioPromptOptions): AsyncIterat
   messages.push({ role: 'user', content: options.prompt })
 
   const stream = await client.chat.completions.create({
-    model: options.model || 'deepseek/deepseek-r1-0528-qwen3-8b',
+    model: options.model || DEFAULT_MODEL,
     messages: messages as any,
     temperature: options.temperature ?? 0,
     max_tokens: options.maxTokens ?? 2000,
