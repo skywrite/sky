@@ -13,7 +13,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -503,6 +503,11 @@ export default class AiChatTask extends Command {
       }
     }
 
+    // Goals and pending decisions are the strategic spine — never prune them.
+    // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
+    // query-boosted (+10) document when the token budget forces pruning.
+    const pinnedPaths: ReadonlySet<string> = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
+
     allFiles = allDocs.map((d) => d.path)
 
     if (inspectInitialContext) {
@@ -575,7 +580,7 @@ export default class AiChatTask extends Command {
 
       if (initialCollection) {
         const assembler = ContextAssembler.from(initialCollection, {
-          scorer: createRecencyTypeScorer(today, { priorityPaths: queryRelevantPaths }),
+          scorer: withPinnedPaths(createRecencyTypeScorer(today, { priorityPaths: queryRelevantPaths }), pinnedPaths),
           maxTokens: 300_000,
         })
         activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true })
