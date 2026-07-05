@@ -56,6 +56,30 @@ A tech company.`),
     },
   ]
 
+  const chatsData = [
+    {
+      doc: Document.fromMarkdown(`---
+created: 2026-02-03
+summary: Planning the Widget Launch
+provider: claude
+model: claude-opus-4-6
+turns: 1
+tags: Work
+---
+
+# Planning the Widget Launch
+
+## JP
+
+How should we plan the widget launch?
+
+## AI Assistant
+
+Start with a small beta group.`),
+      path: '/test/time/2026/02/02-08/03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+    },
+  ]
+
   const store = {
     people: createMockCollection(peopleData),
     orgs: createMockCollection(orgsData),
@@ -64,7 +88,7 @@ A tech company.`),
     goals: createMockCollection([]),
     ideas: createMockCollection([]),
     places: createMockCollection([]),
-    time: createMockCollection([]),
+    time: createMockCollection(chatsData),
   } as unknown as MarkdownStore
 
   return store
@@ -208,5 +232,70 @@ test('executeQuery - empty result for non-matching filter', async () => {
     should: 'return empty array',
     actual: result.data?.people.length,
     expected: 0,
+  })
+})
+
+test('executeQuery - chats query works end-to-end against the schema', async () => {
+  const store = createMockStore()
+  const query = '{ chats(where: { body_contains: "beta group" }) { date when summary provider turns markdown path } }'
+
+  const result = await executeQuery<{
+    chats: Array<{ date: string; when: string; summary: string; provider: string; turns: number; path: string }>
+  }>(query, store)
+
+  assert({
+    given: 'a chats query with body_contains',
+    should: 'execute without schema errors',
+    actual: result.errors,
+    expected: undefined,
+  })
+
+  assert({
+    given: 'a chats query with body_contains',
+    should: 'return the matching chat',
+    actual: result.data?.chats.length,
+    expected: 1,
+  })
+
+  assert({
+    given: 'a chats query',
+    should: 'map summary, when, and turns',
+    actual: [result.data?.chats[0]?.summary, result.data?.chats[0]?.when, result.data?.chats[0]?.turns],
+    expected: ['Planning the Widget Launch', '09:15', 1],
+  })
+})
+
+test('executeQuery - chats are included in tag queries', async () => {
+  const store = createMockStore()
+
+  const chatResult = await executeQuery<{ chats: Array<{ summary: string; tags: string[] }> }>(
+    '{ chats(where: { tags_contains: "Work" }) { summary tags } }',
+    store,
+  )
+
+  assert({
+    given: 'a chats query filtering by tag',
+    should: 'execute without schema errors',
+    actual: chatResult.errors,
+    expected: undefined,
+  })
+
+  assert({
+    given: 'a chats query filtering by tag',
+    should: 'return the tagged chat with its tags',
+    actual: [chatResult.data?.chats[0]?.summary, chatResult.data?.chats[0]?.tags],
+    expected: ['Planning the Widget Launch', ['Work']],
+  })
+
+  const docResult = await executeQuery<{ documents: Array<{ type: string; path: string }> }>(
+    '{ documents(where: { tags_contains: "Work" }) { type path } }',
+    store,
+  )
+
+  assert({
+    given: 'a cross-type documents query filtering by tag',
+    should: 'include the chat, typed as chat',
+    actual: docResult.data?.documents.filter((d) => d.path.includes('/ai-chats/')).map((d) => d.type),
+    expected: ['chat'],
   })
 })

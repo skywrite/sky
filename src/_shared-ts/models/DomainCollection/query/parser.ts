@@ -27,6 +27,7 @@ export type DocumentType =
   | 'place'
   | 'day'
   | 'journal'
+  | 'chat'
   | 'document'
 
 /**
@@ -224,6 +225,7 @@ function mapType(type: string): DocumentType | '*' {
     case 'place':
     case 'day':
     case 'journal':
+    case 'chat':
       return type
     case '*':
       return '*'

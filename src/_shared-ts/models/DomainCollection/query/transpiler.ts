@@ -270,6 +270,8 @@ function pluralize(type: string): string {
       return 'days'
     case 'journal':
       return 'journals'
+    case 'chat':
+      return 'chats'
     case '*':
     case 'document':
     default:

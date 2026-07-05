@@ -387,7 +387,9 @@ export default class AiChatTask extends Command {
       '- Price data (BTC, SPY, EXOD)',
       '',
       'The conversation continues until you press Ctrl+C or submit empty input.',
-      'Conversations are automatically saved to {day}/actions/ai-chats/ folder.',
+      'Chats are ephemeral by default — toggle saving with Ctrl+S (or /save, /log)',
+      'to write the conversation to the {day}/actions/ai-chats/ folder.',
+      'Saved chats are searchable in later sessions via the chats GraphQL query.',
     ],
     usage: [
       'sky ai:chat                              # Claude Opus 4.8 (default), Haiku for fast',
@@ -396,7 +398,7 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
-      'sky ai:chat --ephemeral                  # Chat without saving to file',
+      'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
     ],
     params,
   }
@@ -479,7 +481,13 @@ export default class AiChatTask extends Command {
     for (const [, files] of byDate) {
       const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
       if (hasSummary) {
-        prevDocs.push(...files.filter((f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/')))
+        // Summary replaces raw activity, but journals and AI chats carry
+        // context the summary doesn't (mirrors journal:new's gatherContext)
+        prevDocs.push(
+          ...files.filter(
+            (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
+          ),
+        )
       } else {
         prevDocs.push(...files)
       }

@@ -178,6 +178,21 @@ export interface JournalFilter {
   rel_contains?: string
 }
 
+export interface ChatFilter {
+  date?: string
+  date_gte?: string
+  date_lte?: string
+  recent?: string
+  summary_contains?: string
+  tags_contains?: string
+  tags_contains_any?: string[]
+  tags_contains_all?: string[]
+  tags_starts_with?: string
+  body_contains?: string
+  involves?: string
+  rel_contains?: string
+}
+
 export interface VideoFilter {
   date?: string
   date_gte?: string
@@ -532,6 +547,29 @@ function docToJournal(doc: Document, path: string, day: MappedDay | null = null)
   }
 }
 
+function docToChat(doc: Document, path: string, day: MappedDay | null = null) {
+  // Chat filenames encode the start time: HH-MM_Slugified-Summary.md
+  const timeMatch = path
+    .split('/')
+    .pop()
+    ?.match(/^(\d{2})-(\d{2})_/)
+  const turns = doc.yaml['turns']
+
+  return {
+    date: getDateForDocument(doc, path) ?? '',
+    day,
+    when: timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : null,
+    summary: getOptionalStringField(doc, 'summary'),
+    provider: getOptionalStringField(doc, 'provider'),
+    model: getOptionalStringField(doc, 'model'),
+    turns: typeof turns === 'number' ? turns : 0,
+    tags: Array.from(doc.tags),
+    rel: Array.from(doc.rel),
+    markdown: doc.markdown,
+    path,
+  }
+}
+
 function docToDocument(doc: Document, path: string) {
   return {
     type: detectTypeFromPath(path),
@@ -743,6 +781,21 @@ function matchesJournalFilter(
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
   if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
+  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
+  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
+  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
+  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  return true
+}
+
+function matchesChatFilter(doc: Document, filter: ChatFilter, path?: string, resolveNames?: NameResolver): boolean {
+  if (filter.date && !matchesDate(doc, filter.date, path)) return false
+  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
+  if (filter.summary_contains && !matchesContains(doc, 'summary', filter.summary_contains)) return false
   if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
   if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
@@ -976,6 +1029,23 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
         const dateStr = getDateForDocument(doc, path)
         const day = dateStr ? lookupDay(dateStr) : null
         return docToJournal(doc, path, day)
+      })
+    },
+
+    chats: (args: { where?: ChatFilter; limit?: number }) => {
+      const entries = domain.entriesByType('chat')
+      let results = entries
+      if (args.where) {
+        results = entries.filter(({ doc, path }) => matchesChatFilter(doc, args.where!, path, resolveNames))
+      }
+      results = sortByDateDesc(results)
+      if (args.limit) {
+        results = results.slice(0, args.limit)
+      }
+      return results.map(({ doc, path }) => {
+        const dateStr = getDateForDocument(doc, path)
+        const day = dateStr ? lookupDay(dateStr) : null
+        return docToChat(doc, path, day)
       })
     },
 

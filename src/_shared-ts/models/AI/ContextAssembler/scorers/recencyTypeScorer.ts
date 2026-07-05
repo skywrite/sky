@@ -15,6 +15,7 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
   meeting: 2,
   message: 2,
   video: 2,
+  chat: 2,
   place: 1,
   document: 0,
 }
