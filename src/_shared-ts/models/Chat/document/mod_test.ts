@@ -282,6 +282,65 @@ test('ChatDocument.create - roundtrip preserves data', () => {
     actual: reparsed.turns[3].content,
     expected: "You're welcome.",
   })
+
+  assert({
+    given: 're-parsed created document',
+    should: 'preserve tags',
+    actual: Array.from(reparsed.tags),
+    expected: ['Tech/AI'],
+  })
+})
+
+// --- tag preservation (fromMarkdown → toMarkdown roundtrip) ---
+
+test('ChatDocument - preserves existing tags through a parse/serialize roundtrip', () => {
+  // Chat documents never write tags themselves — but tags added to a saved
+  // chat (by hand, or carried through a future continue-conversation flow)
+  // must survive re-serialization so tag search keeps finding the chat.
+  const source = `---
+created: 2026-02-10
+updated: 2026-02-10
+summary: Tagged Chat
+provider: claude
+model: claude-opus-4-6
+turns: 1
+tags: Acme/Marketing/Ideas; Acme/Company
+---
+
+# Tagged Chat
+
+## JP
+
+A question.
+
+## AI Assistant
+
+An answer.`
+
+  const doc = ChatDocument.fromMarkdown(source)
+
+  assert({
+    given: 'a chat file with semicolon-delimited tags',
+    should: 'parse both tags',
+    actual: Array.from(doc.tags),
+    expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
+  })
+
+  const serialized = doc.toMarkdown()
+
+  assert({
+    given: 'the re-serialized markdown',
+    should: 'retain the tags line',
+    actual: serialized.includes('tags: Acme/Marketing/Ideas; Acme/Company'),
+    expected: true,
+  })
+
+  assert({
+    given: 'a full parse/serialize/parse roundtrip',
+    should: 'still expose both tags',
+    actual: Array.from(ChatDocument.fromMarkdown(serialized).tags),
+    expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
+  })
 })
 
 // --- strips SUMMARY comment on create ---

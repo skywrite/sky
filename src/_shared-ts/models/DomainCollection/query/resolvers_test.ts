@@ -115,6 +115,52 @@ Decided to move.`),
     },
   ]
 
+  const chatsData = [
+    {
+      doc: Document.fromMarkdown(`---
+created: 2026-02-03
+updated: 2026-02-03
+summary: Planning the Widget Launch
+provider: claude
+model: claude-opus-4-6
+turns: 2
+tags: Work
+---
+
+# Planning the Widget Launch
+
+## JP
+
+How should we plan the widget launch?
+
+## AI Assistant
+
+Start with a small beta group.`),
+      path: '/test/time/2026/02/02-08/03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+created: 2026-01-27
+summary: Brainstorm Marketing Ideas
+provider: claude
+model: claude-haiku-4-5
+turns: 1
+tags: Acme/Marketing/Ideas; Acme/Company
+---
+
+# Brainstorm Marketing Ideas
+
+## JP
+
+Give me marketing ideas.
+
+## AI Assistant
+
+Here are three angles to consider.`),
+      path: '/test/time/2026/01/26-01/27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
+    },
+  ]
+
   const placesData = [
     {
       doc: Document.fromMarkdown(`---
@@ -156,7 +202,7 @@ Classic cocktail bar.`),
     goals: createMockCollection([]),
     ideas: createMockCollection([]),
     places: createMockCollection(placesData),
-    time: createMockCollection([...meetingsData, ...messagesData]),
+    time: createMockCollection([...meetingsData, ...messagesData, ...chatsData]),
   } as unknown as MarkdownStore
 }
 
@@ -558,5 +604,190 @@ test('resolvers - meetings date filter uses path date over created', () => {
     should: 'use YAML date field (highest priority)',
     actual: result.length,
     expected: 1,
+  })
+})
+
+test('resolvers - chats returns only ai-chat documents', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({})
+
+  assert({
+    given: 'no filter',
+    should: 'return both chats and nothing else from the time store',
+    actual: result.length,
+    expected: 2,
+  })
+
+  assert({
+    given: 'no filter',
+    should: 'only include ai-chats paths',
+    actual: result.every((c) => c.path.includes('/ai-chats/')),
+    expected: true,
+  })
+})
+
+test('resolvers - chats filters by summary_contains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({ where: { summary_contains: 'widget' } })
+
+  assert({
+    given: 'summary_contains filter for widget',
+    should: 'return 1 chat',
+    actual: result.length,
+    expected: 1,
+  })
+
+  assert({
+    given: 'summary_contains filter for widget',
+    should: 'return the widget launch chat',
+    actual: result[0]?.summary,
+    expected: 'Planning the Widget Launch',
+  })
+})
+
+test('resolvers - chats filters by body_contains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({ where: { body_contains: 'beta group' } })
+
+  assert({
+    given: 'body_contains filter matching transcript text',
+    should: 'return the chat whose conversation mentions it',
+    actual: result.length,
+    expected: 1,
+  })
+})
+
+test('resolvers - chats maps fields correctly', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({ where: { summary_contains: 'widget' } })
+  const chat = result[0]
+
+  assert({
+    given: 'a chat document',
+    should: 'derive when from the HH-MM filename prefix',
+    actual: chat?.when,
+    expected: '09:15',
+  })
+
+  assert({
+    given: 'a chat document',
+    should: 'derive date from the day path',
+    actual: chat?.date,
+    expected: '2026-02-03',
+  })
+
+  assert({
+    given: 'a chat document',
+    should: 'map provider from YAML',
+    actual: chat?.provider,
+    expected: 'claude',
+  })
+
+  assert({
+    given: 'a chat document',
+    should: 'map turns from YAML',
+    actual: chat?.turns,
+    expected: 2,
+  })
+})
+
+test('resolvers - chats sorted by date descending', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({})
+
+  assert({
+    given: 'two chats from different days',
+    should: 'return the most recent first',
+    actual: result[0]?.date,
+    expected: '2026-02-03',
+  })
+})
+
+test('resolvers - chats filters by tags_contains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({ where: { tags_contains: 'Work' } })
+
+  assert({
+    given: 'tags_contains filter for Work',
+    should: 'return only the tagged chat',
+    actual: result.map((c) => c.summary),
+    expected: ['Planning the Widget Launch'],
+  })
+})
+
+test('resolvers - chats filters by hierarchical tags_starts_with', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.chats({ where: { tags_starts_with: 'Acme/Marketing/' } })
+
+  assert({
+    given: 'tags_starts_with filter for the Acme/Marketing/ prefix',
+    should: 'return the chat tagged Acme/Marketing/Ideas',
+    actual: result.map((c) => c.summary),
+    expected: ['Brainstorm Marketing Ideas'],
+  })
+
+  assert({
+    given: 'a chat with semicolon-delimited tags',
+    should: 'parse both tags',
+    actual: result[0]?.tags,
+    expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
+  })
+})
+
+test('resolvers - documents tag queries include chats', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.documents({ where: { tags_contains: 'Work' } })
+  const paths = result.map((d) => d.path)
+
+  assert({
+    given: 'a cross-type documents query filtering by tag Work',
+    should: 'include the tagged chat',
+    actual: paths.some((p) => p.includes('/ai-chats/')),
+    expected: true,
+  })
+
+  assert({
+    given: 'a cross-type documents query filtering by tag Work',
+    should: 'report the chat with type chat',
+    actual: result.find((d) => d.path.includes('/ai-chats/'))?.type,
+    expected: 'chat',
+  })
+})
+
+test('resolvers - chats do not appear in meetings or messages', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const meetings = resolvers.meetings({})
+  const messages = resolvers.messages({})
+
+  assert({
+    given: 'chats in the time store',
+    should: 'not leak into meetings',
+    actual: meetings.some((m) => m.path.includes('/ai-chats/')),
+    expected: false,
+  })
+
+  assert({
+    given: 'chats in the time store',
+    should: 'not leak into messages',
+    actual: messages.some((m) => m.path.includes('/ai-chats/')),
+    expected: false,
   })
 })

@@ -2,7 +2,7 @@
 name: context-evolve
 schema: 0.2.0
 created: 2026-03-01
-updated: 2026-06-10
+updated: 2026-07-05
 description: Evolve GraphQL queries based on conversation direction
 ---
 
@@ -36,7 +36,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Do NOT use `involves` for projects — `involves` is for people only
 
 **People** → `involves: "<person-name>"`
-- Works on: meetings, messages, journals, documents, projects, decisions, goals
+- Works on: meetings, messages, journals, chats, documents, projects, decisions, goals
 - Searches who/from/to fields and body text for the person's name
 - Use the person's canonical name — aliases are resolved automatically
 - When the conversation shifts to a specific person, ALSO fetch their profile document: `people(where: { name_contains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
@@ -50,12 +50,20 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Does NOT work on: days
 - **Prefer `tags_starts_with` for broad topics** — use the top-level category prefix (2 segments max). Example: `tags_starts_with: "Acme/Finance/"`, NOT `"Acme/Finance/Treasury/"`. Always cut the prefix at the second `/` to catch all subtags in that category.
 
+**Past AI chats** → `chats(...)`
+- Saved ai:chat conversations — brainstorms, analysis, and drafting sessions with the AI
+- ALWAYS query chats when the conversation references a previous AI conversation: "our last chat", "what did you tell me", "we discussed", "you suggested", "that analysis you did"
+- Also useful for topic recall — past chats often hold deep context on decisions and ideas
+- Filters: `summary_contains`, `body_contains`, `involves`, `recent`, `date`, plus tag filters
+- One `chats` block is usually enough: `body_contains` searches the full transcript, which includes the summary title. Remember: querying the same root field twice requires aliases.
+- Example: `chats(where: { body_contains: "runway", recent: "6mo" }, limit: 5) { date summary markdown path }`
+
 **Text search** → `body_contains: "<text>"` (last resort)
 - Only use when no structured filter applies
-- Works on: meetings, messages, journals, documents
+- Works on: meetings, messages, journals, chats, documents
 
 **Time** → `recent: "<period>"` (e.g., "7d", "30d", "6mo", "18mo", "1y")
-- Works on: meetings, messages, journals, days, documents
+- Works on: meetings, messages, journals, chats, days, documents
 - Use "7d" for last week, "30d" for last month, "18mo" for broad searches
 - **Default wide**: when no specific timeframe is mentioned, prefer wider windows (18mo) over narrow ones. The scorer handles relevance — your job is to not miss documents.
 - **Omit `recent` entirely** when the user says "entire history", "all time", "everything", or similar.
