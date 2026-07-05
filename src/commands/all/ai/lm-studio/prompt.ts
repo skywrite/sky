@@ -4,7 +4,7 @@ import * as lmStudio from '#shared/ai/llm/lm-studio/mod.ts'
 
 const params = {
   prompt: Arg.string('The prompt to send to the model'),
-  model: Flag.string('Model to use (default: deepseek/deepseek-r1-0528-qwen3-8b)'),
+  model: Flag.string(`Model to use (default: ${lmStudio.DEFAULT_MODEL})`),
   temperature: Flag.number('Temperature for generation (0-2, default: 0)'),
   maxTokens: Flag.number('Maximum tokens to generate (default: 2000)'),
   system: Flag.string('System prompt to use'),
