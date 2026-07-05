@@ -561,7 +561,8 @@ export default class AiChatTask extends Command {
       queries: string[]
       context?: string[] // full context list (turn 1 only)
       diff?: string[] // files added to universe
-      pruned: string[] // files cut by scorer
+      pruned: string[] // eligible files cut by the token budget
+      excluded?: string[] // files excluded by scorer verdict (with reasons)
     }
     const contextLog: ContextTurnLog[] = []
     let turnNumber = 0
@@ -577,6 +578,7 @@ export default class AiChatTask extends Command {
 
       let activityMarkdown: string | null = null
       const turnPruned: string[] = []
+      const turnExcluded: string[] = []
 
       if (initialCollection) {
         const assembler = ContextAssembler.from(initialCollection, {
@@ -586,11 +588,15 @@ export default class AiChatTask extends Command {
         activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true })
         output.log(
           colors.dim(
-            `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ~${assembler.totalTokens} tokens`,
+            `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ${assembler.excluded.length} excluded, ~${assembler.totalTokens} tokens`,
           ),
         )
         for (const s of assembler.pruned) {
           turnPruned.push(`${relPath(s.item.path)} (score=${s.score}, ~${s.tokens} tokens)`)
+        }
+        for (const s of assembler.excluded) {
+          const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
+          turnExcluded.push(`${relPath(s.item.path)} (${reason}, ~${s.tokens} tokens)`)
         }
       }
 
@@ -613,6 +619,9 @@ export default class AiChatTask extends Command {
       }
       if (turnDiff.length > 0) {
         entry.diff = turnDiff
+      }
+      if (turnExcluded.length > 0) {
+        entry.excluded = turnExcluded
       }
       contextLog.push(entry)
 
@@ -1028,6 +1037,9 @@ export default class AiChatTask extends Command {
           }
           if (entry.pruned.length > 0) {
             comment += 'PRUNED:\n' + entry.pruned.map((p) => ` - ${p}`).join('\n') + '\n'
+          }
+          if (entry.excluded && entry.excluded.length > 0) {
+            comment += 'EXCLUDED:\n' + entry.excluded.map((p) => ` - ${p}`).join('\n') + '\n'
           }
           comment += '-->\n\n'
         }

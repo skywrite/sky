@@ -1,7 +1,7 @@
 import { assert, test } from '#test'
 import { Document, type MarkdownStore } from '#shared/models/Markdown/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import ContextAssembler, { estimateTokens, type Scorer } from './mod.ts'
+import ContextAssembler, { estimateTokens, keepAlways, keepNever, type Scorer, scored } from './mod.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,7 +22,7 @@ function makeDomain(items: Array<{ doc: Document; path: string }>): DomainCollec
 }
 
 /** Score every item the same (1). Useful for testing budget logic. */
-const FLAT_SCORER: Scorer = () => 1
+const FLAT_SCORER: Scorer = () => scored(1)
 
 // ---------------------------------------------------------------------------
 // estimateTokens
@@ -76,7 +76,7 @@ test('from — over budget: lowest-scored pruned first', () => {
     { doc: lowDoc, path: '/places/cafe.md' },
   ])
 
-  const scorer: Scorer = (item) => (item.path.includes('goals') ? 10 : 1)
+  const scorer: Scorer = (item) => (item.path.includes('goals') ? scored(10) : scored(1))
 
   // Budget enough for only one doc
   const tokensPerDoc = estimateTokens(highDoc.toMarkdown())
@@ -214,54 +214,66 @@ test('toMarkdown — delegates to Collection, respects opts', () => {
 })
 
 // ---------------------------------------------------------------------------
-// sort — infinite scores (pinned / always-prune items)
+// verdicts — always / never / scored partitioning
 // ---------------------------------------------------------------------------
 
-test('from — two Infinity-scored items still tie-break by size', () => {
-  // Regression: `b.score - a.score` was NaN for two pinned (Infinity) items,
-  // which is undefined comparator behavior — the size tie-break never applied.
+test('from — two pinned items tie-break by size', () => {
   const bigDoc = makeDoc('x'.repeat(400))
   const smallDoc = makeDoc('y'.repeat(20))
 
-  // Insert the big one first so a NaN-as-equal (stable) sort would keep it first
+  // Insert the big one first so an insertion-order-stable sort would keep it first
   const domain = makeDomain([
     { doc: bigDoc, path: '/goals/professional.md' },
     { doc: smallDoc, path: '/goals/personal.md' },
   ])
 
-  const pinnedScorer: Scorer = () => Infinity
+  const pinnedScorer: Scorer = () => keepAlways()
 
   const asm = ContextAssembler.from(domain, { scorer: pinnedScorer, maxTokens: 10000 })
 
   assert({
-    given: 'two pinned (Infinity) items, larger inserted first',
+    given: 'two pinned items, larger inserted first',
     should: 'sort the smaller one first',
     actual: asm.kept[0].item.path,
     expected: '/goals/personal.md',
   })
 })
 
-test('from — mixed Infinity, finite, and -Infinity scores order correctly', () => {
+test('from — pinned, scored, and excluded items partition correctly', () => {
   const domain = makeDomain([
-    { doc: makeDoc('always pruned A'), path: '/orgs/A.md' },
+    { doc: makeDoc('excluded A'), path: '/orgs/A.md' },
     { doc: makeDoc('normal'), path: '/people/Alice.md' },
-    { doc: makeDoc('always pruned B'), path: '/orgs/B.md' },
+    { doc: makeDoc('excluded B'), path: '/orgs/B.md' },
     { doc: makeDoc('pinned'), path: '/goals/personal.md' },
   ])
 
   const scorer: Scorer = (item) => {
-    if (item.path.startsWith('/goals/')) return Infinity
-    if (item.path.startsWith('/orgs/')) return -Infinity
-    return 5
+    if (item.path.startsWith('/goals/')) return keepAlways('pinned')
+    if (item.path.startsWith('/orgs/')) return keepNever('orgs never help')
+    return scored(5)
   }
 
   const asm = ContextAssembler.from(domain, { scorer, maxTokens: 10000 })
 
   assert({
-    given: 'pinned, normal, and always-prune items (two -Infinity ties)',
-    should: 'order pinned > normal > always-prune',
+    given: 'pinned, scored, and excluded items with room for everything',
+    should: 'keep pinned first then scored — excluded stays out despite room',
     actual: asm.kept.map((s) => s.item.path),
-    expected: ['/goals/personal.md', '/people/Alice.md', '/orgs/A.md', '/orgs/B.md'],
+    expected: ['/goals/personal.md', '/people/Alice.md'],
+  })
+
+  assert({
+    given: 'two excluded orgs',
+    should: 'land in the excluded list, not pruned',
+    actual: [asm.excluded.map((s) => s.item.path).sort(), asm.pruned.length],
+    expected: [['/orgs/A.md', '/orgs/B.md'], 0],
+  })
+
+  assert({
+    given: 'an excluded item',
+    should: 'retain the verdict reason for logs',
+    actual: asm.excluded[0].verdict.keep === 'never' ? asm.excluded[0].verdict.reason : undefined,
+    expected: 'orgs never help',
   })
 })
 
@@ -272,7 +284,7 @@ test('from — pinned items survive a tight budget ahead of higher-volume items'
   ])
 
   // Mirrors ai:chat: a boosted document scores high but finite; the pin wins
-  const scorer: Scorer = (item) => (item.path.startsWith('/goals/') ? Infinity : 15)
+  const scorer: Scorer = (item) => (item.path.startsWith('/goals/') ? keepAlways('pinned') : scored(15))
 
   const asm = ContextAssembler.from(domain, { scorer, maxTokens: 100 })
 
@@ -281,5 +293,90 @@ test('from — pinned items survive a tight budget ahead of higher-volume items'
     should: 'keep the pinned goal first',
     actual: asm.kept[0].item.path,
     expected: '/goals/personal.md',
+  })
+})
+
+test('from — pinned items are kept even when they alone exceed the budget', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('p'.repeat(4000)), path: '/goals/big-goal.md' },
+    { doc: makeDoc('small'), path: '/people/Alice.md' },
+  ])
+
+  const scorer: Scorer = (item) => (item.path.startsWith('/goals/') ? keepAlways() : scored(5))
+
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 100 })
+
+  assert({
+    given: 'a 1000-token pinned doc under a 100-token budget',
+    should: 'keep the pin and flag overBudget',
+    actual: [asm.kept.map((s) => s.item.path), asm.overBudget],
+    expected: [['/goals/big-goal.md'], true],
+  })
+})
+
+test('withBudget — loosening recovers pruned items but never excluded ones', () => {
+  const doc = makeDoc('x'.repeat(400)) // ~100 tokens each
+  const domain = makeDomain([
+    { doc, path: '/time/a.md' },
+    { doc: makeDoc('x'.repeat(400)), path: '/time/b.md' },
+    { doc: makeDoc('org'), path: '/orgs/Acme.md' },
+  ])
+
+  const scorer: Scorer = (item) => (item.path.startsWith('/orgs/') ? keepNever('banned') : scored(1))
+
+  const tight = ContextAssembler.from(domain, { scorer, maxTokens: 100 })
+  assert({
+    given: 'a budget fitting one of two scored docs',
+    should: 'prune the other, exclude the org',
+    actual: [tight.kept.length, tight.pruned.length, tight.excluded.length],
+    expected: [1, 1, 1],
+  })
+
+  const loose = tight.withBudget(10000)
+  assert({
+    given: 'a loosened budget with room for everything',
+    should: 'recover the pruned doc but keep the org excluded',
+    actual: [loose.kept.length, loose.pruned.length, loose.excluded.map((s) => s.item.path)],
+    expected: [2, 0, ['/orgs/Acme.md']],
+  })
+})
+
+test('from — all-excluded collection produces empty output', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('a'), path: '/orgs/A.md' },
+    { doc: makeDoc('b'), path: '/orgs/B.md' },
+  ])
+
+  const asm = ContextAssembler.from(domain, { scorer: () => keepNever('banned'), maxTokens: 10000 })
+
+  assert({
+    given: 'a collection where every item is excluded',
+    should: 'keep nothing and render empty markdown',
+    actual: [asm.size, asm.toMarkdown(), asm.excluded.length],
+    expected: [0, '', 2],
+  })
+})
+
+test('from — legacy infinite scores normalize to always/never verdicts', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('pin me'), path: '/goals/g.md' },
+    { doc: makeDoc('ban me'), path: '/orgs/o.md' },
+    { doc: makeDoc('normal'), path: '/people/p.md' },
+  ])
+
+  // Unmigrated scorer style: sentinel scores instead of explicit verdicts
+  const scorer: Scorer = (item) => {
+    if (item.path.startsWith('/goals/')) return scored(Infinity)
+    if (item.path.startsWith('/orgs/')) return scored(-Infinity)
+    return scored(1)
+  }
+
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 10000 })
+
+  assert({
+    given: 'sentinel Infinity/-Infinity scores',
+    should: 'treat them as always/never',
+    actual: [asm.kept.map((s) => s.item.path), asm.excluded.map((s) => s.item.path)],
+    expected: [['/goals/g.md', '/people/p.md'], ['/orgs/o.md']],
   })
 })

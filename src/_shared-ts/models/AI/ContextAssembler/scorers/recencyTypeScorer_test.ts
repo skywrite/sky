@@ -1,6 +1,7 @@
 import { assert, test } from '#test'
 import { type CollectionEntityType, type CollectionItem, Document } from '#shared/models/Markdown/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { verdictScore } from '../mod.ts'
 import { createRecencyTypeScorer } from './recencyTypeScorer.ts'
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ recencyFixtures.forEach((fixture) => {
     assert({
       given: fixture.description,
       should: `score ${fixture.expected}`,
-      actual: round2(scorer(makeItem({ path: fixture.path, type: fixture.type }))),
+      actual: round2(verdictScore(scorer(makeItem({ path: fixture.path, type: fixture.type })))),
       expected: fixture.expected,
     })
   })
@@ -90,7 +91,7 @@ entityFixtures.forEach((fixture) => {
     assert({
       given: `${fixture.type} entity at depth 0`,
       should: `score ${fixture.expected}`,
-      actual: scorer(makeItem({ path: fixture.path, type: fixture.type })),
+      actual: verdictScore(scorer(makeItem({ path: fixture.path, type: fixture.type }))),
       expected: fixture.expected,
     })
   })
@@ -106,7 +107,7 @@ test('recencyTypeScorer — plain document gets recency 0', () => {
   assert({
     given: 'document type with no date in path',
     should: 'score 0 (recency 0 + type 0)',
-    actual: scorer(makeItem({ path: '/docs/random.md', type: 'document' })),
+    actual: verdictScore(scorer(makeItem({ path: '/docs/random.md', type: 'document' }))),
     expected: 0,
   })
 })
@@ -131,7 +132,7 @@ depthFixtures.forEach((fixture) => {
     assert({
       given: `person at depth ${fixture.depth}`,
       should: `score ${fixture.expected}`,
-      actual: scorer(makeItem({ path: '/people/X.md', type: 'person', depth: fixture.depth })),
+      actual: verdictScore(scorer(makeItem({ path: '/people/X.md', type: 'person', depth: fixture.depth }))),
       expected: fixture.expected,
     })
   })
@@ -147,7 +148,7 @@ test('recencyTypeScorer — org at depth 0 scores normally', () => {
   assert({
     given: 'org at depth 0 (root document)',
     should: 'score 6 (recency 3 + type 3)',
-    actual: scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 0 })),
+    actual: verdictScore(scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 0 }))),
     expected: 6,
   })
 })
@@ -158,7 +159,7 @@ test('recencyTypeScorer — org at depth 1 scores normally', () => {
   assert({
     given: 'org at depth 1 (directly referenced)',
     should: 'score 5 (recency 3 + type 3 - depth 1)',
-    actual: scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 1 })),
+    actual: verdictScore(scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 1 }))),
     expected: 5,
   })
 })
@@ -169,7 +170,7 @@ test('recencyTypeScorer — org at depth 2 returns -Infinity', () => {
   assert({
     given: 'org at depth 2 (transitive, e.g. meeting → person → org)',
     should: 'return -Infinity to always prune',
-    actual: scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 2 })),
+    actual: verdictScore(scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 2 }))),
     expected: -Infinity,
   })
 })
@@ -180,7 +181,7 @@ test('recencyTypeScorer — org at depth 3 returns -Infinity', () => {
   assert({
     given: 'org at depth 3',
     should: 'return -Infinity to always prune',
-    actual: scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 3 })),
+    actual: verdictScore(scorer(makeItem({ path: '/orgs/Acme.md', type: 'org', depth: 3 }))),
     expected: -Infinity,
   })
 })
@@ -196,11 +197,13 @@ test('recencyTypeScorer — priority path gets +10 boost', () => {
   assert({
     given: 'a document in priorityPaths',
     should: 'add +10 to base score (recency 5 + type 0 + boost 10 = 15)',
-    actual: scorer(
-      makeItem({
-        path: '/Notebook/time/2026/02/23-01/23/actions/videos/Video_James.md',
-        type: 'document',
-      }),
+    actual: verdictScore(
+      scorer(
+        makeItem({
+          path: '/Notebook/time/2026/02/23-01/23/actions/videos/Video_James.md',
+          type: 'document',
+        }),
+      ),
     ),
     expected: 15,
   })
@@ -213,7 +216,7 @@ test('recencyTypeScorer — non-priority path is unaffected', () => {
   assert({
     given: 'a document NOT in priorityPaths',
     should: 'score normally without boost',
-    actual: scorer(makeItem({ path: '/people/Alice.md', type: 'person' })),
+    actual: verdictScore(scorer(makeItem({ path: '/people/Alice.md', type: 'person' }))),
     expected: 6,
   })
 })
