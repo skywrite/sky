@@ -10,7 +10,7 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.has(ext)
 }
 
-/** Return all image files on ~/Desktop, sorted by name. */
+/** Return all image files on ~/Desktop, sorted by modification time (capture order). */
 export async function findScreenshotsOnDesktop(): Promise<string[]> {
   const home = env.get('HOME')
   if (!home) return []
@@ -27,6 +27,7 @@ export async function findScreenshotsOnDesktop(): Promise<string[]> {
     images.push({ path: fullPath, mtime: info.mtimeMs ?? 0 })
   }
 
-  images.sort((a, b) => a.path.localeCompare(b.path))
+  // Not by name: macOS 12-hour screenshot names misorder lexicographically ("1.05 PM" < "11.00 AM")
+  images.sort((a, b) => a.mtime - b.mtime)
   return images.map((i) => i.path)
 }

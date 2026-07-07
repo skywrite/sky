@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { copyFile, mkdir, rename } from 'node:fs/promises'
+import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -10,13 +10,11 @@ import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { exists, readTextFile } from '#shared/fs/mod.ts'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { exists } from '#shared/fs/mod.ts'
 import { MCPTool } from '#mcp/decorators.ts'
-import { extractMessageFromImage } from './_lib/extractFromImage.ts'
+import { extractMessageFromImage, renameSenders, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
-
-const CORRECTIONS_PROMPT_FILE = new URL('./prompts/parse-corrections.prompt.md', import.meta.url).pathname
+import { parseCorrections } from './_lib/parseCorrections.ts'
 
 function relativeAge(nowMs: number, filePath: string): string {
   // Parse macOS screenshot timestamp from filename (e.g. "Screenshot 2026-02-24 at 3.45.12 PM")
@@ -52,7 +50,10 @@ const params = {
   from: Flag.string('Who the communication was from', { short: 'f' }),
   summary: Flag.string('Summary of message', { short: 's' }),
   medium: Flag.string('Communication medium e.g. WhatsApp, iMessage, etc', { short: 'm' }),
-  fromImage: Flag.string('Path to screenshot, or omit path to search Desktop', { short: 'i', optional: true }),
+  fromImage: Flag.string('Path(s) to screenshot(s), comma-separated, or omit path to search Desktop', {
+    short: 'i',
+    optional: true,
+  }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', { optional: true }),
   aiContext: Flag.string('Additional context for AI image extraction', { optional: true }),
   when: whenNBTime(),
@@ -167,7 +168,14 @@ export default class MessageNewTask extends Command {
       const hasExplicitPath = typeof fromImage === 'string' && fromImage !== 'true'
       let imagePaths: string[]
       if (hasExplicitPath) {
-        imagePaths = [path.resolve(fromImage)]
+        imagePaths = fromImage
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => path.resolve(s))
+        if (imagePaths.length === 0) {
+          return CommandResult.fail('No image path given: --from-image /path/a.png,/path/b.png')
+        }
       } else {
         output.log(colors.gray('No image path specified, searching Desktop...'))
         const found = await findScreenshotsOnDesktop()
@@ -205,16 +213,32 @@ export default class MessageNewTask extends Command {
         }
       }
 
+      // Send screenshots in capture order — multiselect returns toggle order
+      if (imagePaths.length > 1) {
+        const withMtime = await Promise.all(
+          imagePaths.map(async (ip) => ({ ip, mtime: (await stat(ip)).mtimeMs ?? 0 })),
+        )
+        withMtime.sort((a, b) => a.mtime - b.mtime)
+        imagePaths = withMtime.map((x) => x.ip)
+      }
+
       // 2. Extract conversation from image(s)
       const label = imagePaths.length === 1 ? 'screenshot' : `${imagePaths.length} screenshots`
       output.log(colors.gray(`Extracting conversation from ${label}...`))
-      const extraction = await extractMessageFromImage(imagePaths, aiContext)
+      const participants = [from, to].filter(Boolean)
+      const hints = [
+        participants.length > 0
+          ? `Known participant name(s): ${participants.join(', ')}. Use these exact names for the matching senders.`
+          : '',
+        aiContext ?? '',
+      ].filter(Boolean)
+      const extraction = await extractMessageFromImage(imagePaths, hints.length > 0 ? hints.join(' ') : undefined)
 
       // 3. Apply extracted values (CLI flags override AI)
       from = from || extraction.from || undefined
       to = to || extraction.to || undefined
       summary = summary || extraction.summary
-      body = extraction.dialogue
+      let messages = extraction.messages
 
       // 4. Resolve medium: CLI flag > AI detection > user prompt
       if (!medium && extraction.platform) {
@@ -245,15 +269,21 @@ export default class MessageNewTask extends Command {
       output.log(colors.cyan('\n─── Extracted ───'))
       output.log(colors.white(`  From:     ${from ?? '(none)'}`))
       output.log(colors.white(`  To:       ${to ?? '(none)'}`))
+      if (messages.length > 0) {
+        output.log(colors.white(`  Senders:  ${senderSummary(messages)}`))
+      }
       output.log(colors.white(`  Medium:   ${medium}`))
       output.log(colors.white(`  Summary:  ${summary ?? '(none)'}`))
       output.log(colors.white(`  When:     ${when}`))
       output.log(colors.white(`  Images:   ${imagePaths.length}`))
+      if (extraction.continuityNotes) {
+        output.log(colors.yellow(`  Notes:    ${extraction.continuityNotes}`))
+      }
       output.log(colors.cyan('─────────────────'))
 
       const corrections = await p.text({
         message: 'Any corrections? (Enter to accept)',
-        placeholder: 'e.g. medium: Signal, from: Alice, to: Bob, when: 14:30',
+        placeholder: 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
       })
 
       if (p.isCancel(corrections)) {
@@ -263,39 +293,16 @@ export default class MessageNewTask extends Command {
 
       if (corrections) {
         output.log(colors.gray('Parsing corrections...'))
-        const { generateObject } = await import('ai')
-        const { anthropic } = await import('@ai-sdk/anthropic')
-        const { z } = await import('zod')
-
-        const promptContent = await readTextFile(CORRECTIONS_PROMPT_FILE)
-        const renderInput: RenderInput = {
-          user: {
-            from: from ?? 'null',
-            to: to ?? 'null',
-            medium: medium ?? 'null',
-            summary: summary ?? 'null',
-            when: when.time,
-            corrections,
-          },
-        }
-        const { output: correctionPrompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
-
-        const parsed = await generateObject({
-          model: anthropic('claude-sonnet-4-6'),
-          schema: z.object({
-            from: z.string().nullable().optional().describe('Updated from field, only if user changed it'),
-            to: z.string().nullable().optional().describe('Updated to field, only if user changed it'),
-            medium: z.string().optional().describe('Updated medium, only if user changed it'),
-            summary: z.string().optional().describe('Updated summary, only if user changed it'),
-            when: z
-              .string()
-              .optional()
-              .describe('Updated time as "YYYY-MM-DD HH:MM" if date changed, or just "HH:MM" if only time changed'),
-          }),
-          prompt: correctionPrompt,
+        const c = await parseCorrections({
+          from,
+          to,
+          medium,
+          summary,
+          when: when.time,
+          senders: [...new Set(messages.map((m) => m.sender))],
+          corrections,
         })
 
-        const c = parsed.object
         if (c.from !== undefined) from = c.from ?? undefined
         if (c.to !== undefined) to = c.to ?? undefined
         if (c.medium) medium = c.medium
@@ -307,9 +314,20 @@ export default class MessageNewTask extends Command {
           const dateTimeStr = hasDate ? c.when : `${when.plainDate} ${c.when}`
           when = new PlainDateTime(dateTimeStr)
         }
+        if (c.senderRenames && c.senderRenames.length > 0) {
+          messages = renameSenders(messages, c.senderRenames)
+          // Keep metadata in sync when a renamed sender is also the from/to value
+          // (explicit from:/to: corrections were applied above and win over this)
+          for (const r of c.senderRenames) {
+            if (from === r.from) from = r.to
+            if (to === r.from) to = r.to
+          }
+        }
 
         output.log(colors.green('Applied corrections.'))
       }
+
+      body = renderDialogue(messages)
 
       // 6. Prompt to move screenshots to attachments
       const moveLabel = imagePaths.length === 1 ? 'Move screenshot to attachments?' : 'Move screenshots to attachments?'
