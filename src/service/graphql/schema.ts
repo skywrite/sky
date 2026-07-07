@@ -269,5 +269,9 @@ export function createYogaInstance(
       typeDefs,
       resolvers: createResolvers(store, markdownStore),
     }),
+    // Localhost single-user service: expose real resolver errors to clients.
+    // Yoga's default masking rewrites them to "Unexpected error.", which made
+    // ai:chat context failures undiagnosable from the CLI side.
+    maskedErrors: false,
   })
 }
