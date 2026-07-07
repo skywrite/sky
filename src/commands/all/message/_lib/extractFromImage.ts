@@ -1,10 +1,9 @@
-import { readFile } from 'node:fs/promises'
-import * as path from 'node:path'
 import { generateObject } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { loadImageForAI } from './loadImage.ts'
 
 const MODEL = 'claude-opus-4-6'
 const PROMPT_FILE = new URL('../prompts/extract-from-image.prompt.md', import.meta.url).pathname
@@ -26,21 +25,12 @@ const ExtractionSchema = z.object({
 
 export type ImageExtraction = z.infer<typeof ExtractionSchema>
 
-function mediaTypeFromExt(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase()
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
-  if (ext === '.webp') return 'image/webp'
-  if (ext === '.gif') return 'image/gif'
-  return 'image/png'
-}
-
 export async function extractMessageFromImage(imagePaths: string[], aiContext?: string): Promise<ImageExtraction> {
   const imageBlocks = await Promise.all(
-    imagePaths.map(async (p) => ({
-      type: 'image' as const,
-      image: await readFile(p),
-      mediaType: mediaTypeFromExt(p),
-    })),
+    imagePaths.map(async (p) => {
+      const { image, mediaType } = await loadImageForAI(p)
+      return { type: 'image' as const, image, mediaType }
+    }),
   )
 
   const promptContent = await readTextFile(PROMPT_FILE)
