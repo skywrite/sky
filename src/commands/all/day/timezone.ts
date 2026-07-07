@@ -1,5 +1,4 @@
 import { Command, CommandResult } from '#commands/mod.ts'
-import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -13,15 +12,16 @@ export default class DayTimezoneTask extends Command {
     description: 'Set the timezone in the current day file.',
   }
 
-  async run({ args, context }: CommandArgs): Promise<CommandResult> {
-    const { config, output } = context
+  async run({ context, tasks }: CommandArgs): Promise<CommandResult> {
+    const { output } = context
     const now = new PlainDate()
 
     let dayModel = await readDay(now)
 
-    const tzIANA = currentTimezoneIANA()
+    const tzResult = await tasks.run('util:timezone')
+    const tzIANA = tzResult.data?.iana
+    if (!tzIANA) return CommandResult.fail('Unable to detect the current timezone.')
 
-    // Use the new setTimezone method
     dayModel = dayModel.setTimezone(tzIANA)
 
     await writeDay(dayModel)
