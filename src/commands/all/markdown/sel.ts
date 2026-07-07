@@ -15,6 +15,7 @@ import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
 import { parseSelector } from '#shared/models/DomainCollection/query/parser.ts'
 import { PORT_SERVER } from '#shared/config.ts'
+import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 
 const params = {
   dsl: Flag.string('CSS-like selector query', { short: 'd', optional: true }),
@@ -167,14 +168,27 @@ export default class MarkdownSelectorTask extends Command {
     const { raw, json, limit, baseDir, context } = opts
     const { output } = context
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      })
+    } catch (err) {
+      // markdown:sel is the execution layer for all AI-generated queries
+      // (ai:context:files/evolve → here), and the only spot holding both the
+      // query and its errors — so AI-pipeline failures are logged from here.
+      const message = `Service unreachable at ${url}: ${(err as Error).message}`
+      output.log(colors.red(message))
+      await logAIError({ source: 'markdown:sel', stage: 'query:server', message, query })
+      return CommandResult.fail(message)
+    }
 
     if (!response.ok) {
-      output.log(colors.red(`Server error: ${response.status} ${response.statusText}`))
+      const message = `Server error: ${response.status} ${response.statusText}`
+      output.log(colors.red(message))
+      await logAIError({ source: 'markdown:sel', stage: 'query:server', message, query })
       return CommandResult.fail(`Server error: ${response.status}`)
     }
 
@@ -184,6 +198,14 @@ export default class MarkdownSelectorTask extends Command {
       for (const err of result.errors) {
         output.log(colors.red(`GraphQL Error: ${err.message}`))
       }
+      output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+      await logAIError({
+        source: 'markdown:sel',
+        stage: 'query:server',
+        message: 'GraphQL query failed',
+        query,
+        errors: result.errors.map((e) => e.message),
+      })
       return CommandResult.fail('GraphQL query failed')
     }
 
@@ -226,6 +248,14 @@ export default class MarkdownSelectorTask extends Command {
       for (const err of result.errors) {
         output.log(colors.red(`GraphQL Error: ${err.message}`))
       }
+      output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+      await logAIError({
+        source: 'markdown:sel',
+        stage: 'query:local',
+        message: 'GraphQL query failed',
+        query,
+        errors: result.errors.map((e) => e.message),
+      })
       return CommandResult.fail('GraphQL query failed')
     }
 
