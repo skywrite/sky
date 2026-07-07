@@ -151,6 +151,7 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
       ideas: (_: unknown, args: any) => dc?.ideas(args) ?? [],
       days: (_: unknown, args: any) => dc?.days(args) ?? [],
       journals: (_: unknown, args: any) => dc?.journals(args) ?? [],
+      chats: (_: unknown, args: any) => dc?.chats(args) ?? [],
       documents: (_: unknown, args: any) => dc?.documents(args) ?? [],
 
       // Convenience single-item lookups
