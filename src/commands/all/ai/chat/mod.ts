@@ -20,6 +20,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { aiModel, getProfile, resolveProfile } from '#shared/ai/models.ts'
+import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
 
@@ -191,12 +192,16 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
       body: JSON.stringify({ query, depth }),
     })
   } catch (err) {
-    console.warn(`[ai:chat] notebook service unreachable at ${url}: ${(err as Error).message}`)
+    const message = `notebook service unreachable at ${url}: ${(err as Error).message}`
+    console.warn(`[ai:chat] ${message}`)
+    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
     return []
   }
   if (!resp.ok) {
     const body = await resp.text().catch(() => '')
-    console.warn(`[ai:chat] context fetch failed (${resp.status} ${resp.statusText}): ${body.slice(0, 200)}`)
+    const message = `context fetch failed (${resp.status} ${resp.statusText}): ${body.slice(0, 200)}`
+    console.warn(`[ai:chat] ${message}`)
+    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
     return []
   }
 
@@ -204,7 +209,9 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
   try {
     json = await resp.json()
   } catch (err) {
-    console.warn(`[ai:chat] context response not valid JSON: ${(err as Error).message}`)
+    const message = `context response not valid JSON: ${(err as Error).message}`
+    console.warn(`[ai:chat] ${message}`)
+    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
     return []
   }
   const documents =
@@ -563,9 +570,15 @@ export default class AiChatTask extends Command {
       diff?: string[] // files added to universe
       pruned: string[] // eligible files cut by the token budget
       excluded?: string[] // files excluded by scorer verdict (with reasons)
+      errors?: string[] // context queries that failed this turn (also in ai-errors.jsonl)
     }
     const contextLog: ContextTurnLog[] = []
     let turnNumber = 0
+    // Context failures for the current turn. Reset when a turn starts (both
+    // first-turn and evolve paths), recorded into the turn's ContextTurnLog
+    // entry by rebuildContext, and surfaced as a warning after gathering —
+    // the chat used to swallow these and answer from silently thinner context.
+    let turnErrors: string[] = []
 
     function relPath(p: string): string {
       return p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p
@@ -613,6 +626,9 @@ export default class AiChatTask extends Command {
         turn: turnNumber,
         queries: [...contextQueries],
         pruned: turnPruned,
+      }
+      if (turnErrors.length > 0) {
+        entry.errors = [...turnErrors]
       }
       if (turnNumber === 1) {
         entry.context = contextPaths.map(relPath).sort()
@@ -742,6 +758,7 @@ export default class AiChatTask extends Command {
       if (isFirstTurn) {
         isFirstTurn = false
         turnNumber = 1
+        turnErrors = []
 
         output.log(colors.dim('Gathering context...'))
 
@@ -757,9 +774,16 @@ export default class AiChatTask extends Command {
             queryRelevantPaths = new Set(filesResult.data.paths)
             newPaths = filesResult.data.paths
             initialCollection = await mergePathsIntoCollection(filesResult.data.paths, initialCollection)
+          } else if (filesResult.status !== 'success') {
+            // markdown:sel already logged the query + GraphQL errors; record the pipeline impact
+            const message = filesResult.message ?? 'ai:context:files failed'
+            turnErrors.push(message)
+            await logAIError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
           }
-        } catch {
-          // ai:context:files failed — continue with initial context only
+        } catch (err) {
+          const message = (err as Error).message
+          turnErrors.push(message)
+          await logAIError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
         }
 
         rebuildContext(newPaths)
@@ -767,6 +791,7 @@ export default class AiChatTask extends Command {
       } else {
         // Subsequent turns — evolve queries if conversation direction shifted
         turnNumber++
+        turnErrors = []
         try {
           const evolveResult = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
             _: ['ai:context:evolve', userMessage],
@@ -796,19 +821,52 @@ export default class AiChatTask extends Command {
                 if (execResult.status === 'success' && execResult.data?.paths?.length) {
                   allNewPaths.push(...execResult.data.paths)
                   initialCollection = await mergePathsIntoCollection(execResult.data.paths, initialCollection)
+                } else if (execResult.status !== 'success') {
+                  // markdown:sel already logged the query + GraphQL errors
+                  turnErrors.push(execResult.message ?? 'Context query failed')
                 }
-              } catch {
-                // Skip failed queries
+              } catch (err) {
+                const message = (err as Error).message
+                turnErrors.push(message)
+                await logAIError({
+                  source: 'ai:chat',
+                  stage: 'context:evolve:query',
+                  message,
+                  query,
+                  question: userMessage,
+                })
               }
             }
 
             // Update priority paths to latest query results
             queryRelevantPaths = new Set(initialCollection?.paths ?? [])
             rebuildContext(allNewPaths)
+          } else if (evolveResult.status !== 'success') {
+            const message = evolveResult.message ?? 'ai:context:evolve failed'
+            turnErrors.push(message)
+            await logAIError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
           }
-        } catch {
-          // evolve failed — continue with existing context
+        } catch (err) {
+          const message = (err as Error).message
+          turnErrors.push(message)
+          await logAIError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
         }
+      }
+
+      // Surface context failures instead of silently answering without that context
+      if (turnErrors.length > 0) {
+        // rebuildContext records this turn's entry (with errors) when it runs;
+        // it doesn't run when evolve fails outright or returns no change, so
+        // record a minimal entry here to keep the saved-chat TURN log complete.
+        if (contextLog.at(-1)?.turn !== turnNumber) {
+          contextLog.push({ turn: turnNumber, queries: [...contextQueries], pruned: [], errors: [...turnErrors] })
+        }
+        const noun = turnErrors.length === 1 ? 'query' : 'queries'
+        output.log(
+          colors.yellow(
+            `${turnErrors.length} context ${noun} failed — answering with incomplete context (logged to ${AI_ERROR_LOG_DISPLAY})`,
+          ),
+        )
       }
 
       // Every turn — add the user's actual message
@@ -992,7 +1050,10 @@ export default class AiChatTask extends Command {
         }
         output.log('')
       } catch (err) {
-        output.log(colors.red(`Error: ${(err as Error).message}`))
+        const message = (err as Error).message
+        output.log(colors.red(`Error: ${message}`))
+        output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+        await logAIError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
       }
     }
 
@@ -1040,6 +1101,9 @@ export default class AiChatTask extends Command {
           }
           if (entry.excluded && entry.excluded.length > 0) {
             comment += 'EXCLUDED:\n' + entry.excluded.map((p) => ` - ${p}`).join('\n') + '\n'
+          }
+          if (entry.errors && entry.errors.length > 0) {
+            comment += 'ERRORS:\n' + entry.errors.map((e) => ` ! ${e}`).join('\n') + '\n'
           }
           comment += '-->\n\n'
         }
