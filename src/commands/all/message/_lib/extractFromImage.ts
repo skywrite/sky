@@ -8,6 +8,19 @@ import { loadImageForAI } from './loadImage.ts'
 const MODEL = 'claude-opus-4-6'
 const PROMPT_FILE = new URL('../prompts/extract-from-image.prompt.md', import.meta.url).pathname
 
+const MessageSchema = z.object({
+  sender: z
+    .string()
+    .describe(
+      'Sender name: the name shown next to the message, the chat header name for the other party in a 1:1 chat, or a name from the additional context. Outgoing messages with no known name are "Me" — never placeholders like "Person 1".',
+    ),
+  text: z.string().describe('Message text, verbatim'),
+  time: z
+    .string()
+    .nullable()
+    .describe('Timestamp as shown next to the message (e.g. "14:32", "Yesterday 9:15 AM"). Null if not visible.'),
+})
+
 const ExtractionSchema = z.object({
   platform: z
     .string()
@@ -18,12 +31,77 @@ const ExtractionSchema = z.object({
   from: z.string().nullable().describe('Who sent the message(s). Null if unclear.'),
   to: z.string().nullable().describe('Who received the message(s). Null if unclear.'),
   summary: z.string().describe('Brief summary of the conversation in 5-15 words'),
-  dialogue: z
+  messages: z
+    .array(MessageSchema)
+    .describe(
+      'Every message across all screenshots in chronological order. A message appearing in multiple overlapping screenshots must be included only once.',
+    ),
+  continuityNotes: z
     .string()
-    .describe('Full dialogue formatted as markdown. Use "**Name:** message" for each line. Preserve message order.'),
+    .nullable()
+    .describe(
+      'Suspected gaps between screenshots or uncertain ordering, in one or two sentences. Null if the reconstructed stream is continuous and unambiguous.',
+    ),
 })
 
-export type ImageExtraction = z.infer<typeof ExtractionSchema>
+export type ExtractedMessage = z.infer<typeof MessageSchema>
+
+export interface ImageExtraction {
+  platform: string | null
+  from: string | null
+  to: string | null
+  summary: string
+  messages: ExtractedMessage[]
+  continuityNotes: string | null
+}
+
+export interface SenderRename {
+  from: string
+  to: string
+}
+
+export function renameSenders(messages: ExtractedMessage[], renames: SenderRename[]): ExtractedMessage[] {
+  const map = new Map(renames.map((r) => [r.from, r.to]))
+  return messages.map((m) => {
+    const to = map.get(m.sender)
+    return to === undefined ? m : { ...m, sender: to }
+  })
+}
+
+/** e.g. "Sarah ×6, Me ×4" — distinct senders in order of first appearance */
+export function senderSummary(messages: ExtractedMessage[]): string {
+  const counts = new Map<string, number>()
+  for (const m of messages) counts.set(m.sender, (counts.get(m.sender) ?? 0) + 1)
+  return [...counts].map(([name, n]) => `${name} ×${n}`).join(', ')
+}
+
+function normalizeText(text: string): string {
+  return text.trim().replace(/\s+/g, ' ')
+}
+
+/**
+ * Safety net for imperfect overlap merging by the model: drop a message that
+ * repeats the immediately preceding one. Only adjacent repeats are dropped —
+ * the same text sent again later in a conversation is legitimate. Repeats with
+ * two different visible timestamps are kept (a genuine double-send).
+ */
+export function collapseAdjacentDuplicates(messages: ExtractedMessage[]): ExtractedMessage[] {
+  const result: ExtractedMessage[] = []
+  for (const m of messages) {
+    const prev = result[result.length - 1]
+    const isDuplicate =
+      prev !== undefined &&
+      prev.sender === m.sender &&
+      normalizeText(prev.text) === normalizeText(m.text) &&
+      (prev.time === null || m.time === null || prev.time === m.time)
+    if (!isDuplicate) result.push(m)
+  }
+  return result
+}
+
+export function renderDialogue(messages: ExtractedMessage[]): string {
+  return messages.map((m) => `**${m.sender}:** ${m.text}`).join('\n\n')
+}
 
 export async function extractMessageFromImage(imagePaths: string[], aiContext?: string): Promise<ImageExtraction> {
   const imageBlocks = await Promise.all(
@@ -56,5 +134,6 @@ export async function extractMessageFromImage(imagePaths: string[], aiContext?: 
     ],
   })
 
-  return result.object
+  const { messages, ...rest } = result.object
+  return { ...rest, messages: collapseAdjacentDuplicates(messages) }
 }
