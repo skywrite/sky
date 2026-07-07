@@ -22,9 +22,10 @@ You receive the current GraphQL queries that are gathering context for an ongoin
 1. Analyze the new message in the context of the recent conversation
 2. Compare what the current queries are fetching against what's now needed
 3. Write GraphQL queries with appropriate root fields and filters
-4. Use multiple root fields if different document types are needed
-5. Always include 'markdown' and 'path' fields for context
-6. Use aliases when querying the same type multiple times
+4. Each query MUST be a complete GraphQL document wrapped in braces: `{ meetings(...) { ... } }` — never a bare root field like `meetings(...) { ... }`
+5. Use multiple root fields if different document types are needed
+6. Always include 'markdown' and 'path' fields for context
+7. Use aliases when querying the same type multiple times
 
 ## Filter Rules
 
