@@ -13,6 +13,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -142,17 +143,22 @@ export default class AIContextEvolveTask extends Command {
       prompt: parts.join('\n'),
     })
 
+    // The model sometimes returns bare selections (`meetings(...) { ... }`)
+    // without the enclosing braces, which fail to parse downstream. Normalize
+    // wraps those; empties are dropped rather than executed as parse errors.
+    const queries = object.queries.map(normalizeGraphQLQuery).filter((q) => q !== '')
+
     if (json) {
-      output.log(JSON.stringify({ queries: object.queries, changed: object.changed }))
+      output.log(JSON.stringify({ queries, changed: object.changed }))
     } else {
       output.log(`changed: ${object.changed}`)
-      if (object.queries.length > 0) {
-        for (const q of object.queries) {
+      if (queries.length > 0) {
+        for (const q of queries) {
           output.log(q)
         }
       }
     }
 
-    return CommandResult.success({ queries: object.queries, changed: object.changed })
+    return CommandResult.success({ queries, changed: object.changed })
   }
 }

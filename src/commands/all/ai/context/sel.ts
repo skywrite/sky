@@ -6,6 +6,7 @@
 
 import { generateText } from 'ai'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -109,17 +110,8 @@ Write the GraphQL query to gather context for answering this question.`
       prompt: userPrompt,
     })
 
-    // Extract just the GraphQL query (remove any markdown code fences if present)
-    let query = result.text.trim()
-    if (query.startsWith('```graphql')) {
-      query = query.slice(10)
-    } else if (query.startsWith('```')) {
-      query = query.slice(3)
-    }
-    if (query.endsWith('```')) {
-      query = query.slice(0, -3)
-    }
-    query = query.trim()
+    // Strip code fences and wrap bare selections so the query always parses
+    const query = normalizeGraphQLQuery(result.text)
 
     output.log(query)
 
