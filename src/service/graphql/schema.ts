@@ -127,6 +127,28 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
   // Create DomainCollection resolvers when MarkdownStore is available
   const dc = markdownStore ? createDomainResolvers(markdownStore, { scoreFor: createScoreLookup(store) }) : null
 
+  // DomainCollection query delegation (DC resolvers take (args); createSchema
+  // passes (parent, args)). `satisfies` keeps this map exhaustive over
+  // createDomainResolvers: a query added there without a delegate here is a
+  // compile error. A missing delegate resolves null, violates the non-null
+  // schema types ([Chat!]! etc.), and kills every query touching the field.
+  const dcDelegates = {
+    meetings: (_: unknown, args: any) => dc?.meetings(args) ?? [],
+    messages: (_: unknown, args: any) => dc?.messages(args) ?? [],
+    videos: (_: unknown, args: any) => dc?.videos(args) ?? [],
+    people: (_: unknown, args: any) => dc?.people(args) ?? [],
+    orgs: (_: unknown, args: any) => dc?.orgs(args) ?? [],
+    projects: (_: unknown, args: any) => dc?.projects(args) ?? [],
+    decisions: (_: unknown, args: any) => dc?.decisions(args) ?? [],
+    goals: (_: unknown, args: any) => dc?.goals(args) ?? [],
+    places: (_: unknown, args: any) => dc?.places(args) ?? [],
+    ideas: (_: unknown, args: any) => dc?.ideas(args) ?? [],
+    days: (_: unknown, args: any) => dc?.days(args) ?? [],
+    journals: (_: unknown, args: any) => dc?.journals(args) ?? [],
+    chats: (_: unknown, args: any) => dc?.chats(args) ?? [],
+    documents: (_: unknown, args: any) => dc?.documents(args) ?? [],
+  } satisfies Record<keyof ReturnType<typeof createDomainResolvers>, unknown>
+
   return {
     Query: {
       // Legacy resolvers (string arrays for VSCode autocomplete)
@@ -138,21 +160,8 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
       organizationsWithScores: () => store.getOrganizationsWithScores(),
       tagsWithScores: () => store.getTagsWithScores(),
 
-      // DomainCollection queries (DC uses (args), createSchema uses (_parent, args))
-      meetings: (_: unknown, args: any) => dc?.meetings(args) ?? [],
-      messages: (_: unknown, args: any) => dc?.messages(args) ?? [],
-      videos: (_: unknown, args: any) => dc?.videos(args) ?? [],
-      people: (_: unknown, args: any) => dc?.people(args) ?? [],
-      orgs: (_: unknown, args: any) => dc?.orgs(args) ?? [],
-      projects: (_: unknown, args: any) => dc?.projects(args) ?? [],
-      decisions: (_: unknown, args: any) => dc?.decisions(args) ?? [],
-      goals: (_: unknown, args: any) => dc?.goals(args) ?? [],
-      places: (_: unknown, args: any) => dc?.places(args) ?? [],
-      ideas: (_: unknown, args: any) => dc?.ideas(args) ?? [],
-      days: (_: unknown, args: any) => dc?.days(args) ?? [],
-      journals: (_: unknown, args: any) => dc?.journals(args) ?? [],
-      chats: (_: unknown, args: any) => dc?.chats(args) ?? [],
-      documents: (_: unknown, args: any) => dc?.documents(args) ?? [],
+      // DomainCollection queries — exhaustiveness enforced on dcDelegates above
+      ...dcDelegates,
 
       // Convenience single-item lookups
       person: (_: unknown, { name }: { name: string }) => {
