@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { DIR_BASE } from '#config'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { computePreviousRef, fetchNow } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, convertToNotebookTimezone, fetchNow } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
@@ -259,19 +259,9 @@ export default class EmailInboxFetchTask extends Command {
       priorMarkdown.push(converted.markdown)
     }
 
-    // Determine the message's original timestamp (for the ## header)
-    let msgWhen: PlainDateTime
-    if (msg.date) {
-      const d = msg.date instanceof Date ? msg.date : new Date(msg.date as string)
-      const year = d.getFullYear()
-      const month = String(d.getMonth() + 1).padStart(2, '0')
-      const day = String(d.getDate()).padStart(2, '0')
-      const hours = String(d.getHours()).padStart(2, '0')
-      const minutes = String(d.getMinutes()).padStart(2, '0')
-      msgWhen = PlainDateTime.fromString(`${year}-${month}-${day} ${hours}:${minutes}`)
-    } else {
-      msgWhen = (await fetchNow()).plainDateTime
-    }
+    // Determine the message's original timestamp (for the ## header),
+    // in the timezone of the notebook day it arrived on
+    const msgWhen = msg.date ? await convertToNotebookTimezone(msg.date) : (await fetchNow()).plainDateTime
 
     // When --when is passed, all messages go into one file at that date
     // Otherwise, use the message's own date
