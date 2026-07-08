@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { normalizeGraphQLQuery } from './normalize.ts'
+import { graphQLParseError, normalizeGraphQLQuery } from './normalize.ts'
 
 test('normalizeGraphQLQuery', async (t) => {
   await t.step('passes through already-braced queries', () => {
@@ -67,6 +67,30 @@ test('normalizeGraphQLQuery', async (t) => {
       should: 'return an empty string rather than wrapping it',
       actual: normalizeGraphQLQuery('   \n'),
       expected: '',
+    })
+  })
+})
+
+test('graphQLParseError', async (t) => {
+  await t.step('returns null for a valid query', () => {
+    assert({
+      given: 'a parseable GraphQL query',
+      should: 'return null',
+      actual: graphQLParseError('{ goals { path } }'),
+      expected: null,
+    })
+  })
+
+  await t.step('returns the parse error for envelope-fragment garbage', () => {
+    // The exact string ai:context:evolve leaked into its queries array:
+    // a fragment of the model's own structured-output envelope. It starts
+    // with "{" so shape normalization passes it through — only parsing
+    // catches it.
+    assert({
+      given: 'a non-GraphQL string that survives normalization',
+      should: 'return a syntax error message',
+      actual: (graphQLParseError('{\nchanged:true}\n}') ?? '').startsWith('Syntax Error'),
+      expected: true,
     })
   })
 })
