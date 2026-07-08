@@ -11,9 +11,11 @@
 import { generateObject } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
+import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import { graphQLParseError, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -146,7 +148,22 @@ export default class AIContextEvolveTask extends Command {
     // The model sometimes returns bare selections (`meetings(...) { ... }`)
     // without the enclosing braces, which fail to parse downstream. Normalize
     // wraps those; empties are dropped rather than executed as parse errors.
-    const queries = object.queries.map(normalizeGraphQLQuery).filter((q) => q !== '')
+    const normalized = object.queries.map(normalizeGraphQLQuery).filter((q) => q !== '')
+
+    // Normalization only fixes shape — the model occasionally leaks fragments
+    // of its own structured-output envelope (e.g. "{changed:true}}") into the
+    // queries array. Anything unparseable is dropped here so it is neither
+    // executed nor carried forward as a current query in later evolve rounds.
+    const queries: string[] = []
+    for (const q of normalized) {
+      const parseError = graphQLParseError(q)
+      if (parseError === null) {
+        queries.push(q)
+      } else {
+        output.log(colors.yellow(`Dropped unparseable query (${parseError})`))
+        await logAIError({ source: 'ai:context:evolve', stage: 'invalid-query', message: parseError, query: q })
+      }
+    }
 
     if (json) {
       output.log(JSON.stringify({ queries, changed: object.changed }))
