@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { DIR_BASE } from '#config'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { computePreviousRef, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, fetchNow } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
@@ -163,7 +163,7 @@ export default class EmailInboxFetchTask extends Command {
 
       // First-time threads collapse into one file dated today (when the caller enables it,
       // e.g. follow:sync). Already-followed threads stream each new message onto its own date.
-      const today = fetchNowSync().plainDateTime
+      const today = (await fetchNow()).plainDateTime
 
       const createdEntries = new Map<string, { date: string; path: string }>()
       const resultThreads: FetchedThread[] = []
@@ -270,7 +270,7 @@ export default class EmailInboxFetchTask extends Command {
       const minutes = String(d.getMinutes()).padStart(2, '0')
       msgWhen = PlainDateTime.fromString(`${year}-${month}-${day} ${hours}:${minutes}`)
     } else {
-      msgWhen = fetchNowSync().plainDateTime
+      msgWhen = (await fetchNow()).plainDateTime
     }
 
     // When --when is passed, all messages go into one file at that date
