@@ -2,17 +2,14 @@ import * as path from 'node:path'
 import ms from 'ms'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
-import { DIR_HEARTBEAT_FOLLOW, DIR_TIME } from '#config'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import { computePreviousRef, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { exists, outputFile } from '#shared/fs/mod.ts'
+import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import slugify from '#lib/string/slugify.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import dayFile from '#shared/nbfs/dayFile.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { resolveRecipient } from '#commands/all/slack/cli/export/helpers/mod.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -300,29 +297,4 @@ function parseExpires(value: string, now: PlainDateTime): PlainDateTime | undefi
     }
   }
   return undefined
-}
-
-// TODO: extract convertToNotebookTimezone and getDayTimezone into shared helpers (duplicated in service/handler/siteHtml.ts)
-async function convertToNotebookTimezone(when: string): Promise<PlainDateTime> {
-  const systemTimezone = currentTimezoneIANA()
-  const inSystemTz = new ZonedDateTime(when, systemTimezone)
-  const dayTimezone = await getDayTimezone(inSystemTz.date)
-
-  if (systemTimezone === dayTimezone) {
-    return PlainDateTime.fromString(when)
-  }
-
-  const inDayTz = inSystemTz.inTimeZone(dayTimezone)
-  return PlainDateTime.fromString(`${inDayTz.date} ${inDayTz.time}`)
-}
-
-async function getDayTimezone(dateStr: string): Promise<string> {
-  try {
-    const plainDate = new PlainDate(dateStr)
-    const df = path.join(DIR_TIME, dayFile(plainDate))
-    const dayModel = DayDocument.fromMarkdown(await readTextFile(df))
-    return dayModel.timezone
-  } catch {
-    return fetchNowSync().timezone
-  }
 }

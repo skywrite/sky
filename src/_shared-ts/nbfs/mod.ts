@@ -1,7 +1,12 @@
 export { default as computePreviousRef } from './computePreviousRef.ts'
+export {
+  default as convertToNotebookTimezone,
+  type ConvertToNotebookTimezoneOptions,
+} from './convertToNotebookTimezone.ts'
 export { default as dayDir } from './dayDir.ts'
 export { default as dayFile } from './dayFile.ts'
 export { default as dayAttachmentsDir } from './dayAttachmentsDir.ts'
+export { default as dayTimezone } from './dayTimezone.ts'
 export { default as fetchNowSync, type FetchNowOptions } from './fetchNowSync.ts'
 export { default as fetchNow } from './fetchNow.ts'
 export { default as normalizeToPlainDate } from './normalizeToPlainDate.ts'

@@ -1,4 +1,3 @@
-import * as path from 'node:path'
 import YMD from '#universal/dates/ymd.ts'
 import timezoneOffset from '#universal/dates/timezones/timezoneOffset.ts'
 import { generateObject } from 'ai'
@@ -6,15 +5,11 @@ import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
 import * as config from '#shared/config.ts'
 import { env } from '#shared/sys/mod.ts'
-import { readTextFile, readTextFileSync } from '#shared/fs/mod.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import dayFile from '#shared/nbfs/dayFile.ts'
+import { convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
 
 const PROMPT_FILE = new URL('./prompts/site-html-to-markdown.prompt.md', import.meta.url).pathname
 
@@ -70,46 +65,10 @@ function sanitizeName(value: string): string {
   return cleaned.replace(/\s+/g, ' ').trim()
 }
 
-// TODO: extract convertToNotebookTimezone and getDayTimezone into shared helpers (duplicated in commands/all/heartbeat/follow-new.ts)
-function convertToNotebookTimezone(when: string): string {
-  const systemTimezone = currentTimezoneIANA()
-
-  // Parse the time in system timezone first
-  const inSystemTz = new ZonedDateTime(when, systemTimezone)
-
-  // Look up the timezone for THAT specific day, not the current day
-  // The date in `when` determines which day file we read
-  const dayTimezone = getDayTimezone(inSystemTz.date)
-
-  // If timezones match, no conversion needed
-  if (systemTimezone === dayTimezone) {
-    return when
-  }
-
-  // Convert to that day's timezone
-  const inDayTz = inSystemTz.inTimeZone(dayTimezone)
-
-  return `${inDayTz.date} ${inDayTz.time}`
-}
-
-// Get the timezone for a specific day from its day file
-function getDayTimezone(dateStr: string): string {
-  try {
-    const plainDate = new PlainDate(dateStr)
-    const df = path.join(config.DIR_TIME, dayFile(plainDate))
-    const dayModel = DayDocument.fromMarkdown(readTextFileSync(df))
-    return dayModel.timezone
-  } catch {
-    // If day file doesn't exist, fall back to current day's timezone
-    return fetchNowSync().timezone
-  }
-}
-
 async function executeTask(contentData: JsonMarkdownContent): Promise<void> {
   // Convert when from system timezone to notebook day's timezone
   // Pre-parse to PlainDateTime since CommandService.run() doesn't parse overrides
-  const whenStr = contentData.when ? convertToNotebookTimezone(contentData.when) : null
-  const when = whenStr ? PlainDateTime.fromString(whenStr) : fetchNowSync().plainDateTime
+  const when = contentData.when ? await convertToNotebookTimezone(contentData.when) : fetchNowSync().plainDateTime
 
   const commandArgs = {
     ...contentData,
