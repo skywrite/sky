@@ -70,7 +70,9 @@ export default class AIContextFilesTask extends Command {
       '3. File paths are returned',
       '',
       'Use --since to limit time-based results (meetings, messages, journals).',
-      'Default is "auto" — AI extracts timeframe from the question (falls back to 18mo).',
+      'Default is "auto" — AI extracts a timeframe from the question; when the',
+      'question names none, all history is searched (results are newest-first',
+      'and capped by limit, so this costs nothing).',
       'Use --since all to disable, or an explicit value like 1y, 90d.',
     ],
     usage: [
@@ -87,20 +89,23 @@ export default class AIContextFilesTask extends Command {
     const { question, provider, model, since, server, raw, json, limit } = args
     const baseDir = config.DIR_BASE as string
 
-    // Step 1: Resolve timeframe
-    let resolvedSince = since
+    // Step 1: Resolve timeframe. No extracted timeframe means no `recent`
+    // filter at all — results are newest-first and capped by limit, so
+    // searching all history costs nothing and reaches sparse older topics.
+    let resolvedSince: string | undefined = since
     if (since === 'auto') {
+      resolvedSince = undefined
       try {
         const dateResult = await tasks.run<{ since: string; dates: string[] }>('ai:context:date', {
           _: ['ai:context:date', question],
         })
         if (dateResult.status === 'success') {
-          resolvedSince = dateResult.data?.since || '18mo'
-          output.log(colors.dim(`Timeframe: ${resolvedSince}${dateResult.data?.since ? '' : ' (default)'}`))
+          resolvedSince = dateResult.data?.since || undefined
         }
       } catch {
-        resolvedSince = '18mo'
+        resolvedSince = undefined
       }
+      output.log(colors.dim(`Timeframe: ${resolvedSince ?? 'all history (default)'}`))
     }
 
     // Step 2: Generate GraphQL query using AI
