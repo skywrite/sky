@@ -19,6 +19,8 @@ import {
   matchesDecided,
   matchesExact,
   matchesInvolves,
+  matchesInvolvesAll,
+  matchesInvolvesAny,
   matchesPending,
   matchesRecent,
   matchesRelContains,
@@ -51,6 +53,8 @@ export interface MeetingFilter {
   tags_not_contains?: string
   body_contains?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   rel_contains?: string
 }
 
@@ -70,6 +74,8 @@ export interface MessageFilter {
   tags_starts_with?: string
   body_contains?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   rel_contains?: string
 }
 
@@ -105,6 +111,8 @@ export interface ProjectFilter {
   tags_contains_all?: string[]
   tags_starts_with?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
 }
 
 export interface DecisionFilter {
@@ -118,6 +126,8 @@ export interface DecisionFilter {
   tags_contains_all?: string[]
   tags_starts_with?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
 }
 
 export interface GoalFilter {
@@ -128,6 +138,8 @@ export interface GoalFilter {
   tags_contains_all?: string[]
   tags_starts_with?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
 }
 
 export interface IdeaFilter {
@@ -138,6 +150,8 @@ export interface IdeaFilter {
   tags_contains_all?: string[]
   tags_starts_with?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
 }
 
 export interface PlaceFilter {
@@ -175,6 +189,8 @@ export interface JournalFilter {
   tags_starts_with?: string
   body_contains?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   rel_contains?: string
 }
 
@@ -190,6 +206,8 @@ export interface ChatFilter {
   tags_starts_with?: string
   body_contains?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   rel_contains?: string
 }
 
@@ -207,6 +225,8 @@ export interface VideoFilter {
   tags_starts_with?: string
   body_contains?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   rel_contains?: string
 }
 
@@ -216,6 +236,8 @@ export interface DocumentFilter {
   date_lte?: string
   type?: string
   involves?: string
+  involves_any?: string[]
+  involves_all?: string[]
   tags_contains?: string
   tags_contains_any?: string[]
   tags_contains_all?: string[]
@@ -603,6 +625,8 @@ function matchesMeetingFilter(
   if (filter.tags_not_contains && matchesTagContains(doc, filter.tags_not_contains)) return false
   if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
   return true
 }
@@ -627,6 +651,8 @@ function matchesMessageFilter(
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
   return true
 }
@@ -644,6 +670,8 @@ function matchesVideoFilter(doc: Document, filter: VideoFilter, path?: string, r
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
   return true
 }
@@ -686,6 +714,8 @@ function matchesProjectFilter(doc: Document, filter: ProjectFilter, resolveNames
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   return true
 }
 
@@ -701,6 +731,8 @@ function matchesDecisionFilter(doc: Document, filter: DecisionFilter, resolveNam
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   return true
 }
 
@@ -712,6 +744,8 @@ function matchesGoalFilter(doc: Document, filter: GoalFilter, resolveNames?: Nam
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   return true
 }
 
@@ -730,6 +764,8 @@ function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, reso
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   return true
 }
 
@@ -787,6 +823,8 @@ function matchesJournalFilter(
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
   return true
 }
@@ -802,6 +840,8 @@ function matchesChatFilter(doc: Document, filter: ChatFilter, path?: string, res
   if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
   if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
   return true
 }
@@ -816,6 +856,8 @@ function matchesDocumentFilter(
   if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
   if (filter.type && detectTypeFromPath(path) !== filter.type) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
+  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
+  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
   if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
   if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
   if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false

@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-05T14:08:30.745Z
+# Generated at: 2026-07-09T14:47:33.977Z
 # =============================================================================
 
 type Query {
@@ -279,6 +279,8 @@ input MeetingFilter {
   tags_not_contains: String
   body_contains: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   rel_contains: String
 }
 
@@ -296,6 +298,8 @@ input VideoFilter {
   tags_starts_with: String
   body_contains: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   rel_contains: String
 }
 
@@ -315,6 +319,8 @@ input MessageFilter {
   tags_starts_with: String
   body_contains: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   rel_contains: String
 }
 
@@ -350,6 +356,8 @@ input ProjectFilter {
   tags_contains_all: [String!]
   tags_starts_with: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
 }
 
 input DecisionFilter {
@@ -363,6 +371,8 @@ input DecisionFilter {
   tags_contains_all: [String!]
   tags_starts_with: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
 }
 
 input GoalFilter {
@@ -373,6 +383,8 @@ input GoalFilter {
   tags_contains_all: [String!]
   tags_starts_with: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
 }
 
 input IdeaFilter {
@@ -383,6 +395,8 @@ input IdeaFilter {
   tags_contains_all: [String!]
   tags_starts_with: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
 }
 
 input PlaceFilter {
@@ -420,6 +434,8 @@ input JournalFilter {
   tags_starts_with: String
   body_contains: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   rel_contains: String
 }
 
@@ -435,6 +451,8 @@ input ChatFilter {
   tags_starts_with: String
   body_contains: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   rel_contains: String
 }
 
@@ -447,6 +465,8 @@ input DocumentFilter {
   date_lte: String
   type: String
   involves: String
+  involves_any: [String!]
+  involves_all: [String!]
   tags_contains: String
   tags_contains_any: [String!]
   tags_contains_all: [String!]
