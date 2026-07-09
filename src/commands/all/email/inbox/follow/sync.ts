@@ -1,12 +1,13 @@
 import * as path from 'node:path'
 import type { ImapFlow } from 'imapflow'
-import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import { DIR_BASE, DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
 import { outputFile, writeTextFile } from '#shared/fs/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import openEditor from '#lib/shell/openEditor.ts'
 import * as p from '@clack/prompts'
 import { createImapClient } from '../../lib/imap-client.ts'
 import { getInboxThreads } from '../../lib/getInboxThreads.ts'
@@ -179,6 +180,16 @@ export default class EmailInboxFollowSyncTask extends Command {
         await client.connect()
       }
       await this.archiveFromInbox(threadIds, client, output)
+
+      // --pick is interactive triage: open the picked thread's most recent entry
+      if (pickedThreadId) {
+        const picked = fetchResult.threads.find((t) => t.threadId === pickedThreadId)
+        const latest = picked?.messages.at(-1)
+        if (latest) {
+          output.log(`  Opening ${latest.path}`)
+          await openEditor([{ file: path.join(DIR_BASE, latest.path) }])
+        }
+      }
 
       const fetched = fetchResult.fetched
       output.log(`\n  Sync complete: ${newFollows} new, ${updatedFollows} updated, ${fetched} message(s).\n`)
