@@ -41,7 +41,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Searches who/from/to fields and body text for the person's name
 - Use the person's canonical name — aliases are resolved automatically
 - Multiple people, either involved: `involvesAny: ["<name>", "<name>"]` (OR). One block with one shared `limit` — when you want balanced per-person context, use separate aliased blocks instead
-- Multiple people, all involved: `involvesAll: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involvesAll: ["Alice Smith", "Bob Jones"], recent: "6mo" }, limit: 10)` for their conversation with each other
+- Multiple people, all involved: `involvesAll: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involvesAll: ["Alice Smith", "Bob Jones"] }, limit: 10)` for their conversation with each other
 - When the conversation shifts to a specific person, ALSO fetch their profile document: `people(where: { nameContains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
 
 **Tags** → `tagsContains`, `tagsContainsAny`, `tagsContainsAll`, or `tagsStartsWith`
@@ -59,17 +59,16 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Also useful for topic recall — past chats often hold deep context on decisions and ideas
 - Filters: `summaryContains`, `bodyContains`, `involves`, `recent`, `date`, plus tag filters
 - One `chats` block is usually enough: `bodyContains` searches the full transcript, which includes the summary title. Remember: querying the same root field twice requires aliases.
-- Example: `chats(where: { bodyContains: "runway", recent: "6mo" }, limit: 5) { date summary markdown path }`
+- Example: `chats(where: { bodyContains: "runway" }, limit: 5) { date summary markdown path }`
 
 **Text search** → `bodyContains: "<text>"` (last resort)
 - Only use when no structured filter applies
 - Works on: meetings, messages, journals, chats, documents
 
-**Time** → `recent: "<period>"` (e.g., "7d", "30d", "6mo", "18mo", "1y")
+**Time** → `recent: "<period>"` (e.g., "7d", "30d", "90d", "1y")
 - Works on: meetings, messages, journals, chats, days, documents
-- Use "7d" for last week, "30d" for last month, "18mo" for broad searches
-- **Default wide**: when no specific timeframe is mentioned, prefer wider windows (18mo) over narrow ones. The scorer handles relevance — your job is to not miss documents.
-- **Omit `recent` entirely** when the user says "entire history", "all time", "everything", or similar.
+- **Omit `recent` by default.** Results are newest-first and capped by `limit`, so a query without `recent` returns the same documents for active topics — and reaches older history when matches are sparse. Full-history search is cheap; never add `recent` "just in case".
+- Add `recent` ONLY when the conversation is explicitly time-scoped: "last week" → "7d", "last month" → "30d", "this quarter" → "90d", "recently" → "30d".
 
 {{#if entities.block}}
 {{{entities.block}}}
