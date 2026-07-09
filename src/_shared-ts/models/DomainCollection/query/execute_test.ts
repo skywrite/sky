@@ -249,21 +249,21 @@ test('executeQuery - empty result for non-matching filter', async () => {
 
 test('executeQuery - chats query works end-to-end against the schema', async () => {
   const store = createMockStore()
-  const query = '{ chats(where: { body_contains: "beta group" }) { date when summary provider turns markdown path } }'
+  const query = '{ chats(where: { bodyContains: "beta group" }) { date when summary provider turns markdown path } }'
 
   const result = await executeQuery<{
     chats: Array<{ date: string; when: string; summary: string; provider: string; turns: number; path: string }>
   }>(query, store)
 
   assert({
-    given: 'a chats query with body_contains',
+    given: 'a chats query with bodyContains',
     should: 'execute without schema errors',
     actual: result.errors,
     expected: undefined,
   })
 
   assert({
-    given: 'a chats query with body_contains',
+    given: 'a chats query with bodyContains',
     should: 'return the matching chat',
     actual: result.data?.chats.length,
     expected: 1,
@@ -281,7 +281,7 @@ test('executeQuery - chats are included in tag queries', async () => {
   const store = createMockStore()
 
   const chatResult = await executeQuery<{ chats: Array<{ summary: string; tags: string[] }> }>(
-    '{ chats(where: { tags_contains: "Work" }) { summary tags } }',
+    '{ chats(where: { tagsContains: "Work" }) { summary tags } }',
     store,
   )
 
@@ -300,7 +300,7 @@ test('executeQuery - chats are included in tag queries', async () => {
   })
 
   const docResult = await executeQuery<{ documents: Array<{ type: string; path: string }> }>(
-    '{ documents(where: { tags_contains: "Work" }) { type path } }',
+    '{ documents(where: { tagsContains: "Work" }) { type path } }',
     store,
   )
 
@@ -312,47 +312,47 @@ test('executeQuery - chats are included in tag queries', async () => {
   })
 })
 
-test('executeQuery - involves_any and involves_all work end-to-end against the schema', async () => {
+test('executeQuery - involvesAny and involvesAll work end-to-end against the schema', async () => {
   const store = createMockStore()
 
   const anyResult = await executeQuery<{ messages: Array<{ path: string }> }>(
-    '{ messages(where: { involves_any: ["Alice Smith", "Carol Quinn"] }) { path } }',
+    '{ messages(where: { involvesAny: ["Alice Smith", "Carol Quinn"] }) { path } }',
     store,
   )
 
   assert({
-    given: 'an involves_any query where one listed person participates',
+    given: 'an involvesAny query where one listed person participates',
     should: 'execute without schema errors',
     actual: anyResult.errors,
     expected: undefined,
   })
 
   assert({
-    given: 'an involves_any query where one listed person participates',
+    given: 'an involvesAny query where one listed person participates',
     should: 'return the message (OR semantics)',
     actual: anyResult.data?.messages.length,
     expected: 1,
   })
 
   const allHit = await executeQuery<{ messages: Array<{ path: string }> }>(
-    '{ messages(where: { involves_all: ["Alice Smith", "Bob Jones"] }) { path } }',
+    '{ messages(where: { involvesAll: ["Alice Smith", "Bob Jones"] }) { path } }',
     store,
   )
 
   assert({
-    given: 'an involves_all query where every listed person participates',
+    given: 'an involvesAll query where every listed person participates',
     should: 'return the mutual message (AND semantics)',
     actual: allHit.data?.messages.length,
     expected: 1,
   })
 
   const allMiss = await executeQuery<{ messages: Array<{ path: string }> }>(
-    '{ messages(where: { involves_all: ["Alice Smith", "Carol Quinn"] }) { path } }',
+    '{ messages(where: { involvesAll: ["Alice Smith", "Carol Quinn"] }) { path } }',
     store,
   )
 
   assert({
-    given: 'an involves_all query where one listed person is absent',
+    given: 'an involvesAll query where one listed person is absent',
     should: 'return no messages',
     actual: allMiss.data?.messages.length,
     expected: 0,

@@ -5,7 +5,7 @@
 export default [
   {
     selector: 'meeting[summary*="partnership"]',
-    expected: 'query { meetings(where: { summary_contains: "partnership" }) { path markdown } }',
+    expected: 'query { meetings(where: { summaryContains: "partnership" }) { path markdown } }',
     description: 'substring - summary',
   },
 ]

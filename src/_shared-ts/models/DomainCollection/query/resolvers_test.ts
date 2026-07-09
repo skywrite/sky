@@ -224,21 +224,21 @@ test('resolvers - meetings returns all meetings', () => {
   })
 })
 
-test('resolvers - meetings filters by who_contains', () => {
+test('resolvers - meetings filters by whoContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.meetings({ where: { who_contains: 'Alice' } })
+  const result = resolvers.meetings({ where: { whoContains: 'Alice' } })
 
   assert({
-    given: 'who_contains filter for Alice',
+    given: 'whoContains filter for Alice',
     should: 'return 1 meeting',
     actual: result.length,
     expected: 1,
   })
 
   assert({
-    given: 'who_contains filter for Alice',
+    given: 'whoContains filter for Alice',
     should: 'return meeting with Alice',
     actual: result[0]?.who.includes('Alice'),
     expected: true,
@@ -470,35 +470,35 @@ test('resolvers - places filters by type', () => {
   })
 })
 
-test('resolvers - places filters by city_contains', () => {
+test('resolvers - places filters by cityContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.places({ where: { city_contains: 'Buenos' } })
+  const result = resolvers.places({ where: { cityContains: 'Buenos' } })
 
   assert({
-    given: 'city_contains filter for Buenos',
+    given: 'cityContains filter for Buenos',
     should: 'return 1 place',
     actual: result.length,
     expected: 1,
   })
 })
 
-test('resolvers - places filters by name_contains', () => {
+test('resolvers - places filters by nameContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.places({ where: { name_contains: 'Ty' } })
+  const result = resolvers.places({ where: { nameContains: 'Ty' } })
 
   assert({
-    given: 'name_contains filter for Ty',
+    given: 'nameContains filter for Ty',
     should: 'return 1 place',
     actual: result.length,
     expected: 1,
   })
 
   assert({
-    given: 'name_contains filter for Ty',
+    given: 'nameContains filter for Ty',
     should: 'return Ty Bar',
     actual: result[0]?.name,
     expected: 'Ty Bar',
@@ -528,7 +528,7 @@ test('resolvers - messages date filter uses path date, not created', () => {
   const resolvers = createDomainResolvers(store)
 
   // Filter for Feb 16-18 range — old message has created: 2026-02-18 but path date is Feb 5
-  const result = resolvers.messages({ where: { date_gte: '2026-02-16', date_lte: '2026-02-18' } })
+  const result = resolvers.messages({ where: { dateGte: '2026-02-16', dateLte: '2026-02-18' } })
 
   assert({
     given: 'date range 2026-02-16 to 2026-02-18',
@@ -550,7 +550,7 @@ test('resolvers - messages date filter excludes old path despite recent created'
   const resolvers = createDomainResolvers(store)
 
   // Filter for Feb 5 — should find the old message by its path date
-  const result = resolvers.messages({ where: { date_gte: '2026-02-05', date_lte: '2026-02-05' } })
+  const result = resolvers.messages({ where: { dateGte: '2026-02-05', dateLte: '2026-02-05' } })
 
   assert({
     given: 'date range for Feb 5 only',
@@ -572,7 +572,7 @@ test('resolvers - documents date filter uses path date, not created', () => {
   const resolvers = createDomainResolvers(store)
 
   // The documents resolver returns all types — filter to Feb 16-18
-  const result = resolvers.documents({ where: { date_gte: '2026-02-16', date_lte: '2026-02-18' } })
+  const result = resolvers.documents({ where: { dateGte: '2026-02-16', dateLte: '2026-02-18' } })
   const messagePaths = result.map((d) => d.path).filter((p) => p.includes('/messages/'))
 
   assert({
@@ -597,7 +597,7 @@ test('resolvers - meetings date filter uses path date over created', () => {
   // Meeting1 has date: 2026-02-01 (YAML), path is Jan 26-01/01
   // Meeting2 has date: 2026-01-28 (YAML), path is Jan 26-01/28
   // YAML date field still takes priority over path
-  const result = resolvers.meetings({ where: { date_gte: '2026-02-01', date_lte: '2026-02-01' } })
+  const result = resolvers.meetings({ where: { dateGte: '2026-02-01', dateLte: '2026-02-01' } })
 
   assert({
     given: 'date filter for Feb 1 — meeting has YAML date: 2026-02-01',
@@ -628,35 +628,35 @@ test('resolvers - chats returns only ai-chat documents', () => {
   })
 })
 
-test('resolvers - chats filters by summary_contains', () => {
+test('resolvers - chats filters by summaryContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.chats({ where: { summary_contains: 'widget' } })
+  const result = resolvers.chats({ where: { summaryContains: 'widget' } })
 
   assert({
-    given: 'summary_contains filter for widget',
+    given: 'summaryContains filter for widget',
     should: 'return 1 chat',
     actual: result.length,
     expected: 1,
   })
 
   assert({
-    given: 'summary_contains filter for widget',
+    given: 'summaryContains filter for widget',
     should: 'return the widget launch chat',
     actual: result[0]?.summary,
     expected: 'Planning the Widget Launch',
   })
 })
 
-test('resolvers - chats filters by body_contains', () => {
+test('resolvers - chats filters by bodyContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.chats({ where: { body_contains: 'beta group' } })
+  const result = resolvers.chats({ where: { bodyContains: 'beta group' } })
 
   assert({
-    given: 'body_contains filter matching transcript text',
+    given: 'bodyContains filter matching transcript text',
     should: 'return the chat whose conversation mentions it',
     actual: result.length,
     expected: 1,
@@ -667,7 +667,7 @@ test('resolvers - chats maps fields correctly', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.chats({ where: { summary_contains: 'widget' } })
+  const result = resolvers.chats({ where: { summaryContains: 'widget' } })
   const chat = result[0]
 
   assert({
@@ -713,28 +713,28 @@ test('resolvers - chats sorted by date descending', () => {
   })
 })
 
-test('resolvers - chats filters by tags_contains', () => {
+test('resolvers - chats filters by tagsContains', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.chats({ where: { tags_contains: 'Work' } })
+  const result = resolvers.chats({ where: { tagsContains: 'Work' } })
 
   assert({
-    given: 'tags_contains filter for Work',
+    given: 'tagsContains filter for Work',
     should: 'return only the tagged chat',
     actual: result.map((c) => c.summary),
     expected: ['Planning the Widget Launch'],
   })
 })
 
-test('resolvers - chats filters by hierarchical tags_starts_with', () => {
+test('resolvers - chats filters by hierarchical tagsStartsWith', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.chats({ where: { tags_starts_with: 'Acme/Marketing/' } })
+  const result = resolvers.chats({ where: { tagsStartsWith: 'Acme/Marketing/' } })
 
   assert({
-    given: 'tags_starts_with filter for the Acme/Marketing/ prefix',
+    given: 'tagsStartsWith filter for the Acme/Marketing/ prefix',
     should: 'return the chat tagged Acme/Marketing/Ideas',
     actual: result.map((c) => c.summary),
     expected: ['Brainstorm Marketing Ideas'],
@@ -752,7 +752,7 @@ test('resolvers - documents tag queries include chats', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)
 
-  const result = resolvers.documents({ where: { tags_contains: 'Work' } })
+  const result = resolvers.documents({ where: { tagsContains: 'Work' } })
   const paths = result.map((d) => d.path)
 
   assert({

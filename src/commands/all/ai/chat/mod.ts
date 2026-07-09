@@ -458,7 +458,7 @@ export default class AiChatTask extends Command {
     const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, peopleEntities] = await Promise.all([
       fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
       fetchContextFromServer(
-        `{ documents(where: { date_gte: "${prevStart}", date_lte: "${yesterday}" }) { path } }`,
+        `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}" }) { path } }`,
         0,
       ),
       fetchContextFromServer(`{ goals { path } }`, 0),

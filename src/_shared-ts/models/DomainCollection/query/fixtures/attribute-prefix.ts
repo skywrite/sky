@@ -5,12 +5,12 @@
 export default [
   {
     selector: 'meeting[tags^="Acme/"]',
-    expected: 'query { meetings(where: { tags_starts_with: "Acme/" }) { path markdown } }',
+    expected: 'query { meetings(where: { tagsStartsWith: "Acme/" }) { path markdown } }',
     description: 'starts with - tags prefix',
   },
   {
     selector: '*[rel^="projects/"]',
-    expected: 'query { documents(where: { rel_starts_with: "projects/" }) { path markdown } }',
+    expected: 'query { documents(where: { relStartsWith: "projects/" }) { path markdown } }',
     description: 'starts with - rel prefix',
   },
 ]

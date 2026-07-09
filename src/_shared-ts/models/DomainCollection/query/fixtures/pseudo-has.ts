@@ -5,7 +5,7 @@
 export default [
   {
     selector: 'meeting:has([who~="Alice Smith"])',
-    expected: 'query { meetings(where: { who_contains: "Alice Smith" }) { path markdown } }',
+    expected: 'query { meetings(where: { whoContains: "Alice Smith" }) { path markdown } }',
     description: 'has - who contains',
   },
   {
@@ -15,7 +15,7 @@ export default [
   },
   {
     selector: 'message:has([to~="Bob"])',
-    expected: 'query { messages(where: { to_contains: "Bob" }) { path markdown } }',
+    expected: 'query { messages(where: { toContains: "Bob" }) { path markdown } }',
     description: 'has - to contains',
   },
 ]

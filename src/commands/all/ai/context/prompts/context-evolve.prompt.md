@@ -31,7 +31,7 @@ You receive the current GraphQL queries that are gathering context for an ongoin
 
 Use the correct filter for each entity type. Do NOT guess — only use filters that exist in the schema.
 
-**Projects and decisions** → `rel_contains: "<exact-name>"`
+**Projects and decisions** → `relContains: "<exact-name>"`
 - Works on: meetings, messages, journals, documents
 - The `rel` field links documents to projects/decisions by name
 - Do NOT use `involves` for projects — `involves` is for people only
@@ -40,28 +40,28 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on: meetings, messages, journals, chats, documents, projects, decisions, goals
 - Searches who/from/to fields and body text for the person's name
 - Use the person's canonical name — aliases are resolved automatically
-- Multiple people, either involved: `involves_any: ["<name>", "<name>"]` (OR). One block with one shared `limit` — when you want balanced per-person context, use separate aliased blocks instead
-- Multiple people, all involved: `involves_all: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involves_all: ["Alice Smith", "Bob Jones"], recent: "6mo" }, limit: 10)` for their conversation with each other
-- When the conversation shifts to a specific person, ALSO fetch their profile document: `people(where: { name_contains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
+- Multiple people, either involved: `involvesAny: ["<name>", "<name>"]` (OR). One block with one shared `limit` — when you want balanced per-person context, use separate aliased blocks instead
+- Multiple people, all involved: `involvesAll: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involvesAll: ["Alice Smith", "Bob Jones"], recent: "6mo" }, limit: 10)` for their conversation with each other
+- When the conversation shifts to a specific person, ALSO fetch their profile document: `people(where: { nameContains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
 
-**Tags** → `tags_contains`, `tags_contains_any`, `tags_contains_all`, or `tags_starts_with`
-- `tags_contains: "<exact-tag>"` — match a single exact tag
-- `tags_contains_any: ["Tag/A", "Tag/B"]` — match ANY of the listed tags (OR)
-- `tags_contains_all: ["Tag/A", "Tag/B"]` — match ALL of the listed tags (AND)
-- `tags_starts_with: "<prefix>/"` — match a tag category prefix (include trailing `/`)
+**Tags** → `tagsContains`, `tagsContainsAny`, `tagsContainsAll`, or `tagsStartsWith`
+- `tagsContains: "<exact-tag>"` — match a single exact tag
+- `tagsContainsAny: ["Tag/A", "Tag/B"]` — match ANY of the listed tags (OR)
+- `tagsContainsAll: ["Tag/A", "Tag/B"]` — match ALL of the listed tags (AND)
+- `tagsStartsWith: "<prefix>/"` — match a tag category prefix (include trailing `/`)
 - Works on: meetings, messages, journals, people, orgs, projects, decisions, goals, places, documents
 - Does NOT work on: days
-- **Prefer `tags_starts_with` for broad topics** — use the top-level category prefix (2 segments max). Example: `tags_starts_with: "Acme/Finance/"`, NOT `"Acme/Finance/Treasury/"`. Always cut the prefix at the second `/` to catch all subtags in that category.
+- **Prefer `tagsStartsWith` for broad topics** — use the top-level category prefix (2 segments max). Example: `tagsStartsWith: "Acme/Finance/"`, NOT `"Acme/Finance/Treasury/"`. Always cut the prefix at the second `/` to catch all subtags in that category.
 
 **Past AI chats** → `chats(...)`
 - Saved ai:chat conversations — brainstorms, analysis, and drafting sessions with the AI
 - ALWAYS query chats when the conversation references a previous AI conversation: "our last chat", "what did you tell me", "we discussed", "you suggested", "that analysis you did"
 - Also useful for topic recall — past chats often hold deep context on decisions and ideas
-- Filters: `summary_contains`, `body_contains`, `involves`, `recent`, `date`, plus tag filters
-- One `chats` block is usually enough: `body_contains` searches the full transcript, which includes the summary title. Remember: querying the same root field twice requires aliases.
-- Example: `chats(where: { body_contains: "runway", recent: "6mo" }, limit: 5) { date summary markdown path }`
+- Filters: `summaryContains`, `bodyContains`, `involves`, `recent`, `date`, plus tag filters
+- One `chats` block is usually enough: `bodyContains` searches the full transcript, which includes the summary title. Remember: querying the same root field twice requires aliases.
+- Example: `chats(where: { bodyContains: "runway", recent: "6mo" }, limit: 5) { date summary markdown path }`
 
-**Text search** → `body_contains: "<text>"` (last resort)
+**Text search** → `bodyContains: "<text>"` (last resort)
 - Only use when no structured filter applies
 - Works on: meetings, messages, journals, chats, documents
 
@@ -79,7 +79,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 Match informal user phrasing to the closest entity name above. For example:
 - "Acme Pay GTM" → project `Camino-Acme-Pay` + tag `Acme/Product/GTM`
 - "hiring decisions" → check Pending Decisions list for hiring-related names
-- "Bob" → Active People lists `Bob Smith (aka Bob)` → `involves: "Bob Smith"` + `people(where: { name_contains: "Bob Smith" })`
+- "Bob" → Active People lists `Bob Smith (aka Bob)` → `involves: "Bob Smith"` + `people(where: { nameContains: "Bob Smith" })`
 
 People are listed as `Canonical Name (aka Alias1, Alias2)` — always filter by the canonical name, not the alias.
 

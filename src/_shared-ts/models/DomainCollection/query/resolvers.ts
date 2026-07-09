@@ -38,213 +38,213 @@ import { createNameResolver } from './nameResolver.ts'
 
 export interface MeetingFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
   year?: number
   month?: number
-  who_contains?: string
-  who_not_contains?: string
+  whoContains?: string
+  whoNotContains?: string
   medium?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  tags_not_contains?: string
-  body_contains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  tagsNotContains?: string
+  bodyContains?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  rel_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  relContains?: string
 }
 
 export interface MessageFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
   from?: string
-  from_not?: string
-  to_contains?: string
-  to_not_contains?: string
+  fromNot?: string
+  toContains?: string
+  toNotContains?: string
   medium?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  body_contains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  bodyContains?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  rel_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  relContains?: string
 }
 
 export interface PersonFilter {
   name?: string
-  name_contains?: string
+  nameContains?: string
   org?: string
-  org_contains?: string
-  title_contains?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  orgContains?: string
+  titleContains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
 }
 
 export interface OrgFilter {
   name?: string
-  name_contains?: string
+  nameContains?: string
   sector?: string
   kind?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
 }
 
 export interface ProjectFilter {
   name?: string
-  name_contains?: string
+  nameContains?: string
   status?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
+  involvesAny?: string[]
+  involvesAll?: string[]
 }
 
 export interface DecisionFilter {
-  name_contains?: string
+  nameContains?: string
   pending?: boolean
   decided?: boolean
-  identified_gte?: string
-  identified_lte?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  identifiedGte?: string
+  identifiedLte?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
+  involvesAny?: string[]
+  involvesAll?: string[]
 }
 
 export interface GoalFilter {
-  name_contains?: string
+  nameContains?: string
   status?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
+  involvesAny?: string[]
+  involvesAll?: string[]
 }
 
 export interface IdeaFilter {
-  name_contains?: string
+  nameContains?: string
   status?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
+  involvesAny?: string[]
+  involvesAll?: string[]
 }
 
 export interface PlaceFilter {
-  name_contains?: string
+  nameContains?: string
   type?: string
   country?: string
-  city_contains?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  cityContains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
 }
 
 export interface DayFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
   year?: number
   month?: number
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
 }
 
 export interface JournalFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  body_contains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  bodyContains?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  rel_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  relContains?: string
 }
 
 export interface ChatFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
-  summary_contains?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  body_contains?: string
+  summaryContains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  bodyContains?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  rel_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  relContains?: string
 }
 
 export interface VideoFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   recent?: string
-  from_contains?: string
+  fromContains?: string
   medium?: string
-  summary_contains?: string
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  body_contains?: string
+  summaryContains?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  bodyContains?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  rel_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  relContains?: string
 }
 
 export interface DocumentFilter {
   date?: string
-  date_gte?: string
-  date_lte?: string
+  dateGte?: string
+  dateLte?: string
   type?: string
   involves?: string
-  involves_any?: string[]
-  involves_all?: string[]
-  tags_contains?: string
-  tags_contains_any?: string[]
-  tags_contains_all?: string[]
-  tags_starts_with?: string
-  body_contains?: string
+  involvesAny?: string[]
+  involvesAll?: string[]
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  bodyContains?: string
   recent?: string
-  rel_contains?: string
+  relContains?: string
 }
 
 // =============================================================================
@@ -611,23 +611,23 @@ function matchesMeetingFilter(
   resolveNames?: NameResolver,
 ): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
   if (filter.year !== undefined && !matchesExact(doc, 'year', filter.year)) return false
   if (filter.month !== undefined && !matchesExact(doc, 'month', filter.month)) return false
-  if (filter.who_contains && !matchesContains(doc, 'who', filter.who_contains)) return false
-  if (filter.who_not_contains && matchesContains(doc, 'who', filter.who_not_contains)) return false
+  if (filter.whoContains && !matchesContains(doc, 'who', filter.whoContains)) return false
+  if (filter.whoNotContains && matchesContains(doc, 'who', filter.whoNotContains)) return false
   if (filter.medium && !matchesExact(doc, 'medium', filter.medium)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.tags_not_contains && matchesTagContains(doc, filter.tags_not_contains)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.tagsNotContains && matchesTagContains(doc, filter.tagsNotContains)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -638,119 +638,119 @@ function matchesMessageFilter(
   resolveNames?: NameResolver,
 ): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
   if (filter.from && !matchesExact(doc, 'from', filter.from)) return false
-  if (filter.from_not && matchesExact(doc, 'from', filter.from_not)) return false
-  if (filter.to_contains && !matchesContains(doc, 'to', filter.to_contains)) return false
-  if (filter.to_not_contains && matchesContains(doc, 'to', filter.to_not_contains)) return false
+  if (filter.fromNot && matchesExact(doc, 'from', filter.fromNot)) return false
+  if (filter.toContains && !matchesContains(doc, 'to', filter.toContains)) return false
+  if (filter.toNotContains && matchesContains(doc, 'to', filter.toNotContains)) return false
   if (filter.medium && !matchesExact(doc, 'medium', filter.medium)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
 function matchesVideoFilter(doc: Document, filter: VideoFilter, path?: string, resolveNames?: NameResolver): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
-  if (filter.from_contains && !matchesContains(doc, 'from', filter.from_contains)) return false
+  if (filter.fromContains && !matchesContains(doc, 'from', filter.fromContains)) return false
   if (filter.medium && !matchesExact(doc, 'medium', filter.medium)) return false
-  if (filter.summary_contains && !matchesContains(doc, 'summary', filter.summary_contains)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.summaryContains && !matchesContains(doc, 'summary', filter.summaryContains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
 function matchesPersonFilter(doc: Document, filter: PersonFilter): boolean {
   if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.org && !matchesExact(doc, 'org', filter.org)) return false
-  if (filter.org_contains && !matchesContains(doc, 'org', filter.org_contains)) return false
-  if (filter.title_contains && !matchesContains(doc, 'title', filter.title_contains)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.orgContains && !matchesContains(doc, 'org', filter.orgContains)) return false
+  if (filter.titleContains && !matchesContains(doc, 'title', filter.titleContains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   return true
 }
 
 function matchesOrgFilter(doc: Document, filter: OrgFilter): boolean {
   if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.sector && !matchesExact(doc, 'sector', filter.sector)) return false
   // kind is derived from tags, check tag
   if (filter.kind) {
     const kindTag = `Organization/${filter.kind.charAt(0).toUpperCase()}${filter.kind.slice(1)}`
     if (!matchesTagContains(doc, kindTag)) return false
   }
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   return true
 }
 
 function matchesProjectFilter(doc: Document, filter: ProjectFilter, resolveNames?: NameResolver): boolean {
   if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.status && !matchesExact(doc, 'status', filter.status)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   return true
 }
 
 function matchesDecisionFilter(doc: Document, filter: DecisionFilter, resolveNames?: NameResolver): boolean {
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.pending === true && !matchesPending(doc)) return false
   if (filter.decided === true && !matchesDecided(doc)) return false
-  if (filter.identified_gte && filter.identified_lte) {
-    if (!matchesDateRange(doc, filter.identified_gte, filter.identified_lte)) return false
+  if (filter.identifiedGte && filter.identifiedLte) {
+    if (!matchesDateRange(doc, filter.identifiedGte, filter.identifiedLte)) return false
   }
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   return true
 }
 
 function matchesGoalFilter(doc: Document, filter: GoalFilter, resolveNames?: NameResolver): boolean {
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.status && !matchesExact(doc, 'status', filter.status)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   return true
 }
 
 function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, resolveNames?: NameResolver): boolean {
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.status) {
     // Status is derived from path, not YAML
     let status = 'draft'
@@ -759,18 +759,18 @@ function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, reso
     else if (path.includes('/archived/')) status = 'archived'
     if (status !== filter.status) return false
   }
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   return true
 }
 
 function matchesPlaceFilter(doc: Document, filter: PlaceFilter): boolean {
-  if (filter.name_contains && !matchesContains(doc, 'name', filter.name_contains)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.type && !matchesExact(doc, 'type', filter.type)) return false
   if (filter.country) {
     const location = doc.yaml['location']
@@ -780,31 +780,31 @@ function matchesPlaceFilter(doc: Document, filter: PlaceFilter): boolean {
         : undefined
     if (typeof country !== 'string' || country !== filter.country) return false
   }
-  if (filter.city_contains) {
+  if (filter.cityContains) {
     const location = doc.yaml['location']
     const city =
       location && typeof location === 'object' && !Array.isArray(location)
         ? (location as Record<string, unknown>)['city']
         : undefined
-    if (typeof city !== 'string' || !city.toLowerCase().includes(filter.city_contains.toLowerCase())) return false
+    if (typeof city !== 'string' || !city.toLowerCase().includes(filter.cityContains.toLowerCase())) return false
   }
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   return true
 }
 
 function matchesDayFilter(doc: Document, filter: DayFilter, path?: string): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
   if (filter.year !== undefined && !matchesExact(doc, 'year', filter.year)) return false
   if (filter.month !== undefined && !matchesExact(doc, 'month', filter.month)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   return true
 }
 
@@ -815,34 +815,34 @@ function matchesJournalFilter(
   resolveNames?: NameResolver,
 ): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
 function matchesChatFilter(doc: Document, filter: ChatFilter, path?: string, resolveNames?: NameResolver): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
-  if (filter.summary_contains && !matchesContains(doc, 'summary', filter.summary_contains)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.summaryContains && !matchesContains(doc, 'summary', filter.summaryContains)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -853,18 +853,18 @@ function matchesDocumentFilter(
   resolveNames?: NameResolver,
 ): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.date_gte && filter.date_lte && !matchesDateRange(doc, filter.date_gte, filter.date_lte, path)) return false
+  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.type && detectTypeFromPath(path) !== filter.type) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
-  if (filter.involves_any && !matchesInvolvesAny(doc, filter.involves_any, resolveNames)) return false
-  if (filter.involves_all && !matchesInvolvesAll(doc, filter.involves_all, resolveNames)) return false
-  if (filter.tags_contains && !matchesTagContains(doc, filter.tags_contains)) return false
-  if (filter.tags_contains_any && !matchesTagContainsAny(doc, filter.tags_contains_any)) return false
-  if (filter.tags_contains_all && !matchesTagContainsAll(doc, filter.tags_contains_all)) return false
-  if (filter.tags_starts_with && !matchesTagPrefix(doc, filter.tags_starts_with)) return false
-  if (filter.body_contains && !matchesBodyContains(doc, filter.body_contains)) return false
+  if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
+  if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
-  if (filter.rel_contains && !matchesRelContains(doc, filter.rel_contains)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
