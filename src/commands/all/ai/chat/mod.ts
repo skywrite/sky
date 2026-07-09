@@ -22,7 +22,7 @@ import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityConte
 import { aiModel, getProfile, resolveProfile } from '#shared/ai/models.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
-import { createNotebookTools, getApprovalFormatter } from './_tools.ts'
+import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter } from './_tools.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -879,6 +879,7 @@ export default class AiChatTask extends Command {
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
         const notebookTools = await createNotebookTools(tasks)
         const allTools = { ...webTools, ...notebookTools }
+        const toolApproval = createToolApprovalConfig()
 
         const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
           for (const tc of toolCalls ?? []) {
@@ -909,6 +910,7 @@ export default class AiChatTask extends Command {
             instructions: systemPrompt.trim(),
             messages,
             tools: allTools,
+            toolApproval,
             stopWhen: isStepCount(5),
             onStepEnd,
           })

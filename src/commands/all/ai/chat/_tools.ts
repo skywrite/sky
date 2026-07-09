@@ -96,7 +96,6 @@ export async function createNotebookTools(tasks: CommandService): Promise<Record
     tools[entry.toolName] = tool({
       description: entry.description,
       inputSchema: jsonSchema<Record<string, unknown>>(schema),
-      needsApproval: entry.needsApproval,
       execute: async (input: Record<string, unknown>) => {
         const result = await tasks.run(entry.commandName, input)
         if (result.status === 'success') {
@@ -108,6 +107,21 @@ export async function createNotebookTools(tasks: CommandService): Promise<Record
   }
 
   return tools
+}
+
+/**
+ * Generation-time approval policy for the discovered tools. AI SDK 7 moved
+ * approval off the tool definition (tool-level needsApproval is deprecated)
+ * onto the streamText/generateText call; the decorator's needsApproval flag
+ * remains the source of truth and is translated here. Call after
+ * createNotebookTools(), which populates the registry.
+ */
+export function createToolApprovalConfig(): Record<string, 'user-approval'> {
+  const config: Record<string, 'user-approval'> = {}
+  for (const entry of discoveredTools) {
+    if (entry.needsApproval) config[entry.toolName] = 'user-approval'
+  }
+  return config
 }
 
 /**
