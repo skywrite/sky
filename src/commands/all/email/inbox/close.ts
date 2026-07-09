@@ -1,6 +1,7 @@
 import * as p from '@clack/prompts'
 import { unlink } from 'node:fs/promises'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createImapClient } from '../lib/imap-client.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
@@ -26,8 +27,8 @@ export default class EmailInboxCloseTask extends Command {
     name: 'email:inbox:close',
     description: 'Close an email thread: remove Sky/Follow label, archive from inbox, delete follow.',
     descriptionLong: [
-      'Shows a numbered list of threads from email:inbox:view.',
-      'Pick a number to close that thread:',
+      'Shows an interactive picker of threads from email:inbox:view.',
+      'Pick a thread to close it:',
       '  1. Removes the Sky/Follow label from all messages in the thread',
       '  2. Archives all messages from inbox (removes \\Inbox label)',
       '  3. Deletes the follow YAML file',
@@ -70,38 +71,32 @@ export default class EmailInboxCloseTask extends Command {
       return CommandResult.fail('No threads to close')
     }
 
-    // Display numbered list
-    output.log('')
-    for (let i = 0; i < threads.length; i++) {
-      const thread = threads[i]
-      const first = thread.messages[0]
-      const date = first.date ? first.date.toISOString().slice(0, 10) : '(no date)'
-      const from = first.from?.name || first.from?.address || '(unknown)'
-      const subject = first.subject || '(no subject)'
-      const saved = thread.saved ? ' [saved]' : ''
-      const replies = thread.messages.length > 1 ? ` (+${thread.messages.length - 1} replies)` : ''
-      output.log(`  ${String(i + 1).padStart(2)}.  ${date}  ${from}  —  ${subject}${replies}${saved}`)
-    }
-    output.log('')
-
-    // Prompt for selection
-    const selected = await p.text({
-      message: 'Enter number to close (or q to cancel)',
+    // Prompt for selection (same picker style as follow:sync --pick)
+    const selected = await p.select({
+      message: 'Which thread to close?',
+      options: threads.map((t) => {
+        const first = t.messages[0]
+        // Messages are sorted oldest-first, so the last one is the most recent
+        const latest = t.messages.at(-1)
+        const date = latest?.date ? PlainDate.from(latest.date).toString() : undefined
+        const subject = first?.subject || '(no subject)'
+        const from = first?.from?.name || first?.from?.address || '(unknown)'
+        const count = t.messages.length
+        return {
+          value: t.threadId,
+          label: date ? `[${date}] ${subject}` : subject,
+          hint: `${from} · ${count} msg${count === 1 ? '' : 's'} · ${t.saved ? 'saved' : 'unsaved'}`,
+        }
+      }),
     })
 
-    if (p.isCancel(selected) || selected === 'q') {
+    if (p.isCancel(selected)) {
       await client.logout().catch(() => {})
       p.cancel('Cancelled')
       return CommandResult.fail('User cancelled')
     }
 
-    const idx = parseInt(selected, 10) - 1
-    if (isNaN(idx) || idx < 0 || idx >= threads.length) {
-      await client.logout().catch(() => {})
-      return CommandResult.fail(`Invalid selection: ${selected}`)
-    }
-
-    const thread = threads[idx]
+    const thread = threads.find((t) => t.threadId === selected)!
     const threadId = thread.threadId
     const subject = thread.messages[0].subject || '(no subject)'
 
