@@ -64,7 +64,7 @@ async function describeImageForFilename(imagePath: string): Promise<string | und
         {
           role: 'user',
           content: [
-            { type: 'image' as const, image: imageData, mediaType: mediaTypeFromExt(imagePath) },
+            { type: 'file' as const, data: imageData, mediaType: mediaTypeFromExt(imagePath) },
             {
               type: 'text' as const,
               text: 'Describe this image in 5-7 words for use as a filename. Return ONLY the description, no quotes or punctuation at the end.',

@@ -180,7 +180,7 @@ export default class UtilTzConvertTask extends Command {
       const result = await generateObject({
         model: anthropic('claude-sonnet-5'),
         schema: TimezoneParseSchema,
-        system: systemPrompt,
+        instructions: systemPrompt,
         prompt: query,
       })
       parsed = result.object

@@ -213,7 +213,7 @@ export default class SummaryWeekTask extends Command {
     try {
       const result = await generateText({
         model: anthropic(model),
-        system: promptTemplate,
+        instructions: promptTemplate,
         prompt: userPrompt,
       })
       response = result.text

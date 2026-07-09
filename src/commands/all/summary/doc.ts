@@ -182,7 +182,7 @@ export default class SummaryDocTask extends Command {
         // PDF: use messages array with file content part
         const result = await generateText({
           model: anthropic(model),
-          system: systemPrompt,
+          instructions: systemPrompt,
           messages: [
             {
               role: 'user',
@@ -199,12 +199,12 @@ export default class SummaryDocTask extends Command {
         // Image: use messages array with image content part
         const result = await generateText({
           model: anthropic(model),
-          system: systemPrompt,
+          instructions: systemPrompt,
           messages: [
             {
               role: 'user',
               content: [
-                { type: 'image', image: imageData, mediaType: imageMediaType(ext) },
+                { type: 'file', data: imageData, mediaType: imageMediaType(ext) },
                 { type: 'text', text: userPrompt },
               ],
             },
@@ -217,7 +217,7 @@ export default class SummaryDocTask extends Command {
         const fullPrompt = `${userPrompt}\n---\n\n${textContent}`
         const result = await generateText({
           model: anthropic(model),
-          system: systemPrompt,
+          instructions: systemPrompt,
           prompt: fullPrompt,
           temperature: 0,
         })
