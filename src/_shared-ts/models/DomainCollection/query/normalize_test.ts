@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { graphQLParseError, normalizeGraphQLQuery } from './normalize.ts'
+import { graphQLParseError, graphQLValidationErrors, normalizeGraphQLQuery } from './normalize.ts'
 
 test('normalizeGraphQLQuery', async (t) => {
   await t.step('passes through already-braced queries', () => {
@@ -183,6 +183,40 @@ test('graphQLParseError', async (t) => {
       given: 'a non-GraphQL string that survives normalization',
       should: 'return a syntax error message',
       actual: (graphQLParseError('{\nchanged:true}\n}') ?? '').startsWith('Syntax Error'),
+      expected: true,
+    })
+  })
+})
+
+test('graphQLValidationErrors', async (t) => {
+  await t.step('returns null for a schema-valid query', async () => {
+    assert({
+      given: 'a query using real schema fields',
+      should: 'return null',
+      actual: await graphQLValidationErrors('{ messages(where: { bodyContains: "x" }, limit: 2) { path } }'),
+      expected: null,
+    })
+  })
+
+  await t.step('reports hallucinated filter fields', async () => {
+    // Parses fine, fails against the schema — the class of model error the
+    // parse-only guard could not catch (e.g. reverting to the retired
+    // snake_case spelling after the camelCase rename).
+    const errors = await graphQLValidationErrors('{ messages(where: { body_contains: "x" }) { path } }')
+    assert({
+      given: 'a query using a filter field the schema does not define',
+      should: 'return the validation error naming the field',
+      actual: errors !== null && errors[0].includes('body_contains'),
+      expected: true,
+    })
+  })
+
+  await t.step('reports parse failures through the same guard', async () => {
+    const errors = await graphQLValidationErrors('{\nchanged:true}\n}')
+    assert({
+      given: 'an unparseable string',
+      should: 'return the syntax error as the message list',
+      actual: (errors?.[0] ?? '').startsWith('Syntax Error'),
       expected: true,
     })
   })
