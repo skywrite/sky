@@ -16,7 +16,7 @@ const YAML_KEY_ORDER = [
   'status',
 ]
 
-type FollowStatus = 'active' | 'paused'
+type FollowStatus = 'active' | 'paused' | 'closed'
 
 export type FollowMessage = { date: string; path: string }
 

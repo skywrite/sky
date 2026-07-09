@@ -1,5 +1,8 @@
 import * as p from '@clack/prompts'
+import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
+import { DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
+import { outputFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createImapClient } from '../lib/imap-client.ts'
@@ -25,13 +28,13 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class EmailInboxCloseTask extends Command {
   static override description: CommandDescription = {
     name: 'email:inbox:close',
-    description: 'Close an email thread: remove Sky/Follow label, archive from inbox, delete follow.',
+    description: 'Close an email thread: remove Sky/Follow label, archive from inbox, archive follow.',
     descriptionLong: [
       'Shows an interactive picker of threads from email:inbox:view.',
       'Pick a thread to close it:',
       '  1. Removes the Sky/Follow label from all messages in the thread',
       '  2. Archives all messages from inbox (removes \\Inbox label)',
-      '  3. Deletes the follow YAML file',
+      '  3. Archives the follow YAML (status: closed, moved to follow/email/archive/)',
     ],
     usage: ['sky email:inbox:close --account user@example.com'],
     params,
@@ -158,14 +161,15 @@ export default class EmailInboxCloseTask extends Command {
       await client.logout().catch(() => {})
     }
 
-    // 4. Delete the follow YAML if it exists
-    if (thread.saved) {
-      const registry = await EmailFollowRegistry.build()
-      const followEntry = registry.findByThreadId(threadId)
-      if (followEntry) {
-        await unlink(followEntry.path)
-        output.log(`  Deleted follow: ${followEntry.fileName}`)
-      }
+    // 4. Archive the follow YAML if it exists: mark closed, move out of active/
+    // (even when the thread has unsaved replies — closing means stop following)
+    const registry = await EmailFollowRegistry.build()
+    const followEntry = registry.findByThreadId(threadId)
+    if (followEntry) {
+      const closed = followEntry.follow.updateStatus('closed')
+      await outputFile(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, followEntry.fileName), closed.toYaml())
+      await unlink(followEntry.path)
+      output.log(`  Archived follow: ${followEntry.fileName}`)
     }
 
     output.log(`\n  Closed: ${subject}\n`)
