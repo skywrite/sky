@@ -14,8 +14,10 @@ export { getDateFromPath, getDocumentDate, matchesDate, matchesDateRange, matche
 // Tag filters
 export { matchesTagContains, matchesTagContainsAll, matchesTagContainsAny, matchesTagPrefix } from './tags.ts'
 
-// Involvement filter
+// Involvement filters
 export { matchesInvolves, type NameResolver } from './involves.ts'
+export { matchesInvolvesAll } from './involvesAll.ts'
+export { matchesInvolvesAny } from './involvesAny.ts'
 
 // Decision filters
 export { matchesDecided, matchesPending } from './decision.ts'

@@ -78,10 +78,22 @@ How should we plan the widget launch?
 Start with a small beta group.`),
       path: '/test/time/2026/02/02-08/03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
     },
+    {
+      doc: Document.fromMarkdown(`---
+from: Alice Smith
+to: Bob Jones
+medium: Slack
+summary: Widget launch sync
+---
+Alice to Bob about the widget launch.`),
+      path: '/test/time/2026/02/02-08/04/actions/messages/slack_Alice-to-Bob_Widget-launch-sync.md',
+    },
   ]
 
   const store = {
-    people: createMockCollection(peopleData),
+    // people doubles as the PeopleStore for involves name resolution; the
+    // empty index (names/find) makes resolution fall back to literal names
+    people: { ...createMockCollection(peopleData), names: [], find: () => undefined },
     orgs: createMockCollection(orgsData),
     projects: createMockCollection([]),
     decisions: createMockCollection([]),
@@ -297,5 +309,52 @@ test('executeQuery - chats are included in tag queries', async () => {
     should: 'include the chat, typed as chat',
     actual: docResult.data?.documents.filter((d) => d.path.includes('/ai-chats/')).map((d) => d.type),
     expected: ['chat'],
+  })
+})
+
+test('executeQuery - involves_any and involves_all work end-to-end against the schema', async () => {
+  const store = createMockStore()
+
+  const anyResult = await executeQuery<{ messages: Array<{ path: string }> }>(
+    '{ messages(where: { involves_any: ["Alice Smith", "Carol Quinn"] }) { path } }',
+    store,
+  )
+
+  assert({
+    given: 'an involves_any query where one listed person participates',
+    should: 'execute without schema errors',
+    actual: anyResult.errors,
+    expected: undefined,
+  })
+
+  assert({
+    given: 'an involves_any query where one listed person participates',
+    should: 'return the message (OR semantics)',
+    actual: anyResult.data?.messages.length,
+    expected: 1,
+  })
+
+  const allHit = await executeQuery<{ messages: Array<{ path: string }> }>(
+    '{ messages(where: { involves_all: ["Alice Smith", "Bob Jones"] }) { path } }',
+    store,
+  )
+
+  assert({
+    given: 'an involves_all query where every listed person participates',
+    should: 'return the mutual message (AND semantics)',
+    actual: allHit.data?.messages.length,
+    expected: 1,
+  })
+
+  const allMiss = await executeQuery<{ messages: Array<{ path: string }> }>(
+    '{ messages(where: { involves_all: ["Alice Smith", "Carol Quinn"] }) { path } }',
+    store,
+  )
+
+  assert({
+    given: 'an involves_all query where one listed person is absent',
+    should: 'return no messages',
+    actual: allMiss.data?.messages.length,
+    expected: 0,
   })
 })
