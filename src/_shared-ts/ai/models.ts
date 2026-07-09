@@ -83,7 +83,7 @@ export type ProfileName = keyof typeof PROFILES
 export const ROLES = {
   reasoning: 'default-opus-4.6',
   fast: 'default-haiku-4.5',
-  balanced: 'default-sonnet-4.6',
+  balanced: 'default-sonnet-5',
   vision: 'default-gpt-4o',
 } satisfies Record<Role, ProfileName>
 

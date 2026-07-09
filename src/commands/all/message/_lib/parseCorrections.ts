@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-sonnet-5'
 const PROMPT_FILE = new URL('../prompts/parse-corrections.prompt.md', import.meta.url).pathname
 
 const CorrectionsSchema = z.object({

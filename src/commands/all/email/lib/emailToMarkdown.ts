@@ -74,7 +74,7 @@ export async function emailToMarkdown(
     const { output: prompt } = renderPromptFile(promptContent, 'email-to-markdown.prompt.md', renderInput)
 
     const { text } = await generateText({
-      model: anthropic('claude-sonnet-4-6'),
+      model: anthropic('claude-sonnet-5'),
       prompt,
     })
 

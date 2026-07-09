@@ -20,9 +20,9 @@ test('aiModel resolves a role to its baseline profile model', () => {
   })
   assert({
     given: 'the balanced role',
-    should: 'resolve to the sonnet-4-6 profile model',
+    should: 'resolve to the sonnet-5 profile model',
     actual: modelId(aiModel('balanced').model),
-    expected: 'claude-sonnet-4-6',
+    expected: 'claude-sonnet-5',
   })
   assert({
     given: 'the vision role',
