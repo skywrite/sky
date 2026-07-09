@@ -10,7 +10,8 @@
  */
 
 import type { DocumentNode, FieldNode } from 'graphql'
-import { Kind, parse, print, visit } from 'graphql'
+import { Kind, parse, print, validate, visit } from 'graphql'
+import { getSchema } from './execute.ts'
 
 /**
  * Normalize an AI-generated GraphQL query string:
@@ -130,4 +131,21 @@ export function graphQLParseError(query: string): string | null {
   } catch (err) {
     return (err as Error).message
   }
+}
+
+/**
+ * Validate a query against the notebook schema. Returns null when valid,
+ * else the error messages — parse failures and schema-validation failures
+ * (hallucinated filter fields, bad argument types, merge conflicts) in one
+ * guard, so callers drop exactly what the executor would reject.
+ */
+export async function graphQLValidationErrors(query: string): Promise<string[] | null> {
+  let doc: DocumentNode
+  try {
+    doc = parse(query)
+  } catch (err) {
+    return [(err as Error).message]
+  }
+  const errors = validate(await getSchema(), doc)
+  return errors.length > 0 ? errors.map((e) => e.message) : null
 }

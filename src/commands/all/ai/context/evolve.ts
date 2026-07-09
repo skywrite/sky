@@ -14,7 +14,7 @@ import { z } from 'zod'
 import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { graphQLParseError, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import { graphQLValidationErrors, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -150,18 +150,25 @@ export default class AIContextEvolveTask extends Command {
     // wraps those; empties are dropped rather than executed as parse errors.
     const normalized = object.queries.map(normalizeGraphQLQuery).filter((q) => q !== '')
 
-    // Normalization only fixes shape — the model occasionally leaks fragments
-    // of its own structured-output envelope (e.g. "{changed:true}}") into the
-    // queries array. Anything unparseable is dropped here so it is neither
-    // executed nor carried forward as a current query in later evolve rounds.
+    // Normalization only fixes shape and repairable defects — the model
+    // occasionally leaks fragments of its own structured-output envelope
+    // (e.g. "{changed:true}}") into the queries array, or hallucinates filter
+    // fields the schema doesn't define. Anything the executor would reject is
+    // dropped here so it is neither executed nor carried forward as a current
+    // query in later evolve rounds.
     const queries: string[] = []
     for (const q of normalized) {
-      const parseError = graphQLParseError(q)
-      if (parseError === null) {
+      const validationErrors = await graphQLValidationErrors(q)
+      if (validationErrors === null) {
         queries.push(q)
       } else {
-        output.log(colors.yellow(`Dropped unparseable query (${parseError})`))
-        await logAIError({ source: 'ai:context:evolve', stage: 'invalid-query', message: parseError, query: q })
+        output.log(colors.yellow(`Dropped invalid query (${validationErrors.join('; ')})`))
+        await logAIError({
+          source: 'ai:context:evolve',
+          stage: 'invalid-query',
+          message: validationErrors.join('; '),
+          query: q,
+        })
       }
     }
 
