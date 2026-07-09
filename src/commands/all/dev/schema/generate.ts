@@ -489,12 +489,12 @@ function generateSchema(): string {
   // Document types
   for (const [typeName, typeDef] of Object.entries(DOCUMENT_TYPES)) {
     if (typeDef.description) {
-      lines.push(`"""${typeDef.description}"""`)
+      lines.push('"""', typeDef.description, '"""')
     }
     lines.push(`type ${typeName} {`)
     for (const [fieldName, fieldDef] of Object.entries(typeDef.fields)) {
       const typeStr = fieldDef.nullable ? fieldDef.type : fieldDef.type.replace(/!$/, '') + '!'
-      const desc = fieldDef.description ? `  # ${fieldDef.description}` : ''
+      const desc = fieldDef.description ? ` # ${fieldDef.description}` : ''
       // Make nullable fields not have !
       const finalType = fieldDef.nullable ? fieldDef.type.replace(/!$/, '') : typeStr
       lines.push(`  ${fieldName}: ${finalType}${desc}`)
@@ -504,11 +504,11 @@ function generateSchema(): string {
   }
 
   // Generic Document type
-  lines.push('"""Generic document for cross-type queries"""')
+  lines.push('"""', 'Generic document for cross-type queries', '"""')
   lines.push('type Document {')
-  lines.push('  type: String!  # Document type: meeting, message, person, etc.')
-  lines.push('  markdown: String!  # Full document content')
-  lines.push('  path: String!  # File path')
+  lines.push('  type: String! # Document type: meeting, message, person, etc.')
+  lines.push('  markdown: String! # Full document content')
+  lines.push('  path: String! # File path')
   lines.push('}')
   lines.push('')
 
@@ -521,12 +521,12 @@ function generateSchema(): string {
 
     for (const [typeName, typeDef] of Object.entries(AUXILIARY_TYPES)) {
       if (typeDef.description) {
-        lines.push(`"""${typeDef.description}"""`)
+        lines.push('"""', typeDef.description, '"""')
       }
       lines.push(`type ${typeName} {`)
       for (const [fieldName, fieldDef] of Object.entries(typeDef.fields)) {
         const typeStr = fieldDef.nullable ? fieldDef.type : fieldDef.type.replace(/!$/, '') + '!'
-        const desc = fieldDef.description ? `  # ${fieldDef.description}` : ''
+        const desc = fieldDef.description ? ` # ${fieldDef.description}` : ''
         const finalType = fieldDef.nullable ? fieldDef.type.replace(/!$/, '') : typeStr
         lines.push(`  ${fieldName}: ${finalType}${desc}`)
       }
@@ -544,7 +544,7 @@ function generateSchema(): string {
   // Filter types
   for (const [filterName, filterDef] of Object.entries(FILTER_TYPES)) {
     if (filterDef.description) {
-      lines.push(`"""${filterDef.description}"""`)
+      lines.push('"""', filterDef.description, '"""')
     }
     lines.push(`input ${filterName} {`)
     for (const [fieldName, fieldType] of Object.entries(filterDef.fields)) {
