@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import process from 'node:process'
 import colors from 'picocolors'
-import { generateText, jsonSchema, stepCountIs, streamText } from 'ai'
+import { generateText, isStepCount, jsonSchema, streamText } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { mkdir } from 'node:fs/promises'
@@ -883,7 +883,7 @@ export default class AiChatTask extends Command {
         const notebookTools = await createNotebookTools(tasks)
         const allTools = { ...webTools, ...notebookTools }
 
-        const onStepFinish = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
+        const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
           for (const tc of toolCalls ?? []) {
             if (tc.toolName === 'web_search') {
               const input = tc.input as { query: string }
@@ -909,17 +909,17 @@ export default class AiChatTask extends Command {
         const runTurn = async () => {
           const stream = streamText({
             ...reasoning,
-            system: systemPrompt.trim(),
+            instructions: systemPrompt.trim(),
             messages,
             tools: allTools,
-            stopWhen: stepCountIs(5),
-            onStepFinish,
+            stopWhen: isStepCount(5),
+            onStepEnd,
           })
           return {
             text: await stream.text,
             content: await stream.content,
             steps: await stream.steps,
-            response: await stream.response,
+            responseMessages: await stream.responseMessages,
           }
         }
 
@@ -937,7 +937,7 @@ export default class AiChatTask extends Command {
           }
 
           // deno-lint-ignore no-explicit-any
-          messages.push(...(result.response.messages as any))
+          messages.push(...(result.responseMessages as any))
 
           // deno-lint-ignore no-explicit-any
           const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
@@ -1036,7 +1036,7 @@ export default class AiChatTask extends Command {
         turns.push({ role: 'assistant', content: assistantContent })
         // Push all response messages (including tool_use/tool_result pairs) to preserve valid conversation history
         // deno-lint-ignore no-explicit-any
-        messages.push(...(result.response.messages as any))
+        messages.push(...(result.responseMessages as any))
 
         output.log('')
         output.log(result.text)

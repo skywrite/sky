@@ -107,7 +107,7 @@ export async function extractMessageFromImage(imagePaths: string[], aiContext?: 
   const imageBlocks = await Promise.all(
     imagePaths.map(async (p) => {
       const { image, mediaType } = await loadImageForAI(p)
-      return { type: 'image' as const, image, mediaType }
+      return { type: 'file' as const, data: image, mediaType }
     }),
   )
 

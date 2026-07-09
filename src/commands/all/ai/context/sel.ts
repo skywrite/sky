@@ -107,7 +107,7 @@ Write the GraphQL query to gather context for answering this question.`
     // Sonnet 4.6; role now points at Sonnet 5).
     const result = await generateText({
       ...aiModel('balanced'),
-      system: systemPrompt,
+      instructions: systemPrompt,
       prompt: userPrompt,
     })
 

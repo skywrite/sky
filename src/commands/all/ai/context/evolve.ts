@@ -141,7 +141,7 @@ export default class AIContextEvolveTask extends Command {
     const { object } = await generateObject({
       model: anthropic('claude-sonnet-5'),
       schema,
-      system: systemPrompt,
+      instructions: systemPrompt,
       prompt: parts.join('\n'),
     })
 

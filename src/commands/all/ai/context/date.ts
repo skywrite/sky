@@ -84,7 +84,7 @@ export default class AIContextDateTask extends Command {
     const { object } = await generateObject({
       model: anthropic('claude-haiku-4-5-20251001'),
       schema,
-      system: systemPrompt,
+      instructions: systemPrompt,
       prompt: message,
     })
 

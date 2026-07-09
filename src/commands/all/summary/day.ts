@@ -210,7 +210,7 @@ export default class SummaryDayTask extends Command {
       // changes are from prompt edits vs random variation.
       const result = await generateText({
         model: anthropic(model),
-        system: promptTemplate,
+        instructions: promptTemplate,
         prompt: userPrompt,
         temperature: 0,
       })

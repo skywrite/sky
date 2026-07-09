@@ -53,7 +53,7 @@ export interface ReviewResult {
 async function generateExpertPrompt(area: string): Promise<string> {
   const result = await generateText({
     model: anthropic('claude-opus-4-6'),
-    system: `You create system prompts for domain-expert AI coaches.
+    instructions: `You create system prompts for domain-expert AI coaches.
 
 Given an area someone wants to improve, write a system prompt for a world-class expert.
 
@@ -83,7 +83,7 @@ async function continueConversation(
 ): Promise<{ response: string; done: boolean }> {
   const result = await generateText({
     model: anthropic('claude-opus-4-6'),
-    system:
+    instructions:
       expertPrompt +
       `
 
@@ -125,7 +125,7 @@ async function generateGoalMarkdown(
 
   const result = await generateText({
     model: anthropic('claude-opus-4-6'),
-    system:
+    instructions:
       expertPrompt +
       `
 
@@ -317,7 +317,7 @@ export class GoalCoach {
 
     const result = await generateText({
       model: anthropic('claude-opus-4-6'),
-      system: `You're a direct coach reviewing someone's goal progress.
+      instructions: `You're a direct coach reviewing someone's goal progress.
 Be specific and actionable. 2-3 sentences max. No fluff.`,
       prompt: `Goals:\n${content}\n\nUpdate: ${update}\n\nGive feedback.`,
     })
