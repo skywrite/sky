@@ -38,6 +38,8 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on: meetings, messages, journals, chats, documents, projects, decisions, goals
 - Searches who/from/to fields and body text for the person's name
 - Use the person's canonical name — aliases are resolved automatically
+- Multiple people, either involved: `involves_any: ["<name>", "<name>"]` (OR). One block with one shared `limit` — when you want balanced per-person context, use separate aliased blocks instead
+- Multiple people, all involved: `involves_all: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involves_all: ["Alice Smith", "Bob Jones"], recent: "6mo" }, limit: 10)` for their conversation with each other
 - When the question centers on a specific person, ALSO fetch their profile document: `people(where: { name_contains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
 
 **Tags** → `tags_contains`, `tags_contains_any`, `tags_contains_all`, or `tags_starts_with`
