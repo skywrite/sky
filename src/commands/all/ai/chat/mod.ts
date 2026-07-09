@@ -457,10 +457,7 @@ export default class AiChatTask extends Command {
     t0 = performance.now()
     const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, peopleEntities] = await Promise.all([
       fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
-      fetchContextFromServer(
-        `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}" }) { path } }`,
-        0,
-      ),
+      fetchContextFromServer(`{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}" }) { path } }`, 0),
       fetchContextFromServer(`{ goals { path } }`, 0),
       fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
       gatherPeopleEntities(config as Record<string, unknown>),
