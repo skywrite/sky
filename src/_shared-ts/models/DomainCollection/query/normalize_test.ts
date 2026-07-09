@@ -69,6 +69,99 @@ test('normalizeGraphQLQuery', async (t) => {
       expected: '',
     })
   })
+
+  await t.step('auto-aliases duplicate fields with differing arguments', () => {
+    // The exact failure shape ai:context:evolve produced: the same root
+    // field selected twice with different where-args and no aliases, which
+    // execution rejects wholesale ('Fields "meetings" conflict because they
+    // have differing arguments').
+    const conflicted = '{meetings(where:{involves:"A"},limit:2){path}meetings(where:{involves:"B"},limit:2){path}}'
+    assert({
+      given: 'two selections of the same field with differing arguments',
+      should: 'alias the second occurrence',
+      actual: normalizeGraphQLQuery(conflicted),
+      expected: `{
+  meetings(where: {involves: "A"}, limit: 2) {
+    path
+  }
+  meetings2: meetings(where: {involves: "B"}, limit: 2) {
+    path
+  }
+}`,
+    })
+  })
+
+  await t.step('leaves identical duplicate selections alone', () => {
+    const query = '{ goals { path } goals { path } }'
+    assert({
+      given: 'duplicate selections with identical name and arguments',
+      should: 'return the query unchanged — GraphQL merges these validly',
+      actual: normalizeGraphQLQuery(query),
+      expected: query,
+    })
+  })
+
+  await t.step('treats reordered arguments as identical, not conflicting', () => {
+    const query =
+      '{ meetings(limit: 2, where: {recent: "7d"}) { path } meetings(where: {recent: "7d"}, limit: 2) { path } }'
+    assert({
+      given: 'duplicate selections whose arguments differ only in order',
+      should: 'return the query unchanged — argument order is irrelevant in GraphQL',
+      actual: normalizeGraphQLQuery(query),
+      expected: query,
+    })
+  })
+
+  await t.step('numbers generated aliases past existing response keys', () => {
+    const query =
+      '{ messages2: messages(where: {a: "x"}) { path } messages(where: {a: "y"}) { path } messages(where: {a: "z"}) { path } }'
+    assert({
+      given: 'a conflict where the natural alias is already taken',
+      should: 'skip to the next free number instead of colliding',
+      actual: normalizeGraphQLQuery(query),
+      expected: `{
+  messages2: messages(where: {a: "x"}) {
+    path
+  }
+  messages(where: {a: "y"}) {
+    path
+  }
+  messages3: messages(where: {a: "z"}) {
+    path
+  }
+}`,
+    })
+  })
+
+  await t.step('auto-aliases conflicts in nested selection sets', () => {
+    assert({
+      given: 'a differing-arguments conflict below the root',
+      should: 'alias the nested duplicate too',
+      actual: normalizeGraphQLQuery('{ wrapper { thing(x: 1) { p } thing(x: 2) { p } } }'),
+      expected: `{
+  wrapper {
+    thing(x: 1) {
+      p
+    }
+    thing2: thing(x: 2) {
+      p
+    }
+  }
+}`,
+    })
+  })
+
+  await t.step('returns unparseable strings unchanged', () => {
+    // Auto-aliasing needs a parse; garbage must flow through untouched so
+    // graphQLParseError still catches and drops it downstream.
+    const garbage = '{\nchanged:true}\n}'
+    assert({
+      given: 'a non-GraphQL string that survives shape normalization',
+      should: 'return it unchanged for the parse guard to reject',
+      actual: normalizeGraphQLQuery(garbage),
+      expected: garbage,
+    })
+  })
 })
 
 test('graphQLParseError', async (t) => {
