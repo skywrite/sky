@@ -4,7 +4,7 @@ import * as claude from '#shared/ai/llm/claude/mod.ts'
 
 const params = {
   prompt: Arg.string('The prompt to send to Claude'),
-  model: Flag.string('Model to use (default: claude-sonnet-4-5-20250929)'),
+  model: Flag.string('Model to use (default: claude-sonnet-5)'),
   maxTokens: Flag.number('Maximum tokens to generate (default: 64000)'),
   json: Flag.boolean('Enable JSON mode (strips markdown code fences)', { default: false }),
 }

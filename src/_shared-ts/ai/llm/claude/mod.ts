@@ -38,9 +38,8 @@ export async function prompt(options: ClaudePromptOptions): Promise<string> {
     : undefined
 
   const response = await client.messages.create({
-    model: options.model || 'claude-sonnet-4-5-20250929',
+    model: options.model || 'claude-sonnet-5',
     max_tokens: options.maxTokens || 64000,
-    temperature: 0,
     ...(system && { system }),
     messages: [
       {
@@ -109,9 +108,8 @@ export async function* promptStream(options: ClaudePromptOptions): AsyncIterator
     : undefined
 
   const stream = await client.messages.create({
-    model: options.model || 'claude-sonnet-4-5-20250929',
+    model: options.model || 'claude-sonnet-5',
     max_tokens: options.maxTokens || 64000,
-    temperature: 0,
     ...(system && { system }),
     messages: [
       {
