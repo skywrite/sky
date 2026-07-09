@@ -34,6 +34,7 @@ export const DIR_TMP_SYS = os.tmpdir()
 export const DIR_ATTACHMENTS = path.join(DIR_USER_DATA, 'attachments')
 export const DIR_STATE = path.join(DIR_USER_DATA, 'state')
 export const DIR_STATE_FOLLOW_EMAIL_ACTIVE = path.join(DIR_STATE, 'follow', 'email', 'active')
+export const DIR_STATE_FOLLOW_EMAIL_ARCHIVE = path.join(DIR_STATE, 'follow', 'email', 'archive')
 export const DIR_TMP_USER = path.join(DIR_USER_DATA, 'tmp')
 
 export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')
