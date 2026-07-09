@@ -55,7 +55,7 @@ function buildQuery(sel: ParsedSelector, options: { today?: PlainDate }): { quer
     if (filter) filters.push(filter)
   }
 
-  // Then process attributes — collect repeated tags~= into tags_contains_all
+  // Then process attributes — collect repeated tags~= into tagsContainsAll
   const tagContainsValues: string[] = []
   for (const attr of sel.attributes) {
     if (attr.name === 'tags' && attr.operator === '~=') {
@@ -66,10 +66,10 @@ function buildQuery(sel: ParsedSelector, options: { today?: PlainDate }): { quer
     }
   }
   if (tagContainsValues.length === 1) {
-    filters.push(`tags_contains: "${tagContainsValues[0]}"`)
+    filters.push(`tagsContains: "${tagContainsValues[0]}"`)
   } else if (tagContainsValues.length > 1) {
     const items = tagContainsValues.map((v) => `"${v}"`).join(', ')
-    filters.push(`tags_contains_all: [${items}]`)
+    filters.push(`tagsContainsAll: [${items}]`)
   }
 
   return {
@@ -94,23 +94,23 @@ function attributeToFilter(attr: ParsedAttribute): string | null {
 
     case '~=':
       // Contains (for arrays)
-      return `${name}_contains: "${value}"`
+      return `${name}Contains: "${value}"`
 
     case '^=':
       // Starts with
-      return `${name}_starts_with: "${value}"`
+      return `${name}StartsWith: "${value}"`
 
     case '$=':
       // Ends with
-      return `${name}_ends_with: "${value}"`
+      return `${name}EndsWith: "${value}"`
 
     case '*=':
       // Substring
-      return `${name}_contains: "${value}"`
+      return `${name}Contains: "${value}"`
 
     case 'exists':
       // Field exists
-      return `${name}_exists: true`
+      return `${name}Exists: true`
 
     default:
       return null
@@ -141,7 +141,7 @@ function pseudoToFilter(pseudo: ParsedPseudo, options: { today?: PlainDate }): s
     case 'date-range':
       if (pseudo.value) {
         const [start, end] = pseudo.value.split(',').map((s) => s.trim())
-        return `date_gte: "${start}", date_lte: "${end}"`
+        return `dateGte: "${start}", dateLte: "${end}"`
       }
       return null
 
@@ -155,7 +155,7 @@ function pseudoToFilter(pseudo: ParsedPseudo, options: { today?: PlainDate }): s
       return `involves: "${pseudo.value}"`
 
     case 'contains':
-      return `body_contains: "${pseudo.value}"`
+      return `bodyContains: "${pseudo.value}"`
 
     case 'matches':
       return `body_matches: "${pseudo.value}"`
@@ -191,15 +191,15 @@ function innerSelectorToFilter(sel: ParsedSelector): string | null {
 
   for (const attr of sel.attributes) {
     if (attr.name === 'who' && attr.operator === '~=') {
-      filters.push(`who_contains: "${attr.value}"`)
+      filters.push(`whoContains: "${attr.value}"`)
     } else if (attr.name === 'from' && attr.operator === '=') {
       filters.push(`from: "${attr.value}"`)
     } else if (attr.name === 'to' && attr.operator === '~=') {
-      filters.push(`to_contains: "${attr.value}"`)
+      filters.push(`toContains: "${attr.value}"`)
     } else if (attr.name === 'org' && attr.operator === '=') {
       filters.push(`org: "${attr.value}"`)
     } else if (attr.operator === '~=') {
-      filters.push(`${attr.name}_contains: "${attr.value}"`)
+      filters.push(`${attr.name}Contains: "${attr.value}"`)
     } else if (attr.operator === '=') {
       filters.push(`${attr.name}: "${attr.value}"`)
     }
@@ -217,13 +217,13 @@ function innerSelectorToNotFilter(sel: ParsedSelector): string | null {
   for (const attr of sel.attributes) {
     if (attr.operator === 'exists' || !attr.value) {
       // :not([field]) → field is null
-      filters.push(`${attr.name}_is_null: true`)
+      filters.push(`${attr.name}IsNull: true`)
     } else if (attr.operator === '~=') {
-      filters.push(`${attr.name}_not_contains: "${attr.value}"`)
+      filters.push(`${attr.name}NotContains: "${attr.value}"`)
     } else if (attr.operator === '^=') {
-      filters.push(`${attr.name}_not_starts_with: "${attr.value}"`)
+      filters.push(`${attr.name}NotStartsWith: "${attr.value}"`)
     } else if (attr.operator === '=') {
-      filters.push(`${attr.name}_not: "${attr.value}"`)
+      filters.push(`${attr.name}Not: "${attr.value}"`)
     }
   }
 
@@ -232,9 +232,9 @@ function innerSelectorToNotFilter(sel: ParsedSelector): string | null {
     if (pseudo.name === 'has' && pseudo.innerSelector) {
       for (const attr of pseudo.innerSelector.attributes) {
         if (attr.name === 'who' && attr.operator === '~=') {
-          filters.push(`who_not_contains: "${attr.value}"`)
+          filters.push(`whoNotContains: "${attr.value}"`)
         } else if (attr.name === 'from' && attr.operator === '=') {
-          filters.push(`from_not: "${attr.value}"`)
+          filters.push(`fromNot: "${attr.value}"`)
         }
       }
     }

@@ -59,7 +59,7 @@ const mockResolver: NameResolver = (name: string) => {
 test('matchesInvolvesAll - resolves aliases per name', () => {
   const doc = md('from: Jim Wheeler\nto: Alice Smith')
   assert({
-    given: 'an involves_all list using a nickname for one participant',
+    given: 'an involvesAll list using a nickname for one participant',
     should: 'match via the name resolver',
     actual: matchesInvolvesAll(doc, ['JW', 'Alice Smith'], mockResolver),
     expected: true,

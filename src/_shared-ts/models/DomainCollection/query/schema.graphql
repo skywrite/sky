@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-09T14:47:33.977Z
+# Generated at: 2026-07-09T16:13:51.919Z
 # =============================================================================
 
 type Query {
@@ -264,196 +264,196 @@ type PersonOrgs {
 
 input MeetingFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
   year: Int
   month: Int
-  who_contains: String
-  who_not_contains: String
+  whoContains: String
+  whoNotContains: String
   medium: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  tags_not_contains: String
-  body_contains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  tagsNotContains: String
+  bodyContains: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  rel_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
 }
 
 input VideoFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
-  from_contains: String
+  fromContains: String
   medium: String
-  summary_contains: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  body_contains: String
+  summaryContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  rel_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
 }
 
 input MessageFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
   from: String
-  from_not: String
-  to_contains: String
-  to_not_contains: String
+  fromNot: String
+  toContains: String
+  toNotContains: String
   medium: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  body_contains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  rel_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
 }
 
 input PersonFilter {
   name: String
-  name_contains: String
+  nameContains: String
   org: String
-  org_contains: String
-  title_contains: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  orgContains: String
+  titleContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
 }
 
 input OrgFilter {
   name: String
-  name_contains: String
+  nameContains: String
   sector: String
   kind: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
 }
 
 input ProjectFilter {
   name: String
-  name_contains: String
+  nameContains: String
   status: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
+  involvesAny: [String!]
+  involvesAll: [String!]
 }
 
 input DecisionFilter {
-  name_contains: String
+  nameContains: String
   pending: Boolean
   decided: Boolean
-  identified_gte: String
-  identified_lte: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  identifiedGte: String
+  identifiedLte: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
+  involvesAny: [String!]
+  involvesAll: [String!]
 }
 
 input GoalFilter {
-  name_contains: String
+  nameContains: String
   status: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
+  involvesAny: [String!]
+  involvesAll: [String!]
 }
 
 input IdeaFilter {
-  name_contains: String
+  nameContains: String
   status: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
+  involvesAny: [String!]
+  involvesAll: [String!]
 }
 
 input PlaceFilter {
-  name_contains: String
+  nameContains: String
   type: String
   country: String
-  city_contains: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  cityContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
 }
 
 input DayFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
   year: Int
   month: Int
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
 }
 
 input JournalFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  body_contains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  rel_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
 }
 
 input ChatFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   recent: String
-  summary_contains: String
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  body_contains: String
+  summaryContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  rel_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
 }
 
 """
@@ -461,17 +461,17 @@ Filter for querying across all document types
 """
 input DocumentFilter {
   date: String
-  date_gte: String
-  date_lte: String
+  dateGte: String
+  dateLte: String
   type: String
   involves: String
-  involves_any: [String!]
-  involves_all: [String!]
-  tags_contains: String
-  tags_contains_any: [String!]
-  tags_contains_all: [String!]
-  tags_starts_with: String
-  body_contains: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   recent: String
-  rel_contains: String
+  relContains: String
 }

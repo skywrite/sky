@@ -345,7 +345,7 @@ interface SmokeCase {
 const CASES: SmokeCase[] = [
   {
     field: 'meetings',
-    query: '{ meetings(where: { who_contains: "Alice" }) { path } }',
+    query: '{ meetings(where: { whoContains: "Alice" }) { path } }',
     expectPaths: [meetings[0].path],
   },
   {
@@ -355,17 +355,17 @@ const CASES: SmokeCase[] = [
   },
   {
     field: 'videos',
-    query: '{ videos(where: { from_contains: "TechChannel" }) { path } }',
+    query: '{ videos(where: { fromContains: "TechChannel" }) { path } }',
     expectPaths: [videos[0].path],
   },
   {
     field: 'journals',
-    query: '{ journals(where: { body_contains: "gratitude" }) { path } }',
+    query: '{ journals(where: { bodyContains: "gratitude" }) { path } }',
     expectPaths: [journals[0].path],
   },
   {
     field: 'chats',
-    query: '{ chats(where: { summary_contains: "Widget" }) { path } }',
+    query: '{ chats(where: { summaryContains: "Widget" }) { path } }',
     expectPaths: [chats[0].path],
   },
   {
@@ -375,12 +375,12 @@ const CASES: SmokeCase[] = [
   },
   {
     field: 'people',
-    query: '{ people(where: { name_contains: "Alice" }) { path } }',
+    query: '{ people(where: { nameContains: "Alice" }) { path } }',
     expectPaths: [people[0].path],
   },
   {
     field: 'orgs',
-    query: '{ orgs(where: { name_contains: "Acme" }) { path } }',
+    query: '{ orgs(where: { nameContains: "Acme" }) { path } }',
     expectPaths: [orgs[0].path],
   },
   {
@@ -395,7 +395,7 @@ const CASES: SmokeCase[] = [
   },
   {
     field: 'goals',
-    query: '{ goals(where: { name_contains: "Widgets" }) { path } }',
+    query: '{ goals(where: { nameContains: "Widgets" }) { path } }',
     expectPaths: [goals[0].path],
   },
   {

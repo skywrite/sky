@@ -5,12 +5,12 @@
 export default [
   {
     selector: 'meeting:contains("partnership")',
-    expected: 'query { meetings(where: { body_contains: "partnership" }) { path markdown } }',
+    expected: 'query { meetings(where: { bodyContains: "partnership" }) { path markdown } }',
     description: 'full-text search',
   },
   {
     selector: 'message:contains("quarterly review")',
-    expected: 'query { messages(where: { body_contains: "quarterly review" }) { path markdown } }',
+    expected: 'query { messages(where: { bodyContains: "quarterly review" }) { path markdown } }',
     description: 'full-text search - multi-word',
   },
 ]

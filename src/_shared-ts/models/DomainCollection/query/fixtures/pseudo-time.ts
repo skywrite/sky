@@ -37,7 +37,7 @@ export default [
   },
   {
     selector: 'meeting:date-range(2025-01-01, 2025-01-31)',
-    expected: 'query { meetings(where: { date_gte: "2025-01-01", date_lte: "2025-01-31" }) { path markdown } }',
+    expected: 'query { meetings(where: { dateGte: "2025-01-01", dateLte: "2025-01-31" }) { path markdown } }',
     description: 'date range',
   },
 ]

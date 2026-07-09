@@ -25,7 +25,7 @@ test('normalizeGraphQLQuery', async (t) => {
   await t.step('wraps bare top-level selections in braces', () => {
     // The exact failure shape ai:context:evolve produced: bare selections
     // fail with 'Syntax Error: Unexpected Name "meetings".'
-    const bare = 'meetings(where: { tags_starts_with: "Acme/" , recent: "18mo" }, limit: 10) { date summary path }'
+    const bare = 'meetings(where: { tagsStartsWith: "Acme/" , recent: "18mo" }, limit: 10) { date summary path }'
     assert({
       given: 'a bare selection without enclosing braces',
       should: 'wrap it in { }',

@@ -5,22 +5,22 @@
 export default [
   {
     selector: 'decision:not([decided])',
-    expected: 'query { decisions(where: { decided_is_null: true }) { path markdown } }',
+    expected: 'query { decisions(where: { decidedIsNull: true }) { path markdown } }',
     description: 'not - field missing (pending)',
   },
   {
     selector: 'person:not([org])',
-    expected: 'query { people(where: { org_is_null: true }) { path markdown } }',
+    expected: 'query { people(where: { orgIsNull: true }) { path markdown } }',
     description: 'not - no org',
   },
   {
     selector: 'meeting:not([tags])',
-    expected: 'query { meetings(where: { tags_is_null: true }) { path markdown } }',
+    expected: 'query { meetings(where: { tagsIsNull: true }) { path markdown } }',
     description: 'not - untagged',
   },
   {
     selector: 'meeting:not([tags^="Acme/"])',
-    expected: 'query { meetings(where: { tags_not_starts_with: "Acme/" }) { path markdown } }',
+    expected: 'query { meetings(where: { tagsNotStartsWith: "Acme/" }) { path markdown } }',
     description: 'not - negated prefix',
   },
 ]
