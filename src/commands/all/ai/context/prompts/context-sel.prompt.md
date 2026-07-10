@@ -21,7 +21,7 @@ Given a question, write a GraphQL query that would fetch the relevant context to
 
 ## Context
 
-- Only add recent when the question names a timeframe: "7d" for "last week", "30d" for "last month", etc.
+- Only add recent when the question names a past timeframe: "7d" for "last week", "30d" for "last month", etc. Future horizons ("next 3 months", "by year-end") are not lookbacks — omit recent for them.
 - Tags are hierarchical (e.g., "Acme/Product/GTM" starts with "Acme/")
 
 ## Filter Rules
@@ -66,6 +66,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on: meetings, messages, journals, chats, days, documents
 - **Omit `recent` by default.** Results are newest-first and capped by `limit`, so a query without `recent` returns the same documents for active topics — and reaches older history when matches are sparse. Full-history search is cheap; never add `recent` "just in case".
 - Add `recent` ONLY when the question itself is time-scoped: "last week" → "7d", "last month" → "30d", "this quarter" → "90d", "recently" → "30d".
+- Time-scoped means scoped to the past. A future horizon — "next 3 months", "upcoming quarter", "by year-end" — sets what the question plans toward, not how far back to search: omit `recent` so full history informs the answer.
 
 {{#if entities.block}}
 {{{entities.block}}}

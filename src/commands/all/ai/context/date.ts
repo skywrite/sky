@@ -37,7 +37,8 @@ const schema = z.object({
     .string()
     .describe(
       'Lookback duration for context search. Use shorthand: "7d", "30d", "6mo", "1y", "5y", etc. ' +
-        'Empty string "" if no time range is mentioned or implied.',
+        'Only past-referring ranges count — future horizons ("next 3 months", "by year-end") are not lookbacks. ' +
+        'Empty string "" if no past time range is mentioned or implied.',
     ),
   dates: z
     .array(z.string())
@@ -54,7 +55,8 @@ export default class AIContextDateTask extends Command {
       '2. Any specific dates mentioned (e.g., "2026-02-18")',
       '',
       'Uses Haiku for fast, cheap extraction. Returns empty string for since',
-      'when no temporal signal is present — the caller decides the default.',
+      'when no past time range is present — future horizons ("next 3 months")',
+      'are planning targets, not lookbacks. The caller decides the default.',
     ],
     usage: [
       'sky ai:context:date "What did I discuss with Alice last week?"',
