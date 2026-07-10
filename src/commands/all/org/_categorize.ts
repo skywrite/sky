@@ -1,10 +1,24 @@
-import { prompt } from '#shared/ai/llm/claude/mod.ts'
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { WebFetchResult } from './_webFetch.ts'
 import type { WikipediaSelectionResult } from './_wikipedia.ts'
 
 const CATEGORIZE_PROMPT_FILE = new URL('./prompts/org-categorize.prompt.md', import.meta.url).pathname
+
+const CategorizationSchema = z.object({
+  primary_sector: z.string(),
+  primary_subcategory: z.string(),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  kind: z.enum(['company', 'government', 'nonprofit', 'unknown']).optional(),
+  is_new_category: z.boolean().optional(),
+  category_reasoning: z.string().optional(),
+  ticker: z.string().optional(),
+  website: z.string().optional(),
+  description: z.string().optional(),
+})
 
 export interface OrgCategorizationResult {
   sector: string
@@ -18,12 +32,6 @@ export interface OrgCategorizationResult {
   description?: string
 }
 
-export interface CategorizeOptions {
-  model?: string
-  maxTokens?: number
-  apiKey?: string
-}
-
 export interface CategorizationSources {
   webFetch?: WebFetchResult
   wikipedia?: WikipediaSelectionResult
@@ -35,7 +43,6 @@ export interface CategorizationSources {
 export async function categorizeOrganization(
   taxonomyInfo: string,
   sources: CategorizationSources,
-  options?: CategorizeOptions,
 ): Promise<OrgCategorizationResult> {
   // Load and render the prompt template
   const promptContent = await readTextFile(CATEGORIZE_PROMPT_FILE)
@@ -66,19 +73,13 @@ export async function categorizeOrganization(
 
   const { output: categorizationPrompt } = renderPromptFile(promptContent, 'org-categorize.prompt.md', input)
 
-  // Call Claude API (jsonMode automatically handles JSON extraction)
-  const responseText = await prompt({
-    model: options?.model,
-    maxTokens: options?.maxTokens || 4096,
-    apiKey: options?.apiKey,
-    jsonMode: true,
+  const { object: parsed } = await generateObject({
+    ...aiModel('balanced'),
+    schema: CategorizationSchema,
     prompt: categorizationPrompt,
   })
 
-  // Parse the cleaned JSON response
-  const parsed = JSON.parse(responseText)
-
-  const result: OrgCategorizationResult = {
+  return {
     sector: parsed.primary_sector,
     subcategory: parsed.primary_subcategory,
     confidence: parsed.confidence || 'medium',
@@ -89,6 +90,4 @@ export async function categorizeOrganization(
     website: parsed.website,
     description: parsed.description,
   }
-
-  return result
 }

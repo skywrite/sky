@@ -1,4 +1,6 @@
-import { prompt } from '#shared/ai/llm/claude/mod.ts'
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import {
@@ -12,12 +14,19 @@ const SELECT_PROMPT_FILE = new URL('./prompts/org-wikipedia-select.prompt.md', i
 const DISAMBIGUATE_PROMPT_FILE = new URL('./prompts/org-wikipedia-disambiguate.prompt.md', import.meta.url).pathname
 const VALIDATE_PROMPT_FILE = new URL('./prompts/org-wikipedia-validate.prompt.md', import.meta.url).pathname
 
+const ArticleSelectionSchema = z.object({
+  selected_title: z.string(),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  reasoning: z.string().optional(),
+})
+
+const ArticleValidationSchema = z.object({
+  is_match: z.boolean(),
+})
+
 export interface WikipediaSelectionOptions {
   orgName?: string
   website?: string
-  apiKey?: string
-  model?: string
-  maxTokens?: number
   fullContent?: boolean // If true, fetch full article content instead of just intro
 }
 
@@ -106,15 +115,11 @@ async function selectBestArticleAI(
 
   const { output: selectionPrompt } = renderPromptFile(promptContent, 'org-wikipedia-select.prompt.md', input)
 
-  const responseText = await prompt({
-    model: options.model,
-    maxTokens: options.maxTokens || 2048,
-    apiKey: options.apiKey,
-    jsonMode: true,
+  const { object: parsed } = await generateObject({
+    ...aiModel('balanced'),
+    schema: ArticleSelectionSchema,
     prompt: selectionPrompt,
   })
-
-  const parsed = JSON.parse(responseText)
 
   // Find the selected article by title
   const selectedResult = results.find((r) => r.title === parsed.selected_title)
@@ -224,15 +229,11 @@ async function resolveDisambiguationPage(
     input,
   )
 
-  const responseText = await prompt({
-    model: options.model,
-    maxTokens: options.maxTokens || 2048,
-    apiKey: options.apiKey,
-    jsonMode: true,
+  const { object: parsed } = await generateObject({
+    ...aiModel('balanced'),
+    schema: ArticleSelectionSchema,
     prompt: disambiguationPrompt,
   })
-
-  const parsed = JSON.parse(responseText)
 
   // Fetch the selected article
   try {
@@ -280,14 +281,11 @@ async function validateArticleMatch(
 
   const { output: validationPrompt } = renderPromptFile(promptContent, 'org-wikipedia-validate.prompt.md', input)
 
-  const responseText = await prompt({
-    model: options.model,
-    maxTokens: options.maxTokens || 1024,
-    apiKey: options.apiKey,
-    jsonMode: true,
+  const { object: parsed } = await generateObject({
+    ...aiModel('balanced'),
+    schema: ArticleValidationSchema,
     prompt: validationPrompt,
   })
 
-  const parsed = JSON.parse(responseText)
   return parsed.is_match === true
 }

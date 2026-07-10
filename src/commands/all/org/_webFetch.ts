@@ -1,4 +1,6 @@
-import { prompt } from '#shared/ai/llm/claude/mod.ts'
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { aiModel } from '#shared/ai/models.ts'
 import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
 
 // Maximum tokens to send to AI for website content analysis
@@ -26,19 +28,18 @@ function truncateIfExceedsTokenLimit(content: string): string {
   return content
 }
 
+const WebFetchSchema = z.object({
+  name: z.string().describe('Organization name'),
+  summary: z.string().describe('Brief 1-2 sentence description of what the organization does'),
+})
+
 export interface WebFetchResult {
   name: string
   website: string
   summary: string
 }
 
-export interface WebFetchOptions {
-  model?: string
-  maxTokens?: number
-  apiKey?: string
-}
-
-export async function webFetch(url: string, options?: WebFetchOptions): Promise<WebFetchResult> {
+export async function webFetch(url: string): Promise<WebFetchResult> {
   // Normalize URL
   const normalizedUrl = normalizeUrl(url)
 
@@ -51,32 +52,20 @@ export async function webFetch(url: string, options?: WebFetchOptions): Promise<
   const html = await response.text()
   const truncatedHtml = truncateIfExceedsTokenLimit(html)
 
-  // Prompt for analyzing organizations
   const analysisPrompt = `Analyze this organization's website and extract key information.
 
 Website URL: ${url}
 Website HTML:
-${truncatedHtml}
+${truncatedHtml}`
 
-Return a JSON object with:
-{
-  "name": "Organization name",
-  "summary": "Brief 1-2 sentence description of what the organization does"
-}
-
-Return only valid JSON, no markdown formatting.`
-
-  const responseText = await prompt({
-    model: options?.model,
-    maxTokens: options?.maxTokens,
-    apiKey: options?.apiKey,
-    jsonMode: true,
+  const { object } = await generateObject({
+    ...aiModel('balanced'),
+    schema: WebFetchSchema,
     prompt: analysisPrompt,
   })
 
-  const result = JSON.parse(responseText) as Omit<WebFetchResult, 'website'>
   return {
-    ...result,
+    ...object,
     website: normalizedUrl,
   }
 }
