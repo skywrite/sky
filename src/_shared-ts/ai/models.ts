@@ -84,7 +84,7 @@ export const ROLES = {
   reasoning: 'default-opus-4.8',
   fast: 'default-haiku-4.5',
   balanced: 'default-sonnet-5',
-  vision: 'default-gpt-4o',
+  vision: 'default-sonnet-5',
 } satisfies Record<Role, ProfileName>
 
 const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', 'topK', 'maxRetries'])
