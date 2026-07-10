@@ -11,7 +11,7 @@ import { AI_PROFILES } from '#config'
  *
  * Three tiers:
  *   call site -> role      `aiModel('reasoning')`      semantic, stable, model-agnostic
- *   role      -> profile   `reasoning: 'opus-4-6'`     the swap point
+ *   role      -> profile   `reasoning: 'opus-4-8'`     the swap point
  *   profile   -> provider + model + options            the tuned, comparable unit
  *
  * A profile is exactly three fields. `provider` + `model` are the uniform identity;
@@ -81,7 +81,7 @@ export type ProfileName = keyof typeof PROFILES
 
 /** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
 export const ROLES = {
-  reasoning: 'default-opus-4.6',
+  reasoning: 'default-opus-4.8',
   fast: 'default-haiku-4.5',
   balanced: 'default-sonnet-5',
   vision: 'default-gpt-4o',
