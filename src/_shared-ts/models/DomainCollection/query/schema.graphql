@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-10T15:37:50.503Z
+# Generated at: 2026-07-10T22:46:38.821Z
 # =============================================================================
 
 type Query {
@@ -57,7 +57,7 @@ Video recording with transcript and summary
 """
 type Video {
   from: String # Presenter/creator
-  to: String # Intended audience
+  to: String # Intended audience: person name(s), or "#channel-name" for videos posted to a Slack channel
   when: String! # Time (HH:MM)
   medium: String! # Video platform: Video, Loom, YouTube, etc.
   summary: String # Brief summary
@@ -75,9 +75,9 @@ Messages from Slack, email, text, etc.
 """
 type Message {
   from: String # Sender name
-  to: String # Recipient(s)
+  to: String # Recipient(s): person name(s), or "#channel-name" for Slack channel messages
   when: String! # Time (HH:MM)
-  medium: String! # Channel: Slack, Email, iMessage, etc.
+  medium: String! # Platform: Slack, Email, iMessage, etc.
   summary: String # Brief summary
   date: String! # Date (YYYY-MM-DD)
   day: Day # The day this message was sent on
@@ -290,6 +290,8 @@ input VideoFilter {
   dateLte: String
   recent: String
   fromContains: String
+  toContains: String
+  toNotContains: String
   medium: String
   summaryContains: String
   tagsContains: String

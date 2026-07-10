@@ -88,6 +88,27 @@ summary: Widget launch sync
 Alice to Bob about the widget launch.`),
       path: '/test/time/2026/02/02-08/04/actions/messages/slack_Alice-to-Bob_Widget-launch-sync.md',
     },
+    {
+      doc: Document.fromMarkdown(`---
+from: Carol White
+to: "#next-data"
+medium: Slack
+summary: Funnel metrics request
+---
+Posted in the next-data channel.`),
+      path: '/test/time/2026/02/02-08/05/actions/messages/slack_Carol-to-next-data_Funnel-metrics-request.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+from: Jane Doe
+to: "#finance-updates"
+medium: Loom
+summary: Finance Weekly Update
+tags: [Finance]
+---
+Weekly finance video.`),
+      path: '/test/time/2026/02/02-08/05/actions/videos/Loom_Jane_Finance-Weekly-Update.md',
+    },
   ]
 
   const store = {
@@ -355,6 +376,46 @@ test('executeQuery - involvesAny and involvesAll work end-to-end against the sch
     given: 'an involvesAll query where one listed person is absent',
     should: 'return no messages',
     actual: allMiss.data?.messages.length,
+    expected: 0,
+  })
+})
+
+test('executeQuery - toContains filters channel messages and videos', async () => {
+  const store = createMockStore()
+
+  const msgHit = await executeQuery<{ messages: Array<{ to: string }> }>(
+    '{ messages(where: { toContains: "#next-data" }) { to } }',
+    store,
+  )
+
+  assert({
+    given: 'a messages query filtering to a Slack channel',
+    should: 'return only the channel message',
+    actual: [msgHit.data?.messages.length, msgHit.data?.messages[0]?.to],
+    expected: [1, '#next-data'],
+  })
+
+  const videoHit = await executeQuery<{ videos: Array<{ to: string }> }>(
+    '{ videos(where: { toContains: "#finance-updates" }) { to } }',
+    store,
+  )
+
+  assert({
+    given: 'a videos query filtering to a Slack channel',
+    should: 'return only the channel video',
+    actual: [videoHit.data?.videos.length, videoHit.data?.videos[0]?.to],
+    expected: [1, '#finance-updates'],
+  })
+
+  const videoMiss = await executeQuery<{ videos: Array<{ to: string }> }>(
+    '{ videos(where: { toNotContains: "#finance-updates" }) { to } }',
+    store,
+  )
+
+  assert({
+    given: 'a videos query excluding the channel',
+    should: 'return no videos',
+    actual: videoMiss.data?.videos.length,
     expected: 0,
   })
 })

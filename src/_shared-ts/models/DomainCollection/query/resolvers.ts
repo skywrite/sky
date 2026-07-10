@@ -224,6 +224,8 @@ export interface VideoFilter {
   dateLte?: string
   recent?: string
   fromContains?: string
+  toContains?: string
+  toNotContains?: string
   medium?: string
   summaryContains?: string
   tagsContains?: string
@@ -669,6 +671,8 @@ function matchesVideoFilter(doc: Document, filter: VideoFilter, path?: string, r
   if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
   if (filter.fromContains && !matchesContains(doc, 'from', filter.fromContains)) return false
+  if (filter.toContains && !matchesContains(doc, 'to', filter.toContains)) return false
+  if (filter.toNotContains && matchesContains(doc, 'to', filter.toNotContains)) return false
   if (filter.medium && !matchesExact(doc, 'medium', filter.medium)) return false
   if (filter.summaryContains && !matchesContains(doc, 'summary', filter.summaryContains)) return false
   if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
