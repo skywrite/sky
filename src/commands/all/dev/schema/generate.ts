@@ -313,6 +313,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAny: '[String!]',
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
+      relContains: 'String',
     },
   },
   OrgFilter: {
@@ -325,6 +326,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAny: '[String!]',
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
+      relContains: 'String',
     },
   },
   ProjectFilter: {
@@ -339,6 +341,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involves: 'String',
       involvesAny: '[String!]',
       involvesAll: '[String!]',
+      relContains: 'String',
     },
   },
   DecisionFilter: {
@@ -355,6 +358,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involves: 'String',
       involvesAny: '[String!]',
       involvesAll: '[String!]',
+      relContains: 'String',
     },
   },
   GoalFilter: {
@@ -368,6 +372,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involves: 'String',
       involvesAny: '[String!]',
       involvesAll: '[String!]',
+      relContains: 'String',
     },
   },
   IdeaFilter: {
@@ -381,6 +386,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involves: 'String',
       involvesAny: '[String!]',
       involvesAll: '[String!]',
+      relContains: 'String',
     },
   },
   PlaceFilter: {
@@ -393,6 +399,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAny: '[String!]',
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
+      relContains: 'String',
     },
   },
   DayFilter: {

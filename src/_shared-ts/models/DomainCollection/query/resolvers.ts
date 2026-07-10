@@ -89,6 +89,7 @@ export interface PersonFilter {
   tagsContainsAny?: string[]
   tagsContainsAll?: string[]
   tagsStartsWith?: string
+  relContains?: string
 }
 
 export interface OrgFilter {
@@ -100,6 +101,7 @@ export interface OrgFilter {
   tagsContainsAny?: string[]
   tagsContainsAll?: string[]
   tagsStartsWith?: string
+  relContains?: string
 }
 
 export interface ProjectFilter {
@@ -113,6 +115,7 @@ export interface ProjectFilter {
   involves?: string
   involvesAny?: string[]
   involvesAll?: string[]
+  relContains?: string
 }
 
 export interface DecisionFilter {
@@ -128,6 +131,7 @@ export interface DecisionFilter {
   involves?: string
   involvesAny?: string[]
   involvesAll?: string[]
+  relContains?: string
 }
 
 export interface GoalFilter {
@@ -140,6 +144,7 @@ export interface GoalFilter {
   involves?: string
   involvesAny?: string[]
   involvesAll?: string[]
+  relContains?: string
 }
 
 export interface IdeaFilter {
@@ -152,6 +157,7 @@ export interface IdeaFilter {
   involves?: string
   involvesAny?: string[]
   involvesAll?: string[]
+  relContains?: string
 }
 
 export interface PlaceFilter {
@@ -163,6 +169,7 @@ export interface PlaceFilter {
   tagsContainsAny?: string[]
   tagsContainsAll?: string[]
   tagsStartsWith?: string
+  relContains?: string
 }
 
 export interface DayFilter {
@@ -686,6 +693,7 @@ function matchesPersonFilter(doc: Document, filter: PersonFilter): boolean {
   if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -702,6 +710,7 @@ function matchesOrgFilter(doc: Document, filter: OrgFilter): boolean {
   if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -716,6 +725,7 @@ function matchesProjectFilter(doc: Document, filter: ProjectFilter, resolveNames
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -733,6 +743,7 @@ function matchesDecisionFilter(doc: Document, filter: DecisionFilter, resolveNam
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -746,6 +757,7 @@ function matchesGoalFilter(doc: Document, filter: GoalFilter, resolveNames?: Nam
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -766,6 +778,7 @@ function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, reso
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
@@ -792,6 +805,7 @@ function matchesPlaceFilter(doc: Document, filter: PlaceFilter): boolean {
   if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
   return true
 }
 
