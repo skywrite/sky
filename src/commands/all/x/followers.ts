@@ -1,7 +1,7 @@
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { chromium } from 'playwright'
-import { visionFromFile } from '#shared/ai/llm/openai/mod.ts'
+import { visionFromFile } from '#shared/ai/llm/openai/vision.ts'
 import * as path from 'node:path'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
