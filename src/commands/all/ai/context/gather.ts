@@ -24,10 +24,6 @@ import { readTextFile } from '#shared/fs/mod.ts'
 
 const params = {
   question: Arg.string('Question to gather context for'),
-  model: Flag.string('Model to use for query generation', {
-    short: 'M',
-    default: () => 'claude-opus-4-6',
-  }),
   raw: Flag.boolean('Output raw markdown without formatting', { default: false }),
   json: Flag.boolean('Output as JSON', { default: false }),
   depth: Flag.number('Entity resolution depth', { default: () => Infinity }),
@@ -77,14 +73,13 @@ export default class AIContextGatherTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<GatherResult>> {
     const { config, output } = context
-    const { question, model, raw, json, depth } = args
+    const { question, raw, json, depth } = args
 
     // Step 1: Generate GraphQL query using AI
     output.log(colors.dim('Generating query...'))
 
     const selResult = await tasks.run<{ query: string }>('ai:context:sel', {
       _: ['ai:context:sel', question], // positional arg
-      model,
     })
 
     if (selResult.status !== 'success' || !selResult.data?.query) {

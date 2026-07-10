@@ -19,14 +19,6 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 
 const params = {
   question: Arg.string('Question to find relevant files for'),
-  provider: Flag.string('AI provider (claude, openai, ollama, lm-studio)', {
-    short: 'p',
-    default: () => 'claude',
-  }),
-  model: Flag.string('Model to use for query generation', {
-    short: 'M',
-    optional: true,
-  }),
   since: Flag.string('Only include time-based docs from this period (e.g., 1y, 6mo, 90d, auto)', {
     short: 's',
     default: () => 'auto',
@@ -86,7 +78,7 @@ export default class AIContextFilesTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<FilesResult>> {
     const { config, output } = context
-    const { question, provider, model, since, server, raw, json, limit } = args
+    const { question, since, server, raw, json, limit } = args
     const baseDir = config.DIR_BASE as string
 
     // Step 1: Resolve timeframe. No extracted timeframe means no `recent`
@@ -113,8 +105,6 @@ export default class AIContextFilesTask extends Command {
 
     const selResult = await tasks.run<{ query: string }>('ai:context:sel', {
       _: ['ai:context:sel', question],
-      provider,
-      ...(model ? { model } : {}),
       since: resolvedSince === 'all' ? undefined : resolvedSince,
     })
 
