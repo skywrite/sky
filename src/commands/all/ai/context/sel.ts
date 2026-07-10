@@ -12,6 +12,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
 import { aiModel } from '#shared/ai/models.ts'
+import { cachedInstructions } from '#shared/ai/promptCache.ts'
 
 // -----------------------------------------------------------------------------
 // File Paths
@@ -107,7 +108,7 @@ Write the GraphQL query to gather context for answering this question.`
     // Sonnet 4.6; role now points at Sonnet 5).
     const result = await generateText({
       ...aiModel('balanced'),
-      instructions: systemPrompt,
+      instructions: cachedInstructions(systemPrompt),
       prompt: userPrompt,
     })
 

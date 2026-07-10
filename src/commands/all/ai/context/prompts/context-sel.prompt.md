@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-07-05
+updated: 2026-07-10
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -21,7 +21,6 @@ Given a question, write a GraphQL query that would fetch the relevant context to
 
 ## Context
 
-- Notebook date: {{context.notebookDate}} {{context.notebookTime}} (notebook days extend past midnight - "today" means the notebook date)
 - Only add recent when the question names a timeframe: "7d" for "last week", "30d" for "last month", etc.
 - Tags are hierarchical (e.g., "Acme/Product/GTM" starts with "Acme/")
 
@@ -90,3 +89,9 @@ Return ONLY the GraphQL query, no explanation. The query should be valid GraphQL
 ## Schema
 
 {{user.schema}}
+
+<!-- prompt-cache-boundary -->
+
+## Current Date
+
+Notebook date: {{context.notebookDate}} {{context.notebookTime}} (notebook days extend past midnight - "today" means the notebook date)
