@@ -2,8 +2,6 @@ import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { DIR_TIME } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -19,6 +17,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { MCPTool } from '#mcp/decorators.ts'
 import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
+import { summarizeSlackMessage } from './lib/summarize.ts'
 import resolveRecipient from './cli/export/helpers/resolveRecipient.ts'
 
 const params = {
@@ -188,20 +187,10 @@ export default class SlackNewTask extends Command {
         ? await convertToNotebookTimezone(data.message.timeLabel)
         : args.when
 
-    // Summarize the message
+    // Summarize the message (thread replies included — the root is often just a header)
     const messageText = data.message.text.trim()
     let summary = args.summary
-    if (!summary && messageText) {
-      try {
-        const { text } = await generateText({
-          ...aiModel('fast'),
-          prompt: `Summarize this Slack message in 5-7 words. Return ONLY the summary, no quotes or punctuation at the end.\n\n${messageText}`,
-        })
-        summary = text.trim()
-      } catch {
-        summary = messageText.slice(0, 80)
-      }
-    }
+    if (!summary) summary = await summarizeSlackMessage(data.message, data.thread?.replies)
     if (!summary) summary = 'Slack message'
 
     // Derive from/to

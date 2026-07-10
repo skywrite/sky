@@ -1,7 +1,5 @@
 import * as path from 'node:path'
 import ms from 'ms'
-import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { exists, outputFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -11,6 +9,7 @@ import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import slugify from '#lib/string/slugify.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { resolveRecipient } from '#commands/all/slack/cli/export/helpers/mod.ts'
+import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -93,20 +92,9 @@ export default class SlackFollowNewTask extends Command {
         ? await convertToNotebookTimezone(data.message.timeLabel)
         : args.when
 
-    // 2. Summarize the message in 5-9 words
+    // 2. Summarize in 5-7 words (thread replies included — the root is often just a header)
     const messageText = data.message.text.trim()
-    let summary = 'Follow'
-    if (messageText) {
-      try {
-        const { text } = await generateText({
-          ...aiModel('fast'),
-          prompt: `Summarize this Slack message in 5-7 words. Return ONLY the summary, no quotes or punctuation at the end.\n\n${messageText}`,
-        })
-        summary = text.trim()
-      } catch {
-        summary = messageText.slice(0, 80)
-      }
-    }
+    const summary = (await summarizeSlackMessage(data.message, data.thread?.replies)) ?? 'Follow'
 
     // 3. Derive from/to/channel
     const from = data.message.userName
