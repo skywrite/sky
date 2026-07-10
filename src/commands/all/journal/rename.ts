@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import { readDir, readTextFile, rename, writeTextFile } from '#shared/fs/mod.ts'
 import { DIR_TIME } from '#shared/config.ts'
@@ -10,7 +10,6 @@ import slugify from '#lib/string/slugify.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
-const MODEL = 'claude-opus-4-6'
 
 const params = {
   day: dayNoFutureArg(),
@@ -82,7 +81,7 @@ export default class JournalRenameTask extends Command {
     output.log(`Generating summaries for ${journals.length} journal(s)...`)
 
     const result = await generateObject({
-      model: anthropic(MODEL),
+      ...aiModel('reasoning'),
       schema: SummarySchema,
       prompt: buildPrompt(journals),
     })

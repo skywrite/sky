@@ -7,7 +7,7 @@
  */
 
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -82,7 +82,7 @@ export default class AIContextDateTask extends Command {
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-date.prompt.md', renderInput)
 
     const { object } = await generateObject({
-      model: anthropic('claude-haiku-4-5-20251001'),
+      ...aiModel('fast'),
       schema,
       instructions: systemPrompt,
       prompt: message,

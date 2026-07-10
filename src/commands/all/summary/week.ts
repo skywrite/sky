@@ -6,7 +6,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModelByProfile } from '#shared/ai/models.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
@@ -29,9 +29,9 @@ const params = {
     required: true,
     parse: (input) => parsePartialDate(input, { rejectFuture: true }),
   }),
-  model: Flag.string('Claude model to use', {
+  model: Flag.string('Model profile to use', {
     short: 'm',
-    default: () => 'claude-opus-4-6',
+    default: () => 'default-opus-4.6',
   }),
   force: Flag.boolean('Overwrite existing summary file', {
     short: 'f',
@@ -212,7 +212,7 @@ export default class SummaryWeekTask extends Command {
     let response: string
     try {
       const result = await generateText({
-        model: anthropic(model),
+        ...aiModelByProfile(model),
         instructions: promptTemplate,
         prompt: userPrompt,
       })

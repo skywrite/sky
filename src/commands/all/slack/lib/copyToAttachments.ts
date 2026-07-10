@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { DIR_ATTACHMENTS } from '#config'
 import slugify from '#lib/string/slugify.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
@@ -59,7 +59,7 @@ async function describeImageForFilename(imagePath: string): Promise<string | und
   try {
     const imageData = await readFile(imagePath)
     const { text } = await generateText({
-      model: anthropic('claude-haiku-4-5-20251001'),
+      ...aiModel('fast'),
       messages: [
         {
           role: 'user',

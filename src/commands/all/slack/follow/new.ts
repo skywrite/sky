@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import ms from 'ms'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { DIR_HEARTBEAT_FOLLOW } from '#config'
 import { exists, outputFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -99,7 +99,7 @@ export default class SlackFollowNewTask extends Command {
     if (messageText) {
       try {
         const { text } = await generateText({
-          model: anthropic('claude-haiku-4-5-20251001'),
+          ...aiModel('fast'),
           prompt: `Summarize this Slack message in 5-7 words. Return ONLY the summary, no quotes or punctuation at the end.\n\n${messageText}`,
         })
         summary = text.trim()

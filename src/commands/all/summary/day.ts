@@ -5,7 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModelByProfile } from '#shared/ai/models.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -22,7 +22,7 @@ const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
 const params = {
   day: dayNoFutureArg(),
-  model: Flag.string('Claude model to use', { short: 'm', default: () => 'claude-opus-4-6' }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.6' }),
   force: Flag.boolean('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout instead of file', { default: false }),
@@ -209,7 +209,7 @@ export default class SummaryDayTask extends Command {
       // summary. It also helps when iterating on prompts—you can tell if output
       // changes are from prompt edits vs random variation.
       const result = await generateText({
-        model: anthropic(model),
+        ...aiModelByProfile(model),
         instructions: promptTemplate,
         prompt: userPrompt,
         temperature: 0,

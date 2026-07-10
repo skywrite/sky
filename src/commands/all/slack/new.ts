@@ -3,7 +3,7 @@ import { unlink } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { DIR_TIME } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -194,7 +194,7 @@ export default class SlackNewTask extends Command {
     if (!summary && messageText) {
       try {
         const { text } = await generateText({
-          model: anthropic('claude-haiku-4-5-20251001'),
+          ...aiModel('fast'),
           prompt: `Summarize this Slack message in 5-7 words. Return ONLY the summary, no quotes or punctuation at the end.\n\n${messageText}`,
         })
         summary = text.trim()

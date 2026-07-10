@@ -4,7 +4,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModelByProfile } from '#shared/ai/models.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import { isCommandAvailable, runCommand } from '#lib/sys/command.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -45,7 +45,7 @@ const SPREADSHEET_EXTENSIONS = new Set(['.xlsx', '.xls', '.numbers'])
 
 const params = {
   file: Arg.string('Path to the document to summarize', { required: true }),
-  model: Flag.string('Claude model to use', { short: 'm', default: () => 'claude-opus-4-6' }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.6' }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout', { default: false }),
   output: Flag.string('Write summary to this file path', { short: 'o' }),
@@ -181,7 +181,7 @@ export default class SummaryDocTask extends Command {
       if (pdfData) {
         // PDF: use messages array with file content part
         const result = await generateText({
-          model: anthropic(model),
+          ...aiModelByProfile(model),
           instructions: systemPrompt,
           messages: [
             {
@@ -198,7 +198,7 @@ export default class SummaryDocTask extends Command {
       } else if (imageData) {
         // Image: use messages array with image content part
         const result = await generateText({
-          model: anthropic(model),
+          ...aiModelByProfile(model),
           instructions: systemPrompt,
           messages: [
             {
@@ -216,7 +216,7 @@ export default class SummaryDocTask extends Command {
         // Text: use simple system + prompt
         const fullPrompt = `${userPrompt}\n---\n\n${textContent}`
         const result = await generateText({
-          model: anthropic(model),
+          ...aiModelByProfile(model),
           instructions: systemPrompt,
           prompt: fullPrompt,
           temperature: 0,

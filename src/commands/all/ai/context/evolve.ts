@@ -9,7 +9,7 @@
  */
 
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -139,7 +139,7 @@ export default class AIContextEvolveTask extends Command {
     }
 
     const { object } = await generateObject({
-      model: anthropic('claude-sonnet-5'),
+      ...aiModel('balanced'),
       schema,
       instructions: systemPrompt,
       prompt: parts.join('\n'),
