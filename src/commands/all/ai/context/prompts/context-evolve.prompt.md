@@ -44,6 +44,13 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Multiple people, all involved: `involvesAll: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involvesAll: ["Alice Smith", "Bob Jones"] }, limit: 10)` for their conversation with each other
 - When the conversation shifts to a specific person, ALSO fetch their profile document: `people(where: { nameContains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
 
+**Slack channels** → `toContains: "#channel-name"`
+- Works on: messages, videos
+- Channel content stores the channel in the `to:` field with the `#` prefix (e.g. `to: "#next-data"`)
+- Query BOTH root fields — channel messages are `messages`, Looms/recordings posted to the channel are `videos`: `messages(where: { toContains: "#finance-updates" }, limit: 20) { from to when date summary markdown path }` plus the same `where` on `videos`
+- Do NOT add `medium` to channel queries — the `#` prefix already implies Slack, and channel videos have `medium: "Loom"`/`"Video"`, not `"Slack"`
+- Use `involves` for people, not channels
+
 **Tags** → `tagsContains`, `tagsContainsAny`, `tagsContainsAll`, or `tagsStartsWith`
 - `tagsContains: "<exact-tag>"` — match a single exact tag
 - `tagsContainsAny: ["Tag/A", "Tag/B"]` — match ANY of the listed tags (OR)
