@@ -10,7 +10,6 @@ import slugify from '#lib/string/slugify.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
-
 const params = {
   day: dayNoFutureArg(),
   dryRun: Flag.boolean('Preview renames without executing', { short: 'd', default: false }),

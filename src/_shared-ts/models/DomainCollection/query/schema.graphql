@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-09T16:13:51.919Z
+# Generated at: 2026-07-10T15:37:50.503Z
 # =============================================================================
 
 type Query {
@@ -334,6 +334,7 @@ input PersonFilter {
   tagsContainsAny: [String!]
   tagsContainsAll: [String!]
   tagsStartsWith: String
+  relContains: String
 }
 
 input OrgFilter {
@@ -345,6 +346,7 @@ input OrgFilter {
   tagsContainsAny: [String!]
   tagsContainsAll: [String!]
   tagsStartsWith: String
+  relContains: String
 }
 
 input ProjectFilter {
@@ -358,6 +360,7 @@ input ProjectFilter {
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
+  relContains: String
 }
 
 input DecisionFilter {
@@ -373,6 +376,7 @@ input DecisionFilter {
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
+  relContains: String
 }
 
 input GoalFilter {
@@ -385,6 +389,7 @@ input GoalFilter {
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
+  relContains: String
 }
 
 input IdeaFilter {
@@ -397,6 +402,7 @@ input IdeaFilter {
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
+  relContains: String
 }
 
 input PlaceFilter {
@@ -408,6 +414,7 @@ input PlaceFilter {
   tagsContainsAny: [String!]
   tagsContainsAll: [String!]
   tagsStartsWith: String
+  relContains: String
 }
 
 input DayFilter {

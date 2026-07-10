@@ -115,6 +115,28 @@ Decided to move.`),
     },
   ]
 
+  const projectsData = [
+    {
+      doc: Document.fromMarkdown(`---
+name: Acme Pay GTM
+status: open
+tags: [Sample/Sales]
+rel: [decisions/Hire-CTO, people/Jane-Doe]
+---
+Go-to-market plan.`),
+      path: '/test/projects/Acme-Pay-GTM.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+name: Website Refresh
+status: open
+tags: [Sample/Web]
+---
+Refresh the marketing site.`),
+      path: '/test/projects/Website-Refresh.md',
+    },
+  ]
+
   const chatsData = [
     {
       doc: Document.fromMarkdown(`---
@@ -197,7 +219,7 @@ Classic cocktail bar.`),
   return {
     people: createMockCollection(peopleData),
     orgs: createMockCollection([]),
-    projects: createMockCollection([]),
+    projects: createMockCollection(projectsData),
     decisions: createMockCollection(decisionsData),
     goals: createMockCollection([]),
     ideas: createMockCollection([]),
@@ -789,5 +811,51 @@ test('resolvers - chats do not appear in meetings or messages', () => {
     should: 'not leak into messages',
     actual: messages.some((m) => m.path.includes('/ai-chats/')),
     expected: false,
+  })
+})
+
+// =============================================================================
+// relContains on entity types
+// =============================================================================
+
+test('resolvers - projects filters by relContains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { relContains: 'hire-cto' } })
+
+  assert({
+    given: 'relContains filter matching a linked decision (case-insensitive)',
+    should: 'return only the project carrying that rel link',
+    actual: result.map((p) => p.name),
+    expected: ['Acme Pay GTM'],
+  })
+})
+
+test('resolvers - projects relContains with no match returns empty', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { relContains: 'Unrelated-Thing' } })
+
+  assert({
+    given: 'relContains filter matching no rel links',
+    should: 'return no projects',
+    actual: result.length,
+    expected: 0,
+  })
+})
+
+test('resolvers - people filters by relContains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.people({ where: { relContains: 'Bob Jones' } })
+
+  assert({
+    given: 'relContains filter matching a related person',
+    should: 'return the linked person',
+    actual: result.map((p) => p.name),
+    expected: ['Alice Smith'],
   })
 })
