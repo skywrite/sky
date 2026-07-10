@@ -8,9 +8,9 @@ function modelId(m: ResolvedModel['model']): string {
 test('aiModel resolves a role to its baseline profile model', () => {
   assert({
     given: 'the reasoning role',
-    should: 'resolve to the opus-4-6 profile model',
+    should: 'resolve to the opus-4-8 profile model',
     actual: modelId(aiModel('reasoning').model),
-    expected: 'claude-opus-4-6',
+    expected: 'claude-opus-4-8',
   })
   assert({
     given: 'the fast role',
@@ -36,8 +36,17 @@ test('option-less baseline profiles carry no providerOptions', () => {
   assert({
     given: 'a baseline profile with no options',
     should: 'omit providerOptions (behaviour-preserving)',
-    actual: aiModel('reasoning').providerOptions,
+    actual: aiModel('fast').providerOptions,
     expected: undefined,
+  })
+})
+
+test('the reasoning role carries the opus-4.8 effort/thinking options', () => {
+  assert({
+    given: 'the reasoning role after the 4.8 repoint',
+    should: 'carry effort xhigh under providerOptions.anthropic',
+    actual: aiModel('reasoning').providerOptions?.['anthropic']?.['effort'],
+    expected: 'xhigh',
   })
 })
 

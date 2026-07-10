@@ -45,7 +45,7 @@ const SPREADSHEET_EXTENSIONS = new Set(['.xlsx', '.xls', '.numbers'])
 
 const params = {
   file: Arg.string('Path to the document to summarize', { required: true }),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.6' }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.8' }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout', { default: false }),
   output: Flag.string('Write summary to this file path', { short: 'o' }),
@@ -88,7 +88,7 @@ export default class SummaryDocTask extends Command {
       'sky summary:doc financials.xlsx               # Summarize Excel (via SheetJS)',
       'sky summary:doc report.pdf --dry-run           # Preview prompt without calling AI',
       'sky summary:doc report.pdf -o /tmp/summary.md  # Write summary to file',
-      'sky summary:doc report.pdf -m claude-opus-4-6  # Use a specific model',
+      'sky summary:doc report.pdf -m default-sonnet-5  # Use a specific model profile',
     ],
     params,
   }

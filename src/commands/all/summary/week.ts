@@ -31,7 +31,7 @@ const params = {
   }),
   model: Flag.string('Model profile to use', {
     short: 'm',
-    default: () => 'default-opus-4.6',
+    default: () => 'default-opus-4.8',
   }),
   force: Flag.boolean('Overwrite existing summary file', {
     short: 'f',

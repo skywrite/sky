@@ -22,7 +22,7 @@ const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
 const params = {
   day: dayNoFutureArg(),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.6' }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.8' }),
   force: Flag.boolean('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout instead of file', { default: false }),
