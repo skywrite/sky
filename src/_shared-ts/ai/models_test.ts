@@ -26,9 +26,9 @@ test('aiModel resolves a role to its baseline profile model', () => {
   })
   assert({
     given: 'the vision role',
-    should: 'resolve to the openai gpt-4o profile model',
+    should: 'resolve to the sonnet-5 profile model',
     actual: modelId(aiModel('vision').model),
-    expected: 'gpt-4o',
+    expected: 'claude-sonnet-5',
   })
 })
 

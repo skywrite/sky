@@ -1,7 +1,9 @@
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { chromium } from 'playwright'
-import { visionFromFile } from '#shared/ai/llm/openai/vision.ts'
+import { generateText } from 'ai'
+import { aiModel } from '#shared/ai/models.ts'
+import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
@@ -38,7 +40,6 @@ export default class XFollowersTask extends Command {
         'a[href*="/verified_followers"], a[href*="/followers"]:not([href*="/following"])',
         '/tmp/twitter-follower-tooltip.png',
         'Look at this screenshot of a Twitter/X profile. Find the tooltip showing the exact follower count (it will be a number with commas like "14,072"). Return ONLY the number with commas, nothing else.',
-        context,
       )
 
       const followingCountFromVision = await this.extractCountWithVision(
@@ -46,7 +47,6 @@ export default class XFollowersTask extends Command {
         'a[href*="/following"]',
         '/tmp/twitter-following-tooltip.png',
         'Look at this screenshot of a Twitter/X profile. Find the tooltip showing the exact following count (it will be a number with commas like "1,028"). Return ONLY the number with commas, nothing else.',
-        context,
       )
 
       // Fallback to DOM scraping if vision extraction failed
@@ -100,7 +100,6 @@ export default class XFollowersTask extends Command {
     linkSelector: string,
     screenshotPath: string,
     prompt: string,
-    context: any,
   ): Promise<string | null> {
     const link = page.locator(linkSelector).first()
     const box = await link.boundingBox().catch(() => null)
@@ -121,18 +120,27 @@ export default class XFollowersTask extends Command {
       },
     })
 
-    // Extract with vision API
+    // Extract with the vision model
     try {
-      const extractedCount = await visionFromFile(screenshotPath, {
-        prompt,
-        maxTokens: 50,
-        apiKey: context.env.OPENAI_API_KEY,
+      const imageData = await readFile(screenshotPath)
+      const { text } = await generateText({
+        ...aiModel('vision'),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'file' as const, data: imageData, mediaType: 'image/png' },
+              { type: 'text' as const, text: prompt },
+            ],
+          },
+        ],
       })
 
+      const extractedCount = text.trim()
       if (extractedCount && /[\d,]+/.test(extractedCount)) {
         return extractedCount
       }
-    } catch (error) {
+    } catch {
       // Vision extraction failed, will fall back to DOM scraping
     }
 
