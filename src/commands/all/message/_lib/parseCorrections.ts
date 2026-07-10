@@ -1,10 +1,9 @@
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
-const MODEL = 'claude-sonnet-5'
 const PROMPT_FILE = new URL('../prompts/parse-corrections.prompt.md', import.meta.url).pathname
 
 const CorrectionsSchema = z.object({
@@ -55,7 +54,7 @@ export async function parseCorrections(ctx: CorrectionsContext): Promise<ParsedC
   const { output: prompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
 
   const result = await generateObject({
-    model: anthropic(MODEL),
+    ...aiModel('balanced'),
     schema: CorrectionsSchema,
     prompt,
   })

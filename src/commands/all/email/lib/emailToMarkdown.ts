@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -74,7 +74,7 @@ export async function emailToMarkdown(
     const { output: prompt } = renderPromptFile(promptContent, 'email-to-markdown.prompt.md', renderInput)
 
     const { text } = await generateText({
-      model: anthropic('claude-sonnet-5'),
+      ...aiModel('balanced'),
       prompt,
     })
 

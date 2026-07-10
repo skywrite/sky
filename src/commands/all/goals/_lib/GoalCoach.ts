@@ -12,7 +12,7 @@
 
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
@@ -52,7 +52,7 @@ export interface ReviewResult {
  */
 async function generateExpertPrompt(area: string): Promise<string> {
   const result = await generateText({
-    model: anthropic('claude-opus-4-6'),
+    ...aiModel('reasoning'),
     instructions: `You create system prompts for domain-expert AI coaches.
 
 Given an area someone wants to improve, write a system prompt for a world-class expert.
@@ -82,7 +82,7 @@ async function continueConversation(
   isFirst: boolean,
 ): Promise<{ response: string; done: boolean }> {
   const result = await generateText({
-    model: anthropic('claude-opus-4-6'),
+    ...aiModel('reasoning'),
     instructions:
       expertPrompt +
       `
@@ -124,7 +124,7 @@ async function generateGoalMarkdown(
   }[timeframe]
 
   const result = await generateText({
-    model: anthropic('claude-opus-4-6'),
+    ...aiModel('reasoning'),
     instructions:
       expertPrompt +
       `
@@ -316,7 +316,7 @@ export class GoalCoach {
     spinner.start('Thinking...')
 
     const result = await generateText({
-      model: anthropic('claude-opus-4-6'),
+      ...aiModel('reasoning'),
       instructions: `You're a direct coach reviewing someone's goal progress.
 Be specific and actionable. 2-3 sentences max. No fluff.`,
       prompt: `Goals:\n${content}\n\nUpdate: ${update}\n\nGive feedback.`,

@@ -1,11 +1,10 @@
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { loadImageForAI } from './loadImage.ts'
 
-const MODEL = 'claude-opus-4-6'
 const PROMPT_FILE = new URL('../prompts/extract-from-image.prompt.md', import.meta.url).pathname
 
 const MessageSchema = z.object({
@@ -118,7 +117,7 @@ export async function extractMessageFromImage(imagePaths: string[], aiContext?: 
   }
 
   const result = await generateObject({
-    model: anthropic(MODEL),
+    ...aiModel('reasoning'),
     schema: ExtractionSchema,
     messages: [
       {

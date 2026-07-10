@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -51,8 +51,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Constants
 // -----------------------------------------------------------------------------
 
-const MODEL = anthropic('claude-opus-4-6')
-const MODEL_LIGHT = anthropic('claude-haiku-4-5-20251001')
 const CLARIFIER_FILE = new URL('./prompts/decisions-clarifier.prompt.md', import.meta.url).pathname
 const OUTCOMES_FILE = new URL('./prompts/decisions-outcomes.prompt.md', import.meta.url).pathname
 const FORMAT_FILE = new URL('./prompts/decisions-new.prompt.md', import.meta.url).pathname
@@ -124,7 +122,7 @@ async function clarifyDecision(
 
     try {
       const result = await generateText({
-        model: MODEL,
+        ...aiModel('reasoning'),
         prompt: renderedClarifier,
       })
 
@@ -235,7 +233,7 @@ async function clarifyOutcomes(
 
     try {
       const result = await generateText({
-        model: MODEL,
+        ...aiModel('reasoning'),
         prompt: renderedOutcomes,
       })
 
@@ -444,7 +442,7 @@ export default class DecisionsNewTask extends Command {
 
     try {
       const result = await generateText({
-        model: MODEL,
+        ...aiModel('reasoning'),
         prompt: renderedFormat,
       })
 

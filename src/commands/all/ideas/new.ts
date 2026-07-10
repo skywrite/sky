@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -50,7 +50,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Constants
 // -----------------------------------------------------------------------------
 
-const MODEL = anthropic('claude-opus-4-6')
 const CLARIFIER_FILE = new URL('./prompts/ideas-clarifier.prompt.md', import.meta.url).pathname
 const FORMAT_FILE = new URL('./prompts/ideas-format.prompt.md', import.meta.url).pathname
 
@@ -98,7 +97,7 @@ async function clarifyIdea(
 
     try {
       const result = await generateText({
-        model: MODEL,
+        ...aiModel('reasoning'),
         prompt: renderedClarifier,
       })
 
@@ -291,7 +290,7 @@ export default class IdeasNewTask extends Command {
 
     try {
       const result = await generateText({
-        model: MODEL,
+        ...aiModel('reasoning'),
         prompt: renderedFormat,
       })
 

@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { DIR_BASE } from '#shared/config.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
@@ -135,7 +135,7 @@ Output ONLY the bio text, nothing else.`
 
   try {
     const result = await generateText({
-      model: anthropic('claude-sonnet-5'),
+      ...aiModel('balanced'),
       prompt,
     })
     return result.text.trim()

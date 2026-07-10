@@ -1,5 +1,5 @@
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -178,7 +178,7 @@ export default class UtilTzConvertTask extends Command {
     let parsed: z.infer<typeof TimezoneParseSchema>
     try {
       const result = await generateObject({
-        model: anthropic('claude-sonnet-5'),
+        ...aiModel('balanced'),
         schema: TimezoneParseSchema,
         instructions: systemPrompt,
         prompt: query,

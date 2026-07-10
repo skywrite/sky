@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import colors from 'picocolors'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import slugify from '#lib/string/slugify.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
@@ -104,7 +104,7 @@ export default class JournalNewTask extends Command {
 
           try {
             const parseResult = await generateText({
-              model: anthropic('claude-sonnet-5'),
+              ...aiModel('balanced'),
               prompt: `Parse these user corrections for journal metadata. Extract any fields the user is updating.
 
 Current metadata:

@@ -1,5 +1,5 @@
 import { generateObject, generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
@@ -11,9 +11,6 @@ import { dayWord } from '#universal/dates/mod.ts'
 import type { CommandContext } from '#commands/mod.ts'
 import { gatherContext } from './gatherContext.ts'
 
-const MODEL_SUGGEST = 'claude-opus-4-6'
-const MODEL_CLARIFY = anthropic('claude-opus-4-6')
-const MODEL_SYNTHESIZE = anthropic('claude-opus-4-6')
 const PROMPT_FILE = new URL('../prompts/suggest-mi.prompt.md', import.meta.url).pathname
 const PROMPT_CLARIFY = new URL('../prompts/mi-clarifier.prompt.md', import.meta.url).pathname
 const PROMPT_SYNTHESIZE = new URL('../prompts/mi-synthesizer.prompt.md', import.meta.url).pathname
@@ -97,7 +94,7 @@ async function clarifyMI(
 
     try {
       const result = await generateText({
-        model: MODEL_CLARIFY,
+        ...aiModel('reasoning'),
         prompt: renderedClarifier,
       })
 
@@ -267,7 +264,7 @@ async function synthesizeMI(opts: {
   let body: string
   try {
     const result = await generateText({
-      model: MODEL_SYNTHESIZE,
+      ...aiModel('reasoning'),
       prompt: renderedSynth,
     })
     body = result.text.trim()
@@ -368,7 +365,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
 
   // 4. Call AI for suggestions
   const result = await generateObject({
-    model: anthropic(MODEL_SUGGEST),
+    ...aiModel('reasoning'),
     schema: SuggestionsSchema,
     prompt: renderResult.output,
   })
@@ -449,7 +446,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
       spinner.start('Refining suggestions...')
 
       const refinedResult = await generateObject({
-        model: anthropic(MODEL_SUGGEST),
+        ...aiModel('reasoning'),
         schema: SuggestionsSchema,
         prompt:
           renderResult.output +
