@@ -10,6 +10,7 @@
 
 import { generateObject } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { z } from 'zod'
 import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -141,7 +142,7 @@ export default class AIContextEvolveTask extends Command {
     const { object } = await generateObject({
       ...aiModel('balanced'),
       schema,
-      instructions: systemPrompt,
+      instructions: cachedInstructions(systemPrompt),
       prompt: parts.join('\n'),
     })
 

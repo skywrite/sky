@@ -9,6 +9,7 @@ import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
@@ -546,7 +547,10 @@ export default class AiChatTask extends Command {
       entities: { block: formatPeopleBlock(peopleEntities) },
     }
     const { output: baseSystemPrompt } = renderPromptFile(promptContent, 'chat.prompt.md', renderInput)
-    let systemPrompt = baseSystemPrompt
+    // Kept as a separate segment (not concatenated onto the base prompt) so
+    // each gets its own prompt-cache breakpoint: a context change re-writes
+    // only this segment while the base prompt stays cached for the session.
+    let contextPrompt = ''
 
     // Conversation state
     const turns: ConversationMessage[] = []
@@ -649,8 +653,7 @@ export default class AiChatTask extends Command {
         }
       }
 
-      const contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
-      systemPrompt = baseSystemPrompt + '\n\n' + contextPrompt
+      contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
     }
 
     output.log('')
@@ -907,8 +910,8 @@ export default class AiChatTask extends Command {
         const runTurn = async () => {
           const stream = streamText({
             ...reasoning,
-            instructions: systemPrompt.trim(),
-            messages,
+            instructions: cachedInstructions([baseSystemPrompt, contextPrompt]),
+            messages: withCacheTail(messages),
             tools: allTools,
             toolApproval,
             stopWhen: isStepCount(5),
