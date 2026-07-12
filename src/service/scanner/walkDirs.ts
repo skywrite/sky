@@ -35,18 +35,11 @@ export interface ScanOptions {
 }
 
 /**
- * Walk directories and process all markdown files.
- *
- * This is the main scanning loop used during server startup.
- * It processes all .md files and updates the store with:
- * - Tags from all files
- * - People from person files
- * - Organizations from org files
- * - Interactions from time files
- * - Org interactions from project files
+ * Walk directories and feed every markdown file through the scanners,
+ * updating the store. No logging or score events — callers own those.
  */
-export async function scanDirectories(options: ScanOptions): Promise<void> {
-  const { dirs, store, entityDetector, scanners } = options
+export async function scanFiles(options: ScanOptions): Promise<void> {
+  const { dirs, entityDetector, scanners } = options
   const { isPerson, isOrganization, isProject, isTimeFile } = entityDetector
   const {
     readFileAndUpdateTags,
@@ -85,6 +78,23 @@ export async function scanDirectories(options: ScanOptions): Promise<void> {
       }
     }
   }
+}
+
+/**
+ * Walk directories and process all markdown files.
+ *
+ * This is the main scanning loop used during server startup.
+ * It processes all .md files and updates the store with:
+ * - Tags from all files
+ * - People from person files
+ * - Organizations from org files
+ * - Interactions from time files
+ * - Org interactions from project files
+ */
+export async function scanDirectories(options: ScanOptions): Promise<void> {
+  const { store } = options
+
+  await scanFiles(options)
 
   // Emit scores after scan completes
   console.log(`[personScores] Initial scan complete. Tracked ${store.personScores.size} people with scores.`)

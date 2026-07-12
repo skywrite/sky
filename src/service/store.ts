@@ -203,6 +203,26 @@ export class Store extends EventEmitter {
     ;(this as any)['_' + key] = value
     this.emit(`${key}Updated`, value)
   }
+
+  /**
+   * Replace all entity and score state with another store's. Scanners only
+   * ever add, so file removals are applied by scanning into a fresh Store and
+   * swapping it in here — subscribers keep their listeners on this instance
+   * and receive the usual update events.
+   */
+  replaceFrom(other: Store): void {
+    this._people = new Set(other._people)
+    this._organizations = new Set(other._organizations)
+    this._tags = other._tags
+    this._scoring.replaceFrom(other._scoring)
+
+    this.emit('peopleUpdated', this._people)
+    this.emit('organizationsUpdated', this._organizations)
+    this.emit('tagsUpdated', this._tags)
+    this.emitPersonScoresUpdated()
+    this.emitOrgScoresUpdated()
+    this.emitTagScoresUpdated()
+  }
 }
 
 export default new Store()
