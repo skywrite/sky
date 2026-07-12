@@ -109,6 +109,17 @@ export class ScoringStore extends EventEmitter {
   }
 
   /**
+   * Replace all score state with another store's, preserving this instance's
+   * identity so existing event-forwarding subscriptions stay wired. Used by
+   * entity-store rebuilds after file removals.
+   */
+  replaceFrom(other: ScoringStore): void {
+    this._personScores = new Map(other._personScores)
+    this._orgScores = new Map(other._orgScores)
+    this._tagScores = new Map(other._tagScores)
+  }
+
+  /**
    * Record an interaction with a person.
    *
    * @param name - Person's name

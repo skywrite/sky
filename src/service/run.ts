@@ -201,19 +201,52 @@ export default async function run() {
   watchFiles()
 }
 
+// Entity/score stores are add-only during incremental updates, so removals
+// need a full rebuild (see server.rebuildEntityStores). Debounced: a burst of
+// deletions (dir removal, sync sweep) triggers one rebuild, and a rebuild
+// requested mid-run schedules exactly one follow-up.
+let entityRebuildTimer: ReturnType<typeof setTimeout> | null = null
+let entityRebuildRunning = false
+let entityRebuildQueued = false
+
+function scheduleEntityRebuild() {
+  if (entityRebuildTimer) clearTimeout(entityRebuildTimer)
+  entityRebuildTimer = setTimeout(async () => {
+    entityRebuildTimer = null
+    if (entityRebuildRunning) {
+      entityRebuildQueued = true
+      return
+    }
+    entityRebuildRunning = true
+    try {
+      await server.rebuildEntityStores()
+    } catch (err) {
+      console.error('[watcher] Entity store rebuild failed:', err)
+    } finally {
+      entityRebuildRunning = false
+      if (entityRebuildQueued) {
+        entityRebuildQueued = false
+        scheduleEntityRebuild()
+      }
+    }
+  }, 2_000)
+}
+
 async function watchFiles() {
   console.log('[watcher] Starting file watcher...')
   const watcher = MarkdownWatcher.getInstance()
   for await (const ret of watcher.run()) {
-    // if (ret.file) {
-    //   console.log(`[watcher] ${ret.event ?? 'change'}: ${ret.file}`)
-    // }
     if (ret.error) {
       console.error(ret.error)
       continue
     }
 
     if (!ret.file) continue
+    // Log lifecycle events (create/remove) for diagnosability; modify events
+    // fire on every save and sync touch, far too noisy to log.
+    if (ret.event === 'create' || ret.event === 'remove') {
+      console.log(`[watcher] ${ret.event}: ${ret.file}`)
+    }
 
     // Update MarkdownStore for live link resolution
     const mdStore = server.markdownStore
@@ -225,6 +258,12 @@ async function watchFiles() {
       }
       // Invalidate cached DomainCollection so next query sees updated data
       resetResolverCache()
+    }
+
+    // Removed files never reach processFileUpdate (no contents), so their
+    // entities/scores would linger — rebuild the entity stores from disk.
+    if (ret.event === 'remove') {
+      scheduleEntityRebuild()
     }
 
     if (!ret.contents) continue

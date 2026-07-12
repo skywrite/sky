@@ -30,7 +30,7 @@ import { Store } from './store.ts'
 import { createYogaInstance } from './graphql/schema.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
 import { createScanners } from './scanner/scan.ts'
-import { scanDirectories } from './scanner/walkDirs.ts'
+import { scanDirectories, scanFiles } from './scanner/walkDirs.ts'
 import { createHttpApp } from './handler/http.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import dirnameFilename from '#lib/util/dirnameFilename.ts'
@@ -81,6 +81,8 @@ export interface Server {
   port: number
   /** Manually trigger a scan of all markdown directories */
   scan(): Promise<void>
+  /** Rebuild entity/score stores from disk — applies file removals, which incremental scanning cannot */
+  rebuildEntityStores(): Promise<void>
   /** Build/rebuild MarkdownStore (call after scan for fresh data) */
   buildMarkdownStore(): Promise<MarkdownStore | null>
   /** Entity detector for path-based type checks */
@@ -157,6 +159,26 @@ export function createServer(options: ServerOptions): Server {
     hasScanned = true
   }
 
+  // Rebuild entity/score stores from disk. Scanners only ever add, so a
+  // removed file's entities survive incremental updates — scan into a fresh
+  // Store and swap the result into the live one (which emits update events).
+  async function rebuildEntityStores() {
+    const t0 = Date.now()
+    const freshStore = new Store()
+    const freshScanners = createScanners(freshStore, { isTimeFile: entityDetector.isTimeFile }, { referenceDate })
+    await scanFiles({
+      dirs: markdownDirs,
+      store: freshStore,
+      entityDetector,
+      scanners: freshScanners,
+    })
+    store.replaceFrom(freshStore)
+    console.log(
+      `[watcher] Entity stores rebuilt in ${Date.now() - t0}ms ` +
+        `(${store.people.size} people, ${store.organizations.size} orgs)`,
+    )
+  }
+
   // Build MarkdownStore for rich document queries
   async function buildMarkdownStore(): Promise<MarkdownStore | null> {
     const t0 = Date.now()
@@ -200,6 +222,7 @@ export function createServer(options: ServerOptions): Server {
       return markdownStore
     },
     scan,
+    rebuildEntityStores,
     buildMarkdownStore,
     entityDetector,
     scanners,
