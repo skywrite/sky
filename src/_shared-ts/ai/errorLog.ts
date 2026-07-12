@@ -1,6 +1,8 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { appendFile, mkdir } from 'node:fs/promises'
+import type { Warning } from 'ai'
+import colors from 'picocolors'
 import { DIR_USER_DATA } from '#config'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -48,5 +50,44 @@ export async function logAIError(entry: AIErrorEntry): Promise<void> {
     await appendFile(AI_ERROR_LOG_PATH, line + '\n', 'utf8')
   } catch {
     // Swallow: a broken log file must never take down a chat turn
+  }
+}
+
+/** Render an AI SDK warning as a single line, mirroring the SDK's own formatter. */
+export function formatAIWarning(warning: Warning): string {
+  switch (warning.type) {
+    case 'unsupported':
+      return `unsupported feature "${warning.feature}"${warning.details ? `: ${warning.details}` : ''}`
+    case 'compatibility':
+      return `compatibility mode for "${warning.feature}"${warning.details ? `: ${warning.details}` : ''}`
+    case 'deprecated':
+      return `deprecated "${warning.setting}": ${warning.message}`
+    case 'other':
+      return warning.message
+    default:
+      return JSON.stringify(warning)
+  }
+}
+
+/**
+ * Route AI SDK warnings (e.g. "unsupported reasoning metadata") into this log,
+ * announced by a single dim stderr line. The SDK's default logger goes through
+ * process.emitWarning, whose multi-line stack trace tears up the ai:chat Ink
+ * UI mid-conversation. Full entries land here beside the pipeline failures
+ * (filter with `jq 'select(.stage == "warning")'`); the stderr notice is
+ * deduped per process so a warning that fires every turn prints only once.
+ */
+export function routeAISDKWarningsToLog(): void {
+  const noticed = new Set<string>()
+  globalThis.AI_SDK_LOG_WARNINGS = ({ warnings, provider, model }) => {
+    const scope = [provider, model].filter(Boolean).join('/')
+    for (const warning of warnings) {
+      const message = scope ? `${scope}: ${formatAIWarning(warning)}` : formatAIWarning(warning)
+      void logAIError({ source: 'ai-sdk', stage: 'warning', message })
+      if (!noticed.has(message)) {
+        noticed.add(message)
+        console.warn(colors.dim(`AI SDK warning: ${message} (logged to ${AI_ERROR_LOG_DISPLAY})`))
+      }
+    }
   }
 }
