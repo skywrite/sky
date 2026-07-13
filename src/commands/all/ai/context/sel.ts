@@ -7,7 +7,11 @@
 import { generateText } from 'ai'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { graphQLValidationErrors, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import {
+  dropInvalidSelections,
+  graphQLValidationErrors,
+  normalizeGraphQLQuery,
+} from '#shared/models/DomainCollection/query/normalize.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -156,6 +160,27 @@ Fix the query so it validates against the schema. Return ONLY the corrected Grap
 
       query = normalizeGraphQLQuery(repair.text)
       validationErrors = await graphQLValidationErrors(query)
+    }
+
+    // Repairs exhausted with errors left: salvage the valid selections so
+    // one stubborn hallucination costs its selection, not the whole fetch.
+    // When nothing is salvageable, return the query as-is — execution
+    // reports and logs the failure exactly as before.
+    if (validationErrors) {
+      const salvaged = await dropInvalidSelections(query)
+      if (salvaged && salvaged.dropped.length > 0) {
+        const keys = salvaged.dropped.map((d) => d.key).join(', ')
+        output.log(colors.yellow(`Repairs exhausted — dropped invalid selection(s): ${keys}`))
+        await logAIError({
+          source: 'ai:context:sel',
+          stage: 'salvaged-query',
+          message: `Dropped invalid selection(s) after repair rounds: ${keys}`,
+          query,
+          errors: salvaged.dropped.flatMap((d) => d.errors),
+          question,
+        })
+        query = salvaged.query
+      }
     }
 
     output.log(query)

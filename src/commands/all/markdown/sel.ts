@@ -11,7 +11,8 @@ import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import { type ExecuteResult, executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import { dropInvalidSelections } from '#shared/models/DomainCollection/query/normalize.ts'
 import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
 import { parseSelector } from '#shared/models/DomainCollection/query/parser.ts'
 import { PORT_SERVER } from '#shared/config.ts'
@@ -219,21 +220,30 @@ export default class MarkdownSelectorTask extends Command {
       return CommandResult.fail(`Server error: ${response.status}`)
     }
 
-    const result = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> }
+    let result = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> }
 
     if (result.errors?.length) {
-      for (const err of result.errors) {
-        output.log(colors.red(`GraphQL Error: ${err.message}`))
+      // One invalid selection fails the whole document at validation, so
+      // drop the invalid selections and execute the remainder — partial
+      // context beats none. Falls through to the failure path when the
+      // errors cannot be pinned to selections or the whole query is bad.
+      const partial = await this.retrySalvagedViaServer(query, result.errors, url, output)
+      if (partial) {
+        result = partial
+      } else {
+        for (const err of result.errors) {
+          output.log(colors.red(`GraphQL Error: ${err.message}`))
+        }
+        output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+        await logAIError({
+          source: 'markdown:sel',
+          stage: 'query:server',
+          message: 'GraphQL query failed',
+          query,
+          errors: result.errors.map((e) => e.message),
+        })
+        return CommandResult.fail('GraphQL query failed')
       }
-      output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
-      await logAIError({
-        source: 'markdown:sel',
-        stage: 'query:server',
-        message: 'GraphQL query failed',
-        query,
-        errors: result.errors.map((e) => e.message),
-      })
-      return CommandResult.fail('GraphQL query failed')
     }
 
     let paths = extractPaths(result.data)
@@ -269,21 +279,28 @@ export default class MarkdownSelectorTask extends Command {
     const { raw, json, limit, baseDir, context } = opts
     const { output } = context
 
-    const result = await executeQuery(query, store)
+    let result = await executeQuery(query, store)
 
     if (result.errors?.length) {
-      for (const err of result.errors) {
-        output.log(colors.red(`GraphQL Error: ${err.message}`))
+      // Same salvage as the server path: execute the valid remainder
+      // rather than losing every selection to one invalid one.
+      const partial = await this.retrySalvagedLocally(query, result.errors, store, output)
+      if (partial) {
+        result = partial
+      } else {
+        for (const err of result.errors) {
+          output.log(colors.red(`GraphQL Error: ${err.message}`))
+        }
+        output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+        await logAIError({
+          source: 'markdown:sel',
+          stage: 'query:local',
+          message: 'GraphQL query failed',
+          query,
+          errors: result.errors.map((e) => e.message),
+        })
+        return CommandResult.fail('GraphQL query failed')
       }
-      output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
-      await logAIError({
-        source: 'markdown:sel',
-        stage: 'query:local',
-        message: 'GraphQL query failed',
-        query,
-        errors: result.errors.map((e) => e.message),
-      })
-      return CommandResult.fail('GraphQL query failed')
     }
 
     // Extract paths from result
@@ -333,5 +350,83 @@ export default class MarkdownSelectorTask extends Command {
     // Transpile DSL → GraphQL, then execute via the GraphQL path
     const { query } = selectorToGraphQL(selector)
     return this.executeGraphQL(query, store, { ...opts, json: false })
+  }
+
+  /**
+   * Execute the salvageable remainder of a validation-rejected query via
+   * the server. Returns the remainder's result, or null when nothing was
+   * salvaged or the remainder failed too — callers then take the normal
+   * failure path with the original errors.
+   */
+  private async retrySalvagedViaServer(
+    query: string,
+    errors: Array<{ message: string }>,
+    url: string,
+    output: CommandArgs['context']['output'],
+  ): Promise<{ data?: unknown; errors?: Array<{ message: string }> } | null> {
+    const salvaged = await dropInvalidSelections(query)
+    if (!salvaged || salvaged.dropped.length === 0) return null
+
+    let response: Response
+    try {
+      response = await fetchGraphQL(url, salvaged.query, output)
+    } catch {
+      return null
+    }
+    if (!response.ok) return null
+
+    const result = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> }
+    if (result.errors?.length) return null
+
+    await this.reportSalvage(
+      salvaged.dropped.map((d) => d.key),
+      query,
+      errors,
+      'query:server',
+      output,
+    )
+    return result
+  }
+
+  /** Local-store counterpart of retrySalvagedViaServer. */
+  private async retrySalvagedLocally(
+    query: string,
+    errors: Array<{ message: string }>,
+    store: MarkdownStore,
+    output: CommandArgs['context']['output'],
+  ): Promise<ExecuteResult | null> {
+    const salvaged = await dropInvalidSelections(query)
+    if (!salvaged || salvaged.dropped.length === 0) return null
+
+    const result = await executeQuery(salvaged.query, store)
+    if (result.errors?.length) return null
+
+    await this.reportSalvage(
+      salvaged.dropped.map((d) => d.key),
+      query,
+      errors,
+      'query:local',
+      output,
+    )
+    return result
+  }
+
+  private async reportSalvage(
+    droppedKeys: string[],
+    query: string,
+    errors: Array<{ message: string }>,
+    stage: 'query:server' | 'query:local',
+    output: CommandArgs['context']['output'],
+  ): Promise<void> {
+    const keys = droppedKeys.join(', ')
+    output.log(colors.yellow(`Dropped invalid selection(s): ${keys} — returning partial results`))
+    output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+    await logAIError({
+      source: 'markdown:sel',
+      stage,
+      message: `Salvaged partial results (dropped: ${keys})`,
+      query,
+      errors: errors.map((e) => e.message),
+    })
   }
 }

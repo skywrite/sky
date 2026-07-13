@@ -15,7 +15,11 @@ import { z } from 'zod'
 import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { graphQLValidationErrors, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import {
+  dropInvalidSelections,
+  graphQLValidationErrors,
+  normalizeGraphQLQuery,
+} from '#shared/models/DomainCollection/query/normalize.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -154,15 +158,15 @@ export default class AIContextEvolveTask extends Command {
     // Normalization only fixes shape and repairable defects — the model
     // occasionally leaks fragments of its own structured-output envelope
     // (e.g. "{changed:true}}") into the queries array, or hallucinates filter
-    // fields the schema doesn't define. Anything the executor would reject is
-    // dropped here so it is neither executed nor carried forward as a current
-    // query in later evolve rounds.
+    // fields the schema doesn't define. Salvage what the executor would
+    // reject: keep a query's valid selections and drop only the invalid ones
+    // (they'd fail every later evolve round too); a query with nothing
+    // salvageable is dropped whole, as before.
     const queries: string[] = []
     for (const q of normalized) {
-      const validationErrors = await graphQLValidationErrors(q)
-      if (validationErrors === null) {
-        queries.push(q)
-      } else {
+      const salvaged = await dropInvalidSelections(q)
+      if (salvaged === null) {
+        const validationErrors = (await graphQLValidationErrors(q)) ?? ['unsalvageable query']
         output.log(colors.yellow(`Dropped invalid query (${validationErrors.join('; ')})`))
         await logAIError({
           source: 'ai:context:evolve',
@@ -170,7 +174,21 @@ export default class AIContextEvolveTask extends Command {
           message: validationErrors.join('; '),
           query: q,
         })
+        continue
       }
+
+      if (salvaged.dropped.length > 0) {
+        const keys = salvaged.dropped.map((d) => d.key).join(', ')
+        output.log(colors.yellow(`Dropped invalid selection(s): ${keys}`))
+        await logAIError({
+          source: 'ai:context:evolve',
+          stage: 'salvaged-query',
+          message: `Dropped invalid selection(s): ${keys}`,
+          query: q,
+          errors: salvaged.dropped.flatMap((d) => d.errors),
+        })
+      }
+      queries.push(salvaged.query)
     }
 
     if (json) {
