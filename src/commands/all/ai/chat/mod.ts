@@ -1,6 +1,8 @@
 import * as path from 'node:path'
 import process from 'node:process'
+import { setTimeout as delay } from 'node:timers/promises'
 import colors from 'picocolors'
+import openEditor from 'open-editor'
 import { generateText, isStepCount, jsonSchema, streamText } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
@@ -60,6 +62,7 @@ const params = {
     short: 'E',
     default: true,
   }),
+  noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
   when: whenNBTime(),
 }
 
@@ -442,7 +445,15 @@ export default class AiChatTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, env } = context
-    const { reasoning: reasoningProfileName, fast: fastProfileName, days, inspectInitialContext, category, when } = args
+    const {
+      reasoning: reasoningProfileName,
+      fast: fastProfileName,
+      days,
+      inspectInitialContext,
+      category,
+      when,
+      noEditor,
+    } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
 
@@ -1142,6 +1153,11 @@ export default class AiChatTask extends Command {
       }
 
       await writeTextFile(savePath, markdown)
+
+      if (!noEditor) {
+        openEditor([{ file: savePath }])
+        await delay(500)
+      }
 
       output.log('')
       output.log(colors.green(`Conversation saved to ${savePath}`))
