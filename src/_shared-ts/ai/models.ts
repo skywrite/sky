@@ -5,11 +5,6 @@ import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { PROFILES } from './defaultProfiles.ts'
 import { AI_PROFILES } from '#config'
-import { routeAISDKWarningsToLog } from './errorLog.ts'
-
-// Every AI-SDK call site resolves its model through this module, so installing
-// the warning router here guarantees it is in place before the first call.
-routeAISDKWarningsToLog()
 
 /**
  * Central registry for AI model selection.
