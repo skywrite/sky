@@ -9,7 +9,16 @@
 export { parseDuration } from './duration.ts'
 
 // Date filters
-export { getDateFromPath, getDocumentDate, matchesDate, matchesDateRange, matchesRecent } from './date.ts'
+export {
+  getDateFromPath,
+  getDocumentDate,
+  matchesCreatedRecently,
+  matchesDate,
+  matchesDateRange,
+  matchesRecent,
+  matchesRecentActivity,
+  matchesUpdatedRecently,
+} from './date.ts'
 
 // Tag filters
 export { matchesTagContains, matchesTagContainsAll, matchesTagContainsAny, matchesTagPrefix } from './tags.ts'

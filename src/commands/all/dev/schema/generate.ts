@@ -53,7 +53,11 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     description: 'Video recording with transcript and summary',
     fields: {
       from: { type: 'String', description: 'Presenter/creator', nullable: true },
-      to: { type: 'String', description: 'Intended audience: person name(s), or "#channel-name" for videos posted to a Slack channel', nullable: true },
+      to: {
+        type: 'String',
+        description: 'Intended audience: person name(s), or "#channel-name" for videos posted to a Slack channel',
+        nullable: true,
+      },
       when: { type: 'String', description: 'Time (HH:MM)' },
       medium: { type: 'String', description: 'Video platform: Video, Loom, YouTube, etc.' },
       summary: { type: 'String', description: 'Brief summary', nullable: true },
@@ -70,7 +74,11 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     description: 'Messages from Slack, email, text, etc.',
     fields: {
       from: { type: 'String', description: 'Sender name', nullable: true },
-      to: { type: 'String', description: 'Recipient(s): person name(s), or "#channel-name" for Slack channel messages', nullable: true },
+      to: {
+        type: 'String',
+        description: 'Recipient(s): person name(s), or "#channel-name" for Slack channel messages',
+        nullable: true,
+      },
       when: { type: 'String', description: 'Time (HH:MM)' },
       medium: { type: 'String', description: 'Platform: Slack, Email, iMessage, etc.' },
       summary: { type: 'String', description: 'Brief summary', nullable: true },
@@ -316,6 +324,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   OrgFilter: {
@@ -329,6 +340,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   ProjectFilter: {
@@ -344,6 +358,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involvesAny: '[String!]',
       involvesAll: '[String!]',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   DecisionFilter: {
@@ -361,6 +378,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involvesAny: '[String!]',
       involvesAll: '[String!]',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   GoalFilter: {
@@ -375,6 +395,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involvesAny: '[String!]',
       involvesAll: '[String!]',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   IdeaFilter: {
@@ -389,6 +412,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involvesAny: '[String!]',
       involvesAll: '[String!]',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   PlaceFilter: {
@@ -402,6 +428,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       tagsContainsAll: '[String!]',
       tagsStartsWith: 'String',
       relContains: 'String',
+      recent: 'String',
+      createdRecently: 'String',
+      updatedRecently: 'String',
     },
   },
   DayFilter: {

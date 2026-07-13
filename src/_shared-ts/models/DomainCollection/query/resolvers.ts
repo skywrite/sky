@@ -22,8 +22,11 @@ import {
   matchesInvolvesAll,
   matchesInvolvesAny,
   matchesPending,
+  matchesCreatedRecently,
   matchesRecent,
+  matchesRecentActivity,
   matchesRelContains,
+  matchesUpdatedRecently,
   matchesTagContains,
   matchesTagContainsAll,
   matchesTagContainsAny,
@@ -90,6 +93,9 @@ export interface PersonFilter {
   tagsContainsAll?: string[]
   tagsStartsWith?: string
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface OrgFilter {
@@ -102,6 +108,9 @@ export interface OrgFilter {
   tagsContainsAll?: string[]
   tagsStartsWith?: string
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface ProjectFilter {
@@ -116,6 +125,9 @@ export interface ProjectFilter {
   involvesAny?: string[]
   involvesAll?: string[]
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface DecisionFilter {
@@ -132,6 +144,9 @@ export interface DecisionFilter {
   involvesAny?: string[]
   involvesAll?: string[]
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface GoalFilter {
@@ -145,6 +160,9 @@ export interface GoalFilter {
   involvesAny?: string[]
   involvesAll?: string[]
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface IdeaFilter {
@@ -158,6 +176,9 @@ export interface IdeaFilter {
   involvesAny?: string[]
   involvesAll?: string[]
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface PlaceFilter {
@@ -170,6 +191,9 @@ export interface PlaceFilter {
   tagsContainsAll?: string[]
   tagsStartsWith?: string
   relContains?: string
+  recent?: string
+  createdRecently?: string
+  updatedRecently?: string
 }
 
 export interface DayFilter {
@@ -698,6 +722,9 @@ function matchesPersonFilter(doc: Document, filter: PersonFilter): boolean {
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -715,6 +742,9 @@ function matchesOrgFilter(doc: Document, filter: OrgFilter): boolean {
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -730,6 +760,9 @@ function matchesProjectFilter(doc: Document, filter: ProjectFilter, resolveNames
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -748,6 +781,9 @@ function matchesDecisionFilter(doc: Document, filter: DecisionFilter, resolveNam
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -762,6 +798,9 @@ function matchesGoalFilter(doc: Document, filter: GoalFilter, resolveNames?: Nam
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -783,6 +822,9 @@ function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, reso
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 
@@ -810,6 +852,9 @@ function matchesPlaceFilter(doc: Document, filter: PlaceFilter): boolean {
   if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
   if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
   if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.recent && !matchesRecentActivity(doc, filter.recent)) return false
+  if (filter.createdRecently && !matchesCreatedRecently(doc, filter.createdRecently)) return false
+  if (filter.updatedRecently && !matchesUpdatedRecently(doc, filter.updatedRecently)) return false
   return true
 }
 

@@ -120,6 +120,7 @@ Decided to move.`),
       doc: Document.fromMarkdown(`---
 name: Acme Pay GTM
 status: open
+created: 2020-05-01
 tags: [Sample/Sales]
 rel: [decisions/Hire-CTO, people/Jane-Doe]
 ---
@@ -130,10 +131,31 @@ Go-to-market plan.`),
       doc: Document.fromMarkdown(`---
 name: Website Refresh
 status: open
+updated: 2026-03-01
 tags: [Sample/Web]
 ---
 Refresh the marketing site.`),
       path: '/test/projects/Website-Refresh.md',
+    },
+  ]
+
+  const ideasData = [
+    {
+      doc: Document.fromMarkdown(`---
+name: Crypto-Debit-Rewards
+created: 2026-02-08
+tags: [Sample/Ideas]
+---
+Reward debit purchases in BTC.`),
+      path: '/test/ideas/Crypto-Debit-Rewards.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+name: Legacy-Widget
+tags: [Sample/Ideas]
+---
+Old undated idea.`),
+      path: '/test/ideas/Legacy-Widget.md',
     },
   ]
 
@@ -222,7 +244,7 @@ Classic cocktail bar.`),
     projects: createMockCollection(projectsData),
     decisions: createMockCollection(decisionsData),
     goals: createMockCollection([]),
-    ideas: createMockCollection([]),
+    ideas: createMockCollection(ideasData),
     places: createMockCollection(placesData),
     time: createMockCollection([...meetingsData, ...messagesData, ...chatsData]),
   } as unknown as MarkdownStore
@@ -857,5 +879,93 @@ test('resolvers - people filters by relContains', () => {
     should: 'return the linked person',
     actual: result.map((p) => p.name),
     expected: ['Alice Smith'],
+  })
+})
+
+// =============================================================================
+// recent on entity types
+// =============================================================================
+
+test('resolvers - ideas filters by recent using created date', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.ideas({ where: { recent: '100y' } })
+
+  assert({
+    given: 'recent window spanning the created date',
+    should: 'return only the idea carrying a created date',
+    actual: result.map((i) => i.name),
+    expected: ['Crypto-Debit-Rewards'],
+  })
+})
+
+test('resolvers - projects recent excludes docs outside the window', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { recent: '1d' } })
+
+  assert({
+    given: 'recent window that predates every created date',
+    should: 'return no projects',
+    actual: result.length,
+    expected: 0,
+  })
+})
+
+test('resolvers - decisions filters by recent using identified date', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.decisions({ where: { recent: '100y' } })
+
+  assert({
+    given: 'recent window spanning identified dates',
+    should: 'return decisions dated via the identified fallback',
+    actual: result.map((d) => d.name).sort(),
+    expected: ['hire-designer', 'new-office'],
+  })
+})
+
+test('resolvers - entity recent blends updated and created activity', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { recent: '100y' } })
+
+  assert({
+    given: 'one project dated via created, the other via updated',
+    should: 'return both through the activity blend',
+    actual: result.map((p) => p.name).sort(),
+    expected: ['Acme Pay GTM', 'Website Refresh'],
+  })
+})
+
+test('resolvers - createdRecently matches only documents with a created date', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { createdRecently: '100y' } })
+
+  assert({
+    given: 'a strict createdRecently window',
+    should: 'exclude the project that only has an updated date',
+    actual: result.map((p) => p.name),
+    expected: ['Acme Pay GTM'],
+  })
+})
+
+test('resolvers - updatedRecently matches only documents with an updated date', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({ where: { updatedRecently: '100y' } })
+
+  assert({
+    given: 'a strict updatedRecently window',
+    should: 'exclude the project that only has a created date',
+    actual: result.map((p) => p.name),
+    expected: ['Website Refresh'],
   })
 })
