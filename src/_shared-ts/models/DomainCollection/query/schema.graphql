@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-10T22:46:38.821Z
+# Generated at: 2026-07-13T00:08:42.517Z
 # =============================================================================
 
 type Query {
@@ -337,6 +337,9 @@ input PersonFilter {
   tagsContainsAll: [String!]
   tagsStartsWith: String
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input OrgFilter {
@@ -349,6 +352,9 @@ input OrgFilter {
   tagsContainsAll: [String!]
   tagsStartsWith: String
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input ProjectFilter {
@@ -363,6 +369,9 @@ input ProjectFilter {
   involvesAny: [String!]
   involvesAll: [String!]
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input DecisionFilter {
@@ -379,6 +388,9 @@ input DecisionFilter {
   involvesAny: [String!]
   involvesAll: [String!]
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input GoalFilter {
@@ -392,6 +404,9 @@ input GoalFilter {
   involvesAny: [String!]
   involvesAll: [String!]
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input IdeaFilter {
@@ -405,6 +420,9 @@ input IdeaFilter {
   involvesAny: [String!]
   involvesAll: [String!]
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input PlaceFilter {
@@ -417,6 +435,9 @@ input PlaceFilter {
   tagsContainsAll: [String!]
   tagsStartsWith: String
   relContains: String
+  recent: String
+  createdRecently: String
+  updatedRecently: String
 }
 
 input DayFilter {

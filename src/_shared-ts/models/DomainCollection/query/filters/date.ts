@@ -59,6 +59,16 @@ export function getDocumentDate(doc: Document, path?: string): PlainDate | undef
   return undefined
 }
 
+/** True when the date exists and falls inside the trailing window ending at now. */
+function isWithinWindow(date: PlainDate | undefined, duration: string, now: PlainDate): boolean {
+  if (!date) return false
+
+  const days = parseDuration(duration)
+  const cutoff = now.addDays(-days)
+
+  return PlainDate.compare(date, cutoff) >= 0 && PlainDate.compare(date, now) <= 0
+}
+
 /**
  * Check if document is within the specified recent period.
  *
@@ -71,13 +81,36 @@ export function matchesRecent(
   now: PlainDate = PlainDate.today(),
   path?: string,
 ): boolean {
-  const docDate = getDocumentDate(doc, path)
-  if (!docDate) return false
+  return isWithinWindow(getDocumentDate(doc, path), duration, now)
+}
 
-  const days = parseDuration(duration)
-  const cutoff = now.addDays(-days)
+/**
+ * Check if an entity document was recently ACTIVE: its last-modified date
+ * (`updated`, stamped by tooling on writes) when present, falling back to
+ * the origin-date chain (`created`, `identified`). Entity matchers use this
+ * instead of matchesRecent because a years-old idea updated last week is
+ * exactly what "recent ideas" means — while event documents stay on
+ * matchesRecent, where an edited old meeting must not become a recent one.
+ */
+export function matchesRecentActivity(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
+  return isWithinWindow(doc.updated ?? getDocumentDate(doc), duration, now)
+}
 
-  return PlainDate.compare(docDate, cutoff) >= 0 && PlainDate.compare(docDate, now) <= 0
+/**
+ * Strict window against the `created` frontmatter date only — no fallbacks,
+ * documents without one never match. The explicit-semantics counterpart to
+ * matchesRecentActivity's do-what-I-mean blend.
+ */
+export function matchesCreatedRecently(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
+  return isWithinWindow(doc.created, duration, now)
+}
+
+/**
+ * Strict window against the `updated` frontmatter date only — no fallbacks,
+ * documents without one never match.
+ */
+export function matchesUpdatedRecently(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
+  return isWithinWindow(doc.updated, duration, now)
 }
 
 /**
