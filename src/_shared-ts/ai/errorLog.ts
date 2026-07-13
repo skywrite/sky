@@ -76,6 +76,10 @@ export function formatAIWarning(warning: Warning): string {
  * UI mid-conversation. Full entries land here beside the pipeline failures
  * (filter with `jq 'select(.stage == "warning")'`); the stderr notice is
  * deduped per process so a warning that fires every turn prints only once.
+ *
+ * Installed at the process entry points — commands/command-runner.ts (every
+ * CLI command) and service/run.ts (the notebook service) — NOT in models.ts,
+ * because some call sites use providers directly and never load the profiles.
  */
 export function routeAISDKWarningsToLog(): void {
   const noticed = new Set<string>()

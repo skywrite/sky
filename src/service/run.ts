@@ -12,6 +12,11 @@ import { isDayFile, scheduleDayFileSync, subscribeToMobileChanges } from './sync
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
 import { resetResolverCache } from '#shared/models/DomainCollection/query/execute.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
+import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+
+// AI SDK warnings from service handlers (e.g. siteHtml) go to the error log
+// with a one-line stderr notice instead of stack traces in the service log.
+routeAISDKWarningsToLog()
 
 // kill every 12 hours; for some reason the
 // macOS service configuation isn't killing as expected

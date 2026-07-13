@@ -16,6 +16,12 @@ import type {
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
+import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+
+// Install before any command module loads, so AI SDK warnings from every
+// command — including ones that call providers directly, bypassing the
+// model profiles — go to the error log instead of stderr stack traces.
+routeAISDKWarningsToLog()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
