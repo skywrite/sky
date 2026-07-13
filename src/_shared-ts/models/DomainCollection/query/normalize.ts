@@ -12,7 +12,14 @@
  * argument"). Normalize before execution.
  */
 
-import type { ArgumentNode, DocumentNode, FieldNode, ObjectFieldNode, OperationDefinitionNode } from 'graphql'
+import type {
+  ArgumentNode,
+  DefinitionNode,
+  DocumentNode,
+  FieldNode,
+  ObjectFieldNode,
+  OperationDefinitionNode,
+} from 'graphql'
 import { Kind, parse, print, validate, visit } from 'graphql'
 import { getSchema } from './execute.ts'
 
@@ -215,4 +222,81 @@ export async function graphQLValidationErrors(query: string): Promise<string[] |
   }
   const errors = validate(await getSchema(), doc)
   return errors.length > 0 ? errors.map((e) => e.message) : null
+}
+
+export interface DroppedSelection {
+  key: string
+  errors: string[]
+}
+
+export interface SalvagedQuery {
+  query: string
+  dropped: DroppedSelection[]
+}
+
+/**
+ * Drop schema-invalid top-level selections so the rest of the document can
+ * execute. GraphQL validates the whole document before running any of it,
+ * so one bad alias among eight costs all eight — once generation-time
+ * repairs are exhausted (or a stored query has gone stale against a newer
+ * schema), losing one selection beats losing the whole context fetch.
+ *
+ * Each validation error is attributed to the top-level selection whose
+ * source range contains the error's node; flagged selections are removed
+ * and the remainder re-validated until clean. Returns null when nothing
+ * salvageable remains: unparseable input, an error that cannot be pinned
+ * to a top-level selection (e.g. an orphaned variable definition), or no
+ * surviving selections. A valid document comes back unchanged with an
+ * empty `dropped` list.
+ */
+export async function dropInvalidSelections(query: string): Promise<SalvagedQuery | null> {
+  const schema = await getSchema()
+  const dropped: DroppedSelection[] = []
+  let current = query
+
+  // Each round removes at least one selection, so rounds are bounded by
+  // the top-level selection count; the cap is a defensive backstop.
+  for (let round = 0; round < 32; round++) {
+    let doc: DocumentNode
+    try {
+      doc = parse(current)
+    } catch {
+      return null
+    }
+
+    const errors = validate(schema, doc)
+    if (errors.length === 0) {
+      return { query: current, dropped }
+    }
+
+    const topSelections = doc.definitions
+      .filter((d) => d.kind === Kind.OPERATION_DEFINITION)
+      .flatMap((op) => op.selectionSet.selections)
+      .filter((s) => s.kind === Kind.FIELD)
+
+    const invalid = new Map<FieldNode, string[]>()
+    for (const error of errors) {
+      const loc = error.nodes?.[0]?.loc
+      const owner = loc && topSelections.find((s) => s.loc && s.loc.start <= loc.start && loc.end <= s.loc.end)
+      if (!owner) return null
+      const messages = invalid.get(owner)
+      if (messages) messages.push(error.message)
+      else invalid.set(owner, [error.message])
+    }
+
+    for (const [sel, messages] of invalid) {
+      dropped.push({ key: (sel.alias ?? sel.name).value, errors: messages })
+    }
+
+    const definitions = doc.definitions.flatMap((def): DefinitionNode[] => {
+      if (def.kind !== Kind.OPERATION_DEFINITION) return [def]
+      const selections = def.selectionSet.selections.filter((s) => s.kind !== Kind.FIELD || !invalid.has(s))
+      if (selections.length === 0) return []
+      return [{ ...def, selectionSet: { ...def.selectionSet, selections } } as OperationDefinitionNode]
+    })
+    if (!definitions.some((d) => d.kind === Kind.OPERATION_DEFINITION)) return null
+
+    current = print({ ...doc, definitions })
+  }
+  return null
 }
