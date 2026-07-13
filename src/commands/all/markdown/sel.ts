@@ -42,6 +42,37 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
+// A service restart unbinds :9999 for up to ~70s: launchd takes 20-45s to
+// respawn the process, then the notebook rescan takes ~24s before the port
+// binds. Every context query fired in that window used to fail hard. Spread
+// ~90s of retries across it; after one query exhausts them the service is
+// down rather than restarting, so later queries in the same process fail
+// fast instead of stacking retry waits. Any success re-arms.
+const CONNECT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 15000, 15000, 15000, 15000]
+let connectRetriesExhausted = false
+
+async function fetchGraphQL(url: string, query: string, output: CommandArgs['context']['output']): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      })
+      connectRetriesExhausted = false
+      return response
+    } catch (err) {
+      if (connectRetriesExhausted || attempt >= CONNECT_RETRY_DELAYS_MS.length) {
+        connectRetriesExhausted = true
+        throw err
+      }
+      const delayMs = CONNECT_RETRY_DELAYS_MS[attempt]
+      output.log(colors.dim(`Service unreachable — retrying in ${delayMs / 1000}s...`))
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 /**
  * Resolve --server value to a full GraphQL URL.
  */
@@ -170,11 +201,7 @@ export default class MarkdownSelectorTask extends Command {
 
     let response: Response
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      })
+      response = await fetchGraphQL(url, query, output)
     } catch (err) {
       // markdown:sel is the execution layer for all AI-generated queries
       // (ai:context:files/evolve → here), and the only spot holding both the
