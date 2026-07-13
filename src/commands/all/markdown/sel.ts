@@ -12,7 +12,7 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { type ExecuteResult, executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
-import { dropInvalidSelections } from '#shared/models/DomainCollection/query/normalize.ts'
+import { dropInvalidSelections, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
 import { parseSelector } from '#shared/models/DomainCollection/query/parser.ts'
 import { PORT_SERVER } from '#shared/config.ts'
@@ -167,10 +167,17 @@ export default class MarkdownSelectorTask extends Command {
       output.log(colors.red('Error: Cannot use both --dsl and --graphql'))
       return CommandResult.fail('Cannot use both --dsl and --graphql')
     }
+    // Queries can reach execution without generation-time normalization:
+    // chat replays context queries stored by earlier sessions, and
+    // hand-written --graphql never saw it. Repair the repairable (misplaced
+    // filter args, fences, alias conflicts) before validation — unrepaired,
+    // a hoistable stray arg costs its whole selection at salvage.
+    const normalizedGraphql = graphql ? normalizeGraphQLQuery(graphql) : undefined
+
     // --server: send query directly to the running service
     if (server) {
       const url = resolveServerUrl(server)
-      const query = dsl ? selectorToGraphQL(dsl).query : graphql!
+      const query = dsl ? selectorToGraphQL(dsl).query : normalizedGraphql!
       return this.executeGraphQLViaServer(query, url, { raw, json, limit, baseDir, context })
     }
 
@@ -182,7 +189,7 @@ export default class MarkdownSelectorTask extends Command {
 
     // Execute the appropriate query type
     if (graphql) {
-      return this.executeGraphQL(graphql, store, { raw, json, limit, baseDir, context })
+      return this.executeGraphQL(normalizedGraphql!, store, { raw, json, limit, baseDir, context })
     } else {
       return this.executeSelector(dsl!, store, { raw, limit, baseDir, context })
     }

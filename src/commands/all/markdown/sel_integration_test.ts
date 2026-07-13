@@ -303,3 +303,69 @@ test('markdown:sel --server accepts --dsl via transpilation', async () => {
     await cleanupTestDir()
   }
 })
+
+test('markdown:sel --server hoists misplaced filter args before execution', async () => {
+  const given = 'a query with a filter key in field-argument position'
+  const should = 'hoist it into where and return full results'
+
+  const dirs = await setupTestDir()
+
+  const server = createServer({
+    port: 0,
+    markdownDirs: [TEST_DIR],
+    paths: dirs,
+    enableFileWatcher: false,
+    markdownStoreConfig: {
+      peopleDirs: [dirs.people],
+      orgDirs: [dirs.orgs],
+    },
+  })
+
+  await server.start()
+
+  try {
+    const task = new MarkdownSelectorTask()
+    const { context, logs } = createMockContext(TEST_DIR)
+
+    // Stored context queries from before the hoist existed replay through
+    // markdown:sel; without normalization this fails validation ("Unknown
+    // argument \"org\"") and salvage would drop the selection entirely.
+    const result = await task.run({
+      args: {
+        graphql: '{ people(org: "Acme Corp") { name path } }',
+        server: `localhost:${server.port}`,
+        dsl: undefined,
+        raw: false,
+        json: false,
+        limit: undefined,
+      },
+      context,
+      tasks: null,
+      rawArgs: {},
+    } as any)
+
+    assert({
+      given,
+      should,
+      actual: result.status,
+      expected: 'success',
+    })
+
+    assert({
+      given,
+      should: 'match the person the filter intended',
+      actual: result.data?.paths[0]?.includes('alice.md'),
+      expected: true,
+    })
+
+    assert({
+      given,
+      should: 'not drop any selection',
+      actual: logs.some((l) => l.includes('Dropped invalid selection')),
+      expected: false,
+    })
+  } finally {
+    server.stop()
+    await cleanupTestDir()
+  }
+})
