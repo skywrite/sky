@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-07-10
+updated: 2026-07-12
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -70,7 +70,9 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on: meetings, messages, journals, chats, documents
 
 **Time** → `recent: "<period>"` (e.g., "7d", "30d", "90d", "1y")
-- Works on: meetings, messages, journals, chats, days, documents
+- Works on every document type, always inside `where: { ... }` — never as a top-level argument
+- On event types (meetings, messages, journals, chats, days, videos, documents) `recent` matches the event date; on entity types (people, orgs, projects, decisions, goals, ideas, places) it matches last activity (updated, else created)
+- Entity types also accept `createdRecently` / `updatedRecently` when the question is explicitly about creation vs. edits
 - **Omit `recent` by default.** Results are newest-first and capped by `limit`, so a query without `recent` returns the same documents for active topics — and reaches older history when matches are sparse. Full-history search is cheap; never add `recent` "just in case".
 - Add `recent` ONLY when the question itself is time-scoped: "last week" → "7d", "last month" → "30d", "this quarter" → "90d", "recently" → "30d".
 - Time-scoped means scoped to the past. A future horizon — "next 3 months", "upcoming quarter", "by year-end" — sets what the question plans toward, not how far back to search: omit `recent` so full history informs the answer.
