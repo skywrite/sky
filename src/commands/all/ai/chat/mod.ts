@@ -178,14 +178,15 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   return `${timeStr}_${slug}.md`
 }
 
-// The service unbinds :9999 for 5–30s after a restart while it rescans the
-// notebook, and a context fetch in that window used to fail hard — the turn
-// then ran without queried context. Spread ~15s of retries across the
+// A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
+// respawn the process, then the notebook rescan takes ~24s before the port
+// binds — and a context fetch in that window used to fail hard: the turn
+// then ran without queried context. Spread ~90s of retries across the
 // window (mirrors markdown:sel's GraphQL fetch); once one fetch exhausts
 // them the service is down rather than restarting, so later fetches in the
 // same session fail fast instead of stacking retry waits. Any success
 // re-arms.
-const CONNECT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000]
+const CONNECT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 15000, 15000, 15000, 15000]
 let connectRetriesExhausted = false
 
 async function fetchWithConnectRetry(url: string, init: RequestInit): Promise<Response> {
