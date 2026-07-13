@@ -178,6 +178,34 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   return `${timeStr}_${slug}.md`
 }
 
+// The service unbinds :9999 for 5–30s after a restart while it rescans the
+// notebook, and a context fetch in that window used to fail hard — the turn
+// then ran without queried context. Spread ~15s of retries across the
+// window (mirrors markdown:sel's GraphQL fetch); once one fetch exhausts
+// them the service is down rather than restarting, so later fetches in the
+// same session fail fast instead of stacking retry waits. Any success
+// re-arms.
+const CONNECT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000]
+let connectRetriesExhausted = false
+
+async function fetchWithConnectRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, init)
+      connectRetriesExhausted = false
+      return response
+    } catch (err) {
+      if (connectRetriesExhausted || attempt >= CONNECT_RETRY_DELAYS_MS.length) {
+        connectRetriesExhausted = true
+        throw err
+      }
+      const delayMs = CONNECT_RETRY_DELAYS_MS[attempt]
+      console.warn(`[ai:chat] notebook service unreachable — retrying in ${delayMs / 1000}s...`)
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 /**
  * Fetch documents from the running notebook service via POST /context.
  * The server executes the GraphQL query, resolves relationships to the given depth,
@@ -187,7 +215,7 @@ async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{
   const url = `http://localhost:${PORT_SERVER}/context`
   let resp: Response
   try {
-    resp = await fetch(url, {
+    resp = await fetchWithConnectRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, depth }),
