@@ -1,5 +1,10 @@
 import { assert, test } from '#test'
-import { graphQLParseError, graphQLValidationErrors, normalizeGraphQLQuery } from './normalize.ts'
+import {
+  dropInvalidSelections,
+  graphQLParseError,
+  graphQLValidationErrors,
+  normalizeGraphQLQuery,
+} from './normalize.ts'
 
 test('normalizeGraphQLQuery', async (t) => {
   await t.step('passes through already-braced queries', () => {
@@ -322,6 +327,118 @@ test('graphQLValidationErrors', async (t) => {
       should: 'return the syntax error as the message list',
       actual: (errors?.[0] ?? '').startsWith('Syntax Error'),
       expected: true,
+    })
+  })
+})
+
+test('dropInvalidSelections', async (t) => {
+  await t.step('returns a valid document unchanged', async () => {
+    const query = '{ messages(where: { bodyContains: "x" }, limit: 2) { path } }'
+    const result = await dropInvalidSelections(query)
+    assert({
+      given: 'a schema-valid query',
+      should: 'return it unchanged',
+      actual: result?.query,
+      expected: query,
+    })
+    assert({
+      given: 'a schema-valid query',
+      should: 'report nothing dropped',
+      actual: result?.dropped.length,
+      expected: 0,
+    })
+  })
+
+  await t.step('drops only the invalid selection', async () => {
+    // The blast-radius failure: GraphQL validates the whole document up
+    // front, so one hallucinated filter field used to cost every selection.
+    const query =
+      '{ msgs: messages(where: {bodyContains: "x"}) { path } bad: messages(where: {body_contains: "x"}) { path } }'
+    const result = await dropInvalidSelections(query)
+    assert({
+      given: 'one invalid selection among valid ones',
+      should: 'keep the valid selection executable',
+      actual: result?.query,
+      expected: `{
+  msgs: messages(where: {bodyContains: "x"}) {
+    path
+  }
+}`,
+    })
+    assert({
+      given: 'one invalid selection among valid ones',
+      should: 'report the dropped response key',
+      actual: result?.dropped.map((d) => d.key).join(','),
+      expected: 'bad',
+    })
+    assert({
+      given: 'one invalid selection among valid ones',
+      should: 'carry the validator message for the dropped key',
+      actual: result?.dropped[0]?.errors[0]?.includes('body_contains'),
+      expected: true,
+    })
+  })
+
+  await t.step('drops multiple invalid selections in one call', async () => {
+    const query =
+      '{ a: journals(where: {recent: "7d"}) { path } b: messages(where: {body_contains: "x"}) { path } c: documents(where: {madeUp: "y"}) { path } }'
+    const result = await dropInvalidSelections(query)
+    assert({
+      given: 'two invalid selections among three',
+      should: 'drop both and keep the survivor',
+      actual: result?.dropped
+        .map((d) => d.key)
+        .sort()
+        .join(','),
+      expected: 'b,c',
+    })
+    assert({
+      given: 'two invalid selections among three',
+      should: 'leave a document that validates clean',
+      actual: await graphQLValidationErrors(result?.query ?? ''),
+      expected: null,
+    })
+  })
+
+  await t.step('salvages the 2026-07-12 incident shape without normalization', async () => {
+    // Raw form of the failure: `involves` misplaced beside `where`. Even
+    // when the hoist repair is bypassed, salvage must confine the damage
+    // to the one selection instead of voiding the document.
+    const query = `query {
+  msgs: messages(where: { involves: "Alice Hart" }, limit: 20) { path }
+  docs: documents(where: { tagsStartsWith: "Acme/Talent" }, involves: "Alice Hart", limit: 10) { path }
+  person: people(where: { nameContains: "Alice Hart" }, limit: 3) { path }
+}`
+    const result = await dropInvalidSelections(query)
+    assert({
+      given: 'the misplaced-involves incident shape',
+      should: 'drop only the offending selection',
+      actual: result?.dropped.map((d) => d.key).join(','),
+      expected: 'docs',
+    })
+    assert({
+      given: 'the misplaced-involves incident shape',
+      should: 'leave the survivors executable',
+      actual: await graphQLValidationErrors(result?.query ?? ''),
+      expected: null,
+    })
+  })
+
+  await t.step('returns null when every selection is invalid', async () => {
+    assert({
+      given: 'a document with no valid selections',
+      should: 'return null instead of an empty query',
+      actual: await dropInvalidSelections('{ documents(where: {madeUp: "x"}) { path } }'),
+      expected: null,
+    })
+  })
+
+  await t.step('returns null for unparseable input', async () => {
+    assert({
+      given: 'a non-GraphQL string',
+      should: 'return null — there is nothing to salvage',
+      actual: await dropInvalidSelections('{\nchanged:true}\n}'),
+      expected: null,
     })
   })
 })
