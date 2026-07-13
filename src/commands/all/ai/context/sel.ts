@@ -5,14 +5,16 @@
  */
 
 import { generateText } from 'ai'
+import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
+import { graphQLValidationErrors, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 
 // -----------------------------------------------------------------------------
 // File Paths
@@ -21,6 +23,9 @@ import { cachedInstructions } from '#shared/ai/promptCache.ts'
 const PROMPT_FILE = new URL('./prompts/context-sel.prompt.md', import.meta.url).pathname
 const SCHEMA_FILE = new URL('../../../../_shared-ts/models/DomainCollection/query/schema.graphql', import.meta.url)
   .pathname
+
+/** Repair rounds for queries the schema validator rejects. */
+const MAX_QUERY_REPAIRS = 2
 
 // -----------------------------------------------------------------------------
 // Params
@@ -113,7 +118,45 @@ Write the GraphQL query to gather context for answering this question.`
     })
 
     // Strip code fences and wrap bare selections so the query always parses
-    const query = normalizeGraphQLQuery(result.text)
+    let query = normalizeGraphQLQuery(result.text)
+
+    // Normalization repairs shape, not meaning — the model occasionally
+    // hallucinates filter fields or argument placement the schema rejects,
+    // and one invalid field drops the whole query document downstream. Hand
+    // the validator's errors back for a repair round instead; each rejection
+    // is logged so recurring hallucination shapes stay visible even when the
+    // repair succeeds. The instructions prefix is byte-identical across
+    // rounds, so repairs read the schema from the prompt cache.
+    let validationErrors = await graphQLValidationErrors(query)
+    for (let attempt = 1; validationErrors && attempt <= MAX_QUERY_REPAIRS; attempt++) {
+      output.log(colors.yellow(`Query failed validation — repairing (${attempt}/${MAX_QUERY_REPAIRS})`))
+      await logAIError({
+        source: 'ai:context:sel',
+        stage: 'invalid-query',
+        message: validationErrors.join('; '),
+        query,
+        question,
+      })
+
+      const repair = await generateText({
+        ...aiModel('balanced'),
+        instructions: cachedInstructions(systemPrompt),
+        prompt: `${userPrompt}
+
+Your previous query was rejected by the GraphQL validator.
+
+Previous query:
+${query}
+
+Validation errors:
+${validationErrors.map((e) => `- ${e}`).join('\n')}
+
+Fix the query so it validates against the schema. Return ONLY the corrected GraphQL query.`,
+      })
+
+      query = normalizeGraphQLQuery(repair.text)
+      validationErrors = await graphQLValidationErrors(query)
+    }
 
     output.log(query)
 
