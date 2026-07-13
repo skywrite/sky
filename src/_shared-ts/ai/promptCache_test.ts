@@ -80,10 +80,14 @@ test('withCacheTail marks only the final message', () => {
 
 test('withCacheTail moves a stale tail breakpoint to the new last message', () => {
   const afterTurnOne = withCacheTail([{ role: 'user', content: 'first' } as ModelMessage])
-  const grown = [...afterTurnOne, { role: 'assistant', content: 'reply' } as ModelMessage, {
-    role: 'user',
-    content: 'second',
-  } as ModelMessage]
+  const grown = [
+    ...afterTurnOne,
+    { role: 'assistant', content: 'reply' } as ModelMessage,
+    {
+      role: 'user',
+      content: 'second',
+    } as ModelMessage,
+  ]
   const marked = withCacheTail(grown)
   assert({
     given: 'a conversation whose earlier tail was marked last turn',
