@@ -162,6 +162,110 @@ test('normalizeGraphQLQuery', async (t) => {
       expected: garbage,
     })
   })
+
+  await t.step('hoists a misplaced filter arg into a new where', () => {
+    // The 2026-07-10 failure shape: `recent` left in field-argument
+    // position fails validation with 'Unknown argument "recent" on field
+    // "Query.journals"' and voids the whole document.
+    assert({
+      given: 'a filter key passed as a field argument with no where',
+      should: 'move it into a fresh where object',
+      actual: normalizeGraphQLQuery('{ recentJournals: journals(recent: "7d", limit: 10) { date } }'),
+      expected: `{
+  recentJournals: journals(where: {recent: "7d"}, limit: 10) {
+    date
+  }
+}`,
+    })
+  })
+
+  await t.step('merges a misplaced filter arg into an existing where', () => {
+    // The 2026-07-12 failure shape: the model closed `where` after the tag
+    // filter and appended `involves` as a sibling argument.
+    const query =
+      '{ docs: documents(where: {tagsStartsWith: "Acme/Talent"}, involves: "Alice Hart", limit: 10) { path } }'
+    assert({
+      given: 'a filter key passed as a sibling of where',
+      should: 'merge it into the where object, keeping other arguments',
+      actual: normalizeGraphQLQuery(query),
+      // print() wraps argument lists past 80 chars onto separate lines
+      expected: `{
+  docs: documents(
+    where: {tagsStartsWith: "Acme/Talent", involves: "Alice Hart"}
+    limit: 10
+  ) {
+    path
+  }
+}`,
+    })
+  })
+
+  await t.step('keeps the where value when a stray duplicates its key', () => {
+    assert({
+      given: 'a misplaced argument whose key already exists in where',
+      should: 'drop the stray rather than overwrite the where value',
+      actual: normalizeGraphQLQuery('{ documents(where: {involves: "A"}, involves: "B", limit: 5) { path } }'),
+      expected: `{
+  documents(where: {involves: "A"}, limit: 5) {
+    path
+  }
+}`,
+    })
+  })
+
+  await t.step('leaves nested field arguments alone when hoisting', () => {
+    const query = '{ wrapper { thing(x: 1) { p } } }'
+    assert({
+      given: 'arguments on fields below the root',
+      should: 'return the query unchanged — only root fields take where/limit',
+      actual: normalizeGraphQLQuery(query),
+      expected: query,
+    })
+  })
+
+  await t.step('leaves selections whose where is a variable alone', () => {
+    const query = 'query ($w: MessageFilter) { messages(where: $w, recent: "7d") { path } }'
+    assert({
+      given: 'a stray argument beside a non-literal where',
+      should: 'return the query unchanged for validation to report',
+      actual: normalizeGraphQLQuery(query),
+      expected: query,
+    })
+  })
+
+  await t.step('hoists before aliasing so repaired duplicates still alias', () => {
+    assert({
+      given: 'two same-field selections that differ only in misplaced args',
+      should: 'hoist both and alias the second',
+      actual: normalizeGraphQLQuery('{documents(involves:"A"){path}documents(involves:"B"){path}}'),
+      expected: `{
+  documents(where: {involves: "A"}) {
+    path
+  }
+  documents2: documents(where: {involves: "B"}) {
+    path
+  }
+}`,
+    })
+  })
+
+  await t.step('hoisting yields a schema-valid document for the 2026-07-12 shape', async () => {
+    // End-to-end guard for the incident: one misplaced `involves` voided an
+    // eight-selection context query. After normalization the document must
+    // validate clean.
+    const query = `query {
+  msgs: messages(where: { involves: "Alice Hart" }, limit: 20) { path }
+  meets: meetings(where: { involves: "Alice Hart" }, limit: 20) { path }
+  docs: documents(where: { tagsStartsWith: "Acme/Talent" }, involves: "Alice Hart", limit: 10) { path }
+  person: people(where: { nameContains: "Alice Hart" }, limit: 3) { path }
+}`
+    assert({
+      given: 'the misplaced-involves incident shape',
+      should: 'validate clean after normalization',
+      actual: await graphQLValidationErrors(normalizeGraphQLQuery(query)),
+      expected: null,
+    })
+  })
 })
 
 test('graphQLParseError', async (t) => {
