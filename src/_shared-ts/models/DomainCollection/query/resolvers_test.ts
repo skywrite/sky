@@ -969,3 +969,35 @@ test('resolvers - updatedRecently matches only documents with an updated date', 
     expected: ['Website Refresh'],
   })
 })
+
+// =============================================================================
+// bodyContains on entity types
+// =============================================================================
+
+test('resolvers - ideas filters by bodyContains case-insensitively', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.ideas({ where: { bodyContains: 'btc' } })
+
+  assert({
+    given: 'bodyContains matching an idea body in a different case',
+    should: 'return only the matching idea',
+    actual: result.map((i) => i.name),
+    expected: ['Crypto-Debit-Rewards'],
+  })
+})
+
+test('resolvers - people bodyContains excludes non-matching bodies', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.people({ where: { bodyContains: 'no-such-phrase' } })
+
+  assert({
+    given: 'bodyContains matching no person body',
+    should: 'return no people',
+    actual: result.length,
+    expected: 0,
+  })
+})
