@@ -50,8 +50,14 @@ async function loadQuestionsFromFile(type: JournalType): Promise<Question[]> {
     const questions = parseQuestionsFromMarkdown(content)
     questionCache.set(type, questions)
     return questions
-  } catch (error) {
-    console.warn(`Failed to load questions from ${filePath}:`, error)
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException
+    if (error?.code === 'ENOENT') {
+      // A type without a questions file is an AI-only type (same as an empty file)
+      questionCache.set(type, [])
+      return []
+    }
+    console.warn(`Failed to load questions from ${filePath}:`, err)
     return []
   }
 }
