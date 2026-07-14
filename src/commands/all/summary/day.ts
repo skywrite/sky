@@ -207,12 +207,12 @@ export default class SummaryDayTask extends Command {
       // Temperature 0 = greedy decoding (always pick highest probability token).
       // This makes output nearly deterministic, which is appropriate for a factual
       // summary. It also helps when iterating on prompts—you can tell if output
-      // changes are from prompt edits vs random variation.
+      // changes are from prompt edits vs random variation. Thinking profiles
+      // reject sampling params; the resolver drops the override there.
       const result = await generateText({
-        ...aiModelByProfile(model),
+        ...aiModelByProfile(model, { temperature: 0 }),
         instructions: promptTemplate,
         prompt: userPrompt,
-        temperature: 0,
       })
       response = result.text
     } catch (err) {

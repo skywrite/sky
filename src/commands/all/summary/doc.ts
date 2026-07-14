@@ -181,7 +181,7 @@ export default class SummaryDocTask extends Command {
       if (pdfData) {
         // PDF: use messages array with file content part
         const result = await generateText({
-          ...aiModelByProfile(model),
+          ...aiModelByProfile(model, { temperature: 0 }),
           instructions: systemPrompt,
           messages: [
             {
@@ -192,13 +192,12 @@ export default class SummaryDocTask extends Command {
               ],
             },
           ],
-          temperature: 0,
         })
         response = result.text
       } else if (imageData) {
         // Image: use messages array with image content part
         const result = await generateText({
-          ...aiModelByProfile(model),
+          ...aiModelByProfile(model, { temperature: 0 }),
           instructions: systemPrompt,
           messages: [
             {
@@ -209,17 +208,15 @@ export default class SummaryDocTask extends Command {
               ],
             },
           ],
-          temperature: 0,
         })
         response = result.text
       } else {
         // Text: use simple system + prompt
         const fullPrompt = `${userPrompt}\n---\n\n${textContent}`
         const result = await generateText({
-          ...aiModelByProfile(model),
+          ...aiModelByProfile(model, { temperature: 0 }),
           instructions: systemPrompt,
           prompt: fullPrompt,
-          temperature: 0,
         })
         response = result.text
       }
