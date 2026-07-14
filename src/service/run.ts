@@ -1,6 +1,7 @@
+import process from 'node:process'
 import * as config from '#shared/config.ts'
 import { env, exit } from '#shared/sys/mod.ts'
-import { getDarwinIdleMs, runCommand } from '#lib/sys/mod.ts'
+import { getDarwinIdleMs, readSystemTimezone } from '#lib/sys/mod.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { createJsonResponse } from './response.ts'
@@ -22,23 +23,35 @@ routeAISDKWarningsToLog()
 // macOS service configuation isn't killing as expected
 setInterval(() => exit(0), 12 * 60 * 60 * 1000)
 
-// Track system timezone and restart if it changes
-// V8 caches timezone at process start, so we need to restart to pick up changes
-async function getSystemTimezone(): Promise<string> {
-  const result = await runCommand('readlink', ['/etc/localtime'])
-  // /etc/localtime -> /var/db/timezone/zoneinfo/America/New_York
-  return result.stdout.trim().replace(/.*\/zoneinfo\//, '')
+// Track the system timezone and adopt changes in place. The JS engine
+// resolves the host zone once per process, so a long-lived service goes
+// stale when travel re-links /etc/localtime. Assigning process.env.TZ is
+// the escape hatch: Bun (like Node) hooks that specific setter to drop the
+// engine's timezone cache, so Date and Intl re-resolve immediately. That is
+// runtime-specific behavior, not POSIX — a plain setenv would change
+// nothing. This replaces the old exit(0)-and-respawn, which unbound the
+// port for 50-70s at exactly the moments JP travels. Pinning TZ at boot
+// also immunizes the process (and every child it spawns) against the
+// post-wake wobble where Intl transiently reports UTC: an explicit TZ
+// outranks the host default.
+let trackedTimezone = await readSystemTimezone()
+if (trackedTimezone) {
+  process.env.TZ = trackedTimezone
+  console.log(`[timezone] Starting with system timezone: ${trackedTimezone} (TZ pinned)`)
+} else {
+  console.warn('[timezone] Could not read system timezone; running with runtime default')
 }
 
-const initialTimezone = await getSystemTimezone()
-console.log(`[timezone] Starting with system timezone: ${initialTimezone}`)
-
 setInterval(async () => {
-  const currentTz = await getSystemTimezone()
-  if (currentTz !== initialTimezone) {
-    console.log(`[timezone] System timezone changed from ${initialTimezone} to ${currentTz}, restarting...`)
-    exit(0)
-  }
+  const currentTz = await readSystemTimezone()
+  // null = transient read failure (relink window): keep the current zone
+  // rather than restarting over a hiccup like the old comparison did.
+  if (!currentTz || currentTz === trackedTimezone) return
+  console.log(
+    `[timezone] System timezone changed from ${trackedTimezone ?? 'unknown'} to ${currentTz} (updated in place)`,
+  )
+  process.env.TZ = currentTz
+  trackedTimezone = currentTz
 }, 30 * 1000)
 
 // Production-specific routes
