@@ -20,7 +20,9 @@ import { AI_PROFILES } from '#config'
  * for anthropic). The resolver demuxes them into a call: generic -> top level,
  * provider-specific -> `providerOptions[provider]`. Sampling params live in `options`
  * (not top level) on purpose: their validity is model-specific — thinking models 400
- * on `temperature` — so they're set only on profiles whose model accepts them.
+ * on `temperature` — so they're set only on profiles whose model accepts them. Per-call
+ * needs pass through `overrides` (`aiModel('fast', { temperature: 0 })`), which the
+ * resolver drops when the profile's model rejects them.
  *
  * Built on the no-timeout Anthropic provider so long calls don't hit Bun's 300s cap.
  *
@@ -118,20 +120,43 @@ function languageModelFor(profile: ModelProfile): LanguageModel {
   }
 }
 
-/** Resolve a profile into spread-ready call args, demuxing generic vs provider-specific options. */
-export function resolveProfile(profile: ModelProfile): ResolvedModel {
-  const resolved: ResolvedModel = { model: languageModelFor(profile) }
-  if (!profile.options) return resolved
+/** Sampling params thinking models reject; see resolveProfile. */
+const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 
+/** True when a profile turns on extended thinking. */
+function thinkingEnabled(profile: ModelProfile): boolean {
+  const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking
+  return thinking !== undefined && thinking.type !== 'disabled'
+}
+
+/**
+ * Resolve a profile into spread-ready call args, demuxing generic vs provider-specific
+ * options. Per-call `overrides` merge over the profile's common options — but sampling
+ * params are dropped when the profile enables thinking (those models reject them), so
+ * call sites can ask for determinism without tracking which model a profile resolves to.
+ */
+export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions): ResolvedModel {
+  const resolved: ResolvedModel = { model: languageModelFor(profile) }
   const common = resolved as unknown as Record<string, unknown>
   const providerOptions: Record<string, JSONValue> = {}
 
-  for (const [key, value] of Object.entries(profile.options)) {
+  for (const [key, value] of Object.entries(profile.options ?? {})) {
     if (value === undefined) continue
     if (COMMON_KEYS.has(key)) {
       common[key] = value
     } else {
       providerOptions[key] = value as JSONValue
+    }
+  }
+
+  for (const [key, value] of Object.entries(overrides ?? {})) {
+    if (value === undefined || !COMMON_KEYS.has(key)) continue
+    common[key] = value
+  }
+
+  if (thinkingEnabled(profile)) {
+    for (const key of SAMPLING_KEYS) {
+      delete common[key]
     }
   }
 
@@ -143,8 +168,8 @@ export function resolveProfile(profile: ModelProfile): ResolvedModel {
 }
 
 /** Resolve a semantic role (e.g. `aiModel('reasoning')`) to a configured model. */
-export function aiModel(role: Role): ResolvedModel {
-  return resolveProfile(PROFILES[ROLES[role]])
+export function aiModel(role: Role, overrides?: CommonOptions): ResolvedModel {
+  return resolveProfile(PROFILES[ROLES[role]], overrides)
 }
 
 const PROVIDERS = new Set<string>(['anthropic', 'openai', 'ollama', 'lm-studio'])
@@ -182,6 +207,6 @@ export function getProfile(name: string): ModelProfile {
 }
 
 /** Resolve a model profile by name — for direct addressing (e.g. a --reasoning flag or an A/B compare UI). */
-export function aiModelByProfile(name: string): ResolvedModel {
-  return resolveProfile(getProfile(name))
+export function aiModelByProfile(name: string, overrides?: CommonOptions): ResolvedModel {
+  return resolveProfile(getProfile(name), overrides)
 }

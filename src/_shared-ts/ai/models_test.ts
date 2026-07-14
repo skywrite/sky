@@ -84,6 +84,35 @@ test('resolveProfile demuxes generic settings from provider-specific options', (
   })
 })
 
+test('resolveProfile applies sampling overrides on non-thinking profiles', () => {
+  const profile = defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' })
+  const resolved = resolveProfile(profile, { temperature: 0 })
+
+  assert({
+    given: 'a temperature override on a profile without thinking',
+    should: 'hoist it to the top level',
+    actual: resolved.temperature,
+    expected: 0,
+  })
+})
+
+test('resolveProfile drops sampling overrides when the profile enables thinking', () => {
+  const resolved = aiModelByProfile('default-opus-4.8', { temperature: 0, maxOutputTokens: 4096 })
+
+  assert({
+    given: 'a temperature override on a thinking profile',
+    should: 'drop it (thinking models reject sampling params)',
+    actual: resolved.temperature,
+    expected: undefined,
+  })
+  assert({
+    given: 'a non-sampling override on the same call',
+    should: 'still apply',
+    actual: resolved.maxOutputTokens,
+    expected: 4096,
+  })
+})
+
 test('default-opus-4.8 profile resolves to opus 4.8 with effort/thinking options', () => {
   const resolved = aiModelByProfile('default-opus-4.8')
   assert({
