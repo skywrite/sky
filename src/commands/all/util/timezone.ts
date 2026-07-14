@@ -2,9 +2,6 @@ import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import { readSystemTimezone } from '#lib/sys/mod.ts'
-import delay from '#universal/async/delay.ts'
-
-const RETRY_DELAY_MS = 250
 
 export interface UtilTimezoneResult {
   iana: string
@@ -30,12 +27,8 @@ export default class UtilTimezoneTask extends Command {
 
     // The symlink read can fail for a moment while macOS re-links
     // /etc/localtime (auto-timezone re-applying on wake) — the same window
-    // where Intl silently reports UTC. One short retry outlasts it.
-    let system = await readSystemTimezone()
-    if (!system) {
-      await delay(RETRY_DELAY_MS)
-      system = await readSystemTimezone()
-    }
+    // where Intl silently reports UTC. readSystemTimezone retries through it.
+    const system = await readSystemTimezone()
 
     const intl = currentTimezoneIANA()
     const iana = system ?? intl
