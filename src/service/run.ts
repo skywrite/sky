@@ -11,7 +11,6 @@ import { createServer } from './server.ts'
 import { processFileUpdate } from './scanner/walkDirs.ts'
 import { isDayFile, scheduleDayFileSync, subscribeToMobileChanges } from './sync/supabase.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
-import { resetResolverCache } from '#shared/models/DomainCollection/query/execute.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 
@@ -266,7 +265,12 @@ async function watchFiles() {
       console.log(`[watcher] ${ret.event}: ${ret.file}`)
     }
 
-    // Update MarkdownStore for live link resolution
+    // Update MarkdownStore for live queries and link resolution. set/delete
+    // bump the store version, which the DomainCollection resolver caches
+    // (yoga delegates and executeQuery) compare on their next query — no
+    // invalidation call belongs here. One used to live here and silently
+    // targeted a cache the served yoga resolvers never read, so deleted
+    // files kept resolving until the next restart.
     const mdStore = server.markdownStore
     if (mdStore) {
       if (ret.event === 'remove') {
@@ -274,8 +278,6 @@ async function watchFiles() {
       } else if (ret.contents) {
         mdStore.set(ret.file, ret.contents)
       }
-      // Invalidate cached DomainCollection so next query sees updated data
-      resetResolverCache()
     }
 
     // Removed files never reach processFileUpdate (no contents), so their

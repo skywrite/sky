@@ -124,8 +124,30 @@ function createScoreLookup(store: Store): (name: string) => number {
  * Create GraphQL resolvers bound to store instances.
  */
 export function createResolvers(store: Store, markdownStore: MarkdownStore | null) {
-  // Create DomainCollection resolvers when MarkdownStore is available
-  const dc = markdownStore ? createDomainResolvers(markdownStore, { scoreFor: createScoreLookup(store) }) : null
+  // DomainCollection resolvers wrap a snapshot (a derived copy) of the
+  // MarkdownStore. dcVersion records which store version the copy was built
+  // from; liveDc() compares it to the live version on every read and rebuilds
+  // on mismatch. Without that check, yoga served the boot-time scan for the
+  // whole process lifetime — deleted files kept resolving, new files stayed
+  // invisible until the next restart.
+  //
+  // Lazy compare-on-read beats the alternatives here:
+  //  - an explicit reset call from the watcher is what silently failed
+  //    before (it cleared executeQuery's cache, never this closure);
+  //  - rebuilding eagerly on every file event wastes work — saves and sync
+  //    touches fire constantly with no query in between;
+  //  - rebuilding on every query pays fromStore() (~55ms on the production
+  //    store) even when nothing changed, versus two integer reads.
+  let dc: ReturnType<typeof createDomainResolvers> | null = null
+  let dcVersion = -1
+  const liveDc = () => {
+    if (!markdownStore) return null
+    if (!dc || dcVersion !== markdownStore.version) {
+      dc = createDomainResolvers(markdownStore, { scoreFor: createScoreLookup(store) })
+      dcVersion = markdownStore.version
+    }
+    return dc
+  }
 
   // DomainCollection query delegation (DC resolvers take (args); createSchema
   // passes (parent, args)). `satisfies` keeps this map exhaustive over
@@ -133,20 +155,20 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
   // compile error. A missing delegate resolves null, violates the non-null
   // schema types ([Chat!]! etc.), and kills every query touching the field.
   const dcDelegates = {
-    meetings: (_: unknown, args: any) => dc?.meetings(args) ?? [],
-    messages: (_: unknown, args: any) => dc?.messages(args) ?? [],
-    videos: (_: unknown, args: any) => dc?.videos(args) ?? [],
-    people: (_: unknown, args: any) => dc?.people(args) ?? [],
-    orgs: (_: unknown, args: any) => dc?.orgs(args) ?? [],
-    projects: (_: unknown, args: any) => dc?.projects(args) ?? [],
-    decisions: (_: unknown, args: any) => dc?.decisions(args) ?? [],
-    goals: (_: unknown, args: any) => dc?.goals(args) ?? [],
-    places: (_: unknown, args: any) => dc?.places(args) ?? [],
-    ideas: (_: unknown, args: any) => dc?.ideas(args) ?? [],
-    days: (_: unknown, args: any) => dc?.days(args) ?? [],
-    journals: (_: unknown, args: any) => dc?.journals(args) ?? [],
-    chats: (_: unknown, args: any) => dc?.chats(args) ?? [],
-    documents: (_: unknown, args: any) => dc?.documents(args) ?? [],
+    meetings: (_: unknown, args: any) => liveDc()?.meetings(args) ?? [],
+    messages: (_: unknown, args: any) => liveDc()?.messages(args) ?? [],
+    videos: (_: unknown, args: any) => liveDc()?.videos(args) ?? [],
+    people: (_: unknown, args: any) => liveDc()?.people(args) ?? [],
+    orgs: (_: unknown, args: any) => liveDc()?.orgs(args) ?? [],
+    projects: (_: unknown, args: any) => liveDc()?.projects(args) ?? [],
+    decisions: (_: unknown, args: any) => liveDc()?.decisions(args) ?? [],
+    goals: (_: unknown, args: any) => liveDc()?.goals(args) ?? [],
+    places: (_: unknown, args: any) => liveDc()?.places(args) ?? [],
+    ideas: (_: unknown, args: any) => liveDc()?.ideas(args) ?? [],
+    days: (_: unknown, args: any) => liveDc()?.days(args) ?? [],
+    journals: (_: unknown, args: any) => liveDc()?.journals(args) ?? [],
+    chats: (_: unknown, args: any) => liveDc()?.chats(args) ?? [],
+    documents: (_: unknown, args: any) => liveDc()?.documents(args) ?? [],
   } satisfies Record<keyof ReturnType<typeof createDomainResolvers>, unknown>
 
   return {
@@ -165,22 +187,22 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
 
       // Convenience single-item lookups
       person: (_: unknown, { name }: { name: string }) => {
-        const results = dc?.people({ where: { name } }) ?? []
+        const results = liveDc()?.people({ where: { name } }) ?? []
         return results[0] ?? null
       },
       org: (_: unknown, { name }: { name: string }) => {
-        const results = dc?.orgs({ where: { name } }) ?? []
+        const results = liveDc()?.orgs({ where: { name } }) ?? []
         return results[0] ?? null
       },
       project: (_: unknown, { name }: { name: string }) => {
-        const results = dc?.projects({ where: { name } }) ?? []
+        const results = liveDc()?.projects({ where: { name } }) ?? []
         return results[0] ?? null
       },
 
       // Convenience list-all queries
-      allPeople: () => dc?.people({}) ?? [],
-      allOrgs: () => dc?.orgs({}) ?? [],
-      allProjects: () => dc?.projects({}) ?? [],
+      allPeople: () => liveDc()?.people({}) ?? [],
+      allOrgs: () => liveDc()?.orgs({}) ?? [],
+      allProjects: () => liveDc()?.projects({}) ?? [],
 
       // Ref resolution
       resolveRefs: (_: unknown, args: { refs: string[]; year?: number; month?: number; sourceFilePath?: string }) => {

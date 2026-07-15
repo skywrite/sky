@@ -459,3 +459,56 @@ test('service yoga executes every DomainCollection root field with the filter ap
     })
   }
 })
+
+test('service yoga tracks MarkdownStore mutations via version bumps', async () => {
+  // Live mock: a mutable journal list plus a version counter, mimicking the
+  // real MarkdownStore where the watcher's set()/delete() bump the version.
+  // Guards the regression where yoga served the boot-time DomainCollection
+  // for the whole process lifetime (deleted journals kept resolving).
+  const liveJournals = [...journals]
+  let version = 0
+  const mdStore = {
+    people: createMockCollection(people),
+    orgs: createMockCollection(orgs),
+    projects: createMockCollection(projects),
+    decisions: createMockCollection(decisions),
+    goals: createMockCollection(goals),
+    ideas: createMockCollection(ideas),
+    places: createMockCollection(places),
+    time: { getAll: () => ({ toArray: () => liveJournals }) },
+    get version() {
+      return version
+    },
+  } as unknown as MarkdownStore
+  const yoga = createYogaInstance({} as Store, mdStore)
+
+  const before = await runQuery(yoga, '{ journals { path } }')
+
+  // Mutate WITHOUT a version bump: the cached snapshot must keep serving
+  liveJournals.pop()
+  const cached = await runQuery(yoga, '{ journals { path } }')
+
+  version++
+  const after = await runQuery(yoga, '{ journals { path } }')
+
+  assert({
+    given: 'a journals query before any mutation',
+    should: 'see both fixture journals',
+    actual: (before.data?.journals ?? []).length,
+    expected: 2,
+  })
+
+  assert({
+    given: 'a store mutation without a version bump',
+    should: 'keep serving the cached snapshot (rebuilds are version-gated)',
+    actual: (cached.data?.journals ?? []).length,
+    expected: 2,
+  })
+
+  assert({
+    given: 'a store mutation with a version bump',
+    should: 'rebuild the DomainCollection and reflect the change',
+    actual: (after.data?.journals ?? []).length,
+    expected: 1,
+  })
+})

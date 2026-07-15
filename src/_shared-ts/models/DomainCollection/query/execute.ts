@@ -60,29 +60,27 @@ export interface ExecuteResult<T = unknown> {
  *   store
  * )
  */
-// Cache resolvers: DomainCollection.fromStore() is expensive (~6s for 20k docs).
-// Invalidated when store is mutated via set()/delete().
+// Cache resolvers: DomainCollection.fromStore() rebuilds the whole collection
+// (~55ms on the production store) — skip that when nothing changed. The cache
+// is keyed on the store instance AND its version, so MarkdownStore.set()/
+// delete() invalidate it implicitly via the version bump; there is no reset
+// to remember to call. This cache is independent of the yoga delegates' cache
+// (liveDc() in service/graphql/schema.ts) — both compare against the same
+// store counter, which is why it is a counter and not a dirty flag one cache
+// would clear for the other.
 let cachedResolversStore: MarkdownStore | null = null
+let cachedResolversVersion = -1
 let cachedResolvers: ReturnType<typeof createDomainResolvers> | null = null
-
-/**
- * Invalidate the cached resolvers. Call after MarkdownStore.set()/delete()
- * so the next executeQuery() rebuilds from the updated store.
- */
-export function resetResolverCache(): void {
-  cachedResolvers = null
-  cachedResolversStore = null
-}
 
 export async function executeQuery<T = unknown>(query: string, store: MarkdownStore): Promise<ExecuteResult<T>> {
   const schema = await getSchema()
 
-  // Cache resolvers: DomainCollection.fromStore() is expensive (~6s for 20k docs).
-  // Reuse if same store instance; callers should invalidate via resetResolverCache()
-  // when the store is mutated.
-  if (store !== cachedResolversStore || !cachedResolvers) {
+  // Reuse resolvers while the same store instance sits at the same version;
+  // any set()/delete() moves the version and forces a rebuild here.
+  if (store !== cachedResolversStore || store.version !== cachedResolversVersion || !cachedResolvers) {
     cachedResolvers = createDomainResolvers(store)
     cachedResolversStore = store
+    cachedResolversVersion = store.version
   }
 
   const result = await graphql({

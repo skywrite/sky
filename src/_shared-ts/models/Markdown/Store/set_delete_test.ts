@@ -253,3 +253,39 @@ test('MarkdownStore.set: no-op for unrecognized directory', async () => {
     expected: 0,
   })
 })
+
+test('MarkdownStore.version: routed set and delete bump it', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/people/jane.md', '---\nname: Jane Doe\n---\n\n# Jane')
+  const afterSet = store.version
+  store.delete('/nb/people/jane.md')
+
+  assert({
+    given: 'a routed set',
+    should: 'bump the version',
+    actual: afterSet,
+    expected: 1,
+  })
+
+  assert({
+    given: 'a routed delete',
+    should: 'bump the version again',
+    actual: store.version,
+    expected: 2,
+  })
+})
+
+test('MarkdownStore.version: unrouted set/delete leave it unchanged', async () => {
+  const store = await buildEmpty()
+
+  store.set('/unknown/dir/file.md', '---\nname: Orphan\n---\n\n# Orphan')
+  store.delete('/unknown/dir/file.md')
+
+  assert({
+    given: 'set/delete outside every configured dir',
+    should: 'not bump the version (no cache invalidation for no-ops)',
+    actual: store.version,
+    expected: 0,
+  })
+})
