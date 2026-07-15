@@ -419,3 +419,32 @@ test('executeQuery - toContains filters channel messages and videos', async () =
     expected: 0,
   })
 })
+
+test('executeQuery - resolver cache follows store mutations via version bumps', async () => {
+  const store = await MarkdownStore.build({
+    peopleDirs: ['/nb/people'],
+    orgDirs: ['/nb/orgs'],
+    timeDirs: ['/nb/time'],
+  })
+  store.set('/nb/people/jane.md', '---\nname: Jane Doe\n---\n\nJane.')
+
+  const before = await executeQuery<{ people: Array<{ path: string }> }>('{ people { path } }', store)
+
+  store.delete('/nb/people/jane.md')
+
+  const after = await executeQuery<{ people: Array<{ path: string }> }>('{ people { path } }', store)
+
+  assert({
+    given: 'a person set on the store',
+    should: 'appear in query results',
+    actual: before.data?.people.map((p) => p.path),
+    expected: ['/nb/people/jane.md'],
+  })
+
+  assert({
+    given: 'the person deleted after a cached query',
+    should: 'disappear from the next query without any manual cache reset',
+    actual: after.data?.people,
+    expected: [],
+  })
+})

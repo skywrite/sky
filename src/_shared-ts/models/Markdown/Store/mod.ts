@@ -125,48 +125,57 @@ export default class MarkdownStore {
   }
 
   /**
+   * Monotonic mutation counter, bumped by every routed set()/delete().
+   *
+   * The DomainCollection the query layers serve is a derived copy of this
+   * store; this counter is how their caches answer "has the store changed
+   * since I built my copy?" — each cache remembers the version it was built
+   * at and compares on read (see liveDc() in service/graphql/schema.ts and
+   * the executeQuery cache in DomainCollection/query/execute.ts).
+   *
+   * Invalidation is deliberately pull-based. The push alternative (writers
+   * call an explicit reset) already failed once: the watcher reset a module
+   * cache the served yoga resolvers never used, so deleted files kept
+   * resolving until restart. Bumping inside the only two write paths makes
+   * invalidation a side effect of mutation — impossible to forget at a call
+   * site. It is a counter rather than a dirty flag because several caches
+   * read it independently; a flag would be cleared by whichever cache
+   * rebuilt first, leaving the others stale.
+   */
+  private _version = 0
+
+  get version(): number {
+    return this._version
+  }
+
+  /** Sub-store responsible for a file path, or null when no configured directory contains it. */
+  private routeFor(filePath: string): { set(filePath: string, contents: string): void; delete(filePath: string): void } | null {
+    for (const dir of this.dirs.peopleDirs) {
+      if (filePath.startsWith(dir)) return this.people
+    }
+    for (const dir of this.dirs.orgDirs) {
+      if (filePath.startsWith(dir)) return this.orgs
+    }
+    if (this.dirs.projectsDir && filePath.startsWith(this.dirs.projectsDir)) return this.projects
+    if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) return this.decisions
+    if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) return this.goals
+    if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
+    if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
+    for (const dir of this.dirs.timeDirs ?? []) {
+      if (filePath.startsWith(dir)) return this.time
+    }
+    return null
+  }
+
+  /**
    * Add or update a document by file path and raw contents.
    * Routes to the correct sub-store based on which configured directory the path falls under.
    */
   set(filePath: string, contents: string): void {
-    for (const dir of this.dirs.peopleDirs) {
-      if (filePath.startsWith(dir)) {
-        this.people.set(filePath, contents)
-        return
-      }
-    }
-    for (const dir of this.dirs.orgDirs) {
-      if (filePath.startsWith(dir)) {
-        this.orgs.set(filePath, contents)
-        return
-      }
-    }
-    if (this.dirs.projectsDir && filePath.startsWith(this.dirs.projectsDir)) {
-      this.projects.set(filePath, contents)
-      return
-    }
-    if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) {
-      this.decisions.set(filePath, contents)
-      return
-    }
-    if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) {
-      this.goals.set(filePath, contents)
-      return
-    }
-    if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) {
-      this.ideas.set(filePath, contents)
-      return
-    }
-    if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) {
-      this.places.set(filePath, contents)
-      return
-    }
-    for (const dir of this.dirs.timeDirs ?? []) {
-      if (filePath.startsWith(dir)) {
-        this.time.set(filePath, contents)
-        return
-      }
-    }
+    const target = this.routeFor(filePath)
+    if (!target) return
+    target.set(filePath, contents)
+    this._version++
   }
 
   /**
@@ -174,44 +183,10 @@ export default class MarkdownStore {
    * Routes to the correct sub-store based on which configured directory the path falls under.
    */
   delete(filePath: string): void {
-    for (const dir of this.dirs.peopleDirs) {
-      if (filePath.startsWith(dir)) {
-        this.people.delete(filePath)
-        return
-      }
-    }
-    for (const dir of this.dirs.orgDirs) {
-      if (filePath.startsWith(dir)) {
-        this.orgs.delete(filePath)
-        return
-      }
-    }
-    if (this.dirs.projectsDir && filePath.startsWith(this.dirs.projectsDir)) {
-      this.projects.delete(filePath)
-      return
-    }
-    if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) {
-      this.decisions.delete(filePath)
-      return
-    }
-    if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) {
-      this.goals.delete(filePath)
-      return
-    }
-    if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) {
-      this.ideas.delete(filePath)
-      return
-    }
-    if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) {
-      this.places.delete(filePath)
-      return
-    }
-    for (const dir of this.dirs.timeDirs ?? []) {
-      if (filePath.startsWith(dir)) {
-        this.time.delete(filePath)
-        return
-      }
-    }
+    const target = this.routeFor(filePath)
+    if (!target) return
+    target.delete(filePath)
+    this._version++
   }
 
   /**
