@@ -298,6 +298,12 @@ export default class AudioTranscriptSummaryTask extends Command {
       output.log(colors.yellow(`[DEBUG] Failed to extract metadata: ${err}`))
     }
 
+    // Merge who: prefer the analysis step's attendees — it phonetically matched names
+    // against known contacts (canonical full names), so it's the authoritative source.
+    // Fall back to the summary-extracted list on the paste/file path (no analysis step).
+    // Shown in the confirmation box below; user corrections override it.
+    let finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
+
     const finalTitle = title !== 'Transcript Summary' ? title : extractedTitle
 
     // Extract summary section (different header per template)
@@ -320,7 +326,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       output.log(colors.white(`  From:     ${extractedFrom ?? '(not detected)'}`))
       output.log(colors.white(`  To:       ${extractedTo ?? '(not detected)'}`))
     } else {
-      output.log(colors.white(`  Who:      ${extractedWho.length > 0 ? extractedWho.join(', ') : '(none)'}`))
+      output.log(colors.white(`  Who:      ${finalWho.length > 0 ? finalWho.join(', ') : '(none)'}`))
     }
     output.log(colors.white(`  Rel:      ${extractedRel.length > 0 ? extractedRel.join(', ') : '(none)'}`))
     output.log(colors.cyan('──────────────────────────'))
@@ -335,7 +341,7 @@ export default class AudioTranscriptSummaryTask extends Command {
         try {
           const peopleFields = isMessageTemplate
             ? `- from: ${extractedFrom ?? 'null'}\n- to: ${extractedTo ?? 'null'}`
-            : `- who: ${JSON.stringify(extractedWho)}`
+            : `- who: ${JSON.stringify(finalWho)}`
 
           const peopleRules = isMessageTemplate
             ? '- from and to must be strings\n- Only include fields the user explicitly mentioned'
@@ -384,7 +390,7 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
             if (parsed.from) extractedFrom = parsed.from
             if (parsed.to) extractedTo = parsed.to
           } else {
-            if (Array.isArray(parsed.who)) extractedWho = parsed.who
+            if (Array.isArray(parsed.who)) finalWho = parsed.who
           }
           if (Array.isArray(parsed.rel)) extractedRel = parsed.rel
 
@@ -397,11 +403,6 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
 
     // Recalculate finalTitle after potential corrections
     const correctedTitle = title !== 'Transcript Summary' ? title : extractedTitle
-
-    // Merge who: prefer the analysis step's attendees — it phonetically matched names
-    // against known contacts (canonical full names), so it's the authoritative source.
-    // Fall back to the summary-extracted list on the paste/file path (no analysis step).
-    const finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
 
     // 5. Determine output destination
     let outputPath: string | null = null
