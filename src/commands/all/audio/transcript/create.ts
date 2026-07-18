@@ -2,7 +2,8 @@ import * as path from 'node:path'
 import { readFile, unlink } from 'node:fs/promises'
 import OpenAI, { toFile } from 'openai'
 import colors from 'picocolors'
-import { exists, readDir, writeTextFile } from '#shared/fs/mod.ts'
+import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { env } from '#shared/sys/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -31,7 +32,7 @@ interface MistralTranscriptionResponse {
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.mp4', '.m4a', '.wav', '.webm', '.ogg', '.flac', '.aac', '.caf'])
 
 const params = {
-  file: Arg.string('Path to audio file (optional - uses first audio file on Desktop if not provided)', {
+  file: Arg.string('Path to audio file (optional - uses newest audio file on Desktop if not provided)', {
     optional: true,
   }),
   output: Flag.string('Write to specific file path', {
@@ -82,38 +83,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Helpers
 // -----------------------------------------------------------------------------
 
-function isAudioFile(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase()
-  return AUDIO_EXTENSIONS.has(ext)
-}
-
-async function findFirstAudioOnDesktop(): Promise<string | null> {
-  const home = env.get('HOME')
-  if (!home) return null
-
-  const desktopPath = path.join(home, 'Desktop')
-
-  if (!(await exists(desktopPath))) {
-    return null
-  }
-
-  // Read desktop directory and find audio files
-  const entries: string[] = []
-  for await (const entry of readDir(desktopPath)) {
-    if (entry.isFile && isAudioFile(entry.name)) {
-      entries.push(path.join(desktopPath, entry.name))
-    }
-  }
-
-  if (entries.length === 0) {
-    return null
-  }
-
-  // Sort by name and return first one
-  entries.sort()
-  return entries[0]
-}
-
 // -----------------------------------------------------------------------------
 // Command
 // -----------------------------------------------------------------------------
@@ -123,7 +92,7 @@ export default class AudioTranscriptCreateTask extends Command {
     name: 'audio:transcript:create',
     description: 'Create a transcript from an audio file using OpenAI or Mistral.',
     descriptionLong: [
-      'Takes an audio file path, or if not provided, finds the first audio file on the Desktop.',
+      'Takes an audio file path, or if not provided, finds the newest audio file on the Desktop.',
       '',
       'Providers:',
       '  - openai (default): Uses gpt-4o-transcribe model',
@@ -159,11 +128,14 @@ export default class AudioTranscriptCreateTask extends Command {
       inputFile = file
     } else {
       output.log(colors.gray('No file specified, searching Desktop for audio files...'))
-      const foundFile = await findFirstAudioOnDesktop()
-      if (!foundFile) {
+      const audioFiles = await desktopFilesByExt([...AUDIO_EXTENSIONS])
+      if (audioFiles.length === 0) {
         return CommandResult.fail('No audio file found on Desktop. Please specify a file path.')
       }
-      inputFile = foundFile
+      if (audioFiles.length > 1) {
+        output.log(colors.gray(`${audioFiles.length} audio files on Desktop, using newest`))
+      }
+      inputFile = audioFiles[0].path
       output.log(colors.cyan(`Found: ${path.basename(inputFile)}`))
     }
 

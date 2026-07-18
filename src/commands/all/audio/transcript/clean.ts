@@ -6,7 +6,8 @@ import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -29,7 +30,7 @@ const params = {
     },
   ),
   fromTranscript: Flag.string(
-    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the first .vtt on the Desktop.',
+    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the newest .vtt on the Desktop.',
     {
       optional: true,
     },
@@ -81,26 +82,6 @@ const GRAPHQL_URL = 'http://localhost:9999/graphql'
 // Analysis + correction run on the raw transcript and set the quality ceiling for the
 // notes built on it — pin the strongest profile (not the baseline `reasoning` role).
 const TRANSCRIPT_MODEL = 'default-opus-4.8'
-
-async function findFirstVttOnDesktop(): Promise<string | null> {
-  const home = env.get('HOME')
-  if (!home) return null
-
-  const desktopPath = path.join(home, 'Desktop')
-  if (!(await exists(desktopPath))) return null
-
-  const entries: string[] = []
-  for await (const entry of readDir(desktopPath)) {
-    if (entry.isFile && path.extname(entry.name).toLowerCase() === '.vtt') {
-      entries.push(path.join(desktopPath, entry.name))
-    }
-  }
-
-  if (entries.length === 0) return null
-
-  entries.sort()
-  return entries[0]
-}
 
 interface PersonWithScore {
   name: string
@@ -217,7 +198,7 @@ export default class AudioTranscriptCleanTask extends Command {
     usage: [
       'sky audio:transcript:clean                    # Paste transcript via stdin',
       'sky audio:transcript:clean --file input.txt  # Read from file',
-      'sky audio:transcript:clean --from-transcript # Clean first .vtt on Desktop',
+      'sky audio:transcript:clean --from-transcript # Clean newest .vtt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -261,10 +242,18 @@ export default class AudioTranscriptCleanTask extends Command {
         return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
       }
     } else if (useTranscriptFile) {
-      const transcriptPath =
-        typeof fromTranscript === 'string' && fromTranscript !== 'true' ? fromTranscript : await findFirstVttOnDesktop()
-      if (!transcriptPath) {
-        return CommandResult.fail('No .vtt file found on Desktop. Please specify a transcript file path.')
+      let transcriptPath: string
+      if (typeof fromTranscript === 'string' && fromTranscript !== 'true') {
+        transcriptPath = fromTranscript
+      } else {
+        const vtts = await desktopFilesByExt(['.vtt'])
+        if (vtts.length === 0) {
+          return CommandResult.fail('No .vtt file found on Desktop. Please specify a transcript file path.')
+        }
+        if (vtts.length > 1) {
+          output.log(colors.gray(`${vtts.length} .vtt files on Desktop, using newest`))
+        }
+        transcriptPath = vtts[0].path
       }
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
       try {
