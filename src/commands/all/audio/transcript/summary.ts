@@ -175,6 +175,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     let transcript: string
     let pipelineWho: string[] = []
     let pipelineAudioFilePath: string | null = null
+    let pipelineDuration: number | null = null
 
     if (useCleanPipeline) {
       // --from-audio: transcribe → clean. --from-transcript: clean an existing transcript.
@@ -188,6 +189,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       transcript = cleanResult.data.cleanedText
       pipelineWho = cleanResult.data.who
       pipelineAudioFilePath = cleanResult.data.audioFilePath
+      pipelineDuration = cleanResult.data.durationMinutes
       output.log(`\nExtracted attendees: ${pipelineWho.join(', ') || 'none'}`)
       output.log('Generating summary...\n')
     } else if (text) {
@@ -297,6 +299,10 @@ export default class AudioTranscriptSummaryTask extends Command {
     } catch (err) {
       output.log(colors.yellow(`[DEBUG] Failed to extract metadata: ${err}`))
     }
+
+    // Duration computed from VTT cue timestamps is exact — prefer it over the
+    // model's guess from the summary prose. User corrections below still override.
+    if (pipelineDuration !== null) extractedDuration = pipelineDuration
 
     // Merge who: prefer the analysis step's attendees — it phonetically matched names
     // against known contacts (canonical full names), so it's the authoritative source.
