@@ -149,7 +149,9 @@ export default class MarkdownStore {
   }
 
   /** Sub-store responsible for a file path, or null when no configured directory contains it. */
-  private routeFor(filePath: string): { set(filePath: string, contents: string): void; delete(filePath: string): void } | null {
+  private routeFor(
+    filePath: string,
+  ): { set(filePath: string, contents: string): void; delete(filePath: string): void } | null {
     for (const dir of this.dirs.peopleDirs) {
       if (filePath.startsWith(dir)) return this.people
     }
