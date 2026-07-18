@@ -8,6 +8,7 @@ import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
+import ZoomVTT from './lib/ZoomVTT/mod.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -60,6 +61,8 @@ type Result = {
   who: string[]
   rel: string[]
   audioFilePath: string | null
+  /** Exact meeting length from VTT cue timestamps, null when input was not a VTT */
+  durationMinutes: number | null
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -291,6 +294,21 @@ ${transcript}
     output.log(colors.yellow(`[DEBUG] Transcript written to ${debugPath}`))
     // END TODO
 
+    // Zoom VTT input (any path: file, Desktop, or paste): parse to structure and
+    // feed the models compact speaker turns instead of raw cues — drops the
+    // cue-number/timestamp overhead (~25-30% of the file) and merges consecutive
+    // same-speaker cues. Duration comes from cue timestamps exactly.
+    let vttDurationMinutes: number | null = null
+    if (ZoomVTT.isVtt(transcript)) {
+      const vtt = ZoomVTT.parse(transcript)
+      if (!vtt.looksLikeZoomDialect) {
+        output.log(colors.yellow('Voice tags found — not a Zoom VTT? Speaker detection may be unreliable.'))
+      }
+      vttDurationMinutes = vtt.durationMinutes
+      transcript = vtt.toTurnText()
+      output.log(colors.gray(`Zoom VTT: ${vtt.cues.length} cues → ${vtt.turns.length} speaker turns`))
+    }
+
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
 
     // 2. Fetch known contacts and organizations for name matching
@@ -517,6 +535,7 @@ ${cleanedTranscript}
       who: analysis.who,
       rel: analysis.rel,
       audioFilePath: audioSourcePath,
+      durationMinutes: vttDurationMinutes,
     })
   }
 
