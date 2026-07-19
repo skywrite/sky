@@ -216,7 +216,7 @@ Staff Engineer at Acme Corp focusing on infrastructure and platform reliability.
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- projects/Fitness-Goals.md -->
+<!-- projects/open/Fitness-Goals/_project/overview.md -->
 ---
 name: Fitness Goals
 slug: fitness-goals
@@ -253,7 +253,7 @@ Personal fitness goals for 2026. Focus on running, consistent exercise, and heal
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- projects/Product-Launch-Q1.md -->
+<!-- projects/open/Product-Launch-Q1/_project/overview.md -->
 ---
 name: Product Launch Q1
 slug: product-launch-q1
@@ -293,7 +293,7 @@ Major product update targeting Q1 2026 launch. Includes mobile app redesign, aut
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- projects/Series-B.md -->
+<!-- projects/open/Series-B/_project/overview.md -->
 ---
 name: Series B
 slug: series-b
@@ -333,7 +333,7 @@ Series B fundraising planning and preparation. Target: $40-50M raise in Q3 2026.
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- projects/Infrastructure-Upgrade.md -->
+<!-- projects/open/Infrastructure-Upgrade/_project/overview.md -->
 ---
 name: Infrastructure Upgrade
 slug: infrastructure-upgrade

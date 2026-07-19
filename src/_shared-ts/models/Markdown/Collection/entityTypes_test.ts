@@ -32,6 +32,33 @@ test('detectTypeFromPath - messages still detected alongside chat pattern', () =
   })
 })
 
+test('detectTypeFromPath - project overview paths are projects', () => {
+  assert({
+    given: 'a _project/overview.md path under a status dir',
+    should: 'detect type project',
+    actual: detectTypeFromPath('/nb/projects/open/Atlas/_project/overview.md'),
+    expected: 'project',
+  })
+})
+
+test('detectTypeFromPath - non-overview project files are documents', () => {
+  assert({
+    given: 'a markdown file in a project folder outside _project/',
+    should: 'detect type document',
+    actual: detectTypeFromPath('/nb/projects/open/Team-Survey/misc/to-go.md'),
+    expected: 'document',
+  })
+})
+
+test('detectTypeFromPath - project subdirs do not leak into later patterns', () => {
+  assert({
+    given: 'a project file under a subdir named like another pattern (meetings/)',
+    should: 'detect type document, not meeting',
+    actual: detectTypeFromPath('/nb/projects/completed/Skunkworks/meetings/kickoff-notes.md'),
+    expected: 'document',
+  })
+})
+
 test('detectTypeFromPath - unmatched paths fall back to document', () => {
   assert({
     given: 'a path matching no pattern',

@@ -224,7 +224,7 @@ name: Widget-Launch
 status: open
 ---
 Launch the widget.`),
-    path: '/test/projects/open/widget-launch.md',
+    path: '/test/projects/open/widget-launch/_project/overview.md',
   },
   {
     doc: doc(`---
@@ -232,7 +232,7 @@ name: Office-Move
 status: closed
 ---
 Move offices.`),
-    path: '/test/projects/closed/office-move.md',
+    path: '/test/projects/closed/office-move/_project/overview.md',
   },
 ]
 

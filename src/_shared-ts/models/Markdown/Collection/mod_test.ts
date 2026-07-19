@@ -352,7 +352,7 @@ const entityTypeFixtures = [
   { path: '/orgs/acme.md', expectedType: 'org', description: 'orgs directory' },
   { path: '/decisions/2026/01/test.md', expectedType: 'decision', description: 'decisions directory' },
   { path: '/goals/personal.md', expectedType: 'goal', description: 'goals directory' },
-  { path: '/projects/alpha.md', expectedType: 'project', description: 'projects directory' },
+  { path: '/projects/open/alpha/_project/overview.md', expectedType: 'project', description: 'project overview' },
   { path: '/time/2026/01/29/journal/morning.md', expectedType: 'journal', description: 'journal directory' },
   { path: '/time/2026/01/29/meeting/standup.md', expectedType: 'meeting', description: 'meeting directory' },
   { path: '/messages/slack/thread.md', expectedType: 'message', description: 'messages directory' },

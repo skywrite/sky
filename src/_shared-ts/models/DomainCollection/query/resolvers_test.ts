@@ -125,7 +125,7 @@ tags: [Sample/Sales]
 rel: [decisions/Hire-CTO, people/Jane-Doe]
 ---
 Go-to-market plan.`),
-      path: '/test/projects/Acme-Pay-GTM.md',
+      path: '/test/projects/open/Acme-Pay-GTM/_project/overview.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -135,7 +135,7 @@ updated: 2026-03-01
 tags: [Sample/Web]
 ---
 Refresh the marketing site.`),
-      path: '/test/projects/Website-Refresh.md',
+      path: '/test/projects/open/Website-Refresh/_project/overview.md',
     },
   ]
 
