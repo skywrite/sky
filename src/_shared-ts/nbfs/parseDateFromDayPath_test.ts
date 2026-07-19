@@ -5,7 +5,7 @@ import parseDateFromDayPath from './parseDateFromDayPath.ts'
 test(parseDateFromDayPath.name, () => {
   const FIXTURES = [
     {
-      path: path.join('time', '_pre-2020', '2019', '04', '01-07', '05', 'day.md'),
+      path: path.join('time', '2019', '04', '01-07', '05', 'day.md'),
       expected: '2019-04-05',
     },
     {

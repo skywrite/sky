@@ -5,7 +5,7 @@ import dayDir from './dayDir.ts'
 test(dayDir.name, () => {
   // Fixtures: YMD string -> expected path components
   const FIXTURES: Record<string, string[]> = {
-    '2019-04-05': ['_pre-2020', '2019', '04', '01-07', '05'],
+    '2019-04-05': ['2019', '04', '01-07', '05'],
     '2021-05-31': ['2021', '05', '31-06', '31'],
     '2021-06-06': ['2021', '05', '31-06', 'x06'],
     '2022-01-01': ['2022', '01', '01-02', '01'],

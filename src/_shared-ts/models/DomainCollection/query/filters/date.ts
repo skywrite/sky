@@ -11,7 +11,6 @@ import { parseDuration } from './duration.ts'
  * Extract date from a time-based path.
  * Uses parseDateFromDayPath from nbfs which handles:
  * - Standard paths: time/YYYY/MM/DD-DD/DD/...
- * - Pre-2020 paths: time/_pre-2020/YYYY/MM/DD-DD/DD/...
  * - Month spillover: time/YYYY/MM/DD-DD/xDD/... (x prefix = next month)
  */
 export function getDateFromPath(path: string): PlainDate | undefined {
