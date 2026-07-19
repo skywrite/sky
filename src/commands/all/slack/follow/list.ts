@@ -1,7 +1,7 @@
 import colors from 'picocolors'
 import ms from 'ms'
 import { exists } from '#shared/fs/mod.ts'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
@@ -67,8 +67,8 @@ export default class SlackFollowListTask extends Command {
     const { output } = context
     const { all } = args
 
-    if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
-      output.log(`No follow directory found at ${DIR_HEARTBEAT_FOLLOW}`)
+    if (!(await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE))) {
+      output.log(`No follow directory found at ${DIR_STATE_FOLLOW_SLACK_ACTIVE}`)
       return CommandResult.success({ follows: [] })
     }
 
