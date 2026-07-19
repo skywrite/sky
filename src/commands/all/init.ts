@@ -13,8 +13,6 @@ const CONTENT_DIRS = [
   'time',
   'decisions',
   'goals',
-  'heartbeat',
-  'heartbeat/follow',
   'ideas',
   'notes',
   'people',

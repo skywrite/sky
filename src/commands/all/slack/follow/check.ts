@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
-import { DIR_BASE, DIR_HEARTBEAT_FOLLOW } from '#config'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
+import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
@@ -47,7 +47,7 @@ export default class SlackFollowCheckTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
 
-    if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
+    if (!(await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE))) {
       output.log('No follow directory found.')
       return CommandResult.success({ checked: 0, expired: [], skipped: [], errors: [], withActivity: [] })
     }
@@ -71,6 +71,8 @@ export default class SlackFollowCheckTask extends Command {
             ? 'no activity recorded'
             : `inactive ${Math.floor(inactiveMs / 86_400_000)}d >= ${Follow.DEFAULT_MAX_INACTIVE}`
 
+        const closed = follow.updateStatus('closed')
+        await outputFile(path.join(DIR_STATE_FOLLOW_SLACK_ARCHIVE, `${entry.fileName}.yaml`), closed.toYaml())
         await unlink(entry.path)
         output.log(`[expire] ${entry.fileName}: ${reason}`)
         expired.push(entry.fileName)

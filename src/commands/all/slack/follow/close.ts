@@ -1,9 +1,11 @@
 import * as p from '@clack/prompts'
 import ms from 'ms'
+import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
-import { exists } from '#shared/fs/mod.ts'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { exists, outputFile } from '#shared/fs/mod.ts'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import type Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -13,7 +15,7 @@ const params = {
   inactiveThan: Flag.string('Close all follows inactive for longer than duration (e.g. 7d, 2w)', {
     short: 'i',
   }),
-  dryRun: Flag.boolean('Show what would be closed without deleting', { default: false }),
+  dryRun: Flag.boolean('Show what would be closed without archiving', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -31,12 +33,12 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class SlackFollowCloseTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:follow:close',
-    description: 'Close follows by deleting their files.',
+    description: 'Close follows by marking them closed and archiving their files.',
     usage: [
       'sky slack:follow:close                                              # Pick from list',
       'sky slack:follow:close slack_core-four_Person-wants-weekly-meetings  # By name',
       'sky slack:follow:close --inactive-than 7d                           # Close inactive > 7 days',
-      'sky slack:follow:close --inactive-than 7d --dry-run                 # Preview without deleting',
+      'sky slack:follow:close --inactive-than 7d --dry-run                 # Preview without archiving',
     ],
     params,
   }
@@ -45,7 +47,7 @@ export default class SlackFollowCloseTask extends Command {
     const { output } = context
     const { file, inactiveThan, dryRun } = args
 
-    if (!(await exists(DIR_HEARTBEAT_FOLLOW))) {
+    if (!(await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE))) {
       return CommandResult.fail('No follow directory found.')
     }
 
@@ -72,7 +74,7 @@ export default class SlackFollowCloseTask extends Command {
         const label = dryRun ? '[dry-run] Would close' : 'Closed'
         output.log(`${label}: ${e.follow.summary} (${e.fileName})`)
         if (!dryRun) {
-          await unlink(e.path)
+          await archiveFollow(e.path, e.fileName, e.follow)
         }
         closed.push(e.fileName)
       }
@@ -128,9 +130,16 @@ export default class SlackFollowCloseTask extends Command {
       return CommandResult.success({ closed: [selectedFile] })
     }
 
-    await unlink(entry.path)
+    await archiveFollow(entry.path, selectedFile, entry.follow)
     output.log(`Closed follow: ${selectedFile}`)
 
     return CommandResult.success({ closed: [selectedFile] })
   }
+}
+
+/** Mark the follow closed, write it to the archive dir, and remove it from active/ */
+async function archiveFollow(activePath: string, fileName: string, follow: Follow): Promise<void> {
+  const closed = follow.updateStatus('closed')
+  await outputFile(path.join(DIR_STATE_FOLLOW_SLACK_ARCHIVE, `${fileName}.yaml`), closed.toYaml())
+  await unlink(activePath)
 }

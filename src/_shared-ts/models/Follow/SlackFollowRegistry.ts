@@ -1,5 +1,5 @@
 import ms from 'ms'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { exists } from '#shared/fs/mod.ts'
 import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -20,15 +20,14 @@ export default class SlackFollowRegistry {
     this._errors = errors
   }
 
-  static async build(dir: string = DIR_HEARTBEAT_FOLLOW): Promise<SlackFollowRegistry> {
+  static async build(dir: string = DIR_STATE_FOLLOW_SLACK_ACTIVE): Promise<SlackFollowRegistry> {
     if (!(await exists(dir))) {
       return new SlackFollowRegistry(new Map(), [])
     }
 
     const { byFile, errors } = await loadFollowDir(dir)
 
-    // Slack registry only surfaces Slack follows. Email follows used to live here
-    // during the transition; they're filtered out so callers see a clean slack-only view.
+    // Defensive: drop anything that isn't a Slack follow (the dir should only hold slack).
     for (const [name, entry] of byFile) {
       if (entry.follow.source !== 'Slack') byFile.delete(name)
     }

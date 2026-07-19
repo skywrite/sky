@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import ms from 'ms'
-import { DIR_HEARTBEAT_FOLLOW } from '#config'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { exists, outputFile } from '#shared/fs/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
@@ -68,7 +68,7 @@ export default class SlackFollowNewTask extends Command {
     }
 
     // 0. Check for duplicate follow
-    if (await exists(DIR_HEARTBEAT_FOLLOW)) {
+    if (await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE)) {
       const registry = await SlackFollowRegistry.build()
       const dupe = registry.getAll().find((e) => e.follow.ref.link === link)
       if (dupe) {
@@ -250,7 +250,7 @@ export default class SlackFollowNewTask extends Command {
     })
 
     // 5. Write follow YAML
-    const filePath = path.join(DIR_HEARTBEAT_FOLLOW, fileName)
+    const filePath = path.join(DIR_STATE_FOLLOW_SLACK_ACTIVE, fileName)
 
     await outputFile(filePath, follow.toYaml())
 
