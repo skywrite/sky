@@ -1,3 +1,4 @@
+import * as path from 'node:path'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import dayFile from './dayFile.ts'
@@ -89,8 +90,8 @@ test('nbfs functions handle pre-2020 dates', () => {
 
   assert({
     given: 'PlainDate before 2020',
-    should: 'include _pre-2020 prefix',
-    actual: weekDirResult.startsWith('_pre-2020'),
-    expected: true,
+    should: 'build a plain year path like any other date',
+    actual: weekDirResult,
+    expected: path.join('2019', '08', '26-01'),
   })
 })

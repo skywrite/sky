@@ -7,7 +7,7 @@ import normalizeToPlainDate from './normalizeToPlainDate.ts'
  * Get the week directory path for a given date.
  *
  * @param date - PlainDate instance or YMD string (e.g., "2025-03-15")
- * @returns Directory path like "2025/03/10-16" or "_pre-2020/2019/04/01-07"
+ * @returns Directory path like "2025/03/10-16"
  */
 export default function weekDir(date: PlainDate | string = new PlainDate()): string {
   const plainDate = normalizeToPlainDate(date)
@@ -26,10 +26,5 @@ export default function weekDir(date: PlainDate | string = new PlainDate()): str
 
   const weekDirName = firstDayNumSt + '-' + lastDayNumSt
 
-  // didn't start the notebook until Nov 2020; so any
-  // year before was added retroactively
-  const dirs = [yearStr, monthStr, weekDirName]
-  if (plainDate.year < 2020) dirs.unshift('_pre-2020')
-
-  return path.join(...dirs)
+  return path.join(yearStr, monthStr, weekDirName)
 }

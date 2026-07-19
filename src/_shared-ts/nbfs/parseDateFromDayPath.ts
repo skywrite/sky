@@ -4,7 +4,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 /**
  * Parses a PlainDate from a day file path.
  *
- * Day files are structured as: time/[_pre-2020/]YYYY/MM/DD-DD/DD/day.md
+ * Day files are structured as: time/YYYY/MM/DD-DD/DD/day.md
  * where the final DD may be prefixed with 'x' if it spills into the next month.
  *
  * @param filePath - The full path to a day file
@@ -18,10 +18,6 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
  * @example
  * parseDateFromDayPath('/path/to/Notebook/time/2022/03/28-03/x02/day.md')
  * // Returns: PlainDate for 2022-04-02 (x prefix means next month)
- *
- * @example
- * parseDateFromDayPath('/path/to/Notebook/time/_pre-2020/2019/04/01-07/05/day.md')
- * // Returns: PlainDate for 2019-04-05
  */
 export default function parseDateFromDayPath(filePath: string): PlainDate {
   const parts = filePath.split(path.sep)
@@ -32,13 +28,8 @@ export default function parseDateFromDayPath(filePath: string): PlainDate {
     throw new Error(`Invalid day file path: missing 'time' directory in ${filePath}`)
   }
 
-  // After 'time', we have: [_pre-2020/]YYYY/MM/DD-DD/DD
-  let offset = timeIndex + 1
-
-  // Check for _pre-2020 prefix
-  if (parts[offset] === '_pre-2020') {
-    offset++
-  }
+  // After 'time', we have: YYYY/MM/DD-DD/DD
+  const offset = timeIndex + 1
 
   const yearStr = parts[offset]
   const monthStr = parts[offset + 1]

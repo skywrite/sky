@@ -35,7 +35,7 @@ export default class NbfsMigrateTask extends Command {
     descriptionLong: [
       'Moves day directories from v1 paths (YYYY/MM/DD-DD/DD/) to v2 paths (YYYY/MM/W##/MM.DD/).',
       'Dry-run by default — pass --execute to actually move files.',
-      'Handles _pre-2020/ entries and cross-month x-prefix days.',
+      'Handles cross-month x-prefix days.',
       'Also moves week-level files (_tracking/, summary.md) to new week directories.',
       'Cleans up empty directories after migration.',
     ],
