@@ -75,9 +75,10 @@ async function loadFixtureStore() {
     const content = await loadFixture(`orgs/${file}`)
     orgs.set(`${FIXTURES_DIR}orgs/${file}`, OrganizationDocument.fromMarkdown(content))
   }
-  for (const file of ['Product-Launch-Q1.md', 'Infrastructure-Upgrade.md', 'Series-B.md', 'Fitness-Goals.md']) {
-    const content = await loadFixture(`projects/${file}`)
-    projects.set(`${FIXTURES_DIR}projects/${file}`, ProjectDocument.fromMarkdown(content))
+  for (const name of ['Product-Launch-Q1', 'Infrastructure-Upgrade', 'Series-B', 'Fitness-Goals']) {
+    const relPath = `projects/open/${name}/_project/overview.md`
+    const content = await loadFixture(relPath)
+    projects.set(`${FIXTURES_DIR}${relPath}`, ProjectDocument.fromMarkdown(content))
   }
 
   return { store: createFixtureStore(people, orgs, projects), people, orgs, projects }
@@ -142,7 +143,7 @@ test('depth - direct rel ref gets depth 1', async () => {
 
   // Meeting rel: [projects/Product-Launch-Q1, Acme Corp] -> depth 1
   const collection = DomainCollection.fromDocument(doc, path, store)
-  const project = itemByPath(collection, 'projects/Product-Launch-Q1.md')
+  const project = itemByPath(collection, 'projects/open/Product-Launch-Q1/_project/overview.md')
   const org = itemByPath(collection, 'orgs/Acme-Corp.md')
 
   assert({
@@ -228,20 +229,18 @@ test('depth - full depth-2 graph from Marcus meeting', async () => {
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 2 })
 
-  // Build a map of suffix -> depth for every item
+  // Build a map of fixture-relative path -> depth for every item
+  // (project paths all end in _project/overview.md, so short suffixes collide)
   const depthMap = new Map<string, number>()
   for (const item of collection.allItems) {
-    // Use the last two path segments for readability
-    const segments = item.path.split('/')
-    const key = segments.slice(-2).join('/')
-    depthMap.set(key, item.depth)
+    depthMap.set(item.path.replace(FIXTURES_DIR, ''), item.depth)
   }
 
   // Depth 0: meeting itself
   assert({
     given: 'Marcus meeting at depth 2',
     should: 'have meeting at depth 0',
-    actual: depthMap.get('meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md'),
+    actual: depthMap.get('time/2026/01/20-26/23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md'),
     expected: 0,
   })
 
@@ -265,7 +264,7 @@ test('depth - full depth-2 graph from Marcus meeting', async () => {
   assert({
     given: 'Marcus meeting at depth 2',
     should: 'have Series-B at depth 1 (rel field)',
-    actual: depthMap.get('projects/Series-B.md'),
+    actual: depthMap.get('projects/open/Series-B/_project/overview.md'),
     expected: 1,
   })
 

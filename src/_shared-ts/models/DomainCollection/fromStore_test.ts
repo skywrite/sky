@@ -110,7 +110,7 @@ test('DomainCollection.fromStore - includes all document types', () => {
   const store = createFullMockStore({
     people: [{ doc: alice, path: '/people/Alice.md' }],
     orgs: [{ doc: acme, path: '/orgs/Acme.md' }],
-    projects: [{ doc: project, path: '/projects/ProjectX.md' }],
+    projects: [{ doc: project, path: '/projects/open/ProjectX/_project/overview.md' }],
     decisions: [{ doc: decision, path: '/decisions/Hire-CTO.md' }],
     goals: [{ doc: goal, path: '/goals/Personal.md' }],
     time: [{ doc: meeting, path: '/time/2026/01/meeting.md' }],

@@ -67,7 +67,12 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
 const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type: CollectionEntityType }> = [
   { pattern: (p) => p.includes('/orgs/') || p.includes('/organizations/'), type: 'org' },
   { pattern: (p) => p.includes('/people/') || p.includes('/people-'), type: 'person' },
-  { pattern: (p) => p.includes('/projects/'), type: 'project' },
+  // Only the canonical _project/ files (overview.md) are projects. The
+  // second entry is a terminal catch-all: other files in a project folder
+  // are plain documents, and must not fall through to later patterns via
+  // subdir names like .../meetings/ or .../slides/.
+  { pattern: (p) => p.includes('/projects/') && p.includes('/_project/'), type: 'project' },
+  { pattern: (p) => p.includes('/projects/'), type: 'document' },
   { pattern: (p) => p.includes('/decisions/'), type: 'decision' },
   { pattern: (p) => p.includes('/goals/'), type: 'goal' },
   { pattern: (p) => p.includes('/ideas/'), type: 'idea' },

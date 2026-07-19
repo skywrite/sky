@@ -97,11 +97,12 @@ async function loadFixtureStore(): Promise<{
   }
 
   // Load projects
-  const projectFiles = ['Product-Launch-Q1.md', 'Infrastructure-Upgrade.md', 'Series-B.md', 'Fitness-Goals.md']
-  for (const file of projectFiles) {
-    const content = await loadFixture(`projects/${file}`)
+  const projectNames = ['Product-Launch-Q1', 'Infrastructure-Upgrade', 'Series-B', 'Fitness-Goals']
+  for (const name of projectNames) {
+    const relPath = `projects/open/${name}/_project/overview.md`
+    const content = await loadFixture(relPath)
     const doc = ProjectDocument.fromMarkdown(content)
-    projects.set(`${FIXTURES_DIR}projects/${file}`, doc)
+    projects.set(`${FIXTURES_DIR}${relPath}`, doc)
   }
 
   return { store: createFixtureStore(people, orgs, projects), people, orgs, projects }
