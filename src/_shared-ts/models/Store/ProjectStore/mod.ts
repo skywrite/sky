@@ -11,17 +11,29 @@ interface ProjectEntry {
   projectDir: string
 }
 
+interface ProjectFileEntry {
+  value: Document
+  path: string
+  /** Project folder this file belongs to; null when none could be derived */
+  projectDir: string | null
+}
+
 /**
  * Store for Project documents with name-based lookup and status filtering.
  *
  * Projects have a unique structure:
  *   {projectsDir}/{status}/{ProjectName}/_project/overview.md
+ * (completed/ additionally nests by year: completed/{year}/{ProjectName}/)
  *
  * The store indexes by:
  * - Normalized name (lowercase, trimmed)
  * - File path
  *
  * And provides filtering by status.
+ *
+ * Every other .md file inside a project folder (notes, _project/log.md,
+ * nested subdirs) is tracked as a plain Document with a rel to its project
+ * injected (e.g. "projects/Atlas"), enumerable via getDocuments().
  */
 export default class ProjectStore {
   /** Normalized name → ProjectEntry */
@@ -35,6 +47,9 @@ export default class ProjectStore {
 
   /** All entries for iteration */
   private entries: ProjectEntry[] = []
+
+  /** Non-overview .md files inside project folders, rel-injected */
+  private files: ProjectFileEntry[] = []
 
   /** Errors encountered during build */
   private _errors: StoreError[] = []
@@ -66,6 +81,11 @@ export default class ProjectStore {
   static async build(projectsDir: string): Promise<ProjectStore> {
     const store = new ProjectStore()
 
+    // Non-overview files collected during the walk; attached after all
+    // overviews are indexed (walk order is not overview-first, and the
+    // rel injection prefers the overview's name over the folder name).
+    const pending: Array<{ doc: Document; path: string; statusDir: string }> = []
+
     // Walk each status directory
     for (const status of PROJECT_STATUSES) {
       const statusDir = path.join(projectsDir, status)
@@ -82,10 +102,10 @@ export default class ProjectStore {
         try {
           const contents = await readTextFile(entry.path)
 
-          // Non-overview files: index as generic Document in byPath only
+          // Non-overview files: attach as project documents after the walk
           if (!isOverview) {
             const doc = Document.fromMarkdown(contents)
-            store.byPath.set(entry.path, doc)
+            pending.push({ doc, path: entry.path, statusDir })
             continue
           }
 
@@ -148,6 +168,10 @@ export default class ProjectStore {
       }
     }
 
+    for (const p of pending) {
+      store.addFile(p.doc, p.path, p.statusDir)
+    }
+
     return store
   }
 
@@ -162,7 +186,7 @@ export default class ProjectStore {
 
     if (!isOverview) {
       const doc = Document.fromMarkdown(contents)
-      this.byPath.set(filePath, doc)
+      this.addFile(doc, filePath, null)
       return
     }
 
@@ -218,6 +242,60 @@ export default class ProjectStore {
     if (idx !== -1) {
       this.entries.splice(idx, 1)
     }
+
+    // Remove from files
+    const fileIdx = this.files.findIndex((f) => f.path === filePath)
+    if (fileIdx !== -1) {
+      this.files.splice(fileIdx, 1)
+    }
+  }
+
+  /**
+   * Track a non-overview .md file, injecting a rel to its project.
+   *
+   * The project is derived from the indexed overviews first (handles
+   * year-nested layouts and names that differ from the folder), falling
+   * back to the folder name for folders without an overview — including
+   * the incremental case where a new project's files sync in before its
+   * overview does (folder name == project name by convention).
+   */
+  private addFile(doc: Document, filePath: string, statusDir: string | null): void {
+    const project = this.projectFor(filePath, statusDir)
+    const value = project ? doc.addRel(`projects/${project.name}`) : doc
+    this.byPath.set(filePath, value)
+    this.files.push({ value, path: filePath, projectDir: project?.dir ?? null })
+  }
+
+  /** Derive the owning project folder and name for a file path. */
+  private projectFor(filePath: string, statusDir: string | null): { dir: string; name: string } | null {
+    for (const e of this.entries) {
+      if (e.value.name && filePath.startsWith(`${e.projectDir}/`)) {
+        return { dir: e.projectDir, name: e.value.name }
+      }
+    }
+
+    // No overview indexed for this folder: first non-year segment after
+    // the status dir is the project folder.
+    const base = statusDir ?? this.statusDirFor(filePath)
+    if (!base) return null
+    const segments = filePath.slice(base.length + 1).split('/')
+    const yearPrefix: string[] = []
+    while (segments.length > 1 && /^\d{4}$/.test(segments[0])) {
+      yearPrefix.push(segments.shift()!)
+    }
+    if (segments.length < 2) return null // file sits directly under the status dir
+    return { dir: [base, ...yearPrefix, segments[0]].join('/'), name: segments[0] }
+  }
+
+  /** Locate the {...}/{status} prefix of a project file path. */
+  private statusDirFor(filePath: string): string | null {
+    const segments = filePath.split('/')
+    for (let i = 0; i < segments.length - 1; i++) {
+      if ((PROJECT_STATUSES as readonly string[]).includes(segments[i])) {
+        return segments.slice(0, i + 1).join('/')
+      }
+    }
+    return null
   }
 
   /**
@@ -241,6 +319,15 @@ export default class ProjectStore {
   getAll(): Collection<ProjectDocument> {
     const docs = this.entries.map((e) => ({ doc: e.value, path: e.path }))
     return Collection.from(docs, 'project')
+  }
+
+  /**
+   * Get all non-overview .md files inside project folders, each carrying
+   * an injected rel to its project (e.g. "projects/Atlas").
+   */
+  getDocuments(): Collection<Document> {
+    const docs = this.files.map((f) => ({ doc: f.value, path: f.path }))
+    return Collection.from(docs, 'document')
   }
 
   /**

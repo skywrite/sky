@@ -96,6 +96,91 @@ test('ProjectStore.build: indexes project by name and status', async () => {
   }
 })
 
+test('ProjectStore.build: tracks project folder files with injected rel', async () => {
+  await setupTestDir()
+
+  try {
+    const write = async (relPath: string, contents: string) => {
+      const filePath = path.join(TEST_DIR, relPath)
+      await mkdir(path.dirname(filePath), { recursive: true })
+      await writeTextFile(filePath, contents)
+    }
+
+    // Overview name differs from folder name -> overview name must win
+    await write('open/MyProject/_project/overview.md', '---\nname: My Project\nstatus: open\n---\n\n# My Project')
+    await write('open/MyProject/_project/log.md', '# Log')
+    await write('open/MyProject/notes.md', '# Notes')
+    await write('open/MyProject/research/deep-dive.md', '# Deep dive')
+    // Year-nested completed project
+    await write('completed/2022/Old-Thing/_project/overview.md', '---\nname: Old Thing\nstatus: completed\n---')
+    await write('completed/2022/Old-Thing/retro.md', '---\nrel:\n  - Some Person\n---\n\n# Retro')
+    // Project folder without an overview -> folder name fallback
+    await write('hold/No-Overview/raw-notes.md', '# Raw')
+
+    const store = await ProjectStore.build(TEST_DIR)
+
+    assert({
+      given: 'two overviews and five folder files',
+      should: 'index only overviews as projects',
+      actual: store.size,
+      expected: 2,
+    })
+
+    assert({
+      given: 'two overviews and five folder files',
+      should: 'expose the folder files via getDocuments',
+      actual: store.getDocuments().size,
+      expected: 5,
+    })
+
+    assert({
+      given: 'getAll',
+      should: 'exclude folder files',
+      actual: store.getAll().size,
+      expected: 2,
+    })
+
+    const relOf = (relPath: string) => Array.from(store.findByPath(path.join(TEST_DIR, relPath))?.rel ?? [])
+
+    assert({
+      given: 'a file next to _project/',
+      should: 'carry a rel with the overview name, not the folder name',
+      actual: relOf('open/MyProject/notes.md'),
+      expected: ['projects/My Project'],
+    })
+
+    assert({
+      given: 'a _project/log.md file',
+      should: 'carry the project rel',
+      actual: relOf('open/MyProject/_project/log.md'),
+      expected: ['projects/My Project'],
+    })
+
+    assert({
+      given: 'a file in a nested subdir',
+      should: 'carry the project rel',
+      actual: relOf('open/MyProject/research/deep-dive.md'),
+      expected: ['projects/My Project'],
+    })
+
+    assert({
+      given: 'a file in a year-nested completed project with existing rel',
+      should: 'append the project rel to the existing one',
+      actual: relOf('completed/2022/Old-Thing/retro.md').includes('projects/Old Thing'),
+      expected: true,
+    })
+
+    assert({
+      given: 'a file in a folder without an overview',
+      should: 'fall back to the folder name',
+      actual: relOf('hold/No-Overview/raw-notes.md'),
+      expected: ['projects/No-Overview'],
+    })
+  } finally {
+    await cleanupTestDir()
+  }
+})
+
 test('ProjectStore.find: returns undefined for unknown name', () => {
   const store = ProjectStore.empty()
 

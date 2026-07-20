@@ -38,7 +38,7 @@ test('ProjectStore.set: adds overview as fully indexed project', () => {
   })
 })
 
-test('ProjectStore.set: adds non-overview as path-only document', () => {
+test('ProjectStore.set: adds non-overview as rel-injected project document', () => {
   const store = ProjectStore.empty()
   const notesPath = '/projects/open/MyProject/notes.md'
 
@@ -56,6 +56,71 @@ test('ProjectStore.set: adds non-overview as path-only document', () => {
     should: 'find by path',
     actual: store.findByPath(notesPath)?.yaml['title'],
     expected: 'Notes',
+  })
+
+  assert({
+    given: 'set with non-overview file and no indexed overview',
+    should: 'inject rel from the folder name',
+    actual: Array.from(store.findByPath(notesPath)?.rel ?? []),
+    expected: ['projects/MyProject'],
+  })
+
+  assert({
+    given: 'set with non-overview file',
+    should: 'appear in getDocuments',
+    actual: store.getDocuments().size,
+    expected: 1,
+  })
+})
+
+test('ProjectStore.set: file rel prefers indexed overview name', () => {
+  const store = ProjectStore.empty()
+
+  store.set(OVERVIEW_PATH, OVERVIEW_CONTENTS)
+  store.set('/projects/open/MyProject/notes.md', '# Notes')
+
+  assert({
+    given: 'overview indexed before the file',
+    should: 'inject rel with the overview name',
+    actual: Array.from(store.findByPath('/projects/open/MyProject/notes.md')?.rel ?? []),
+    expected: ['projects/My Project'],
+  })
+})
+
+test('ProjectStore.set: upserting a file keeps one getDocuments entry', () => {
+  const store = ProjectStore.empty()
+  const notesPath = '/projects/open/MyProject/notes.md'
+
+  store.set(notesPath, '# v1')
+  store.set(notesPath, '# v2')
+
+  assert({
+    given: 'same file set twice',
+    should: 'keep a single entry',
+    actual: store.getDocuments().size,
+    expected: 1,
+  })
+})
+
+test('ProjectStore.delete: removes file from getDocuments and byPath', () => {
+  const store = ProjectStore.empty()
+  const notesPath = '/projects/open/MyProject/notes.md'
+
+  store.set(notesPath, '# Notes')
+  store.delete(notesPath)
+
+  assert({
+    given: 'delete after set',
+    should: 'remove from getDocuments',
+    actual: store.getDocuments().size,
+    expected: 0,
+  })
+
+  assert({
+    given: 'delete after set',
+    should: 'remove from byPath',
+    actual: store.findByPath(notesPath),
+    expected: undefined,
   })
 })
 
