@@ -41,6 +41,15 @@ test('detectTypeFromPath - project overview paths are projects', () => {
   })
 })
 
+test('detectTypeFromPath - _project files other than overview are documents', () => {
+  assert({
+    given: 'a _project/log.md path',
+    should: 'detect type document, not project',
+    actual: detectTypeFromPath('/nb/projects/completed/2022/Widget-V2/_project/log.md'),
+    expected: 'document',
+  })
+})
+
 test('detectTypeFromPath - non-overview project files are documents', () => {
   assert({
     given: 'a markdown file in a project folder outside _project/',
