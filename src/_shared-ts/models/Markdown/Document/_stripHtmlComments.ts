@@ -4,7 +4,9 @@ type MarkdownFence = {
 }
 
 export default function _stripHtmlComments(markdown: string): string {
-  let output = ''
+  // Accumulate into an array + join — string += over thousands of lines
+  // leans on engine rope optimizations to stay linear; join guarantees it.
+  const output: string[] = []
   let inComment = false
   let inFence: MarkdownFence | null = null
   const lines = markdown.match(/[^\n]*(?:\n|$)/g) ?? []
@@ -13,7 +15,7 @@ export default function _stripHtmlComments(markdown: string): string {
     if (line === '') continue
 
     if (inFence) {
-      output += line
+      output.push(line)
       if (isClosingFence(line, inFence)) {
         inFence = null
       }
@@ -22,17 +24,17 @@ export default function _stripHtmlComments(markdown: string): string {
 
     const fence = !inComment ? fenceForLine(line) : null
     if (fence) {
-      output += line
+      output.push(line)
       inFence = fence
       continue
     }
 
     const stripped = stripHtmlCommentsFromLine(line, inComment)
-    output += stripped.text
+    output.push(stripped.text)
     inComment = stripped.inComment
   }
 
-  return output
+  return output.join('')
 }
 
 function stripHtmlCommentsFromLine(line: string, startsInComment: boolean): { text: string; inComment: boolean } {

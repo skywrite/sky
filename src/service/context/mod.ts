@@ -7,6 +7,7 @@
  */
 
 import type { Document } from '#shared/models/Markdown/mod.ts'
+import _stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
@@ -93,11 +94,14 @@ export async function resolveContext(query: string, depth: number, store: Markdo
   const collection = DomainCollection.fromDocuments(docs, store, { depth })
   const t3 = performance.now()
 
-  // 5. Map to response format
+  // 5. Map to response format. Strip comments on the serialized string:
+  // Document.stripHtmlComments() re-parses the whole doc to build a new
+  // Document, and parse is superlinear on huge list-heavy files — seconds
+  // per doc at hundreds of KB, per request.
   const documents: ContextDocument[] = collection.allItems.map((item) => ({
     path: item.path,
     type: item.type,
-    markdown: item.doc.stripHtmlComments().toMarkdown(),
+    markdown: _stripHtmlComments(item.doc.toMarkdown()),
   }))
   const t4 = performance.now()
 
