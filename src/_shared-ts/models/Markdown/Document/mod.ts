@@ -11,11 +11,11 @@ import _stripHtmlComments from './_stripHtmlComments.ts'
 
 export default class Document {
   public readonly markdown: string
-  public readonly markdownTokens: marked.TokensList
   public readonly yamlError?: string
 
-  protected _links: Map<string, Link>
   protected _yaml: Record<string, unknown>
+  private _markdownTokens: marked.TokensList | null = null
+  private _linksMap: Map<string, Link> | null = null
 
   /**
    * Preferred key order for YAML frontmatter.
@@ -26,10 +26,28 @@ export default class Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     this.markdown = markdown
     this._yaml = structuredClone(yaml)
-    this.markdownTokens = marked.lexer(this.markdown, {})
     this.yamlError = yamlError
+  }
 
-    this._links = fetchLinksFromTokensList(this.markdownTokens)
+  /**
+   * Lexed lazily on first access (mirrors SectionDocument's lazy sections):
+   * marked's lexer is quadratic on large docs and dominates store scans,
+   * yet most documents (query filtering, boot indexing) never need tokens.
+   * See _regressions/large-doc-performance_test.ts.
+   */
+  public get markdownTokens(): marked.TokensList {
+    if (this._markdownTokens === null) {
+      this._markdownTokens = marked.lexer(this.markdown, {})
+    }
+    return this._markdownTokens
+  }
+
+  /** Read-only for subclasses; only updateLinks replaces the cache. */
+  protected get _links(): Map<string, Link> {
+    if (this._linksMap === null) {
+      this._linksMap = fetchLinksFromTokensList(this.markdownTokens)
+    }
+    return this._linksMap
   }
 
   public get links(): Map<string, Link> {
@@ -143,7 +161,7 @@ export default class Document {
       clonedDoc = (<typeof Document>this.constructor).fromMarkdown(markdownContents) as this
     }
 
-    clonedDoc['_links'] = links
+    clonedDoc._linksMap = links
     clonedDoc.markdownTokens.links = linkMapToTokenLinks(links)
 
     return clonedDoc

@@ -1,4 +1,5 @@
 import { assert, test } from '#test'
+import * as marked from 'marked'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 
@@ -159,4 +160,29 @@ tags:
   assert({ actual: doc.yaml.author, expected: null })
   assert({ actual: doc.yaml.email, expected: null })
   assert({ actual: doc.yaml.tags, expected: null })
+})
+
+test('Document - markdownTokens are cached across accesses', () => {
+  // updateLinks mutates the returned TokensList (markdownTokens.links = …)
+  // and relies on the lazy getter returning the same object every time.
+  const doc = Document.fromMarkdown('# Title\n\nSome [link][ref] text.\n\n[ref]: https://example.com')
+
+  assert({
+    given: 'two accesses of markdownTokens',
+    should: 'return the identical cached object',
+    actual: doc.markdownTokens === doc.markdownTokens,
+    expected: true,
+  })
+})
+
+test('Document - lazy tokens match a direct marked lex', () => {
+  const markdown = '# Heading\n\n- item one\n- item two\n\nA paragraph with **bold**.'
+  const doc = Document.fromMarkdown(markdown)
+
+  assert({
+    given: 'a lazily-lexed document',
+    should: 'produce the same tokens as lexing the markdown directly',
+    actual: JSON.stringify(doc.markdownTokens),
+    expected: JSON.stringify(marked.lexer(markdown, {})),
+  })
 })
