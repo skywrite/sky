@@ -240,7 +240,7 @@ test('inactivityMs() anchors on last message date, then lastActivity/followSince
     ref: {},
     summary: 'msg anchor',
     lastActivity: PlainDateTime.fromString('2026-01-01 00:00'),
-    messages: [{ date: '2026-02-27', path: 'time/2026/02/23-01/27/msg.md' }],
+    messages: [{ date: '2026-02-27', path: 'time/2026/02/23-01/02-27/msg.md' }],
   })
   assert({
     given,
@@ -290,7 +290,7 @@ test('isExpired() honors an explicit expires deadline over activity', () => {
     source: 'Slack',
     ref: {},
     summary: 'deadline',
-    messages: [{ date: '2026-02-28', path: 'time/2026/02/23-01/28/msg.md' }],
+    messages: [{ date: '2026-02-28', path: 'time/2026/02/23-01/02-28/msg.md' }],
     expires: PlainDateTime.fromString('2026-03-01 09:00'),
   })
 
@@ -311,7 +311,7 @@ test('isExpired() honors an explicit expires deadline over activity', () => {
     source: 'Slack',
     ref: {},
     summary: 'slow thread',
-    messages: [{ date: '2025-12-01', path: 'time/2025/12/01-07/01/msg.md' }],
+    messages: [{ date: '2025-12-01', path: 'time/2025/12/01-07/12-01/msg.md' }],
     expires: PlainDateTime.fromString('2026-06-01 09:00'),
   })
   assert({

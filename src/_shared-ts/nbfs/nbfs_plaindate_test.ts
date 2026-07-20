@@ -74,13 +74,12 @@ test('weekDir accepts PlainDate and YMD string', () => {
 test('nbfs functions handle month boundary correctly', () => {
   // Test March 1, 2025 which is in a week that starts in February (Feb 24-Mar 2)
   const plainDate = new PlainDate('2025-03-01')
-  const dayDirResult = dayDir(plainDate)
 
   assert({
     given: 'PlainDate that spills into next month (March 1, 2025)',
-    should: 'prefix day with x',
-    actual: dayDirResult.includes('x01'),
-    expected: true,
+    should: 'carry its own month in the MM-DD day dir',
+    actual: dayDir(plainDate),
+    expected: path.join('2025', '02', '24-02', '03-01'),
   })
 })
 

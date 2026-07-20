@@ -11,9 +11,8 @@ import normalizeToPlainDate from './normalizeToPlainDate.ts'
 /**
  * Read a day file and return a Day model.
  *
- * Tries v2 path first (YYYY/W##/MM.DD/day.md), then falls back to v1
- * (YYYY/MM/DD-DD/DD/day.md). This allows the system to work both before
- * and after NBFS v2 migration.
+ * Tries the v1.1 path (YYYY/MM/DD-DD/MM-DD/day.md) first, then falls
+ * back to the v2 path (kept alongside the deferred v2 migration tooling).
  *
  * @param day - PlainDate instance or YMD string (e.g., "2025-03-15")
  * @param timeDir - Directory containing day files
@@ -22,14 +21,11 @@ import normalizeToPlainDate from './normalizeToPlainDate.ts'
 export default async function readDay(day: PlainDate | string, timeDir = DIR_TIME): Promise<DayDocument> {
   const plainDate = normalizeToPlainDate(day)
 
-  // Try v1 path first, fall back to v2
   try {
-    const v1Path = path.join(timeDir, dayFile(plainDate))
-    const dayContents = await readTextFile(v1Path)
-    return DayDocument.fromMarkdown(dayContents)
+    const v11Path = path.join(timeDir, dayFile(plainDate))
+    return DayDocument.fromMarkdown(await readTextFile(v11Path))
   } catch {
     const v2Path = path.join(timeDir, v2DayFile(plainDate))
-    const dayContents = await readTextFile(v2Path)
-    return DayDocument.fromMarkdown(dayContents)
+    return DayDocument.fromMarkdown(await readTextFile(v2Path))
   }
 }

@@ -42,7 +42,7 @@ for (const { yaml, expected, description } of documentDateFixtures) {
 
 test('getDocumentDate - path date takes priority over created', () => {
   const doc = md('created: 2026-02-18')
-  const path = '/Notebook/time/2026/02/02-08/05/actions/messages/some-message.md'
+  const path = '/Notebook/time/2026/02/02-08/02-05/actions/messages/some-message.md'
   const result = getDocumentDate(doc, path)
 
   assert({
@@ -55,7 +55,7 @@ test('getDocumentDate - path date takes priority over created', () => {
 
 test('getDocumentDate - date YAML field still takes priority over path', () => {
   const doc = md('date: 2026-02-15')
-  const path = '/Notebook/time/2026/02/09-15/13/actions/meetings/some-meeting.md'
+  const path = '/Notebook/time/2026/02/09-15/02-13/actions/meetings/some-meeting.md'
   const result = getDocumentDate(doc, path)
 
   assert({

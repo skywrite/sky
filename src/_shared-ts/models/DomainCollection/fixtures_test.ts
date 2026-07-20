@@ -113,10 +113,10 @@ async function loadFixtureStore(): Promise<{
 test('fixtures - loads meeting and resolves who and rel fields', async () => {
   const { store } = await loadFixtureStore()
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(meetingDoc, meetingPath, store, { depth: 1 })
 
@@ -161,10 +161,10 @@ test('fixtures - loads meeting and resolves who and rel fields', async () => {
 test('fixtures - meeting with depth 2 resolves person -> org chain', async () => {
   const { store } = await loadFixtureStore()
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(meetingDoc, meetingPath, store, { depth: 2 })
 
@@ -195,10 +195,10 @@ test('fixtures - meeting with depth 2 resolves person -> org chain', async () =>
 test('fixtures - slack message resolves from field to person', async () => {
   const { store } = await loadFixtureStore()
   const messageContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md',
+    'time/2026/01/20-26/01-23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md',
   )
   const messageDoc = Document.fromMarkdown(messageContent)
-  const messagePath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md`
+  const messagePath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md`
 
   const collection = DomainCollection.fromDocument(messageDoc, messagePath, store)
 
@@ -212,9 +212,9 @@ test('fixtures - slack message resolves from field to person', async () => {
 
 test('fixtures - day.md collects multiple meetings', async () => {
   const { store } = await loadFixtureStore()
-  const dayContent = await loadFixture('time/2026/01/20-26/23/day.md')
+  const dayContent = await loadFixture('time/2026/01/20-26/01-23/day.md')
   const dayDoc = Document.fromMarkdown(dayContent)
-  const dayPath = `${FIXTURES_DIR}time/2026/01/20-26/23/day.md`
+  const dayPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/day.md`
 
   // Day file itself doesn't have who/from/to, so it shouldn't resolve much at depth 1
   const collection = DomainCollection.fromDocument(dayDoc, dayPath, store)
@@ -232,17 +232,17 @@ test('fixtures - fromDocuments combines multiple meetings', async () => {
 
   // Load two meetings
   const meeting1Content = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meeting2Content = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
   )
 
   const meeting1Doc = Document.fromMarkdown(meeting1Content)
   const meeting2Doc = Document.fromMarkdown(meeting2Content)
 
-  const meeting1Path = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
-  const meeting2Path = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
+  const meeting1Path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meeting2Path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
 
   const collection = DomainCollection.fromDocuments(
     [
@@ -306,17 +306,17 @@ test('fixtures - deduplicates shared person across meetings', async () => {
   // Chen Wei meeting has Chen Wei as who
   // Both reference Acme Corp
   const meeting1Content = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meeting2Content = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md',
+    'time/2026/01/20-26/01-23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md',
   )
 
   const meeting1Doc = Document.fromMarkdown(meeting1Content)
   const meeting2Doc = Document.fromMarkdown(meeting2Content)
 
-  const meeting1Path = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
-  const meeting2Path = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md`
+  const meeting1Path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meeting2Path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md`
 
   const collection = DomainCollection.fromDocuments(
     [
@@ -342,10 +342,10 @@ test('fixtures - deduplicates shared person across meetings', async () => {
 test('fixtures - toMarkdown outputs orgs before people before meetings', async () => {
   const { store } = await loadFixtureStore()
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(meetingDoc, meetingPath, store, { depth: 2 })
   const output = collection.toMarkdown()
@@ -373,10 +373,10 @@ test('fixtures - toMarkdown outputs orgs before people before meetings', async (
 test('fixtures - toMarkdown with relativeTo strips base path', async () => {
   const { store } = await loadFixtureStore()
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(meetingDoc, meetingPath, store, { depth: 0 })
   const output = collection.toMarkdown({ relativeTo: FIXTURES_DIR })
@@ -385,7 +385,7 @@ test('fixtures - toMarkdown with relativeTo strips base path', async () => {
     given: 'toMarkdown with relativeTo',
     should: 'show relative path in comment',
     actual: output.includes(
-      '<!-- time/2026/01/20-26/23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md -->',
+      '<!-- time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md -->',
     ),
     expected: true,
   })
@@ -400,9 +400,9 @@ test('fixtures - toMarkdown with relativeTo strips base path', async () => {
 
 test('fixtures - journal health references project via rel', async () => {
   const { store } = await loadFixtureStore()
-  const journalContent = await loadFixture('time/2026/01/20-26/23/journal/01_health.md')
+  const journalContent = await loadFixture('time/2026/01/20-26/01-23/journal/01_health.md')
   const journalDoc = Document.fromMarkdown(journalContent)
-  const journalPath = `${FIXTURES_DIR}time/2026/01/20-26/23/journal/01_health.md`
+  const journalPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/journal/01_health.md`
 
   const collection = DomainCollection.fromDocument(journalDoc, journalPath, store)
 
@@ -425,10 +425,10 @@ test('fixtures - journal health references project via rel', async () => {
 test('fixtures - investor meeting resolves Northwind Ventures org', async () => {
   const { store } = await loadFixtureStore()
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
+    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
 
   const collection = DomainCollection.fromDocument(meetingDoc, meetingPath, store)
 
@@ -443,7 +443,7 @@ test('fixtures - investor meeting resolves Northwind Ventures org', async () => 
 
 test('fixtures - aggregate full day and write to output file', async () => {
   const { store } = await loadFixtureStore()
-  const dayBase = 'time/2026/01/20-26/23'
+  const dayBase = 'time/2026/01/20-26/01-23'
 
   // Load all day documents
   const docs: Array<{ doc: Document; path: string }> = []
