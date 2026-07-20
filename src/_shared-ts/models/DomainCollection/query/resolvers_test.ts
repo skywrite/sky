@@ -238,10 +238,25 @@ Classic cocktail bar.`),
     },
   ]
 
+  // Folder files arrive from ProjectStore with the project rel already
+  // injected — mimic that here (injection itself is ProjectStore-tested)
+  const projectFilesData = [
+    {
+      doc: Document.fromMarkdown(`---
+rel: [projects/Acme Pay GTM]
+---
+GTM launch checklist.`),
+      path: '/test/projects/open/Acme-Pay-GTM/checklist.md',
+    },
+  ]
+
   return {
     people: createMockCollection(peopleData),
     orgs: createMockCollection([]),
-    projects: createMockCollection(projectsData),
+    projects: {
+      ...createMockCollection(projectsData),
+      getDocuments: () => ({ toArray: () => projectFilesData }),
+    },
     decisions: createMockCollection(decisionsData),
     goals: createMockCollection([]),
     ideas: createMockCollection(ideasData),
@@ -851,6 +866,34 @@ test('resolvers - projects filters by relContains', () => {
     should: 'return only the project carrying that rel link',
     actual: result.map((p) => p.name),
     expected: ['Acme Pay GTM'],
+  })
+})
+
+test('resolvers - documents relContains finds project folder files', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.documents({ where: { relContains: 'Acme Pay GTM' } })
+
+  assert({
+    given: 'a project-name relContains filter on the documents root',
+    should: 'return the folder file carrying the injected rel',
+    actual: result.map((d: { path: string }) => d.path),
+    expected: ['/test/projects/open/Acme-Pay-GTM/checklist.md'],
+  })
+})
+
+test('resolvers - projects root excludes project folder files', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({})
+
+  assert({
+    given: 'a store with two overviews and one folder file',
+    should: 'return only the overviews',
+    actual: result.map((p) => p.name).sort(),
+    expected: ['Acme Pay GTM', 'Website Refresh'],
   })
 })
 
