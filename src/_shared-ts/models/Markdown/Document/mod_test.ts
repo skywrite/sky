@@ -186,3 +186,135 @@ test('Document - lazy tokens match a direct marked lex', () => {
     expected: JSON.stringify(marked.lexer(markdown, {})),
   })
 })
+
+// ---------------------------------------------------------------------------
+// toMarkdown fast path — raw body when tokens were never materialized
+// ---------------------------------------------------------------------------
+
+const FAST_PATH_SAMPLES = [
+  { desc: 'headings, list and emphasis', body: '# Title\n\n- one\n- two\n\nA paragraph with **bold** text.' },
+  { desc: 'fenced code and blockquote', body: '```ts\nconst x = 1\n```\n\n> quoted line\n' },
+  { desc: 'reference links', body: 'See [docs][ref] for details.\n\n[ref]: https://example.com' },
+  { desc: 'table', body: '| a | b |\n| --- | --- |\n| 1 | 2 |\n' },
+  { desc: 'task list', body: '- [ ] todo item\n- [x] done item\n' },
+  { desc: 'empty body', body: '' },
+]
+
+FAST_PATH_SAMPLES.forEach(({ desc, body }) => {
+  test(`Document - toMarkdown fast path matches token render: ${desc}`, () => {
+    const markdown = `---\ntitle: Sample\n---\n\n${body}`
+
+    const lazy = Document.fromMarkdown(markdown)
+    const rendered = Document.fromMarkdown(markdown)
+    rendered.markdownTokens // materialize first, forcing the token render path
+
+    assert({
+      given: `a document with ${desc}`,
+      should: 'produce identical output whether or not tokens were materialized',
+      actual: lazy.toMarkdown(),
+      expected: rendered.toMarkdown(),
+    })
+  })
+})
+
+test('Document - toMarkdown does not materialize tokens', () => {
+  const doc = Document.fromMarkdown('---\ntitle: Sample\n---\n\n# Title\n\nBody text.')
+  doc.toMarkdown()
+
+  assert({
+    given: 'toMarkdown on an unmaterialized document',
+    should: 'leave tokens unlexed',
+    actual: doc['_markdownTokens'],
+    expected: null,
+  })
+})
+
+test('Document - clone does not materialize tokens', () => {
+  // clone() round-trips through toMarkdown(); before the fast path this
+  // lexed the source doc, costing ~16s across the project store at boot.
+  const doc = Document.fromMarkdown('---\ntitle: Sample\n---\n\n- item one\n- item two')
+  const cloned = doc.clone()
+
+  assert({
+    given: 'a cloned document',
+    should: 'leave the source tokens unlexed',
+    actual: doc['_markdownTokens'],
+    expected: null,
+  })
+
+  assert({
+    given: 'a cloned document',
+    should: 'leave the clone tokens unlexed',
+    actual: cloned['_markdownTokens'],
+    expected: null,
+  })
+
+  assert({
+    given: 'a cloned document',
+    should: 'preserve content',
+    actual: cloned.toMarkdown(),
+    expected: doc.toMarkdown(),
+  })
+})
+
+test('Document - setRel does not materialize tokens', () => {
+  // The ProjectStore rel-injection path: mutating yaml must not lex.
+  const doc = Document.fromMarkdown('---\ntitle: Sample\n---\n\n# Body')
+  const withRel = doc.addRel('projects/Atlas')
+
+  assert({
+    given: 'addRel on an unmaterialized document',
+    should: 'leave tokens unlexed',
+    actual: withRel['_markdownTokens'],
+    expected: null,
+  })
+
+  assert({
+    given: 'addRel',
+    should: 'still record the rel',
+    actual: Array.from(withRel.rel),
+    expected: ['projects/Atlas'],
+  })
+})
+
+test('Document - reference-link definitions take the token render path', () => {
+  // The render relocates definitions to the end of the body, so the raw
+  // text can differ — such documents must not take the fast path.
+  const body = 'Intro [docs][ref].\n\n[ref]: https://example.com\n\nMore text after.\n'
+  const doc = Document.fromMarkdown(`---\ntitle: Sample\n---\n\n${body}`)
+  const output = doc.toMarkdown()
+
+  assert({
+    given: 'a document with a mid-body link definition',
+    should: 'materialize tokens rather than return the raw body',
+    actual: doc['_markdownTokens'] !== null,
+    expected: true,
+  })
+
+  assert({
+    given: 'a document with a mid-body link definition',
+    should: 'render definitions at the end, as before the fast path',
+    actual: output.endsWith('More text after.\n[ref]: https://example.com\n'),
+    expected: true,
+  })
+})
+
+test('Document - toMarkdown({ links: false }) still drops link definitions', () => {
+  // links: false must take the token render path — the fast path would
+  // return the raw body, definitions included.
+  const doc = Document.fromMarkdown('---\ntitle: Sample\n---\n\nSee [docs][ref].\n\n[ref]: https://example.com')
+
+  assert({
+    given: 'toMarkdown with links: false',
+    should: 'omit the link definition',
+    actual: doc.toMarkdown({ links: false }).includes('https://example.com'),
+    expected: false,
+  })
+
+  assert({
+    given: 'toMarkdown with links kept (default)',
+    should: 'include the link definition',
+    actual: doc.toMarkdown().includes('https://example.com'),
+    expected: true,
+  })
+})
