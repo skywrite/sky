@@ -897,6 +897,28 @@ test('resolvers - projects root excludes project folder files', () => {
   })
 })
 
+test('resolvers - projects expose folder files via files', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.projects({})
+  const byName = new Map(result.map((p) => [p.name, p.files]))
+
+  assert({
+    given: 'a project with one folder file',
+    should: 'list the file path in files',
+    actual: byName.get('Acme Pay GTM'),
+    expected: ['/test/projects/open/Acme-Pay-GTM/checklist.md'],
+  })
+
+  assert({
+    given: 'a project with no folder files',
+    should: 'return an empty files list',
+    actual: byName.get('Website Refresh'),
+    expected: [],
+  })
+})
+
 test('resolvers - projects relContains with no match returns empty', () => {
   const store = createMockStore()
   const resolvers = createDomainResolvers(store)

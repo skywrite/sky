@@ -31,6 +31,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 **Projects and decisions** → `relContains: "<exact-name>"`
 - Works on: meetings, messages, journals, documents
 - The `rel` field links documents to projects/decisions by name
+- Files inside a project folder (notes, logs, drafts) are documents carrying the project rel: `documents(where: { relContains: "<project-name>" })` returns them, and `projects { files }` lists a folder's file paths
 - Do NOT use `involves` for projects — `involves` is for people only
 
 **People** → `involves: "<person-name>"`

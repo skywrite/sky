@@ -132,6 +132,7 @@ type Project {
   rel: [String!]! # Related entities
   markdown: String! # Full document content
   path: String! # File path
+  files: [String!]! # Paths of other markdown files in the project folder
 }
 
 """

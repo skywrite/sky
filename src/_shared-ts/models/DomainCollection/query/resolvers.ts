@@ -500,7 +500,7 @@ function docToOrg(doc: Document, path: string) {
   }
 }
 
-function docToProject(doc: Document, path: string) {
+function docToProject(doc: Document, path: string, files: string[] = []) {
   return {
     name: getStringField(doc, 'name'),
     status: getStringField(doc, 'status', 'open'),
@@ -509,7 +509,17 @@ function docToProject(doc: Document, path: string) {
     rel: Array.from(doc.rel),
     markdown: doc.markdown,
     path,
+    files,
   }
+}
+
+const PROJECT_OVERVIEW_SUFFIX = '/_project/overview.md'
+
+/** Project folder root for an overview path ('' when not an overview). */
+function projectDirOf(overviewPath: string): string {
+  return overviewPath.endsWith(PROJECT_OVERVIEW_SUFFIX)
+    ? overviewPath.slice(0, -PROJECT_OVERVIEW_SUFFIX.length)
+    : ''
 }
 
 function docToDecision(doc: Document, path: string) {
@@ -970,6 +980,22 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
   // Create day lookup for resolving meeting.day, message.day, journal.day
   const lookupDay = createDayLookup(domain)
 
+  // Project folder files grouped by project dir, for Project.files.
+  // Built once per resolver set (i.e. per store version).
+  const filesByProjectDir = new Map<string, string[]>()
+  {
+    const projectDirs = domain.entriesByType('project').map(({ path }) => projectDirOf(path)).filter(Boolean)
+    for (const p of domain.paths) {
+      if (!p.includes('/projects/') || p.endsWith(PROJECT_OVERVIEW_SUFFIX)) continue
+      const dir = projectDirs.find((d) => p.startsWith(`${d}/`))
+      if (dir) {
+        const list = filesByProjectDir.get(dir) ?? []
+        list.push(p)
+        filesByProjectDir.set(dir, list)
+      }
+    }
+  }
+
   // Resolve a name to all known aliases via PeopleStore, with token + score
   // fallback for informal references. e.g., "JW" → ["James Robert Wheeler",
   // "JW", "Jim Wheeler"]; "James" → the highest-scored James's names.
@@ -1070,7 +1096,7 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
       if (args.limit) {
         results = results.slice(0, args.limit)
       }
-      return results.map(({ doc, path }) => docToProject(doc, path))
+      return results.map(({ doc, path }) => docToProject(doc, path, filesByProjectDir.get(projectDirOf(path)) ?? []))
     },
 
     decisions: (args: { where?: DecisionFilter; limit?: number }) => {

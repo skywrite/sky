@@ -479,6 +479,26 @@ test('service yoga executes every DomainCollection root field with the filter ap
   }
 })
 
+test('service yoga returns project folder files via Project.files', async () => {
+  const yoga = createYogaInstance({} as Store, createMockMarkdownStore())
+
+  const result = await runQuery(yoga, '{ projects(where: { nameContains: "Widget-Launch" }) { path files } }')
+
+  assert({
+    given: 'a projects query selecting files',
+    should: 'execute without errors',
+    actual: result.errors?.map((e) => e.message) ?? [],
+    expected: [],
+  })
+
+  assert({
+    given: 'a project with one folder file',
+    should: 'list the folder file path',
+    actual: (result.data?.projects ?? []).flatMap((p: { files: string[] }) => p.files),
+    expected: [projectFiles[0].path],
+  })
+})
+
 test('service yoga tracks MarkdownStore mutations via version bumps', async () => {
   // Live mock: a mutable journal list plus a version counter, mimicking the
   // real MarkdownStore where the watcher's set()/delete() bump the version.
