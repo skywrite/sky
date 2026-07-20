@@ -17,7 +17,9 @@ import renderMarkdown from './renderMarkdown.ts'
 // const DIRS_TEST = [DIR_TIME + '/2024/07/01-07/01/']
 const DIRS_TEST = DIRS_MARKDOWN
 
-test(renderMarkdown.name, async () => {
+// Round-trips every .md file in the real notebook — minutes of work, far
+// past bun's 5s default timeout (it was silently timing out for months).
+test(renderMarkdown.name, { timeout: 300_000 }, async () => {
   for (const dir of DIRS_TEST) {
     for await (const entry of walk(dir)) {
       if (path.extname(entry.path) !== '.md') continue
