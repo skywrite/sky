@@ -275,6 +275,7 @@ export interface DocumentFilter {
   dateGte?: string
   dateLte?: string
   type?: string
+  pathContains?: string
   involves?: string
   involvesAny?: string[]
   involvesAll?: string[]
@@ -517,9 +518,7 @@ const PROJECT_OVERVIEW_SUFFIX = '/_project/overview.md'
 
 /** Project folder root for an overview path ('' when not an overview). */
 function projectDirOf(overviewPath: string): string {
-  return overviewPath.endsWith(PROJECT_OVERVIEW_SUFFIX)
-    ? overviewPath.slice(0, -PROJECT_OVERVIEW_SUFFIX.length)
-    : ''
+  return overviewPath.endsWith(PROJECT_OVERVIEW_SUFFIX) ? overviewPath.slice(0, -PROJECT_OVERVIEW_SUFFIX.length) : ''
 }
 
 function docToDecision(doc: Document, path: string) {
@@ -942,6 +941,7 @@ function matchesDocumentFilter(
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
   if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.type && detectTypeFromPath(path) !== filter.type) return false
+  if (filter.pathContains && !path.includes(filter.pathContains)) return false
   if (filter.involves && !matchesInvolves(doc, filter.involves, resolveNames)) return false
   if (filter.involvesAny && !matchesInvolvesAny(doc, filter.involvesAny, resolveNames)) return false
   if (filter.involvesAll && !matchesInvolvesAll(doc, filter.involvesAll, resolveNames)) return false
@@ -984,7 +984,10 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
   // Built once per resolver set (i.e. per store version).
   const filesByProjectDir = new Map<string, string[]>()
   {
-    const projectDirs = domain.entriesByType('project').map(({ path }) => projectDirOf(path)).filter(Boolean)
+    const projectDirs = domain
+      .entriesByType('project')
+      .map(({ path }) => projectDirOf(path))
+      .filter(Boolean)
     for (const p of domain.paths) {
       if (!p.includes('/projects/') || p.endsWith(PROJECT_OVERVIEW_SUFFIX)) continue
       const dir = projectDirs.find((d) => p.startsWith(`${d}/`))

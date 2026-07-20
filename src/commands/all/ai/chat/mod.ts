@@ -496,9 +496,16 @@ export default class AiChatTask extends Command {
     // Parallel: fetch all four sets of documents from server at once,
     // plus the interaction-ranked people list for system prompt grounding
     t0 = performance.now()
+    // pathContains scopes the date sweeps to the time tree: project folder
+    // files carry created: dates too, and large project docs in a date
+    // sweep cost seconds of serialize for content the query-targeted rel
+    // path (ai:context:files) is meant to fetch when relevant.
     const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, peopleEntities] = await Promise.all([
-      fetchContextFromServer(`{ documents(where: { date: "${today}" }) { path } }`, 1),
-      fetchContextFromServer(`{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}" }) { path } }`, 0),
+      fetchContextFromServer(`{ documents(where: { date: "${today}", pathContains: "/time/" }) { path } }`, 1),
+      fetchContextFromServer(
+        `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
+        0,
+      ),
       fetchContextFromServer(`{ goals { path } }`, 0),
       fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
       gatherPeopleEntities(config as Record<string, unknown>),
