@@ -494,7 +494,7 @@ test('service yoga returns project folder files via Project.files', async () => 
   assert({
     given: 'a project with one folder file',
     should: 'list the folder file path',
-    actual: (result.data?.projects ?? []).flatMap((p: { files: string[] }) => p.files),
+    actual: (result.data?.projects ?? []).flatMap((p) => (p as unknown as { files: string[] }).files),
     expected: [projectFiles[0].path],
   })
 })
