@@ -23,6 +23,7 @@ function createFullMockStore(config: {
   people?: Array<{ doc: PersonDocument; path: string }>
   orgs?: Array<{ doc: OrganizationDocument; path: string }>
   projects?: Array<{ doc: ProjectDocument; path: string }>
+  projectFiles?: Array<{ doc: Document; path: string }>
   decisions?: Array<{ doc: DecisionDocument; path: string }>
   goals?: Array<{ doc: GoalDocument; path: string }>
   ideas?: Array<{ doc: Document; path: string }>
@@ -38,6 +39,7 @@ function createFullMockStore(config: {
     },
     projects: {
       getAll: () => Collection.from(config.projects ?? [], 'project'),
+      getDocuments: () => Collection.from(config.projectFiles ?? [], 'document'),
     },
     decisions: {
       getAll: () => Collection.from(config.decisions ?? [], 'decision'),
@@ -151,5 +153,38 @@ test('DomainCollection.fromStore - includes all document types', () => {
     should: 'have 1 goal',
     actual: collection.goals.length,
     expected: 1,
+  })
+})
+
+test('DomainCollection.fromStore - includes project folder files as documents', () => {
+  const project = ProjectDocument.fromMarkdown(md('name: ProjectX', '# ProjectX'))
+  const notes = Document.fromMarkdown(md('rel:\n  - projects/ProjectX', '# Notes'))
+
+  const store = createFullMockStore({
+    projects: [{ doc: project, path: '/projects/open/ProjectX/_project/overview.md' }],
+    projectFiles: [{ doc: notes, path: '/projects/open/ProjectX/notes.md' }],
+  })
+
+  const collection = DomainCollection.fromStore(store)
+
+  assert({
+    given: 'a project with one folder file',
+    should: 'include both documents',
+    actual: collection.size,
+    expected: 2,
+  })
+
+  assert({
+    given: 'a project with one folder file',
+    should: 'classify only the overview as a project',
+    actual: collection.projects.length,
+    expected: 1,
+  })
+
+  assert({
+    given: 'a project with one folder file',
+    should: 'expose the folder file as a document entry',
+    actual: collection.entriesByType('document').map((e) => e.path),
+    expected: ['/projects/open/ProjectX/notes.md'],
   })
 })

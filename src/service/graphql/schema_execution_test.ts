@@ -236,6 +236,17 @@ Move offices.`),
   },
 ]
 
+// Folder files arrive from ProjectStore with the project rel injected
+const projectFiles = [
+  {
+    doc: doc(`---
+rel: [projects/Widget-Launch]
+---
+Launch checklist.`),
+    path: '/test/projects/open/widget-launch/checklist.md',
+  },
+]
+
 const decisions = [
   {
     doc: doc(`---
@@ -323,7 +334,10 @@ function createMockMarkdownStore(): MarkdownStore {
   return {
     people: createMockCollection(people),
     orgs: createMockCollection(orgs),
-    projects: createMockCollection(projects),
+    projects: {
+      ...createMockCollection(projects),
+      getDocuments: () => ({ toArray: () => projectFiles }),
+    },
     decisions: createMockCollection(decisions),
     goals: createMockCollection(goals),
     ideas: createMockCollection(ideas),
@@ -387,6 +401,11 @@ const CASES: SmokeCase[] = [
     field: 'projects',
     query: '{ projects(where: { status: "open" }) { path } }',
     expectPaths: [projects[0].path],
+  },
+  {
+    field: 'documents',
+    query: '{ documents(where: { relContains: "Widget-Launch" }) { path } }',
+    expectPaths: [projectFiles[0].path],
   },
   {
     field: 'decisions',
@@ -470,7 +489,10 @@ test('service yoga tracks MarkdownStore mutations via version bumps', async () =
   const mdStore = {
     people: createMockCollection(people),
     orgs: createMockCollection(orgs),
-    projects: createMockCollection(projects),
+    projects: {
+      ...createMockCollection(projects),
+      getDocuments: () => ({ toArray: () => projectFiles }),
+    },
     decisions: createMockCollection(decisions),
     goals: createMockCollection(goals),
     ideas: createMockCollection(ideas),

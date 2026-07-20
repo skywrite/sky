@@ -133,21 +133,22 @@ export default class DomainCollection {
     // Instead, build the Map mutably here, then wrap once via Collection.fromMap().
     const items = new Map<string, CollectionItem<Document>>()
 
-    function addAll(subStore: { getAll(): { toArray(): Array<{ doc: Document; path: string }> } }) {
-      for (const { doc, path } of subStore.getAll().toArray()) {
+    function addAll(collection: { toArray(): Array<{ doc: Document; path: string }> }) {
+      for (const { doc, path } of collection.toArray()) {
         const type = detectTypeFromPath(path)
         items.set(path, { doc, path, type, depth: 0 })
       }
     }
 
-    addAll(store.people)
-    addAll(store.orgs)
-    addAll(store.projects)
-    addAll(store.decisions)
-    addAll(store.goals)
-    addAll(store.ideas)
-    addAll(store.places)
-    addAll(store.time)
+    addAll(store.people.getAll())
+    addAll(store.orgs.getAll())
+    addAll(store.projects.getAll())
+    addAll(store.projects.getDocuments())
+    addAll(store.decisions.getAll())
+    addAll(store.goals.getAll())
+    addAll(store.ideas.getAll())
+    addAll(store.places.getAll())
+    addAll(store.time.getAll())
 
     const domain = new DomainCollection(store)
     domain.collection = Collection.fromMap(items)

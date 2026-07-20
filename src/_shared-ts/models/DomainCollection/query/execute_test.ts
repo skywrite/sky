@@ -116,7 +116,7 @@ Weekly finance video.`),
     // empty index (names/find) makes resolution fall back to literal names
     people: { ...createMockCollection(peopleData), names: [], find: () => undefined },
     orgs: createMockCollection(orgsData),
-    projects: createMockCollection([]),
+    projects: { ...createMockCollection([]), getDocuments: () => ({ toArray: () => [] }) },
     decisions: createMockCollection([]),
     goals: createMockCollection([]),
     ideas: createMockCollection([]),
