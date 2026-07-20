@@ -502,6 +502,7 @@ input DocumentFilter {
   dateGte: String
   dateLte: String
   type: String
+  pathContains: String
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
