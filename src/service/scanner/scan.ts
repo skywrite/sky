@@ -93,9 +93,7 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     if (Array.isArray(person)) persons = [...person]
     else if (typeof person === 'string') persons = [person]
     else {
-      console.log(file)
-      console.dir(person)
-      console.log('\n')
+      console.warn(`[scan] person file missing name/who: ${file}`)
     }
 
     const newSet = store.people.union(new Set(persons))
@@ -128,9 +126,7 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     if (Array.isArray(orgName)) orgs = [...orgName]
     else if (typeof orgName === 'string') orgs = [orgName]
     else {
-      console.log(file)
-      console.dir(orgName)
-      console.log('\n')
+      console.warn(`[scan] org file missing name: ${file}`)
     }
 
     const newSet = store.organizations.union(new Set(orgs))
