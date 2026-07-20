@@ -26,7 +26,8 @@ async function setupTestDir(): Promise<PathConfig> {
     orgs: path.join(TEST_DIR, 'orgs'),
     projects: path.join(TEST_DIR, 'projects'),
     places: path.join(TEST_DIR, 'places'),
-    time: path.join(TEST_DIR, 'time', '2026', '01-jan', 'w05'),
+    // time/YYYY/MM/DD-DD — the week dir holding Tue 2026-01-27
+    time: path.join(TEST_DIR, 'time', '2026', '01', '26-01'),
   }
 
   await mkdir(dirs.people, { recursive: true })
@@ -257,8 +258,8 @@ name: Jane Smith
   )
 
   // Create a meeting file in a proper date folder structure
-  // parseDateFromDayPath expects: .../2026/01-jan/w05/27-mon/...
-  const dayDir = path.join(paths.time, '27-mon')
+  // parseDateFromDayPath expects: .../time/2026/01/26-01/01-27/...
+  const dayDir = path.join(paths.time, '01-27')
   await mkdir(dayDir, { recursive: true })
   const meetingFile = path.join(dayDir, 'meeting_weekly-sync.md')
   await writeFile(
