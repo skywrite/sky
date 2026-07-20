@@ -77,7 +77,12 @@ recencyFixtures.forEach((fixture) => {
 const entityFixtures = [
   { type: 'person' as const, path: '/people/Alice.md', expected: 6, description: 'person (3 + 3)' },
   { type: 'org' as const, path: '/orgs/Acme.md', expected: 6, description: 'org (3 + 3)' },
-  { type: 'project' as const, path: '/projects/Alpha.md', expected: 7, description: 'project (3 + 4)' },
+  {
+    type: 'project' as const,
+    path: '/projects/open/Alpha/_project/overview.md',
+    expected: 7,
+    description: 'project (3 + 4)',
+  },
   { type: 'goal' as const, path: '/goals/fitness.md', expected: 8, description: 'goal (3 + 5)' },
   { type: 'decision' as const, path: '/decisions/hire.md', expected: 8, description: 'decision (3 + 5)' },
   { type: 'idea' as const, path: '/ideas/thing.md', expected: 5, description: 'idea (3 + 2)' },
@@ -218,5 +223,67 @@ test('recencyTypeScorer — non-priority path is unaffected', () => {
     should: 'score normally without boost',
     actual: verdictScore(scorer(makeItem({ path: '/people/Alice.md', type: 'person' }))),
     expected: 6,
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Project status penalty — open > completed > whiteboard > canceled > hold
+// ---------------------------------------------------------------------------
+
+const projectStatusFixtures = [
+  {
+    path: '/projects/open/Alpha/notes.md',
+    type: 'document' as const,
+    expected: 0,
+    description: 'open folder file — no penalty',
+  },
+  {
+    path: '/projects/completed/2022/Old-Thing/_project/overview.md',
+    type: 'project' as const,
+    expected: 6,
+    description: 'completed overview (3 + 4 - 1)',
+  },
+  {
+    path: '/projects/whiteboard/Moonshot/notes.md',
+    type: 'document' as const,
+    expected: -1.5,
+    description: 'whiteboard folder file (0 + 0 - 1.5)',
+  },
+  {
+    path: '/projects/canceled/Dead-End/notes.md',
+    type: 'document' as const,
+    expected: -2,
+    description: 'canceled folder file (0 + 0 - 2)',
+  },
+  {
+    path: '/projects/hold/Paused/notes.md',
+    type: 'document' as const,
+    expected: -3,
+    description: 'hold folder file (0 + 0 - 3)',
+  },
+]
+
+projectStatusFixtures.forEach((fixture) => {
+  test(`recencyTypeScorer — ${fixture.description}`, () => {
+    const scorer = createRecencyTypeScorer(TODAY)
+
+    assert({
+      given: fixture.description,
+      should: `score ${fixture.expected}`,
+      actual: verdictScore(scorer(makeItem({ path: fixture.path, type: fixture.type }))),
+      expected: fixture.expected,
+    })
+  })
+})
+
+test('recencyTypeScorer — priority boost outweighs the status penalty', () => {
+  const path = '/projects/completed/2022/Old-Thing/retro.md'
+  const scorer = createRecencyTypeScorer(TODAY, { priorityPaths: new Set([path]) })
+
+  assert({
+    given: 'a query-relevant file in a completed project',
+    should: 'score 9 (0 + 0 + boost 10 - penalty 1)',
+    actual: verdictScore(scorer(makeItem({ path, type: 'document' }))),
+    expected: 9,
   })
 })
