@@ -31,7 +31,7 @@ summary: Project kickoff
 tags: [Work]
 ---
 Meeting notes here.`),
-      path: '/test/time/2026/01/26-01/01/actions/meetings/meeting1.md',
+      path: '/test/time/2026/01/26-01/01-01/actions/meetings/meeting1.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -43,7 +43,7 @@ summary: Quick sync
 tags: [Personal]
 ---
 Phone call notes.`),
-      path: '/test/time/2026/01/26-01/28/actions/meetings/meeting2.md',
+      path: '/test/time/2026/01/26-01/01-28/actions/meetings/meeting2.md',
     },
   ]
 
@@ -59,7 +59,7 @@ summary: M&A candidate
 created: 2026-02-18
 ---
 Old message saved later.`),
-      path: '/test/time/2026/02/02-08/05/actions/messages/old-message.md',
+      path: '/test/time/2026/02/02-08/02-05/actions/messages/old-message.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -71,7 +71,7 @@ summary: Status update
 created: 2026-02-17
 ---
 Recent message.`),
-      path: '/test/time/2026/02/16-22/17/actions/messages/recent-message.md',
+      path: '/test/time/2026/02/16-22/02-17/actions/messages/recent-message.md',
     },
   ]
 
@@ -180,7 +180,7 @@ How should we plan the widget launch?
 ## AI Assistant
 
 Start with a small beta group.`),
-      path: '/test/time/2026/02/02-08/03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+      path: '/test/time/2026/02/02-08/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -201,7 +201,7 @@ Give me marketing ideas.
 ## AI Assistant
 
 Here are three angles to consider.`),
-      path: '/test/time/2026/01/26-01/27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
+      path: '/test/time/2026/01/26-01/01-27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
     },
   ]
 

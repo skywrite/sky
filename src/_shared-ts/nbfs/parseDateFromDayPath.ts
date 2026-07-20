@@ -4,20 +4,21 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 /**
  * Parses a PlainDate from a day file path.
  *
- * Day files are structured as: time/YYYY/MM/DD-DD/DD/day.md
- * where the final DD may be prefixed with 'x' if it spills into the next month.
+ * Day files are structured as: time/YYYY/MM/DD-DD/MM-DD/day.md
+ * where the day dir carries its own month, so cross-month spillover
+ * days are self-describing.
  *
  * @param filePath - The full path to a day file
  * @returns PlainDate representing the date
  * @throws Error if the path is not a valid day file path
  *
  * @example
- * parseDateFromDayPath('/path/to/Notebook/time/2022/03/21-27/21/day.md')
+ * parseDateFromDayPath('/path/to/Notebook/time/2022/03/21-27/03-21/day.md')
  * // Returns: PlainDate for 2022-03-21
  *
  * @example
- * parseDateFromDayPath('/path/to/Notebook/time/2022/03/28-03/x02/day.md')
- * // Returns: PlainDate for 2022-04-02 (x prefix means next month)
+ * parseDateFromDayPath('/path/to/Notebook/time/2022/03/28-03/04-02/day.md')
+ * // Returns: PlainDate for 2022-04-02 (cross-month day, month from the day dir)
  */
 export default function parseDateFromDayPath(filePath: string): PlainDate {
   const parts = filePath.split(path.sep)
@@ -28,38 +29,23 @@ export default function parseDateFromDayPath(filePath: string): PlainDate {
     throw new Error(`Invalid day file path: missing 'time' directory in ${filePath}`)
   }
 
-  // After 'time', we have: YYYY/MM/DD-DD/DD
+  // After 'time', we have: YYYY/MM/DD-DD/MM-DD
   const offset = timeIndex + 1
 
   const yearStr = parts[offset]
-  const monthStr = parts[offset + 1]
-  const dayStr = parts[offset + 3] // Skip week range (DD-DD)
+  const dayStr = parts[offset + 3] // Skip month and week range (DD-DD)
 
-  if (!yearStr || !monthStr || !dayStr) {
+  if (!yearStr || !dayStr) {
     throw new Error(`Invalid day file path: missing date components in ${filePath}`)
   }
 
-  let year = parseInt(yearStr, 10)
-  let month = parseInt(monthStr, 10)
-  let day: number
+  const year = parseInt(yearStr, 10)
+  const dayDirMatch = dayStr.match(/^(\d{2})-(\d{2})$/)
 
-  // Handle 'x' prefix for next month spillover
-  if (dayStr.startsWith('x')) {
-    day = parseInt(dayStr.slice(1), 10)
-    month++ // Day is in the next month
-
-    // Handle year rollover
-    if (month > 12) {
-      month = 1
-      year++
-    }
-  } else {
-    day = parseInt(dayStr, 10)
+  if (isNaN(year) || !dayDirMatch) {
+    throw new Error(`Invalid date components in path ${filePath}: year=${yearStr}, dayDir=${dayStr}`)
   }
 
-  if (isNaN(year) || isNaN(month) || isNaN(day)) {
-    throw new Error(`Invalid date components in path ${filePath}: year=${year}, month=${month}, day=${day}`)
-  }
-
-  return new PlainDate(year, month, day)
+  // The MM-DD day dir carries its own month — cross-month safe
+  return new PlainDate(year, parseInt(dayDirMatch[1], 10), parseInt(dayDirMatch[2], 10))
 }

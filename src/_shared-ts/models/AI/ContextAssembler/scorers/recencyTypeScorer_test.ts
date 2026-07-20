@@ -32,25 +32,25 @@ const TODAY = new PlainDate(2026, 2, 23)
 // Recency decays linearly over 540 days: recency = 5 * (1 - daysSince / 540)
 const recencyFixtures = [
   {
-    path: '/Notebook/time/2026/02/23-01/23/day.md',
+    path: '/Notebook/time/2026/02/23-01/02-23/day.md',
     type: 'day' as const,
     expected: 8, // recency 5.0 + type 3
     description: "today's day (recency 5.00 + type 3)",
   },
   {
-    path: '/Notebook/time/2026/02/16-22/20/day.md',
+    path: '/Notebook/time/2026/02/16-22/02-20/day.md',
     type: 'day' as const,
     expected: 7.97, // recency 5*(1-3/540)=4.972 + type 3 = 7.972 → round2 = 7.97
     description: '3-day-old day (recency 4.97 + type 3)',
   },
   {
-    path: '/Notebook/time/2026/01/06-12/10/day.md',
+    path: '/Notebook/time/2026/01/06-12/01-10/day.md',
     type: 'day' as const,
     expected: 7.59, // recency 5*(1-44/540)=4.593 + type 3 = 7.593 → round2 = 7.59
     description: '44-day-old day (recency 4.59 + type 3)',
   },
   {
-    path: '/Notebook/time/2026/02/23-01/23/goals/q1-okr.md',
+    path: '/Notebook/time/2026/02/23-01/02-23/goals/q1-okr.md',
     type: 'goal' as const,
     expected: 10, // recency 5.0 + type 5
     description: "today's goal (recency 5.00 + type 5)",
@@ -196,7 +196,7 @@ test('recencyTypeScorer — org at depth 3 returns -Infinity', () => {
 // ---------------------------------------------------------------------------
 
 test('recencyTypeScorer — priority path gets +10 boost', () => {
-  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/23/actions/videos/Video_James.md'])
+  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md'])
   const scorer = createRecencyTypeScorer(TODAY, { priorityPaths })
 
   assert({
@@ -205,7 +205,7 @@ test('recencyTypeScorer — priority path gets +10 boost', () => {
     actual: verdictScore(
       scorer(
         makeItem({
-          path: '/Notebook/time/2026/02/23-01/23/actions/videos/Video_James.md',
+          path: '/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md',
           type: 'document',
         }),
       ),
@@ -215,7 +215,7 @@ test('recencyTypeScorer — priority path gets +10 boost', () => {
 })
 
 test('recencyTypeScorer — non-priority path is unaffected', () => {
-  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/23/actions/videos/Video_James.md'])
+  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md'])
   const scorer = createRecencyTypeScorer(TODAY, { priorityPaths })
 
   assert({

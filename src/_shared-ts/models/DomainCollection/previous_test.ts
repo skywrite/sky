@@ -107,10 +107,10 @@ async function loadStore() {
     orgs.set(`${FIXTURES_DIR}orgs/${file}`, OrganizationDocument.fromMarkdown(content))
   }
   const msgFixtures = [
-    { rel: `${WEEK_DIR}/21/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-1.md` },
-    { rel: `${WEEK_DIR}/22/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-2.md` },
-    { rel: `${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md` },
-    { rel: 'time/2026/02/02-08/02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md' },
+    { rel: `${WEEK_DIR}/01-21/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-1.md` },
+    { rel: `${WEEK_DIR}/01-22/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-2.md` },
+    { rel: `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md` },
+    { rel: 'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md' },
   ]
   for (const { rel } of msgFixtures) {
     const content = await loadFixture(rel)
@@ -134,9 +134,11 @@ function itemByPath(collection: DomainCollection, suffix: string) {
 
 test('previous chain - follows full chain from last message', async () => {
   const { store } = await loadStore()
-  const content = await loadFixture(`${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`)
+  const content = await loadFixture(
+    `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`,
+  )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
+  const path = `${FIXTURES_DIR}${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
 
@@ -168,9 +170,11 @@ test('previous chain - follows full chain from last message', async () => {
 
 test('previous chain - items inherit same depth as referencing document', async () => {
   const { store } = await loadStore()
-  const content = await loadFixture(`${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`)
+  const content = await loadFixture(
+    `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`,
+  )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
+  const path = `${FIXTURES_DIR}${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
 
@@ -202,9 +206,11 @@ test('previous chain - items inherit same depth as referencing document', async 
 
 test('previous chain - does not follow rel from chained messages', async () => {
   const { store } = await loadStore()
-  const content = await loadFixture(`${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`)
+  const content = await loadFixture(
+    `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`,
+  )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
+  const path = `${FIXTURES_DIR}${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
 
   // depth: 0 means no rel traversal, but previous chain is still followed
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
@@ -223,9 +229,11 @@ test('previous chain - does not follow rel from chained messages', async () => {
 
 test('previous chain - works alongside rel traversal', async () => {
   const { store } = await loadStore()
-  const content = await loadFixture(`${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`)
+  const content = await loadFixture(
+    `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`,
+  )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}${WEEK_DIR}/23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
+  const path = `${FIXTURES_DIR}${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
 
   // depth: 1 enables rel traversal for the ROOT doc (message-3)
   // message-3 has no rel, but its from: Chen Wei should resolve
@@ -254,10 +262,10 @@ test('previous chain - follows MM-DD/subpath across month boundaries', async () 
   const { store } = await loadStore()
   // message-4 is in Feb, its previous uses 01-23/subpath to reach Jan message-3
   const content = await loadFixture(
-    'time/2026/02/02-08/02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/02/02-08/02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
 

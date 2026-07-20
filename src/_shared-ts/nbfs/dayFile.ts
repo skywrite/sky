@@ -9,7 +9,7 @@ export const FILE_DAY = 'day.md'
  * Get the day file path for a given date.
  *
  * @param date - PlainDate instance or YMD string (e.g., "2025-03-15")
- * @returns File path like "2025/03/10-16/15/day.md"
+ * @returns File path like "2025/03/10-16/03-15/day.md"
  */
 export default function dayFile(date: PlainDate | string = new PlainDate()): string {
   const plainDate = normalizeToPlainDate(date)

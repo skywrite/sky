@@ -44,7 +44,7 @@ summary: Project kickoff
 tags: [Work]
 ---
 Meeting notes here.`),
-    path: '/test/time/2026/02/02-08/03/actions/meetings/kickoff.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/meetings/kickoff.md',
   },
   {
     doc: doc(`---
@@ -56,7 +56,7 @@ summary: Quick sync
 tags: [Personal]
 ---
 Phone call notes.`),
-    path: '/test/time/2026/02/02-08/03/actions/meetings/sync.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/meetings/sync.md',
   },
 ]
 
@@ -71,7 +71,7 @@ summary: Status update
 created: 2026-02-03
 ---
 Recent message.`),
-    path: '/test/time/2026/02/02-08/03/actions/messages/status.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/messages/status.md',
   },
   {
     doc: doc(`---
@@ -83,7 +83,7 @@ summary: Candidate intro
 created: 2026-02-03
 ---
 Another message.`),
-    path: '/test/time/2026/02/02-08/03/actions/messages/intro.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/messages/intro.md',
   },
 ]
 
@@ -97,7 +97,7 @@ summary: Conference talk
 created: 2026-02-03
 ---
 Talk notes.`),
-    path: '/test/time/2026/02/02-08/03/actions/videos/talk.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/videos/talk.md',
   },
   {
     doc: doc(`---
@@ -108,7 +108,7 @@ summary: Recipe walkthrough
 created: 2026-02-03
 ---
 Recipe notes.`),
-    path: '/test/time/2026/02/02-08/03/actions/videos/recipe.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/videos/recipe.md',
   },
 ]
 
@@ -119,7 +119,7 @@ time: "08:00"
 tags: [Journal]
 ---
 Morning gratitude entry about the launch.`),
-    path: '/test/time/2026/02/02-08/03/journal/morning.md',
+    path: '/test/time/2026/02/02-08/02-03/journal/morning.md',
   },
   {
     doc: doc(`---
@@ -127,7 +127,7 @@ time: "22:00"
 tags: [Journal]
 ---
 Evening review of the day.`),
-    path: '/test/time/2026/02/02-08/04/journal/evening.md',
+    path: '/test/time/2026/02/02-08/02-04/journal/evening.md',
   },
 ]
 
@@ -141,7 +141,7 @@ model: claude-opus-4-6
 turns: 2
 ---
 # Planning the Widget Launch`),
-    path: '/test/time/2026/02/02-08/03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+    path: '/test/time/2026/02/02-08/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
   },
   {
     doc: doc(`---
@@ -152,7 +152,7 @@ model: claude-haiku-4-5
 turns: 1
 ---
 # Brainstorm Marketing Ideas`),
-    path: '/test/time/2026/02/02-08/04/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
+    path: '/test/time/2026/02/02-08/02-04/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
   },
 ]
 
@@ -164,7 +164,7 @@ started: "07:30"
 tags: [Day]
 ---
 Day file.`),
-    path: '/test/time/2026/02/02-08/03/day.md',
+    path: '/test/time/2026/02/02-08/02-03/day.md',
   },
   {
     doc: doc(`---
@@ -173,7 +173,7 @@ started: "08:00"
 tags: [Day]
 ---
 Day file.`),
-    path: '/test/time/2026/02/02-08/04/day.md',
+    path: '/test/time/2026/02/02-08/02-04/day.md',
   },
 ]
 
