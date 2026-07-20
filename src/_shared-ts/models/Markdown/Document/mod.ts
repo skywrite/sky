@@ -9,6 +9,9 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type Attachment, attachmentsToYaml, parseAttachments } from './attachment.ts'
 import _stripHtmlComments from './_stripHtmlComments.ts'
 
+/** Reference-link definition line, e.g. `[label]: https://example.com` */
+const REFERENCE_DEFINITION = /^\[[^\]]+\]:\s/m
+
 export default class Document {
   public readonly markdown: string
   public readonly yamlError?: string
@@ -40,6 +43,11 @@ export default class Document {
       this._markdownTokens = marked.lexer(this.markdown, {})
     }
     return this._markdownTokens
+  }
+
+  /** See toMarkdown — the raw body is authoritative only under these terms. */
+  private canSkipTokenRender(links: boolean): boolean {
+    return this._markdownTokens === null && links && !REFERENCE_DEFINITION.test(this.markdown)
   }
 
   /** Read-only for subclasses; only updateLinks replaces the cache. */
@@ -141,7 +149,16 @@ export default class Document {
 
     const yamlStr = yamlLines.join('\n')
 
-    const markdown = renderMarkdown(this.markdownTokens, { links })
+    // Untouched tokens mean the raw body is still authoritative, so skip
+    // the lex (marked is quadratic — ~85s for a 1MB doc). Three conditions
+    // keep the output byte-identical to the token render:
+    //   - tokens never materialized (updateLinks mutates them in place)
+    //   - links kept ({ links: false } needs the render to drop them)
+    //   - no reference-link definitions (the render relocates them to the
+    //     end of the body, so the raw text can differ)
+    const markdown = this.canSkipTokenRender(links)
+      ? this.markdown
+      : renderMarkdown(this.markdownTokens, { links })
 
     if (yaml) {
       return yamlStr + '\n\n' + markdown

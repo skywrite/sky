@@ -81,6 +81,32 @@ test('large doc — per-request serve path is parse-free and fast', () => {
   })
 })
 
+test('large doc — toMarkdown on a fresh document does not lex', () => {
+  // Serializing must not force the quadratic lexer: the raw body is
+  // authoritative until something materializes tokens. Before this,
+  // toMarkdown on a 1MB doc cost tens of seconds — paid by clone(), and
+  // so by every rel injection during the project store scan.
+  const fresh = Document.fromMarkdown(raw)
+
+  const t0 = performance.now()
+  const output = fresh.toMarkdown()
+  const elapsed = performance.now() - t0
+
+  assert({
+    given: 'a freshly constructed ~1MB document',
+    should: 'serialize in under 500ms without lexing',
+    actual: elapsed < 500,
+    expected: true,
+  })
+
+  assert({
+    given: 'the fast-path output',
+    should: 'contain the document body',
+    actual: output.includes('Section 1 Response Summary'),
+    expected: true,
+  })
+})
+
 test('large doc — string strip removes comments, preserves fenced content', () => {
   const stripped = _stripHtmlComments(raw)
 
