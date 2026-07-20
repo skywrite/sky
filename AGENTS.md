@@ -88,20 +88,32 @@ bun run dev:test:unit    # Run tests (bun test)
 
 ## Never Hard-Code Real User Data — Use Mock Data
 
-Data the user shares in conversation (names, addresses, coordinates, share/Maps links, emails, phone numbers, account IDs, API keys, etc.) is for completing the task at hand — it must **NOT** be baked into anything committed to the repo:
+> ⛔ **HARD RULE — ZERO TOLERANCE. This repo is public. A leaked name pushed to GitHub cannot be unpublished.** This rule was violated once (2026-07-20: real project names from the notebook ended up in test fixtures and code comments, and required a full history rewrite). Never again.
 
-- Test fixtures, sample data, and expected values
+Real user data is **anything observed while working — from ANY source**, not just what the user types in conversation:
+
+- Data shared in conversation (names, addresses, coordinates, share/Maps links, emails, phone numbers, account IDs, API keys)
+- **Anything seen while exploring the notebook** (`~/Sky` or wherever `dir` points): project names, folder names, people, orgs, file paths, file sizes, dates tied to real content
+- Service/log output, GraphQL query results, command output containing notebook content
+
+None of it may be baked into anything committed to the repo:
+
+- Test fixtures, sample data, and expected values — **including fixture file paths** (`/projects/open/<RealName>/...` leaks just as hard as file contents)
 - Command `usage` examples, flag descriptions, and `descriptionLong` text
 - Code comments, doc examples, and templates (`tmpl/`)
+- Commit messages
 
 Substitute clearly fake / mock data instead — real personal data (e.g. someone's home coordinates or a link to their house) does not belong in source control. Good substitutes:
 
 - Names → `"Jane Doe"`, `"Beach house"`, `"Joe's Cafe"`
+- Project names → `"Atlas"`, `"Widget-V2"`, `"Team-Survey"`
 - Coordinates → public landmarks (e.g. Eiffel Tower `48.85837, 2.294481`)
 - Links / URLs → placeholders like `<google-maps-link>` or `https://example.com/...`
 - Emails → `jane@example.com`
 
 It's fine to use a real value transiently to **verify** behavior (run the command, resolve a link), but scrub it from every committed file afterward and delete any throwaway script that captured it.
+
+**Mandatory before every commit:** grep the staged diff for every real name/value you encountered during the session (`git diff --staged | grep -i "<name>"`). If you explored the notebook at all, assume leakage until the grep proves otherwise.
 
 ## Key Conventions
 
