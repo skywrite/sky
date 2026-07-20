@@ -40,6 +40,8 @@ type TestFn = (t: TestContext) => void | Promise<void>
 interface TestOptions {
   ignore?: boolean
   skip?: boolean | string
+  /** Per-test timeout in ms (bun's default is 5000) */
+  timeout?: number
 }
 
 interface TestDefinition extends TestOptions {
@@ -81,7 +83,7 @@ function test(first: string | TestDefinition | TestFn, second?: TestOptions | Te
     if (shouldSkip(first)) {
       bunTest.skip(first.name, wrapSkippable(fn))
     } else {
-      bunTest(first.name, wrapSkippable(fn))
+      bunTest(first.name, wrapSkippable(fn), first.timeout)
     }
     return
   }
@@ -95,7 +97,7 @@ function test(first: string | TestDefinition | TestFn, second?: TestOptions | Te
   if (shouldSkip(second as TestOptions)) {
     bunTest.skip(first, wrapSkippable(fn))
   } else {
-    bunTest(first, wrapSkippable(fn))
+    bunTest(first, wrapSkippable(fn), (second as TestOptions | undefined)?.timeout)
   }
 }
 
