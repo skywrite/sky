@@ -10,7 +10,7 @@
     "dev:test": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*' && cd ../extensions/vscode && npm test",
     "dev:test:unit": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*'",
     "dev:test:vscode": "cd ../extensions/vscode && npm test",
-    "dev:typecheck": "tsgo --noEmit",
+    "dev:typecheck": "tsc --noEmit",
     "dev:schema:validate": "bun run commands/all/lint/schema.ts",
     "dev:schema:generate": "bun run commands/command-runner.ts dev/schema/generate"
   },
@@ -76,8 +76,8 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.11",
-    "@typescript/native-preview": "^7.0.0-dev.20260330.1",
     "oxfmt": "^0.42.0",
-    "oxlint": "1.56.0"
+    "oxlint": "1.56.0",
+    "typescript": "^7.0.2"
   }
 }

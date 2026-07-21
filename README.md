@@ -292,7 +292,7 @@ export default class MyCommand extends Command {
 | [Bun](https://bun.sh) | Runtime, package manager, test runner |
 | [oxfmt](https://oxc.rs) | Code formatting (Rust, 178ms for 1000+ files) |
 | [oxlint](https://oxc.rs) | Linting (Rust, ESLint-compatible) |
-| [tsgo](https://github.com/nicklockwood/tsgo) | Type checking (Go port of tsc, native binary) |
+| [tsc](https://www.typescriptlang.org) | Type checking (TypeScript 7, native Go binary) |
 
 ```bash
 bun run dev:fmt          # Format
