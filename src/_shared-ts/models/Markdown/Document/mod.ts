@@ -156,9 +156,7 @@ export default class Document {
     //   - links kept ({ links: false } needs the render to drop them)
     //   - no reference-link definitions (the render relocates them to the
     //     end of the body, so the raw text can differ)
-    const markdown = this.canSkipTokenRender(links)
-      ? this.markdown
-      : renderMarkdown(this.markdownTokens, { links })
+    const markdown = this.canSkipTokenRender(links) ? this.markdown : renderMarkdown(this.markdownTokens, { links })
 
     if (yaml) {
       return yamlStr + '\n\n' + markdown
