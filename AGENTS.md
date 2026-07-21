@@ -18,7 +18,7 @@ Sky is a CLI and file system for organizing your life — daily journaling, task
 | TypeScript | All application code |
 | [oxfmt](https://oxc.rs) | Code formatting |
 | [oxlint](https://oxc.rs) | Linting |
-| [tsgo](https://github.com/nicklockwood/tsgo) | Type checking (Go port of tsc) |
+| [tsc](https://www.typescriptlang.org) | Type checking (TypeScript 7, native Go binary) |
 
 ## Project Structure
 
@@ -72,7 +72,7 @@ All commands run from `src/`:
 ```bash
 bun run dev:fmt          # Format (oxfmt)
 bun run dev:lint         # Lint (oxlint + banned-apis + tasks)
-bun run dev:typecheck    # Type check (tsgo)
+bun run dev:typecheck    # Type check (tsc)
 bun run dev:test:unit    # Run tests (bun test)
 ```
 
