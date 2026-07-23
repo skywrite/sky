@@ -1,9 +1,12 @@
 import * as path from 'node:path'
+import { copyFile, mkdir, rename } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import slugify from '#lib/string/slugify.ts'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -43,10 +46,11 @@ export default class MeetingNewTask extends Command {
   }
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output } = context
+    const { output, config } = context
     let { when, medium, who, summary, category, fromAudio, fromTranscript } = args
     let body: string | undefined
     let rel: string[] | undefined
+    let transcriptSourcePath: string | null = null
 
     if (fromAudio !== undefined && fromTranscript !== undefined) {
       return CommandResult.fail('Use either --from-audio or --from-transcript, not both')
@@ -84,6 +88,13 @@ export default class MeetingNewTask extends Command {
         medium = data.medium
       }
 
+      // Only --from-transcript hands us a file worth keeping: on the --from-audio
+      // path the .vtt is a generated artifact, and the recording it came from is
+      // the file that matters.
+      if (fromTranscript !== undefined) {
+        transcriptSourcePath = data.transcriptFilePath
+      }
+
       output.log(`\nExtracted: who="${who}", summary="${summary}", when="${when}", medium="${medium}"`)
       if (rel && rel.length > 0) {
         output.log(`  Related: ${rel.join(', ')}`)
@@ -108,8 +119,30 @@ export default class MeetingNewTask extends Command {
 
     const meetingFileName = `actions/meetings/${fileSlug}.md`
 
+    // Move the source transcript into the day's attachments so the notebook owns it,
+    // then point the meeting file at it. A failure here must not lose the summary the
+    // AI pipeline just produced, so it degrades to a warning.
+    let attachments: Attachment[] | undefined
+    if (transcriptSourcePath) {
+      const sourcePath = transcriptSourcePath
+      const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(whenDate))
+      const attachmentFile = `${whenDate}_${fileSlug}${path.extname(sourcePath)}`
+      const destPath = path.join(attachDir, attachmentFile)
+
+      try {
+        await mkdir(attachDir, { recursive: true })
+        await rename(sourcePath, destPath).catch(async () => {
+          await copyFile(sourcePath, destPath)
+        })
+        attachments = [{ file: attachmentFile }]
+        output.log(`  Imported transcript to ${destPath}\n`)
+      } catch (err) {
+        output.error(`Failed to import transcript ${sourcePath}: ${(err as Error).message}`)
+      }
+    }
+
     const ddfw = new DayDirFileWriter(whenDate)
-    const meeting = new MeetingDocument({ who, when, medium, summary, body, rel })
+    const meeting = new MeetingDocument({ who, when, medium, summary, body, rel, attachments })
 
     const data = meeting.toMarkdown()
 

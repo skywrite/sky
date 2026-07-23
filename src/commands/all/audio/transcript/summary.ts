@@ -76,6 +76,7 @@ type Result = {
   body: string // Full markdown output
   cleanedText: string // Input transcript (cleaned if from audio pipeline)
   audioFilePath: string | null // Source audio file path (when --from-audio used)
+  transcriptFilePath: string | null // Transcript file that was read, null when pasted in
   from: string | null // For audio-message template
   to: string | null // For audio-message template
 }
@@ -176,6 +177,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     let pipelineWho: string[] = []
     let pipelineAudioFilePath: string | null = null
     let pipelineDuration: number | null = null
+    let transcriptFilePath: string | null = null
 
     if (useCleanPipeline) {
       // --from-audio: transcribe → clean. --from-transcript: clean an existing transcript.
@@ -190,12 +192,14 @@ export default class AudioTranscriptSummaryTask extends Command {
       pipelineWho = cleanResult.data.who
       pipelineAudioFilePath = cleanResult.data.audioFilePath
       pipelineDuration = cleanResult.data.durationMinutes
+      transcriptFilePath = cleanResult.data.transcriptFilePath
       output.log(`\nExtracted attendees: ${pipelineWho.join(', ') || 'none'}`)
       output.log('Generating summary...\n')
     } else if (text) {
       // Get transcript input (text param > file param > stdin)
       transcript = text
     } else if (file) {
+      transcriptFilePath = file
       try {
         transcript = await readTextFile(file)
       } catch (err) {
@@ -464,6 +468,7 @@ ${summary}
       body: summary,
       cleanedText: transcript,
       audioFilePath: pipelineAudioFilePath,
+      transcriptFilePath,
       from: extractedFrom,
       to: extractedTo,
     })
