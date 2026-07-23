@@ -61,6 +61,8 @@ type Result = {
   who: string[]
   rel: string[]
   audioFilePath: string | null
+  /** Transcript file that was read, null when the transcript was pasted in */
+  transcriptFilePath: string | null
   /** Exact meeting length from VTT cue timestamps, null when input was not a VTT */
   durationMinutes: number | null
 }
@@ -220,6 +222,7 @@ export default class AudioTranscriptCleanTask extends Command {
     // 1. Get transcript input
     let transcript: string
     let audioSourcePath: string | null = null
+    let transcriptSourcePath: string | null = null
 
     if (useAudioPipeline) {
       output.log('Starting audio transcription...\n')
@@ -237,6 +240,7 @@ export default class AudioTranscriptCleanTask extends Command {
       if (!transcriptPath) {
         return CommandResult.fail('Transcription did not save to file')
       }
+      transcriptSourcePath = transcriptPath
       output.log(`Saved transcript: ${transcriptPath}\n`)
 
       try {
@@ -258,6 +262,7 @@ export default class AudioTranscriptCleanTask extends Command {
         }
         transcriptPath = vtts[0].path
       }
+      transcriptSourcePath = transcriptPath
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
       try {
         transcript = await readTextFile(transcriptPath)
@@ -265,6 +270,7 @@ export default class AudioTranscriptCleanTask extends Command {
         return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
       }
     } else if (file) {
+      transcriptSourcePath = file
       try {
         transcript = await readTextFile(file)
       } catch (err) {
@@ -535,6 +541,7 @@ ${cleanedTranscript}
       who: analysis.who,
       rel: analysis.rel,
       audioFilePath: audioSourcePath,
+      transcriptFilePath: transcriptSourcePath,
       durationMinutes: vttDurationMinutes,
     })
   }
