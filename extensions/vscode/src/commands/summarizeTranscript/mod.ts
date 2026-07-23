@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import { readFileSync } from 'node:fs'
 import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 
 /**
  * The template ships next to this file. Read on use rather than at import so
@@ -135,7 +136,8 @@ export default async function summarizeTranscript(): Promise<void> {
           prompt,
         })
 
-        const summary = (await result.text).trim()
+        // Unwrap the whole-document ```markdown fence the model sometimes adds.
+        const summary = stripWrappingCodeFence(await result.text)
         if (!summary) {
           throw new Error('Model returned an empty summary')
         }
