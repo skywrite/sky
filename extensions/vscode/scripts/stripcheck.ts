@@ -27,11 +27,16 @@ import { readdirSync } from 'node:fs'
 const testFiles = readdirSync(path.join(EXT, 'src'), { recursive: true, withFileTypes: true })
   .filter((e) => e.isFile() && e.name.endsWith('_test.ts'))
   .map((e) => path.join(e.parentPath, e.name))
+// scripts/ also runs under Node's stripper (npm run check, syncTitles).
+const scriptFiles = readdirSync(path.join(EXT, 'scripts'), { withFileTypes: true })
+  .filter((e) => e.isFile() && e.name.endsWith('.ts'))
+  .map((e) => path.join(e.parentPath, e.name))
 const ENTRIES = [
   path.join(EXT, 'src', 'extension.ts'),
   path.join(EXT, 'src', 'test', 'runTest.ts'),
   path.join(EXT, 'src', 'test', 'suite', 'index.ts'),
   ...testFiles,
+  ...scriptFiles,
 ]
 
 function resolveSpec(spec: string, fromFile: string): string | null {

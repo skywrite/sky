@@ -4,7 +4,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
-import { aiModelByProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import { isCommandAvailable, runCommand } from '#lib/sys/command.ts'
@@ -46,7 +46,9 @@ const SPREADSHEET_EXTENSIONS = new Set(['.xlsx', '.xls', '.numbers'])
 
 const params = {
   file: Arg.string('Path to the document to summarize', { required: true }),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => 'default-opus-4.8' }),
+  // Defaults to the registry's reasoning role so repoints reach this command
+  // (and the VS Code extension's attachment summaries, which shell to it).
+  model: Flag.string('Model profile to use', { short: 'm', default: () => ROLES.reasoning }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout', { default: false }),
   output: Flag.string('Write summary to this file path', { short: 'o' }),
