@@ -1,0 +1,22 @@
+{
+  // Base config for webpack-era extensions (currently only browser/ extends
+  // this; the vscode extension has its own self-contained tsconfig).
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2020",
+    "strict": true,
+    "esModuleInterop": true,
+    "noImplicitAny": false,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": [
+        "node_modules/*",
+        "src/types/*"
+      ]
+    },
+    "typeRoots": [
+      "node_modules/@types"
+    ]
+  }
+}

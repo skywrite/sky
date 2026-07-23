@@ -1,5 +1,5 @@
 import colors from 'picocolors'
-import { OutputHandler } from './OutputHandler.ts'
+import type { OutputHandler } from './OutputHandler.ts'
 
 /**
  * Default output handler that passes through to console.

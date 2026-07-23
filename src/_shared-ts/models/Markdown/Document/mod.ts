@@ -3,7 +3,7 @@ import splitYamlMarkdown from '../util/splitYamlMarkdown.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
 import renderMarkdown from '../util/renderMarkdown.ts'
-import { fetchLinksFromTokensList, Link, linkMapToTokenLinks } from '../Link/mod.ts'
+import { fetchLinksFromTokensList, type Link, linkMapToTokenLinks } from '../Link/mod.ts'
 import { parseWithError, stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type Attachment, attachmentsToYaml, parseAttachments } from './attachment.ts'
@@ -110,7 +110,7 @@ export default class Document {
   }
 
   public clone(): this {
-    const newDoc = (<typeof Document>this.constructor).fromMarkdown(this.toMarkdown())
+    const newDoc = (this.constructor as typeof Document).fromMarkdown(this.toMarkdown())
     return newDoc as this
   }
 
@@ -173,7 +173,7 @@ export default class Document {
     // check if spaces already exist
     if (links.size > 0 && !this.toMarkdown({ links: false }).endsWith(spaceBetweenLinks)) {
       const markdownContents = this.toMarkdown() + spaceBetweenLinks
-      clonedDoc = (<typeof Document>this.constructor).fromMarkdown(markdownContents) as this
+      clonedDoc = (this.constructor as typeof Document).fromMarkdown(markdownContents) as this
     }
 
     clonedDoc._linksMap = links
@@ -286,7 +286,7 @@ export default class Document {
 
     // Re-parse into new Document
     const fullMarkdown = Object.keys(this.yaml).length > 0 ? yamlStr + '\n\n' + markdown : markdown
-    const newDoc = (<typeof Document>this.constructor).fromMarkdown(fullMarkdown) as this
+    const newDoc = (this.constructor as typeof Document).fromMarkdown(fullMarkdown) as this
 
     // Fix up reference links - only include links that are used in filtered content
     const neededLinks = this.referenceLinks(markdown)
@@ -304,7 +304,7 @@ export default class Document {
 
     // Re-parse into new Document
     const fullMarkdown = Object.keys(this.yaml).length > 0 ? yamlStr + '\n\n' + markdown : markdown
-    const newDoc = (<typeof Document>this.constructor).fromMarkdown(fullMarkdown) as this
+    const newDoc = (this.constructor as typeof Document).fromMarkdown(fullMarkdown) as this
 
     // Fix up reference links - only include links that are used in stripped content
     const neededLinks = new Map<string, Link>()

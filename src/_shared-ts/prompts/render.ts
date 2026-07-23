@@ -24,7 +24,7 @@ import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 // Context Building
 // =============================================================================
 
-const ABOUT_ME_PATH = path.join(<string>DIR_BASE, 'journal', 'about-me.md')
+const ABOUT_ME_PATH = path.join(DIR_BASE as string, 'journal', 'about-me.md')
 
 /**
  * Build default me context from journal/about-me.md

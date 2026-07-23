@@ -1,4 +1,4 @@
-import { OutputHandler } from './OutputHandler.ts'
+import type { OutputHandler } from './OutputHandler.ts'
 
 /**
  * Output handler that buffers messages in memory.

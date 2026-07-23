@@ -12,10 +12,13 @@ import RelSet from '#shared/models/RelSet/mod.ts'
  * commonly-used data properties to the underlying document.
  */
 export default class Day {
-  constructor(
-    readonly doc: DayDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: DayDocument
+  private store: MarkdownStore
+
+  constructor(doc: DayDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: DayDocument, store: MarkdownStore): Day {
     return new Day(doc, store)

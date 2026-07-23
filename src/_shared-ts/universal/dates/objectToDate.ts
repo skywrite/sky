@@ -5,9 +5,9 @@ export interface DateObject {
 }
 
 export default function objectToDate(obj: DateObject): Date {
-  const year = parseInt(<string>obj.year) || new Date().getFullYear()
-  const month = parseInt(<string>obj.month) - 1 || new Date().getMonth()
-  const day = parseInt(<string>obj.day) || new Date().getDate()
+  const year = parseInt(obj.year as string) || new Date().getFullYear()
+  const month = parseInt(obj.month as string) - 1 || new Date().getMonth()
+  const day = parseInt(obj.day as string) || new Date().getDate()
 
   return new Date(year, month, day)
 }

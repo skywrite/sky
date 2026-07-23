@@ -1,6 +1,6 @@
 import DayDocument from '#shared/models/Day/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
-import { Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
+import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'

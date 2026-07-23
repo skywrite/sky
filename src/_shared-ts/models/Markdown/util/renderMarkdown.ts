@@ -1,4 +1,4 @@
-import { Token, Tokens, TokensList } from 'marked'
+import type { Token, Tokens, TokensList } from 'marked'
 
 export type RenderMarkdownOptions = {
   links?: boolean
@@ -13,7 +13,7 @@ export default function renderMarkdown(
   let str = ''
   let topMost = false
 
-  if ((<TokensList>tokens).links) topMost = true
+  if ((tokens as TokensList).links) topMost = true
 
   while (_tokens.length > 0) {
     const token = _tokens.shift() as Tokens.Generic
@@ -27,7 +27,7 @@ export default function renderMarkdown(
   }
 
   if (topMost && opts.links) {
-    for (const [label, { href, title }] of Object.entries((<TokensList>tokens).links)) {
+    for (const [label, { href, title }] of Object.entries((tokens as TokensList).links)) {
       if (!title) {
         str += `[${label}]: ${href}\n`
       } else {

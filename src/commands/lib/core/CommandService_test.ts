@@ -3,7 +3,7 @@ import * as config from '#config'
 import CommandService from './CommandService.ts'
 import CommandContext, { CommandPlatform } from './CommandContext.ts'
 import { BufferedOutput } from '../output/BufferedOutput.ts'
-import { Command, CommandArgs, CommandDescription, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandArgs, type CommandDescription, CommandResult } from '#commands/mod.ts'
 
 // Helper: Create a test context with buffered output
 function createTestContext(): CommandContext {

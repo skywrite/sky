@@ -2,7 +2,7 @@
  * Task registry for managing MCP-enabled tasks
  */
 
-import { Command, CommandDescription, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandDescription, CommandResult } from '#commands/mod.ts'
 import { getMCPToolOptions, isMCPTool } from '../decorators.ts'
 import { commandNameToMCPToolName } from '../adapter.ts'
 

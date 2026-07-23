@@ -1,4 +1,4 @@
-import { Command, CommandArgs, CommandDescription, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandArgs, type CommandDescription, CommandResult } from '#commands/mod.ts'
 
 type Result = {
   parentTaskName: string | undefined

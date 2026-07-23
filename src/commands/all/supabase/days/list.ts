@@ -1,6 +1,6 @@
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { createSupabaseClient, DayFileRow, getSupabaseEnv } from '../lib/client.ts'
+import { createSupabaseClient, type DayFileRow, getSupabaseEnv } from '../lib/client.ts'
 
 const params = {
   json: Flag.boolean('Output as JSON', { default: false }),

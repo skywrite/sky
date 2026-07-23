@@ -3,11 +3,11 @@ import * as marked from 'marked'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import { Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
+import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
 
 type numOrStr = number | string
 
-export type ModficationOptions = {
+export type ModificationOptions = {
   links?: Map<string, Link>
   sort?: boolean
 }
@@ -26,11 +26,11 @@ export default class ListDocument extends Document {
 
   // ## ITEM METHODS
 
-  public addItem(listIndexOrTitle: number | string, item: string, opts?: ModficationOptions): this {
+  public addItem(listIndexOrTitle: number | string, item: string, opts?: ModificationOptions): this {
     return this.insertItem(listIndexOrTitle, item, -1, opts)
   }
 
-  public insertItem(listIndexOrTitle: numOrStr, item: string, itemIndex: number, opts?: ModficationOptions): this {
+  public insertItem(listIndexOrTitle: numOrStr, item: string, itemIndex: number, opts?: ModificationOptions): this {
     const list = this.findListFromIndexOrTitle(listIndexOrTitle)
     let newList = list.insert(item, itemIndex)
 
@@ -51,7 +51,7 @@ export default class ListDocument extends Document {
     return newDoc
   }
 
-  public removeItem(listIndexOrTitle: number | string, itemIndex: number, opts?: ModficationOptions): this {
+  public removeItem(listIndexOrTitle: number | string, itemIndex: number, opts?: ModificationOptions): this {
     const list = this.findListFromIndexOrTitle(listIndexOrTitle)
     let newList = list.remove(itemIndex).newList
 
@@ -73,7 +73,7 @@ export default class ListDocument extends Document {
 
     // don't render links
     const newMarkdown = this.toMarkdown({ links: false }).trim() + '\n\n' + listObj.toMarkdown() + '\n'
-    let newDoc = (<typeof ListDocument>this.constructor).fromMarkdown(newMarkdown) as this
+    let newDoc = (this.constructor as typeof ListDocument).fromMarkdown(newMarkdown) as this
 
     // need to set the yaml
     newDoc._yaml = structuredClone(this.yaml)
@@ -117,7 +117,7 @@ export default class ListDocument extends Document {
     }
     newMarkdown = newMarkdown + '\n'
 
-    let newDoc = (<typeof ListDocument>this.constructor).fromMarkdown(newMarkdown) as this
+    let newDoc = (this.constructor as typeof ListDocument).fromMarkdown(newMarkdown) as this
     newDoc._yaml = structuredClone(this.yaml)
 
     // Merge links
@@ -128,7 +128,7 @@ export default class ListDocument extends Document {
   public replaceList(listIndexOrTitle: number | string, newList: ItemList): this {
     const list = this.findListFromIndexOrTitle(listIndexOrTitle)
     const newMarkdown = this.toMarkdown().replace(list.toMarkdown(), newList.toMarkdown())
-    const doc = (<typeof ListDocument>this.constructor).fromMarkdown(newMarkdown) as this
+    const doc = (this.constructor as typeof ListDocument).fromMarkdown(newMarkdown) as this
 
     // replace links
     const newLinks = new Map<string, Link>(Array.from(this.links.entries()))
@@ -153,7 +153,7 @@ export default class ListDocument extends Document {
     const itemListMarkdown = itemList.toMarkdown()
 
     const markdownWithYaml = this.toMarkdown().replace('\n' + itemListMarkdown + '\n', '')
-    return (<typeof ListDocument>this.constructor).fromMarkdown(markdownWithYaml) as this
+    return (this.constructor as typeof ListDocument).fromMarkdown(markdownWithYaml) as this
   }
 
   public findListIndex(predicate: (list: ItemList) => boolean): number {

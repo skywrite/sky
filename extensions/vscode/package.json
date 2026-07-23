@@ -1,0 +1,150 @@
+{
+  "name": "sky-ext",
+  "description": "JP's Notebook VSCode Extension",
+  "version": "0.0.1",
+  "publisher": "jprichardson",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "type": "module",
+  "imports": {
+    "#config": "./shared/config.ts",
+    "#shared/*": "./shared/*",
+    "#universal/*": "./shared/universal/*",
+    "#lib/*": "./lib/*"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./src/extension.ts",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.hellonotebook",
+        "title": "Hello Notebook"
+      },
+      {
+        "command": "extension.openeditor",
+        "title": "Open with Editor"
+      },
+      {
+        "command": "checkbox.toggleGutter",
+        "title": "Toggle Checkbox"
+      },
+      {
+        "command": "checkbox.clickGutter",
+        "title": "Click Checkbox in Gutter"
+      },
+      {
+        "command": "checkbox.dropTask",
+        "title": "Drop Task (Move to Dropped section)"
+      },
+      {
+        "command": "reminder.add",
+        "title": "Add Reminder"
+      },
+      {
+        "command": "reminder.smartPaste",
+        "title": "Smart Paste (Reminder with Links)"
+      },
+      {
+        "command": "todo.cut",
+        "title": "Cut Todo Item (Smart Copy with Links)"
+      },
+      {
+        "command": "transcript.summarize",
+        "title": "Summarize Transcript (Claude Opus 4.6)"
+      },
+      {
+        "command": "lifts.insert",
+        "title": "Insert Lifts from Strong"
+      },
+      {
+        "command": "attachment.summarize",
+        "title": "Summarize Attachment (Claude)"
+      },
+      {
+        "command": "attachment.summarizeAll",
+        "title": "Summarize All Attachments (Claude)"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "cmd+r",
+        "command": "workbench.action.reloadWindow",
+        "when": ""
+      },
+      {
+        "key": "cmd+r",
+        "command": "-workbench.action.reloadWindow",
+        "when": "isDevelopment"
+      },
+      {
+        "command": "extension.openeditor",
+        "key": "cmd+t",
+        "when": "resourceLangId == markdown"
+      },
+      {
+        "command": "checkbox.toggleGutter",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "editorTextFocus && editorLangId == 'markdown'"
+      },
+      {
+        "command": "checkbox.dropTask",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "editorTextFocus && editorLangId == 'markdown'"
+      },
+      {
+        "command": "reminder.add",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorTextFocus && editorLangId == 'markdown'"
+      },
+      {
+        "command": "reminder.smartPaste",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "editorTextFocus && editorLangId == 'markdown'"
+      },
+      {
+        "command": "todo.cut",
+        "key": "ctrl+x",
+        "mac": "cmd+x",
+        "when": "editorTextFocus && editorLangId == 'markdown'"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "extension.openeditor",
+          "when": "resourceLangId == markdown",
+          "group": "1_navigation",
+          "order": 1
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && node scripts/stripcheck.ts && node scripts/depparity.ts",
+    "test": "node src/test/runTest.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.62.0",
+    "handlebars": "4.7.8",
+    "jsonc-parser": "3.3.1",
+    "marked": "16.1.1",
+    "ws": "8.18.0",
+    "yaml": "2.8.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "10.0.6",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "1.100.0",
+    "@vscode/test-electron": "2.5.2",
+    "mocha": "10.2.0",
+    "typescript": "^7.0.2"
+  }
+}
