@@ -5,6 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
 import { aiModelByProfile } from '#shared/ai/models.ts'
+import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import { isCommandAvailable, runCommand } from '#lib/sys/command.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -223,6 +224,9 @@ export default class SummaryDocTask extends Command {
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
+
+    // Models sometimes wrap the whole summary in a ```markdown fence — unwrap.
+    response = stripWrappingCodeFence(response)
 
     // Output
     if (outputPath) {
