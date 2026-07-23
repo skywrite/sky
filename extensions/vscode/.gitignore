@@ -1,0 +1,5 @@
+# Dependencies
+node_modules/
+
+# VS Code test runner scratch
+.vscode-test/

@@ -1,0 +1,34 @@
+{
+  // Single source of truth for both the editor and `npm run typecheck`.
+  // These settings mirror how the extension is actually loaded at runtime:
+  // Node resolves #shared/* etc. through package.json "imports" (nodenext),
+  // types are stripped rather than compiled (noEmit, .ts specifiers allowed),
+  // and an unmarked type-only import is a hard error, not an activation crash.
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "rootDir": ".",
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "noImplicitAny": false,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    // Node's stripper rejects non-erasable syntax (parameter properties,
+    // enums, runtime namespaces) only at load time — fail at typecheck
+    // instead. Angle-bracket assertions are the one stripper-rejected form
+    // this flag cannot see; scripts/stripcheck.ts covers those.
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node", "vscode", "mocha"]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".vscode-test"
+  ]
+}

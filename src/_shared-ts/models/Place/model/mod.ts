@@ -11,10 +11,13 @@ import RelSet from '#shared/models/RelSet/mod.ts'
  * commonly-used data properties to the underlying document.
  */
 export default class Place {
-  constructor(
-    readonly doc: PlaceDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: PlaceDocument
+  private store: MarkdownStore
+
+  constructor(doc: PlaceDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: PlaceDocument, store: MarkdownStore): Place {
     return new Place(doc, store)

@@ -1,4 +1,4 @@
-import { Command, CommandArgs, CommandDescription, CommandPlatform, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandArgs, type CommandDescription, CommandPlatform, CommandResult } from '#commands/mod.ts'
 
 /**
  * Example task demonstrating CommandContext usage

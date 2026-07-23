@@ -2,7 +2,7 @@
  * Tool executor for running MCP tasks
  */
 
-import { Command, CommandArgs, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandArgs, CommandResult } from '#commands/mod.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type { RegisteredCommand } from './CommandRegistry.ts'

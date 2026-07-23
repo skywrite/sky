@@ -1,4 +1,4 @@
-import { Links, Tokens, TokensList } from 'marked'
+import type { Links, Tokens, TokensList } from 'marked'
 
 export type Link = {
   label: string

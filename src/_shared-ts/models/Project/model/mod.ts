@@ -8,10 +8,13 @@ import RelSet from '#shared/models/RelSet/mod.ts'
 
 /** ProjectDocument + MarkdownStore for relationship resolution */
 export default class Project {
-  constructor(
-    readonly doc: ProjectDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: ProjectDocument
+  private store: MarkdownStore
+
+  constructor(doc: ProjectDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: ProjectDocument, store: MarkdownStore): Project {
     return new Project(doc, store)

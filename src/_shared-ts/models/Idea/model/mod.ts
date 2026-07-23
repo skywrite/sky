@@ -10,10 +10,13 @@ import RelSet from '#shared/models/RelSet/mod.ts'
  * commonly-used data properties to the underlying document.
  */
 export default class Idea {
-  constructor(
-    readonly doc: IdeaDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: IdeaDocument
+  private store: MarkdownStore
+
+  constructor(doc: IdeaDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: IdeaDocument, store: MarkdownStore): Idea {
     return new Idea(doc, store)

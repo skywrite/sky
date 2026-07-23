@@ -11,10 +11,13 @@ import RelSet from '#shared/models/RelSet/mod.ts'
  * commonly-used data properties to the underlying document.
  */
 export default class Organization {
-  constructor(
-    readonly doc: OrganizationDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: OrganizationDocument
+  private store: MarkdownStore
+
+  constructor(doc: OrganizationDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: OrganizationDocument, store: MarkdownStore): Organization {
     return new Organization(doc, store)

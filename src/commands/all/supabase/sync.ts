@@ -10,7 +10,7 @@ import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
-import { createSupabaseClient, DayFileRow, getSupabaseEnv } from './lib/client.ts'
+import { createSupabaseClient, type DayFileRow, getSupabaseEnv } from './lib/client.ts'
 
 function sha256(content: string): string {
   return createHash('sha256').update(content).digest('hex')

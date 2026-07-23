@@ -3,7 +3,7 @@ import * as marked from 'marked'
 import { hoursToDurationString } from '#universal/dates/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import ListDocument, { ModficationOptions } from '#shared/models/Markdown/ListDocument/mod.ts'
+import ListDocument, { type ModificationOptions } from '#shared/models/Markdown/ListDocument/mod.ts'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import durationStringToHours from '#universal/dates/durationStringToHours.ts'
 
@@ -13,7 +13,7 @@ export interface DayConstructorOptions {
   markdown?: string
 }
 
-export interface AddDayItemOptions extends ModficationOptions {
+export interface AddDayItemOptions extends ModificationOptions {
   category?: string // default 'Professional'
 }
 
@@ -274,7 +274,7 @@ export default class DayDocument extends ListDocument {
     return refs
   }
 
-  public override addItem(listTitle: string, item: string, opts?: ModficationOptions): this {
+  public override addItem(listTitle: string, item: string, opts?: ModificationOptions): this {
     let sort = false
     if (listTitle.endsWith('Complete') || listTitle.endsWith('Commitments')) {
       sort = true
@@ -289,7 +289,7 @@ export default class DayDocument extends ListDocument {
    * Add an item to the Most Important list, creating the list at the top if it doesn't exist.
    * Order: Most Important → Commitments → Todos → Reminders → Complete
    */
-  public addMostImportantItem(item: string, opts?: ModficationOptions): this {
+  public addMostImportantItem(item: string, opts?: ModificationOptions): this {
     const listName = 'Most Important'
     if (this.lists.find((l) => l.title === listName)) {
       return this.addItem(listName, item, opts)

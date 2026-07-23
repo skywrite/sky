@@ -4,7 +4,7 @@ import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { slugify } from '#lib/string/mod.ts'
 import { dayFile } from '#lib/nbfs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
-import { Link } from '#shared/models/Markdown/Link/mod.ts'
+import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 import { ArgOrFlag, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 

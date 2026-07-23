@@ -6,6 +6,6 @@ Icon?
 .claude/
 .vscode/
 docs/
-extensions/
+extensions/browser/
 node_modules/
 src/commands/extras

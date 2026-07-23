@@ -36,7 +36,7 @@ export default function slugify(input: string, opts?: SlugifyOptions | number): 
     .replace(/[^a-zA-Z0-9 _-]/g, '')
     .replace(/-{2,}/g, '-')
 
-  if (!(<SlugifyOptions>opts).preserveCase) {
+  if (!(opts as SlugifyOptions).preserveCase) {
     newStr = newStr.toLowerCase()
   }
 

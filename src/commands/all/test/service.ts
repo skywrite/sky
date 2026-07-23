@@ -1,4 +1,4 @@
-import { Command, CommandArgs, CommandDescription, CommandResult } from '#commands/mod.ts'
+import { Command, type CommandArgs, type CommandDescription, CommandResult } from '#commands/mod.ts'
 
 /**
  * Example task demonstrating CommandService usage and composition patterns
