@@ -1,5 +1,5 @@
 ---
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # VSCode Extension
@@ -27,7 +27,7 @@ After that it runs from the repo in place; edits take effect on the next window 
 - `shared` → `../../src/_shared-ts` (symlink) — notebook shared code, addressed as `#shared/*`, `#universal/*`, `#config` via the package.json `imports` map
 - `lib` → `../../src/lib` (symlink) — `#lib/*`
 - `resources/` — gutter icons
-- `scripts/` — guards (see below)
+- `scripts/` — the guard scripts behind `npm run check` (see Scripts below)
 
 The symlinks exist because Node forbids `imports` targets outside the package directory. Resolution realpaths through them, so shared code's own `#`-imports keep resolving against `src/package.json`. Consequence: the extension cannot be packaged with vsce — it only runs installed in place, per Install above.
 
@@ -48,6 +48,42 @@ Dependencies: imports in extension source resolve from `node_modules/` here — 
 
 ```bash
 npm run typecheck  # tsc --noEmit over src plus all reachable shared code
-npm run check      # typecheck + stripcheck + depparity
+npm run check      # typecheck + the three guard scripts below
 npm test           # runs the *_test.ts suite in a real VS Code host
 ```
+
+### The guard scripts (`scripts/`)
+
+With no build step, the invariants a bundler would have enforced (or hidden)
+are held by three small scripts instead. Each runs in `npm run check` and, on
+failure, prints exactly what to fix.
+
+**`stripcheck.ts` — "everything Node will load, Node can strip."** Walks the
+real import graph from the extension, test, and script entry points and runs
+Node's *actual* type stripper over every reachable file. This catches what
+tsc cannot: syntax that typechecks fine but that the runtime rejects at load
+— most notably angle-bracket assertions (`<T>x`), which are erasable syntax
+tsc accepts even with `erasableSyntaxOnly`, yet Node refuses for JSX
+ambiguity. Without this guard, that class of mistake surfaces as an
+activation crash.
+
+**`depparity.ts` — "both resolution views agree."** The extension resolves
+modules two ways: extension source loads from `node_modules/` here, while
+shared code loads from `src/node_modules` (runtime realpaths through the
+symlinks; typecheck follows the tsconfig `paths` block to the same real
+locations). The guard asserts (1) any package declared in both places is
+version-identical — otherwise the same specifier loads different code
+depending on who imports it — and (2) the runtime map (package.json
+`imports`) and the typecheck map (tsconfig `paths`) cover the same
+namespaces with equivalent targets, so the editor never checks a different
+graph than the one Node runs.
+
+**`syncTitles.ts` — "the palette tells the truth about the model."** Command
+titles like `Summarize Transcript (claude-opus-4-8)` are static manifest
+data — VS Code has no runtime retitling — so the model id must be physically
+baked into `package.json`. Runtime surfaces (the summary heading, the
+progress toast) read the AI registry live via `aiModelId('reasoning')` and
+follow role repoints automatically; the titles cannot. Run the script bare
+after a repoint to re-bake them (`node scripts/syncTitles.ts`, then reload
+the window); its `--check` mode fails `npm run check` while they're stale,
+so a model bump can't leave the dropdown lying.
