@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { aiModel, aiModelByProfile, defineProfile, resolveProfile, type ResolvedModel } from './models.ts'
+import { aiModel, aiModelByProfile, aiModelId, defineProfile, resolveProfile, type ResolvedModel } from './models.ts'
 
 function modelId(m: ResolvedModel['model']): string {
   return (m as { modelId: string }).modelId
@@ -29,6 +29,15 @@ test('aiModel resolves a role to its baseline profile model', () => {
     should: 'resolve to the sonnet-5 profile model',
     actual: modelId(aiModel('vision').model),
     expected: 'claude-sonnet-5',
+  })
+})
+
+test('aiModelId exposes the model id behind a role', () => {
+  assert({
+    given: 'the reasoning role',
+    should: 'return the canonical model id for recording in output',
+    actual: aiModelId('reasoning'),
+    expected: 'claude-opus-4-8',
   })
 })
 

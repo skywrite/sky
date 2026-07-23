@@ -1,6 +1,5 @@
 import * as vscode from 'vscode'
 import { readFileSync } from 'node:fs'
-import Anthropic from '@anthropic-ai/sdk'
 import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 
@@ -11,9 +10,6 @@ import { renderPromptFile } from '#shared/prompts/mod.ts'
 function promptTemplate(): string {
   return readFileSync(new URL('./prompt.prompt.md', import.meta.url), 'utf8')
 }
-
-const MODEL_ID = 'claude-opus-4-6'
-const SUMMARY_HEADING = 'Summary (Claude - Opus 4.6)'
 
 // TODO: Replace findHeadingLine/findSectionEnd with SectionDocument.findSection() + position offset
 // (see summarizeAttachment for the pattern)
@@ -48,8 +44,11 @@ function findSectionEnd(lines: string[], startLine: number, level: number): numb
 }
 
 /**
- * Summarize the transcript section using Claude Opus 4.6.
- * Finds ## Transcript section, sends to AI with YAML context, and inserts/appends to ## Summary (Claude - Opus 4.6).
+ * Summarize the transcript section via the shared AI registry ('reasoning' role).
+ * Finds the ## Transcript section, sends it to the model with YAML context, and
+ * inserts/appends the result under a model-named heading, e.g.
+ * ## Summary (claude-opus-4-8) — the model id comes from the registry so the
+ * recorded provenance tracks role repoints automatically.
  */
 export default async function summarizeTranscript(): Promise<void> {
   const editor = vscode.window.activeTextEditor
@@ -82,16 +81,23 @@ export default async function summarizeTranscript(): Promise<void> {
     return
   }
 
+  // Load the AI pipeline on demand — activation never pays for the AI SDK.
+  // streamText comes re-exported from the registry so this runs on src's
+  // single SDK instance; the extension never imports 'ai' at runtime.
+  const { aiModel, aiModelId, streamText } = await import('#shared/ai/models.ts')
+  const modelId = aiModelId('reasoning')
+  const summaryHeading = `Summary (${modelId})`
+
   // Check if summary section already exists
   const existingSummary = doc.findSection(
-    (s) => s.level === 2 && s.heading.toLowerCase() === SUMMARY_HEADING.toLowerCase(),
+    (s) => s.level === 2 && s.heading.toLowerCase() === summaryHeading.toLowerCase(),
   )
 
   // Show progress
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'Generating summary with Claude Opus 4.6...',
+      title: `Generating summary with ${modelId}...`,
       cancellable: false,
     },
     async () => {
@@ -113,37 +119,31 @@ export default async function summarizeTranscript(): Promise<void> {
           },
         )
 
-        // Get API key from environment
-        const apiKey = process.env.ANTHROPIC_API_KEY
-        if (!apiKey) {
+        // The provider reads the key from the environment; fail with a clear
+        // message rather than a deep SDK error when it's absent.
+        if (!process.env.ANTHROPIC_API_KEY) {
           throw new Error('ANTHROPIC_API_KEY environment variable not set')
         }
 
-        // Call Claude API
-        const client = new Anthropic({
-          apiKey,
-          maxRetries: 0,
-          timeout: 10 * 60 * 1000,
+        // Call through the shared registry: model + effort/thinking come from the
+        // 'reasoning' profile, and sampling overrides are dropped automatically
+        // when the profile enables thinking. Streaming keeps bytes flowing so
+        // Node's undici idle timeouts can't kill a long call (the Bun-only
+        // `timeout: false` in the shared provider is a no-op under the ext host).
+        const result = streamText({
+          ...aiModel('reasoning', { temperature: 0, maxOutputTokens: 64000 }),
+          prompt,
         })
 
-        const response = await client.messages.create({
-          model: MODEL_ID,
-          max_tokens: 64000,
-          temperature: 0,
-          messages: [{ role: 'user', content: prompt }],
-        })
-
-        const content = response.content[0]
-        if (content.type !== 'text') {
-          throw new Error('Unexpected response type from Claude')
+        const summary = (await result.text).trim()
+        if (!summary) {
+          throw new Error('Model returned an empty summary')
         }
-
-        const summary = content.text.trim()
         const lines = text.split('\n')
 
         if (existingSummary) {
           // Append to existing section
-          const summaryLine = findHeadingLine(lines, SUMMARY_HEADING, 2)
+          const summaryLine = findHeadingLine(lines, summaryHeading, 2)
           const sectionEnd = findSectionEnd(lines, summaryLine, 2)
 
           // Find last non-empty line in section
@@ -164,7 +164,7 @@ export default async function summarizeTranscript(): Promise<void> {
         } else {
           // Insert new section above ## Transcript
           const transcriptLine = findHeadingLine(lines, 'Transcript', 2)
-          const newSection = `## ${SUMMARY_HEADING}\n\n${summary}\n\n`
+          const newSection = `## ${summaryHeading}\n\n${summary}\n\n`
           const position = new vscode.Position(transcriptLine, 0)
 
           await editor.edit((editBuilder) => {

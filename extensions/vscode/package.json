@@ -53,7 +53,7 @@
       },
       {
         "command": "transcript.summarize",
-        "title": "Summarize Transcript (Claude Opus 4.6)"
+        "title": "Summarize Transcript (AI)"
       },
       {
         "command": "lifts.insert",
@@ -132,10 +132,6 @@
     "test": "node src/test/runTest.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.62.0",
-    "handlebars": "4.7.8",
-    "jsonc-parser": "3.3.1",
-    "marked": "16.1.1",
     "ws": "8.18.0",
     "yaml": "2.8.0"
   },

@@ -172,6 +172,25 @@ export function aiModel(role: Role, overrides?: CommonOptions): ResolvedModel {
   return resolveProfile(PROFILES[ROLES[role]], overrides)
 }
 
+/**
+ * The model id a role currently resolves to, in canonical API form
+ * (e.g. "claude-opus-4-8") — for call sites that record the model identity
+ * in their output (summary headings, logs, provenance notes). Mirrors
+ * aiModel's resolution: built-in ROLES -> PROFILES.
+ */
+export function aiModelId(role: Role): string {
+  return PROFILES[ROLES[role]].model
+}
+
+/**
+ * AI-SDK entry points re-exported for consumers outside src's resolution
+ * scope (the VS Code extension: its own node_modules walk cannot reach
+ * src/node_modules, and importing 'ai' from extension source would load a
+ * second copy of the SDK). Importing through the registry guarantees the
+ * one instance that also built the model objects.
+ */
+export { generateText, streamText } from 'ai'
+
 const PROVIDERS = new Set<string>(['anthropic', 'openai', 'ollama', 'lm-studio'])
 
 let configProfilesCache: Record<string, ModelProfile> | null = null

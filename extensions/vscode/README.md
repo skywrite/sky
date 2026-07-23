@@ -42,7 +42,7 @@ Node's stripper erases types only — it rejects non-erasable syntax at load, wh
 | type-only imports marked `import type` | `verbatimModuleSyntax` (tsconfig) |
 | import specifiers explicit: `./x.ts`, `#shared/y/mod.ts` | resolution fails fast otherwise |
 
-Dependencies: imports in extension source resolve from `node_modules/` here. Imports inside shared code resolve from `src/node_modules` at runtime (realpath) but are typechecked against the copies installed here — keep the versions identical to src; `scripts/depparity.ts` asserts it.
+Dependencies: imports in extension source resolve from `node_modules/` here — so the manifest declares only what extension source itself imports (`ws`, `yaml`). Imports inside shared code resolve from `src/node_modules` on both sides: at runtime via the symlinks' realpath, at typecheck via the tsconfig `paths` block that maps `#`-imports to their real locations — no mirror copies needed here. `scripts/depparity.ts` asserts version parity for any declared overlap and that the runtime (`imports`) and typecheck (`paths`) maps stay equivalent.
 
 ## Scripts
 
