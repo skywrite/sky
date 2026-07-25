@@ -2,11 +2,11 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { aiModelByProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import type { JournalContext } from './gatherContext.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
 
-const PROFILE = 'default-opus-4.8'
+const PROFILE = ROLES.reasoning
 const PROMPT_FILE = new URL('../prompts/generate-questions.prompt.md', import.meta.url).pathname
 const TYPE_PROMPT_FILE = new URL('../prompts/generate-type-questions.prompt.md', import.meta.url).pathname
 

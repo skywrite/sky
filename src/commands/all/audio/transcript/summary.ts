@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { aiModel, aiModelByProfile } from '#shared/ai/models.ts'
+import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -94,9 +94,10 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Helpers
 // -----------------------------------------------------------------------------
 
-// The summary IS the meeting notes — pin the strongest profile for the deliverable.
-// Metadata extraction and correction-parsing are lighter and use baseline roles.
-const SUMMARY_MODEL = 'default-opus-4.8'
+// The summary IS the meeting notes, so it rides the reasoning role — the registry's
+// strongest default — rather than a literal, keeping one swap point at the next model
+// bump. Metadata extraction and correction-parsing are lighter and use baseline roles.
+const SUMMARY_MODEL = ROLES.reasoning
 
 const PROMPT_FILES = {
   meeting: {

@@ -8,9 +8,9 @@ function modelId(m: ResolvedModel['model']): string {
 test('aiModel resolves a role to its baseline profile model', () => {
   assert({
     given: 'the reasoning role',
-    should: 'resolve to the opus-4-8 profile model',
+    should: 'resolve to the opus-5 profile model',
     actual: modelId(aiModel('reasoning').model),
-    expected: 'claude-opus-4-8',
+    expected: 'claude-opus-5',
   })
   assert({
     given: 'the fast role',
@@ -37,7 +37,7 @@ test('aiModelId exposes the model id behind a role', () => {
     given: 'the reasoning role',
     should: 'return the canonical model id for recording in output',
     actual: aiModelId('reasoning'),
-    expected: 'claude-opus-4-8',
+    expected: 'claude-opus-5',
   })
 })
 
@@ -50,9 +50,9 @@ test('option-less baseline profiles carry no providerOptions', () => {
   })
 })
 
-test('the reasoning role carries the opus-4.8 effort/thinking options', () => {
+test('the reasoning role carries the opus-5 effort/thinking options', () => {
   assert({
-    given: 'the reasoning role after the 4.8 repoint',
+    given: 'the reasoning role after the opus-5 repoint',
     should: 'carry effort xhigh under providerOptions.anthropic',
     actual: aiModel('reasoning').providerOptions?.['anthropic']?.['effort'],
     expected: 'xhigh',
@@ -105,8 +105,10 @@ test('resolveProfile applies sampling overrides on non-thinking profiles', () =>
   })
 })
 
+// Guarded on the live reasoning profile: opus 5 rejects temperature/topP/topK outright,
+// so a leak here is a 400 in production, not a quality nudge.
 test('resolveProfile drops sampling overrides when the profile enables thinking', () => {
-  const resolved = aiModelByProfile('default-opus-4.8', { temperature: 0, maxOutputTokens: 4096 })
+  const resolved = aiModelByProfile('default-opus-5', { temperature: 0, maxOutputTokens: 4096 })
 
   assert({
     given: 'a temperature override on a thinking profile',
@@ -122,6 +124,29 @@ test('resolveProfile drops sampling overrides when the profile enables thinking'
   })
 })
 
+test('default-opus-5 profile resolves to opus 5 with effort/thinking options', () => {
+  const resolved = aiModelByProfile('default-opus-5')
+  assert({
+    given: 'the default-opus-5 profile',
+    should: 'resolve to claude-opus-5',
+    actual: modelId(resolved.model),
+    expected: 'claude-opus-5',
+  })
+  assert({
+    given: 'its effort option',
+    should: 'land under providerOptions.anthropic',
+    actual: resolved.providerOptions?.['anthropic']?.['effort'],
+    expected: 'xhigh',
+  })
+  assert({
+    given: 'its thinking option',
+    should: 'land under providerOptions.anthropic as adaptive',
+    actual: resolved.providerOptions?.['anthropic']?.['thinking'],
+    expected: { type: 'adaptive' },
+  })
+})
+
+// Kept addressable by name after the reasoning role moved to opus 5.
 test('default-opus-4.8 profile resolves to opus 4.8 with effort/thinking options', () => {
   const resolved = aiModelByProfile('default-opus-4.8')
   assert({
