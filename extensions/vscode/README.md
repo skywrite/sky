@@ -79,7 +79,7 @@ namespaces with equivalent targets, so the editor never checks a different
 graph than the one Node runs.
 
 **`syncTitles.ts` — "the palette tells the truth about the model."** Command
-titles like `Summarize Transcript (claude-opus-4-8)` are static manifest
+titles like `Summarize Transcript (claude-opus-5)` are static manifest
 data — VS Code has no runtime retitling — so the model id must be physically
 baked into `package.json`. Runtime surfaces (the summary heading, the
 progress toast) read the AI registry live via `aiModelId('reasoning')` and

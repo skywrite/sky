@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { aiModelByProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
@@ -85,8 +85,9 @@ const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.m
 const GRAPHQL_URL = 'http://localhost:9999/graphql'
 
 // Analysis + correction run on the raw transcript and set the quality ceiling for the
-// notes built on it — pin the strongest profile (not the baseline `reasoning` role).
-const TRANSCRIPT_MODEL = 'default-opus-4.8'
+// notes built on it, so they ride the reasoning role — the registry's strongest default.
+// Re-pin to a literal profile here if `reasoning` is ever moved down-tier for cost.
+const TRANSCRIPT_MODEL = ROLES.reasoning
 
 interface PersonWithScore {
   name: string

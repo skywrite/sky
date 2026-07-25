@@ -48,7 +48,7 @@ function findSectionEnd(lines: string[], startLine: number, level: number): numb
  * Summarize the transcript section via the shared AI registry ('reasoning' role).
  * Finds the ## Transcript section, sends it to the model with YAML context, and
  * inserts/appends the result under a model-named heading, e.g.
- * ## Summary (claude-opus-4-8) — the model id comes from the registry so the
+ * ## Summary (claude-opus-5) — the model id comes from the registry so the
  * recorded provenance tracks role repoints automatically.
  */
 export default async function summarizeTranscript(): Promise<void> {

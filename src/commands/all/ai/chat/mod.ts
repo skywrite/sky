@@ -22,7 +22,7 @@ import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
-import { aiModel, getProfile, resolveProfile } from '#shared/ai/models.ts'
+import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter } from './_tools.ts'
@@ -36,13 +36,13 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-4.8, default-local-reasoning)', {
+  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-5, default-local-reasoning)', {
     short: 'r',
-    default: () => 'default-opus-4.8',
+    default: () => ROLES.reasoning,
   }),
   fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5, default-local-fast)', {
     short: 'f',
-    default: () => 'default-haiku-4.5',
+    default: () => ROLES.fast,
   }),
   days: Flag.number('Number of days to look back for context', {
     short: 'd',

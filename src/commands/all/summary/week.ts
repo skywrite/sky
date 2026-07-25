@@ -6,7 +6,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { generateText } from 'ai'
-import { aiModelByProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
@@ -31,7 +31,7 @@ const params = {
   }),
   model: Flag.string('Model profile to use', {
     short: 'm',
-    default: () => 'default-opus-4.8',
+    default: () => ROLES.reasoning,
   }),
   force: Flag.boolean('Overwrite existing summary file', {
     short: 'f',
