@@ -20,6 +20,15 @@ export interface MarkdownOutputOptions {
   delimited?: boolean
   /** Sort by type priority (default: true) */
   sorted?: boolean
+  /**
+   * Optional prefix for each document's path comment, derived from its path.
+   * Return undefined to leave a document's comment as the bare path.
+   *
+   * Documents render in type order, not chronological order, so a reader has
+   * no local cue for when a given document happened - the callback exists so
+   * callers can stamp one on (e.g. a resolved date and "TODAY"/"yesterday").
+   */
+  label?: (path: string) => string | undefined
 }
 
 /**
@@ -238,7 +247,7 @@ export default class MarkdownCollection<T extends Document = Document> {
    * Output the collection as markdown.
    */
   toMarkdown(opts: MarkdownOutputOptions = {}): string {
-    const { includePath = true, relativeTo, delimited = true, sorted = true } = opts
+    const { includePath = true, relativeTo, delimited = true, sorted = true, label } = opts
     const separator = opts.separator ?? (delimited ? '\n\n' : '\n---\n')
 
     let items = Array.from(this.items.values())
@@ -251,7 +260,7 @@ export default class MarkdownCollection<T extends Document = Document> {
     const parts: string[] = []
 
     for (const item of items) {
-      const content = formatItem(item, includePath, relativeTo, delimited)
+      const content = formatItem(item, includePath, relativeTo, delimited, label?.(item.path))
       parts.push(content)
     }
 
@@ -278,6 +287,7 @@ function formatItem<T extends Document>(
   includePath: boolean,
   relativeTo?: string,
   delimited?: boolean,
+  label?: string,
 ): string {
   const parts: string[] = []
 
@@ -290,16 +300,18 @@ function formatItem<T extends Document>(
     }
   }
 
+  const pathComment = label ? `<!-- ${label} | ${displayPath} -->` : `<!-- ${displayPath} -->`
+
   if (delimited) {
     parts.push('<!-- START FILE -->')
     if (includePath) {
-      parts.push(`<!-- ${displayPath} -->`)
+      parts.push(pathComment)
     }
     parts.push(item.doc.toMarkdown())
     parts.push('<!-- END FILE -->')
   } else {
     if (includePath) {
-      parts.push(`<!-- ${displayPath} -->`)
+      parts.push(pathComment)
     }
     parts.push(item.doc.toMarkdown())
   }

@@ -21,6 +21,7 @@ import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
+import createDayLabeler from '../lib/dayLabel.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
@@ -473,6 +474,7 @@ export default class AiChatTask extends Command {
     const now = await fetchNow()
     const today = when?.plainDate ?? now.plainDateTime.plainDate
     const startTime = now.plainDateTime
+    const dayLabeler = createDayLabeler(today)
     output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
 
     // Gather all context (summaries, health, prices)
@@ -646,7 +648,7 @@ export default class AiChatTask extends Command {
           scorer: withPinnedPaths(createRecencyTypeScorer(today, { priorityPaths: queryRelevantPaths }), pinnedPaths),
           maxTokens: 300_000,
         })
-        activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true })
+        activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true, label: dayLabeler })
         output.log(
           colors.dim(
             `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ${assembler.excluded.length} excluded, ~${assembler.totalTokens} tokens`,
