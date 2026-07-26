@@ -254,7 +254,11 @@ export interface VideoFilter {
   dateGte?: string
   dateLte?: string
   recent?: string
+  from?: string
+  fromNot?: string
   fromContains?: string
+  to?: string
+  toNot?: string
   toContains?: string
   toNotContains?: string
   medium?: string
@@ -710,7 +714,14 @@ function matchesVideoFilter(doc: Document, filter: VideoFilter, path?: string, r
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
   if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
+  // Exact from/to mirror MessageFilter: the selector transpiler turns `video[from="X"]`
+  // into `from:` (and `:not([from="X"])` into `fromNot:`), so these must exist or the
+  // generated query fails schema validation before it ever runs.
+  if (filter.from && !matchesExact(doc, 'from', filter.from)) return false
+  if (filter.fromNot && matchesExact(doc, 'from', filter.fromNot)) return false
   if (filter.fromContains && !matchesContains(doc, 'from', filter.fromContains)) return false
+  if (filter.to && !matchesExact(doc, 'to', filter.to)) return false
+  if (filter.toNot && matchesExact(doc, 'to', filter.toNot)) return false
   if (filter.toContains && !matchesContains(doc, 'to', filter.toContains)) return false
   if (filter.toNotContains && matchesContains(doc, 'to', filter.toNotContains)) return false
   if (filter.medium && !matchesExact(doc, 'medium', filter.medium)) return false

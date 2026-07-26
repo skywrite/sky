@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-13T11:40:59.899Z
+# Generated at: 2026-07-26T20:20:30.334Z
 # =============================================================================
 
 type Query {
@@ -290,7 +290,11 @@ input VideoFilter {
   dateGte: String
   dateLte: String
   recent: String
+  from: String
+  fromNot: String
   fromContains: String
+  to: String
+  toNot: String
   toContains: String
   toNotContains: String
   medium: String

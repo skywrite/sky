@@ -1066,3 +1066,146 @@ test('resolvers - people bodyContains excludes non-matching bodies', () => {
     expected: 0,
   })
 })
+
+// =============================================================================
+// videos
+//
+// A local store rather than createMockStore(), so adding video fixtures cannot
+// shift the counts the shared time-collection tests above assert on.
+// =============================================================================
+
+function createVideoStore(): MarkdownStore {
+  const videosData = [
+    {
+      doc: Document.fromMarkdown(`---
+from: Jane Doe
+to: "#engineering"
+when: "09:46"
+medium: Loom
+summary: Weekly product update
+video:
+  url: https://example.com/v/abc123
+---
+Transcript mentions the Atlas rollout.`),
+      path: '/test/time/2026/02/02-08/02-03/actions/videos/update.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+from: John Smith
+to: Atlas Team
+when: "11:00"
+medium: YouTube
+summary: Conference talk
+---
+Talk notes.`),
+      path: '/test/time/2026/02/02-08/02-04/actions/videos/talk.md',
+    },
+  ]
+
+  return {
+    people: createMockCollection([]),
+    orgs: createMockCollection([]),
+    projects: { ...createMockCollection([]), getDocuments: () => ({ toArray: () => [] }) },
+    decisions: createMockCollection([]),
+    goals: createMockCollection([]),
+    ideas: createMockCollection([]),
+    places: createMockCollection([]),
+    time: createMockCollection(videosData),
+  } as unknown as MarkdownStore
+}
+
+test('resolvers - videos returns all videos', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  assert({
+    given: 'no filter',
+    should: 'return every video',
+    actual: resolvers.videos({}).length,
+    expected: 2,
+  })
+})
+
+test('resolvers - videos maps the nested video.url field', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  const result = resolvers.videos({ where: { from: 'Jane Doe' } })
+
+  assert({
+    given: 'a video with video.url set',
+    should: 'flatten it to the url field',
+    actual: result[0]?.url,
+    expected: 'https://example.com/v/abc123',
+  })
+
+  assert({
+    given: 'a video with no video key at all',
+    should: 'report url as null',
+    actual: resolvers.videos({ where: { from: 'John Smith' } })[0]?.url,
+    expected: null,
+  })
+})
+
+test('resolvers - videos filters by exact from', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  assert({
+    given: 'an exact from filter',
+    should: 'return only that presenter',
+    actual: resolvers.videos({ where: { from: 'Jane Doe' } }).map((v) => v.path),
+    expected: ['/test/time/2026/02/02-08/02-03/actions/videos/update.md'],
+  })
+
+  assert({
+    given: 'a partial name under the exact from filter',
+    should: 'not match — exact means exact, unlike fromContains',
+    actual: resolvers.videos({ where: { from: 'Jane' } }).length,
+    expected: 0,
+  })
+
+  assert({
+    given: 'the same partial name under fromContains',
+    should: 'still match',
+    actual: resolvers.videos({ where: { fromContains: 'Jane' } }).length,
+    expected: 1,
+  })
+})
+
+test('resolvers - videos filters by fromNot', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  assert({
+    given: 'a fromNot filter',
+    should: 'exclude that presenter and keep the rest',
+    actual: resolvers.videos({ where: { fromNot: 'Jane Doe' } }).map((v) => v.from),
+    expected: ['John Smith'],
+  })
+})
+
+test('resolvers - videos filters by exact to', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  assert({
+    given: 'an exact to filter for a channel audience',
+    should: 'return the video posted to that channel',
+    actual: resolvers.videos({ where: { to: '#engineering' } }).map((v) => v.from),
+    expected: ['Jane Doe'],
+  })
+
+  assert({
+    given: 'an exact to filter for a named audience',
+    should: 'return the video sent to that audience',
+    actual: resolvers.videos({ where: { to: 'Atlas Team' } }).map((v) => v.from),
+    expected: ['John Smith'],
+  })
+})
+
+test('resolvers - videos filters by toNot', () => {
+  const resolvers = createDomainResolvers(createVideoStore())
+
+  assert({
+    given: 'a toNot filter',
+    should: 'exclude that audience and keep the rest',
+    actual: resolvers.videos({ where: { toNot: '#engineering' } }).map((v) => v.from),
+    expected: ['John Smith'],
+  })
+})
