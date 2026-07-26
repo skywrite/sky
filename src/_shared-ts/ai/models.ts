@@ -1,8 +1,9 @@
-import type { JSONValue, LanguageModel } from 'ai'
+import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
 import { createOpenAI, openai, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { PROFILES } from './defaultProfiles.ts'
 import { AI_PROFILES } from '#config'
 
@@ -104,7 +105,16 @@ function getLmStudioProviderWith(baseUrl: string): ReturnType<typeof createOpenA
   return _lmStudioProvider.provider
 }
 
+/**
+ * Every model the registry hands out is wrapped, so no call site can send a
+ * prompt carrying half an emoji — one unpaired surrogate makes the provider
+ * reject the entire request body. See wellFormedPromptMiddleware.
+ */
 function languageModelFor(profile: ModelProfile): LanguageModel {
+  return wrapLanguageModel({ model: providerModelFor(profile), middleware: wellFormedPromptMiddleware })
+}
+
+function providerModelFor(profile: ModelProfile) {
   switch (profile.provider) {
     case 'openai':
       return openai(profile.model)

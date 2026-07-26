@@ -12,6 +12,7 @@ import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
+import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
@@ -400,10 +401,7 @@ function createWebTools() {
           const raw = await resp.text()
 
           const text = contentType.includes('html') ? htmlToText(raw) : raw
-          if (text.length > MAX_FETCH_CHARS) {
-            return text.slice(0, MAX_FETCH_CHARS) + '\n\n[Content truncated...]'
-          }
-          return text
+          return truncate(text, MAX_FETCH_CHARS, '\n\n[Content truncated...]')
         } catch (err) {
           return `Error fetching URL: ${(err as Error).message}`
         }

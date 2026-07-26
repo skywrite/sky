@@ -21,6 +21,7 @@ import {
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
+import truncate from '#shared/strings/truncate.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -130,7 +131,7 @@ export default class AIContextEvolveTask extends Command {
       parts.push('## Recent Conversation\n')
       for (const turn of recentTurns.slice(-6)) {
         const role = turn.role === 'user' ? 'User' : 'Assistant'
-        const content = turn.content.length > 300 ? turn.content.slice(0, 300) + '...' : turn.content
+        const content = truncate(turn.content, 300, '...')
         parts.push(`**${role}:** ${content}\n`)
       }
     }

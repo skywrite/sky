@@ -1,5 +1,6 @@
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import truncate from '#shared/strings/truncate.ts'
 
 type MessageLike = { text: string; userName?: string; userId?: string }
 
@@ -57,7 +58,7 @@ export function buildTranscript(message: MessageLike, replies: MessageLike[] = [
     if (!text) continue
     lines.push(`${m.userName || m.userId || '-'}: ${text}`)
   }
-  return lines.join('\n\n').slice(0, MAX_TRANSCRIPT_CHARS)
+  return truncate(lines.join('\n\n'), MAX_TRANSCRIPT_CHARS)
 }
 
 /**
@@ -81,7 +82,7 @@ export function fallbackSummary(message: MessageLike, replies: MessageLike[] = [
   for (const m of [message, ...replies]) {
     const text = m.text?.trim()
     if (!text) continue
-    return text.split('\n')[0].trim().slice(0, MAX_SUMMARY_CHARS)
+    return truncate(text.split('\n')[0].trim(), MAX_SUMMARY_CHARS)
   }
   return undefined
 }
