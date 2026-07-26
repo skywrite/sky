@@ -1,0 +1,10 @@
+{
+  "message": {
+    "channel_id": "D012ABC3DEF",
+    "ts": "1700000000.000100",
+    "author": {
+      "user_id": "U0123LOCALX"
+    },
+    "content": "*Atlas Rollout - Summary*\n*==================================*\n\nFollowing up on the earlier call, here is the written version for reference.\n\nI shared the draft plan with the platform team yesterday.\n\nHere's the structure:\n\n---\n\n*The Plan*\n\nAll three checkpoints should land in the same release.\n\n1. *Checkpoint One* - Ship the widget importer.\n2. *Checkpoint Two* - Migrate the sample dataset.\n3. *Checkpoint Three* - Enable the nightly job.\n\n---\n\n*Next Steps*\n\nThe team is reviewing. Follow up scheduled for next week."
+  }
+}

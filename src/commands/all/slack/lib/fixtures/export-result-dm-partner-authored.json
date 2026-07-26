@@ -9,7 +9,7 @@
   "message": {
     "ts": "1700000000.000100",
     "timeLabel": "2023-11-14 09:00",
-    "text": "Synthetic sample message body.",
+    "text": "*Re: Atlas Sync Notes*\n\nCan you let me know which sections you want covered in the sync notes?\n\nI need to update the draft before the review.",
     "userId": "U0456SARAHX",
     "userName": "Sarah Chen",
     "threadTs": "1700000000.000100",
@@ -28,7 +28,7 @@
       {
         "ts": "1700007200.000300",
         "timeLabel": "2023-11-14 11:00",
-        "text": "Initial thought - reuse the outline from the last sync.",
+        "text": "Initial thought - we should reuse the outline from the last sync as the core structure.\n\n- Milestone status\n- Roadmap updates\n- Open questions",
         "userId": "U0123LOCALX",
         "userName": "Jane Smith"
       }

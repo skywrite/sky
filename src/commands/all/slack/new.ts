@@ -18,7 +18,7 @@ import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { MCPTool } from '#mcp/decorators.ts'
 import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
 import { summarizeSlackMessage } from './lib/summarize.ts'
-import resolveRecipient from './cli/export/helpers/resolveRecipient.ts'
+import resolveRecipient from './lib/resolveRecipient.ts'
 
 const params = {
   to: ArgOrFlag.string('Channel or person', { short: 't' }),

@@ -5,6 +5,6 @@ import type { AgentSlackUser } from './types.ts'
  * Prefers real_name > display_name > name (the `name` fallback
  * is needed for Slack Connect users from external orgs).
  */
-export default function parseAgentSlackUserName(user: AgentSlackUser): string | undefined {
+export default function parseUser(user: AgentSlackUser): string | undefined {
   return user.real_name || user.display_name || user.name || undefined
 }

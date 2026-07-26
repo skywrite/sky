@@ -6,15 +6,17 @@ import {
   type AgentSlackMessage,
   type AgentSlackUser,
   collectUserIds,
+  parseUser,
+} from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
+import {
+  type ConversationType,
   extractWorkspaceUrl,
   formatChannelLabel,
   formatNameList,
   formatSlackTimestamp,
   inferConversationType,
-  parseAgentSlackUserName,
   resolveContent,
-} from './helpers/mod.ts'
-import type { ConversationType } from './helpers/mod.ts'
+} from '#commands/all/slack/lib/mod.ts'
 
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
@@ -250,7 +252,7 @@ async function resolveUserNames(userIds: string[]): Promise<Map<string, string>>
       if (result.code === 0) {
         try {
           const user: AgentSlackUser = JSON.parse(result.stdout)
-          const name = parseAgentSlackUserName(user)
+          const name = parseUser(user)
           if (name) map.set(id, name)
         } catch {
           /* skip */
@@ -274,7 +276,7 @@ async function resolveUserName(
     try {
       const user: AgentSlackUser = JSON.parse(result.stdout)
       hasFullName = !!(user.real_name || user.display_name)
-      name = parseAgentSlackUserName(user)
+      name = parseUser(user)
       if (name) userNames.set(userId, name)
     } catch {
       /* skip */

@@ -331,7 +331,7 @@ test('dedupeTags - flattens across collections, dedupes, and sorts', () => {
     given: 'tag arrays across three document types with duplicates',
     should: 'return a sorted, deduplicated list',
     actual: dedupeTags(data),
-    expected: ['Assets/Crypto/BTC', 'Blockchains/Stellar', 'Atlas/Finance'],
+    expected: ['Assets/Crypto/BTC', 'Atlas/Finance', 'Blockchains/Stellar'],
   })
 })
 
