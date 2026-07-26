@@ -6,7 +6,12 @@ import type ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
 
-/** ProjectDocument + MarkdownStore for relationship resolution */
+/**
+ * ProjectDocument + MarkdownStore for relationship resolution.
+ *
+ * Status 2026-07-26: nothing constructs this class — the model layer has no entry
+ * point yet. Before building on it or deleting it, read ../../README.md.
+ */
 export default class Project {
   readonly doc: ProjectDocument
   private store: MarkdownStore
