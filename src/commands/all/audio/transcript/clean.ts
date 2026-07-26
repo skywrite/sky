@@ -9,6 +9,7 @@ import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
+import SRT from './lib/SRT/mod.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -31,7 +32,7 @@ const params = {
     },
   ),
   fromTranscript: Flag.string(
-    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the newest .vtt on the Desktop.',
+    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the newest .vtt/.srt on the Desktop.',
     {
       optional: true,
     },
@@ -63,7 +64,7 @@ type Result = {
   audioFilePath: string | null
   /** Transcript file that was read, null when the transcript was pasted in */
   transcriptFilePath: string | null
-  /** Exact meeting length from VTT cue timestamps, null when input was not a VTT */
+  /** Exact length from VTT/SRT cue timestamps, null when the input carried no cues */
   durationMinutes: number | null
 }
 
@@ -204,7 +205,7 @@ export default class AudioTranscriptCleanTask extends Command {
     usage: [
       'sky audio:transcript:clean                    # Paste transcript via stdin',
       'sky audio:transcript:clean --file input.txt  # Read from file',
-      'sky audio:transcript:clean --from-transcript # Clean newest .vtt on Desktop',
+      'sky audio:transcript:clean --from-transcript # Clean newest .vtt/.srt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -254,14 +255,14 @@ export default class AudioTranscriptCleanTask extends Command {
       if (typeof fromTranscript === 'string' && fromTranscript !== 'true') {
         transcriptPath = fromTranscript
       } else {
-        const vtts = await desktopFilesByExt(['.vtt'])
-        if (vtts.length === 0) {
-          return CommandResult.fail('No .vtt file found on Desktop. Please specify a transcript file path.')
+        const found = await desktopFilesByExt(['.vtt', '.srt'])
+        if (found.length === 0) {
+          return CommandResult.fail('No .vtt or .srt file found on Desktop. Please specify a transcript file path.')
         }
-        if (vtts.length > 1) {
-          output.log(colors.gray(`${vtts.length} .vtt files on Desktop, using newest`))
+        if (found.length > 1) {
+          output.log(colors.gray(`${found.length} transcript files on Desktop, using newest`))
         }
-        transcriptPath = vtts[0].path
+        transcriptPath = found[0].path
       }
       transcriptSourcePath = transcriptPath
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
@@ -301,19 +302,29 @@ ${transcript}
     output.log(colors.yellow(`[DEBUG] Transcript written to ${debugPath}`))
     // END TODO
 
-    // Zoom VTT input (any path: file, Desktop, or paste): parse to structure and
-    // feed the models compact speaker turns instead of raw cues — drops the
-    // cue-number/timestamp overhead (~25-30% of the file) and merges consecutive
-    // same-speaker cues. Duration comes from cue timestamps exactly.
-    let vttDurationMinutes: number | null = null
+    // Cue-based input (any path: file, Desktop, or paste): parse to structure and
+    // feed the models compact turns instead of raw cues — drops the cue-number and
+    // timestamp overhead (25-30% of a VTT, over half of an SRT) and merges related
+    // cues. Duration comes from cue timestamps exactly.
+    //
+    // VTT is checked first because it announces itself with a header; SRT has none,
+    // so its sniff is structural and deliberately declines anything WEBVTT-headed.
+    let cueDurationMinutes: number | null = null
     if (ZoomVTT.isVtt(transcript)) {
       const vtt = ZoomVTT.parse(transcript)
       if (!vtt.looksLikeZoomDialect) {
         output.log(colors.yellow('Voice tags found — not a Zoom VTT? Speaker detection may be unreliable.'))
       }
-      vttDurationMinutes = vtt.durationMinutes
+      cueDurationMinutes = vtt.durationMinutes
       transcript = vtt.toTurnText()
       output.log(colors.gray(`Zoom VTT: ${vtt.cues.length} cues → ${vtt.turns.length} speaker turns`))
+    } else if (SRT.isSrt(transcript)) {
+      const srt = SRT.parse(transcript)
+      const turns = srt.turns()
+      cueDurationMinutes = srt.durationMinutes
+      transcript = srt.toTurnText()
+      const how = srt.speakers.length > 0 ? `${srt.speakers.length} speakers` : 'no speaker labels — split on pauses'
+      output.log(colors.gray(`SRT: ${srt.cues.length} cues → ${turns.length} turns (${how})`))
     }
 
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
@@ -543,7 +554,7 @@ ${cleanedTranscript}
       rel: analysis.rel,
       audioFilePath: audioSourcePath,
       transcriptFilePath: transcriptSourcePath,
-      durationMinutes: vttDurationMinutes,
+      durationMinutes: cueDurationMinutes,
     })
   }
 

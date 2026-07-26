@@ -31,7 +31,7 @@ const params = {
     },
   ),
   fromTranscript: Flag.string(
-    'Run transcript pipeline: clean, then summarize. Optional path to transcript file, or omit to use the newest .vtt on the Desktop.',
+    'Run transcript pipeline: clean, then summarize. Optional path to transcript file, or omit to use the newest .vtt/.srt on the Desktop.',
     {
       optional: true,
     },
@@ -145,7 +145,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     usage: [
       'sky audio:transcript:summary --file input.txt  # Read from file',
       'sky audio:transcript:summary                   # Paste via stdin',
-      'sky audio:transcript:summary --from-transcript # Clean + summarize newest .vtt on Desktop',
+      'sky audio:transcript:summary --from-transcript # Clean + summarize newest .vtt/.srt on Desktop',
     ],
     params,
   }
