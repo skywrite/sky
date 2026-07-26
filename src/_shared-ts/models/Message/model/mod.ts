@@ -10,6 +10,9 @@ import RelSet from '#shared/models/RelSet/mod.ts'
  *
  * Provides sugar methods for relationship resolution while delegating
  * commonly-used data properties to the underlying document.
+ *
+ * Status 2026-07-26: nothing constructs this class — the model layer has no entry
+ * point yet. Before building on it or deleting it, read ../../README.md.
  */
 export default class Message {
   constructor(
