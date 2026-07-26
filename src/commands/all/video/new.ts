@@ -4,7 +4,7 @@ import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import stringifyForMarkdown from '#shared/yaml/stringifyForMarkdown.ts'
+import VideoDocument from '#shared/models/Video/mod.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary of the video', { short: 's', required: true }),
@@ -49,34 +49,24 @@ export default class VideoNewTask extends Command {
       entryWho = to
     }
 
-    const obj: Record<string, any> = {
+    // The document's default template heads the body with "# Video"; this command
+    // has always used the medium instead ("# Loom", "# YouTube"), so pass a body.
+    const body = [`# ${mediumValue}`, '', '## Summary', '', '(insert summary here)', '', '## Transcript'].join('\n')
+
+    const video = new VideoDocument({
       ...(from && { from }),
       ...(to && { to }),
-      when: when.time,
+      when,
       medium: mediumValue,
       summary: summary || '',
-      video: {
-        url: null,
-      },
-      rel: null,
-      tags: null,
       attachments: [{ file: null }],
-    }
+      body,
+    })
 
-    const data = stringifyForMarkdown(obj)
+    // toMarkdown() has no trailing newline; video files have always ended with one.
+    const data = video.toMarkdown() + '\n'
 
-    const markdownLines = [
-      `# ${mediumValue}`,
-      '',
-      '## Summary',
-      '',
-      '(insert summary here)',
-      '',
-      '## Transcript',
-      '',
-    ].join('\n')
-
-    const filePath = await ddfw.write(fileName, data.trimStart() + markdownLines)
+    const filePath = await ddfw.write(fileName, data)
 
     const dayItemParts = [when.time, '>']
     if (entryWho) {

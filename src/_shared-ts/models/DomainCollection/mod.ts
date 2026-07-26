@@ -12,6 +12,7 @@ import type ProjectDocument from '#shared/models/Project/mod.ts'
 import type GoalDocument from '#shared/models/Goal/mod.ts'
 import type IdeaDocument from '#shared/models/Idea/mod.ts'
 import type PlaceDocument from '#shared/models/Place/mod.ts'
+import VideoDocument from '#shared/models/Video/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
@@ -200,9 +201,18 @@ export default class DomainCollection {
     return this.collection.filter((_, path) => detectTypeFromPath(path) === 'place').getAll() as PlaceDocument[]
   }
 
-  /** All video documents */
-  get videos(): Document[] {
-    return this.collection.filter((_, path) => detectTypeFromPath(path) === 'video').getAll()
+  /**
+   * All video documents.
+   *
+   * Constructed rather than cast: the scanner parses every time-based file into a
+   * plain Document, so there is no VideoDocument to narrow to. The entity getters
+   * above (orgs, people, …) read from typed sub-stores and can cast safely.
+   */
+  get videos(): VideoDocument[] {
+    return this.collection
+      .filter((_, path) => detectTypeFromPath(path) === 'video')
+      .getAll()
+      .map((doc) => new VideoDocument(doc.yaml, doc.markdown, doc.yamlError))
   }
 
   /** All other documents (not org, person, project, goal, or place) */

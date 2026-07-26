@@ -1,6 +1,6 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const DEFAULT_TEMPLATE = `# Video
 
@@ -11,19 +11,28 @@ const DEFAULT_TEMPLATE = `# Video
 ## Transcript`
 
 export default class VideoDocument extends Document {
+  static override yamlKeyOrder = ['from', 'to', 'when', 'medium', 'summary', 'video', 'rel', 'tags', 'attachments']
+
   /**
    * Create a new video:  new VideoDocument({ from, when, medium, summary, body?, rel? })
    * Parse an existing one: VideoDocument.fromMarkdown(contents)
+   *
+   * When no markdown is provided (creation), builds YAML with known fields in
+   * display order. Extra fields from input (e.g. attachments) pass through via
+   * ...extra. The 'body' input field becomes markdown content, defaulting to
+   * the summary/transcript template.
+   *
+   * Unlike Meeting/Message, a video carries no created/updated stamps — the
+   * recording is a fixed artifact, so `when` is the only date that means anything.
    */
   constructor(input: Record<string, unknown>, markdown?: string, yamlError?: string) {
     let yaml: Record<string, unknown>
     let md: string
 
     if (markdown === undefined) {
-      const { when: whenRaw, created: _c, updated: _u, body, ...extra } = input
+      const { when: whenRaw, body, ...extra } = input
       const when = whenRaw instanceof PlainDateTime ? whenRaw.time : (whenRaw ?? new PlainDateTime().time)
       const medium = input['medium'] ?? 'Video'
-      const today = PlainDate.today().ymd
 
       yaml = {
         ...(input['from'] ? { from: input['from'] } : {}),
@@ -32,8 +41,6 @@ export default class VideoDocument extends Document {
         medium,
         summary: input['summary'] ?? null,
         video: input['video'] ?? { url: null },
-        created: today,
-        updated: today,
         rel: input['rel'] ?? null,
         tags: input['tags'] ?? null,
         ...extra,
