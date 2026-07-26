@@ -1,4 +1,10 @@
-export type ConversationType = 'channel' | 'dm' | 'group' | 'unknown'
+/**
+ * Wire-format types for the `agent-slack` CLI's JSON output.
+ *
+ * These mirror agent-slack's own `CompactSlackMessage` shape — a hand-maintained
+ * copy of another tool's contract, so they drift when agent-slack is upgraded.
+ * The fixtures in ./fixtures/ exist to catch that drift.
+ */
 
 export type AgentSlackFile = {
   name?: string
