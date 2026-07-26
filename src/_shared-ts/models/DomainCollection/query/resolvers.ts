@@ -7,6 +7,7 @@
  */
 
 import type { Document } from '#shared/models/Markdown/mod.ts'
+import VideoDocument from '#shared/models/Video/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import DomainCollection from '../mod.ts'
 import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
@@ -422,9 +423,9 @@ function docToMessage(doc: Document, path: string, day: MappedDay | null = null)
 }
 
 function docToVideo(doc: Document, path: string, day: MappedDay | null = null) {
-  const video = doc.yaml['video']
-  const url =
-    video && typeof video === 'object' && !Array.isArray(video) ? (video as Record<string, unknown>)['url'] : undefined
+  // The scanner yields plain Documents, so re-wrap to read the nested `video.url`
+  // shape through the model rather than duplicating its layout here.
+  const url = new VideoDocument(doc.yaml, doc.markdown).videoUrl
 
   return {
     from: getOptionalStringField(doc, 'from'),
@@ -432,7 +433,7 @@ function docToVideo(doc: Document, path: string, day: MappedDay | null = null) {
     when: getStringField(doc, 'when'),
     medium: getStringField(doc, 'medium', 'Video'),
     summary: getOptionalStringField(doc, 'summary'),
-    url: typeof url === 'string' ? url : null,
+    url: url ?? null,
     date: getDateForDocument(doc, path) ?? '',
     day,
     tags: Array.from(doc.tags),
