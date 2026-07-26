@@ -18,7 +18,7 @@ const params = {
     short: 'a',
     optional: true,
   }),
-  fromTranscript: Flag.string('Path to transcript file, or omit to use the newest .vtt on the Desktop', {
+  fromTranscript: Flag.string('Path to transcript file, or omit to use the newest .vtt/.srt on the Desktop', {
     short: 't',
     optional: true,
   }),
