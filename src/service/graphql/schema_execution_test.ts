@@ -91,6 +91,7 @@ const videos = [
   {
     doc: doc(`---
 from: TechChannel
+to: "#engineering"
 when: "20:00"
 medium: Video
 summary: Conference talk
@@ -371,6 +372,28 @@ const CASES: SmokeCase[] = [
     field: 'videos',
     query: '{ videos(where: { fromContains: "TechChannel" }) { path } }',
     expectPaths: [videos[0].path],
+  },
+  // Exact from/to: the selector transpiler emits these for `video[from="X"]` and
+  // `video[to="X"]`, so they must validate against VideoFilter, not just *Contains.
+  {
+    field: 'videos',
+    query: '{ videos(where: { from: "TechChannel" }) { path } }',
+    expectPaths: [videos[0].path],
+  },
+  {
+    field: 'videos',
+    query: '{ videos(where: { fromNot: "TechChannel" }) { path } }',
+    expectPaths: [videos[1].path],
+  },
+  {
+    field: 'videos',
+    query: '{ videos(where: { to: "#engineering" }) { path } }',
+    expectPaths: [videos[0].path],
+  },
+  {
+    field: 'videos',
+    query: '{ videos(where: { toNot: "#engineering" }) { path } }',
+    expectPaths: [videos[1].path],
   },
   {
     field: 'journals',
