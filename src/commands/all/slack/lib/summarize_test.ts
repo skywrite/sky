@@ -1,6 +1,9 @@
 import { assert, test } from '#test'
 import { buildTranscript, cleanSummary, fallbackSummary } from './summarize.ts'
 
+/** U+1F600 — one code point, two UTF-16 code units, so a length cap can fall inside it. */
+const GRIN = '😀'
+
 // --- buildTranscript ---
 
 test('buildTranscript: root message only', () => {
@@ -40,6 +43,18 @@ test('buildTranscript: nothing to summarize', () => {
     should: 'return an empty string',
     actual: buildTranscript({ text: '' }, [{ text: '' }]),
     expected: '',
+  })
+})
+
+test('buildTranscript: emoji straddling the length cap', () => {
+  // Slack text is emoji-dense, and a cap landing between an emoji's two code
+  // units leaves a lone surrogate — which the model API rejects as invalid
+  // JSON for the entire request, losing the summary to the fallback path.
+  assert({
+    given: 'a transcript long enough that the cap falls inside an emoji',
+    should: 'cut without stranding half of it',
+    actual: buildTranscript({ text: GRIN.repeat(5000) }).isWellFormed(),
+    expected: true,
   })
 })
 
@@ -127,5 +142,15 @@ test('fallbackSummary: no text at all', () => {
     should: 'return undefined',
     actual: fallbackSummary({ text: '' }, [{ text: ' ' }]),
     expected: undefined,
+  })
+})
+
+test('fallbackSummary: emoji straddling the length cap', () => {
+  // This summary becomes a filename, so a stranded surrogate would reach a path.
+  assert({
+    given: 'a first line long enough that the 80-char cap falls inside an emoji',
+    should: 'cut without stranding half of it',
+    actual: fallbackSummary({ text: `x${GRIN.repeat(50)}` })?.isWellFormed(),
+    expected: true,
   })
 })
