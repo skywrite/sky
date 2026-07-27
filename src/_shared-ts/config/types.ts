@@ -20,6 +20,9 @@ export interface SkyConfig {
     }
   }
   bins: Record<string, string>
+  slack: {
+    workspace?: string
+  }
   ai: {
     models: {
       strong: string

@@ -23,6 +23,7 @@ export const BINS = skyConfig.bins
 export const AI_MODELS = skyConfig.ai.models
 export const AI_PROFILES: Record<string, AiProfileConfig> = skyConfig.ai.profiles ?? {}
 export const PORT_SERVER = skyConfig.server.port
+export const SLACK_WORKSPACE = skyConfig.slack.workspace
 
 // ── Derived from config (convention) ───────────────────────────
 

@@ -99,7 +99,9 @@ export default class SlackCliExportTask extends Command {
 
     const getResult = await runCommand('agent-slack', getArgs)
     if (getResult.code !== 0) {
-      return CommandResult.fail(`agent-slack message get failed: ${getResult.stderr}`)
+      const detail = getResult.stderr.trim() || getResult.stdout.trim()
+      const hint = detail.includes('invalid_auth') ? ' — credentials expired, run `sky slack:auth`' : ''
+      return CommandResult.fail(`agent-slack message get failed: ${detail}${hint}`)
     }
 
     let data: { message: AgentSlackMessage; thread?: { ts: string; length: number } }
