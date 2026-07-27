@@ -10,6 +10,9 @@ import {
   type WikipediaSearchResult,
 } from '#lib/apis/wikipedia.ts'
 
+/** Hard ceiling on the article select/disambiguate/validate calls — see _categorize.ts for why. */
+const AI_TIMEOUT_MS = 2 * 60 * 1000
+
 const SELECT_PROMPT_FILE = new URL('./prompts/org-wikipedia-select.prompt.md', import.meta.url).pathname
 const DISAMBIGUATE_PROMPT_FILE = new URL('./prompts/org-wikipedia-disambiguate.prompt.md', import.meta.url).pathname
 const VALIDATE_PROMPT_FILE = new URL('./prompts/org-wikipedia-validate.prompt.md', import.meta.url).pathname
@@ -117,6 +120,7 @@ async function selectBestArticleAI(
 
   const { object: parsed } = await generateObject({
     ...aiModel('balanced'),
+    abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     schema: ArticleSelectionSchema,
     prompt: selectionPrompt,
   })
@@ -231,6 +235,7 @@ async function resolveDisambiguationPage(
 
   const { object: parsed } = await generateObject({
     ...aiModel('balanced'),
+    abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     schema: ArticleSelectionSchema,
     prompt: disambiguationPrompt,
   })
@@ -283,6 +288,7 @@ async function validateArticleMatch(
 
   const { object: parsed } = await generateObject({
     ...aiModel('balanced'),
+    abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     schema: ArticleValidationSchema,
     prompt: validationPrompt,
   })

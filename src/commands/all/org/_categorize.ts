@@ -8,6 +8,15 @@ import type { WikipediaSelectionResult } from './_wikipedia.ts'
 
 const CATEGORIZE_PROMPT_FILE = new URL('./prompts/org-categorize.prompt.md', import.meta.url).pathname
 
+/**
+ * Hard ceiling on the categorization call. Nothing else bounds it: the Anthropic provider
+ * disables Bun's 300s fetch cap (see anthropicProvider.ts), and `generateObject` — unlike
+ * generateText — accepts no `timeout` option, only `abortSignal`. Without this, a stalled
+ * socket hangs org:new forever with no output and no error. The call itself runs in a few
+ * seconds, so anything approaching this is a dead connection, not slow work.
+ */
+const AI_TIMEOUT_MS = 2 * 60 * 1000
+
 const CategorizationSchema = z.object({
   primary_sector: z.string(),
   primary_subcategory: z.string(),
@@ -75,6 +84,7 @@ export async function categorizeOrganization(
 
   const { object: parsed } = await generateObject({
     ...aiModel('balanced'),
+    abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     schema: CategorizationSchema,
     prompt: categorizationPrompt,
   })
