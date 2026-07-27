@@ -3,6 +3,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import ChatDocument from './mod.ts'
 import type { ChatTurn } from './mod.ts'
+import { serializeContextLog, splitContextLog } from './contextLog.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 
@@ -371,5 +372,155 @@ test('ChatDocument.create - strips SUMMARY comment from assistant content', () =
     should: 'not contain SUMMARY comment',
     actual: doc.toMarkdown().includes('<!-- SUMMARY:'),
     expected: false,
+  })
+})
+
+// --- conversation ---
+
+test('ChatDocument.conversation - maps speakers to roles', async () => {
+  const doc = ChatDocument.fromMarkdown(await readFixture('simple-two-turns.md'))
+  assert({
+    given: 'a simple two-turn chat',
+    should: 'produce role-tagged messages',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'What do you think about the future of payments?' },
+      {
+        role: 'assistant',
+        content:
+          'Payments are evolving rapidly. Stablecoins and AI agents are likely to drive the next wave of innovation.',
+      },
+    ],
+  })
+})
+
+test('ChatDocument.conversation - alternates through a multi-turn chat', async () => {
+  const doc = ChatDocument.fromMarkdown(await readFixture('multi-turn-with-subheadings.md'))
+  assert({
+    given: 'a four-turn chat with H3 subheadings',
+    should: 'produce four alternating messages',
+    actual: doc.conversation.map((m) => m.role),
+    expected: ['user', 'assistant', 'user', 'assistant'],
+  })
+  assert({
+    given: 'a four-turn chat with H3 subheadings',
+    should: 'keep subheadings inside the assistant content',
+    actual: doc.conversation[1].content.includes('### Key Differences'),
+    expected: true,
+  })
+})
+
+test('ChatDocument.conversation - folds assistant-emitted H2 headings back into the reply', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Fold Test',
+      '',
+      '## JP',
+      '',
+      'Compare the options.',
+      '',
+      '## AI Assistant',
+      '',
+      'Two options stand out.',
+      '',
+      '## Recommendation',
+      '',
+      'Go with the first option.',
+      '',
+      '## JP',
+      '',
+      'Thanks.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'an assistant reply containing a literal H2 heading',
+    should: 'fold the phantom section back into the assistant message',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'Compare the options.' },
+      { role: 'assistant', content: 'Two options stand out.\n\n## Recommendation\n\nGo with the first option.' },
+      { role: 'user', content: 'Thanks.' },
+    ],
+  })
+})
+
+test('ChatDocument.conversation - merges consecutive same-role turns', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Merge Test',
+      '',
+      '## JP',
+      '',
+      'First thought.',
+      '',
+      '## JP',
+      '',
+      'Second thought.',
+      '',
+      '## AI Assistant',
+      '',
+      'Answer.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'two consecutive JP turns',
+    should: 'merge them into one user message so roles alternate',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'First thought.\n\nSecond thought.' },
+      { role: 'assistant', content: 'Answer.' },
+    ],
+  })
+})
+
+// --- contextLog + conversation on a saved transcript ---
+
+test('ChatDocument - a saved transcript with a TURN log parses cleanly', async () => {
+  const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log.md'))
+
+  assert({
+    given: 'a saved chat with trailing TURN comments',
+    should: 'expose the conversation without any log debris',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'What should I focus on for the Atlas launch this week?' },
+      { role: 'assistant', content: 'Focus on the demo script and the pricing page copy.' },
+      { role: 'user', content: 'Draft the announcement outline.' },
+      { role: 'assistant', content: 'Here is an outline: intro, demo, pricing, call to action.' },
+    ],
+  })
+
+  assert({
+    given: 'a saved chat with trailing TURN comments',
+    should: 'parse both log entries',
+    actual: doc.contextLog,
+    expected: [
+      {
+        turn: 1,
+        queries: ['{ documents(where: { bodyContains: "Atlas" }) { path } }'],
+        context: ['goals/2026.md', 'projects/Atlas/plan.md', 'time/2026/03-March/05/journal/entry.md'],
+        pruned: ['time/2026/03-March/01/notes.md (score=3, ~1200 tokens)'],
+      },
+      {
+        turn: 2,
+        queries: [
+          '{ documents(where: { bodyContains: "Atlas" }) { path } }',
+          '{ decisions(where: { pending: true }) { path } }',
+        ],
+        diff: ['decisions/pricing-tier.md'],
+        pruned: [],
+        errors: ['ai:context:evolve failed: fetch timeout'],
+      },
+    ],
+  })
+
+  // The fixture must be byte-for-byte what the ai:chat writer produces —
+  // this law is what makes resume's read side trustworthy against real files.
+  const { body, entries } = splitContextLog(doc.markdown)
+  assert({
+    given: 'the fixture body markdown',
+    should: 'reassemble byte-identically from body + serialized log',
+    actual: body + serializeContextLog(entries),
+    expected: doc.markdown,
   })
 })

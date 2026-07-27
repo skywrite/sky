@@ -15,6 +15,7 @@ import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
+import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/contextLog.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
@@ -610,16 +611,7 @@ export default class AiChatTask extends Command {
     let splitViewEnabled = false
     let contextScrollOffset = 0
 
-    // Per-turn context log
-    interface ContextTurnLog {
-      turn: number
-      queries: string[]
-      context?: string[] // full context list (turn 1 only)
-      diff?: string[] // files added to universe
-      pruned: string[] // eligible files cut by the token budget
-      excluded?: string[] // files excluded by scorer verdict (with reasons)
-      errors?: string[] // context queries that failed this turn (also in ai-errors.jsonl)
-    }
+    // Per-turn context log, persisted as trailing TURN comments on save
     const contextLog: ContextTurnLog[] = []
     let turnNumber = 0
     // Context failures for the current turn. Reset when a turn starts (both
@@ -1131,33 +1123,10 @@ export default class AiChatTask extends Command {
       })
       let markdown = chatDoc.toMarkdown()
 
-      // Append per-turn context log as hidden comment
-      if (contextLog.length > 0) {
-        let comment = '\n\n\n\n\n\n\n\n'
-        for (const entry of contextLog) {
-          comment += `<!-- TURN ${entry.turn}\n`
-          if (entry.queries.length > 0) {
-            comment += 'QUERIES:\n' + entry.queries.map((q) => ` - ${q}`).join('\n') + '\n'
-          }
-          if (entry.context) {
-            comment += 'CONTEXT:\n' + entry.context.map((p) => ` - ${p}`).join('\n') + '\n'
-          }
-          if (entry.diff && entry.diff.length > 0) {
-            comment += 'DIFF:\n' + entry.diff.map((p) => ` + ${p}`).join('\n') + '\n'
-          }
-          if (entry.pruned.length > 0) {
-            comment += 'PRUNED:\n' + entry.pruned.map((p) => ` - ${p}`).join('\n') + '\n'
-          }
-          if (entry.excluded && entry.excluded.length > 0) {
-            comment += 'EXCLUDED:\n' + entry.excluded.map((p) => ` - ${p}`).join('\n') + '\n'
-          }
-          if (entry.errors && entry.errors.length > 0) {
-            comment += 'ERRORS:\n' + entry.errors.map((e) => ` ! ${e}`).join('\n') + '\n'
-          }
-          comment += '-->\n\n'
-        }
-        markdown += comment
-      }
+      // Append per-turn context log as hidden trailing comments (resume
+      // reads this back via splitContextLog — the format is locked by
+      // contextLog_test.ts, byte for byte)
+      markdown += serializeContextLog(contextLog)
 
       await writeTextFile(savePath, markdown)
 
