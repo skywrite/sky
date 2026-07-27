@@ -4,9 +4,11 @@ import { mkdir, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import { parse as parseJSONC } from 'jsonc-parser'
 import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
 import { DIR_CODE, DIR_CODE_SERVICES, DIR_USER_SERVICES, SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
+import { parseWhoami } from './slack/cli/lib/agent-slack/mod.ts'
 import { buildManifest } from './cli/_commandsManifest.ts'
 
 const CONTENT_DIRS = [
@@ -41,6 +43,7 @@ function generateConfig(opts: {
   editor: string
   categories: string[]
   commandDirs?: string[]
+  slackWorkspace?: string
 }): string {
   const cats = JSON.stringify(opts.categories)
   const dir = JSON.stringify(opts.dir)
@@ -50,6 +53,9 @@ function generateConfig(opts: {
     opts.commandDirs && opts.commandDirs.length > 0
       ? `,\n\n  // Additional command directories (e.g., sky-extras)\n  "commands": {\n    "dirs": ${JSON.stringify(opts.commandDirs)}\n  }`
       : ''
+  const slackBlock = opts.slackWorkspace
+    ? `,\n\n  // Slack workspace used by slack:* commands (detected via agent-slack CLI)\n  "slack": { "workspace": ${JSON.stringify(opts.slackWorkspace)} }`
+    : `\n\n  // Slack workspace used by slack:* commands (requires the agent-slack CLI)\n  // "slack": { "workspace": "https://yourteam.slack.com" }`
 
   return `{
   // Sky configuration — https://github.com/skynotebook/sky
@@ -66,7 +72,7 @@ function generateConfig(opts: {
   "editor": ${editor},
 
   // Life domains — become section headers in day files (e.g., "Professional Todos")
-  "categories": ${cats}${commandsBlock}
+  "categories": ${cats}${commandsBlock}${slackBlock}
 
   // AI model preferences (uncomment to override defaults)
   // "ai": {
@@ -156,6 +162,7 @@ export default class InitCommand extends Command {
     p.intro('Sky — initialize your notebook')
 
     let preservedCommandDirs: string[] = []
+    let preservedSlackWorkspace: string | undefined
     if (await exists(SKY_CONFIG_PATH)) {
       const overwrite = await p.confirm({
         message: `${SKY_CONFIG_PATH} already exists. Overwrite?`,
@@ -166,8 +173,12 @@ export default class InitCommand extends Command {
         return CommandResult.success()
       }
       try {
-        const parsed = parseJSONC(await readTextFile(SKY_CONFIG_PATH)) as { commands?: { dirs?: string[] } }
+        const parsed = parseJSONC(await readTextFile(SKY_CONFIG_PATH)) as {
+          commands?: { dirs?: string[] }
+          slack?: { workspace?: string }
+        }
         if (Array.isArray(parsed.commands?.dirs)) preservedCommandDirs = parsed.commands.dirs
+        if (typeof parsed.slack?.workspace === 'string') preservedSlackWorkspace = parsed.slack.workspace
       } catch {}
     }
 
@@ -241,6 +252,23 @@ export default class InitCommand extends Command {
     }
     s.stop(`Created data directories in ${resolvedUserDataDir}`)
 
+    // Detect agent-slack and its default workspace for slack:* commands
+    s.start('Detecting agent-slack CLI...')
+    let slackWorkspace = preservedSlackWorkspace
+    if (await isCommandAvailable('agent-slack')) {
+      const whoami = await runCommand('agent-slack', ['auth', 'whoami'])
+      const parsed = whoami.success ? parseWhoami(whoami.stdout) : undefined
+      const detected = parsed?.defaultWorkspaceUrl ?? parsed?.workspaceUrls[0]
+      if (detected) slackWorkspace = detected
+      s.stop(
+        detected
+          ? `agent-slack detected — Slack workspace ${detected}`
+          : 'agent-slack detected — no workspace configured yet (see agent-slack auth)',
+      )
+    } else {
+      s.stop('agent-slack not found — skipping Slack workspace config')
+    }
+
     // Write config
     s.start('Writing config...')
     await mkdir(SKY_CONFIG_DIR, { recursive: true })
@@ -250,6 +278,7 @@ export default class InitCommand extends Command {
       editor,
       categories,
       commandDirs: preservedCommandDirs,
+      slackWorkspace,
     })
     await writeTextFile(SKY_CONFIG_PATH, configContent)
     s.stop(`Config written to ${SKY_CONFIG_PATH}`)

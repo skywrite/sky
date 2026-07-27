@@ -70,6 +70,7 @@ function defaults(): SkyConfig {
       },
     },
     bins: {},
+    slack: {},
     ai: {
       models: {
         strong: 'anthropic/claude-sonnet-5',
@@ -104,6 +105,7 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.commands?.day?.start) config.commands.day.start = parsed.commands.day.start
     if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
+    if (parsed.slack?.workspace) config.slack.workspace = parsed.slack.workspace
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.server?.port) config.server.port = parsed.server.port
