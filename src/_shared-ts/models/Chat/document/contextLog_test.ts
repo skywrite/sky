@@ -21,7 +21,20 @@ interface LogFixture {
   file: string
   description: string
   expected: ContextTurnLog[]
+  /**
+   * 'strict': byte-exact writer output. 'whitespace-normalized': the file was
+   * post-processed on disk (line-trailing spaces stripped, final newline
+   * collapsed) — the law then holds modulo that same normalization.
+   */
+  law?: 'whitespace-normalized'
 }
+
+const stripTrailingWhitespace = (s: string) =>
+  s
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+$/, ''))
+    .join('\n')
+    .replace(/\n+$/, '\n')
 
 const logFixtures: LogFixture[] = [
   {
@@ -85,6 +98,19 @@ const logFixtures: LogFixture[] = [
       },
     ],
   },
+  {
+    file: 'context-log-whitespace-trimmed.md',
+    description: 'a whitespace-normalized file (bare-dash query, trimmed EOF)',
+    law: 'whitespace-normalized',
+    expected: [
+      {
+        turn: 1,
+        queries: ['\n{\n  journals(where: { recent: "6mo" }) {\n    path\n  }\n}'],
+        context: ['time/2026/02-February/10/journal/entry.md', 'projects/Atlas/retro.md'],
+        pruned: [],
+      },
+    ],
+  },
 ]
 
 logFixtures.forEach((fixture) => {
@@ -99,12 +125,22 @@ logFixtures.forEach((fixture) => {
       expected: fixture.expected,
     })
 
-    assert({
-      given: fixture.description,
-      should: 'satisfy the round-trip law: body + serialize(entries) === raw',
-      actual: body + serializeContextLog(entries),
-      expected: raw,
-    })
+    const reassembled = body + serializeContextLog(entries)
+    if (fixture.law === 'whitespace-normalized') {
+      assert({
+        given: fixture.description,
+        should: 'satisfy the round-trip law modulo whitespace normalization',
+        actual: stripTrailingWhitespace(reassembled),
+        expected: stripTrailingWhitespace(raw),
+      })
+    } else {
+      assert({
+        given: fixture.description,
+        should: 'satisfy the round-trip law: body + serialize(entries) === raw',
+        actual: reassembled,
+        expected: raw,
+      })
+    }
   })
 })
 

@@ -6,7 +6,7 @@ import openEditor from 'open-editor'
 import { generateText, isStepCount, jsonSchema, streamText } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir } from 'node:fs/promises'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -16,6 +16,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/contextLog.ts'
+import { reconstructResumeState } from '#shared/models/Chat/document/resume.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
@@ -66,6 +67,9 @@ const params = {
     default: true,
   }),
   noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
+  resume: Flag.boolean('Resume a saved chat: pick from the current day (read-only reconstruction report for now)', {
+    default: false,
+  }),
   when: whenNBTime(),
 }
 
@@ -75,7 +79,21 @@ import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
-type Result = { saved?: string; turns?: number }
+type Result = {
+  saved?: string
+  turns?: number
+  inspect?: {
+    file: string
+    messages: number
+    exchanges: number
+    startsWithUser: boolean
+    contextLogTurns: number
+    lastTurn: number
+    queries: string[]
+    universePaths: number
+    missingPaths: string[]
+  }
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -182,6 +200,86 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   const timeStr = dt.time.replace(':', '-')
   const slug = slugify(summary)
   return `${timeStr}_${slug}.md`
+}
+
+/**
+ * Read-only reconstruction report for a saved chat — what --resume shows
+ * until live resume lands. Reads the file and the filesystem only; no
+ * service, no writes.
+ */
+async function inspectChatFile(
+  filePath: string,
+  baseDir: string,
+  output: { log: (msg: string) => void },
+): Promise<CommandResult<Result>> {
+  const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
+  const state = reconstructResumeState(doc)
+  const exchanges = Math.floor(state.conversation.length / 2)
+  const first = state.conversation[0]
+  const last = state.conversation.at(-1)
+
+  output.log(colors.bold(`Resume (read-only report): ${filePath}`))
+  output.log(`  summary: ${doc.summary || '(none)'}`)
+  output.log(
+    colors.dim(
+      `  created ${doc.yaml['created'] ?? '?'} · updated ${doc.yaml['updated'] ?? '?'} · ${doc.provider}/${doc.model}`,
+    ),
+  )
+  const tags = Array.from(doc.tags)
+  if (tags.length > 0) output.log(colors.dim(`  tags: ${tags.join('; ')}`))
+  const rel = Array.from(doc.rel)
+  if (rel.length > 0) output.log(colors.dim(`  rel: ${rel.join(', ')}`))
+
+  output.log('')
+  output.log(`  conversation: ${state.conversation.length} messages (${exchanges} exchanges)`)
+  if (first) output.log(colors.dim(`    first (${first.role}): ${truncate(first.content, 100)}`))
+  if (last && last !== first) output.log(colors.dim(`    last (${last.role}): ${truncate(last.content, 100)}`))
+  if (!first) {
+    output.log(colors.yellow('  WARNING: no conversation parsed'))
+  } else if (first.role !== 'user') {
+    output.log(colors.yellow('  WARNING: conversation does not start with a user message'))
+  }
+  if (typeof doc.yaml['turns'] !== 'number') {
+    output.log(colors.yellow('  WARNING: malformed turns: frontmatter (yaml swallowed following lines?)'))
+  } else if (doc.turnCount !== exchanges) {
+    output.log(colors.dim(`  note: frontmatter says ${doc.turnCount} turns, parsed ${exchanges}`))
+  }
+
+  output.log('')
+  const missing: string[] = []
+  if (state.contextLog.length === 0) {
+    output.log(colors.yellow('  context log: none — resume would gather fresh context (pre-log transcript)'))
+  } else {
+    output.log(`  context log: ${state.contextLog.length} turn entries, last turn ${state.lastTurn}`)
+    output.log(`  queries (${state.queries.length}):`)
+    for (const q of state.queries) {
+      output.log(colors.dim(`    - ${q.split('\n').join(' ')}`))
+    }
+
+    for (const p of state.universePaths) {
+      if (!(await exists(path.join(baseDir, p)))) missing.push(p)
+    }
+    const okCount = state.universePaths.length - missing.length
+    output.log(`  universe: ${state.universePaths.length} paths — ${okCount} exist, ${missing.length} missing`)
+    for (const p of missing) {
+      output.log(colors.yellow(`    missing: ${p}`))
+    }
+  }
+
+  return CommandResult.success({
+    turns: exchanges,
+    inspect: {
+      file: filePath,
+      messages: state.conversation.length,
+      exchanges,
+      startsWithUser: first?.role === 'user',
+      contextLogTurns: state.contextLog.length,
+      lastTurn: state.lastTurn,
+      queries: state.queries,
+      universePaths: state.universePaths.length,
+      missingPaths: missing,
+    },
+  })
 }
 
 // A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
@@ -439,6 +537,8 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
+      'sky ai:chat --resume                     # Pick a chat from today (read-only report for now)',
+      'sky ai:chat --resume --when -1d          # Pick from yesterday',
     ],
     params,
   }
@@ -453,6 +553,7 @@ export default class AiChatTask extends Command {
       category,
       when,
       noEditor,
+      resume,
     } = args
     let { log, ephemeral } = args
     let { message: initialMessage } = args
@@ -475,6 +576,45 @@ export default class AiChatTask extends Command {
     const startTime = now.plainDateTime
     const dayLabeler = createDayLabeler(today)
     output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
+
+    // --resume: pick one of the day's saved chats (--when shifts the day).
+    // Until live resume lands this is a read-only reconstruction report.
+    if (resume) {
+      const chatsDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
+      const chats: Array<{ file: string; label: string; hint: string }> = []
+      if (await exists(chatsDir)) {
+        const names = (await readdir(chatsDir))
+          .filter((n) => n.endsWith('.md'))
+          .sort()
+          .reverse()
+        for (const name of names) {
+          const doc = ChatDocument.fromMarkdown(await readTextFile(path.join(chatsDir, name)))
+          const time = name.slice(0, 5).replace('-', ':')
+          const exchanges = Math.floor(doc.conversation.length / 2)
+          chats.push({
+            file: path.join(chatsDir, name),
+            label: `${time}  ${truncate(doc.summary || name, 70)}`,
+            hint: `${exchanges} exchange${exchanges === 1 ? '' : 's'}`,
+          })
+        }
+      }
+
+      if (chats.length === 0) {
+        output.log(colors.yellow(`No saved chats for ${today}.`))
+        return CommandResult.success({ turns: 0 })
+      }
+
+      const picked = await p.select({
+        message: `Resume which chat from ${today}?`,
+        options: chats.map((c) => ({ value: c.file, label: c.label, hint: c.hint })),
+      })
+      if (p.isCancel(picked)) {
+        output.log(colors.dim('Cancelled.'))
+        return CommandResult.success({ turns: 0 })
+      }
+
+      return await inspectChatFile(<string>picked, <string>config.DIR_BASE, output)
+    }
 
     // Gather all context (summaries, health, prices)
     t0 = performance.now()

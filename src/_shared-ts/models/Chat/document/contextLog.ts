@@ -10,6 +10,11 @@
  * written — every saved chat in the notebook is in this exact format, and
  * `body + serializeContextLog(entries) === markdown` must hold for any file
  * the writer produced (the round-trip law the tests pin down).
+ *
+ * Files on disk may additionally have been whitespace-normalized after the
+ * fact (line-trailing spaces stripped, final newline collapsed) — the parser
+ * tolerates that losslessly, and for such files the law holds modulo the
+ * same normalization.
  */
 
 export interface ContextTurnLog {
@@ -129,6 +134,14 @@ function parseEntry(turn: number, inner: string): ContextTurnLog {
     }
     if (section && items && line.startsWith(ITEM_MARKERS[section])) {
       items.push(line.slice(ITEM_MARKERS[section].length))
+      continue
+    }
+    // A marker with its trailing space stripped (' -' alone on the line):
+    // old chats recorded queries that begin with a newline, and the
+    // notebook's whitespace normalizer trims line-trailing spaces, so the
+    // item's content starts on the continuation lines below.
+    if (section && items && line === ITEM_MARKERS[section].trimEnd()) {
+      items.push('')
       continue
     }
     // Continuation of a multi-line item (queries and error messages can span
