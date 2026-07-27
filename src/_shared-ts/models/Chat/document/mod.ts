@@ -1,6 +1,7 @@
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import expand from '#shared/strings/expand.ts'
+import { type ContextTurnLog, splitContextLog } from './contextLog.ts'
 
 /**
  * A turn extracted from a chat document.
@@ -13,6 +14,11 @@ export interface ChatTurn {
 }
 
 const SUMMARY_PATTERN = /<!--\s*SUMMARY:\s*(.+?)\s*-->/
+
+const SPEAKER_ROLES: Record<string, 'user' | 'assistant'> = {
+  JP: 'user',
+  'AI Assistant': 'assistant',
+}
 
 /**
  * ChatDocument - parses AI chat transcript files.
@@ -63,6 +69,47 @@ export default class ChatDocument extends SectionDocument {
   get turns(): ChatTurn[] {
     if (!this.root) return []
     return this.root.children.filter((s) => s.level === 2).map(sectionToTurn)
+  }
+
+  /** Per-turn context pipeline log parsed from the trailing TURN comments */
+  get contextLog(): ContextTurnLog[] {
+    return splitContextLog(this.markdown).entries
+  }
+
+  /**
+   * The conversation as role-tagged messages, ready to seed a live session:
+   * the trailing TURN log stripped, H2 headings the assistant emitted inside
+   * a reply (split off as bogus speakers by the section parser) folded back
+   * into the preceding message, and consecutive same-role messages merged so
+   * the result alternates.
+   */
+  get conversation(): ConversationMessage[] {
+    const { body } = splitContextLog(this.markdown)
+    const turns = new ChatDocument(this.yaml, body).turns
+    const messages: ConversationMessage[] = []
+
+    for (const turn of turns) {
+      const role = SPEAKER_ROLES[turn.speaker]
+      const last = messages.at(-1)
+
+      if (!role) {
+        const heading = `## ${turn.speaker}`
+        const restored = turn.content ? `${heading}\n\n${turn.content}` : heading
+        if (last) {
+          last.content += `\n\n${restored}`
+        } else {
+          messages.push({ role: 'user', content: restored })
+        }
+        continue
+      }
+
+      if (last && last.role === role) {
+        last.content += `\n\n${turn.content}`
+      } else {
+        messages.push({ role, content: turn.content })
+      }
+    }
+    return messages
   }
 
   static override fromMarkdown(contentsWithOptionalYamlHeader: string): ChatDocument {
