@@ -142,10 +142,36 @@ function setupSubscription(
         }),
       )
     }
+  } else if (query.includes('tagsWithScoresUpdated')) {
+    event = 'tagScoresUpdated'
+    fn = (scores: unknown) => {
+      ws.send(
+        JSON.stringify({
+          id,
+          type: 'next',
+          payload: { data: { tagsWithScoresUpdated: scores } },
+        }),
+      )
+    }
   }
 
   if (event && fn) {
     store.on(event, fn)
     listeners.push({ event, fn })
+    return
   }
+
+  // No branch matched. Registering nothing here is indistinguishable, from the
+  // client's side, from a subscription that simply has no updates yet — so an
+  // unhandled field goes unnoticed until someone wonders why their data is
+  // stale. `tagsWithScoresUpdated` sat in exactly that state, silently feeding
+  // nothing to the editor's tag completions. Fail loudly instead.
+  console.error(`WebSocket: no handler for subscription id=${id}: ${query}`)
+  ws.send(
+    JSON.stringify({
+      id,
+      type: 'error',
+      payload: [{ message: `Unsupported subscription: ${query}` }],
+    }),
+  )
 }
