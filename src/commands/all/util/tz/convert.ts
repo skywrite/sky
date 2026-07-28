@@ -5,10 +5,10 @@ import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
-import PlainDateTime from '#universal/dates/nbdt/PlainDateTime/mod.ts'
 import { currentTimezoneIANA, timezoneToOffsetString } from '#universal/dates/timezones/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { resolveAnchor } from './lib/resolveAnchor.ts'
 
 const SYSTEM_PROMPT_FILE = new URL('./prompts/tz-convert-system.prompt.md', import.meta.url).pathname
 
@@ -42,22 +42,41 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // AI Schema
 // -----------------------------------------------------------------------------
 
+// The model only classifies the query — `kind` picks which of the other fields apply, and
+// resolveAnchor() does the arithmetic. Kept flat rather than a discriminated union because
+// nested unions round-trip less reliably through generateObject.
 const TimezoneParseSchema = z.object({
-  hours: z.number().describe('Hour in 24-hour format (0-23)'),
-  minutes: z.number().describe('Minutes (0-59)'),
-  sourceTimezone: z.string().describe('IANA timezone of the input time (e.g., America/Chicago for "central")'),
-  targetTimezone: z.string().describe('IANA timezone to convert to (e.g., Europe/Paris for "France")'),
-  targetName: z.string().describe('Friendly name for the target location (e.g., "France", "Tokyo", "London")'),
+  kind: z
+    .enum(['now', 'relative', 'wallClock'])
+    .describe(
+      "Query shape: 'now' for the current instant, 'relative' for an offset from now, 'wallClock' for a time the user supplied",
+    ),
+  relativeMinutes: z.number().default(0).describe('kind=relative only: minutes from now, negative for the past'),
+  hours: z.number().default(0).describe('kind=wallClock only: hour in 24-hour format (0-23)'),
+  minutes: z.number().default(0).describe('kind=wallClock only: minutes (0-59)'),
+  dateOffset: z
+    .number()
+    .default(0)
+    .describe('kind=wallClock only: days offset from today (-1 for yesterday, 1 for tomorrow)'),
+  sourceTimezone: z
+    .string()
+    .default('')
+    .describe("kind=wallClock only: IANA timezone the supplied time is in; empty for the user's own timezone"),
+  targetTimezone: z.string().describe('IANA timezone to display the result in (e.g., Asia/Bangkok)'),
+  targetName: z.string().describe('Friendly name for the target location (e.g., "Bangkok", "France", "Tokyo")'),
   targetUses24Hour: z.boolean().describe('Whether the target location typically uses 24-hour time format'),
-  dateOffset: z.number().default(0).describe('Days offset from today (-1 for yesterday, 1 for tomorrow, etc.)'),
 })
 
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 
-// Countries/regions that typically use 24-hour format
-const USES_24_HOUR_LOCAL = false // US uses 12-hour
+// Whether the user's own locale renders 24-hour time.
+function localUses24Hour(): boolean {
+  const { hourCycle, hour12 } = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions()
+  if (typeof hour12 === 'boolean') return !hour12
+  return hourCycle === 'h23' || hourCycle === 'h24'
+}
 
 function formatTime(zdt: ZonedDateTime, use24Hour: boolean): string {
   const jsDate = zdt.toTimeDateValue()
@@ -141,10 +160,14 @@ export default class UtilTzConvertTask extends Command {
     descriptionLong: [
       'Takes a natural language query like "9:30 AM central today in france"',
       'and outputs the equivalent time in your local timezone, UTC, and the target timezone.',
+      'Queries can supply a time to convert, ask for the current time somewhere,',
+      'or offset from now.',
     ],
     usage: [
+      'sky util:tz:convert "now in Bangkok"',
+      'sky util:tz:convert "what time is it in Tokyo"',
+      'sky util:tz:convert "in 3 hours in Tokyo"',
       'sky util:tz:convert "9:30 AM central today in france"',
-      'sky util:tz:convert "5 PM today in France"',
       'sky util:tz:convert "2:00 PM EST tomorrow in Tokyo"',
     ],
     params,
@@ -168,6 +191,7 @@ export default class UtilTzConvertTask extends Command {
       context: {
         notebookDate: context.notebookNow.date,
         systemDate: context.systemNow.date,
+        systemTime: context.systemNow.time,
         notebookTimezone: context.notebookNow.timezone,
         systemTimezone,
       },
@@ -188,27 +212,9 @@ export default class UtilTzConvertTask extends Command {
       return CommandResult.error(err as Error, 'Failed to parse timezone query')
     }
 
-    // Calculate the date with offset
-    const baseDate = context.systemNow.plainDateTime
-    let targetDate = baseDate
-    if (parsed.dateOffset !== 0) {
-      // Add days by manipulating the date
-      const parts = baseDate.date.split('-').map(Number)
-      const jsDate = new Date(parts[0], parts[1] - 1, parts[2])
-      jsDate.setDate(jsDate.getDate() + parsed.dateOffset)
-      const newDateStr = jsDate.toISOString().slice(0, 10)
-      targetDate = new PlainDateTime({ date: newDateStr, time: baseDate.time })
-    }
-
-    // Create the time string
-    const timeStr = `${parsed.hours.toString().padStart(2, '0')}:${parsed.minutes.toString().padStart(2, '0')}`
-
-    // Create ZonedDateTime in the source timezone
-    const sourcePlainDateTime = new PlainDateTime({
-      date: targetDate.date,
-      time: timeStr,
-    })
-    const sourceZdt = new ZonedDateTime(sourcePlainDateTime, parsed.sourceTimezone)
+    // Resolve the instant to convert from — the current clock for "now"/relative queries,
+    // the supplied wall clock otherwise
+    const sourceZdt = resolveAnchor(parsed, context.systemNow, systemTimezone)
 
     // Convert to other timezones
     const local = sourceZdt.inTimeZone(systemTimezone)
@@ -231,7 +237,7 @@ export default class UtilTzConvertTask extends Command {
       )
     } else {
       const rows: TableRow[] = [
-        buildRow('Local', local, USES_24_HOUR_LOCAL),
+        buildRow('Local', local, localUses24Hour()),
         buildRow(parsed.targetName, target, parsed.targetUses24Hour),
         buildRow('UTC', utc, true), // UTC always 24-hour
       ]
