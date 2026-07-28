@@ -10,7 +10,7 @@
  * stays with the command.
  */
 
-import type ChatDocument from './mod.ts'
+import ChatDocument from './mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ContextTurnLog } from './contextLog.ts'
 
@@ -52,4 +52,52 @@ export function reconstructResumeState(doc: ChatDocument): ResumeState {
     lastTurn: lastEntry?.turn ?? 0,
     contextLog,
   }
+}
+
+export type ResumeWriteCheck = { ok: true } | { ok: false; reason: string }
+
+/**
+ * The write-back gate: before a resumed session overwrites its original
+ * file, the candidate markdown must reparse to a conversation that starts
+ * with the original conversation and a TURN log that starts with the
+ * carried entries. Any divergence means a serialization bug — the caller
+ * must abort and leave the original untouched.
+ *
+ * One sanctioned exception: when the original ends with a user message
+ * (an interrupted chat), the resumed session merges its first new message
+ * into that turn, so the final original message may be a proper prefix of
+ * the candidate's rather than equal.
+ */
+export function verifyResumeCandidate(candidateMarkdown: string, original: ResumeState): ResumeWriteCheck {
+  const doc = ChatDocument.fromMarkdown(candidateMarkdown)
+
+  const conversation = doc.conversation
+  const prior = original.conversation
+  if (conversation.length < prior.length) {
+    return { ok: false, reason: `conversation shrank: ${conversation.length} < ${prior.length} messages` }
+  }
+  for (let i = 0; i < prior.length; i++) {
+    if (conversation[i].role !== prior[i].role) {
+      return { ok: false, reason: `message ${i + 1} changed role` }
+    }
+    const isMergedTail = i === prior.length - 1 && prior[i].role === 'user'
+    const contentOk = isMergedTail
+      ? conversation[i].content.startsWith(prior[i].content)
+      : conversation[i].content === prior[i].content
+    if (!contentOk) {
+      return { ok: false, reason: `message ${i + 1} content diverged` }
+    }
+  }
+
+  const log = doc.contextLog
+  if (log.length < original.contextLog.length) {
+    return { ok: false, reason: `context log shrank: ${log.length} < ${original.contextLog.length} entries` }
+  }
+  for (let i = 0; i < original.contextLog.length; i++) {
+    if (JSON.stringify(log[i]) !== JSON.stringify(original.contextLog[i])) {
+      return { ok: false, reason: `context log entry ${i + 1} (turn ${original.contextLog[i].turn}) diverged` }
+    }
+  }
+
+  return { ok: true }
 }
