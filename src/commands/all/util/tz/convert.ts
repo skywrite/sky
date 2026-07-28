@@ -100,32 +100,39 @@ function formatDate(zdt: ZonedDateTime): string {
   return formatter.format(jsDate)
 }
 
-interface TableRow {
-  location: string
-  time: string
-  date: string
-  offset: string
-  iana: string
+// Row emphasis: the target is what was asked for, UTC is the machine reference, and the
+// local row sits between them uncolored.
+type RowTone = 'answer' | 'plain' | 'muted'
+
+const TONES: Record<RowTone, (line: string) => string> = {
+  answer: colors.cyan,
+  plain: (line) => line,
+  muted: colors.dim,
 }
 
-function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean): TableRow {
+interface TableRow {
+  cells: string[]
+  tone: RowTone
+}
+
+function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean, tone: RowTone): TableRow {
   const jsDate = zdt.toTimeDateValue()
   return {
-    location,
-    time: formatTime(zdt, use24Hour),
-    date: formatDate(zdt),
-    offset: timezoneToOffsetString(zdt.timezone, jsDate),
-    iana: zdt.timezone,
+    cells: [
+      location,
+      formatTime(zdt, use24Hour),
+      formatDate(zdt),
+      timezoneToOffsetString(zdt.timezone, jsDate),
+      zdt.timezone,
+    ],
+    tone,
   }
 }
 
 function printTable(output: { log: (msg: string) => void }, rows: TableRow[]): void {
   // Calculate column widths
   const headers = ['Location', 'Time', 'Date', 'Offset', 'Timezone']
-  const widths = headers.map((h, i) => {
-    const colValues = rows.map((r) => Object.values(r)[i])
-    return Math.max(h.length, ...colValues.map((v) => v.length))
-  })
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r.cells[i].length)))
 
   // Header
   const headerLine = headers.map((h, i) => h.padEnd(widths[i])).join('  ')
@@ -134,16 +141,17 @@ function printTable(output: { log: (msg: string) => void }, rows: TableRow[]): v
   output.log(colors.dim(headerLine))
   output.log(colors.dim(separator))
 
-  // Rows
+  // Rows. Pad before coloring — ANSI escapes would otherwise count toward the column width.
   for (const row of rows) {
-    const values = Object.values(row)
-    const line = values
+    const line = row.cells
       .map((v, i) => {
         const padded = v.padEnd(widths[i])
-        return i === 0 ? colors.bold(padded) : padded
+        // Bold and dim share one intensity reset, so the muted row leaves its label unbolded
+        // rather than have the label's reset cancel the row's dim.
+        return i === 0 && row.tone !== 'muted' ? colors.bold(padded) : padded
       })
       .join('  ')
-    output.log(line)
+    output.log(TONES[row.tone](line))
   }
 
   output.log('')
@@ -237,9 +245,9 @@ export default class UtilTzConvertTask extends Command {
       )
     } else {
       const rows: TableRow[] = [
-        buildRow('Local', local, localUses24Hour()),
-        buildRow(parsed.targetName, target, parsed.targetUses24Hour),
-        buildRow('UTC', utc, true), // UTC always 24-hour
+        buildRow('Local', local, localUses24Hour(), 'plain'),
+        buildRow(parsed.targetName, target, parsed.targetUses24Hour, 'answer'),
+        buildRow('UTC', utc, true, 'muted'), // UTC always 24-hour
       ]
       printTable(output, rows)
     }
