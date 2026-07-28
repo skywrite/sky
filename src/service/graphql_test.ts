@@ -2,6 +2,7 @@ import { assert, test } from '#test'
 import * as path from 'node:path'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from '#service/server.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 
 const TEST_DIR = '/private/tmp/notebook-graphql-test'
 
@@ -432,6 +433,98 @@ test('GraphQL subscriptions real-time', async () => {
     })
 
     const expected = true
+
+    assert({ given, should, actual, expected })
+  } finally {
+    server.stop()
+    await cleanupTestDir()
+  }
+})
+
+/**
+ * Every subscription the VS Code extension opens must actually deliver.
+ *
+ * The handler dispatches on substring matches against the query text, and an
+ * unmatched field registers no listener at all — the client sees a healthy
+ * connection that simply never pushes. `tagsWithScoresUpdated` was unmatched
+ * from this file's first commit, so editor tag completions only ever refreshed
+ * on reconnect. Asserting delivery, rather than that the subscribe was
+ * accepted, is what distinguishes the two.
+ */
+test('GraphQL subscriptions deliver', async () => {
+  const given = 'every subscription the editor opens, and a store update for each'
+  const should = 'push a payload for all of them'
+
+  // Mirrors CompletionDataStore.setupSubscriptions() in extensions/vscode.
+  const subscriptions: Array<[string, string]> = [
+    ['tags', 'tagsUpdated'],
+    ['people', 'peopleUpdated'],
+    ['organizations', 'organizationsUpdated'],
+    ['peopleWithScores', 'peopleWithScoresUpdated { name score }'],
+    ['tagsWithScores', 'tagsWithScoresUpdated { name score }'],
+  ]
+
+  const dirs = await setupTestDir()
+  const server = createServer({
+    port: 0,
+    markdownDirs: [TEST_DIR],
+    paths: dirs,
+    enableFileWatcher: false,
+    markdownStoreConfig: {
+      peopleDirs: [dirs.people],
+      orgDirs: [dirs.orgs],
+    },
+  })
+  await server.start()
+
+  try {
+    const ws = new WebSocket(`ws://localhost:${server.port}/graphql`, 'graphql-transport-ws')
+    const delivered = new Set<string>()
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(finish, 5000)
+
+      function finish() {
+        clearTimeout(timeout)
+        ws.close()
+        resolve()
+      }
+
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'connection_init' }))
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data.toString())
+
+        if (message.type === 'connection_ack') {
+          for (const [id, field] of subscriptions) {
+            ws.send(
+              JSON.stringify({
+                id,
+                type: 'subscribe',
+                payload: { query: `subscription { ${field} }` },
+              }),
+            )
+          }
+
+          // Let every subscribe register before driving the store.
+          setTimeout(() => {
+            server.store.update('tags', TagSet.fromArray(['atlas']))
+            server.store.update('people', new Set(['Jane Doe']))
+            server.store.update('organizations', new Set(['Atlas']))
+            server.store.emitPersonScoresUpdated()
+            server.store.emitTagScoresUpdated()
+          }, 100)
+        }
+
+        if (message.type === 'next') delivered.add(message.id)
+        if (delivered.size === subscriptions.length) finish()
+      }
+
+      ws.onerror = finish
+    })
+
+    const actual = subscriptions.map(([id]) => id).filter((id) => !delivered.has(id))
+    const expected: string[] = []
 
     assert({ given, should, actual, expected })
   } finally {
