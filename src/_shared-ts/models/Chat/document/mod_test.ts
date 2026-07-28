@@ -1,8 +1,9 @@
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import ChatDocument from './mod.ts'
+import ChatDocument, { extractConversationSummary } from './mod.ts'
 import type { ChatTurn } from './mod.ts'
+import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog, splitContextLog } from './contextLog.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
@@ -470,6 +471,46 @@ test('ChatDocument.conversation - merges consecutive same-role turns', () => {
       { role: 'user', content: 'First thought.\n\nSecond thought.' },
       { role: 'assistant', content: 'Answer.' },
     ],
+  })
+})
+
+// --- extractConversationSummary ---
+
+test('extractConversationSummary - latest SUMMARY comment wins, fallback covers resumes', () => {
+  const withComment: ConversationMessage[] = [
+    { role: 'user', content: 'First question.' },
+    { role: 'assistant', content: 'Answer.\n\n<!-- SUMMARY: Early Topic -->' },
+    { role: 'user', content: 'Second question.' },
+    { role: 'assistant', content: 'Answer two.\n\n<!-- SUMMARY: Evolved Topic -->' },
+  ]
+  assert({
+    given: 'two assistant SUMMARY comments',
+    should: 'take the latest',
+    actual: extractConversationSummary(withComment, 'Original Summary'),
+    expected: 'Evolved Topic',
+  })
+
+  const noComment: ConversationMessage[] = [
+    { role: 'user', content: 'A question with quite a few words in it here.' },
+    { role: 'assistant', content: 'An answer without any summary comment.' },
+  ]
+  assert({
+    given: 'no SUMMARY comment but a resume fallback',
+    should: 'keep the original summary instead of guessing from first words',
+    actual: extractConversationSummary(noComment, 'Original Summary'),
+    expected: 'Original Summary',
+  })
+  assert({
+    given: 'no SUMMARY comment and no fallback',
+    should: 'fall back to the first ten words of the first user message',
+    actual: extractConversationSummary(noComment),
+    expected: 'A question with quite a few words in it here.',
+  })
+  assert({
+    given: 'an empty-string fallback',
+    should: 'ignore it and use first words',
+    actual: extractConversationSummary(noComment, ''),
+    expected: 'A question with quite a few words in it here.',
   })
 })
 
