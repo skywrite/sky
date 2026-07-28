@@ -12,12 +12,12 @@
 
 import ChatDocument from './mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
-import type { ContextTurnLog } from './contextLog.ts'
+import { type ContextTurnLog, stripEntryAnnotation } from './contextLog.ts'
 
 export interface ResumeState {
   /** Role-tagged conversation ready to seed a session's message history */
   conversation: ConversationMessage[]
-  /** Notebook-relative context universe recorded in the TURN log, first-seen order */
+  /** Notebook-relative context universe recorded in the TURN log, first-seen order, annotations stripped */
   universePaths: string[]
   /** Query set in effect at the last recorded turn */
   queries: string[]
@@ -34,8 +34,8 @@ export function reconstructResumeState(doc: ChatDocument): ResumeState {
   // hand-edited file might — dedupe so the universe fetch stays clean.
   const universe = new Set<string>()
   for (const entry of contextLog) {
-    for (const p of entry.context ?? []) universe.add(p)
-    for (const p of entry.diff ?? []) universe.add(p)
+    for (const p of entry.context ?? []) universe.add(stripEntryAnnotation(p))
+    for (const p of entry.diff ?? []) universe.add(stripEntryAnnotation(p))
   }
 
   // Every entry records the full query set at that turn (evolve replaces the

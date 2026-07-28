@@ -75,6 +75,22 @@ test('reconstructResumeState - carries the live query set from the last turn', a
   })
 })
 
+test('reconstructResumeState - strips entry annotations from the universe', async () => {
+  const state = reconstructResumeState(await readFixture('context-log-with-stats.md'))
+  assert({
+    given: 'a log with annotated CONTEXT and DIFF entries',
+    should: 'restore bare notebook paths, first-seen order',
+    actual: state.universePaths,
+    expected: [
+      'goals/2026.md',
+      'projects/Atlas/launch-plan.md',
+      'time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md',
+      'time/2026/06/01-07/06-02/journal/08_focus_Planning-The-Atlas-Beta.md',
+      'people/2020/ja/Jane-Doe.md',
+    ],
+  })
+})
+
 test('reconstructResumeState - empty CONTEXT restores an empty universe', async () => {
   const state = reconstructResumeState(await readFixture('context-log-empty-context.md'))
   assert({
