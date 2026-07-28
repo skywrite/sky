@@ -5,6 +5,7 @@ import { DIR_CODE, DIR_TIME } from '#config'
 import exists from '#shared/fs/exists.ts'
 import daysOfWeek from '#universal/dates/daysOfWeek.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { weekDir } from '#shared/nbfs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { Command, CommandResult, when as whenParam } from '#commands/mod.ts'
@@ -68,11 +69,13 @@ export default class WeekNewTask extends Command {
       output.log('')
     }
 
+    const activeStreaks = (await loadStreaks('active')).map((loaded) => loaded.streak)
+
     for (const [_i, day] of days.entries()) {
       const plainDay = PlainDate.from(day)
       const dd = new DayDirFileWriter(plainDay)
 
-      const dayObj = DayDocument.createFutureDay(plainDay)
+      const dayObj = stampStreaksList(DayDocument.createFutureDay(plainDay), activeStreaks, plainDay)
       await dd.write('day.md', dayObj.toMarkdown())
     }
 

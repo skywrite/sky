@@ -26,6 +26,7 @@ function createFullMockStore(config: {
   projectFiles?: Array<{ doc: Document; path: string }>
   decisions?: Array<{ doc: DecisionDocument; path: string }>
   goals?: Array<{ doc: GoalDocument; path: string }>
+  streaks?: Array<{ doc: Document; path: string }>
   ideas?: Array<{ doc: Document; path: string }>
   places?: Array<{ doc: PlaceDocument; path: string }>
   time?: Array<{ doc: Document; path: string }>
@@ -46,6 +47,9 @@ function createFullMockStore(config: {
     },
     goals: {
       getAll: () => Collection.from(config.goals ?? [], 'goal'),
+    },
+    streaks: {
+      getAll: () => Collection.from(config.streaks ?? [], 'streak'),
     },
     ideas: {
       getAll: () => Collection.from(config.ideas ?? [], 'idea'),

@@ -1,6 +1,7 @@
 import { PORT_SERVER, DAY_START_COMMANDS } from '#config'
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -9,7 +10,7 @@ interface UpdateStartOptions {
   day?: PlainDate
 }
 
-async function updateStartField(opts: UpdateStartOptions = {}) {
+async function updateStartField(opts: UpdateStartOptions = {}): Promise<PlainDate> {
   const { tz, day } = opts
 
   let targetDay: PlainDate
@@ -36,6 +37,22 @@ async function updateStartField(opts: UpdateStartOptions = {}) {
   }
 
   await writeDay(dayModel)
+
+  return targetDay
+}
+
+/**
+ * Reconcile the day's Streaks list with the active rules: add streaks created
+ * since the week was stamped and refresh count decorations on unstruck items.
+ */
+async function reconcileStreaks(targetDay: PlainDate) {
+  const active = (await loadStreaks('active')).map((loaded) => loaded.streak)
+  if (active.length === 0) return
+
+  const counts = await computeStreakCounts(active, targetDay)
+  const dayModel = await readDay(targetDay)
+  const stamped = stampStreaksList(dayModel, active, targetDay, counts)
+  if (stamped !== dayModel) await writeDay(stamped)
 }
 
 const params = {
@@ -85,7 +102,14 @@ export default class DayStartTask extends Command {
     }
 
     // These tasks modify the Day file, so run them sequentially
-    await updateStartField({ tz, day })
+    const targetDay = await updateStartField({ tz, day })
+
+    // Streaks are best-effort: a missing streaks/ dir or day file must not fail the start
+    try {
+      await reconcileStreaks(targetDay)
+    } catch (err) {
+      console.warn(`  [day:start] streaks: ${(err as Error).message}`)
+    }
 
     // Set location on day document
     if (tasks && !skipLocation) {

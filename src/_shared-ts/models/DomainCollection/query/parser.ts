@@ -23,6 +23,7 @@ export type DocumentType =
   | 'project'
   | 'decision'
   | 'goal'
+  | 'streak'
   | 'idea'
   | 'place'
   | 'day'
@@ -221,6 +222,7 @@ function mapType(type: string): DocumentType | '*' {
     case 'project':
     case 'decision':
     case 'goal':
+    case 'streak':
     case 'idea':
     case 'place':
     case 'day':

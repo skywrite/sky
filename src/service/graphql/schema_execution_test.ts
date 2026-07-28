@@ -331,6 +331,30 @@ Cocktail bar.`),
   },
 ]
 
+const streaks = [
+  {
+    doc: doc(`---
+name: eat-clean
+title: Eat clean
+schedule: daily
+start: 2026-02-01
+---
+# Eat clean`),
+    path: '/test/streaks/active/eat-clean.md',
+  },
+  {
+    doc: doc(`---
+name: old-habit
+title: Old habit
+schedule: daily
+start: 2025-01-01
+end: 2025-06-01
+---
+# Old habit`),
+    path: '/test/streaks/archived/old-habit.md',
+  },
+]
+
 function createMockMarkdownStore(): MarkdownStore {
   return {
     people: createMockCollection(people),
@@ -341,6 +365,7 @@ function createMockMarkdownStore(): MarkdownStore {
     },
     decisions: createMockCollection(decisions),
     goals: createMockCollection(goals),
+    streaks: createMockCollection(streaks),
     ideas: createMockCollection(ideas),
     places: createMockCollection(places),
     time: createMockCollection([...meetings, ...messages, ...videos, ...journals, ...chats, ...days]),
@@ -446,6 +471,16 @@ const CASES: SmokeCase[] = [
     expectPaths: [ideas[0].path],
   },
   {
+    field: 'streaks',
+    query: '{ streaks(where: { status: "active" }) { path } }',
+    expectPaths: [streaks[0].path],
+  },
+  {
+    field: 'streaks',
+    query: '{ streaks(where: { nameContains: "old" }) { path } }',
+    expectPaths: [streaks[1].path],
+  },
+  {
     field: 'places',
     query: '{ places(where: { country: "AR" }) { path } }',
     expectPaths: [places[0].path],
@@ -538,6 +573,7 @@ test('service yoga tracks MarkdownStore mutations via version bumps', async () =
     },
     decisions: createMockCollection(decisions),
     goals: createMockCollection(goals),
+    streaks: createMockCollection(streaks),
     ideas: createMockCollection(ideas),
     places: createMockCollection(places),
     time: { getAll: () => ({ toArray: () => liveJournals }) },

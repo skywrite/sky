@@ -8,6 +8,9 @@
 
 import type { Document } from '#shared/models/Markdown/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
+import StreakDocument, { computeStreakStats, streaksItemsFromDay, type StreakDayEntry } from '#shared/models/Streak/mod.ts'
+import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import DomainCollection from '../mod.ts'
 import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
@@ -186,6 +189,20 @@ export interface IdeaFilter {
   recent?: string
   createdRecently?: string
   updatedRecently?: string
+}
+
+export interface StreakFilter {
+  name?: string
+  nameContains?: string
+  titleContains?: string
+  status?: string
+  schedule?: string
+  tagsContains?: string
+  tagsContainsAny?: string[]
+  tagsContainsAll?: string[]
+  tagsStartsWith?: string
+  relContains?: string
+  bodyContains?: string
 }
 
 export interface PlaceFilter {
@@ -572,6 +589,42 @@ function docToIdea(doc: Document, path: string) {
   }
 }
 
+/** Status is path-derived for streaks, like ideas. */
+function streakStatusFromPath(path: string): string {
+  return path.includes('/archived/') ? 'archived' : 'active'
+}
+
+/**
+ * Constructed rather than cast, like videos: outside fromStore (mock stores,
+ * fromDocuments-built collections) a path-detected streak is a plain Document,
+ * and the stats walk needs real StreakDocument behavior.
+ */
+function toStreakDocument(doc: Document): StreakDocument {
+  return doc instanceof StreakDocument ? doc : new StreakDocument(doc.yaml, doc.markdown, doc.yamlError)
+}
+
+function docToStreak(streak: StreakDocument, path: string, stats: ReturnType<typeof computeStreakStats>) {
+  return {
+    name: streak.name,
+    title: streak.title,
+    status: streakStatusFromPath(path),
+    schedule: streak.schedule,
+    start: streak.start?.ymd ?? null,
+    end: streak.end?.ymd ?? null,
+    current: stats.current,
+    best: stats.best,
+    trackedToday: stats.trackedToday,
+    completedToday: stats.completedToday,
+    monthDone: stats.monthDone,
+    monthTracked: stats.monthTracked,
+    lastDone: stats.lastDone?.ymd ?? null,
+    tags: Array.from(streak.tags),
+    rel: Array.from(streak.rel),
+    markdown: streak.markdown,
+    path,
+  }
+}
+
 function docToPlace(doc: Document, path: string) {
   // country and city are nested inside the location YAML object
   const location = getField(doc, 'location')
@@ -862,6 +915,21 @@ function matchesIdeaFilter(doc: Document, filter: IdeaFilter, path: string, reso
   return true
 }
 
+function matchesStreakFilter(doc: Document, filter: StreakFilter, path: string): boolean {
+  if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
+  if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
+  if (filter.titleContains && !matchesContains(doc, 'title', filter.titleContains)) return false
+  if (filter.status && streakStatusFromPath(path) !== filter.status) return false
+  if (filter.schedule && !matchesExact(doc, 'schedule', filter.schedule)) return false
+  if (filter.tagsContains && !matchesTagContains(doc, filter.tagsContains)) return false
+  if (filter.tagsContainsAny && !matchesTagContainsAny(doc, filter.tagsContainsAny)) return false
+  if (filter.tagsContainsAll && !matchesTagContainsAll(doc, filter.tagsContainsAll)) return false
+  if (filter.tagsStartsWith && !matchesTagPrefix(doc, filter.tagsStartsWith)) return false
+  if (filter.relContains && !matchesRelContains(doc, filter.relContains)) return false
+  if (filter.bodyContains && !matchesBodyContains(doc, filter.bodyContains)) return false
+  return true
+}
+
 function matchesPlaceFilter(doc: Document, filter: PlaceFilter): boolean {
   if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.type && !matchesExact(doc, 'type', filter.type)) return false
@@ -1016,6 +1084,56 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
   // "JW", "Jim Wheeler"]; "James" → the highest-scored James's names.
   const resolveNames: NameResolver = createNameResolver(store.people, { scoreFor: options.scoreFor })
 
+  // Streak stats walk the day history. Built lazily on the first streak query
+  // and cached for this resolver set (= this store version). Day docs without
+  // a Streaks section are skipped via a string check before the full re-parse
+  // into a DayDocument (the scanner stores plain Documents, which have no lists).
+  let streakDayEntries: StreakDayEntry[] | null = null
+  function getStreakDayEntries(): StreakDayEntry[] {
+    if (streakDayEntries) return streakDayEntries
+    const entries: StreakDayEntry[] = []
+    for (const { doc, path } of domain.entriesByType('day')) {
+      if (!doc.markdown.includes('## Streaks')) continue
+      let day: PlainDate
+      try {
+        day = parseDateFromDayPath(path)
+      } catch {
+        continue
+      }
+      const items = streaksItemsFromDay(DayDocument.fromMarkdown(doc.toMarkdown()))
+      if (items.length > 0) entries.push({ day, items })
+    }
+    streakDayEntries = entries
+    return entries
+  }
+
+  /** Per-day completion fields for the Day type: which streaks were struck / left unstruck. */
+  function streakDayFields(doc: Document, path: string, streaks: StreakDocument[]) {
+    const empty = { streaksCompleted: [] as string[], streaksMissed: [] as string[] }
+    if (streaks.length === 0) return empty
+
+    let date: PlainDate
+    try {
+      date = parseDateFromDayPath(path)
+    } catch {
+      return empty
+    }
+
+    const items = doc.markdown.includes('## Streaks')
+      ? streaksItemsFromDay(DayDocument.fromMarkdown(doc.toMarkdown()))
+      : []
+
+    const streaksCompleted: string[] = []
+    const streaksMissed: string[] = []
+    for (const streak of streaks) {
+      if (!streak.isTrackedOn(date)) continue
+      const item = items.find((i) => streak.matchesDayItem(i))
+      if (item !== undefined && DayDocument.isItemDone(item)) streaksCompleted.push(streak.name)
+      else streaksMissed.push(streak.name)
+    }
+    return { streaksCompleted, streaksMissed }
+  }
+
   /** Sort entries by date descending (most recent first) using path-derived date. */
   function sortByDateDesc(entries: Array<{ doc: Document; path: string }>): Array<{ doc: Document; path: string }> {
     return entries.sort((a, b) => {
@@ -1150,6 +1268,23 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
       return results.map(({ doc, path }) => docToIdea(doc, path))
     },
 
+    streaks: (args: { where?: StreakFilter; limit?: number }) => {
+      const entries = domain.entriesByType('streak')
+      let results = entries
+      if (args.where) {
+        results = entries.filter(({ doc, path }) => matchesStreakFilter(doc, args.where!, path))
+      }
+      if (args.limit) {
+        results = results.slice(0, args.limit)
+      }
+      const dayEntries = getStreakDayEntries()
+      const today = PlainDate.today()
+      return results.map(({ doc, path }) => {
+        const streak = toStreakDocument(doc)
+        return docToStreak(streak, path, computeStreakStats(streak, dayEntries, today))
+      })
+    },
+
     places: (args: { where?: PlaceFilter; limit?: number }) => {
       const entries = domain.entriesByType('place')
       let results = entries
@@ -1172,7 +1307,11 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
       if (args.limit) {
         results = results.slice(0, args.limit)
       }
-      return results.map(({ doc, path }) => docToDay(doc, path))
+      const streaks = domain.entriesByType('streak').map(({ doc }) => toStreakDocument(doc))
+      return results.map(({ doc, path }) => ({
+        ...docToDay(doc, path),
+        ...streakDayFields(doc, path, streaks),
+      }))
     },
 
     journals: (args: { where?: JournalFilter; limit?: number }) => {

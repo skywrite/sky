@@ -81,6 +81,7 @@ function createMockStore(): MarkdownStore {
     projects: { ...createMockCollection([]), getDocuments: () => ({ toArray: () => [] }) },
     decisions: createMockCollection([]),
     goals: createMockCollection([]),
+    streaks: createMockCollection([]),
     ideas: createMockCollection([]),
     places: createMockCollection([]),
     time: createMockCollection([...meetingsData, ...daysData, ...journalsData]),

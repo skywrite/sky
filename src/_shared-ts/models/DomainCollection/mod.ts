@@ -10,6 +10,7 @@ import type PersonDocument from '#shared/models/Person/mod.ts'
 import type OrganizationDocument from '#shared/models/Organization/mod.ts'
 import type ProjectDocument from '#shared/models/Project/mod.ts'
 import type GoalDocument from '#shared/models/Goal/mod.ts'
+import StreakDocument from '#shared/models/Streak/mod.ts'
 import type IdeaDocument from '#shared/models/Idea/mod.ts'
 import type PlaceDocument from '#shared/models/Place/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
@@ -147,6 +148,7 @@ export default class DomainCollection {
     addAll(store.projects.getDocuments())
     addAll(store.decisions.getAll())
     addAll(store.goals.getAll())
+    addAll(store.streaks.getAll())
     addAll(store.ideas.getAll())
     addAll(store.places.getAll())
     addAll(store.time.getAll())
@@ -189,6 +191,20 @@ export default class DomainCollection {
   /** All goal documents */
   get goals(): GoalDocument[] {
     return this.collection.filter((_, path) => detectTypeFromPath(path) === 'goal').getAll() as GoalDocument[]
+  }
+
+  /**
+   * All streak documents.
+   *
+   * Constructed rather than cast (like videos): fromStore holds real
+   * StreakDocuments, but fromDocuments-built collections (ai:context) parse
+   * everything as plain Document, so the cast would lie there.
+   */
+  get streaks(): StreakDocument[] {
+    return this.collection
+      .filter((_, path) => detectTypeFromPath(path) === 'streak')
+      .getAll()
+      .map((doc) => (doc instanceof StreakDocument ? doc : new StreakDocument(doc.yaml, doc.markdown, doc.yamlError)))
   }
 
   /** All idea documents */

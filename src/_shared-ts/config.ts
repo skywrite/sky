@@ -59,6 +59,7 @@ export const DIR_PLACES = path.join(DIR_BASE, 'places')
 export const DIR_PLACES_LOCATIONS = path.join(DIR_PLACES, 'locations')
 export const DIR_PROJECTS = path.join(DIR_BASE, 'projects')
 export const DIR_PROJECTS_OPEN = path.join(DIR_PROJECTS, 'open')
+export const DIR_STREAKS = path.join(DIR_BASE, 'streaks')
 export const DIR_TIME = path.join(DIR_BASE, 'time')
 export const DIR_ORGS = path.join(DIR_BASE, 'orgs')
 
@@ -73,6 +74,7 @@ export const DIRS_MARKDOWN = [
   DIR_PEOPLE_OLD,
   DIR_PLACES,
   DIR_PROJECTS,
+  DIR_STREAKS,
   DIR_TIME,
 ]
 
