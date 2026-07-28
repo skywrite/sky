@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-26T20:20:30.334Z
+# Generated at: 2026-07-28T13:01:40.462Z
 # =============================================================================
 
 type Query {
@@ -22,6 +22,7 @@ type Query {
   goals(where: GoalFilter, limit: Int): [Goal!]!
   places(where: PlaceFilter, limit: Int): [Place!]!
   ideas(where: IdeaFilter, limit: Int): [Idea!]!
+  streaks(where: StreakFilter, limit: Int): [Streak!]!
   days(where: DayFilter, limit: Int): [Day!]!
   journals(where: JournalFilter, limit: Int): [Journal!]!
   chats(where: ChatFilter, limit: Int): [Chat!]!
@@ -193,6 +194,29 @@ type Idea {
 }
 
 """
+Habit-tracking streak rule with computed run statistics (active/archived)
+"""
+type Streak {
+  name: String! # Streak identifier/slug
+  title: String! # Human title shown in day-file Streaks lists
+  status: String! # Status: active, archived (derived from path)
+  schedule: String! # Cadence: daily, weekdays
+  start: String # First tracked day (YYYY-MM-DD)
+  end: String # Last tracked day, inclusive; a future value is a planned end
+  current: Int! # Current run in completed days (computed from day files)
+  best: Int! # Longest run ever (computed)
+  trackedToday: Boolean! # Whether today expects this streak
+  completedToday: Boolean! # Whether today is already struck
+  monthDone: Int! # Completions this month (through yesterday, plus today once done)
+  monthTracked: Int! # Tracked days this month — the consistency denominator
+  lastDone: String # Most recent completed day (YYYY-MM-DD)
+  tags: [String!]! # Tags
+  rel: [String!]! # Related entities
+  markdown: String! # Full document content (the why)
+  path: String! # File path
+}
+
+"""
 Daily note/log
 """
 type Day {
@@ -203,6 +227,8 @@ type Day {
   ended: String # Day end time
   location: String # Location
   tz: String # Timezone
+  streaksCompleted: [String!]! # Streak slugs struck done on this day
+  streaksMissed: [String!]! # Streak slugs tracked this day but not struck
   tags: [String!]! # Tags
   markdown: String! # Full document content
   path: String! # File path
@@ -434,6 +460,20 @@ input IdeaFilter {
   recent: String
   createdRecently: String
   updatedRecently: String
+}
+
+input StreakFilter {
+  name: String
+  nameContains: String
+  titleContains: String
+  status: String
+  schedule: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  relContains: String
+  bodyContains: String
 }
 
 input PlaceFilter {

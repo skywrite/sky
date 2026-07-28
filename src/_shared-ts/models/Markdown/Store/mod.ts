@@ -5,6 +5,7 @@ import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import ProjectDocument from '#shared/models/Project/mod.ts'
 import DecisionDocument from '#shared/models/Decision/mod.ts'
 import GoalDocument from '#shared/models/Goal/mod.ts'
+import StreakDocument from '#shared/models/Streak/mod.ts'
 import IdeaDocument from '#shared/models/Idea/mod.ts'
 import PlaceDocument from '#shared/models/Place/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -13,12 +14,23 @@ import OrgStore from '#shared/models/Store/OrgStore/mod.ts'
 import ProjectStore from '#shared/models/Store/ProjectStore/mod.ts'
 import DecisionStore from '#shared/models/Store/DecisionStore/mod.ts'
 import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
+import StreakStore from '#shared/models/Store/StreakStore/mod.ts'
 import IdeaStore from '#shared/models/Store/IdeaStore/mod.ts'
 import PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import DocumentStore from '#shared/models/Store/DocumentStore/mod.ts'
 import * as config from '#config'
 
-export type EntityType = 'person' | 'org' | 'project' | 'decision' | 'goal' | 'idea' | 'place' | 'url' | 'document'
+export type EntityType =
+  | 'person'
+  | 'org'
+  | 'project'
+  | 'decision'
+  | 'goal'
+  | 'streak'
+  | 'idea'
+  | 'place'
+  | 'url'
+  | 'document'
 
 export type ResolvedRef =
   | { type: 'person'; value: PersonDocument; path: string; raw: string }
@@ -26,6 +38,7 @@ export type ResolvedRef =
   | { type: 'project'; value: ProjectDocument; path: string; raw: string }
   | { type: 'decision'; value: DecisionDocument; path: string; raw: string }
   | { type: 'goal'; value: GoalDocument; path: string; raw: string }
+  | { type: 'streak'; value: StreakDocument; path: string; raw: string }
   | { type: 'idea'; value: IdeaDocument; path: string; raw: string }
   | { type: 'place'; value: PlaceDocument; path: string; raw: string }
   | { type: 'document'; value: Document; path: string; raw: string }
@@ -48,6 +61,7 @@ export interface MarkdownStoreConfig {
   projectsDir?: string
   decisionsDir?: string
   goalsDir?: string
+  streaksDir?: string
   ideasDir?: string
   placesDir?: string
   timeDirs?: string[]
@@ -60,6 +74,7 @@ export default class MarkdownStore {
   readonly projects: ProjectStore
   readonly decisions: DecisionStore
   readonly goals: GoalStore
+  readonly streaks: StreakStore
   readonly ideas: IdeaStore
   readonly places: PlaceStore
   readonly time: DocumentStore
@@ -73,6 +88,7 @@ export default class MarkdownStore {
     projects: ProjectStore,
     decisions: DecisionStore,
     goals: GoalStore,
+    streaks: StreakStore,
     ideas: IdeaStore,
     places: PlaceStore,
     time: DocumentStore,
@@ -83,6 +99,7 @@ export default class MarkdownStore {
     this.projects = projects
     this.decisions = decisions
     this.goals = goals
+    this.streaks = streaks
     this.ideas = ideas
     this.places = places
     this.time = time
@@ -90,18 +107,19 @@ export default class MarkdownStore {
   }
 
   static async build(cfg: MarkdownStoreConfig): Promise<MarkdownStore> {
-    const [people, orgs, projects, decisions, goals, ideas, places, time] = await Promise.all([
+    const [people, orgs, projects, decisions, goals, streaks, ideas, places, time] = await Promise.all([
       PeopleStore.build(cfg.peopleDirs),
       OrgStore.build(cfg.orgDirs),
       cfg.projectsDir ? ProjectStore.build(cfg.projectsDir) : Promise.resolve(ProjectStore.empty()),
       cfg.decisionsDir ? DecisionStore.build(cfg.decisionsDir) : Promise.resolve(DecisionStore.empty()),
       cfg.goalsDir ? GoalStore.build(cfg.goalsDir) : Promise.resolve(GoalStore.empty()),
+      cfg.streaksDir ? StreakStore.build(cfg.streaksDir) : Promise.resolve(StreakStore.empty()),
       cfg.ideasDir ? IdeaStore.build(cfg.ideasDir) : Promise.resolve(IdeaStore.empty()),
       cfg.placesDir ? PlaceStore.build(cfg.placesDir) : Promise.resolve(PlaceStore.empty()),
       DocumentStore.build(cfg.timeDirs ?? []),
     ])
 
-    return new MarkdownStore(people, orgs, projects, decisions, goals, ideas, places, time, cfg)
+    return new MarkdownStore(people, orgs, projects, decisions, goals, streaks, ideas, places, time, cfg)
   }
 
   /**
@@ -118,6 +136,7 @@ export default class MarkdownStore {
       projectsDir: config.DIR_PROJECTS,
       decisionsDir: config.DIR_DECISIONS,
       goalsDir: config.DIR_GOALS,
+      streaksDir: config.DIR_STREAKS,
       ideasDir: config.DIR_IDEAS,
       placesDir: config.DIR_PLACES,
       timeDirs: [config.DIR_TIME],
@@ -161,6 +180,7 @@ export default class MarkdownStore {
     if (this.dirs.projectsDir && filePath.startsWith(this.dirs.projectsDir)) return this.projects
     if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) return this.decisions
     if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) return this.goals
+    if (this.dirs.streaksDir && filePath.startsWith(this.dirs.streaksDir)) return this.streaks
     if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
     if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
     for (const dir of this.dirs.timeDirs ?? []) {
@@ -192,7 +212,7 @@ export default class MarkdownStore {
   }
 
   /**
-   * Resolution order: URL, projects/, decisions/, goals/, ideas/, places/, person, org, time doc, unresolved
+   * Resolution order: URL, projects/, decisions/, goals/, streaks/, ideas/, places/, person, org, time doc, unresolved
    */
   resolve(raw: string, context?: ResolveContext): ResolvedRef {
     // Guard against null/undefined/non-string values
@@ -246,6 +266,14 @@ export default class MarkdownStore {
         if (goal && goalPath) {
           return { type: 'goal', value: goal, path: goalPath, raw }
         }
+      }
+    }
+
+    if (raw.startsWith('streaks/')) {
+      const streakName = raw.slice('streaks/'.length)
+      const streak = this.streaks.find(streakName)
+      if (streak) {
+        return { type: 'streak', value: streak.value, path: streak.path, raw }
       }
     }
 

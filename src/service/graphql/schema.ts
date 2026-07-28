@@ -163,6 +163,7 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
     projects: (_: unknown, args: any) => liveDc()?.projects(args) ?? [],
     decisions: (_: unknown, args: any) => liveDc()?.decisions(args) ?? [],
     goals: (_: unknown, args: any) => liveDc()?.goals(args) ?? [],
+    streaks: (_: unknown, args: any) => liveDc()?.streaks(args) ?? [],
     places: (_: unknown, args: any) => liveDc()?.places(args) ?? [],
     ideas: (_: unknown, args: any) => liveDc()?.ideas(args) ?? [],
     days: (_: unknown, args: any) => liveDc()?.days(args) ?? [],

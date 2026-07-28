@@ -16,6 +16,7 @@ import { recencyScore } from './recencyScore.ts'
 const TYPE_SCORES: Record<CollectionEntityType, number> = {
   goal: 12,
   decision: 12,
+  streak: 8, // daily practices feed forward-looking journal questions
   journal: 8,
   day: 5,
   meeting: 5,

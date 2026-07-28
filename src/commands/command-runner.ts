@@ -191,6 +191,19 @@ async function run() {
       console.warn(colors.gray(`\n  Note: Command ${input} should return CommandResult.success()\n`))
     }
   }
+
+  // Rate-limited afternoon streak nudge on interactive runs. Gated here so the
+  // module (and the notebook reads behind it) only load when a nudge is even
+  // possible; streaks/day commands are excluded — they already show status.
+  try {
+    const isQuietCommand = commandName.startsWith('streaks:') || commandName.startsWith('day:')
+    if (process.stdout.isTTY && !isQuietCommand && new Date().getHours() >= 15) {
+      const { maybeNudgeStreaks } = await import('#lib/streaks/nudge.ts')
+      await maybeNudgeStreaks()
+    }
+  } catch {
+    // A nudge must never break a command
+  }
 }
 
 class CommandRunnerError extends Error {

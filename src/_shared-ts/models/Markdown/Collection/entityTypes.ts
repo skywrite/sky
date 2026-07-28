@@ -14,6 +14,7 @@ export type CollectionEntityType =
   | 'project'
   | 'decision'
   | 'goal'
+  | 'streak'
   | 'idea'
   | 'place'
   | 'message'
@@ -49,15 +50,16 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
   project: 2,
   decision: 3,
   goal: 4,
-  idea: 5,
-  place: 6,
-  message: 7,
-  meeting: 8,
-  video: 9,
-  journal: 10,
-  chat: 11,
-  document: 12,
-  day: 13,
+  streak: 5,
+  idea: 6,
+  place: 7,
+  message: 8,
+  meeting: 9,
+  video: 10,
+  journal: 11,
+  chat: 12,
+  document: 13,
+  day: 14,
 }
 
 /**
@@ -76,6 +78,7 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/projects/'), type: 'document' },
   { pattern: (p) => p.includes('/decisions/'), type: 'decision' },
   { pattern: (p) => p.includes('/goals/'), type: 'goal' },
+  { pattern: (p) => p.includes('/streaks/'), type: 'streak' },
   { pattern: (p) => p.includes('/ideas/'), type: 'idea' },
   { pattern: (p) => p.includes('/places/'), type: 'place' },
   { pattern: (p) => p.includes('/messages/') || p.includes('/slack/') || p.includes('/email/'), type: 'message' },
