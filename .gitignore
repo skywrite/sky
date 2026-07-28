@@ -5,7 +5,6 @@ Icon?
 !**/.env.example
 .claude/
 .vscode/
-docs/
 extensions/browser/
 node_modules/
 src/commands/extras
