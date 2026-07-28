@@ -8,7 +8,7 @@
  * Usage: sky ai:context:evolve "What are the financial implications?" --queries '["{ meetings... }"]'
  */
 
-import { generateObject } from 'ai'
+import { generateObject, generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { z } from 'zod'
@@ -29,6 +29,9 @@ import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
 const PROMPT_FILE = new URL('./prompts/context-evolve.prompt.md', import.meta.url).pathname
 const SCHEMA_FILE = new URL('../../../../_shared-ts/models/DomainCollection/query/schema.graphql', import.meta.url)
   .pathname
+
+/** Repair rounds for queries the schema validator rejects (mirrors ai:context:sel). */
+const MAX_QUERY_REPAIRS = 2
 
 interface EvolveResult {
   queries: string[]
@@ -159,15 +162,52 @@ export default class AIContextEvolveTask extends Command {
     // Normalization only fixes shape and repairable defects — the model
     // occasionally leaks fragments of its own structured-output envelope
     // (e.g. "{changed:true}}") into the queries array, or hallucinates filter
-    // fields the schema doesn't define. Salvage what the executor would
-    // reject: keep a query's valid selections and drop only the invalid ones
-    // (they'd fail every later evolve round too); a query with nothing
-    // salvageable is dropped whole, as before.
+    // fields the schema doesn't define. Hand the validator's errors back for
+    // repair rounds first (mirrors ai:context:sel; the instructions prefix is
+    // byte-identical across rounds, so repairs read the schema from the
+    // prompt cache). Only when repairs are exhausted, salvage what the
+    // executor would reject: keep a query's valid selections and drop only
+    // the invalid ones; a query with nothing salvageable is dropped whole.
     const queries: string[] = []
-    for (const q of normalized) {
+    for (let q of normalized) {
+      let validationErrors = await graphQLValidationErrors(q)
+      for (let attempt = 1; validationErrors && attempt <= MAX_QUERY_REPAIRS; attempt++) {
+        output.log(colors.yellow(`Query failed validation — repairing (${attempt}/${MAX_QUERY_REPAIRS})`))
+        await logAIError({
+          source: 'ai:context:evolve',
+          stage: 'invalid-query',
+          message: validationErrors.join('; '),
+          query: q,
+          question: message,
+        })
+
+        const repair = await generateText({
+          ...aiModel('balanced'),
+          instructions: cachedInstructions(systemPrompt),
+          prompt: `${parts.join('\n')}
+
+Your previous query was rejected by the GraphQL validator.
+
+Previous query:
+${q}
+
+Validation errors:
+${validationErrors.map((e) => `- ${e}`).join('\n')}
+
+Fix the query so it validates against the schema. Return ONLY the corrected GraphQL query.`,
+        })
+
+        q = normalizeGraphQLQuery(repair.text)
+        validationErrors = await graphQLValidationErrors(q)
+      }
+
+      if (!validationErrors) {
+        queries.push(q)
+        continue
+      }
+
       const salvaged = await dropInvalidSelections(q)
       if (salvaged === null) {
-        const validationErrors = (await graphQLValidationErrors(q)) ?? ['unsalvageable query']
         output.log(colors.yellow(`Dropped invalid query (${validationErrors.join('; ')})`))
         await logAIError({
           source: 'ai:context:evolve',
@@ -180,11 +220,11 @@ export default class AIContextEvolveTask extends Command {
 
       if (salvaged.dropped.length > 0) {
         const keys = salvaged.dropped.map((d) => d.key).join(', ')
-        output.log(colors.yellow(`Dropped invalid selection(s): ${keys}`))
+        output.log(colors.yellow(`Repairs exhausted — dropped invalid selection(s): ${keys}`))
         await logAIError({
           source: 'ai:context:evolve',
           stage: 'salvaged-query',
-          message: `Dropped invalid selection(s): ${keys}`,
+          message: `Dropped invalid selection(s) after repair rounds: ${keys}`,
           query: q,
           errors: salvaged.dropped.flatMap((d) => d.errors),
         })
