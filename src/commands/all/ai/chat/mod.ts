@@ -6,7 +6,7 @@ import openEditor from 'open-editor'
 import { generateText, isStepCount, jsonSchema, streamText } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
-import { mkdir, readdir } from 'node:fs/promises'
+import { mkdir, readdir, rename } from 'node:fs/promises'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -16,7 +16,8 @@ import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/contextLog.ts'
-import { reconstructResumeState } from '#shared/models/Chat/document/resume.ts'
+import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
+import { resolveUniverse } from './resolveUniverse.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
@@ -27,7 +28,7 @@ import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import createDayLabeler from '../lib/dayLabel.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
-import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
+import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter } from './_tools.ts'
 
@@ -67,9 +68,12 @@ const params = {
     default: true,
   }),
   noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
-  resume: Flag.boolean('Resume a saved chat: pick from the current day (read-only reconstruction report for now)', {
-    default: false,
-  }),
+  resume: Flag.boolean(
+    'Resume a saved chat from the current day: conversation and context restored, same file updated',
+    {
+      default: false,
+    },
+  ),
   when: whenNBTime(),
 }
 
@@ -79,20 +83,17 @@ import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
-type Result = {
-  saved?: string
-  turns?: number
-  inspect?: {
-    file: string
-    messages: number
-    exchanges: number
-    startsWithUser: boolean
-    contextLogTurns: number
-    lastTurn: number
-    queries: string[]
-    universePaths: number
-    missingPaths: string[]
-  }
+type Result = { saved?: string; turns?: number }
+
+/** Everything the save path needs to write a resumed chat back to its file. */
+interface ResumeSession {
+  filePath: string
+  created: string
+  rel: string[]
+  tags: string[]
+  /** false when yaml turns: swallowed following lines — never overwrite those */
+  frontmatterHealthy: boolean
+  state: ResumeState
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -200,86 +201,6 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   const timeStr = dt.time.replace(':', '-')
   const slug = slugify(summary)
   return `${timeStr}_${slug}.md`
-}
-
-/**
- * Read-only reconstruction report for a saved chat — what --resume shows
- * until live resume lands. Reads the file and the filesystem only; no
- * service, no writes.
- */
-async function inspectChatFile(
-  filePath: string,
-  baseDir: string,
-  output: { log: (msg: string) => void },
-): Promise<CommandResult<Result>> {
-  const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
-  const state = reconstructResumeState(doc)
-  const exchanges = Math.floor(state.conversation.length / 2)
-  const first = state.conversation[0]
-  const last = state.conversation.at(-1)
-
-  output.log(colors.bold(`Resume (read-only report): ${filePath}`))
-  output.log(`  summary: ${doc.summary || '(none)'}`)
-  output.log(
-    colors.dim(
-      `  created ${doc.yaml['created'] ?? '?'} · updated ${doc.yaml['updated'] ?? '?'} · ${doc.provider}/${doc.model}`,
-    ),
-  )
-  const tags = Array.from(doc.tags)
-  if (tags.length > 0) output.log(colors.dim(`  tags: ${tags.join('; ')}`))
-  const rel = Array.from(doc.rel)
-  if (rel.length > 0) output.log(colors.dim(`  rel: ${rel.join(', ')}`))
-
-  output.log('')
-  output.log(`  conversation: ${state.conversation.length} messages (${exchanges} exchanges)`)
-  if (first) output.log(colors.dim(`    first (${first.role}): ${truncate(first.content, 100)}`))
-  if (last && last !== first) output.log(colors.dim(`    last (${last.role}): ${truncate(last.content, 100)}`))
-  if (!first) {
-    output.log(colors.yellow('  WARNING: no conversation parsed'))
-  } else if (first.role !== 'user') {
-    output.log(colors.yellow('  WARNING: conversation does not start with a user message'))
-  }
-  if (typeof doc.yaml['turns'] !== 'number') {
-    output.log(colors.yellow('  WARNING: malformed turns: frontmatter (yaml swallowed following lines?)'))
-  } else if (doc.turnCount !== exchanges) {
-    output.log(colors.dim(`  note: frontmatter says ${doc.turnCount} turns, parsed ${exchanges}`))
-  }
-
-  output.log('')
-  const missing: string[] = []
-  if (state.contextLog.length === 0) {
-    output.log(colors.yellow('  context log: none — resume would gather fresh context (pre-log transcript)'))
-  } else {
-    output.log(`  context log: ${state.contextLog.length} turn entries, last turn ${state.lastTurn}`)
-    output.log(`  queries (${state.queries.length}):`)
-    for (const q of state.queries) {
-      output.log(colors.dim(`    - ${q.split('\n').join(' ')}`))
-    }
-
-    for (const p of state.universePaths) {
-      if (!(await exists(path.join(baseDir, p)))) missing.push(p)
-    }
-    const okCount = state.universePaths.length - missing.length
-    output.log(`  universe: ${state.universePaths.length} paths — ${okCount} exist, ${missing.length} missing`)
-    for (const p of missing) {
-      output.log(colors.yellow(`    missing: ${p}`))
-    }
-  }
-
-  return CommandResult.success({
-    turns: exchanges,
-    inspect: {
-      file: filePath,
-      messages: state.conversation.length,
-      exchanges,
-      startsWithUser: first?.role === 'user',
-      contextLogTurns: state.contextLog.length,
-      lastTurn: state.lastTurn,
-      queries: state.queries,
-      universePaths: state.universePaths.length,
-      missingPaths: missing,
-    },
-  })
 }
 
 // A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
@@ -537,8 +458,8 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
-      'sky ai:chat --resume                     # Pick a chat from today (read-only report for now)',
-      'sky ai:chat --resume --when -1d          # Pick from yesterday',
+      'sky ai:chat --resume                     # Pick a chat from today and continue it',
+      'sky ai:chat --resume --when -1d          # Resume a chat from yesterday',
     ],
     params,
   }
@@ -577,8 +498,10 @@ export default class AiChatTask extends Command {
     const dayLabeler = createDayLabeler(today)
     output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
 
-    // --resume: pick one of the day's saved chats (--when shifts the day).
-    // Until live resume lands this is a read-only reconstruction report.
+    // --resume: pick one of the day's saved chats (--when shifts the day)
+    // and continue it as if the session never exited: conversation reseeded,
+    // recorded context universe restored, and the same file updated on exit.
+    let resumeSession: ResumeSession | null = null
     if (resume) {
       const chatsDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
       const chats: Array<{ file: string; label: string; hint: string }> = []
@@ -613,7 +536,29 @@ export default class AiChatTask extends Command {
         return CommandResult.success({ turns: 0 })
       }
 
-      return await inspectChatFile(<string>picked, <string>config.DIR_BASE, output)
+      const filePath = <string>picked
+      const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
+      const state = reconstructResumeState(doc)
+      if (state.conversation.length === 0) {
+        return CommandResult.fail(`Nothing to resume: no conversation parsed from ${filePath}`)
+      }
+      resumeSession = {
+        filePath,
+        created: String(doc.yaml['created'] ?? formatDate(startTime)),
+        rel: Array.from(doc.rel),
+        tags: Array.from(doc.tags),
+        frontmatterHealthy: typeof doc.yaml['turns'] === 'number',
+        state,
+      }
+      // Resuming a saved chat: saving back is the default, not ephemeral.
+      ephemeral = false
+      if (!resumeSession.frontmatterHealthy) {
+        output.log(
+          colors.yellow(
+            'Warning: malformed frontmatter (turns: swallowed following lines) — this session will NOT overwrite the file; a recovery copy will be written on exit.',
+          ),
+        )
+      }
     }
 
     // Gather all context (summaries, health, prices)
@@ -628,92 +573,133 @@ export default class AiChatTask extends Command {
     // returning documents with markdown. Skips a local MarkdownStore.build() (~20k files).
     let initialCollection: DomainCollection | null = null
     let allFiles: string[] = []
+    let pinnedPaths: ReadonlySet<string> = new Set()
+    let peopleEntities: Awaited<ReturnType<typeof gatherPeopleEntities>> = []
 
-    output.log(colors.dim(`[server] Fetching context from server...`))
+    // A resumed chat with a TURN log restores its recorded universe exactly —
+    // no fresh baseline injection. New documents enter only through the
+    // normal evolve path afterward. (Pre-log transcripts fall through to the
+    // fresh gather below.)
+    const restoring = resumeSession !== null && resumeSession.state.contextLog.length > 0
 
-    const prevStart = today.addDays(-(days - 1))
-    const yesterday = today.addDays(-1)
+    if (restoring && resumeSession) {
+      output.log(colors.dim('[resume] Resolving recorded context universe...'))
+      t0 = performance.now()
+      const resolution = await resolveUniverse(resumeSession.state.universePaths, baseDir)
+      peopleEntities = await gatherPeopleEntities(config as Record<string, unknown>)
+      initialCollection = await mergePathsIntoCollection(
+        resolution.resolved.map((r) => path.join(baseDir, r)),
+        null,
+      )
+      // The recorded goals/decisions keep their never-prune pinning on resume.
+      pinnedPaths = new Set(
+        resolution.resolved
+          .filter((r) => r.startsWith('goals/') || r.startsWith('decisions/'))
+          .map((r) => path.join(baseDir, r)),
+      )
+      allFiles = initialCollection?.paths ?? []
 
-    // Parallel: fetch all four sets of documents from server at once,
-    // plus the interaction-ranked people list for system prompt grounding
-    t0 = performance.now()
-    // pathContains scopes the date sweeps to the time tree: project folder
-    // files carry created: dates too, and large project docs in a date
-    // sweep cost seconds of serialize for content the query-targeted rel
-    // path (ai:context:files) is meant to fetch when relevant.
-    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, peopleEntities] = await Promise.all([
-      fetchContextFromServer(`{ documents(where: { date: "${today}", pathContains: "/time/" }) { path } }`, 1),
-      fetchContextFromServer(
-        `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
-        0,
-      ),
-      fetchContextFromServer(`{ goals { path } }`, 0),
-      fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
-      gatherPeopleEntities(config as Record<string, unknown>),
-    ])
-    output.log(
-      colors.dim(
-        `[server] POST /context x4: ${(performance.now() - t0).toFixed(
+      const parts = [`${resolution.resolved.length} of ${resumeSession.state.universePaths.length} restored`]
+      if (resolution.remapped > 0) parts.push(`${resolution.remapped} via day-dir remap`)
+      if (resolution.suffixMatched > 0) parts.push(`${resolution.suffixMatched} via basename match`)
+      output.log(colors.dim(`[resume] Universe: ${parts.join(', ')} (${(performance.now() - t0).toFixed(0)}ms)`))
+      if (resolution.unresolved.length > 0) {
+        output.log(colors.yellow(`[resume] ${resolution.unresolved.length} recorded paths could not be resolved:`))
+        for (const u of resolution.unresolved.slice(0, 10)) {
+          output.log(colors.yellow(`  - ${u}`))
+        }
+        if (resolution.unresolved.length > 10) {
+          output.log(colors.yellow(`  … and ${resolution.unresolved.length - 10} more`))
+        }
+      }
+    } else {
+      output.log(colors.dim(`[server] Fetching context from server...`))
+
+      const prevStart = today.addDays(-(days - 1))
+      const yesterday = today.addDays(-1)
+
+      // Parallel: fetch all four sets of documents from server at once,
+      // plus the interaction-ranked people list for system prompt grounding
+      t0 = performance.now()
+      // pathContains scopes the date sweeps to the time tree: project folder
+      // files carry created: dates too, and large project docs in a date
+      // sweep cost seconds of serialize for content the query-targeted rel
+      // path (ai:context:files) is meant to fetch when relevant.
+      const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, people] = await Promise.all([
+        fetchContextFromServer(`{ documents(where: { date: "${today}", pathContains: "/time/" }) { path } }`, 1),
+        fetchContextFromServer(
+          `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
           0,
-        )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
-      ),
-    )
+        ),
+        fetchContextFromServer(`{ goals { path } }`, 0),
+        fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
+        gatherPeopleEntities(config as Record<string, unknown>),
+      ])
+      peopleEntities = people
+      output.log(
+        colors.dim(
+          `[server] POST /context x4: ${(performance.now() - t0).toFixed(
+            0,
+          )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
+        ),
+      )
 
-    // Group previous docs by date and apply per-day strategy
-    const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
-    for (const d of prevDocsRaw) {
-      if (!d.path.includes('/time/')) continue
-      const date = parseDateFromDayPath(d.path)?.toString()
-      if (!date) continue
-      const list = byDate.get(date) ?? []
-      list.push(d)
-      byDate.set(date, list)
-    }
-
-    const prevDocs: Array<{ doc: Document; path: string }> = []
-    for (const [, files] of byDate) {
-      const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
-      if (hasSummary) {
-        // Summary replaces raw activity, but journals and AI chats carry
-        // context the summary doesn't (mirrors journal:new's gatherContext)
-        prevDocs.push(
-          ...files.filter(
-            (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
-          ),
-        )
-      } else {
-        prevDocs.push(...files)
+      // Group previous docs by date and apply per-day strategy
+      const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
+      for (const d of prevDocsRaw) {
+        if (!d.path.includes('/time/')) continue
+        const date = parseDateFromDayPath(d.path)?.toString()
+        if (!date) continue
+        const list = byDate.get(date) ?? []
+        list.push(d)
+        byDate.set(date, list)
       }
-    }
 
-    // Deduplicate all docs by path
-    const seen = new Set<string>()
-    const allDocs: Array<{ doc: Document; path: string }> = []
-    for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
-      if (!seen.has(d.path)) {
-        seen.add(d.path)
-        allDocs.push(d)
+      const prevDocs: Array<{ doc: Document; path: string }> = []
+      for (const [, files] of byDate) {
+        const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
+        if (hasSummary) {
+          // Summary replaces raw activity, but journals and AI chats carry
+          // context the summary doesn't (mirrors journal:new's gatherContext)
+          prevDocs.push(
+            ...files.filter(
+              (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
+            ),
+          )
+        } else {
+          prevDocs.push(...files)
+        }
       }
-    }
 
-    // Goals and pending decisions are the strategic spine — never prune them.
-    // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
-    // query-boosted (+10) document when the token budget forces pruning.
-    const pinnedPaths: ReadonlySet<string> = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
-
-    allFiles = allDocs.map((d) => d.path)
-
-    if (inspectInitialContext) {
-      const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
-      for (const f of sorted) {
-        output.log(f)
+      // Deduplicate all docs by path
+      const seen = new Set<string>()
+      const allDocs: Array<{ doc: Document; path: string }> = []
+      for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
+        if (!seen.has(d.path)) {
+          seen.add(d.path)
+          allDocs.push(d)
+        }
       }
-      return CommandResult.success({ turns: 0 })
-    }
 
-    t0 = performance.now()
-    initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
-    output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
+      // Goals and pending decisions are the strategic spine — never prune them.
+      // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
+      // query-boosted (+10) document when the token budget forces pruning.
+      pinnedPaths = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
+
+      allFiles = allDocs.map((d) => d.path)
+
+      if (inspectInitialContext) {
+        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+        for (const f of sorted) {
+          output.log(f)
+        }
+        return CommandResult.success({ turns: 0 })
+      }
+
+      t0 = performance.now()
+      initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
+      output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
+    }
 
     output.log(`Found:`)
     output.log(`  - ${allFiles.length} documents (including summaries)`)
@@ -743,8 +729,9 @@ export default class AiChatTask extends Command {
     // Conversation state
     const turns: ConversationMessage[] = []
     const messages: Message[] = []
-    const createdDate = formatDate(startTime)
+    const createdDate = resumeSession?.created ?? formatDate(startTime)
     let isFirstTurn = true
+    let hasNewMessages = false
     let contextPaths: string[] = initialCollection?.paths ?? []
     let contextQueries: string[] = []
     let queryRelevantPaths: ReadonlySet<string> = new Set()
@@ -765,7 +752,9 @@ export default class AiChatTask extends Command {
     }
 
     // Rebuild system prompt with latest context and record the turn log
-    function rebuildContext(newPaths?: string[]) {
+    // (record=false for the resume-setup rebuild, which must not append a
+    // duplicate entry for an already-recorded turn)
+    function rebuildContext(newPaths?: string[], record = true) {
       const prevPaths = new Set(contextPaths)
       contextPaths = initialCollection?.paths ?? []
 
@@ -801,38 +790,76 @@ export default class AiChatTask extends Command {
         }
       }
 
-      // Record turn log
-      const entry: ContextTurnLog = {
-        turn: turnNumber,
-        queries: [...contextQueries],
-        pruned: turnPruned,
-      }
-      if (turnErrors.length > 0) {
-        entry.errors = [...turnErrors]
-      }
-      if (turnNumber === 1) {
-        entry.context = contextPaths.map(relPath).sort()
-      }
-      if (turnDiff.length > 0) {
-        entry.diff = turnDiff
-      }
-      if (turnExcluded.length > 0) {
-        entry.excluded = turnExcluded
-      }
-      contextLog.push(entry)
-
-      // Changelog UI
-      if (turnNumber > 1 && (turnDiff.length > 0 || turnPruned.length > 0)) {
-        output.log(colors.dim('Context changed:'))
-        for (const d of turnDiff) {
-          output.log(colors.dim(`  + ${d}`))
+      if (record) {
+        // Record turn log
+        const entry: ContextTurnLog = {
+          turn: turnNumber,
+          queries: [...contextQueries],
+          pruned: turnPruned,
         }
-        for (const p of turnPruned) {
-          output.log(colors.dim(`  - ${p}`))
+        if (turnErrors.length > 0) {
+          entry.errors = [...turnErrors]
+        }
+        if (turnNumber === 1) {
+          entry.context = contextPaths.map(relPath).sort()
+        }
+        if (turnDiff.length > 0) {
+          entry.diff = turnDiff
+        }
+        if (turnExcluded.length > 0) {
+          entry.excluded = turnExcluded
+        }
+        contextLog.push(entry)
+
+        // Changelog UI
+        if (turnNumber > 1 && (turnDiff.length > 0 || turnPruned.length > 0)) {
+          output.log(colors.dim('Context changed:'))
+          for (const d of turnDiff) {
+            output.log(colors.dim(`  + ${d}`))
+          }
+          for (const p of turnPruned) {
+            output.log(colors.dim(`  - ${p}`))
+          }
         }
       }
 
       contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
+    }
+
+    // Seed a resumed session: conversation, carried TURN log, query state,
+    // and turn numbering continue exactly where the transcript left off.
+    if (resumeSession) {
+      const state = resumeSession.state
+      turns.push(...state.conversation)
+      messages.push(...state.conversation.map((m) => ({ role: m.role, content: m.content })))
+      contextLog.push(...state.contextLog)
+      contextQueries = [...state.queries]
+      turnNumber = state.lastTurn
+
+      if (restoring) {
+        // Context restored — new messages continue through the evolve path.
+        isFirstTurn = false
+        rebuildContext(undefined, false)
+      } else {
+        output.log(colors.yellow('No context log in this transcript — gathering fresh context for your next message.'))
+      }
+
+      output.log('')
+      output.log(colors.bold(`Resuming: ${truncate(extractSummary(turns), 80)}`))
+      output.log(colors.dim(resumeSession.filePath))
+      const replay = turns.slice(-4)
+      if (turns.length > replay.length) {
+        output.log(colors.dim(`  … ${turns.length - replay.length} earlier messages (Ctrl+B for full history)`))
+      }
+      output.log('')
+      for (const m of replay) {
+        if (m.role === 'user') {
+          output.log(colors.cyan('You: ') + truncate(m.content, 600))
+        } else {
+          output.log(truncate(m.content, 600))
+        }
+        output.log('')
+      }
     }
 
     output.log('')
@@ -1048,11 +1075,22 @@ export default class AiChatTask extends Command {
         )
       }
 
-      // Every turn — add the user's actual message
-      messages.push({ role: 'user', content: userMessage })
-
-      // Record user turn (always just the user's actual message, not context)
-      turns.push({ role: 'user', content: userMessage })
+      // Every turn — add the user's actual message (never the context). A
+      // resumed transcript can end mid-exchange on a user message; merge into
+      // it so roles keep alternating.
+      hasNewMessages = true
+      const priorTurn = turns.at(-1)
+      if (priorTurn?.role === 'user') {
+        priorTurn.content += '\n\n' + userMessage
+      } else {
+        turns.push({ role: 'user', content: userMessage })
+      }
+      const priorMsg = messages.at(-1)
+      if (priorMsg?.role === 'user' && typeof priorMsg.content === 'string') {
+        priorMsg.content += '\n\n' + userMessage
+      } else {
+        messages.push({ role: 'user', content: userMessage })
+      }
 
       // Get AI response
       output.log(colors.dim('Thinking...'))
@@ -1238,20 +1276,27 @@ export default class AiChatTask extends Command {
       }
     }
 
-    // Save conversation if there were any turns (unless --ephemeral)
-    if (turns.length > 0 && !ephemeral) {
+    // Save conversation if there were any turns (unless --ephemeral). A
+    // resumed session with no new messages leaves its file untouched.
+    if (turns.length > 0 && !ephemeral && (!resumeSession || hasNewMessages)) {
       const endTime = (await fetchNow()).plainDateTime
       const updatedDate = formatDate(endTime)
-
-      // Create save path: {timeDir}/{dayDir}/actions/ai-chats/{filename}.md
-      const aiDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
-      if (!(await exists(aiDir))) {
-        await mkdir(aiDir, { recursive: true })
-      }
+      const exchangeCount = Math.floor(turns.length / 2)
 
       const summary = extractSummary(turns)
-      const filename = formatFilename(startTime, summary)
-      const savePath = path.join(aiDir, filename)
+      let savePath: string
+      if (resumeSession) {
+        // Write back to the original file: filename and created stay stable
+        // (day-file links and the chats resolver depend on the filename).
+        savePath = resumeSession.filePath
+      } else {
+        // Create save path: {timeDir}/{dayDir}/actions/ai-chats/{filename}.md
+        const aiDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
+        if (!(await exists(aiDir))) {
+          await mkdir(aiDir, { recursive: true })
+        }
+        savePath = path.join(aiDir, formatFilename(startTime, summary))
+      }
 
       const chatDoc = ChatDocument.create({
         summary,
@@ -1260,6 +1305,8 @@ export default class AiChatTask extends Command {
         updated: updatedDate,
         provider: reasoningProfile.provider,
         model: reasoningProfile.model,
+        rel: resumeSession?.rel,
+        tags: resumeSession?.tags,
       })
       let markdown = chatDoc.toMarkdown()
 
@@ -1268,7 +1315,37 @@ export default class AiChatTask extends Command {
       // contextLog_test.ts, byte for byte)
       markdown += serializeContextLog(contextLog)
 
-      await writeTextFile(savePath, markdown)
+      if (resumeSession) {
+        const rs = resumeSession
+        const abortOverwrite = async (why: string) => {
+          const recoveryDir = path.dirname(AI_ERROR_LOG_PATH)
+          await mkdir(recoveryDir, { recursive: true })
+          const recoveryPath = path.join(
+            recoveryDir,
+            `resume-recovery_${endTime.plainDate.ymd}_${endTime.time.replace(':', '-')}.md`,
+          )
+          await writeTextFile(recoveryPath, markdown)
+          output.log('')
+          output.log(colors.red(`NOT saved to ${rs.filePath} — ${why}.`))
+          output.log(colors.red(`Original left untouched; this session's transcript written to ${recoveryPath}`))
+          return CommandResult.success({ saved: recoveryPath, turns: exchangeCount })
+        }
+
+        if (!rs.frontmatterHealthy) {
+          return await abortOverwrite('its frontmatter is malformed and a rewrite would lose data')
+        }
+        const check = verifyResumeCandidate(markdown, rs.state)
+        if (!check.ok) {
+          return await abortOverwrite(`the write-back self-check failed (${check.reason})`)
+        }
+        // Atomic replace: a crash mid-write must never leave a truncated
+        // transcript at the original path.
+        const tmpPath = path.join(path.dirname(savePath), `.${path.basename(savePath)}.resume-tmp`)
+        await writeTextFile(tmpPath, markdown)
+        await rename(tmpPath, savePath)
+      } else {
+        await writeTextFile(savePath, markdown)
+      }
 
       if (!noEditor) {
         openEditor([{ file: savePath }])
@@ -1277,13 +1354,16 @@ export default class AiChatTask extends Command {
 
       output.log('')
       output.log(colors.green(`Conversation saved to ${savePath}`))
-      const exchangeCount = Math.floor(turns.length / 2)
       output.log(colors.dim(`${exchangeCount} turn${exchangeCount !== 1 ? 's' : ''} recorded`))
+      if (resumeSession) {
+        output.log(colors.dim('(resumed — original file updated in place)'))
+      }
 
-      // Optionally log to day file
-      if (log) {
+      // Optionally log to day file (skipped on resume: the chat was already
+      // logged when first saved, and a new time key would duplicate it)
+      if (log && !resumeSession) {
         try {
-          const relativePath = `actions/ai-chats/${filename}`
+          const relativePath = `actions/ai-chats/${path.basename(savePath)}`
           const key = `${startTime.time} > AI Chat`
           const value = `[${summary}](${relativePath})`
           const cat = category || 'Professional'
@@ -1296,13 +1376,17 @@ export default class AiChatTask extends Command {
         } catch (err) {
           output.log(colors.yellow(`Warning: Failed to log to day file: ${(err as Error).message}`))
         }
+      } else if (log && resumeSession) {
+        output.log(colors.dim('Day-file log skipped on resume.'))
       }
 
       return CommandResult.success({ saved: savePath, turns: exchangeCount })
     }
 
     output.log('')
-    if (ephemeral && turns.length > 0) {
+    if (resumeSession && !hasNewMessages) {
+      output.log(colors.dim('No new messages — file left untouched.'))
+    } else if (ephemeral && turns.length > 0) {
       output.log(colors.dim(`${Math.floor(turns.length / 2)} turns (not saved)`))
     } else {
       output.log(colors.dim('No conversation to save.'))
