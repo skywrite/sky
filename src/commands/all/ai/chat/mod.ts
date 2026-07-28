@@ -15,7 +15,11 @@ import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
-import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/contextLog.ts'
+import {
+  type ContextTurnLog,
+  serializeContextLog,
+  stripEntryAnnotation,
+} from '#shared/models/Chat/document/contextLog.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { resolveUniverse } from './resolveUniverse.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
@@ -915,6 +919,13 @@ export default class AiChatTask extends Command {
       if (restoring) {
         // Context restored — new messages continue through the evolve path.
         isFirstTurn = false
+        // Recorded DIFFs are the docs queries added in the original session,
+        // so they re-seed the query boost. Turn-1 query hits are mixed into
+        // CONTEXT with the baseline and stay unboosted — a best-effort
+        // restore, not an exact one.
+        queryRelevantPaths = new Set(
+          state.contextLog.flatMap((e) => e.diff ?? []).map((d) => path.join(baseDir, stripEntryAnnotation(d))),
+        )
         rebuildContext(undefined, false)
       } else {
         output.log(colors.yellow('No context log in this transcript — gathering fresh context for your next message.'))
@@ -1120,8 +1131,11 @@ export default class AiChatTask extends Command {
               }
             }
 
-            // Update priority paths to latest query results
-            queryRelevantPaths = new Set(initialCollection?.paths ?? [])
+            // The boost accumulates over what queries actually returned.
+            // Seeding it from the whole universe instead hands every document
+            // the same +10, which cancels out and lets the recency baseline
+            // outrank deliberate retrieval under budget pressure.
+            queryRelevantPaths = new Set([...queryRelevantPaths, ...allNewPaths])
             rebuildContext(allNewPaths)
           } else if (evolveResult.status !== 'success') {
             const message = evolveResult.message ?? 'ai:context:evolve failed'
