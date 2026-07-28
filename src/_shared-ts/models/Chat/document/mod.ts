@@ -179,6 +179,27 @@ function stripSummaryComment(text: string): string {
 }
 
 /**
+ * The conversation's running summary: the latest <!-- SUMMARY: ... -->
+ * comment the assistant emitted, else the given fallback, else the first
+ * ten words of the first user message.
+ *
+ * The fallback matters for resumed chats: saved transcripts have SUMMARY
+ * comments stripped, so if the new exchange doesn't emit one the original
+ * frontmatter summary must win over the first-words guess.
+ */
+export function extractConversationSummary(messages: ConversationMessage[], fallback?: string): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') {
+      const match = messages[i].content.match(SUMMARY_PATTERN)
+      if (match) return match[1].trim()
+    }
+  }
+  if (fallback) return fallback
+  const first = messages.find((m) => m.role === 'user')?.content ?? ''
+  return first.trim().split(/\s+/).slice(0, 10).join(' ')
+}
+
+/**
  * Convert a Section to a ChatTurn, including child sections rendered back to markdown.
  */
 function sectionToTurn(section: Section): ChatTurn {

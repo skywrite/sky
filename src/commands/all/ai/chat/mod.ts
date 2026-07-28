@@ -14,7 +14,7 @@ import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
-import ChatDocument from '#shared/models/Chat/document/mod.ts'
+import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
 import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/contextLog.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { resolveUniverse } from './resolveUniverse.ts'
@@ -89,6 +89,7 @@ type Result = { saved?: string; turns?: number }
 interface ResumeSession {
   filePath: string
   created: string
+  summary: string
   rel: string[]
   tags: string[]
   /** false when yaml turns: swallowed following lines — never overwrite those */
@@ -314,23 +315,64 @@ async function mergePathsIntoCollection(
   return existing ? existing.merge(newCollection) : newCollection
 }
 
-const SUMMARY_PATTERN = /<!--\s*SUMMARY:\s*(.+?)\s*-->/
+interface OlderChatRow {
+  path: string
+  date: string
+  when: string | null
+  summary: string | null
+  turns: number
+}
 
 /**
- * Extract the running summary from the last assistant response.
- * Falls back to first 10 words of the first user message.
+ * Second-level resume picker reaching chats from previous days via the
+ * service's chats query (listing fields only — no markdown fetched).
+ * Returns the picked absolute path, or null on cancel/none/unreachable.
  */
-function extractSummary(turns: ConversationMessage[]): string {
-  // Walk backwards through assistant turns to find the latest summary
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === 'assistant') {
-      const match = turns[i].content.match(SUMMARY_PATTERN)
-      if (match) return match[1].trim()
+async function pickOlderChat(
+  todayYmd: string,
+  baseDir: string,
+  output: { log: (msg: string) => void },
+): Promise<string | null> {
+  let rows: OlderChatRow[]
+  try {
+    const resp = await fetchWithConnectRetry(`http://localhost:${PORT_SERVER}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ chats(limit: 500) { path date when summary turns } }' }),
+    })
+    const json = (await resp.json()) as { data?: { chats?: OlderChatRow[] }; errors?: Array<{ message: string }> }
+    if (!json.data?.chats) {
+      output.log(colors.yellow(`Older chats unavailable: ${json.errors?.[0]?.message ?? 'empty response'}`))
+      return null
     }
+    rows = json.data.chats
+  } catch (err) {
+    output.log(colors.yellow(`Older chats unavailable — notebook service unreachable (${(err as Error).message})`))
+    return null
   }
-  // Fallback: first 10 words of first user message
-  const first = turns.find((t) => t.role === 'user')?.content ?? ''
-  return first.trim().split(/\s+/).slice(0, 10).join(' ')
+
+  const older = rows
+    .filter((c) => c.date !== todayYmd)
+    .sort((a, b) => (b.date + (b.when ?? '')).localeCompare(a.date + (a.when ?? '')))
+    .slice(0, 100)
+  if (older.length === 0) {
+    output.log(colors.yellow('No older chats found.'))
+    return null
+  }
+
+  const picked = await p.select({
+    message: 'Resume which chat?',
+    options: older.map((c) => ({
+      value: path.isAbsolute(c.path) ? c.path : path.join(baseDir, c.path),
+      label: `${c.date} ${c.when ?? ''}  ${truncate(c.summary || path.basename(c.path), 60)}`,
+      hint: `${c.turns} turn${c.turns === 1 ? '' : 's'}`,
+    })),
+  })
+  if (p.isCancel(picked)) {
+    output.log(colors.dim('Cancelled.'))
+    return null
+  }
+  return <string>picked
 }
 
 // -----------------------------------------------------------------------------
@@ -449,6 +491,12 @@ export default class AiChatTask extends Command {
       'Chats are ephemeral by default — toggle saving with Ctrl+S (or /save, /log)',
       'to write the conversation to the {day}/actions/ai-chats/ folder.',
       'Saved chats are searchable in later sessions via the chats GraphQL query.',
+      '',
+      'Resume: --resume lists the saved chats for the day (--when shifts the day,',
+      'and Older… reaches previous days). The picked chat continues as if the',
+      'session never exited — conversation reseeded, recorded context restored',
+      'from the TURN log — and exiting updates the same file in place. Saving is',
+      'on by default when resuming; exiting with no new messages touches nothing.',
     ],
     usage: [
       'sky ai:chat                              # Claude Opus 4.8 (default), Haiku for fast',
@@ -522,21 +570,34 @@ export default class AiChatTask extends Command {
         }
       }
 
+      const OLDER = '__older__'
+      let filePath: string
       if (chats.length === 0) {
-        output.log(colors.yellow(`No saved chats for ${today}.`))
-        return CommandResult.success({ turns: 0 })
+        output.log(colors.dim(`No saved chats for ${today} — showing older chats.`))
+        const older = await pickOlderChat(String(today), <string>config.DIR_BASE, output)
+        if (!older) return CommandResult.success({ turns: 0 })
+        filePath = older
+      } else {
+        const picked = await p.select({
+          message: `Resume which chat from ${today}?`,
+          options: [
+            ...chats.map((c) => ({ value: c.file, label: c.label, hint: c.hint })),
+            { value: OLDER, label: 'Older…', hint: 'previous days' },
+          ],
+        })
+        if (p.isCancel(picked)) {
+          output.log(colors.dim('Cancelled.'))
+          return CommandResult.success({ turns: 0 })
+        }
+        if (picked === OLDER) {
+          const older = await pickOlderChat(String(today), <string>config.DIR_BASE, output)
+          if (!older) return CommandResult.success({ turns: 0 })
+          filePath = older
+        } else {
+          filePath = <string>picked
+        }
       }
 
-      const picked = await p.select({
-        message: `Resume which chat from ${today}?`,
-        options: chats.map((c) => ({ value: c.file, label: c.label, hint: c.hint })),
-      })
-      if (p.isCancel(picked)) {
-        output.log(colors.dim('Cancelled.'))
-        return CommandResult.success({ turns: 0 })
-      }
-
-      const filePath = <string>picked
       const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
       const state = reconstructResumeState(doc)
       if (state.conversation.length === 0) {
@@ -545,6 +606,7 @@ export default class AiChatTask extends Command {
       resumeSession = {
         filePath,
         created: String(doc.yaml['created'] ?? formatDate(startTime)),
+        summary: doc.summary,
         rel: Array.from(doc.rel),
         tags: Array.from(doc.tags),
         frontmatterHealthy: typeof doc.yaml['turns'] === 'number',
@@ -845,7 +907,7 @@ export default class AiChatTask extends Command {
       }
 
       output.log('')
-      output.log(colors.bold(`Resuming: ${truncate(extractSummary(turns), 80)}`))
+      output.log(colors.bold(`Resuming: ${truncate(resumeSession.summary || extractConversationSummary(turns), 80)}`))
       output.log(colors.dim(resumeSession.filePath))
       const replay = turns.slice(-4)
       if (turns.length > replay.length) {
@@ -1283,7 +1345,9 @@ export default class AiChatTask extends Command {
       const updatedDate = formatDate(endTime)
       const exchangeCount = Math.floor(turns.length / 2)
 
-      const summary = extractSummary(turns)
+      // A resumed chat keeps its original summary unless a new SUMMARY
+      // comment supersedes it — never the first-words guess.
+      const summary = extractConversationSummary(turns, resumeSession?.summary)
       let savePath: string
       if (resumeSession) {
         // Write back to the original file: filename and created stay stable
