@@ -823,6 +823,12 @@ export default class AiChatTask extends Command {
       let activityMarkdown: string | null = null
       const turnPruned: string[] = []
       const turnExcluded: string[] = []
+      // Annotated form of each universe path for CONTEXT/DIFF entries — same
+      // (score, ~tokens) shape PRUNED has always carried, so the saved log
+      // shows what every doc cost, not just the cut ones. Resume recovers the
+      // bare path via stripEntryAnnotation.
+      const entryAnnotations = new Map<string, string>()
+      let turnStats: string | undefined
 
       if (initialCollection) {
         const assembler = ContextAssembler.from(initialCollection, {
@@ -842,13 +848,18 @@ export default class AiChatTask extends Command {
           const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
           turnExcluded.push(`${relPath(s.item.path)} (${reason}, ~${s.tokens} tokens)`)
         }
+        for (const s of [...assembler.kept, ...assembler.pruned]) {
+          const note = s.verdict.keep === 'always' ? 'pinned' : `score=${s.score}`
+          entryAnnotations.set(s.item.path, `${relPath(s.item.path)} (${note}, ~${s.tokens} tokens)`)
+        }
+        turnStats = `kept=${assembler.size} pruned=${assembler.pruned.length} excluded=${assembler.excluded.length} ~tokens=${assembler.totalTokens}`
       }
 
       // Compute diff: files new to the universe this turn
       const turnDiff: string[] = []
       if (newPaths) {
         for (const p of newPaths) {
-          if (!prevPaths.has(p)) turnDiff.push(relPath(p))
+          if (!prevPaths.has(p)) turnDiff.push(entryAnnotations.get(p) ?? relPath(p))
         }
       }
 
@@ -859,11 +870,14 @@ export default class AiChatTask extends Command {
           queries: [...contextQueries],
           pruned: turnPruned,
         }
+        if (turnStats) {
+          entry.stats = turnStats
+        }
         if (turnErrors.length > 0) {
           entry.errors = [...turnErrors]
         }
         if (turnNumber === 1) {
-          entry.context = contextPaths.map(relPath).sort()
+          entry.context = contextPaths.map((p) => entryAnnotations.get(p) ?? relPath(p)).sort()
         }
         if (turnDiff.length > 0) {
           entry.diff = turnDiff

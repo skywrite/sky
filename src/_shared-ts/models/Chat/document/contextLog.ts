@@ -9,7 +9,10 @@
  * `serializeContextLog` must stay byte-identical to what ai:chat has always
  * written — every saved chat in the notebook is in this exact format, and
  * `body + serializeContextLog(entries) === markdown` must hold for any file
- * the writer produced (the round-trip law the tests pin down).
+ * the writer produced (the round-trip law the tests pin down). The format
+ * may gain sections over time (STATS and entry annotations arrived after the
+ * first vintage); every addition must be optional so files of any vintage
+ * keep satisfying the law.
  *
  * Files on disk may additionally have been whitespace-normalized after the
  * fact (line-trailing spaces stripped, final newline collapsed) — the parser
@@ -20,11 +23,28 @@
 export interface ContextTurnLog {
   turn: number
   queries: string[]
-  context?: string[] // full context list (turn 1 only)
-  diff?: string[] // files added to universe
+  /** Single-line totals, e.g. `kept=98 pruned=12 excluded=0 ~tokens=201455` */
+  stats?: string
+  context?: string[] // full context universe (turn 1 only); entries may carry an annotation
+  diff?: string[] // files added to universe; entries may carry an annotation
   pruned: string[] // eligible files cut by the token budget
   excluded?: string[] // files excluded by scorer verdict (with reasons)
   errors?: string[] // context queries that failed this turn (also in ai-errors.jsonl)
+}
+
+const STATS_PREFIX = 'STATS: '
+
+/**
+ * CONTEXT and DIFF entries may end with ` (score=…, ~N tokens)` or
+ * ` (pinned, ~N tokens)` — the same shape PRUNED entries have always had.
+ * Consumers that need the bare notebook path (resume's universe
+ * reconstruction) strip it here; entries without an annotation pass through
+ * untouched, including filenames that legitimately contain parentheses.
+ */
+const ENTRY_ANNOTATION = / \((?:pinned|score=[^,()]*), ~\d+ tokens\)$/
+
+export function stripEntryAnnotation(entry: string): string {
+  return entry.replace(ENTRY_ANNOTATION, '')
 }
 
 export function serializeContextLog(entries: ContextTurnLog[]): string {
@@ -35,6 +55,9 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     comment += `<!-- TURN ${entry.turn}\n`
     if (entry.queries.length > 0) {
       comment += 'QUERIES:\n' + entry.queries.map((q) => ` - ${q}`).join('\n') + '\n'
+    }
+    if (entry.stats) {
+      comment += `STATS: ${entry.stats}\n`
     }
     if (entry.context) {
       comment += 'CONTEXT:\n' + entry.context.map((p) => ` - ${p}`).join('\n') + '\n'
@@ -130,6 +153,16 @@ function parseEntry(turn: number, inner: string): ContextTurnLog {
       section = header
       items = []
       entry[header] = items
+      continue
+    }
+    // STATS is a single value line, not an item section. Prefix-matched, so a
+    // multi-line query containing a line that starts with `STATS: ` would be
+    // misread — the same theoretical collision the exact-line section headers
+    // already accept.
+    if (line.startsWith(STATS_PREFIX)) {
+      entry.stats = line.slice(STATS_PREFIX.length)
+      section = null
+      items = null
       continue
     }
     if (section && items && line.startsWith(ITEM_MARKERS[section])) {

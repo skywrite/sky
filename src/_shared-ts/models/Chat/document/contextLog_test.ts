@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { type ContextTurnLog, serializeContextLog, splitContextLog } from './contextLog.ts'
+import { type ContextTurnLog, serializeContextLog, splitContextLog, stripEntryAnnotation } from './contextLog.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 
@@ -99,6 +99,34 @@ const logFixtures: LogFixture[] = [
     ],
   },
   {
+    file: 'context-log-with-stats.md',
+    description: 'STATS lines and annotated CONTEXT/DIFF entries',
+    expected: [
+      {
+        turn: 1,
+        queries: ['{ projects(where: { nameContains: "Atlas" }) { path } }'],
+        stats: 'kept=3 pruned=1 excluded=0 ~tokens=5200',
+        context: [
+          'goals/2026.md (pinned, ~800 tokens)',
+          'projects/Atlas/launch-plan.md (score=9.5, ~2600 tokens)',
+          'time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=2.1, ~3100 tokens)',
+          'time/2026/06/01-07/06-02/journal/08_focus_Planning-The-Atlas-Beta.md (score=6.5, ~1800 tokens)',
+        ],
+        pruned: ['time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=2.1, ~3100 tokens)'],
+      },
+      {
+        turn: 2,
+        queries: [
+          '{ projects(where: { nameContains: "Atlas" }) { path } }',
+          '{ people(where: { nameContains: "Jane Doe" }) { path } }',
+        ],
+        stats: 'kept=4 pruned=1 excluded=0 ~tokens=6100',
+        diff: ['people/2020/ja/Jane-Doe.md (score=8.2, ~900 tokens)'],
+        pruned: ['time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=2.1, ~3100 tokens)'],
+      },
+    ],
+  },
+  {
     file: 'context-log-whitespace-trimmed.md',
     description: 'a whitespace-normalized file (bare-dash query, trimmed EOF)',
     law: 'whitespace-normalized',
@@ -183,5 +211,41 @@ test('serializeContextLog - empty input serializes to empty string', () => {
     should: 'produce no trailing log at all',
     actual: serializeContextLog([]),
     expected: '',
+  })
+})
+
+test('stripEntryAnnotation - recovers the bare path from every annotation form', () => {
+  assert({
+    given: 'a score annotation with a full-precision float',
+    should: 'strip it',
+    actual: stripEntryAnnotation('projects/Atlas/plan.md (score=7.123456789012345, ~4321 tokens)'),
+    expected: 'projects/Atlas/plan.md',
+  })
+  assert({
+    given: 'a pinned annotation',
+    should: 'strip it',
+    actual: stripEntryAnnotation('goals/2026.md (pinned, ~800 tokens)'),
+    expected: 'goals/2026.md',
+  })
+  assert({
+    given: 'a negative score',
+    should: 'strip it',
+    actual: stripEntryAnnotation('time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=-2, ~40 tokens)'),
+    expected: 'time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md',
+  })
+})
+
+test('stripEntryAnnotation - leaves unannotated entries untouched', () => {
+  assert({
+    given: 'a bare path',
+    should: 'pass it through',
+    actual: stripEntryAnnotation('goals/2026.md'),
+    expected: 'goals/2026.md',
+  })
+  assert({
+    given: 'a filename that legitimately ends in parentheses',
+    should: 'pass it through',
+    actual: stripEntryAnnotation('notes/Atlas (draft).md'),
+    expected: 'notes/Atlas (draft).md',
   })
 })
