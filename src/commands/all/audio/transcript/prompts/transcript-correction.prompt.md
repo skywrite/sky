@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-13
-updated: 2026-01-26
+updated: 2026-07-29
 description: Apply transcription corrections and add natural paragraph breaks
 ---
 
@@ -17,7 +17,7 @@ Apply the following corrections to this transcript and add natural paragraph bre
 
 ## Output Requirements
 
-1. **Apply corrections**: Replace the words listed in the corrections
+1. **Apply corrections**: Replace EVERY occurrence of each listed `originalText` — a correction applies transcript-wide, and its `occurrences` count says how many instances to expect
 2. **Add natural paragraph breaks**: Insert blank lines between paragraphs where there are natural topic shifts or pauses in the conversation. A transcript that is one giant wall of text is hard to read - break it into digestible paragraphs.
 3. **No additions**: Do NOT add speaker labels, timestamps, headers, bullet points, or markdown formatting
 4. **Clean output**: Return only the corrected transcript text, no code fences or explanations
