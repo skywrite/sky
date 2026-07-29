@@ -1,11 +1,15 @@
 import { assert, test } from '#test'
 import { mkdir, rm, symlink } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { isValidTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import delay from '#universal/async/delay.ts'
 import { readSystemTimezone, timezoneFromZoneinfoPath } from './systemTimezone.ts'
 
-const TEST_DIR = '/private/tmp/sky-system-timezone-test'
+// realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and
+// /var are symlinks into /private)
+const TEST_DIR = path.join(realpathSync(os.tmpdir()), 'sky-system-timezone-test')
 
 const parseFixtures = [
   {

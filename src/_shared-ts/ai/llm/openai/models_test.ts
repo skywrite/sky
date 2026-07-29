@@ -1,7 +1,12 @@
 import { assert, test } from '#test'
 import { listModels } from './listModels.ts'
+import isOnline from '#shared/network/isOnline.ts'
+import { env } from '#shared/sys/mod.ts'
 
-test('listModels - returns array of model IDs', async () => {
+// Live API call — needs a key (absent on CI) and network.
+const ignore = !env.get('OPENAI_API_KEY') || !(await isOnline())
+
+test('listModels - returns array of model IDs', { ignore }, async () => {
   const models = await listModels()
 
   assert({

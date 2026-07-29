@@ -1,10 +1,14 @@
 import { assert, test } from '#test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { createServer } from '#service/server.ts'
 import MarkdownSelectorTask from './sel.ts'
 
-const TEST_DIR = '/private/tmp/notebook-sel-test'
+// realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and
+// /var are symlinks into /private)
+const TEST_DIR = path.join(realpathSync(os.tmpdir()), 'notebook-sel-test')
 
 async function setupTestDir() {
   await rm(TEST_DIR, { recursive: true, force: true })
