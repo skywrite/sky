@@ -3,7 +3,7 @@ import { unlink } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import { DIR_TIME } from '#config'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
@@ -92,7 +92,7 @@ export default class SlackNewTask extends Command {
     const whoSlug = slugify(who, { preserveCase: true, suggestedLength: 40 })
     const summarySlug = slugify(<string>summary, { preserveCase: true, suggestedLength: 30 })
     const partialSlug = summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug
-    const fileName = `actions/messages/slack_${partialSlug}.md`
+    const fileName = messageFileName(when, 'slack', partialSlug)
 
     const ddfw = new DayDirFileWriter(whenDate)
 
