@@ -18,10 +18,15 @@ test('MarkdownWatcher yields create event for new .md file', async () => {
 
   await delay(500)
 
+  // Watcher startup and event delivery are slow on CI runners: keep re-writing
+  // (same contents) until the watcher reports the file, up to a deadline. A
+  // rewrite fires a modify event even if the watcher missed the creation.
   const filePath = path.join(tempDir, 'test.md')
-  await writeFile(filePath, '# Hello')
-
-  await delay(1000)
+  const deadline = performance.now() + 8000
+  while (performance.now() < deadline && !events.some((e) => e.file === filePath)) {
+    await writeFile(filePath, '# Hello')
+    await delay(250)
+  }
 
   watcher.close()
   await collecting
@@ -59,13 +64,17 @@ test('MarkdownWatcher ignores non-.md files', async () => {
 
   await delay(500)
 
+  // Same re-write loop as above: writing both files each round also gives the
+  // .txt file every chance to (wrongly) emit before the negative assertion.
   const txtPath = path.join(tempDir, 'test.txt')
-  await writeFile(txtPath, 'plain text')
-
   const mdPath = path.join(tempDir, 'test.md')
-  await writeFile(mdPath, '# Markdown')
-
-  await delay(1000)
+  const deadline = performance.now() + 8000
+  while (performance.now() < deadline && !events.some((e) => e.file === mdPath)) {
+    await writeFile(txtPath, 'plain text')
+    await writeFile(mdPath, '# Markdown')
+    await delay(250)
+  }
+  await delay(300)
 
   watcher.close()
   await collecting
