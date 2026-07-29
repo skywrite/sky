@@ -8,6 +8,7 @@ import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
 import { currentTimezoneIANA, timezoneToOffsetString } from '#universal/dates/timezones/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { nextClockChange } from './lib/nextClockChange.ts'
 import { resolveAnchor } from './lib/resolveAnchor.ts'
 
 const SYSTEM_PROMPT_FILE = new URL('./prompts/tz-convert-system.prompt.md', import.meta.url).pathname
@@ -115,7 +116,22 @@ interface TableRow {
   tone: RowTone
 }
 
+// Date of the zone's next clock change, in that zone's own local terms. "N/A" reads better
+// than a blank for zones that never shift.
+function formatNextClockChange(timezone: string, from: Date): string {
+  const change = nextClockChange(timezone, from)
+  if (!change) return 'N/A'
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric' }).format(
+    change.at,
+  )
+  // Always signed — the direction is the point, so "+1h" is worth the character over "1h".
+  const sign = change.deltaHours < 0 ? '-' : '+'
+  return `${date} (${sign}${Math.abs(change.deltaHours)}h)`
+}
+
 function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean, tone: RowTone): TableRow {
+  // Both the offset and the clock change are read at the instant being converted, so a query
+  // about a future date reports the shift that follows *it*, not the one following today.
   const jsDate = zdt.toTimeDateValue()
   return {
     cells: [
@@ -124,6 +140,7 @@ function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean, tone
       formatDate(zdt),
       timezoneToOffsetString(zdt.timezone, jsDate),
       zdt.timezone,
+      formatNextClockChange(zdt.timezone, jsDate),
     ],
     tone,
   }
@@ -131,7 +148,7 @@ function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean, tone
 
 function printTable(output: { log: (msg: string) => void }, rows: TableRow[]): void {
   // Calculate column widths
-  const headers = ['Location', 'Time', 'Date', 'Offset', 'Timezone']
+  const headers = ['Location', 'Time', 'Date', 'Offset', 'Timezone', 'Next DST']
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r.cells[i].length)))
 
   // Header
