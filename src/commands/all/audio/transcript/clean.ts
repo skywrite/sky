@@ -10,6 +10,7 @@ import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 import SRT from './lib/SRT/mod.ts'
+import { dedupeIssues } from './lib/dedupeIssues.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -165,9 +166,9 @@ const TranscriptIssueSchema = z.object({
         .enum(['filler', 'stutter', 'false_start', 'unclear', 'technical', 'name', 'inaudible', 'crosstalk'])
         .catch('unclear'),
       confidence: z.enum(['high', 'medium', 'low']),
-      lineNumber: z.number(),
+      occurrences: z.number().int().positive().catch(1).default(1),
       originalText: z.string(),
-      context: z.string(),
+      contexts: z.array(z.string()).catch([]).default([]),
       suggestedFix: z.string().nullish(),
       options: z.array(z.string()).nullish(),
     }),
@@ -179,10 +180,18 @@ const TranscriptIssueSchema = z.object({
 
 type TranscriptIssue = z.infer<typeof TranscriptIssueSchema>['issues'][number]
 
+/** "(N instances)" when issues cover more instances than entries, else empty. */
+function instancesSuffix(issues: TranscriptIssue[]): string {
+  const total = issues.reduce((sum, issue) => sum + issue.occurrences, 0)
+  return total > issues.length ? ` (${total} instances)` : ''
+}
+
 interface UserCorrection {
   issueIndex: number
   originalText: string
   correction: string
+  /** Instances behind this entry — the correction phase must hit them all. */
+  occurrences: number
   action: 'accept' | 'custom' | 'skip'
 }
 
@@ -410,6 +419,14 @@ ${transcript}
       return CommandResult.error(error, 'Failed to analyze transcript')
     }
 
+    // The contract asks for one issue per distinct problem, but models leak
+    // per-instance duplicates — merge them so one answer covers every occurrence.
+    const rawIssueCount = analysis.issues.length
+    analysis.issues = dedupeIssues(analysis.issues)
+    if (analysis.issues.length < rawIssueCount) {
+      output.log(colors.gray(`Merged ${rawIssueCount - analysis.issues.length} duplicate issues`))
+    }
+
     // Separate high-confidence (auto-apply) from medium/low (need review)
     const autoFixIssues = analysis.issues.filter((i) => i.confidence === 'high')
     const reviewIssues = analysis.issues.filter((i) => i.confidence !== 'high')
@@ -428,10 +445,12 @@ ${transcript}
     }
 
     if (autoFixIssues.length > 0) {
-      output.log(colors.green(`Auto-fixing ${autoFixIssues.length} high-confidence issues`))
+      output.log(
+        colors.green(`Auto-fixing ${autoFixIssues.length} high-confidence issues${instancesSuffix(autoFixIssues)}`),
+      )
     }
     if (reviewIssues.length > 0) {
-      output.log(colors.yellow(`${reviewIssues.length} issues need your review`))
+      output.log(colors.yellow(`${reviewIssues.length} issues need your review${instancesSuffix(reviewIssues)}`))
     }
     if (autoFixIssues.length === 0 && reviewIssues.length === 0) {
       output.log(colors.green('No issues found! Transcript looks clean.'))
@@ -445,6 +464,7 @@ ${transcript}
       issueIndex: i,
       originalText: issue.originalText,
       correction: issue.suggestedFix || '',
+      occurrences: issue.occurrences,
       action: 'accept' as const,
     }))
 
@@ -672,18 +692,20 @@ ${cleanedTranscript}
 
       // Build context display
       const issueLabel = this.getIssueTypeLabel(issue.type)
-      const contextLines = [
-        '',
-        colors.dim(`─── Issue ${i + 1} of ${issues.length} ───`),
-        '',
-        `${issueLabel}`,
-        '',
-        colors.dim('Context:'),
-        `  ${issue.context}`,
+      const contextLines = ['', colors.dim(`─── Issue ${i + 1} of ${issues.length} ───`), '', `${issueLabel}`]
+
+      if (issue.contexts.length > 0) {
+        contextLines.push('', colors.dim(issue.contexts.length > 1 ? 'Contexts:' : 'Context:'))
+        for (const context of issue.contexts) {
+          contextLines.push(`  ${context}`)
+        }
+      }
+
+      contextLines.push(
         '',
         colors.dim('Problem:'),
-        `  ${colors.red(issue.originalText)}`,
-      ]
+        `  ${colors.red(issue.originalText)}${issue.occurrences > 1 ? colors.dim(` ×${issue.occurrences}`) : ''}`,
+      )
 
       if (issue.suggestedFix) {
         contextLines.push('')
@@ -763,6 +785,7 @@ ${cleanedTranscript}
           issueIndex: i,
           originalText: issue.originalText,
           correction: '',
+          occurrences: issue.occurrences,
           action: 'skip',
         })
         p.log.info(colors.dim('Skipped'))
@@ -781,6 +804,7 @@ ${cleanedTranscript}
             issueIndex: i,
             originalText: issue.originalText,
             correction: '',
+            occurrences: issue.occurrences,
             action: 'skip',
           })
           p.log.info(colors.dim('Skipped'))
@@ -789,6 +813,7 @@ ${cleanedTranscript}
             issueIndex: i,
             originalText: issue.originalText,
             correction: customInput as string,
+            occurrences: issue.occurrences,
             action: 'custom',
           })
           p.log.success(`Custom: ${customInput}`)
@@ -802,6 +827,7 @@ ${cleanedTranscript}
         issueIndex: i,
         originalText: issue.originalText,
         correction: correctionText,
+        occurrences: issue.occurrences,
         action: 'accept',
       })
       p.log.success(`Accepted: ${correctionText}`)

@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-13
-updated: 2026-01-26
+updated: 2026-07-29
 description: Analyze transcript for transcription errors and clean-up opportunities
 ---
 
@@ -65,6 +65,15 @@ Identify issues and assign a confidence level to each:
 - **medium**: You're 60-90% sure. Show suggestion but let user confirm.
 - **low**: You're <60% sure or multiple valid options exist. Must prompt user.
 
+## One Issue Per Distinct Problem
+
+Report each distinct problem ONCE — never one issue per instance.
+
+- A term misheard repeatedly ("Novack" 25 times) is ONE issue with `occurrences: 25`; its correction is applied to every instance.
+- Repeated fillers work the same way: all the "um"s are ONE issue with an occurrence count. Estimates are fine.
+- `contexts` holds 1-3 representative samples. For a one-off issue include the sentence before and after; for a recurring term one sentence per sample is enough.
+- Only split the same text into separate issues when different places genuinely need DIFFERENT corrections.
+
 ## People Extraction
 
 In addition to issues, extract two lists of people:
@@ -85,9 +94,9 @@ If no participants or mentioned people can be identified, use empty arrays. Do N
     {
       "type": "filler" | "stutter" | "false_start" | "unclear" | "technical" | "name" | "inaudible" | "crosstalk",
       "confidence": "high" | "medium" | "low",
-      "lineNumber": 1,
+      "occurrences": 25,
       "originalText": "the problematic text",
-      "context": "Include the sentence BEFORE, the problem sentence, and the sentence AFTER for full context",
+      "contexts": ["1-3 representative samples, each showing the problem text with enough surrounding words to judge it"],
       "suggestedFix": "corrected text (empty string to remove)",
       "options": ["alternative1", "alternative2"]
     }
