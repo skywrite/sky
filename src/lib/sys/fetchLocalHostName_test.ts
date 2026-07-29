@@ -1,7 +1,11 @@
 import { assert, test } from '#test'
+import process from 'node:process'
 import fetchLocalHostName from './fetchLocalHostName.ts'
 
-test(fetchLocalHostName.name, async () => {
+// scutil is macOS-only
+const ignore = process.platform !== 'darwin'
+
+test(fetchLocalHostName.name, { ignore }, async () => {
   const given = ''
   const should = 'return computer name in sluggified form'
 
