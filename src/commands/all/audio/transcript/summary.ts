@@ -176,6 +176,7 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     let transcript: string
     let pipelineWho: string[] = []
+    let pipelineRel: string[] = []
     let pipelineAudioFilePath: string | null = null
     let pipelineDuration: number | null = null
     let transcriptFilePath: string | null = null
@@ -191,6 +192,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       }
       transcript = cleanResult.data.cleanedText
       pipelineWho = cleanResult.data.who
+      pipelineRel = cleanResult.data.rel
       pipelineAudioFilePath = cleanResult.data.audioFilePath
       pipelineDuration = cleanResult.data.durationMinutes
       transcriptFilePath = cleanResult.data.transcriptFilePath
@@ -309,11 +311,12 @@ export default class AudioTranscriptSummaryTask extends Command {
     // model's guess from the summary prose. User corrections below still override.
     if (pipelineDuration !== null) extractedDuration = pipelineDuration
 
-    // Merge who: prefer the analysis step's attendees — it phonetically matched names
+    // Merge who/rel: prefer the analysis step's lists — it phonetically matched names
     // against known contacts (canonical full names), so it's the authoritative source.
-    // Fall back to the summary-extracted list on the paste/file path (no analysis step).
-    // Shown in the confirmation box below; user corrections override it.
+    // Fall back to the summary-extracted lists on the paste/file path (no analysis step).
+    // Shown in the confirmation box below; user corrections override them.
     let finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
+    let finalRel = pipelineRel.length > 0 ? pipelineRel : extractedRel
 
     const finalTitle = title !== 'Transcript Summary' ? title : extractedTitle
 
@@ -339,7 +342,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     } else {
       output.log(colors.white(`  Who:      ${finalWho.length > 0 ? finalWho.join(', ') : '(none)'}`))
     }
-    output.log(colors.white(`  Rel:      ${extractedRel.length > 0 ? extractedRel.join(', ') : '(none)'}`))
+    output.log(colors.white(`  Rel:      ${finalRel.length > 0 ? finalRel.join(', ') : '(none)'}`))
     output.log(colors.cyan('──────────────────────────'))
 
     // Ask for corrections when running in a terminal
@@ -368,7 +371,7 @@ Current metadata:
 - durationMinutes: ${extractedDuration ?? 'null'}
 - medium: ${extractedMedium ?? 'null'}
 ${peopleFields}
-- rel: ${JSON.stringify(extractedRel)}
+- rel: ${JSON.stringify(finalRel)}
 
 User corrections:
 ${corrections}
@@ -403,7 +406,7 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
           } else {
             if (Array.isArray(parsed.who)) finalWho = parsed.who
           }
-          if (Array.isArray(parsed.rel)) extractedRel = parsed.rel
+          if (Array.isArray(parsed.rel)) finalRel = parsed.rel
 
           output.log(colors.green('Applied corrections.'))
         } catch (err) {
@@ -464,7 +467,7 @@ ${summary}
       durationMinutes: extractedDuration,
       medium: extractedMedium,
       who: finalWho,
-      rel: extractedRel,
+      rel: finalRel,
       summary: summarySection,
       body: summary,
       cleanedText: transcript,
