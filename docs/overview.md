@@ -194,7 +194,7 @@ Binary attachments and machine state don't belong in your life's history.
   // Preferred editor for opening files after creation
   "editor": "code",
 
-  // Life domains — become section headers in day files
+  // Life domains — the prefix on day-file sections. Fixed for now.
   "categories": ["Professional", "Personal"],
 
   // Extra command directories, for commands you keep outside this repo
@@ -229,9 +229,9 @@ commands and they get discovered, named, and tab-completed exactly like the buil
 **API keys never go here.** They live in `src/.env`. This file is meant to be readable and
 shareable; a config full of secrets isn't.
 
-**`categories` is recorded but not yet wired up.** `sky init` asks for it and writes it, and
-the generated comment promises it drives day-file sections — but the day skeleton is
-currently fixed at `Professional` and `Personal`. Take the default until that's connected.
+**`categories` is fixed at `Professional` / `Personal`.** The day skeleton, goals files, and
+recurring and scheduled items all assume that pair, so editing the array doesn't change the
+sections Sky writes. The key is in the config to reserve the shape, not to be tuned.
 
 Two more keys the generated config doesn't show, both optional:
 `commands.day.start` and `commands.day.end` list the commands that `sky day:start` and

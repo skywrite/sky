@@ -41,11 +41,9 @@ function generateConfig(opts: {
   dir: string
   userDataDir: string
   editor: string
-  categories: string[]
   commandDirs?: string[]
   slackWorkspace?: string
 }): string {
-  const cats = JSON.stringify(opts.categories)
   const dir = JSON.stringify(opts.dir)
   const userDataDir = JSON.stringify(opts.userDataDir)
   const editor = JSON.stringify(opts.editor)
@@ -71,8 +69,10 @@ function generateConfig(opts: {
   // Preferred editor for opening files after creation
   "editor": ${editor},
 
-  // Life domains — become section headers in day files (e.g., "Professional Todos")
-  "categories": ${cats}${commandsBlock}${slackBlock}
+  // Life domains — the prefix on day-file sections ("Professional Todos").
+  // Fixed for now: goals, recurring and scheduled items all assume this pair,
+  // so editing it here does not change the sections Sky writes.
+  "categories": ["Professional", "Personal"]${commandsBlock}${slackBlock}
 
   // AI model preferences (uncomment to override defaults)
   // "ai": {
@@ -210,18 +210,6 @@ export default class InitCommand extends Command {
     const editor = await p.text({ message: 'Preferred editor?', placeholder: 'code', defaultValue: 'code' })
     if (p.isCancel(editor)) return CommandResult.success()
 
-    const categoriesInput = await p.text({
-      message: 'Life domains / categories?',
-      placeholder: 'Professional, Personal',
-      defaultValue: 'Professional, Personal',
-    })
-    if (p.isCancel(categoriesInput)) return CommandResult.success()
-
-    const categories = categoriesInput
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean)
-
     const s = p.spinner()
 
     // Create content directories
@@ -276,7 +264,6 @@ export default class InitCommand extends Command {
       dir,
       userDataDir,
       editor,
-      categories,
       commandDirs: preservedCommandDirs,
       slackWorkspace,
     })
