@@ -1,0 +1,119 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # e2e (browser) tests are excluded in CI, so playwright's browsers are never
+  # needed — skip the ~400MB download in case its postinstall script runs.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  checks:
+    name: lint, typecheck, fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Install dependencies
+        working-directory: src
+        run: bun install --frozen-lockfile
+      - name: Format check
+        working-directory: src
+        run: bun run dev:fmt:check
+      - name: Lint
+        working-directory: src
+        run: bun run dev:lint
+      - name: Typecheck
+        working-directory: src
+        run: bun run dev:typecheck
+
+  cli:
+    name: cli tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Install dependencies
+        working-directory: src
+        run: bun install --frozen-lockfile
+      - name: Run cli tests (everything except service/ and e2e)
+        working-directory: src
+        run: bun run dev:test:cli
+
+  web:
+    name: web tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Install dependencies
+        working-directory: src
+        run: bun install --frozen-lockfile
+      - name: Run service tests (HTTP handlers, websocket, GraphQL)
+        working-directory: src
+        run: bun run dev:test:web
+
+  vscode:
+    name: vscode extension tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: extensions/vscode/.nvmrc
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+      # The extension's shared/ and lib/ are symlinks into src/, and modules
+      # loaded through them resolve their npm deps from src/node_modules
+      # (realpath-based resolution) — so src needs its install too.
+      - name: Install src dependencies
+        working-directory: src
+        run: bun install --frozen-lockfile
+      - name: Install extension dependencies
+        working-directory: extensions/vscode
+        run: npm ci
+      # Downloads stable VS Code (no local install on the runner) and drives it
+      # under a virtual display.
+      - name: Run extension tests
+        working-directory: extensions/vscode
+        run: xvfb-run -a npm test
+
+  security:
+    name: security (bun audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      # bun audit reads the lockfile and queries the advisory DB — no install
+      # step needed. Fails on any known vulnerability in the locked deps.
+      - name: Audit src dependencies
+        working-directory: src
+        run: bun audit
+      - name: Audit root workspace
+        run: bun audit
