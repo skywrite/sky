@@ -56,7 +56,7 @@ function generateConfig(opts: {
     : `\n\n  // Slack workspace used by slack:* commands (requires the agent-slack CLI)\n  // "slack": { "workspace": "https://yourteam.slack.com" }`
 
   return `{
-  // Sky configuration — https://github.com/skynotebook/sky
+  // Sky configuration — https://github.com/skywrite/sky
   // Config version (do not change manually)
   "version": 1,
 
