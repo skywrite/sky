@@ -511,7 +511,6 @@ export default class AiChatTask extends Command {
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
-      'sky ai:chat --resume --when -1d          # Resume a chat from yesterday',
     ],
     params,
   }
