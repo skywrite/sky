@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
 import openEditor from '#lib/shell/openEditor.ts'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
@@ -59,7 +59,7 @@ export default class EmailNewTask extends Command {
     let fileSlug = whoSlug
     if (description) fileSlug += `_${slugify(description, { suggestedLength: 40, preserveCase: true })}`
 
-    const fileName = `actions/messages/email_${fileSlug}.md`
+    const fileName = messageFileName(when, 'email', fileSlug)
 
     const ddfw = new DayDirFileWriter(whenDate)
 

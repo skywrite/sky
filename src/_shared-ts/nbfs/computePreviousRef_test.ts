@@ -98,3 +98,32 @@ test('computePreviousRef - nested subpaths preserved', () => {
     expected: '18/actions/messages/email_From-Name_Subject-Line',
   })
 })
+
+// Follow chains hang off this: follow:check records a message's written path,
+// then computes the next day's `previous` from it. Message names now carry an
+// HH-MM_ prefix, whose hyphen must not be mistaken for the MM-DD date segment
+// — that lives before the first slash, and the prefix is inside the subpath.
+test('computePreviousRef - HH-MM message prefix survives in the subpath', () => {
+  const prev = 'time/2026/03/16-22/03-18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing.md'
+
+  assert({
+    given: 'a time-prefixed message path, same month',
+    should: 'keep the prefix in the subpath and date it DD/',
+    actual: computePreviousRef(prev, PlainDate.fromString('2026-03-20')),
+    expected: '18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing',
+  })
+
+  assert({
+    given: 'a time-prefixed message path, later month',
+    should: 'date it MM-DD/ without disturbing the prefix',
+    actual: computePreviousRef(prev, PlainDate.fromString('2026-05-02')),
+    expected: '03-18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing',
+  })
+
+  assert({
+    given: 'a time-prefixed message path, later year',
+    should: 'date it YYYY-MM-DD/ without disturbing the prefix',
+    actual: computePreviousRef(prev, PlainDate.fromString('2027-01-05')),
+    expected: '2026-03-18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing',
+  })
+})

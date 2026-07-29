@@ -3,7 +3,7 @@ import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import openEditor from '#lib/shell/openEditor.ts'
-import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
@@ -383,7 +383,7 @@ export default class MessageNewTask extends Command {
 
     const summarySlug = slugify(<string>summary, { preserveCase: true, suggestedLength: 40 })
     const partialSlug = summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug
-    const fileName = `actions/messages/${mediumSlug}_${partialSlug}.md`
+    const fileName = messageFileName(when, mediumSlug, partialSlug)
 
     const ddfw = new DayDirFileWriter(date)
     const entryWhen = when.time
