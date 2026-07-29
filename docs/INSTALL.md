@@ -154,7 +154,7 @@ This is interactive. It asks four questions and defaults are fine for all of the
 | Where should Sky store your notebook? | `~/Sky` | `dir` — your markdown lives here |
 | Where should Sky store data files? | `~/Sky-Data` | `userDataDir` — attachments and state, not git-tracked |
 | Preferred editor? | `code` | `editor` — what opens files after they're created |
-| Life domains / categories? | `Professional, Personal` | `categories` — becomes the day file's section headers |
+| Life domains / categories? | `Professional, Personal` | `categories` — recorded in your config; take the default |
 
 It then creates the notebook directory skeleton, writes `~/.sky/config.jsonc`, installs the
 launchd service templates to `~/Library/LaunchAgents`, and builds the command manifest.
