@@ -113,8 +113,7 @@ Frontmatter fields, always in this order:
 | `tz` | IANA timezone the day was lived in |
 
 Sections appear in a fixed order — Most Important → Commitments → Todos → Reminders →
-Streaks → Complete — and the category-prefixed ones (`Professional`, `Personal`) come from
-the `categories` array in your config. Change that array and the day file changes with it.
+Streaks → Complete. The category prefixes are `Professional` and `Personal`.
 
 Two conventions worth knowing:
 
@@ -126,43 +125,20 @@ Two conventions worth knowing:
 
 ## Days follow sleep, not midnight
 
-A day starts with `sky day:start` and ends with `sky day:end`. If you're still working at
-1:30 AM, that's still today — Sky writes extended hours (`25:30`) so late-night work stays
-grouped with the day it belongs to instead of being orphaned into a mostly-empty tomorrow.
-The system tracks which day is *active*, not what the wall clock says.
+A day starts with `sky day:start`, ends with `sky day:end`, and is allowed to run past
+midnight. Work at 1:30 AM belongs to the day you're still living, so Sky writes it as
+`25:30` rather than orphaning it into a mostly-empty tomorrow. Same reasoning behind `ended`
+being a duration: a seventeen-hour day is a real thing that happened, and "ended at 01:30"
+throws that away.
 
-This is also why `ended` is a duration rather than a clock time: a 17-hour day is a real
-thing that happened, and rounding it to "ended at 01:30" loses that.
+How notebook "now" is actually computed — plus extended and negative hours, per-day
+timezones, and the date types — is [its own document](nbfs.md).
 
-## The notebook filesystem
-
-Files under `time/` are organized by year, month, week, and day. Weeks run Monday through
-Sunday and are named by their first and last day numbers. Day directories are named
-`MM-DD`, so a week that spills into the next month still sorts chronologically without any
-special marker.
+## What's in the notebook
 
 ```
 ~/Sky/
-  time/
-    2026/
-      03/
-        30-05/                     # week: Mon Mar 30 – Sun Apr 5
-          _tracking/               # week-level CSV tracking
-          03-30/                   # Monday
-            day.md
-          03-31/                   # Tuesday
-            day.md
-            journal/
-              gratitude.md
-            actions/
-              meetings/
-              messages/
-              notes/
-              ai-chats/
-          04-01/                   # Wednesday — April, still this week's directory
-            day.md
-          04-02/
-            day.md
+  time/                            # every day, filed by year / month / week / day
   data/                            # tracking data, weather, location history
   decisions/                       # decision records
   goals/                           # personal and professional goals
@@ -176,18 +152,19 @@ special marker.
   streaks/                         # habit definitions: active/ and archived/
 ```
 
+Most of the volume is under `time/`, which has a structure of its own: one directory per
+day, nested inside the week it belongs to, holding the day file and everything that day
+produced.
+
+```
+~/Sky/time/2026/03/30-05/03-31/day.md
+```
+
+That layout — and the reasoning behind it — is covered in
+[Notebook time and NBFS](nbfs.md).
+
 Dates are ISO 8601 (`YYYY-MM-DD`) everywhere — it sorts lexicographically, it's unambiguous
 across locales, and it doesn't make you think.
-
-Everything a day produced lives in that day's directory: journal entries under `journal/`,
-and captured work under `actions/` split by kind (`meetings/`, `messages/`, `notes/`,
-`ai-chats/`). Commands file these for you and add the linking `-> [Title](path)` entry to
-the day's Complete list in the same step, which is what keeps the day file an accurate
-index of the day rather than a thing you maintain.
-
-> An older layout used `DD` day directories with an `x` prefix for cross-month days
-> (`x01`). If you have a notebook from that era, `sky nbfs:migrate` moves it — dry-run by
-> default, `--execute` to commit.
 
 ## Two directories, different jobs
 
@@ -252,6 +229,10 @@ commands and they get discovered, named, and tab-completed exactly like the buil
 **API keys never go here.** They live in `src/.env`. This file is meant to be readable and
 shareable; a config full of secrets isn't.
 
+**`categories` is recorded but not yet wired up.** `sky init` asks for it and writes it, and
+the generated comment promises it drives day-file sections — but the day skeleton is
+currently fixed at `Professional` and `Personal`. Take the default until that's connected.
+
 Two more keys the generated config doesn't show, both optional:
 `commands.day.start` and `commands.day.end` list the commands that `sky day:start` and
 `sky day:end` run for you. The defaults are `day:sr:update`, `prices:all:fetch`,
@@ -273,5 +254,6 @@ notebook without touching your real one.
 
 ## Where to go next
 
+- [Notebook time and NBFS](nbfs.md) — the file layout and time model in depth
 - [Commands](commands.md) — what's actually available
 - [Architecture](architecture.md) — how the code is laid out, and how to add a command

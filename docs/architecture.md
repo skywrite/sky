@@ -130,18 +130,15 @@ Everything in Sky works without the service running. It's a cache, not a depende
 
 ## Dates — never use JS `Date`
 
-Use `#universal/dates/nbdt/mod.ts` exclusively:
+Use `PlainDate`, `PlainDateTime` and `ZonedDateTime` from `#universal/dates/nbdt/mod.ts`
+exclusively. JS `Date` silently mixes local and UTC and shifts by a day at timezone
+boundaries, which in a notebook keyed by date means work filed under the wrong day.
 
-| Type | For |
-|---|---|
-| `PlainDate` | Dates with no time — counting days, comparisons |
-| `PlainDateTime` | Date + time, no zone — local events |
-| `ZonedDateTime` | Date + time + zone — actual moments |
+`bun run dev:lint` fails the build on `new Date()`, `.toISOString()`, and friends. When a
+third-party library hands back a `Date`, convert at the boundary and never let it travel.
 
-JS `Date` silently mixes local and UTC and shifts dates by a day at timezone boundaries,
-which in a notebook keyed by date means work filed under the wrong day. `bun run dev:lint`
-fails the build on `new Date()`, `.toISOString()`, and friends. When a third-party library
-hands back a `Date`, convert at the boundary and never let it travel.
+Which type to reach for, and the extended-hours arithmetic that makes the notebook's day
+boundaries work, are in [Notebook time and NBFS](nbfs.md).
 
 ## Imports
 

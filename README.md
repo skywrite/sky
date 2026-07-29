@@ -74,6 +74,7 @@ will be a mystery.
 |---|---|
 | [Install](docs/INSTALL.md) | Setup, API keys, background service, troubleshooting |
 | [Overview](docs/overview.md) | How the notebook is laid out, and why |
+| [Notebook time & NBFS](docs/nbfs.md) | The file layout and time model in depth |
 | [Commands](docs/commands.md) | Tour of the 150+ commands |
 | [Architecture](docs/architecture.md) | Code layout, and how to add a command |
 | [Contributing](CONTRIBUTING.md) | PR guidelines |
