@@ -13,10 +13,7 @@
     "./sys": "./src/sys.ts",
     "./prompts": "./src/prompts.ts",
     "./config": "./src/config.ts",
-    "./secrets": "./src/secrets.ts",
-    "./ai/claude": "./src/ai-claude.ts",
-    "./ai/openai": "./src/ai-openai.ts",
-    "./ai/ollama": "./src/ai-ollama.ts"
+    "./secrets": "./src/secrets.ts"
   },
   "scripts": {
     "build": "echo 'TODO: bundle for publishing'"
