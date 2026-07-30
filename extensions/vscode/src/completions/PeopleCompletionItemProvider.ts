@@ -1,8 +1,13 @@
 import * as vscode from 'vscode'
 import { isCursorInYamlFrontmatter } from '../util.ts'
 import { isCursorInRelevantYamlKey } from '../util/mod.ts'
-import { CompletionDataStore } from './store/CompletionDataStore.ts'
+import { CompletionDataStore, type PersonWithScore } from './store/CompletionDataStore.ts'
 import { createReplacementRange } from './utils/ranges.ts'
+
+/** The slice of the completion store this provider needs. */
+export interface PeopleSource {
+  getPeopleWithScores(): PersonWithScore[]
+}
 
 /**
  * Provides person name completions in YAML frontmatter.
@@ -10,10 +15,12 @@ import { createReplacementRange } from './utils/ranges.ts'
  * with recency weighting - more recent and frequent interactions rank higher.
  */
 export default class PeopleCompletionItemProvider implements vscode.CompletionItemProvider {
-  private store: CompletionDataStore
+  private source: PeopleSource
 
-  constructor() {
-    this.store = CompletionDataStore.getInstance()
+  // Defaults to the shared store. Tests pass a stub so assertions don't ride on
+  // whatever the notebook service happens to hold.
+  constructor(source: PeopleSource = CompletionDataStore.getInstance()) {
+    this.source = source
   }
 
   provideCompletionItems(
@@ -49,7 +56,7 @@ export default class PeopleCompletionItemProvider implements vscode.CompletionIt
     const searchLower = searchPerson.toLowerCase()
 
     // Get people with scores and filter by prefix
-    const allPeopleWithScores = this.store.getPeopleWithScores()
+    const allPeopleWithScores = this.source.getPeopleWithScores()
     const matchingPeople = allPeopleWithScores.filter((p) =>
       p.name.toLowerCase().startsWith(searchLower)
     )
