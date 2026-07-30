@@ -214,12 +214,7 @@ type ReviewResult = { status: 'tight'; note?: string } | { status: 'questions'; 
  * skips the rest. Answers are appended verbatim as a Clarifications section —
  * the AI never rewrites the user's text. All failures are non-fatal.
  */
-async function reviewDetails(
-  habit: string,
-  schedule: string,
-  details: string,
-  spinner: TextSpinner,
-): Promise<string> {
+async function reviewDetails(habit: string, schedule: string, details: string, spinner: TextSpinner): Promise<string> {
   spinner.start('Reviewing the rules...')
 
   let review: ReviewResult
@@ -587,7 +582,9 @@ export default class StreaksNewTask extends Command {
         output.log(colors.gray(`Stamped "${title}" into the ${startDay.ymd} Streaks list`))
       }
     } catch {
-      output.log(colors.yellow(`Note: no day file for ${startDay.ymd} yet - the item appears via week:new or day:start`))
+      output.log(
+        colors.yellow(`Note: no day file for ${startDay.ymd} yet - the item appears via week:new or day:start`),
+      )
     }
 
     // Step 12: Add day item (on the creation day - starting later is part of the record)

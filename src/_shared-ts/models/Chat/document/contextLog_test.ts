@@ -230,7 +230,9 @@ test('stripEntryAnnotation - recovers the bare path from every annotation form',
   assert({
     given: 'a negative score',
     should: 'strip it',
-    actual: stripEntryAnnotation('time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=-2, ~40 tokens)'),
+    actual: stripEntryAnnotation(
+      'time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md (score=-2, ~40 tokens)',
+    ),
     expected: 'time/2026/05/25-31/05-28/actions/notes/Atlas-Beta-Findings.md',
   })
 })

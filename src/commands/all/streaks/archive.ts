@@ -70,7 +70,9 @@ export default class StreaksArchiveTask extends Command {
     await outputFile(archivedPath, archived.toMarkdown())
     await unlink(found.path)
 
-    output.log(colors.green(`Archived "${streak.title}"`) + colors.dim(`  final run: ${stats.current}d, best: ${stats.best}d`))
+    output.log(
+      colors.green(`Archived "${streak.title}"`) + colors.dim(`  final run: ${stats.current}d, best: ${stats.best}d`),
+    )
 
     const dayItem = `${now.plainDateTime.time} > streaks/${name} -> Archived | ${streak.title}`
     try {

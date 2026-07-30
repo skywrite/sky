@@ -35,10 +35,7 @@ export default class StreaksListTask extends Command {
   static override description: CommandDescription = {
     name: 'streaks:list',
     description: 'Show streak status: current run, best run, month consistency.',
-    usage: [
-      'sky streaks:list        # Active streaks',
-      'sky streaks:list --all  # Include archived',
-    ],
+    usage: ['sky streaks:list        # Active streaks', 'sky streaks:list --all  # Include archived'],
     params,
   }
 
@@ -54,9 +51,7 @@ export default class StreaksListTask extends Command {
 
     const today = await notebookToday()
 
-    const starts = loaded
-      .map(({ streak }) => streak.start)
-      .filter((s): s is PlainDate => s !== undefined)
+    const starts = loaded.map(({ streak }) => streak.start).filter((s): s is PlainDate => s !== undefined)
     const earliest = starts.length > 0 ? starts.reduce((a, b) => (PlainDate.compare(a, b) <= 0 ? a : b)) : today
     const entries = await loadStreakEntries(earliest, today)
 

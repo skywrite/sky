@@ -196,7 +196,11 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
       status: { type: 'String!', description: 'Status: active, archived (derived from path)' },
       schedule: { type: 'String!', description: 'Cadence: daily, weekdays' },
       start: { type: 'String', description: 'First tracked day (YYYY-MM-DD)', nullable: true },
-      end: { type: 'String', description: 'Last tracked day, inclusive; a future value is a planned end', nullable: true },
+      end: {
+        type: 'String',
+        description: 'Last tracked day, inclusive; a future value is a planned end',
+        nullable: true,
+      },
       current: { type: 'Int!', description: 'Current run in completed days (computed from day files)' },
       best: { type: 'Int!', description: 'Longest run ever (computed)' },
       trackedToday: { type: 'Boolean!', description: 'Whether today expects this streak' },

@@ -9,7 +9,11 @@
 import type { Document } from '#shared/models/Markdown/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
-import StreakDocument, { computeStreakStats, streaksItemsFromDay, type StreakDayEntry } from '#shared/models/Streak/mod.ts'
+import StreakDocument, {
+  computeStreakStats,
+  streaksItemsFromDay,
+  type StreakDayEntry,
+} from '#shared/models/Streak/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import DomainCollection from '../mod.ts'
