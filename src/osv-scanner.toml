@@ -1,0 +1,10 @@
+# xlsx is installed from the SheetJS CDN tarball because the npm registry
+# package is abandoned at 0.18.5 — the tarball (0.20.3) is above every fixed
+# range in the known advisories. OSV cannot parse a tarball-URL as a version,
+# so it flags every historical xlsx advisory; ignore the package explicitly.
+# bun audit (which sees the real resolved version) still covers it.
+[[PackageOverrides]]
+name = "xlsx"
+ecosystem = "npm"
+ignore = true
+reason = "Installed from SheetJS CDN at 0.20.3; npm registry is stuck at 0.18.5. Version exceeds all fixed ranges, but OSV cannot parse tarball-URL versions."
