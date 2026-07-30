@@ -487,6 +487,9 @@ ${transcript}
           null,
           2,
         ),
+        // Reference only: the rewrite must not drift on names analysis didn't flag.
+        knownPeople,
+        knownOrgs,
       },
     }
 
