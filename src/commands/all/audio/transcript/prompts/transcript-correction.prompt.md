@@ -15,6 +15,22 @@ Apply the following corrections to this transcript and add natural paragraph bre
 
 {{user.corrections}}
 
+## Known Contacts (Reference Only)
+
+Canonical spellings of known people, for reference while rewriting. Wherever the transcript or an applied correction yields one of these names, reproduce it exactly as spelled here — never drift to another spelling. Do NOT introduce new corrections from this list; only the corrections listed above may change words.
+
+```
+{{user.knownPeople}}
+```
+
+## Known Organizations (Reference Only)
+
+The same rules apply to these organization names.
+
+```
+{{user.knownOrgs}}
+```
+
 ## Output Requirements
 
 1. **Apply corrections**: Replace EVERY occurrence of each listed `originalText` — a correction applies transcript-wide, and its `occurrences` count says how many instances to expect
