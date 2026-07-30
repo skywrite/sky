@@ -117,3 +117,23 @@ jobs:
         run: bun audit
       - name: Audit root workspace
         run: bun audit
+
+  # A reusable workflow can only be called at the job level, so this sits
+  # beside the bun-audit job rather than inside it. Scans every lockfile in
+  # the repo (root and src bun.lock, the vscode extension's package-lock.json)
+  # against OSV, which includes the MAL- malicious-package advisories that
+  # bun audit's advisory DB lacks.
+  osv-scanner:
+    name: security (osv-scanner)
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    # security-events: write is needed to upload SARIF findings to the repo's
+    # Security → Code scanning tab; widens the workflow-level contents:read
+    # for this job only.
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    with:
+      scan-args: |-
+        --recursive
+        ./
