@@ -12,7 +12,7 @@
  * This bug was introduced in Oct 2025 and not caught until Mar 2026.
  */
 
-import WebSocket from 'ws'
+import { WebSocket } from '#shared/vendor/ws.ts'
 
 const GRAPHQL_URL = 'http://localhost:9999/graphql'
 const GRAPHQL_WS_URL = 'ws://localhost:9999/graphql'
