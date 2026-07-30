@@ -4,19 +4,19 @@ import OrganizationsCompletionItemProvider from './OrganizationsCompletionItemPr
 import PeopleCompletionItemProvider from './PeopleCompletionItemProvider.ts'
 
 /**
- * Characterization tests describing what the org provider does *today*.
- *
- * Today it is fed the plain organization list, which arrives alphabetical and
- * carries no ranking signal — so org completions get neither a sortText nor a
- * score detail, while people in the very same `rel:` list get both. The last
- * test pins that asymmetry deliberately: it is the behavior a later change is
- * meant to remove, and pinning it here makes that change visible as an edited
- * expectation rather than a silent drift.
+ * Organizations are scored on the same scale as people, and both providers key
+ * their sortText off that score, so the two interleave in a shared field like
+ * `rel:` instead of people always sitting on top.
  */
 
-const ORGS = ['Acme', 'Atlas', 'Borealis']
+// The store hands these over pre-sorted, score descending.
+const ORGS = [
+  { name: 'Atlas', score: 200 },
+  { name: 'Acme', score: 5 },
+  { name: 'Borealis', score: 0 },
+]
 
-const provider = new OrganizationsCompletionItemProvider({ getOrganizations: () => ORGS })
+const provider = new OrganizationsCompletionItemProvider({ getOrganizationsWithScores: () => ORGS })
 
 interface Summary {
   label: string
@@ -52,41 +52,41 @@ function summarize(items: vscode.CompletionItem[] | undefined): Summary[] | 'no 
   }))
 }
 
-test('OrganizationsCompletionItemProvider - ordering and filtering', async () => {
+test('OrganizationsCompletionItemProvider - ordering, filtering and score detail', async () => {
   const fixtures = [
     {
       given: 'an empty org field',
       lines: ['---', 'org: ', '---', ''],
       line: 1,
       expected: [
-        { label: 'Acme', sortText: undefined, detail: undefined },
-        { label: 'Atlas', sortText: undefined, detail: undefined },
-        { label: 'Borealis', sortText: undefined, detail: undefined },
+        { label: 'Atlas', sortText: '997999', detail: 'Score: 200.0' },
+        { label: 'Acme', sortText: '999949', detail: 'Score: 5.0' },
+        { label: 'Borealis', sortText: '999999', detail: undefined },
       ],
-      should: 'offer every org in list order, with no ranking signal attached',
+      should: 'offer every org in store order, with a score on all but the unscored',
     },
     {
       given: 'a partial org name',
       lines: ['---', 'org: A', '---', ''],
       line: 1,
       expected: [
-        { label: 'Acme', sortText: undefined, detail: undefined },
-        { label: 'Atlas', sortText: undefined, detail: undefined },
+        { label: 'Atlas', sortText: '997999', detail: 'Score: 200.0' },
+        { label: 'Acme', sortText: '999949', detail: 'Score: 5.0' },
       ],
-      should: 'filter by prefix, case-insensitively',
+      should: 'filter by prefix, case-insensitively, keeping each score key',
     },
     {
       given: 'a second entry after a semicolon',
       lines: ['---', 'orgs: Acme; B', '---', ''],
       line: 1,
-      expected: [{ label: 'Borealis', sortText: undefined, detail: undefined }],
+      expected: [{ label: 'Borealis', sortText: '999999', detail: undefined }],
       should: 'complete the entry being typed',
     },
     {
       given: 'a YAML array item',
       lines: ['---', 'orgs:', '  - Acme', '  - B', '---', ''],
       line: 3,
-      expected: [{ label: 'Borealis', sortText: undefined, detail: undefined }],
+      expected: [{ label: 'Borealis', sortText: '999999', detail: undefined }],
       should: 'complete inside the list item',
     },
   ]
@@ -110,7 +110,7 @@ test('OrganizationsCompletionItemProvider - where it fires', async () => {
       given: `the ${field} field`,
       should: 'offer orgs',
       actual: summarize(await completions(['---', `${field}: Ac`, '---', ''], 1)),
-      expected: [{ label: 'Acme', sortText: undefined, detail: undefined }],
+      expected: [{ label: 'Acme', sortText: '999949', detail: 'Score: 5.0' }],
     })
   }
 
@@ -129,8 +129,12 @@ test('OrganizationsCompletionItemProvider - where it fires', async () => {
   })
 })
 
-test('rel: ranking signals — people carry them, orgs do not', async () => {
-  const lines = ['---', 'rel: ', '---', '']
+test('rel: a high-scoring org outranks a lower-scoring person', async () => {
+  // Typing `Ro` where an org you work with constantly and a person you barely
+  // mention both match. The two come from separate providers; VS Code merges
+  // their items and orders by sortText among equally-good prefix matches, so
+  // the org has to win on the key alone.
+  const lines = ['---', 'rel: Ro', '---', '']
 
   const document = await vscode.workspace.openTextDocument({
     content: lines.join('\n'),
@@ -140,25 +144,31 @@ test('rel: ranking signals — people carry them, orgs do not', async () => {
   const token = new vscode.CancellationTokenSource().token
   const context = { triggerKind: vscode.CompletionTriggerKind.Invoke, triggerCharacter: undefined }
 
+  const orgs = new OrganizationsCompletionItemProvider({
+    getOrganizationsWithScores: () => [{ name: 'Rotunda Labs', score: 180 }],
+  })
   const people = new PeopleCompletionItemProvider({
-    getPeopleWithScores: () => [{ name: 'Jane Doe', score: 30 }],
+    getPeopleWithScores: () => [{ name: 'Rosa Lee', score: 4 }],
+  })
+
+  const merged = [
+    ...(orgs.provideCompletionItems(document, position, token, context) ?? []),
+    ...(people.provideCompletionItems(document, position, token, context) ?? []),
+  ]
+
+  assertEqual({
+    given: 'an org and a person both matching the typed prefix',
+    should: 'sort the higher-scoring org first, across provider boundaries',
+    actual: merged
+      .toSorted((a, b) => (a.sortText ?? '').localeCompare(b.sortText ?? ''))
+      .map((item) => `${item.label} (${item.sortText})`),
+    expected: ['Rotunda Labs (998199)', 'Rosa Lee (999959)'],
   })
 
   assertEqual({
-    given: 'a person offered in rel:',
-    should: 'carry a sortText and a score detail',
-    actual: summarize(people.provideCompletionItems(document, position, token, context)),
-    expected: [{ label: 'Jane Doe', sortText: '00000', detail: 'Score: 30.0' }],
-  })
-
-  assertEqual({
-    given: 'an org offered in the same rel: field',
-    should: 'carry neither, so VS Code falls back to sorting it by label',
-    actual: summarize(provider.provideCompletionItems(document, position, token, context)),
-    expected: [
-      { label: 'Acme', sortText: undefined, detail: undefined },
-      { label: 'Atlas', sortText: undefined, detail: undefined },
-      { label: 'Borealis', sortText: undefined, detail: undefined },
-    ],
+    given: 'the same two items',
+    should: 'both carry a score detail, so the ranking is legible in the list',
+    actual: merged.map((item) => item.detail),
+    expected: ['Score: 180.0', 'Score: 4.0'],
   })
 })

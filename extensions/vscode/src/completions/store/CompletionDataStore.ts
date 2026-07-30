@@ -27,12 +27,18 @@ export interface TagWithScore {
   score: number
 }
 
+export interface OrgWithScore {
+  name: string
+  score: number
+}
+
 interface GraphQLResponse {
   data: {
     tags: string[]
     peopleNames: string[]
     organizations: string[]
     peopleWithScores: PersonWithScore[]
+    organizationsWithScores: OrgWithScore[]
     tagsWithScores: TagWithScore[]
   }
 }
@@ -45,6 +51,7 @@ export class CompletionDataStore {
   private people: string[] = []
   private peopleWithScores: PersonWithScore[] = []
   private organizations: string[] = []
+  private organizationsWithScores: OrgWithScore[] = []
   private ws: WebSocket | null = null
   private isInitialized = false
   private reconnectAttempts = 0
@@ -120,6 +127,10 @@ export class CompletionDataStore {
             name
             score
           }
+          organizationsWithScores {
+            name
+            score
+          }
           tagsWithScores {
             name
             score
@@ -146,6 +157,7 @@ export class CompletionDataStore {
       this.people = result.data.peopleNames || []
       this.organizations = result.data.organizations || []
       this.peopleWithScores = result.data.peopleWithScores || []
+      this.organizationsWithScores = result.data.organizationsWithScores || []
     } catch (error) {
       // Keep existing data on error rather than clearing it
       console.error('[CompletionDataStore] Error fetching data:', error)
@@ -182,6 +194,10 @@ export class CompletionDataStore {
               this.subscribe('people', 'peopleUpdated')
               this.subscribe('organizations', 'organizationsUpdated')
               this.subscribe('peopleWithScores', 'peopleWithScoresUpdated { name score }')
+              this.subscribe(
+                'organizationsWithScores',
+                'organizationsWithScoresUpdated { name score }',
+              )
               this.subscribe('tagsWithScores', 'tagsWithScoresUpdated { name score }')
               this.startPingInterval()
               break
@@ -275,6 +291,16 @@ export class CompletionDataStore {
         }
         break
 
+      case 'organizationsWithScores':
+        if (payload.data.organizationsWithScoresUpdated) {
+          this.organizationsWithScores = payload.data.organizationsWithScoresUpdated
+          console.log(
+            '[CompletionDataStore] Organizations with scores updated:',
+            this.organizationsWithScores.length,
+          )
+        }
+        break
+
       case 'tagsWithScores':
         if (payload.data.tagsWithScoresUpdated) {
           this.tagsWithScores_ = payload.data.tagsWithScoresUpdated
@@ -318,6 +344,17 @@ export class CompletionDataStore {
   getPersonScore(name: string): number {
     const person = this.peopleWithScores.find((p) => p.name === name)
     return person?.score ?? 0
+  }
+
+  /**
+   * Get all organizations with their scores, sorted by score (descending).
+   *
+   * Scored the same way people are — same interaction weights, same recency
+   * decay — so the two rank against each other meaningfully in a shared field
+   * like `rel:`.
+   */
+  getOrganizationsWithScores(): OrgWithScore[] {
+    return this.organizationsWithScores
   }
 
   /**

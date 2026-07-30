@@ -1,17 +1,21 @@
 import * as vscode from 'vscode'
 import { isCursorInYamlFrontmatter } from '../util.ts'
 import { isCursorInRelevantYamlKey } from '../util/mod.ts'
-import { CompletionDataStore } from './store/CompletionDataStore.ts'
-import { filterByPrefix } from './utils/matching.ts'
+import { CompletionDataStore, type OrgWithScore } from './store/CompletionDataStore.ts'
 import { createReplacementRange } from './utils/ranges.ts'
+import { scoreSortText } from './utils/ranking.ts'
 
 /** The slice of the completion store this provider needs. */
 export interface OrganizationsSource {
-  getOrganizations(): string[]
+  getOrganizationsWithScores(): OrgWithScore[]
 }
 
 /**
  * Provides organization name completions in YAML frontmatter.
+ *
+ * Organizations are scored exactly as people are — same interaction weights,
+ * same recency decay — and both rank off that score, so in a shared field like
+ * `rel:` an org you work with constantly outranks a person you barely mention.
  *
  * Completion icons (visual reference: https://microsoft.github.io/vscode-codicons/dist/codicon.html)
  * - Organizations: Struct (three-bar structure icon)
@@ -56,14 +60,25 @@ export default class OrganizationsCompletionItemProvider implements vscode.Compl
     }
 
     const searchOrg = orgs.at(-1) || ''
+    const searchLower = searchOrg.toLowerCase()
 
-    const allOrgs = this.source.getOrganizations()
-    const matchingOrgs = filterByPrefix(allOrgs, searchOrg)
+    const allOrgsWithScores = this.source.getOrganizationsWithScores()
+    const matchingOrgs = allOrgsWithScores.filter((org) =>
+      org.name.toLowerCase().startsWith(searchLower)
+    )
 
     return matchingOrgs.map((org) => {
-      const completionItem = new vscode.CompletionItem(org)
+      const completionItem = new vscode.CompletionItem(org.name)
       completionItem.kind = vscode.CompletionItemKind.Struct
       completionItem.range = createReplacementRange(position, searchOrg.length)
+
+      // Same key as people use, so the two interleave by score
+      completionItem.sortText = scoreSortText(org.score)
+
+      // Show score as detail for transparency
+      if (org.score > 0) {
+        completionItem.detail = `Score: ${org.score.toFixed(1)}`
+      }
 
       return completionItem
     })

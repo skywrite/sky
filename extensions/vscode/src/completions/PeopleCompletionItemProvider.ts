@@ -3,6 +3,7 @@ import { isCursorInYamlFrontmatter } from '../util.ts'
 import { isCursorInRelevantYamlKey } from '../util/mod.ts'
 import { CompletionDataStore, type PersonWithScore } from './store/CompletionDataStore.ts'
 import { createReplacementRange } from './utils/ranges.ts'
+import { scoreSortText } from './utils/ranking.ts'
 
 /** The slice of the completion store this provider needs. */
 export interface PeopleSource {
@@ -62,14 +63,14 @@ export default class PeopleCompletionItemProvider implements vscode.CompletionIt
     )
 
     // Create completion items with score-based sorting
-    return matchingPeople.map((person, index) => {
+    return matchingPeople.map((person) => {
       const completionItem = new vscode.CompletionItem(person.name)
       completionItem.kind = vscode.CompletionItemKind.User
       completionItem.range = createReplacementRange(position, searchPerson.length)
 
-      // Use sortText to preserve server-side score ordering
-      // Pad index to ensure proper string sorting (00001, 00002, etc.)
-      completionItem.sortText = String(index).padStart(5, '0')
+      // Key off the score rather than this list's own ordering, so people and
+      // organizations — separate providers, one merged list — interleave.
+      completionItem.sortText = scoreSortText(person.score)
 
       // Show score as detail for transparency
       if (person.score > 0) {

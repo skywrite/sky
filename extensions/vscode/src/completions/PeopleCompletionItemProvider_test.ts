@@ -61,10 +61,10 @@ test('PeopleCompletionItemProvider - ordering, filtering and score detail', asyn
       lines: ['---', 'who: ', '---', ''],
       line: 1,
       expected: [
-        { label: 'Jane Doe', sortText: '00000', detail: 'Score: 30.0' },
-        { label: 'John Roe', sortText: '00001', detail: 'Score: 20.5' },
-        { label: 'Jane Roe', sortText: '00002', detail: 'Score: 10.0' },
-        { label: 'Ada Byron', sortText: '00003', detail: undefined },
+        { label: 'Jane Doe', sortText: '999699', detail: 'Score: 30.0' },
+        { label: 'John Roe', sortText: '999794', detail: 'Score: 20.5' },
+        { label: 'Jane Roe', sortText: '999899', detail: 'Score: 10.0' },
+        { label: 'Ada Byron', sortText: '999999', detail: undefined },
       ],
       should: 'offer everyone in store order, with a score on all but the unscored',
     },
@@ -73,37 +73,37 @@ test('PeopleCompletionItemProvider - ordering, filtering and score detail', asyn
       lines: ['---', 'who: Jane', '---', ''],
       line: 1,
       expected: [
-        { label: 'Jane Doe', sortText: '00000', detail: 'Score: 30.0' },
-        { label: 'Jane Roe', sortText: '00001', detail: 'Score: 10.0' },
+        { label: 'Jane Doe', sortText: '999699', detail: 'Score: 30.0' },
+        { label: 'Jane Roe', sortText: '999899', detail: 'Score: 10.0' },
       ],
-      should: 'filter by prefix and renumber sortText from zero',
+      should: 'filter by prefix, each keeping the sortText its own score earned',
     },
     {
       given: 'a lowercase partial name',
       lines: ['---', 'who: jane d', '---', ''],
       line: 1,
-      expected: [{ label: 'Jane Doe', sortText: '00000', detail: 'Score: 30.0' }],
+      expected: [{ label: 'Jane Doe', sortText: '999699', detail: 'Score: 30.0' }],
       should: 'match case-insensitively across the space',
     },
     {
       given: 'a second entry after a semicolon',
       lines: ['---', 'who: Jane Doe; Jo', '---', ''],
       line: 1,
-      expected: [{ label: 'John Roe', sortText: '00000', detail: 'Score: 20.5' }],
+      expected: [{ label: 'John Roe', sortText: '999794', detail: 'Score: 20.5' }],
       should: 'complete the entry being typed, not the whole field',
     },
     {
       given: 'a second entry after a comma',
       lines: ['---', 'who: Jane Doe, Jo', '---', ''],
       line: 1,
-      expected: [{ label: 'John Roe', sortText: '00000', detail: 'Score: 20.5' }],
+      expected: [{ label: 'John Roe', sortText: '999794', detail: 'Score: 20.5' }],
       should: 'treat the comma as a separator too',
     },
     {
       given: 'a YAML array item',
       lines: ['---', 'who:', '  - Jane Doe', '  - Jo', '---', ''],
       line: 3,
-      expected: [{ label: 'John Roe', sortText: '00000', detail: 'Score: 20.5' }],
+      expected: [{ label: 'John Roe', sortText: '999794', detail: 'Score: 20.5' }],
       should: 'complete inside the list item',
     },
     {
@@ -133,7 +133,7 @@ test('PeopleCompletionItemProvider - where it fires', async () => {
       given: `the ${field} field`,
       should: 'offer people',
       actual: summarize(await completions(['---', `${field}: Jane D`, '---', ''], 1)),
-      expected: [{ label: 'Jane Doe', sortText: '00000', detail: 'Score: 30.0' }],
+      expected: [{ label: 'Jane Doe', sortText: '999699', detail: 'Score: 30.0' }],
     })
   }
 
