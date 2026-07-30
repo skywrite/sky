@@ -1,10 +1,15 @@
 import { assert, test } from '#test'
 import { rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import process from 'node:process'
 import MarkdownWatcher from './mod.ts'
 import { createTempDir, delay, type MarkdownWatcherEvent } from './test-helpers.ts'
 
-test('MarkdownWatcher yields modify event for updated .md file', async () => {
+// See create_test.ts: watcher coverage is macOS-only (Bun+Linux fs.watch
+// recursive can silently deliver nothing).
+const ignore = process.platform !== 'darwin'
+
+test('MarkdownWatcher yields modify event for updated .md file', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-modify-')
 
   // Create file before starting watcher
