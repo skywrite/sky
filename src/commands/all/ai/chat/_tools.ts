@@ -8,6 +8,8 @@
  */
 
 import { jsonSchema, tool } from 'ai'
+import colors from 'picocolors'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
@@ -41,6 +43,13 @@ export interface DiscoveredTool {
 const discoveredTools: DiscoveredTool[] = []
 
 /**
+ * Files already reported as unimportable. ai:chat rebuilds its tools every
+ * turn, so without this the same failure would warn on every turn and append
+ * a line to the error log each time.
+ */
+const reportedImportFailures = new Set<string>()
+
+/**
  * Discover @AIChatTool decorated tasks. Returns metadata for each tool
  * without generating AI SDK tool objects.
  */
@@ -68,8 +77,22 @@ export async function discoverAIChatTools(): Promise<DiscoveredTool[]> {
         needsApproval: options.needsApproval ?? true,
         commandClass: TaskClass,
       })
-    } catch {
-      // Skip files that fail to import
+    } catch (err) {
+      // The manifest said aiChatTool:true, but the file no longer imports —
+      // typically an external group whose `node_modules` went missing, so
+      // `@skywrite/*` can't resolve. Swallowing this dropped the tool with no
+      // trace at scan time (the manifest was built while it still worked) or
+      // at chat time, leaving a session that silently cannot act.
+      const message = (err as Error).message
+      if (!reportedImportFailures.has(file)) {
+        reportedImportFailures.add(file)
+        console.warn(colors.yellow(`⚠ [sky] ai:chat tool unavailable: failed to import ${file} — ${message}`))
+        await logAIError({
+          source: 'ai:chat',
+          stage: 'tools:discover',
+          message: `Failed to import AI chat tool ${file}: ${message}`,
+        })
+      }
     }
   }
 
