@@ -22,7 +22,7 @@
       "#lib/*": ["../../src/lib/*"]
     },
     "target": "ES2022",
-    "lib": ["ES2023", "DOM"],
+    "lib": ["ES2024", "DOM"],
     "strict": true,
     "esModuleInterop": true,
     "noImplicitAny": false,
