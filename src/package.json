@@ -4,9 +4,10 @@
   "scripts": {
     "dev:fmt": "oxfmt --write .",
     "dev:fmt:check": "oxfmt --check .",
-    "dev:lint": "oxlint && bun run commands/all/lint/banned-apis.ts && bun run commands/all/lint/tasks.ts",
+    "dev:lint": "oxlint && bun run commands/all/lint/banned-apis.ts && bun run commands/all/lint/tasks.ts && bun run commands/all/lint/packages.ts",
     "dev:lint:banned": "bun run commands/all/lint/banned-apis.ts",
     "dev:lint:tasks": "bun run commands/all/lint/tasks.ts",
+    "dev:lint:packages": "bun run commands/all/lint/packages.ts",
     "dev:test": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*' && cd ../extensions/vscode && npm test",
     "dev:test:cli": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*' --path-ignore-patterns '**/service/**'",
     "dev:test:unit": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*'",
