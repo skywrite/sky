@@ -5,6 +5,11 @@ import { CompletionDataStore } from './store/CompletionDataStore.ts'
 import { filterByPrefix } from './utils/matching.ts'
 import { createReplacementRange } from './utils/ranges.ts'
 
+/** The slice of the completion store this provider needs. */
+export interface OrganizationsSource {
+  getOrganizations(): string[]
+}
+
 /**
  * Provides organization name completions in YAML frontmatter.
  *
@@ -13,10 +18,12 @@ import { createReplacementRange } from './utils/ranges.ts'
  * - People: User (person silhouette) - see PeopleCompletionItemProvider
  */
 export default class OrganizationsCompletionItemProvider implements vscode.CompletionItemProvider {
-  private store: CompletionDataStore
+  private source: OrganizationsSource
 
-  constructor() {
-    this.store = CompletionDataStore.getInstance()
+  // Defaults to the shared store. Tests pass a stub so assertions don't ride on
+  // whatever the notebook service happens to hold.
+  constructor(source: OrganizationsSource = CompletionDataStore.getInstance()) {
+    this.source = source
   }
   provideCompletionItems(
     document: vscode.TextDocument,
@@ -50,7 +57,7 @@ export default class OrganizationsCompletionItemProvider implements vscode.Compl
 
     const searchOrg = orgs.at(-1) || ''
 
-    const allOrgs = this.store.getOrganizations()
+    const allOrgs = this.source.getOrganizations()
     const matchingOrgs = filterByPrefix(allOrgs, searchOrg)
 
     return matchingOrgs.map((org) => {

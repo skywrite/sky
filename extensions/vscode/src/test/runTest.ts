@@ -5,10 +5,20 @@ import { runTests } from '@vscode/test-electron'
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
-/** Locally installed VS Code executable, if present (avoids a download). */
+/**
+ * Locally installed VS Code executable, if present (avoids a download).
+ *
+ * VS Code 1.131 renamed the macOS binary from Electron to Code, so both names
+ * are tried — checking only the old one silently fell through to the download
+ * path, which then spawned that same missing name and failed with ENOENT.
+ * Returns undefined off macOS (CI included), where the download path is used.
+ */
 function findLocalVSCode(): string | undefined {
-  const macOSPath = '/Applications/Visual Studio Code.app/Contents/MacOS/Electron'
-  return fs.existsSync(macOSPath) ? macOSPath : undefined
+  const macOSPaths = [
+    '/Applications/Visual Studio Code.app/Contents/MacOS/Code',
+    '/Applications/Visual Studio Code.app/Contents/MacOS/Electron',
+  ]
+  return macOSPaths.find((path) => fs.existsSync(path))
 }
 
 async function main() {

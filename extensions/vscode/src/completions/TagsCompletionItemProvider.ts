@@ -1,7 +1,12 @@
 import * as vscode from 'vscode'
 import { isCursorInYamlFrontmatter } from '../util.ts'
-import { CompletionDataStore } from './store/CompletionDataStore.ts'
+import { CompletionDataStore, type TagWithScore } from './store/CompletionDataStore.ts'
 import { createReplacementRange } from './utils/ranges.ts'
+
+/** The slice of the completion store this provider needs. */
+export interface TagsSource {
+  getTagsWithScores(): TagWithScore[]
+}
 
 /**
  * Provides tag completions in YAML frontmatter.
@@ -9,10 +14,12 @@ import { createReplacementRange } from './utils/ranges.ts'
  * more recently and frequently used tags rank higher.
  */
 export default class TagsCompletionItemProvider implements vscode.CompletionItemProvider {
-  private store: CompletionDataStore
+  private source: TagsSource
 
-  constructor() {
-    this.store = CompletionDataStore.getInstance()
+  // Defaults to the shared store. Tests pass a stub so assertions don't ride on
+  // whatever the notebook service happens to hold.
+  constructor(source: TagsSource = CompletionDataStore.getInstance()) {
+    this.source = source
   }
   provideCompletionItems(
     document: vscode.TextDocument,
@@ -35,7 +42,7 @@ export default class TagsCompletionItemProvider implements vscode.CompletionItem
     const searchTag = tags.at(-1) || ''
     const searchLower = searchTag.toLowerCase()
 
-    const allTagsWithScores = this.store.getTagsWithScores()
+    const allTagsWithScores = this.source.getTagsWithScores()
     const matchingTags = allTagsWithScores.filter((t) =>
       t.name.toLowerCase().startsWith(searchLower)
     )
