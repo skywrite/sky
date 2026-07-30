@@ -131,10 +131,6 @@
     "check": "npm run typecheck && node scripts/stripcheck.ts && node scripts/depparity.ts && node scripts/syncTitles.ts --check",
     "test": "node src/test/runTest.ts"
   },
-  "dependencies": {
-    "ws": "8.18.0",
-    "yaml": "2.8.0"
-  },
   "devDependencies": {
     "@types/mocha": "10.0.6",
     "@types/node": "^24.0.0",

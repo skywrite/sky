@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import * as YAML from 'yaml'
+import * as YAML from '#shared/vendor/yaml.ts'
 
 interface YAMLParseError extends Error {
   code?: string
