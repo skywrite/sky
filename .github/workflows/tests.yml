@@ -95,6 +95,11 @@ jobs:
       - name: Install extension dependencies
         working-directory: extensions/vscode
         run: npm ci
+      # Typecheck + stripcheck + depparity + syncTitles — fast static gates
+      # before the slower VS Code download.
+      - name: Run extension checks
+        working-directory: extensions/vscode
+        run: npm run check
       # Downloads stable VS Code (no local install on the runner) and drives it
       # under a virtual display.
       - name: Run extension tests
