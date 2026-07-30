@@ -802,6 +802,7 @@ export default class AiChatTask extends Command {
     let queryRelevantPaths: ReadonlySet<string> = new Set()
     let splitViewEnabled = false
     let contextScrollOffset = 0
+    let toolsAnnounced = false
 
     // Per-turn context log, persisted as trailing TURN comments on save
     const contextLog: ContextTurnLog[] = []
@@ -1189,6 +1190,15 @@ export default class AiChatTask extends Command {
         const notebookTools = await createNotebookTools(tasks)
         const allTools = { ...webTools, ...notebookTools }
         const toolApproval = createToolApprovalConfig()
+
+        // Name the tools once per session: an empty or short list is the only
+        // visible symptom of a tool that failed to load (createNotebookTools
+        // warns, but that scrolls past under a long context gather).
+        if (!toolsAnnounced) {
+          toolsAnnounced = true
+          const names = Object.keys(allTools)
+          output.log(colors.dim(names.length > 0 ? `Tools: ${names.join(', ')}` : 'Tools: none available'))
+        }
 
         const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
           for (const tc of toolCalls ?? []) {
