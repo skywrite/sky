@@ -12,7 +12,7 @@ const fixtures: { description: string; entry: SecretEntry }[] = [
       schema: '1.0.0',
       created: '2026-03-05T12:00:00.000Z',
       updated: '2026-03-05T12:00:00.000Z',
-      user: 'jp@gmail.com',
+      user: 'user@example.com',
       pass: 'abcd-efgh-ijkl-mnop',
     },
   },
@@ -34,7 +34,7 @@ const fixtures: { description: string; entry: SecretEntry }[] = [
       created: '2026-03-05T12:00:00.000Z',
       updated: '2026-03-05T14:00:00.000Z',
       notes: 'app password for IMAP',
-      user: 'jp@gmail.com',
+      user: 'user@example.com',
       pass: 'wxyz-1234',
     },
   },
@@ -279,7 +279,12 @@ test('createSecret - sets type and val', () => {
 // ── updateEntry ──────────────────────────────────────────────────────
 
 test('updateEntry - preserves type, schema, created', () => {
-  const original = createLogin({ user: 'old@example.com', pass: 'oldpass' })
+  // Backdate `updated`: createLogin and updateEntry can land in the same millisecond,
+  // which leaves the bump unobservable against a live timestamp.
+  const original: SecretEntry = {
+    ...createLogin({ user: 'old@example.com', pass: 'oldpass' }),
+    updated: '2026-03-05T12:00:00.000Z',
+  }
   const updated = updateEntry(original, { user: 'new@example.com', pass: 'newpass' })
 
   assert({
@@ -313,7 +318,7 @@ test('updateEntry - preserves type, schema, created', () => {
   assert({
     given: 'updateEntry on a login',
     should: 'bump updated timestamp',
-    actual: updated.updated !== original.updated || updated.updated === original.updated,
+    actual: updated.updated > original.updated,
     expected: true,
   })
 })

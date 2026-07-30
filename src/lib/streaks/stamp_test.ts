@@ -82,7 +82,9 @@ test(`stampStreaksList() decorates with counts and refreshes unstruck items`, ()
 })
 
 test(`stampStreaksList() never touches struck items`, () => {
-  const day = DayDocument.createFutureDay(MONDAY).addList(STREAKS_LIST_TITLE).addItem(STREAKS_LIST_TITLE, '~~Eat clean — 11d~~')
+  const day = DayDocument.createFutureDay(MONDAY)
+    .addList(STREAKS_LIST_TITLE)
+    .addItem(STREAKS_LIST_TITLE, '~~Eat clean — 11d~~')
 
   const stamped = stampStreaksList(day, [EAT_CLEAN], MONDAY, new Map([['eat-clean', 12]]))
 
@@ -95,7 +97,9 @@ test(`stampStreaksList() never touches struck items`, () => {
 })
 
 test(`stampStreaksList() preserves hand-added items and appends missing streaks`, () => {
-  const day = DayDocument.createFutureDay(MONDAY).addList(STREAKS_LIST_TITLE).addItem(STREAKS_LIST_TITLE, 'Stretch — experimental')
+  const day = DayDocument.createFutureDay(MONDAY)
+    .addList(STREAKS_LIST_TITLE)
+    .addItem(STREAKS_LIST_TITLE, 'Stretch — experimental')
 
   const stamped = stampStreaksList(day, [EAT_CLEAN], MONDAY)
 

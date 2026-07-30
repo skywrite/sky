@@ -39,10 +39,7 @@ function cleanPastedText(input: string): string {
   for (const marker of PASTE_MARKERS) {
     text = text.replaceAll(marker, '')
   }
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n+$/, '')
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+$/, '')
 }
 
 function formatPasteLabel(text: string, index: number): string {
@@ -174,7 +171,11 @@ function MultilineTextPrompt({ message, placeholder, hint, initialValue, onDone 
       const block = pasteBlocks[Number(match[1])]
       if (block) {
         elements.push(
-          React.createElement(Text, { key: `p${segKey++}`, color: 'yellow' }, formatPasteLabel(block, Number(match[1]))),
+          React.createElement(
+            Text,
+            { key: `p${segKey++}`, color: 'yellow' },
+            formatPasteLabel(block, Number(match[1])),
+          ),
         )
       }
       lastIndex = match.index + match[0].length

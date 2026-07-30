@@ -42,13 +42,14 @@ export async function maybeNudgeStreaks(): Promise<void> {
   const items = streaksItemsFromDay(day)
   const pending = active.filter(
     (streak) =>
-      streak.isTrackedOn(today) &&
-      !items.some((item) => streak.matchesDayItem(item) && DayDocument.isItemDone(item)),
+      streak.isTrackedOn(today) && !items.some((item) => streak.matchesDayItem(item) && DayDocument.isItemDone(item)),
   )
   if (pending.length === 0) return
 
   const titles = pending.map((streak) => streak.title).join(', ')
-  console.log(colors.dim(`\n  ◦ streaks pending today: ${titles} — strike in the day file or \`sky streaks:done <name>\``))
+  console.log(
+    colors.dim(`\n  ◦ streaks pending today: ${titles} — strike in the day file or \`sky streaks:done <name>\``),
+  )
 
   await outputFile(stampFile, JSON.stringify({ lastNudge: new Date().toISOString() }))
 }

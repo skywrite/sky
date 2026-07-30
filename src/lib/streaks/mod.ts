@@ -160,10 +160,7 @@ export async function loadStreakEntries(from: PlainDate, to: PlainDate): Promise
 }
 
 /** Current-run count per streak name, for decorating day items (`— 12d`). */
-export async function computeStreakCounts(
-  streaks: StreakDocument[],
-  today: PlainDate,
-): Promise<Map<string, number>> {
+export async function computeStreakCounts(streaks: StreakDocument[], today: PlainDate): Promise<Map<string, number>> {
   const counts = new Map<string, number>()
 
   const starts = streaks.map((s) => s.start).filter((s): s is PlainDate => s !== undefined)

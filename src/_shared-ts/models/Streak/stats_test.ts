@@ -29,9 +29,19 @@ test(`computeStreakStats() basic run`, () => {
     actual: stats.current,
   })
   assert({ given: 'the same walk', should: 'track best', expected: 3, actual: stats.best })
-  assert({ given: 'an unstruck today', should: 'stay pending, not missed', expected: false, actual: stats.completedToday })
+  assert({
+    given: 'an unstruck today',
+    should: 'stay pending, not missed',
+    expected: false,
+    actual: stats.completedToday,
+  })
   assert({ given: 'a tracked today', should: 'report trackedToday', expected: true, actual: stats.trackedToday })
-  assert({ given: 'the month window', should: 'exclude pending today from denominator', expected: 3, actual: stats.monthTracked })
+  assert({
+    given: 'the month window',
+    should: 'exclude pending today from denominator',
+    expected: 3,
+    actual: stats.monthTracked,
+  })
   assert({ given: 'the month window', should: 'count three dones', expected: 3, actual: stats.monthDone })
   assert({ given: 'the walk', should: 'remember last done day', expected: '2026-03-04', actual: stats.lastDone?.ymd })
 })
@@ -121,10 +131,7 @@ test(`computeStreakStats() ended streaks freeze at their end`, () => {
 
 test(`computeStreakStats() attributes items via title and decoration`, () => {
   const streak = makeStreak(DAILY)
-  const entries = [
-    entry('2026-03-02', '~~Eat clean — 7d~~', 'Morning run'),
-    entry('2026-03-03', '~~Eat clean~~'),
-  ]
+  const entries = [entry('2026-03-02', '~~Eat clean — 7d~~', 'Morning run'), entry('2026-03-03', '~~Eat clean~~')]
   const stats = computeStreakStats(streak, entries, new PlainDate('2026-03-03'))
 
   assert({
@@ -140,5 +147,10 @@ test(`computeStreakStats() future start yields zeroes`, () => {
   const stats = computeStreakStats(streak, [], new PlainDate('2026-02-01'))
 
   assert({ given: 'a streak that has not started', should: 'have no run', expected: 0, actual: stats.current })
-  assert({ given: 'a streak that has not started', should: 'not be tracked today', expected: false, actual: stats.trackedToday })
+  assert({
+    given: 'a streak that has not started',
+    should: 'not be tracked today',
+    expected: false,
+    actual: stats.trackedToday,
+  })
 })
