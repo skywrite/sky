@@ -1,10 +1,16 @@
 import { assert, test } from '#test'
 import { rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import process from 'node:process'
 import MarkdownWatcher from './mod.ts'
 import { createTempDir, delay, type MarkdownWatcherEvent } from './test-helpers.ts'
 
-test('MarkdownWatcher yields create event for new .md file', async () => {
+// fs.watch({recursive: true}) under Bun on Linux can deliver no events at all
+// (a second watcher in the same process may stay silent) — watcher coverage
+// is macOS-only until that's resolved.
+const ignore = process.platform !== 'darwin'
+
+test('MarkdownWatcher yields create event for new .md file', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-create-')
   const watcher = MarkdownWatcher.create()
   const events: MarkdownWatcherEvent[] = []
@@ -50,7 +56,7 @@ test('MarkdownWatcher yields create event for new .md file', async () => {
   await rm(tempDir, { recursive: true })
 })
 
-test('MarkdownWatcher ignores non-.md files', async () => {
+test('MarkdownWatcher ignores non-.md files', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-ignore-')
   const watcher = MarkdownWatcher.create()
   const events: MarkdownWatcherEvent[] = []
