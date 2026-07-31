@@ -47,7 +47,7 @@ import {
 } from '#lib/google/mod.ts'
 import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
-import { addSheetsComment, addSlidesComment } from './browserComments.ts'
+import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
 
 export interface MissionFile {
   id: string
@@ -681,7 +681,7 @@ export function createAgentTools(deps: {
 
     add_anchored_comment: {
       description:
-        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), or one cell (Sheets, pass sheetId + range). Slower than add_comment (~15s each) but the comment appears AT its location. Docs are not supported — use add_comment with quote. On any error (browser missing, signed out), fall back to add_comment.',
+        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), one cell (Sheets, pass sheetId + range), or a text passage (Docs — pass searchText, a VERBATIM snippet from the doc, distinctive enough to be unique; the comment binds to its first occurrence). Slower than add_comment (~20s each) but the comment appears AT its location. On any error (browser missing, signed out), fall back to add_comment.',
       inputSchema: jsonSchema<{
         fileId: string
         comment: string
@@ -689,6 +689,7 @@ export function createAgentTools(deps: {
         elementObjectId?: string
         sheetId?: number
         range?: string
+        searchText?: string
       }>({
         type: 'object',
         properties: {
@@ -701,6 +702,10 @@ export function createAgentTools(deps: {
           },
           sheetId: { type: 'number', description: 'Sheets: numeric sheetId (from the outline)' },
           range: { type: 'string', description: 'Sheets: A1 cell to anchor to, e.g. "B12"' },
+          searchText: {
+            type: 'string',
+            description: 'Docs: verbatim unique text from the document the comment anchors to',
+          },
         },
         required: ['fileId', 'comment'],
       }),
@@ -711,6 +716,7 @@ export function createAgentTools(deps: {
         elementObjectId,
         sheetId,
         range,
+        searchText,
       }: {
         fileId: string
         comment: string
@@ -718,6 +724,7 @@ export function createAgentTools(deps: {
         elementObjectId?: string
         sheetId?: number
         range?: string
+        searchText?: string
       }) => {
         if (!comment.trim()) return 'Error: comment content is empty'
         try {
@@ -738,8 +745,12 @@ export function createAgentTools(deps: {
             if (sheetId === undefined || !range) return 'Error: pass sheetId and range for a Sheets anchored comment'
             await addSheetsComment({ spreadsheetId: fileId, sheetId, range, comment: comment.trim() })
             where = `cell ${range}`
+          } else if (kind === 'doc') {
+            if (!searchText?.trim()) return 'Error: pass searchText (verbatim doc text) for a Docs anchored comment'
+            await addDocsComment({ documentId: fileId, searchText: searchText.trim(), comment: comment.trim() })
+            where = `text "${searchText.trim().slice(0, 40)}"`
           } else {
-            return 'Error: anchored comments are only possible on Slides and Sheets — use add_comment for Docs'
+            return `Error: "${file.name}" is not a Doc/Sheet/Slides file`
           }
           // The UI flow is blind; the API is the witness. UI-created comments
           // list through the Drive API (with real anchors).
