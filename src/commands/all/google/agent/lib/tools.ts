@@ -97,6 +97,46 @@ function toolError(err: unknown): string {
 }
 
 /**
+ * Hard ceiling per tool call, comfortably above the slowest legitimate tool
+ * (an anchored browser comment ≈ 90s). A wedged call must surface as a tool
+ * error the agent can route around — never freeze the mission. The stream
+ * watchdog in mod.ts relies on this: every tool call produces SOME result
+ * within this window, so a longer silence can only mean a dead model stream.
+ */
+const TOOL_TIMEOUT_MS = 180_000
+
+function withToolTimeouts<T extends Record<string, { execute: (...a: never[]) => unknown }>>(
+  tools: T,
+  log: (line: string) => void,
+): T {
+  for (const [name, tool] of Object.entries(tools)) {
+    const execute = tool.execute as (...a: unknown[]) => Promise<unknown>
+    tool.execute = (async (...a: unknown[]) => {
+      const run = execute(...a)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        return await Promise.race([
+          run,
+          new Promise<string>((resolve) => {
+            timer = setTimeout(() => {
+              log(`${name} timed out after ${TOOL_TIMEOUT_MS / 60_000} minutes — continuing without it`)
+              resolve(
+                `Error: ${name} did not finish within ${TOOL_TIMEOUT_MS / 60_000} minutes (network stall). It may still have partially completed — verify its effect before retrying once, and if it stalls again fall back and continue the mission.`,
+              )
+            }, TOOL_TIMEOUT_MS)
+          }),
+        ])
+      } finally {
+        clearTimeout(timer)
+        // The losing branch keeps running detached; keep its rejection quiet.
+        void run.catch(() => undefined)
+      }
+    }) as typeof tool.execute
+  }
+  return tools
+}
+
+/**
  * The inner toolset of the workspace agent. Every tool logs a one-line
  * humanized status through `log` — the live progress feed the user watches.
  */
@@ -113,7 +153,7 @@ export function createAgentTools(deps: {
 }) {
   const { client, log, state, critiquePrompt, deckCritiquePrompt, docCritiquePrompt } = deps
 
-  return {
+  const tools = {
     find_files: {
       description:
         'Find Google Docs/Sheets/Slides in Drive by name or content, most recently modified first. Omit query to list recent files.',
@@ -994,4 +1034,6 @@ export function createAgentTools(deps: {
       },
     },
   }
+
+  return withToolTimeouts(tools, log)
 }
