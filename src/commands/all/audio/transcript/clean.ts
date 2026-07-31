@@ -11,6 +11,7 @@ import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 import SRT from './lib/SRT/mod.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
+import { fetchOrgs, fetchPeople, fetchProjects } from './lib/entityLists.ts'
 import {
   applyRulings,
   buildRulings,
@@ -92,79 +93,11 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 const ANALYSIS_PROMPT_FILE = new URL('./prompts/transcript-analysis.prompt.md', import.meta.url).pathname
 const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.md', import.meta.url).pathname
-const GRAPHQL_URL = 'http://localhost:9999/graphql'
 
 // Analysis + correction run on the raw transcript and set the quality ceiling for the
 // notes built on it, so they ride the reasoning role — the registry's strongest default.
 // Re-pin to a literal profile here if `reasoning` is ever moved down-tier for cost.
 const TRANSCRIPT_MODEL = ROLES.reasoning
-
-interface PersonWithScore {
-  name: string
-  score: number
-  lastInteraction: string | null
-}
-
-interface OrgWithScore {
-  name: string
-  score: number
-  lastInteraction: string | null
-}
-
-async function fetchRecentPeople(monthsBack = 4): Promise<string> {
-  const cutoffDate = new Date()
-  cutoffDate.setMonth(cutoffDate.getMonth() - monthsBack)
-  const cutoff = cutoffDate.toISOString().slice(0, 10)
-
-  try {
-    const response = await fetch(GRAPHQL_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: '{ peopleWithScores { name score lastInteraction } }',
-      }),
-    })
-
-    if (!response.ok) return ''
-
-    const result = await response.json()
-    const people: PersonWithScore[] = result.data?.peopleWithScores ?? []
-
-    return people
-      .filter((p) => p.lastInteraction && p.lastInteraction > cutoff)
-      .sort((a, b) => b.score - a.score)
-      .map((p) => `${p.name} (${Math.floor(p.score)})`)
-      .join('\n')
-  } catch {
-    return ''
-  }
-}
-
-async function fetchTopOrgs(limit = 30): Promise<string> {
-  try {
-    const response = await fetch(GRAPHQL_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: '{ organizationsWithScores { name score lastInteraction } }',
-      }),
-    })
-
-    if (!response.ok) return ''
-
-    const result = await response.json()
-    const orgs: OrgWithScore[] = result.data?.organizationsWithScores ?? []
-
-    return orgs
-      .filter((o) => o.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map((o) => `${o.name} (${Math.floor(o.score)})`)
-      .join('\n')
-  } catch {
-    return ''
-  }
-}
 
 // Zod schema for structured AI response
 const TranscriptIssueSchema = z.object({
@@ -346,10 +279,11 @@ ${transcript}
 
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
 
-    // 2. Fetch known contacts and organizations for name matching
-    output.log(colors.gray('Fetching known contacts and organizations...'))
-    const knownPeopleFromGraph = await fetchRecentPeople(4)
-    const knownOrgsFromGraph = await fetchTopOrgs(30)
+    // 2. Fetch known entity names (people, orgs, projects) for matching
+    output.log(colors.gray('Fetching known contacts, organizations, and projects...'))
+    const knownPeopleFromGraph = await fetchPeople(context.notebookNow.date)
+    const knownOrgsFromGraph = await fetchOrgs()
+    const knownProjects = await fetchProjects()
 
     // Also fetch recently created people (last 7 days) via person:list:last
     let recentlyCreatedPeople = ''
@@ -371,6 +305,9 @@ ${transcript}
     }
     if (knownOrgs) {
       output.log(colors.gray(`Loaded ${knownOrgs.split('\n').length} organizations for name matching`))
+    }
+    if (knownProjects) {
+      output.log(colors.gray(`Loaded ${knownProjects.split('\n').length} projects for name matching`))
     }
 
     // User glossary: rulings from past reviews, corrected at HIGH confidence and
@@ -396,6 +333,7 @@ ${transcript}
         input: transcript,
         knownPeople,
         knownOrgs,
+        knownProjects,
         glossary: glossary ? renderGlossary(glossary) : '(none yet)',
       },
     }
@@ -522,6 +460,7 @@ ${transcript}
         // Reference only: the rewrite must not drift on names analysis didn't flag.
         knownPeople,
         knownOrgs,
+        knownProjects,
       },
     }
 

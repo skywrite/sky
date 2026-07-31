@@ -31,6 +31,14 @@ The same rules apply to these organization names.
 {{user.knownOrgs}}
 ```
 
+## Known Projects (Reference Only)
+
+The same rules apply to these project names.
+
+```
+{{user.knownProjects}}
+```
+
 ## Output Requirements
 
 1. **Apply corrections**: Replace EVERY occurrence of each listed `originalText` — a correction applies transcript-wide, and its `occurrences` count says how many instances to expect
