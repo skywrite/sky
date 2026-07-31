@@ -56,8 +56,8 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - `tagsContainsAny: ["Tag/A", "Tag/B"]` — match ANY of the listed tags (OR)
 - `tagsContainsAll: ["Tag/A", "Tag/B"]` — match ALL of the listed tags (AND)
 - `tagsStartsWith: "<prefix>/"` — match a tag category prefix (include trailing `/`)
-- Works on: meetings, messages, journals, people, orgs, projects, decisions, goals, places, documents
-- Does NOT work on: days
+- Works on every root field: meetings, messages, videos, journals, chats, days, people, orgs, projects, decisions, goals, ideas, streaks, places, documents
+- `documents` filters on tags but has no `tags` field to select — selecting it fails validation; select `type markdown path` there, or query the specific root field when you want the tags back
 - **Prefer `tagsStartsWith` for broad topics** — use the top-level category prefix (2 segments max). Example: `tagsStartsWith: "Acme/Finance/"`, NOT `"Acme/Finance/Treasury/"`. Always cut the prefix at the second `/` to catch all subtags in that category.
 
 **Past AI chats** → `chats(...)`
