@@ -33,6 +33,14 @@ Company names are often phonetically transcribed incorrectly.
 {{user.knownOrgs}}
 ```
 
+## Known Projects
+
+Project and product names from the user's notebook. Use this list for name correction exactly like the contacts and organizations above: if a transcribed word or phrase **sounds like** a known project, correct it with HIGH confidence.
+
+```
+{{user.knownProjects}}
+```
+
 ## User Glossary (Past Rulings)
 
 Rulings the user has made on previous transcripts, in up to three groups:
