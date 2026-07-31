@@ -2,6 +2,18 @@ import type { GoogleClient } from './client.ts'
 
 export const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 
+/**
+ * A file living on a shared drive 404s on every files/permissions request
+ * that doesn't opt in via supportsAllDrives — being shared with the account
+ * is not enough. Every files/permissions URL is built here so the opt-in is
+ * universal; files.export and comments have no such switch and need none.
+ */
+function driveApiUrl(endpoint: string): URL {
+  const url = new URL(endpoint)
+  url.searchParams.set('supportsAllDrives', 'true')
+  return url
+}
+
 export type WorkspaceKind = 'doc' | 'sheet' | 'slides'
 
 export const WORKSPACE_MIME: Record<WorkspaceKind, string> = {
@@ -59,7 +71,9 @@ export async function searchFiles(
   client: GoogleClient,
   options: { text?: string; kind?: WorkspaceKind; limit?: number } = {},
 ): Promise<DriveFile[]> {
-  const url = new URL(DRIVE_FILES_URL)
+  const url = driveApiUrl(DRIVE_FILES_URL)
+  // Listing needs its own shared-drive opt-in on top of supportsAllDrives.
+  url.searchParams.set('includeItemsFromAllDrives', 'true')
   url.searchParams.set('q', buildFilesQuery(options))
   url.searchParams.set('orderBy', 'modifiedTime desc')
   url.searchParams.set('pageSize', String(options.limit ?? 10))
@@ -69,7 +83,7 @@ export async function searchFiles(
 }
 
 export async function getFile(client: GoogleClient, fileId: string): Promise<DriveFile> {
-  const url = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`)
+  const url = driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`)
   url.searchParams.set('fields', FILE_FIELDS)
   return await client.getJson<DriveFile>(url.toString())
 }
@@ -89,12 +103,14 @@ export async function exportFileBytes(client: GoogleClient, fileId: string, mime
 
 /** Permanently delete a file (bypasses trash). Used to clean up staged uploads. */
 export async function deleteFile(client: GoogleClient, fileId: string): Promise<void> {
-  await client.request(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`, { method: 'DELETE' })
+  await client.request(driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`).toString(), {
+    method: 'DELETE',
+  })
 }
 
 /** Copy a file (e.g. a branded template deck) under a new name. */
 export async function copyFile(client: GoogleClient, fileId: string, title: string): Promise<DriveFile> {
-  const url = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/copy`)
+  const url = driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/copy`)
   url.searchParams.set('fields', FILE_FIELDS)
   return await client.postJson<DriveFile>(url.toString(), { name: title })
 }
@@ -110,7 +126,7 @@ export async function shareFile(
   fileId: string,
   options: { role: ShareRole; emailAddress?: string; anyoneWithLink?: boolean },
 ): Promise<{ id: string }> {
-  const url = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/permissions`)
+  const url = driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/permissions`)
   url.searchParams.set('fields', 'id')
   if (options.emailAddress) url.searchParams.set('sendNotificationEmail', 'true')
   const body = options.anyoneWithLink
@@ -180,7 +196,7 @@ export async function uploadFile(
   client: GoogleClient,
   options: { name: string; mimeType: string; data: Uint8Array },
 ): Promise<DriveFile> {
-  const url = new URL(DRIVE_UPLOAD_URL)
+  const url = driveApiUrl(DRIVE_UPLOAD_URL)
   url.searchParams.set('uploadType', 'multipart')
   url.searchParams.set('fields', FILE_FIELDS)
   const boundary = `sky-multipart-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`
@@ -202,7 +218,7 @@ export async function createDocFromMarkdown(
   client: GoogleClient,
   options: { title: string; markdown: string },
 ): Promise<DriveFile> {
-  const url = new URL(DRIVE_UPLOAD_URL)
+  const url = driveApiUrl(DRIVE_UPLOAD_URL)
   url.searchParams.set('uploadType', 'multipart')
   url.searchParams.set('fields', FILE_FIELDS)
   const init = multipartInit({ name: options.title, mimeType: WORKSPACE_MIME.doc }, options.markdown, 'text/markdown')
@@ -219,7 +235,7 @@ export async function replaceFileWithMarkdown(
   fileId: string,
   markdown: string,
 ): Promise<DriveFile> {
-  const url = new URL(`${DRIVE_UPLOAD_URL}/${encodeURIComponent(fileId)}`)
+  const url = driveApiUrl(`${DRIVE_UPLOAD_URL}/${encodeURIComponent(fileId)}`)
   url.searchParams.set('uploadType', 'multipart')
   url.searchParams.set('fields', FILE_FIELDS)
   const init = multipartInit({}, markdown, 'text/markdown')

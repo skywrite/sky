@@ -1,11 +1,23 @@
 import { assert, test } from '#test'
+import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { GoogleClient } from './client.ts'
+import { saveAccountTokens } from './tokens.ts'
 import {
   EXPORT_MIME,
   WORKSPACE_MIME,
   buildBinaryMultipartBody,
   buildFilesQuery,
   buildMultipartBody,
+  copyFile,
+  createDocFromMarkdown,
+  deleteFile,
   escapeDriveQueryValue,
+  exportFile,
+  getFile,
+  replaceFileWithMarkdown,
+  searchFiles,
+  shareFile,
+  uploadFile,
   workspaceKind,
 } from './drive.ts'
 
@@ -111,5 +123,47 @@ test('workspace mime maps', () => {
     should: 'export docs as markdown, sheets as csv, slides as text',
     expected: ['text/markdown', 'text/csv', 'text/plain'],
     actual: [EXPORT_MIME.doc, EXPORT_MIME.sheet, EXPORT_MIME.slides],
+  })
+})
+
+test('every files and permissions request opts into shared drives', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, 'jane@example.com', { refreshToken: 'rt', accessToken: 'at', scopes: [] })
+
+  const urls: string[] = []
+  const fetchFn = (async (url: unknown) => {
+    urls.push(String(url))
+    return new Response(JSON.stringify({ files: [] }), { status: 200 })
+  }) as typeof fetch
+  const client = new GoogleClient({
+    secrets,
+    email: 'jane@example.com',
+    client: { clientId: 'id', clientSecret: 'sec' },
+    fetchFn,
+    sleep: async () => {},
+  })
+
+  await searchFiles(client, { text: 'atlas' })
+  await getFile(client, 'f1')
+  await copyFile(client, 'f1', 'Atlas Copy')
+  await deleteFile(client, 'f1')
+  await shareFile(client, 'f1', { role: 'reader', emailAddress: 'jane@example.com' })
+  await uploadFile(client, { name: 'logo.png', mimeType: 'image/png', data: new Uint8Array([1]) })
+  await createDocFromMarkdown(client, { title: 'Atlas Plan', markdown: '# Hi' })
+  await replaceFileWithMarkdown(client, 'f1', '# Hi')
+  await exportFile(client, 'f1', 'text/plain')
+
+  assert({
+    given: 'every Drive files/permissions call plus a files.export',
+    should: 'carry supportsAllDrives everywhere except export, which has no such switch',
+    expected: ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', null],
+    actual: urls.map((u) => new URL(u).searchParams.get('supportsAllDrives')),
+  })
+
+  assert({
+    given: 'a files.list search',
+    should: 'also opt its results in via includeItemsFromAllDrives',
+    expected: 'true',
+    actual: new URL(urls[0]).searchParams.get('includeItemsFromAllDrives'),
   })
 })
