@@ -83,11 +83,15 @@ export function buildAuthUrl(options: {
   return url.toString()
 }
 
+/** Auth endpoints answer in seconds; a hang here would freeze every request behind the token refresh. */
+const AUTH_TIMEOUT_MS = 30_000
+
 async function postTokenEndpoint(params: Record<string, string>, fetchFn: typeof fetch): Promise<TokenResponse> {
   const res = await fetchFn(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(params).toString(),
+    signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
   })
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) {
@@ -137,7 +141,10 @@ export function refreshAccessToken(options: {
 
 /** The email of the account that granted the token (requires the `email` scope). */
 export async function fetchAccountEmail(accessToken: string, fetchFn: typeof fetch = fetch): Promise<string> {
-  const res = await fetchFn(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } })
+  const res = await fetchFn(GOOGLE_USERINFO_URL, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+  })
   if (!res.ok) throw new GoogleAuthError(`Google userinfo endpoint ${res.status}`)
   const body = (await res.json()) as { email?: string }
   if (!body.email) throw new GoogleAuthError('Google userinfo response had no email')

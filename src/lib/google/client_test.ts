@@ -85,6 +85,66 @@ test('GoogleClient retries once with a forced refresh on 401', async () => {
   })
 })
 
+test('GoogleClient retries dropped connections with backoff', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, EMAIL, { refreshToken: 'rt-1', accessToken: 'at-1', scopes: [] })
+
+  const calls: Call[] = []
+  const fetchFn = fakeFetch(calls, (_url, call) => {
+    if (call <= 2) throw new Error('socket hang up')
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  })
+
+  const sleeps: number[] = []
+  const client = new GoogleClient({
+    secrets,
+    email: EMAIL,
+    client: OAUTH_CLIENT,
+    fetchFn,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+  })
+  const body = await client.getJson<{ ok: boolean }>('https://www.googleapis.com/drive/v3/files')
+
+  assert({
+    given: 'two dropped connections before a success',
+    should: 'retry with growing backoff and return the eventual response',
+    expected: [3, [500, 1000], true],
+    actual: [calls.length, sleeps, body.ok],
+  })
+})
+
+test('GoogleClient gives up on persistent network failure with a descriptive error', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, EMAIL, { refreshToken: 'rt-1', accessToken: 'at-1', scopes: [] })
+
+  const calls: Call[] = []
+  const fetchFn = fakeFetch(calls, () => {
+    throw new Error('The operation timed out.')
+  })
+
+  const client = new GoogleClient({ secrets, email: EMAIL, client: OAUTH_CLIENT, fetchFn, sleep: async () => {} })
+
+  let caught: unknown
+  try {
+    await client.getJson('https://www.googleapis.com/drive/v3/files')
+  } catch (err) {
+    caught = err
+  }
+
+  assert({
+    given: 'every attempt failing at the network layer',
+    should: 'stop after three attempts and name the underlying failure',
+    expected: [3, true, true],
+    actual: [
+      calls.length,
+      String((caught as Error)?.message).includes('after 3 attempts'),
+      String((caught as Error)?.message).includes('timed out'),
+    ],
+  })
+})
+
 test('GoogleClient surfaces API errors', async () => {
   const secrets = new TestSecretsProvider()
   await saveAccountTokens(secrets, EMAIL, { refreshToken: 'rt-1', accessToken: 'at-1', scopes: [] })

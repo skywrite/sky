@@ -28,6 +28,13 @@ import type { MissionFile } from './lib/tools.ts'
 import { writeDocArtifact } from './lib/artifact.ts'
 
 const MAX_STEPS = 48
+/**
+ * A live stream ticks constantly (reasoning/text deltas, tool events), and
+ * tool calls answer within their own 3-minute ceiling — so a silent stretch
+ * this long can only be a socket that died without erroring. Abort and
+ * report what completed instead of spinning forever.
+ */
+const STREAM_STALL_MS = 240_000
 const MAX_DATA_CHARS = 262_144
 const MAX_MISSION_IMAGES = 24
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif)$/i
@@ -204,6 +211,7 @@ export default class GoogleAgentTask extends Command {
 
     log(`Mission started (${client.email})`)
 
+    const abort = new AbortController()
     try {
       // Streamed for the same reason as ai:chat: long generations hold the
       // socket past Anthropic's non-streaming ceiling on flaky networks.
@@ -213,17 +221,41 @@ export default class GoogleAgentTask extends Command {
         messages: [{ role: 'user', content: missionMessage }],
         tools,
         stopWhen: isStepCount(MAX_STEPS),
+        abortSignal: abort.signal,
       })
-      let report = (await stream.text).trim()
-      const steps = (await stream.steps).length
-      // A mission that hits the step cap ends on a tool call with no final
+      let stalled = false
+      let watchdog: ReturnType<typeof setTimeout> | undefined
+      const arm = () => {
+        clearTimeout(watchdog)
+        watchdog = setTimeout(() => {
+          stalled = true
+          abort.abort()
+        }, STREAM_STALL_MS)
+      }
+      let report = ''
+      let steps = 0
+      try {
+        arm()
+        for await (const _part of stream.fullStream) arm()
+        report = (await stream.text).trim()
+        steps = (await stream.steps).length
+      } catch (err) {
+        if (!stalled) throw err
+        log(`No stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted as stalled`)
+      } finally {
+        clearTimeout(watchdog)
+      }
+      // A mission that hits the step cap (or stalls) ends with no final
       // text — the user must still get every file and URL it touched.
       if (!report) {
+        const touched = state.files.map(
+          (f) => `${f.action === 'created' ? 'Created' : 'Updated'}: ${f.title}${f.url ? ` — ${f.url}` : ''}`,
+        )
         report = [
-          `The mission ended after ${steps} steps without a final report${steps >= MAX_STEPS ? ' (step limit reached)' : ''}. Files touched:`,
-          ...state.files.map(
-            (f) => `${f.action === 'created' ? 'Created' : 'Updated'}: ${f.title}${f.url ? ` — ${f.url}` : ''}`,
-          ),
+          stalled
+            ? 'The mission stalled (no stream activity for 4 minutes) and was aborted. Files touched before the stall:'
+            : `The mission ended after ${steps} steps without a final report${steps >= MAX_STEPS ? ' (step limit reached)' : ''}. Files touched:`,
+          ...(touched.length > 0 ? touched : ['(none)']),
         ].join('\n')
       }
 

@@ -6,6 +6,8 @@ import type { StoredTokens } from './tokens.ts'
 
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
 const MAX_ATTEMPTS = 3
+/** Per-request ceiling: a silently dead socket must error (and retry), never hang a mission. */
+const REQUEST_TIMEOUT_MS = 60_000
 
 export class GoogleApiError extends Error {
   readonly status: number
@@ -89,10 +91,23 @@ export class GoogleClient {
   async request(url: string, init: RequestInit = {}): Promise<Response> {
     let token = await this.accessToken()
     for (let attempt = 1; ; attempt++) {
-      const res = await this.fetchFn(url, {
-        ...init,
-        headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` },
-      })
+      let res: Response
+      try {
+        res = await this.fetchFn(url, {
+          ...init,
+          signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` },
+        })
+      } catch (err) {
+        // Timeouts and dropped connections are the same transient class as a 5xx.
+        if (attempt < MAX_ATTEMPTS) {
+          await this.sleep(500 * attempt)
+          continue
+        }
+        throw new Error(
+          `Google API request failed after ${MAX_ATTEMPTS} attempts on ${url}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
       if (res.ok) return res
       if (res.status === 401 && attempt === 1) {
         token = await this.accessToken({ forceRefresh: true })
