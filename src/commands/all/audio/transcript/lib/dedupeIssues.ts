@@ -28,8 +28,8 @@ const RANK = { high: 2, medium: 1, low: 0 } as const
 /** Contexts are representative samples — more than this is noise, not signal. */
 export const MAX_CONTEXTS = 3
 
-/** Merge key: the transcribed text, case- and whitespace-insensitive. */
-function keyOf(text: string): string {
+/** Canonical form of a transcribed term: case- and whitespace-insensitive. */
+export function normalizeTerm(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
@@ -63,7 +63,7 @@ function mergeInto(base: DedupableIssue, dupe: DedupableIssue): void {
 export function dedupeIssues<T extends DedupableIssue>(issues: T[]): T[] {
   const groups = new Map<string, T[]>()
   for (const issue of issues) {
-    const key = keyOf(issue.originalText)
+    const key = normalizeTerm(issue.originalText)
     const group = groups.get(key)
     if (group) group.push(issue)
     else groups.set(key, [issue])
@@ -75,7 +75,7 @@ export function dedupeIssues<T extends DedupableIssue>(issues: T[]): T[] {
       // Sub-group by fix so divergent high-confidence fixes stay separate.
       const byFix = new Map<string, T>()
       for (const issue of group) {
-        const fixKey = keyOf(issue.suggestedFix ?? '')
+        const fixKey = normalizeTerm(issue.suggestedFix ?? '')
         const base = byFix.get(fixKey)
         if (base) mergeInto(base, issue)
         else byFix.set(fixKey, clone(issue))
