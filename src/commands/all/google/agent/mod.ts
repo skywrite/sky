@@ -1,0 +1,262 @@
+import * as os from 'node:os'
+import * as path from 'node:path'
+import colors from 'picocolors'
+import open from 'open'
+import { isStepCount, streamText } from 'ai'
+import { aiModel } from '#shared/ai/models.ts'
+import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { readDir, readTextFile } from '#shared/fs/mod.ts'
+import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
+import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import {
+  AccountResolutionError,
+  GoogleApiError,
+  deleteFile,
+  getFile,
+  listAccountEmails,
+  resolveFileRef,
+  slideDesignPromptSection,
+  workspaceKind,
+} from '#lib/google/mod.ts'
+import type { DriveFile } from '#lib/google/mod.ts'
+import { resolveGoogleClient } from '../lib/resolveClient.ts'
+import { probeAccountsForFile } from '../lib/probeAccounts.ts'
+import { createAgentTools, createMissionState } from './lib/tools.ts'
+import type { MissionFile } from './lib/tools.ts'
+import { writeDocArtifact } from './lib/artifact.ts'
+
+const MAX_STEPS = 48
+const MAX_DATA_CHARS = 262_144
+const MAX_MISSION_IMAGES = 24
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif)$/i
+
+const params = {
+  mission: ArgOrFlag.string('What to create or change, with ALL content the document needs', {
+    short: 'm',
+    required: true,
+  }),
+  file: Flag.string('Target an existing document (Google URL or file id)', { short: 'f' }),
+  data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
+  images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
+  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  noOpen: Flag.boolean('Do not open touched files in the browser', { default: false }),
+}
+
+type Params = InferParams<typeof params>
+type Result = { report: string; files: MissionFile[]; steps: number; artifact?: string }
+
+declare module '#commands/lib/core/CommandTypesRegistry.ts' {
+  interface CommandTypesRegistry {
+    'google:agent': { params: Params; result: Result }
+  }
+}
+
+@AIChatTool({ needsApproval: true })
+export default class GoogleAgentTask extends Command {
+  static override description: CommandDescription = {
+    name: 'google:agent',
+    description:
+      'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself.',
+    descriptionLong: [
+      'Runs a focused sub-agent that executes one Google Workspace mission end',
+      'to end: find/read files, create docs from markdown (visually reviewed',
+      'as rendered PDF pages), build styled decks slide by slide with visual',
+      'verification via rendered thumbnails, place local images into docs and',
+      'decks, read/leave/reply-to comments, and build spreadsheets with live',
+      'formulas, styling and native charts embeddable into decks as linked',
+      'charts. Progress streams as it works; touched files are recorded in',
+      'the notebook under actions/docs/.',
+    ],
+    usage: [
+      'sky google:agent "Create a doc titled Atlas Q3 Plan with: ..."',
+      'sky google:agent "Build a 6-slide deck pitching Atlas: ..."',
+      'sky google:agent "Make a budget sheet with a column chart" -d spend.csv',
+      'sky google:agent "Photo-background deck pitching Atlas, dark and moody" -i ~/decks/backgrounds',
+      'sky google:agent "Tighten the Outlook section" -f <doc-url>',
+      'sky google:agent "..." -a work',
+    ],
+    params,
+  }
+
+  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
+    output.log(`  Mission: ${String(input.mission ?? '')}`)
+    if (input.file) output.log(`  Target:  ${String(input.file)}`)
+    output.log(`  Account: ${input.account ? String(input.account) : '(default)'}`)
+  }
+
+  /** Missions targeting the same file can be session-approved once; create missions always prompt. */
+  static approvalSessionKey(input: Record<string, unknown>): string | undefined {
+    if (typeof input.file !== 'string') return undefined
+    return resolveFileRef(input.file)?.fileId
+  }
+
+  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    const { output, secrets } = context
+    const { mission, file, account } = args
+
+    if (!mission?.trim()) {
+      return CommandResult.fail('Provide a mission, e.g. sky google:agent "Create a doc titled X with ..."')
+    }
+
+    let client
+    try {
+      client = await resolveGoogleClient({
+        secrets,
+        requested: account,
+        interactive: context.compositionDepth === 0,
+      })
+    } catch (err) {
+      if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
+      throw err
+    }
+
+    // Google live-renders remote edits, so an open tab is the mission's
+    // preview pane. One tab per file, capped — never a tab storm.
+    const openedUrls = new Set<string>()
+    const openInBrowser = (url: string | undefined) => {
+      if (!url || args.noOpen || openedUrls.has(url) || openedUrls.size >= 3) return
+      openedUrls.add(url)
+      open(url).catch(() => undefined)
+    }
+
+    let target: { fileId: string; kind?: string } | null = null
+    let targetFile: DriveFile | undefined
+    if (file) {
+      target = resolveFileRef(file)
+      if (!target) return CommandResult.fail(`--file is not a Google file URL or id: ${file}`)
+
+      // Preflight the target before spinning up the agent. Drive answers 404
+      // both for "gone" and "wrong account" — on miss, probe the other stored
+      // accounts so the error names the account that can actually see it.
+      try {
+        targetFile = await getFile(client, target.fileId)
+      } catch (err) {
+        if (err instanceof GoogleApiError && err.status === 404) {
+          const others = (await listAccountEmails(secrets)).filter((email) => email !== client.email)
+          const visibleTo = await probeAccountsForFile(secrets, others, target.fileId)
+          return CommandResult.fail(
+            visibleTo.length > 0
+              ? `The target file is not visible to ${client.email}, but ${visibleTo.join(' and ')} can see it. Rerun with -a ${visibleTo[0]}`
+              : `Target file not found for ${client.email}: ${target.fileId}. Check the URL — or connect the account that owns it (sky google:auth).`,
+          )
+        }
+        throw err
+      }
+    }
+
+    let missionData: string | undefined
+    if (args.data) {
+      try {
+        missionData = await readTextFile(args.data)
+      } catch {
+        return CommandResult.fail(`Could not read --data file: ${args.data}`)
+      }
+      if (missionData.length > MAX_DATA_CHARS) {
+        return CommandResult.fail(`--data file is too large (${missionData.length} chars > ${MAX_DATA_CHARS})`)
+      }
+    }
+
+    let imagePaths: string[] = []
+    if (args.images) {
+      const dir = args.images.startsWith('~/') ? path.join(os.homedir(), args.images.slice(2)) : args.images
+      try {
+        for await (const entry of readDir(dir)) {
+          if (entry.isFile && IMAGE_EXT_RE.test(entry.name)) imagePaths.push(path.join(dir, entry.name))
+        }
+      } catch {
+        return CommandResult.fail(`Could not read --images directory: ${args.images}`)
+      }
+      if (imagePaths.length === 0) {
+        return CommandResult.fail(`No PNG/JPEG/GIF files in --images directory: ${args.images}`)
+      }
+      imagePaths.sort()
+      imagePaths = imagePaths.slice(0, MAX_MISSION_IMAGES)
+    }
+
+    if (!import.meta.dirname) return CommandResult.error('Cannot locate the agent prompt directory')
+    const promptDir = path.join(import.meta.dirname, 'prompts')
+    const systemPrompt = await readTextFile(path.join(promptDir, 'agent.prompt.md'))
+    const critiquePrompt = await readTextFile(path.join(promptDir, 'slide-critique.prompt.md'))
+    const deckCritiquePrompt = await readTextFile(path.join(promptDir, 'deck-critique.prompt.md'))
+    const docCritiquePrompt = await readTextFile(path.join(promptDir, 'doc-critique.prompt.md'))
+
+    const state = createMissionState()
+    state.onFileTracked = (missionFile) => openInBrowser(missionFile.url)
+    if (targetFile) openInBrowser(targetFile.webViewLink)
+    const log = (line: string) => output.log(colors.dim(`◦ ${line}`))
+    const tools = createAgentTools({ client, log, state, critiquePrompt, deckCritiquePrompt, docCritiquePrompt })
+
+    const missionMessage = [
+      `Mission: ${mission.trim()}`,
+      target && targetFile
+        ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})`
+        : undefined,
+      missionData ? `Data (pass verbatim to set_values via its csv parameter):\n\n${missionData.trim()}` : undefined,
+      imagePaths.length > 0
+        ? `Images available on disk (stage with upload_image using these exact paths):\n${imagePaths.join('\n')}`
+        : undefined,
+      `Google account in use: ${client.email}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
+    log(`Mission started (${client.email})`)
+
+    try {
+      // Streamed for the same reason as ai:chat: long generations hold the
+      // socket past Anthropic's non-streaming ceiling on flaky networks.
+      const stream = streamText({
+        ...aiModel('reasoning'),
+        instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
+        messages: [{ role: 'user', content: missionMessage }],
+        tools,
+        stopWhen: isStepCount(MAX_STEPS),
+      })
+      let report = (await stream.text).trim()
+      const steps = (await stream.steps).length
+      // A mission that hits the step cap ends on a tool call with no final
+      // text — the user must still get every file and URL it touched.
+      if (!report) {
+        report = [
+          `The mission ended after ${steps} steps without a final report${steps >= MAX_STEPS ? ' (step limit reached)' : ''}. Files touched:`,
+          ...state.files.map(
+            (f) => `${f.action === 'created' ? 'Created' : 'Updated'}: ${f.title}${f.url ? ` — ${f.url}` : ''}`,
+          ),
+        ].join('\n')
+      }
+
+      let artifact: string | undefined
+      if (state.files.length > 0) {
+        try {
+          const now = context.notebookNow
+          artifact = await writeDocArtifact(
+            { date: now.date, time: now.time },
+            { account: client.email, mission: mission.trim(), files: state.files, report },
+          )
+          log(`Recorded in notebook: ${artifact}`)
+        } catch (err) {
+          output.log(colors.dim(`◦ Could not write the notebook record: ${(err as Error).message}`))
+        }
+      }
+
+      output.log('')
+      output.log(report.trim())
+      return CommandResult.success({ report, files: state.files, steps, artifact })
+    } catch (err) {
+      return CommandResult.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      // Staged image uploads are only a fetch vehicle — Google copies the
+      // bytes at insert time, so the Drive copies must not outlive the mission.
+      for (const upload of state.tempUploads) {
+        try {
+          await deleteFile(client, upload.id)
+          log(`Deleted staged image "${upload.name}"`)
+        } catch {
+          log(`Could not delete staged image "${upload.name}" — remove it from Drive manually`)
+        }
+      }
+    }
+  }
+}

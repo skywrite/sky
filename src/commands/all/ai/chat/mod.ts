@@ -34,7 +34,7 @@ import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityConte
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
-import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter } from './_tools.ts'
+import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -794,6 +794,9 @@ export default class AiChatTask extends Command {
     // Conversation state
     const turns: ConversationMessage[] = []
     const messages: Message[] = []
+    // "toolName:key" entries the user approved with "don't ask again this
+    // session" (e.g. google_agent scoped to one file id). Session-lived only.
+    const sessionApprovals = new Set<string>()
     const createdDate = resumeSession?.created ?? formatDate(startTime)
     let isFirstTurn = true
     let hasNewMessages = false
@@ -1281,6 +1284,11 @@ export default class AiChatTask extends Command {
               continue
             }
 
+            // A tool may scope approval to a stable key (e.g. the targeted
+            // file id); a key the user already blessed skips the prompt.
+            const sessionKey = getApprovalSessionKey(toolCall.toolName)?.(toolCall.input as Record<string, unknown>)
+            const sessionEntry = sessionKey ? `${toolCall.toolName}:${sessionKey}` : undefined
+
             // Use task-specific formatter if available, generic fallback otherwise
             const formatter = getApprovalFormatter(toolCall.toolName)
             if (formatter) {
@@ -1299,7 +1307,33 @@ export default class AiChatTask extends Command {
               }
             }
 
-            const approved = await p.confirm({ message: 'Approve?' })
+            if (sessionEntry && sessionApprovals.has(sessionEntry)) {
+              output.log(colors.dim('Auto-approved — you allowed this file for the rest of the session.'))
+              approvals.push({
+                type: 'tool-approval-response',
+                approvalId,
+                approved: true,
+                reason: 'Auto-approved: the user allowed this file for the session',
+              })
+              continue
+            }
+
+            let approved: boolean | symbol
+            if (sessionEntry) {
+              const choice = await p.select({
+                message: 'Approve?',
+                options: [
+                  { value: 'yes', label: 'Yes' },
+                  { value: 'always', label: "Yes — don't ask again for this file this session" },
+                  { value: 'no', label: 'No' },
+                ],
+              })
+              if (!p.isCancel(choice) && choice === 'always') sessionApprovals.add(sessionEntry)
+              approved = p.isCancel(choice) ? choice : choice !== 'no'
+            } else {
+              approved = await p.confirm({ message: 'Approve?' })
+            }
+
             if (p.isCancel(approved)) {
               deniedTools.add(toolCall.toolName)
               approvals.push({
