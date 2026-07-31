@@ -16,6 +16,10 @@ export function sheetsCommentUrl(spreadsheetId: string, sheetId: number, range: 
   return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit#gid=${sheetId}&range=${encodeURIComponent(range)}`
 }
 
+export function docsCommentUrl(documentId: string): string {
+  return `https://docs.google.com/document/d/${encodeURIComponent(documentId)}/edit`
+}
+
 /** Cmd+Option+M → type → Cmd+Enter. The docos editor class has been stable for a decade; typing is keyboard-driven so a rename only loses the readiness wait. */
 async function typeComment(page: Page, comment: string): Promise<void> {
   await page.keyboard.press('Meta+Alt+KeyM')
@@ -68,6 +72,41 @@ export async function addSlidesComment(options: {
     }
     await typeComment(page, options.comment)
     return { level }
+  } finally {
+    await context.close()
+  }
+}
+
+/**
+ * Comment anchored to text in a Doc: the editor's own find selects the first
+ * occurrence of searchText, which stays selected after the find bar closes —
+ * the comment then binds to that text. Callers pass a snippet distinctive
+ * enough to be unique.
+ */
+export async function addDocsComment(options: {
+  documentId: string
+  searchText: string
+  comment: string
+}): Promise<void> {
+  const context = await launchGoogleBrowser({ headless: true })
+  try {
+    const page = await openGooglePage(context, docsCommentUrl(options.documentId))
+    await page.waitForTimeout(4000)
+    // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
+    await page.mouse.click(700, 300)
+    await page.waitForTimeout(800)
+    await page.mouse.click(700, 300)
+    await page.waitForTimeout(800)
+    await page.keyboard.press('Meta+KeyF')
+    await page.waitForTimeout(800)
+    await page.keyboard.type(options.searchText, { delay: 15 })
+    await page.waitForTimeout(1200)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(500)
+    // Closing the find bar keeps the match selected — the comment binds to it.
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+    await typeComment(page, options.comment)
   } finally {
     await context.close()
   }
