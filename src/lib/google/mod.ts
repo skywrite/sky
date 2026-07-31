@@ -73,15 +73,17 @@ export {
   SLIDES_ALLOWED_REQUESTS,
   SLIDES_API_URL,
   batchUpdateSlides,
+  computeElementCenterEmu,
   createPresentation,
   fetchThumbnailPng,
+  getElementAnchor,
   getPresentationOutline,
   getSlideThumbnail,
   presentationUrl,
   summarizePresentation,
   validateSlidesRequests,
 } from './slides.ts'
-export type { PresentationOutline, SlideElementSummary, SlideSummary, SlideThumbnail } from './slides.ts'
+export type { ElementAnchor, PresentationOutline, SlideElementSummary, SlideSummary, SlideThumbnail } from './slides.ts'
 
 export { EMU_PER_PT, SLIDE_DESIGN, SLIDE_THEMES, hexToRgb01, slideDesignPromptSection } from './design.ts'
 export type { RgbColor, SlideTheme } from './design.ts'
@@ -106,7 +108,7 @@ export type { ParsedGoogleUrl } from './parseGoogleUrl.ts'
 
 export { csvToValues } from './csv.ts'
 
-export { compactComments, createComment, createReply, listComments } from './comments.ts'
+export { compactComments, createComment, createReply, deleteComment, listComments } from './comments.ts'
 export type { CompactComment, DriveComment, DriveReply } from './comments.ts'
 
 export { MAX_IMAGE_BYTES, driveImageUrl, sniffImageMime } from './images.ts'

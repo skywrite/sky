@@ -14,6 +14,7 @@ import {
   copyFile,
   createComment,
   createReply,
+  deleteComment,
   listComments,
   shareFile,
   createDocFromMarkdown,
@@ -26,6 +27,7 @@ import {
   extractChartIds,
   fetchThumbnailPng,
   getDocOutline,
+  getElementAnchor,
   getFile,
   getPresentationOutline,
   getSlideThumbnail,
@@ -45,6 +47,7 @@ import {
 } from '#lib/google/mod.ts'
 import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
+import { addSheetsComment, addSlidesComment } from './browserComments.ts'
 
 export interface MissionFile {
   id: string
@@ -626,19 +629,23 @@ export function createAgentTools(deps: {
 
     add_comment: {
       description:
-        'Leave a comment on a file (Doc/Sheet/Slides) that collaborators see and can reply to. Comments are file-level: BEGIN the content with the location it concerns ("Slide 3:", "Section Outlook:"). One comment per issue.',
-      inputSchema: jsonSchema<{ fileId: string; content: string }>({
+        'Leave a comment on a file (Doc/Sheet/Slides) that collaborators see and can reply to. Comments are file-level and appear in the 💬 comments panel, NOT pinned to content (Google forbids third-party anchoring): BEGIN the content with the location it concerns ("Slide 3:", "Section Outlook:") and pass the exact text it refers to as quote — the panel shows the quote with the comment. One comment per issue.',
+      inputSchema: jsonSchema<{ fileId: string; content: string; quote?: string }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
           content: { type: 'string', description: 'The comment text, starting with the location it concerns' },
+          quote: {
+            type: 'string',
+            description: 'Verbatim text from the file this comment refers to — displayed alongside the comment',
+          },
         },
         required: ['fileId', 'content'],
       }),
-      execute: async ({ fileId, content }: { fileId: string; content: string }) => {
+      execute: async ({ fileId, content, quote }: { fileId: string; content: string; quote?: string }) => {
         if (!content.trim()) return 'Error: comment content is empty'
         try {
-          const comment = await createComment(client, fileId, content.trim())
+          const comment = await createComment(client, fileId, content.trim(), { quoted: quote })
           const file = await getFile(client, fileId)
           track(state, 'updated', file)
           const location = content.trim().split(':')[0]
@@ -666,6 +673,107 @@ export function createAgentTools(deps: {
           const comments = await listComments(client, fileId, { includeResolved })
           log(`Read ${comments.length} comment thread(s)`)
           return { comments: compactComments(comments) }
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
+    add_anchored_comment: {
+      description:
+        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), or one cell (Sheets, pass sheetId + range). Slower than add_comment (~15s each) but the comment appears AT its location. Docs are not supported — use add_comment with quote. On any error (browser missing, signed out), fall back to add_comment.',
+      inputSchema: jsonSchema<{
+        fileId: string
+        comment: string
+        slideObjectId?: string
+        elementObjectId?: string
+        sheetId?: number
+        range?: string
+      }>({
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          comment: { type: 'string', description: 'The comment text collaborators will see at the anchor' },
+          slideObjectId: { type: 'string', description: 'Slides: the slide to anchor to (from the outline)' },
+          elementObjectId: {
+            type: 'string',
+            description: 'Slides: element on that slide to pin the marker to (from the outline)',
+          },
+          sheetId: { type: 'number', description: 'Sheets: numeric sheetId (from the outline)' },
+          range: { type: 'string', description: 'Sheets: A1 cell to anchor to, e.g. "B12"' },
+        },
+        required: ['fileId', 'comment'],
+      }),
+      execute: async ({
+        fileId,
+        comment,
+        slideObjectId,
+        elementObjectId,
+        sheetId,
+        range,
+      }: {
+        fileId: string
+        comment: string
+        slideObjectId?: string
+        elementObjectId?: string
+        sheetId?: number
+        range?: string
+      }) => {
+        if (!comment.trim()) return 'Error: comment content is empty'
+        try {
+          const file = await getFile(client, fileId)
+          const kind = workspaceKind(file.mimeType)
+          let where: string
+          if (kind === 'slides') {
+            if (!slideObjectId) return 'Error: pass slideObjectId for a Slides anchored comment'
+            const anchor = elementObjectId ? await getElementAnchor(client, fileId, elementObjectId) : null
+            const { level } = await addSlidesComment({
+              presentationId: fileId,
+              slideObjectId,
+              comment: comment.trim(),
+              anchor: anchor ?? undefined,
+            })
+            where = level === 'element' ? `element ${elementObjectId} on ${slideObjectId}` : `slide ${slideObjectId}`
+          } else if (kind === 'sheet') {
+            if (sheetId === undefined || !range) return 'Error: pass sheetId and range for a Sheets anchored comment'
+            await addSheetsComment({ spreadsheetId: fileId, sheetId, range, comment: comment.trim() })
+            where = `cell ${range}`
+          } else {
+            return 'Error: anchored comments are only possible on Slides and Sheets — use add_comment for Docs'
+          }
+          // The UI flow is blind; the API is the witness. UI-created comments
+          // list through the Drive API (with real anchors).
+          const needle = comment.trim().slice(0, 40)
+          const found = (await listComments(client, fileId)).some((c) => (c.content ?? '').includes(needle))
+          track(state, 'updated', file)
+          log(`Anchored a comment on "${file.name}" (${where})${found ? '' : ' — not yet visible via API'}`)
+          return found
+            ? { anchored: true }
+            : { anchored: true, warning: 'submitted, but not yet listed via the API — verify before relying on it' }
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
+    delete_comment: {
+      description:
+        'Delete one comment thread entirely (including replies) — ONLY when the mission explicitly asks for comments to be removed. For addressed feedback prefer reply_to_comment with resolve, which keeps the history.',
+      inputSchema: jsonSchema<{ fileId: string; commentId: string }>({
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          commentId: { type: 'string', description: 'Thread to delete (from list_comments)' },
+        },
+        required: ['fileId', 'commentId'],
+      }),
+      execute: async ({ fileId, commentId }: { fileId: string; commentId: string }) => {
+        try {
+          await deleteComment(client, fileId, commentId)
+          const file = await getFile(client, fileId)
+          track(state, 'updated', file)
+          log(`Deleted a comment thread on "${file.name}"`)
+          return { deleted: true }
         } catch (err) {
           return toolError(err)
         }

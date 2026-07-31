@@ -3,6 +3,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { exists, makeTempDir } from '#shared/fs/mod.ts'
+import { CHROMIUM_PATHS } from '../../lib/browserSession.ts'
 
 // Rasterizes agent-authored SVG into PNG background art using whatever the
 // machine already has — no bundled renderer. Fidelity order: librsvg is fast
@@ -12,13 +13,6 @@ import { exists, makeTempDir } from '#shared/fs/mod.ts'
 const execFileAsync = promisify(execFile)
 
 const RSVG_PATHS = ['/opt/homebrew/bin/rsvg-convert', '/usr/local/bin/rsvg-convert', '/usr/bin/rsvg-convert']
-
-const CHROMIUM_PATHS = [
-  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-]
 
 const QLMANAGE_PATH = '/usr/bin/qlmanage'
 
