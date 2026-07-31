@@ -13,6 +13,18 @@ import { isDayFile, scheduleDayFileSync, subscribeToMobileChanges } from './sync
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+import { beginEvent, configureLogging, logger } from '#shared/log.ts'
+
+// First thing, before anything can log: route this process's records to the
+// service stream. Under launchd stdout is not a TTY, so records go to the
+// daily file only; interactive `bun run` development also mirrors them to the
+// terminal.
+configureLogging({ stream: 'service', console: process.stdout.isTTY === true })
+
+const logServer = logger('server')
+const logTz = logger('timezone')
+const logHeartbeat = logger('heartbeat')
+const logWatcher = logger('watcher')
 
 // AI SDK warnings from service handlers (e.g. siteHtml) go to the error log
 // with a one-line stderr notice instead of stack traces in the service log.
@@ -36,9 +48,9 @@ setInterval(() => exit(0), 12 * 60 * 60 * 1000)
 let trackedTimezone = await readSystemTimezone()
 if (trackedTimezone) {
   process.env.TZ = trackedTimezone
-  console.log(`[timezone] Starting with system timezone: ${trackedTimezone} (TZ pinned)`)
+  logTz.info('Starting with system timezone {tz} (TZ pinned)', { tz: trackedTimezone })
 } else {
-  console.warn('[timezone] Could not read system timezone; running with runtime default')
+  logTz.warn('Could not read system timezone; running with runtime default')
 }
 
 setInterval(async () => {
@@ -46,9 +58,11 @@ setInterval(async () => {
   // null = transient read failure (relink window): keep the current zone
   // rather than restarting over a hiccup like the old comparison did.
   if (!currentTz || currentTz === trackedTimezone) return
-  console.log(
-    `[timezone] System timezone changed from ${trackedTimezone ?? 'unknown'} to ${currentTz} (updated in place)`,
-  )
+  logTz.info('System timezone changed from {from} to {to} (updated in place)', {
+    event: 'tz-change',
+    from: trackedTimezone ?? 'unknown',
+    to: currentTz,
+  })
   process.env.TZ = currentTz
   trackedTimezone = currentTz
 }, 30 * 1000)
@@ -88,9 +102,15 @@ const server = createServer({
 })
 
 export default async function run() {
-  console.log('Notebook server is starting...')
+  // One wide boot event carries the phase timings; a boot that dies before
+  // emitting it leaves the tz line as the last record, and the throw itself
+  // lands in the /tmp crash-catcher.
+  const boot = beginEvent(logServer, 'boot')
+  logServer.info('Notebook server is starting')
 
+  const scanStarted = performance.now()
   await server.scan()
+  boot.set({ scanMs: Math.round(performance.now() - scanStarted) })
   subscribeToMobileChanges(config)
 
   // Heartbeat: periodic cadence runner (follow checks, inbox scans, etc.)
@@ -111,37 +131,51 @@ export default async function run() {
   customRoutes.set('/heartbeat/wake', async (req: Request) => {
     if (req.method === 'POST') {
       heartbeatSleeping = false
-      console.log('[heartbeat] Woken by /heartbeat/wake')
+      logHeartbeat.info('wake', { event: 'wake', reason: 'endpoint' })
       return createJsonResponse(jsend.success({ sleeping: false }))
     }
     return new Response('Method not allowed', { status: 405 })
   })
 
+  let intervalCount = 0
+
   setInterval(async () => {
     if (heartbeatRunning) return
     heartbeatRunning = true
+    // One wide event per tick, at debug so steady-state stays quiet; anything
+    // that actually happens gets its own info/error record below.
+    const tick = beginEvent(logHeartbeat, 'tick', { level: 'debug' })
     try {
       const idleMs = await getDarwinIdleMs()
-      if (idleMs != null) {
-        const hrs = Math.floor(idleMs / 3_600_000)
-        const mins = Math.floor((idleMs % 3_600_000) / 60_000)
-        const secs = Math.floor((idleMs % 60_000) / 1_000)
-        console.log(`[heartbeat] idle: ${hrs}h${mins}m${secs}s`)
+      tick.set({ idleMs, tz: trackedTimezone })
+
+      // Hourly pulse at info (and on the first tick after boot): the always-on
+      // trail of tz and idle state — the tripwire for the recurring
+      // Intl-flips-to-UTC bug, bounded to 60-minute resolution.
+      intervalCount++
+      if (intervalCount % 60 === 1) {
+        logHeartbeat.info('heartbeat', {
+          event: 'heartbeat',
+          tz: trackedTimezone,
+          idleMs,
+          sleeping: heartbeatSleeping,
+        })
       }
 
       // Sleep: quiet hours (10pm–4am) + idle > 3hrs
       if (!heartbeatSleeping && isQuietHours() && idleMs != null && idleMs >= SLEEP_IDLE_MS) {
         heartbeatSleeping = true
-        console.log('[heartbeat] Sleeping (quiet hours + idle > 3h)')
+        logHeartbeat.info('sleep', { event: 'sleep', reason: 'quiet hours + idle > 3h', idleMs })
       }
 
       // Auto-wake when quiet hours end
       if (heartbeatSleeping && !isQuietHours()) {
         heartbeatSleeping = false
-        console.log('[heartbeat] Auto-woke (quiet hours ended)')
+        logHeartbeat.info('wake', { event: 'wake', reason: 'quiet hours ended' })
       }
 
       if (heartbeatSleeping) {
+        tick.emit('sleeping')
         return
       }
 
@@ -162,22 +196,38 @@ export default async function run() {
               withActivity: { fileName: string }[]
             }
           | undefined
+        tick.set({
+          checked: data?.checked ?? 0,
+          withActivity: data?.withActivity.length ?? 0,
+          expired: data?.expired?.length ?? 0,
+          skipped: data?.skipped?.length ?? 0,
+        })
         if (data && data.checked > 0) {
-          console.log(`[heartbeat] Checked ${data.checked} follow(s), ${data.withActivity.length} with activity`)
+          logHeartbeat.info('Checked {checked} follow(s), {withActivity} with activity', {
+            event: 'follows-checked',
+            checked: data.checked,
+            withActivity: data.withActivity.length,
+          })
         }
         if (data && data.expired && data.expired.length > 0) {
-          console.log(`[heartbeat] Expired ${data.expired.length} follow(s): ${data.expired.join(', ')}`)
+          logHeartbeat.info('Expired {count} follow(s)', {
+            event: 'follows-expired',
+            count: data.expired.length,
+            expired: data.expired,
+          })
         }
         if (data && data.skipped && data.skipped.length > 0) {
-          console.log(`[heartbeat] Skipped: ${data.skipped.join(', ')}`)
+          logHeartbeat.info('Skipped {count} follow(s)', {
+            event: 'follows-skipped',
+            count: data.skipped.length,
+            skipped: data.skipped,
+          })
         }
         if (data && data.errors && data.errors.length > 0) {
-          for (const e of data.errors) {
-            console.error(`[heartbeat] Follow error: ${e}`)
-          }
+          logHeartbeat.error('{count} follow error(s)', { count: data.errors.length, errors: data.errors })
         }
       } else {
-        console.error(`[heartbeat] check failed: ${result.message}`)
+        logHeartbeat.error('follow check failed: {message}', { message: result.message })
       }
 
       // Email follow sync (every 3 minutes) — disabled until IMAP zlib stability is resolved
@@ -204,14 +254,22 @@ export default async function run() {
       //   }
       // }
     } catch (err) {
-      console.error('[heartbeat] error:', err)
+      tick.fail(err)
+      return
     } finally {
       heartbeatRunning = false
     }
+    tick.emit()
   }, HEARTBEAT_INTERVAL_MS)
-  console.log(`[heartbeat] Started (every ${HEARTBEAT_INTERVAL_MS / 1000}s)`)
+  logHeartbeat.info('Started (every {intervalSecs}s)', { intervalSecs: HEARTBEAT_INTERVAL_MS / 1000 })
 
+  const startStarted = performance.now()
   await server.start()
+  boot.emit('ok', {
+    startMs: Math.round(performance.now() - startStarted),
+    port: server.port,
+    tz: trackedTimezone,
+  })
 
   // Start file watcher AFTER server is listening —
   // chokidar's initial directory scan competes for I/O with buildMarkdownStore()
@@ -238,7 +296,7 @@ function scheduleEntityRebuild() {
     try {
       await server.rebuildEntityStores()
     } catch (err) {
-      console.error('[watcher] Entity store rebuild failed:', err)
+      logWatcher.error('Entity store rebuild failed', err as Error)
     } finally {
       entityRebuildRunning = false
       if (entityRebuildQueued) {
@@ -250,11 +308,11 @@ function scheduleEntityRebuild() {
 }
 
 async function watchFiles() {
-  console.log('[watcher] Starting file watcher...')
+  logWatcher.info('Starting file watcher')
   const watcher = MarkdownWatcher.getInstance()
   for await (const ret of watcher.run()) {
     if (ret.error) {
-      console.error(ret.error)
+      logWatcher.error('watcher error: {error}', { error: ret.error })
       continue
     }
 
@@ -262,7 +320,7 @@ async function watchFiles() {
     // Log lifecycle events (create/remove) for diagnosability; modify events
     // fire on every save and sync touch, far too noisy to log.
     if (ret.event === 'create' || ret.event === 'remove') {
-      console.log(`[watcher] ${ret.event}: ${ret.file}`)
+      logWatcher.info('{event}: {file}', { event: ret.event, file: ret.file })
     }
 
     // Update MarkdownStore for live queries and link resolution. set/delete

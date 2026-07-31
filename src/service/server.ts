@@ -36,9 +36,16 @@ import { createWebSocketHandler } from './handler/websocket.ts'
 import dirnameFilename from '#lib/util/dirnameFilename.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import { beginEvent, logger } from '#shared/log.ts'
 import type { MarkdownStoreConfig } from './stores/mod.ts'
 
 const { __dirname } = dirnameFilename(import.meta.url)
+
+// In processes that never call configureLogging (tests boot this factory with
+// fixture dirs), these loggers are silent no-ops.
+const logServer = logger('server')
+const logWatcher = logger('watcher')
+const logMdStore = logger('markdownstore')
 
 // Re-export PathConfig for consumers
 export type { PathConfig } from './scanner/entities.ts'
@@ -163,7 +170,7 @@ export function createServer(options: ServerOptions): Server {
   // removed file's entities survive incremental updates — scan into a fresh
   // Store and swap the result into the live one (which emits update events).
   async function rebuildEntityStores() {
-    const t0 = Date.now()
+    const rebuild = beginEvent(logWatcher, 'entity-rebuild')
     const freshStore = new Store()
     const freshScanners = createScanners(freshStore, { isTimeFile: entityDetector.isTimeFile }, { referenceDate })
     await scanFiles({
@@ -173,27 +180,26 @@ export function createServer(options: ServerOptions): Server {
       scanners: freshScanners,
     })
     store.replaceFrom(freshStore)
-    console.log(
-      `[watcher] Entity stores rebuilt in ${Date.now() - t0}ms ` +
-        `(${store.people.size} people, ${store.organizations.size} orgs)`,
-    )
+    rebuild.emit('ok', { people: store.people.size, orgs: store.organizations.size })
   }
 
   // Build MarkdownStore for rich document queries
   async function buildMarkdownStore(): Promise<MarkdownStore | null> {
-    const t0 = Date.now()
-    console.log('[MarkdownStore] Building...')
+    const build = beginEvent(logMdStore, 'build')
+    const buildStarted = performance.now()
     markdownStore = markdownStoreConfig
       ? await MarkdownStore.build(markdownStoreConfig)
       : await MarkdownStore.buildFromAll()
-    console.log(
-      `[MarkdownStore] Built in ${Date.now() - t0}ms with ${markdownStore.people.size} people, ` +
-        `${markdownStore.orgs.size} orgs, ${markdownStore.projects.size} projects`,
-    )
+    build.set({
+      buildMs: Math.round(performance.now() - buildStarted),
+      people: markdownStore.people.size,
+      orgs: markdownStore.orgs.size,
+      projects: markdownStore.projects.size,
+    })
     // Pre-warm DomainCollection resolvers (builds Collection from all 20k docs, ~6s cold)
-    const t1 = Date.now()
+    const warmStarted = performance.now()
     await executeQuery('{ __typename }', markdownStore)
-    console.log(`[DomainCollection] Warmed resolvers in ${Date.now() - t1}ms`)
+    build.emit('ok', { warmMs: Math.round(performance.now() - warmStarted) })
     return markdownStore
   }
 
@@ -228,7 +234,7 @@ export function createServer(options: ServerOptions): Server {
     scanners,
 
     async start() {
-      console.log('Server starting...')
+      logServer.info('Server starting')
       if (!hasScanned) await scan()
 
       // Build MarkdownStore on startup
@@ -249,7 +255,7 @@ export function createServer(options: ServerOptions): Server {
           if (addr && typeof addr === 'object') {
             actualPort = addr.port
           }
-          console.log(`Server running at http://localhost:${actualPort}/`)
+          logServer.info('Server running at http://localhost:{port}/', { port: actualPort })
           resolve()
         })
         httpServer.on('upgrade', wsHandler.handleUpgrade)
@@ -260,7 +266,7 @@ export function createServer(options: ServerOptions): Server {
       if (httpServer) {
         httpServer.close()
         httpServer = null
-        console.log('Server stopped')
+        logServer.info('Server stopped')
       }
     },
   }

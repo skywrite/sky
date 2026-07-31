@@ -1,48 +1,68 @@
 import * as path from 'node:path'
-import * as os from 'node:os'
-import { mkdirSync } from 'node:fs'
-import { getRotatingFileSink } from '@logtape/file'
-import { configureSync, getConsoleSink, getLogger, isLogLevel, jsonLinesFormatter, resetSync } from '@logtape/logtape'
-import type { LogLevel, LogRecord, Logger, TextFormatter } from '@logtape/logtape'
-import { DIR_USER_DATA } from '#config'
+import { closeSync, mkdirSync, openSync, readdirSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import {
+  configureSync,
+  getConsoleSink,
+  getJsonLinesFormatter,
+  getLogger,
+  isLogLevel,
+  resetSync,
+} from '@logtape/logtape'
+import type { LogLevel, LogRecord, Logger, Sink, TextFormatter } from '@logtape/logtape'
 import { env } from '#shared/sys/mod.ts'
 
 /**
- * Structured logging for long-running processes.
+ * Structured logging for sky's long-running processes.
  *
- * The notebook service used to log with bare `console.log` and hand-written
- * `[subsystem]` prefixes, redirected by launchd to /tmp. That gave us no
- * timestamps at all — a daemon whose failure modes are "when did the timezone
- * flip?" and "how long was the port unbound?" was writing lines that could not
- * answer either — no level control, no rotation, and a file macOS periodically
- * deletes. This routes the same messages into a rotating JSONL file next to
- * the AI error log, with a real timestamp on every record.
+ * The service used to log with bare `console.log` and hand-written
+ * `[subsystem]` prefixes through a raw fd redirect — no timestamps, no
+ * levels, no structure to query. This module writes wide, structured events
+ * to daily JSONL files instead, one stream per process family so concurrent
+ * processes never share a file:
  *
- * Nothing imports LogTape directly; everything goes through this module, so
- * swapping the backend stays a one-file change.
+ *   service.2026-07-31.jsonl   the launchd daemon
+ *   cli.2026-07-31.jsonl       sky commands (short-lived, sometimes concurrent)
+ *   mcp.2026-07-31.jsonl       MCP servers (stdout is protocol — never log there)
  *
- * Inspect with: tail -20 <userDataDir>/logs/service.jsonl | jq
- * Filter to one subsystem: jq 'select(.logger == "sky.heartbeat")'
+ * Files live under `/tmp/sky/logs` — logs are diagnostic exhaust, ephemeral
+ * by design: they survive service restarts, accumulate across weeks of
+ * uptime, and vanish with /tmp on reboot. That is the accepted contract,
+ * matching the per-boot process logs already kept under /tmp; anything that
+ * must outlive a reboot belongs in a durable store (the AI error log's
+ * pattern), not here. A day's file is immutable once the day ends — nothing
+ * is ever renamed, so `tail -f` never breaks and ranged queries are just
+ * globs. The sweep bounds growth between reboots: files older than 90 days
+ * go first, then oldest-first until the directory fits 500 MiB.
+ *
+ * Nothing outside this module imports LogTape; swapping the backend stays a
+ * one-file change.
+ *
+ * Inspect:      tail -f /tmp/sky/logs/service.$(date -u +%F).jsonl | jq
+ * One subsystem: jq 'select(.logger == "sky.heartbeat")' service.*.jsonl
+ * Slow events:   jq 'select(.durationMs > 5000)' service.*.jsonl
+ * All streams:   cat *.2026-07-31.jsonl | jq -s 'sort_by(."@timestamp")[]'
  */
 
-export const SERVICE_LOG_PATH = path.join(DIR_USER_DATA, 'logs', 'service.jsonl')
+/** Process families, each the sole writer of its own daily files. */
+export type LogStream = 'service' | 'cli' | 'mcp'
 
-/** Home-relative form of the log path for terminal display. */
-export const SERVICE_LOG_DISPLAY = SERVICE_LOG_PATH.startsWith(os.homedir())
-  ? `~${SERVICE_LOG_PATH.slice(os.homedir().length)}`
-  : SERVICE_LOG_PATH
+// Literal /tmp, not os.tmpdir(): on macOS tmpdir() is the per-user
+// /var/folders confetti dir, which the OS actually does age-clean.
+export const DIR_LOGS = '/tmp/sky/logs'
 
 /**
  * Root category. Every logger hangs off this so our records stay separable
- * from LogTape's own `logtape.meta` diagnostics in the same stream.
+ * from LogTape's own `logtape.meta` diagnostics.
  */
 const ROOT = 'sky'
 
 const DEFAULT_LEVEL: LogLevel = 'info'
 
-/** 5 MiB across 5 files caps the log directory at ~25 MiB. */
-const MAX_SIZE = 5 * 1024 * 1024
-const MAX_FILES = 5
+/** Sweep thresholds: drop by age first, then oldest-first to fit the cap. */
+const RETENTION_DAYS = 90
+const MAX_TOTAL_BYTES = 500 * 1024 * 1024
+
+export type { LogLevel, Logger } from '@logtape/logtape'
 
 /**
  * Resolve the configured level. LogTape spells the third level `warning`;
@@ -59,14 +79,19 @@ export function resolveLevel(raw: string | undefined): LogLevel {
   return DEFAULT_LEVEL
 }
 
+/** The UTC calendar day a record belongs to, and the name of its file. */
+function utcDate(timestampMs: number): string {
+  return new Date(timestampMs).toISOString().slice(0, 10)
+}
+
 /**
  * Convert a value into something `JSON.stringify` cannot choke on.
  *
- * `jsonLinesFormatter` stringifies properties directly, so one cyclic object or
- * one BigInt anywhere in the payload throws inside the sink — and LogTape
- * responds by dropping the whole record. Losing a log line because of the shape
- * of a field attached to it is the wrong trade, so anything unserializable is
- * replaced by a marker and the record survives.
+ * The JSON Lines formatter stringifies properties directly, so one cyclic
+ * object or one BigInt anywhere in the payload throws inside the sink — and
+ * LogTape responds by dropping the whole record. Losing a log line because of
+ * the shape of a field attached to it is the wrong trade, so anything
+ * unserializable is replaced by a marker and the record survives.
  *
  * Errors are rebuilt by hand: their `message` and `stack` are non-enumerable,
  * so the generic object branch would flatten them to `{}` — the exact failure
@@ -107,64 +132,182 @@ function toJsonSafe(value: unknown, seen: WeakSet<object>): unknown {
 }
 
 /**
- * `jsonLinesFormatter`, but a record whose properties cannot be stringified is
- * degraded rather than discarded.
+ * Properties are flattened to the top level of each record — wide events make
+ * fields the star, and `.durationMs` beats `.properties.durationMs` in every
+ * jq query forever after. Flattening means a property could collide with the
+ * record's own keys, so those get an underscore prefix instead of silently
+ * clobbering the record.
  */
-const safeJsonLinesFormatter: TextFormatter = (record: LogRecord) => {
+const RESERVED_KEYS = ['@timestamp', 'level', 'logger', 'message']
+
+function guardReservedKeys(properties: Record<string, unknown>): Record<string, unknown> | null {
+  let guarded: Record<string, unknown> | null = null
+  for (const key of RESERVED_KEYS) {
+    if (key in properties) {
+      guarded ??= { ...properties }
+      guarded[`_${key}`] = guarded[key]
+      delete guarded[key]
+    }
+  }
+  return guarded
+}
+
+const flatJsonLinesFormatter = getJsonLinesFormatter({ properties: 'flatten' })
+
+/**
+ * The flattened JSON Lines formatter, but a record whose properties cannot be
+ * stringified is degraded rather than discarded.
+ */
+export const safeJsonLinesFormatter: TextFormatter = (record: LogRecord) => {
+  const guarded = guardReservedKeys(record.properties)
+  const rec = guarded ? { ...record, properties: guarded } : record
   try {
-    return jsonLinesFormatter(record)
+    return flatJsonLinesFormatter(rec)
   } catch {
-    const properties = toJsonSafe(record.properties, new WeakSet()) as Record<string, unknown>
+    const properties = toJsonSafe(rec.properties, new WeakSet()) as Record<string, unknown>
     try {
-      return jsonLinesFormatter({ ...record, properties })
+      return flatJsonLinesFormatter({ ...rec, properties })
     } catch {
       // Something outside properties is unserializable. Emit a valid line
       // recording that fact rather than losing the event entirely.
       return `${JSON.stringify({
-        '@timestamp': new Date(record.timestamp).toISOString(),
-        level: record.level === 'warning' ? 'WARN' : record.level.toUpperCase(),
-        logger: record.category.join('.'),
+        '@timestamp': new Date(rec.timestamp).toISOString(),
+        level: rec.level === 'warning' ? 'WARN' : rec.level.toUpperCase(),
+        logger: rec.category.join('.'),
         message: '[unserializable log record]',
-        properties: {},
       })}\n`
     }
   }
 }
 
+const LOG_FILE_RE = /^([a-z]+)\.(\d{4}-\d{2}-\d{2})\.jsonl$/
+
+/**
+ * Enforce retention: delete daily files (any stream) older than
+ * RETENTION_DAYS, then oldest-first until the directory fits MAX_TOTAL_BYTES.
+ * Files bearing the current date are never deleted — a process may hold them
+ * open. Never throws, and every unlink tolerates having lost a race with a
+ * sweep from another process.
+ */
+export function sweepLogs(dir: string, nowMs: number): void {
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  const today = utcDate(nowMs)
+  const cutoff = utcDate(nowMs - RETENTION_DAYS * 86_400_000)
+
+  const files: { date: string; filePath: string; size: number }[] = []
+  for (const name of names) {
+    const match = LOG_FILE_RE.exec(name)
+    if (!match) continue
+    const date = match[2]!
+    const filePath = path.join(dir, name)
+    if (date < cutoff) {
+      try {
+        unlinkSync(filePath)
+      } catch {
+        // Already gone (concurrent sweep) — the goal state, not a failure
+      }
+      continue
+    }
+    try {
+      files.push({ date, filePath, size: statSync(filePath).size })
+    } catch {
+      // Vanished between readdir and stat
+    }
+  }
+
+  let total = files.reduce((sum, f) => sum + f.size, 0)
+  if (total <= MAX_TOTAL_BYTES) return
+  files.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  for (const f of files) {
+    if (total <= MAX_TOTAL_BYTES) break
+    if (f.date === today) continue
+    try {
+      unlinkSync(f.filePath)
+      total -= f.size
+    } catch {
+      // Lost the race; the other sweeper subtracted it from disk for us
+    }
+  }
+}
+
+/**
+ * A sink writing each record to `<dir>/<stream>.<utc-date>.jsonl`, opening the
+ * next day's file (and sweeping retention) when a record's timestamp crosses
+ * midnight UTC. Appends are unbuffered single writes: crash-safe, and safe to
+ * interleave should two processes ever share a stream file briefly (launchd
+ * restart overlap).
+ *
+ * Directory creation is lazy — a process that never logs never touches disk.
+ */
+export function getDailyFileSink(
+  dir: string,
+  stream: string,
+  options: { formatter: TextFormatter },
+): Sink & Disposable {
+  let fd: number | null = null
+  let openDate: string | null = null
+  const sink = (record: LogRecord) => {
+    const date = utcDate(record.timestamp)
+    if (date !== openDate || fd === null) {
+      if (fd !== null) closeSync(fd)
+      mkdirSync(dir, { recursive: true })
+      fd = openSync(path.join(dir, `${stream}.${date}.jsonl`), 'a')
+      openDate = date
+      sweepLogs(dir, record.timestamp)
+    }
+    writeSync(fd, options.formatter(record))
+  }
+  return Object.assign(sink, {
+    [Symbol.dispose]: () => {
+      if (fd !== null) {
+        closeSync(fd)
+        fd = null
+      }
+    },
+  })
+}
+
 export interface LoggingOptions {
+  /** Which process family this is — names the daily file. */
+  stream: LogStream
   /** Overrides the level that would otherwise come from SKY_LOG_LEVEL. */
   level?: LogLevel
-  /** Writes somewhere other than the service log. Tests use this; nothing else should. */
-  path?: string
+  /** Writes somewhere other than DIR_LOGS. Tests use this; nothing else should. */
+  dir?: string
+  /**
+   * Mirror records to the console as well as the file. Off by default —
+   * stdout belongs to the terminal UI in CLI processes and to the protocol in
+   * stdio MCP servers. The service passes `process.stdout.isTTY` so
+   * interactive `bun run` development still shows output.
+   */
+  console?: boolean
 }
 
 let configured = false
 
 /**
  * Install the process-wide logging configuration. Idempotent, so entry points
- * may call it defensively; the first call wins.
- *
- * Buffering is disabled (`bufferSize: 0`) so every record hits the file as it
- * is written. The default 8 KiB / 5s buffer would drop the last few seconds of
- * output on a crash, which is the output most worth having.
+ * may call it defensively; the first call wins. A process that never calls it
+ * logs nothing — `logger()` calls in shared code are no-ops there, which is
+ * the safe default for processes not yet wired up.
  */
-export function configureLogging(options: LoggingOptions = {}): void {
+export function configureLogging(options: LoggingOptions): void {
   if (configured) return
-  const destination = options.path ?? SERVICE_LOG_PATH
+  const dir = options.dir ?? DIR_LOGS
   const level = options.level ?? resolveLevel(env.get('SKY_LOG_LEVEL'))
-  mkdirSync(path.dirname(destination), { recursive: true })
+  const skySinks = options.console ? ['file', 'console'] : ['file']
   configureSync({
     sinks: {
-      file: getRotatingFileSink(destination, {
-        formatter: safeJsonLinesFormatter,
-        maxSize: MAX_SIZE,
-        maxFiles: MAX_FILES,
-        bufferSize: 0,
-      }),
+      file: getDailyFileSink(dir, options.stream, { formatter: safeJsonLinesFormatter }),
       console: getConsoleSink(),
     },
     loggers: [
-      { category: [ROOT], sinks: ['file'], lowestLevel: level },
+      { category: [ROOT], sinks: skySinks, lowestLevel: level },
       // LogTape reports its own failures here — a full disk, an unwritable
       // path. Those must not go to the file sink, since the file sink is what
       // they are about; stderr is the one place still guaranteed to work.
@@ -191,4 +334,52 @@ export function resetLogging(): void {
  */
 export function logger(...subsystem: string[]): Logger {
   return getLogger([ROOT, ...subsystem])
+}
+
+export interface LogEvent {
+  /** Accumulate fields as the unit of work progresses. */
+  set(fields: Record<string, unknown>): LogEvent
+  /** Emit the single wide record for this unit of work. */
+  emit(outcome?: string, fields?: Record<string, unknown>): void
+  /** Emit at error level with the failure attached. */
+  fail(error: unknown, fields?: Record<string, unknown>): void
+}
+
+/**
+ * One wide event per unit of work, instead of a trail of narration: begin at
+ * the top, `set()` fields as they become known, `emit()`/`fail()` exactly once
+ * at the end. The record carries the event name, outcome, wall duration
+ * (monotonic — measured with performance.now, immune to clock changes), and
+ * every accumulated field:
+ *
+ *   const tick = beginEvent(logger('heartbeat'), 'tick', { level: 'debug' })
+ *   tick.set({ idleMs, checked })
+ *   tick.emit()              // {event:"tick", outcome:"ok", durationMs, idleMs, checked}
+ *
+ * Event names are literal — no `{placeholder}` templating.
+ */
+export function beginEvent(log: Logger, event: string, options: { level?: 'debug' | 'info' } = {}): LogEvent {
+  const started = performance.now()
+  const acc: Record<string, unknown> = {}
+  function finish(method: 'debug' | 'info' | 'error', outcome: string, extra?: Record<string, unknown>): void {
+    log[method](event, {
+      event,
+      outcome,
+      durationMs: Math.round(performance.now() - started),
+      ...acc,
+      ...extra,
+    })
+  }
+  return {
+    set(fields) {
+      Object.assign(acc, fields)
+      return this
+    },
+    emit(outcome = 'ok', fields) {
+      finish(options.level ?? 'info', outcome, fields)
+    },
+    fail(error, fields) {
+      finish('error', 'error', { error, ...fields })
+    },
+  }
 }
