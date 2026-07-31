@@ -12,7 +12,6 @@
         "@clack/prompts": "0.11.0",
         "@googlemaps/google-maps-services-js": "3.4.2",
         "@hono/node-server": "2.0.12",
-        "@logtape/file": "2.3.0",
         "@logtape/logtape": "2.3.0",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@ngrok/ngrok": "1.5.2",
@@ -156,8 +155,6 @@
     "@inquirer/type": ["@inquirer/type@3.0.10", "", { "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-BvziSRxfz5Ov8ch0z/n3oijRSEcEsHnhggm4xFZe93DHcUCTlutlq9Ox4SVENAfcRD22UQq7T/atg9Wr3k09eA=="],
 
     "@kamilkisiela/fast-url-parser": ["@kamilkisiela/fast-url-parser@1.1.4", "", {}, "sha512-gbkePEBupNydxCelHCESvFSFM8XPh1Zs/OAVRW/rKpEqPAl5PbOM90Si8mv9bvnR53uPD2s/FiRxdvSejpRJew=="],
-
-    "@logtape/file": ["@logtape/file@2.3.0", "", { "peerDependencies": { "@logtape/logtape": "^2.3.0" } }, "sha512-IO1IV+WSmEjf6RpdS7EnbcytrV4EUbDngeZhSeTrXQjremGZPljwqQsgjTXaK845jwIUhV2852ezAA7UBfMyXQ=="],
 
     "@logtape/logtape": ["@logtape/logtape@2.3.0", "", {}, "sha512-s/pxCgf9Gg75ypTV/bRUq355Dy/JP/zUJWfgJQPO5pTkXC23X2AXBcmBBgFiWH+bSi4yiX/G06qGV8CdAWD3SA=="],
 
