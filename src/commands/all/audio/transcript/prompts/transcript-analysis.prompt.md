@@ -33,9 +33,23 @@ Company names are often phonetically transcribed incorrectly.
 {{user.knownOrgs}}
 ```
 
+## User Glossary (Past Rulings)
+
+Rulings the user has made on previous transcripts, in up to three groups:
+
+- **Confirmed corrections**: when the mishearing — or a close variant — appears and the replacement makes sense in context, correct it with HIGH confidence; do not ask again.
+- **Sounds-like hints**: ordinary words the user has previously corrected to an entity name. NEVER rewrite these blindly: correct at HIGH confidence only where the context clearly refers to the entity; leave genuine ordinary-speech uses untouched; when ambiguous, flag at MEDIUM confidence with the hinted entity as `suggestedFix`.
+- **Leave as-is**: never flag these terms.
+
+```
+{{user.glossary}}
+```
+
 ## Instructions
 
 Identify issues and assign a confidence level to each:
+
+Keep each issue's `originalText` to the SMALLEST span that contains the error — a word or short phrase. Never flag a whole sentence when one word inside it is the problem; the surrounding sentence belongs in `contexts`, not in `originalText`.
 
 ### Auto-fix (confidence: "high") - Applied automatically:
 
@@ -95,7 +109,7 @@ If no participants or mentioned people can be identified, use empty arrays. Do N
       "type": "filler" | "stutter" | "false_start" | "unclear" | "technical" | "name" | "inaudible" | "crosstalk",
       "confidence": "high" | "medium" | "low",
       "occurrences": 25,
-      "originalText": "the problematic text",
+      "originalText": "the smallest span containing the error — a word or short phrase, never a whole sentence",
       "contexts": ["1-3 representative samples, each showing the problem text with enough surrounding words to judge it"],
       "suggestedFix": "corrected text (empty string to remove)",
       "options": ["alternative1", "alternative2"]

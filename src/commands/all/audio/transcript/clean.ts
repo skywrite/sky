@@ -11,6 +11,14 @@ import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 import SRT from './lib/SRT/mod.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
+import {
+  applyRulings,
+  buildRulings,
+  GLOSSARY_FILE,
+  loadGlossary,
+  renderGlossary,
+  saveGlossary,
+} from './lib/glossary.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -365,6 +373,15 @@ ${transcript}
       output.log(colors.gray(`Loaded ${knownOrgs.split('\n').length} organizations for name matching`))
     }
 
+    // User glossary: rulings from past reviews, corrected at HIGH confidence and
+    // never re-asked. Null means the file is malformed — never overwrite it then.
+    const glossary = await loadGlossary()
+    if (glossary === null) {
+      output.log(colors.yellow(`Glossary unreadable — fix or delete ${GLOSSARY_FILE} (new rulings won't be saved)`))
+    } else if (glossary.entries.length > 0) {
+      output.log(colors.gray(`Loaded ${glossary.entries.length} glossary rulings`))
+    }
+
     // 3. Load and render analysis prompt
     const analysisPromptContent = await readTextFile(ANALYSIS_PROMPT_FILE)
 
@@ -379,6 +396,7 @@ ${transcript}
         input: transcript,
         knownPeople,
         knownOrgs,
+        glossary: glossary ? renderGlossary(glossary) : '(none yet)',
       },
     }
 
@@ -458,6 +476,20 @@ ${transcript}
 
     // 5. Interactive Q&A loop (only for medium/low confidence issues)
     const reviewCorrections = await this.interactiveCorrection(output, reviewIssues)
+
+    // Persist the user's rulings so future runs stop asking about settled terms.
+    if (glossary !== null) {
+      const rulings = buildRulings(reviewIssues, reviewCorrections)
+      if (rulings.length > 0) {
+        applyRulings(glossary, rulings, context.notebookNow.date)
+        try {
+          await saveGlossary(glossary)
+          output.log(colors.gray(`Glossary updated (${rulings.length} rulings): ${GLOSSARY_FILE}`))
+        } catch (err) {
+          output.error(`Failed to save glossary: ${(err as Error).message}`)
+        }
+      }
+    }
 
     // Auto-accept all high-confidence fixes
     const autoCorrections: UserCorrection[] = autoFixIssues.map((issue, i) => ({
