@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { presentationUrl, summarizePresentation, validateSlidesRequests } from './slides.ts'
+import { computeElementCenterEmu, presentationUrl, summarizePresentation, validateSlidesRequests } from './slides.ts'
 
 test('validateSlidesRequests', () => {
   assert({
@@ -41,6 +41,26 @@ test('validateSlidesRequests', () => {
     should: 'reject',
     expected: 'requests is empty',
     actual: validateSlidesRequests([]),
+  })
+})
+
+test('computeElementCenterEmu', () => {
+  assert({
+    given: 'EMU geometry with scaling, PT-unit geometry, and incomplete geometry',
+    should: 'compute scaled centers, normalize PT to EMU, and return null when unknown',
+    expected: [{ x: 1609600, y: 850000 }, { x: 12700000, y: 6350000 }, null, null],
+    actual: [
+      computeElementCenterEmu({
+        size: { width: { magnitude: 1000000, unit: 'EMU' }, height: { magnitude: 500000, unit: 'EMU' } },
+        transform: { translateX: 609600, translateY: 600000, scaleX: 2, scaleY: 1, unit: 'EMU' },
+      }),
+      computeElementCenterEmu({
+        size: { width: { magnitude: 200, unit: 'PT' }, height: { magnitude: 100, unit: 'PT' } },
+        transform: { translateX: 900, translateY: 450, unit: 'PT' },
+      }),
+      computeElementCenterEmu({ size: { width: { magnitude: 100 } } }),
+      computeElementCenterEmu({ transform: { translateX: 1, translateY: 2 } }),
+    ],
   })
 })
 

@@ -21,15 +21,24 @@ export interface DriveComment {
 }
 
 /**
- * Leave a file-level comment. Anchored comments are not reliably creatable by
- * third-party apps on Google-editor files (the anchor format is undocumented
- * and silently degrades), so location context belongs in the content itself
- * ("Slide 3: ...").
+ * Leave a file-level comment. Anchored comments are not creatable by
+ * third-party apps on Google-editor files (the anchor format is opaque and
+ * undocumented, and silently degrades), so location context belongs in the
+ * content itself ("Slide 3: ...") and optionally in quotedFileContent — the
+ * comments panel displays the quote alongside the comment, making it
+ * self-locating.
  */
-export async function createComment(client: GoogleClient, fileId: string, content: string): Promise<DriveComment> {
+export async function createComment(
+  client: GoogleClient,
+  fileId: string,
+  content: string,
+  options: { quoted?: string } = {},
+): Promise<DriveComment> {
   const url = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/comments`)
   url.searchParams.set('fields', COMMENT_FIELDS)
-  return await client.postJson<DriveComment>(url.toString(), { content })
+  const body: Record<string, unknown> = { content }
+  if (options.quoted?.trim()) body.quotedFileContent = { value: options.quoted.trim() }
+  return await client.postJson<DriveComment>(url.toString(), body)
 }
 
 const MAX_COMMENTS = 300
@@ -75,6 +84,13 @@ export async function createReply(
   const body: Record<string, unknown> = { content: options.content }
   if (options.resolve) body.action = 'resolve'
   return await client.postJson<DriveReply>(url.toString(), body)
+}
+
+/** Delete a whole comment thread (including its replies). */
+export async function deleteComment(client: GoogleClient, fileId: string, commentId: string): Promise<void> {
+  await client.request(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/comments/${encodeURIComponent(commentId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export interface CompactComment {
