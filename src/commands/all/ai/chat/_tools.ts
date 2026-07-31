@@ -11,7 +11,7 @@ import { jsonSchema, tool } from 'ai'
 import colors from 'picocolors'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
-import type { FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
+import type { ApprovalSessionKeyFn, FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
@@ -154,4 +154,14 @@ export function getApprovalFormatter(toolName: string): FormatApprovalFn | undef
   const found = discoveredTools.find((t) => t.toolName === toolName)
   if (!found) return undefined
   return found.commandClass.formatApproval as FormatApprovalFn | undefined
+}
+
+/**
+ * Get the approvalSessionKey function for a tool, if the task class defines
+ * one — the hook behind "don't ask again for this one this session".
+ */
+export function getApprovalSessionKey(toolName: string): ApprovalSessionKeyFn | undefined {
+  const found = discoveredTools.find((t) => t.toolName === toolName)
+  if (!found) return undefined
+  return found.commandClass.approvalSessionKey as ApprovalSessionKeyFn | undefined
 }

@@ -49,3 +49,12 @@ export function getAIChatToolOptions(target: any): AIChatToolOptions | undefined
 
 /** Type for the optional static formatApproval method on task classes */
 export type FormatApprovalFn = (input: Record<string, unknown>, output: OutputHandler) => void
+
+/**
+ * Type for the optional static approvalSessionKey method on task classes.
+ * When a call's input maps to a stable key (e.g. the targeted file id), the
+ * approval prompt offers "don't ask again for this one this session" and
+ * later calls with the same key are auto-approved. Return undefined for
+ * inputs that should always prompt.
+ */
+export type ApprovalSessionKeyFn = (input: Record<string, unknown>) => string | undefined
