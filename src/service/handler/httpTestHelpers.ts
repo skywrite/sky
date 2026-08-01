@@ -1,9 +1,8 @@
 import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { Store } from '../store.ts'
 import { createHttpApp } from './http.ts'
-
-const STATIC_DIR = new URL('../client', import.meta.url).pathname
 
 function createTestYoga(): YogaServerInstance<object, object> {
   return {
@@ -15,13 +14,12 @@ function createTestYoga(): YogaServerInstance<object, object> {
   } as unknown as YogaServerInstance<object, object>
 }
 
-export function createTestHttpApp(markdownDirs: string[]) {
+export function createTestHttpApp(markdownDirs: string[], options: { markdownStore?: MarkdownStore | null } = {}) {
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
   return createHttpApp({
     store: new Store(),
     yoga: createTestYoga(),
-    markdownStore: null,
-    staticDir: STATIC_DIR,
+    markdownStore: options.markdownStore ?? null,
     markdownBaseDir,
     markdownDirs,
   })

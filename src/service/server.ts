@@ -33,13 +33,10 @@ import { createScanners } from './scanner/scan.ts'
 import { scanDirectories, scanFiles } from './scanner/walkDirs.ts'
 import { createHttpApp } from './handler/http.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
-import dirnameFilename from '#lib/util/dirnameFilename.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import { beginEvent, logger } from '#shared/log.ts'
 import type { MarkdownStoreConfig } from './stores/mod.ts'
-
-const { __dirname } = dirnameFilename(import.meta.url)
 
 // In processes that never call configureLogging (tests boot this factory with
 // fixture dirs), these loggers are silent no-ops.
@@ -210,7 +207,6 @@ export function createServer(options: ServerOptions): Server {
       store,
       yoga,
       markdownStore,
-      staticDir: __dirname + '/client',
       markdownBaseDir: findCommonAncestor(markdownDirs.map((dir) => path.dirname(dir))),
       markdownDirs,
       customRoutes,
