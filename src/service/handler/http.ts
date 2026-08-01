@@ -4,10 +4,10 @@
  * Used by both run.ts (production) and server.ts (testing).
  */
 
-import * as path from 'node:path'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -26,6 +26,7 @@ import {
   saveMarkdownContent,
 } from './markdown-preview/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
+import { buildHomePageData, renderHomePage, searchNotebook } from './home/mod.ts'
 
 /**
  * Options for creating the HTTP app.
@@ -37,8 +38,6 @@ export interface HttpHandlerOptions {
   yoga: YogaServerInstance<object, object>
   /** MarkdownStore for context resolution (null if not ready) */
   markdownStore: MarkdownStore | null
-  /** Directory containing static files (index.html) */
-  staticDir: string
   /** Base notebook directory that preview paths are relative to */
   markdownBaseDir: string
   /** Directories containing markdown files that can be previewed */
@@ -51,7 +50,7 @@ export interface HttpHandlerOptions {
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, staticDir, markdownBaseDir, markdownDirs, customRoutes } = options
+  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes } = options
 
   const app = new Hono()
 
@@ -310,6 +309,31 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     }
   })
 
+  app.get('/docs/_api/search', (c) => {
+    if (!markdownStore) {
+      return c.json({ message: 'Search index not ready' }, 503)
+    }
+
+    const query = (c.req.query('q') ?? '').trim()
+    const limitRaw = Number(c.req.query('limit') ?? '20')
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 50) : 20
+
+    let today: PlainDate | undefined
+    try {
+      today = fetchNowSync().plainDateTime.plainDate
+    } catch {
+      today = undefined
+    }
+
+    return c.json({
+      query,
+      results: searchNotebook(markdownStore, markdownBaseDir, query, limit, today, {
+        personScores: store.scoring.personScores,
+        orgScores: store.scoring.orgScores,
+      }),
+    })
+  })
+
   app.post('/docs/_api/render-block', async (c) => {
     try {
       const payload = await c.req.json<{
@@ -400,10 +424,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     )
   })
 
-  // Static index page
+  // Home page
   app.get('/', async (c) => {
-    const indexHtml = await readTextFile(path.join(staticDir, 'index.html'))
-    return c.html(indexHtml)
+    const data = await buildHomePageData({ markdownStore, markdownBaseDir })
+    return c.html(renderHomePage(data))
   })
 
   // 404 fallback
