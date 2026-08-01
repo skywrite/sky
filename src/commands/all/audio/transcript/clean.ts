@@ -7,6 +7,7 @@ import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { logger } from '#shared/log.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 import SRT from './lib/SRT/mod.ts'
@@ -98,6 +99,9 @@ const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.m
 // notes built on it, so they ride the reasoning role — the registry's strongest default.
 // Re-pin to a literal profile here if `reasoning` is ever moved down-tier for cost.
 const TRANSCRIPT_MODEL = ROLES.reasoning
+
+// No-op until the CLI process family configures logging (see #shared/log.ts).
+const log = logger('transcript')
 
 // Zod schema for structured AI response
 const TranscriptIssueSchema = z.object({
@@ -236,21 +240,7 @@ export default class AudioTranscriptCleanTask extends Command {
       return CommandResult.fail('No transcript content provided')
     }
 
-    // TODO: Remove debug file output before merging
-    const debugPath = '/tmp/transcript-debug.txt'
-    await writeTextFile(
-      debugPath,
-      `=== TRANSCRIPT DEBUG ===
-Length: ${transcript.length} characters
-Lines: ${transcript.split('\n').length}
-
-=== RAW CONTENT ===
-${transcript}
-=== END ===
-`,
-    )
-    output.log(colors.yellow(`[DEBUG] Transcript written to ${debugPath}`))
-    // END TODO
+    log.debug('transcript received', { chars: transcript.length, lines: transcript.split('\n').length })
 
     // Cue-based input (any path: file, Desktop, or paste): parse to structure and
     // feed the models compact turns instead of raw cues — drops the cue-number and
