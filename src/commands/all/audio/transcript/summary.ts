@@ -5,6 +5,7 @@ import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { logger } from '#shared/log.ts'
 import { env, isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -98,6 +99,9 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // strongest default — rather than a literal, keeping one swap point at the next model
 // bump. Metadata extraction and correction-parsing are lighter and use baseline roles.
 const SUMMARY_MODEL = ROLES.reasoning
+
+// No-op until the CLI process family configures logging (see #shared/log.ts).
+const log = logger('transcript')
 
 const PROMPT_FILES = {
   meeting: {
@@ -216,9 +220,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       return CommandResult.fail('No transcript content provided')
     }
 
-    output.log(
-      colors.yellow(`[DEBUG] Transcript received: ${transcript.length} chars, ${transcript.split('\n').length} lines`),
-    )
+    log.debug('transcript received', { chars: transcript.length, lines: transcript.split('\n').length })
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
 
     // 2. Load and render summary prompt
@@ -254,7 +256,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       return CommandResult.error(error, 'Failed to generate summary')
     }
 
-    output.log(colors.yellow(`[DEBUG] Summary generated: ${summary.length} chars`))
+    log.debug('summary generated', { chars: summary.length })
 
     // 4. Extract structured metadata with second AI call
     output.log(colors.cyan('Extracting metadata...'))
@@ -275,6 +277,8 @@ export default class AudioTranscriptSummaryTask extends Command {
     let extractedTo: string | null = null
     const isMessageTemplate = template === 'audio-message'
 
+    // Hoisted so the failure warn can carry the payload that failed to parse.
+    let extractJson = ''
     try {
       const result = await generateText({
         ...aiModel('balanced'),
@@ -284,14 +288,14 @@ export default class AudioTranscriptSummaryTask extends Command {
       })
 
       // Parse JSON response
-      let jsonText = result.text.trim()
-      if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      extractJson = result.text.trim()
+      if (extractJson.startsWith('```')) {
+        extractJson = extractJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
       }
 
-      output.log(colors.yellow(`[DEBUG] Extract response: ${jsonText}`))
+      log.debug('metadata extract response', { raw: extractJson })
 
-      const extracted = JSON.parse(jsonText)
+      const extracted = JSON.parse(extractJson)
       extractedTitle = extracted.title || 'Untitled'
       extractedTime = extracted.time || null
       extractedDuration = extracted.durationMinutes ?? null
@@ -304,7 +308,8 @@ export default class AudioTranscriptSummaryTask extends Command {
         extractedWho = Array.isArray(extracted.who) ? extracted.who : []
       }
     } catch (err) {
-      output.log(colors.yellow(`[DEBUG] Failed to extract metadata: ${err}`))
+      output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
+      log.warn('metadata extraction failed', { error: err, raw: extractJson })
     }
 
     // Duration computed from VTT cue timestamps is exact — prefer it over the
@@ -352,6 +357,8 @@ export default class AudioTranscriptSummaryTask extends Command {
         output.log(colors.cyan('\nParsing corrections...'))
 
         // Use AI to parse corrections - handles any format including comma-separated fields
+        // Hoisted so the failure warn can carry the payload that failed to parse.
+        let jsonText = ''
         try {
           const peopleFields = isMessageTemplate
             ? `- from: ${extractedFrom ?? 'null'}\n- to: ${extractedTo ?? 'null'}`
@@ -386,12 +393,12 @@ Example input: "Time: 2026-01-27 8:44, duration: 13 mins, Medium: Phone"
 Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "Phone"}`,
           })
 
-          let jsonText = parseResult.text.trim()
+          jsonText = parseResult.text.trim()
           if (jsonText.startsWith('```')) {
             jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
           }
 
-          output.log(colors.yellow(`[DEBUG] Correction parse result: ${jsonText}`))
+          log.debug('correction parse result', { raw: jsonText })
 
           const parsed = JSON.parse(jsonText)
 
@@ -411,6 +418,7 @@ Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "P
           output.log(colors.green('Applied corrections.'))
         } catch (err) {
           output.log(colors.yellow(`Failed to parse corrections: ${err}`))
+          log.warn('correction parse failed', { error: err, raw: jsonText })
         }
       }
     }
