@@ -1,16 +1,10 @@
-// TODO: These tests fail under bun due to JSX runtime mismatch — Hono JSX elements
-// are passed to react-dom's renderToString which expects React elements. The error is:
-// "Objects are not valid as a React child (found: object with keys {tag, props, key, children, isEscaped, localContexts})"
-// This affects all tests that hit the markdown preview server rendering path.
-// Works under deno because the JSX factory resolution differs.
-
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 
-test({ name: 'docs route - renders explorer without a selected file', ignore: true }, async () => {
+test({ name: 'docs route - renders explorer without a selected file' }, async () => {
   const testDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-empty-'))
   const notesDir = path.join(testDir, 'notes')
   await mkdir(notesDir, { recursive: true })
@@ -113,7 +107,7 @@ test('docs route - rejects file outside configured markdown dirs', async () => {
   }
 })
 
-test({ name: 'docs route - renders markdown in browser', ignore: true }, async () => {
+test({ name: 'docs route - renders markdown in browser' }, async () => {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-render-'))
 
   try {
@@ -244,7 +238,7 @@ This is **phase 1** browser rendering.
   }
 })
 
-test({ name: 'docs route - renders raw markdown editor in edit mode', ignore: true }, async () => {
+test({ name: 'docs route - renders raw markdown editor in edit mode' }, async () => {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-'))
 
   try {
@@ -310,7 +304,7 @@ test({ name: 'docs route - renders raw markdown editor in edit mode', ignore: tr
   }
 })
 
-test({ name: 'docs route - renders frontmatter only once in edit mode', ignore: true }, async () => {
+test({ name: 'docs route - renders frontmatter only once in edit mode' }, async () => {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-frontmatter-'))
 
   try {
@@ -341,7 +335,7 @@ test({ name: 'docs route - renders frontmatter only once in edit mode', ignore: 
   }
 })
 
-test({ name: 'docs route - renders thematic breaks without raw block chrome in edit mode', ignore: true }, async () => {
+test({ name: 'docs route - renders thematic breaks without raw block chrome in edit mode' }, async () => {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-hr-'))
 
   try {
