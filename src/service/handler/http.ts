@@ -26,7 +26,8 @@ import {
   saveMarkdownContent,
 } from './markdown-preview/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
-import { buildHomePageData, renderHomePage, searchNotebook } from './home/mod.ts'
+import { searchNotebook } from './home/mod.ts'
+import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 
 /**
  * Options for creating the HTTP app.
@@ -424,10 +425,27 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     )
   })
 
-  // Home page
-  app.get('/', async (c) => {
-    const data = await buildHomePageData({ markdownStore, markdownBaseDir })
-    return c.html(renderHomePage(data))
+  // The app shell (Mantine on the sky theme; client bundled by Bun at first request).
+  // `/` is the blank canvas being wired up; `/theme` is the living reference mock.
+  app.get('/', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  app.get('/theme', (c) => {
+    return c.html(renderAppHtml('sky · theme'))
+  })
+
+  app.get('/_assets/:name', async (c) => {
+    try {
+      const asset = await getThemeAsset(c.req.param('name'))
+      if (!asset) return c.json({ message: 'Not found.' }, 404)
+      return new Response(asset.content, {
+        headers: { 'Content-Type': asset.type, 'Cache-Control': 'no-cache' },
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return c.json({ message }, 500)
+    }
   })
 
   // 404 fallback

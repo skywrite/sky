@@ -10,25 +10,8 @@ const storePromise = MarkdownStore.build({
   timeDirs: [`${FIXTURES_DIR}/time`],
 })
 
-test({ name: 'home route - renders before the search index is ready' }, async () => {
-  const app = createTestHttpApp([FIXTURES_DIR])
-  const response = await app.request('http://localhost/')
-  const html = await response.text()
-
-  assert({
-    given: 'a home request without a markdown store',
-    should: 'return 200',
-    actual: response.status,
-    expected: 200,
-  })
-
-  assert({
-    given: 'a home request without a markdown store',
-    should: 'render the search box with the warming-up hint',
-    actual: html.includes('id="home-search"') && html.includes('warming up'),
-    expected: true,
-  })
-})
+// NOTE: `/` now serves the client app shell (see theme/themeRoute_test.ts).
+// The SSR home renderer is unrouted but kept — its search API lives on below.
 
 test({ name: 'search api - 503 before the index is ready' }, async () => {
   const app = createTestHttpApp([FIXTURES_DIR])
@@ -39,19 +22,6 @@ test({ name: 'search api - 503 before the index is ready' }, async () => {
     should: 'return 503',
     actual: response.status,
     expected: 503,
-  })
-})
-
-test({ name: 'home route - renders counts once the index is ready' }, async () => {
-  const app = createTestHttpApp([FIXTURES_DIR], { markdownStore: await storePromise })
-  const response = await app.request('http://localhost/')
-  const html = await response.text()
-
-  assert({
-    given: 'a home request with a markdown store',
-    should: 'render document counts and enabled search',
-    actual: response.status === 200 && html.includes('documents') && !html.includes('warming up'),
-    expected: true,
   })
 })
 

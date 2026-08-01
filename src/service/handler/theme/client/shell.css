@@ -1,0 +1,508 @@
+/* The v4.5 shell — layout only; components come from Mantine.
+   Tokens map onto Mantine's palette vars so the scheme switch just works. */
+
+:root {
+  --sky-bg: var(--mantine-color-body);
+  --sky-side: var(--mantine-color-gray-0);
+  --sky-s2: var(--mantine-color-gray-1);
+  --sky-border-soft: var(--mantine-color-gray-2);
+  --sky-text: var(--mantine-color-gray-9);
+  --sky-text-2: var(--mantine-color-gray-7);
+  --sky-dim: var(--mantine-color-gray-6);
+  --sky-green: var(--mantine-color-green-8);
+  --sky-blue-deep: var(--mantine-color-blue-8);
+  --sky-blue-soft: var(--mantine-color-blue-0);
+  --sky-hover: var(--mantine-color-gray-2);
+  --sky-card: #ffffff;
+  --sky-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-mantine-color-scheme='dark'] {
+  --sky-side: var(--mantine-color-dark-8);
+  --sky-s2: var(--mantine-color-dark-5);
+  --sky-border-soft: var(--mantine-color-dark-4);
+  --sky-text: var(--mantine-color-dark-0);
+  --sky-text-2: var(--mantine-color-dark-1);
+  --sky-dim: var(--mantine-color-dark-2);
+  --sky-green: var(--mantine-color-green-4);
+  --sky-blue-deep: var(--mantine-color-blue-3);
+  --sky-blue-soft: rgba(34, 139, 230, 0.16);
+  --sky-hover: var(--mantine-color-dark-4);
+  --sky-card: var(--mantine-color-dark-5);
+  --sky-card-shadow: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--sky-text);
+  background: var(--sky-bg);
+  overflow: hidden;
+}
+
+#root,
+.sky-app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ============ sidebar ============ */
+.sky-side {
+  width: 276px;
+  flex: none;
+  background: var(--sky-side);
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.sky-side-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 14px;
+}
+
+.sky-brand {
+  font-weight: 650;
+  font-size: 18px;
+}
+
+.sky-newchat {
+  margin-bottom: 10px;
+}
+
+.sky-side-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  padding: 13px 10px 5px;
+}
+
+.sky-thread {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--sky-text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+}
+
+.sky-thread:hover {
+  background: var(--sky-hover);
+}
+
+.sky-thread[data-active='true'] {
+  background: var(--sky-card);
+  box-shadow: var(--sky-card-shadow);
+  color: var(--sky-text);
+  font-weight: 550;
+}
+
+.sky-thread .sky-meta {
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+/* ============ main ============ */
+.sky-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sky-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 48px 10px;
+  max-width: 1096px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sky-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.sky-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sky-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sky-col {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 44px 48px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+
+/* ============ turns ============ */
+.sky-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sky-who {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-turn-user {
+  align-items: flex-end;
+}
+
+.sky-bubble {
+  background: var(--sky-s2);
+  border-radius: 18px 18px 6px 18px;
+  padding: 12px 19px;
+  max-width: 72%;
+  font-size: 18px;
+}
+
+.sky-body {
+  font-size: 18px;
+}
+
+.sky-body p {
+  margin: 0 0 11px;
+  max-width: 72ch;
+}
+
+.sky-body p:last-child {
+  margin-bottom: 0;
+}
+
+.sky-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* ============ blocks ============ */
+.sky-block {
+  border-radius: 18px;
+  background: var(--sky-side);
+  overflow: hidden;
+}
+
+[data-mantine-color-scheme='dark'] .sky-block {
+  background: var(--mantine-color-dark-6);
+}
+
+.sky-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 28px 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-block-head .sky-spacer {
+  flex: 1;
+}
+
+.sky-mini {
+  font-weight: 400;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  opacity: 0.8;
+}
+
+.sky-block-pad {
+  padding: 16px 28px 24px;
+}
+
+.sky-q {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 9px;
+  max-width: 72ch;
+}
+
+.sky-quote {
+  font-size: 18px;
+  color: var(--sky-text-2);
+  border-left: 3px solid var(--sky-border-soft);
+  padding-left: 14px;
+  margin: 0 0 18px;
+  max-width: 72ch;
+}
+
+.sky-jfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.sky-progress {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-left: auto;
+}
+
+/* ============ brief rows ============ */
+.sky-need {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 18px;
+}
+
+.sky-need:last-child {
+  border-bottom: none;
+}
+
+.sky-need-n {
+  color: var(--sky-dim);
+  font-size: 15px;
+  width: 18px;
+  flex: none;
+}
+
+.sky-need-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-need-sub {
+  display: block;
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 2px;
+}
+
+.sky-need-btns {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.sky-need[data-approved='true'] .sky-need-txt {
+  color: var(--sky-dim);
+}
+
+.sky-sent {
+  font-size: 15px;
+  color: var(--sky-green);
+  font-weight: 550;
+}
+
+/* ============ checklist ============ */
+.sky-todo {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 9px 0;
+  font-size: 18px;
+}
+
+.sky-todo-label {
+  flex: 1;
+}
+
+.sky-todo[data-done='true'] .sky-todo-label {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-tag {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.sky-week {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 0 2px;
+  font-size: 15.5px;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+
+.sky-week:hover {
+  color: var(--sky-text-2);
+}
+
+/* ============ chips ============ */
+.sky-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.sky-chip {
+  font-size: 14.5px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  color: var(--sky-text-2);
+  background: var(--sky-s2);
+}
+
+.sky-chip[data-act='true'] {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+/* ============ condensation + fate ============ */
+.sky-condensed {
+  text-align: center;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  padding: 2px 0;
+}
+
+.sky-fate {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  margin-top: 5px;
+}
+
+/* ============ the record ============ */
+.sky-record {
+  padding: 12px 4px;
+}
+
+.sky-rec-date {
+  margin: 0 0 20px;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.sky-rec-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  margin: 20px 0 7px;
+}
+
+.sky-rec-line {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 18px;
+}
+
+.sky-rec-at {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-dim);
+  width: 56px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============ composer ============ */
+.sky-composer-zone {
+  background: var(--sky-bg);
+}
+
+.sky-composer {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 48px 10px;
+}
+
+.sky-input {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 17px;
+  background: var(--sky-s2);
+  padding: 16px 19px;
+  font-size: 18px;
+  color: var(--sky-dim);
+}
+
+.sky-under {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 48px 14px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+/* ============ the blank canvas at / ============ */
+.sky-blank {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sky-dim);
+  font-size: 16px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.sky-blank a {
+  color: var(--sky-blue-deep);
+}
+
+@media (max-width: 900px) {
+  .sky-side {
+    display: none;
+  }
+
+  .sky-col,
+  .sky-composer,
+  .sky-under {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
