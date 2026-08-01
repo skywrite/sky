@@ -17,11 +17,17 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+import { configureLogging } from '#shared/log.ts'
 
 // Install before any command module loads, so AI SDK warnings from every
 // command — including ones that call providers directly, bypassing the
 // model profiles — go to the error log instead of stderr stack traces.
 routeAISDKWarningsToLog()
+
+// CLI is its own log-stream family (cli.<date>.jsonl). Console mirroring stays
+// off — stdout belongs to the terminal UI. Idempotent, so richer per-invocation
+// wiring can land here later without conflict.
+configureLogging({ stream: 'cli' })
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
