@@ -6,7 +6,7 @@
 import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { createDomainResolvers } from '../resolvers.ts'
+import { createDomainResolvers } from '../resolvers/mod.ts'
 
 // =============================================================================
 // Fixtures

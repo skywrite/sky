@@ -8,7 +8,7 @@
 import { buildSchema, graphql, type GraphQLSchema } from 'graphql'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { createDomainResolvers } from './resolvers.ts'
+import { createDomainResolvers } from './resolvers/mod.ts'
 
 // Cache the schema string and built schema
 let schemaString: string | null = null

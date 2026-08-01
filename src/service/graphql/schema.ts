@@ -11,7 +11,7 @@ import { createSchema, createYoga, type YogaServerInstance } from 'graphql-yoga'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import type { Store } from '../store.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers.ts'
+import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import * as resolvers from './resolvers/mod.ts'
 
