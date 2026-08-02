@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
@@ -349,14 +350,7 @@ export default class AudioTranscriptCleanTask extends Command {
         timeout: 20 * 60 * 1000, // 20 min — long transcripts are slow to analyze
       })
 
-      // Extract JSON from response (strip any markdown fences if present)
-      let jsonText = result.text.trim()
-      if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-      }
-
-      const parsed = JSON.parse(jsonText)
-      analysis = TranscriptIssueSchema.parse(parsed)
+      analysis = TranscriptIssueSchema.parse(extractJson(result.text))
     } catch (err) {
       const error = err as Error & { text?: string; cause?: unknown }
       output.error(`AI Error: ${error.message}`)

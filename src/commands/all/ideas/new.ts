@@ -4,6 +4,7 @@ import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -101,12 +102,7 @@ async function clarifyIdea(
         prompt: renderedClarifier,
       })
 
-      let jsonText = result.text.trim()
-      if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-      }
-
-      clarifierResult = JSON.parse(jsonText)
+      clarifierResult = extractJson<typeof clarifierResult>(result.text)
     } catch {
       spinner.stop('Clarification failed')
       return currentInput
@@ -294,12 +290,7 @@ export default class IdeasNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      let jsonText = result.text.trim()
-      if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-      }
-
-      aiResponse = JSON.parse(jsonText)
+      aiResponse = extractJson<typeof aiResponse>(result.text)
       spinner.stop('Idea formatted')
     } catch (err) {
       spinner.stop('Failed to format idea')

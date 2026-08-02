@@ -1,5 +1,6 @@
 import { generateObject, generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import { z } from 'zod'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
@@ -56,14 +57,6 @@ interface ClarifyResult {
   conversation: string
 }
 
-function stripCodeFences(text: string): string {
-  let cleaned = text.trim()
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  }
-  return cleaned
-}
-
 /**
  * Run the MI clarifier to sharpen the selected MI.
  * Returns the clarified MI statement + conversation, or null if user cancels.
@@ -98,7 +91,7 @@ async function clarifyMI(
         prompt: renderedClarifier,
       })
 
-      clarifierResult = JSON.parse(stripCodeFences(result.text))
+      clarifierResult = extractJson<typeof clarifierResult>(result.text)
     } catch {
       spinner.stop('Clarification failed')
       return { statement: currentInput, conversation: conversationHistory }

@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import slugify from '#lib/string/slugify.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
@@ -125,11 +126,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
 - DO NOT include fields the user didn't mention`,
             })
 
-            let jsonText = parseResult.text.trim()
-            if (jsonText.startsWith('```')) {
-              jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-            }
-            const parsed = JSON.parse(jsonText)
+            const parsed = extractJson<{ when?: string; rel?: string[] }>(parseResult.text)
 
             if (parsed.when) {
               journalWhen = new PlainDateTime(parsed.when)

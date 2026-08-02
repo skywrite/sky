@@ -4,6 +4,7 @@ import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -72,15 +73,6 @@ type ClarifierResult =
   | { status: 'clear'; habit: string; summary: string }
   | { status: 'unclear'; question: string; reason: string }
 
-/** Strip markdown code fences from AI response text. */
-function stripCodeFences(text: string): string {
-  let cleaned = text.trim()
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  }
-  return cleaned
-}
-
 /**
  * Echo captured input (pastes expanded) right below the prompt, so the exact
  * text the AI will see stays visible in scrollback while it processes.
@@ -134,7 +126,7 @@ async function clarifyHabit(
         prompt: renderedClarifier,
       })
 
-      clarifierResult = JSON.parse(stripCodeFences(result.text))
+      clarifierResult = extractJson<typeof clarifierResult>(result.text)
     } catch {
       spinner.stop('Clarification failed')
       return currentInput
@@ -229,7 +221,7 @@ async function reviewDetails(habit: string, schedule: string, details: string, s
       prompt: rendered,
     })
 
-    review = JSON.parse(stripCodeFences(result.text))
+    review = extractJson<typeof review>(result.text)
   } catch {
     spinner.stop('Review unavailable - keeping the rules as written')
     return details
@@ -526,7 +518,7 @@ export default class StreaksNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      aiResponse = JSON.parse(stripCodeFences(result.text))
+      aiResponse = extractJson<typeof aiResponse>(result.text)
       spinner.stop('Streak formatted')
     } catch (err) {
       spinner.stop('Failed to format streak')
