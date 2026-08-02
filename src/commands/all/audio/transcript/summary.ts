@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -259,6 +260,20 @@ export default class AudioTranscriptSummaryTask extends Command {
     log.debug('summary generated', { chars: summary.length })
 
     // 4. Extract structured metadata with second AI call
+    // Shape the extract and correction prompts are asked to return. Every field
+    // is optional: the model omits what it can't find, and `time` is passed
+    // through verbatim (extended notebook hours are valid — see docs/nbfs.md).
+    interface ExtractedMetadata {
+      title?: string
+      time?: string
+      durationMinutes?: number
+      medium?: string
+      from?: string
+      to?: string
+      who?: string[]
+      rel?: string[]
+    }
+
     output.log(colors.cyan('Extracting metadata...'))
 
     const extractPromptContent = await readTextFile(prompts.extract)
@@ -278,7 +293,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     const isMessageTemplate = template === 'audio-message'
 
     // Hoisted so the failure warn can carry the payload that failed to parse.
-    let extractJson = ''
+    let extractRaw = ''
     try {
       const result = await generateText({
         ...aiModel('balanced'),
@@ -287,15 +302,11 @@ export default class AudioTranscriptSummaryTask extends Command {
         timeout: 20 * 60 * 1000, // 20 min
       })
 
-      // Parse JSON response
-      extractJson = result.text.trim()
-      if (extractJson.startsWith('```')) {
-        extractJson = extractJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-      }
+      extractRaw = result.text
 
-      log.debug('metadata extract response', { raw: extractJson })
+      log.debug('metadata extract response', { raw: extractRaw })
 
-      const extracted = JSON.parse(extractJson)
+      const extracted = extractJson<ExtractedMetadata>(extractRaw)
       extractedTitle = extracted.title || 'Untitled'
       extractedTime = extracted.time || null
       extractedDuration = extracted.durationMinutes ?? null
@@ -309,7 +320,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       }
     } catch (err) {
       output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
-      log.warn('metadata extraction failed', { error: err, raw: extractJson })
+      log.warn('metadata extraction failed', { error: err, raw: extractRaw })
     }
 
     // Duration computed from VTT cue timestamps is exact — prefer it over the
@@ -400,14 +411,11 @@ Example input: "time: 2026-03-31 25:30"
 Example output: {"time": "2026-03-31 25:30"}`,
           })
 
-          jsonText = parseResult.text.trim()
-          if (jsonText.startsWith('```')) {
-            jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-          }
+          jsonText = parseResult.text
 
           log.debug('correction parse result', { raw: jsonText })
 
-          const parsed = JSON.parse(jsonText)
+          const parsed = extractJson<ExtractedMetadata>(jsonText)
 
           // Apply parsed corrections
           if (parsed.title) extractedTitle = parsed.title

@@ -4,6 +4,7 @@ import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
 import colors from 'picocolors'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -70,17 +71,6 @@ type OutcomeResult =
   | { status: 'clear'; outcomes: string; summary: string }
   | { status: 'unclear'; question: string; reason: string }
 
-/**
- * Strip markdown code fences from AI response text.
- */
-function stripCodeFences(text: string): string {
-  let cleaned = text.trim()
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  }
-  return cleaned
-}
-
 interface ClarifyResult {
   /** The final refined statement */
   statement: string
@@ -126,7 +116,7 @@ async function clarifyDecision(
         prompt: renderedClarifier,
       })
 
-      clarifierResult = JSON.parse(stripCodeFences(result.text))
+      clarifierResult = extractJson<typeof clarifierResult>(result.text)
     } catch {
       spinner.stop('Clarification failed')
       return { statement: currentInput, conversation: conversationHistory }
@@ -237,7 +227,7 @@ async function clarifyOutcomes(
         prompt: renderedOutcomes,
       })
 
-      outcomeResult = JSON.parse(stripCodeFences(result.text))
+      outcomeResult = extractJson<typeof outcomeResult>(result.text)
     } catch {
       spinner.stop('Outcome clarification failed')
       return { statement: currentInput, conversation: conversationHistory }
@@ -446,7 +436,7 @@ export default class DecisionsNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      aiResponse = JSON.parse(stripCodeFences(result.text))
+      aiResponse = extractJson<typeof aiResponse>(result.text)
       spinner.stop('Decision formatted')
     } catch (err) {
       spinner.stop('Failed to format decision')
