@@ -14,7 +14,10 @@ const CorrectionsSchema = z.object({
   when: z
     .string()
     .optional()
-    .describe('Updated time as "YYYY-MM-DD HH:MM" if date changed, or just "HH:MM" if only time changed'),
+    .describe(
+      'Updated time as "YYYY-MM-DD HH:MM" if date changed, or just "HH:MM" if only time changed. ' +
+        'Hours are not capped at 23 — copy extended hours like "25:30" through verbatim, never normalized',
+    ),
   senderRenames: z
     .array(
       z.object({
