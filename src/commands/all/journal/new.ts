@@ -115,7 +115,11 @@ User corrections:
 ${corrections}
 
 Return ONLY a JSON object with the fields that should be updated. Rules:
-- "when" must be in format "YYYY-MM-DD HH:MM" (24-hour, zero-padded)
+- "when" must be in format "YYYY-MM-DD HH:MM" (zero-padded)
+- Hours are NOT capped at 23. Notebook time files late-night work under the day it started,
+  so "2026-03-31 25:30" means 01:30 the next morning and is a deliberate, valid value. Copy
+  such times through exactly — never normalize them, never roll the date forward, never
+  report them as invalid or ask the user to clarify them.
 - "rel" must be an array of strings
 - Only include fields that the user explicitly wants to change
 - DO NOT include fields the user didn't mention`,

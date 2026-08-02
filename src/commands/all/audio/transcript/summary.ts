@@ -384,13 +384,20 @@ User corrections:
 ${corrections}
 
 Return ONLY a JSON object with the fields that should be updated. Rules:
-- time must be in format "YYYY-MM-DD HH:MM" (24-hour, zero-padded)
+- time must be in format "YYYY-MM-DD HH:MM" (zero-padded)
+- Hours are NOT capped at 23. Notebook time files late-night work under the day it started,
+  so "25:30" means 01:30 the next morning and is a deliberate, valid value. Copy such times
+  through exactly — never normalize them, never roll the date forward, never report them as
+  invalid or ask the user to clarify them.
 - durationMinutes must be a number
 ${peopleRules}
 - If the user says "13 mins" or "13 minutes", convert to durationMinutes: 13
 
 Example input: "Time: 2026-01-27 8:44, duration: 13 mins, Medium: Phone"
-Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "Phone"}`,
+Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "Phone"}
+
+Example input: "time: 2026-03-31 25:30"
+Example output: {"time": "2026-03-31 25:30"}`,
           })
 
           jsonText = parseResult.text.trim()

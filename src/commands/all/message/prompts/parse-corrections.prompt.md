@@ -22,5 +22,10 @@ Sender rename rules:
 - If a renamed sender's old name is the current from or to value, also update that field to the new name.
 - Never rename a sender that is not in the dialogue sender list.
 
+Time rules:
+
+- `when` is "YYYY-MM-DD HH:MM" if the user changed the date, or just "HH:MM" if only the time changed.
+- Hours are NOT capped at 23. Notebook time files late-night work under the day it started, so "25:30" means 01:30 the next morning and is a deliberate, valid value. Copy such times through exactly — never normalize them, never roll the date forward, never substitute a clock-hour equivalent.
+
 User corrections:
 {{user.corrections}}
