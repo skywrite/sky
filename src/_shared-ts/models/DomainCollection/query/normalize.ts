@@ -19,13 +19,16 @@ import type {
   FieldNode,
   ObjectFieldNode,
   OperationDefinitionNode,
+  SelectionNode,
 } from 'graphql'
-import { Kind, parse, print, validate, visit } from 'graphql'
+import { Kind, OperationTypeNode, parse, print, validate, visit } from 'graphql'
 import { getSchema } from './execute.ts'
 
 /**
  * Normalize an AI-generated GraphQL query string:
- * - strips surrounding markdown code fences (``` or ```graphql)
+ * - strips markdown code fences (``` or ```graphql), and merges the root
+ *   selections when the model emitted several fenced blocks instead of one
+ *   query — the interior fences otherwise break the whole document
  * - wraps bare selections in `{ ... }` when the string does not already
  *   start with `{` or a `query` operation
  * - hoists filter keys misplaced as field arguments into `where`
@@ -37,23 +40,77 @@ import { getSchema } from './execute.ts'
  *   field-merge conflict
  */
 export function normalizeGraphQLQuery(query: string): string {
-  let q = query.trim()
+  const chunks = fenceChunks(query).map(wrapBareSelection)
+  if (chunks.length === 0) {
+    return ''
+  }
 
-  if (q.startsWith('```')) {
-    q = q.replace(/^```[a-zA-Z]*[ \t]*\r?\n?/, '')
-  }
-  if (q.endsWith('```')) {
-    q = q.slice(0, -3)
-  }
-  q = q.trim()
+  // One chunk is the overwhelmingly common case; pass it through untouched so
+  // formatting survives. Only a multi-block reply needs the reparse to merge.
+  const q = chunks.length === 1 ? chunks[0] : mergeTopLevelSelections(chunks)
 
-  if (q === '') {
-    return q
-  }
-  if (!(q.startsWith('{') || /^query\b/.test(q))) {
-    q = `{\n${q}\n}`
-  }
   return autoAliasConflictingFields(hoistMisplacedFilterArgs(q))
+}
+
+/**
+ * Split model output on fence lines into candidate query chunks.
+ *
+ * Fences are treated as separators rather than as a wrapper to strip, because
+ * models routinely emit several ```graphql blocks (and prose between them)
+ * when asked for one query. Anchored stripping leaves the interior fences in
+ * place and the whole document fails to parse on a backtick.
+ */
+function fenceChunks(text: string): string[] {
+  return text
+    .split(/^[ \t]*```[a-zA-Z0-9_-]*[ \t]*\r?$/m)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk !== '')
+}
+
+/** Models emit `meetings(...) { ... }` without the enclosing braces. */
+function wrapBareSelection(chunk: string): string {
+  return chunk.startsWith('{') || /^query\b/.test(chunk) ? chunk : `{\n${chunk}\n}`
+}
+
+/**
+ * Fold several query documents into one by concatenating their root
+ * selections. Chunks that don't parse — prose the model mixed in — are
+ * dropped. Aliases already present are preserved, and any same-name
+ * collisions the merge creates are resolved by autoAliasConflictingFields.
+ */
+function mergeTopLevelSelections(chunks: string[]): string {
+  const selections: SelectionNode[] = []
+
+  for (const chunk of chunks) {
+    let doc: DocumentNode
+    try {
+      doc = parse(chunk)
+    } catch {
+      continue
+    }
+    for (const def of doc.definitions) {
+      if (def.kind === Kind.OPERATION_DEFINITION && def.operation === OperationTypeNode.QUERY) {
+        selections.push(...def.selectionSet.selections)
+      }
+    }
+  }
+
+  // Nothing parsed — hand back the first chunk so the caller reports a real
+  // GraphQL syntax error against actual content rather than an empty string.
+  if (selections.length === 0) {
+    return chunks[0]
+  }
+
+  return print({
+    kind: Kind.DOCUMENT,
+    definitions: [
+      {
+        kind: Kind.OPERATION_DEFINITION,
+        operation: OperationTypeNode.QUERY,
+        selectionSet: { kind: Kind.SELECTION_SET, selections },
+      },
+    ],
+  })
 }
 
 /** The only arguments root query fields accept (see dev/schema/generate.ts). */
