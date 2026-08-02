@@ -66,6 +66,45 @@ test('normalizeGraphQLQuery', async (t) => {
     })
   })
 
+  await t.step('merges several fenced blocks into one query', () => {
+    // Models emit one block per question instead of one aliased query; the
+    // interior fences used to leave the document unparseable.
+    const reply = [
+      '```graphql',
+      '{ atlasChats: chats(where: { bodyContains: "Atlas" }, limit: 10) { path } }',
+      '```',
+      '',
+      '```graphql',
+      '{ atlasDocs: documents(where: { bodyContains: "Atlas" }, limit: 10) { path } }',
+      '```',
+    ].join('\n')
+    const normalized = normalizeGraphQLQuery(reply)
+    assert({
+      given: 'a reply containing two fenced query blocks',
+      should: 'keep both root selections in a single parseable document',
+      actual:
+        graphQLParseError(normalized) === null && normalized.includes('atlasChats') && normalized.includes('atlasDocs'),
+      expected: true,
+    })
+  })
+
+  await t.step('drops prose mixed in with a fenced block', () => {
+    const reply = [
+      "I can't reach that URL, but here is what the notebook has:",
+      '',
+      '```graphql',
+      '{ atlasDocs: documents(where: { bodyContains: "Atlas" }, limit: 10) { path } }',
+      '```',
+    ].join('\n')
+    const normalized = normalizeGraphQLQuery(reply)
+    assert({
+      given: 'commentary preceding a fenced query',
+      should: 'return just the query',
+      actual: graphQLParseError(normalized) === null && normalized.includes('atlasDocs'),
+      expected: true,
+    })
+  })
+
   await t.step('returns empty string for empty input', () => {
     assert({
       given: 'whitespace-only input',
