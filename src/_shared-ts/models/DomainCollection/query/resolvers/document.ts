@@ -46,6 +46,10 @@ export default {
   // Every document, whatever its detected type — this is the untyped escape
   // hatch the other fourteen root fields narrow.
   type: '*',
+  // Without this, `limit` sliced store order — roughly oldest path first — so
+  // a broad tag query returned 2022 files and cut the current ones. Undated
+  // entity files sink to the end.
+  sortByDate: true,
   matches: (doc, filter, path, ctx) => matchesDocumentFilter(doc, path, filter, ctx.resolveNames),
   mapper: () => perRow(docToDocument),
 } satisfies EntitySpec<DocumentFilter, ReturnType<typeof docToDocument>>

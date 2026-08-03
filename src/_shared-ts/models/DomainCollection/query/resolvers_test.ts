@@ -6,6 +6,7 @@ import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { createDomainResolvers } from './resolvers/mod.ts'
+import { DEFAULT_QUERY_LIMIT } from './resolvers/shared.ts'
 
 // =============================================================================
 // Test Fixtures
@@ -1209,5 +1210,95 @@ test('resolvers - videos filters by toNot', () => {
     should: 'exclude that audience and keep the rest',
     actual: resolvers.videos({ where: { toNot: '#engineering' } }).map((v) => v.from),
     expected: ['John Smith'],
+  })
+})
+
+// =============================================================================
+// Sort-before-limit and the default limit
+// =============================================================================
+
+/** A store whose time collection holds exactly the given items. */
+function createTimeStore(items: Array<{ doc: Document; path: string }>): MarkdownStore {
+  return {
+    people: createMockCollection([]),
+    orgs: createMockCollection([]),
+    projects: { ...createMockCollection([]), getDocuments: () => ({ toArray: () => [] }) },
+    decisions: createMockCollection([]),
+    goals: createMockCollection([]),
+    streaks: createMockCollection([]),
+    ideas: createMockCollection([]),
+    places: createMockCollection([]),
+    time: createMockCollection(items),
+  } as unknown as MarkdownStore
+}
+
+test('resolvers - documents sorts newest-first before applying limit', () => {
+  // Store order is oldest path first — the order that used to reach `limit`
+  const resolvers = createDomainResolvers(
+    createTimeStore([
+      {
+        doc: Document.fromMarkdown('# Old video\n'),
+        path: '/test/time/2022/03/07-13/03-09/actions/videos/old-video.md',
+      },
+      {
+        doc: Document.fromMarkdown('# Mid note\n'),
+        path: '/test/time/2025/05/05-11/05-07/actions/notes/mid-note.md',
+      },
+      {
+        doc: Document.fromMarkdown('# New script\n'),
+        path: '/test/time/2026/03/09-15/03-11/actions/notes/new-script.md',
+      },
+    ]),
+  )
+
+  assert({
+    given: 'three dated documents and limit 2',
+    should: 'keep the two newest, not the first two in store order',
+    actual: resolvers.documents({ limit: 2 }).map((d) => d.path),
+    expected: [
+      '/test/time/2026/03/09-15/03-11/actions/notes/new-script.md',
+      '/test/time/2025/05/05-11/05-07/actions/notes/mid-note.md',
+    ],
+  })
+})
+
+test('resolvers - documents sinks undated files below dated ones', () => {
+  const resolvers = createDomainResolvers(
+    createTimeStore([
+      { doc: Document.fromMarkdown('# Undated\n'), path: '/test/notes/reference.md' },
+      {
+        doc: Document.fromMarkdown('# Dated\n'),
+        path: '/test/time/2026/01/05-11/01-05/actions/notes/dated.md',
+      },
+    ]),
+  )
+
+  assert({
+    given: 'a dated and an undated document',
+    should: 'order the dated one first',
+    actual: resolvers.documents({}).map((d) => d.path),
+    expected: ['/test/time/2026/01/05-11/01-05/actions/notes/dated.md', '/test/notes/reference.md'],
+  })
+})
+
+test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () => {
+  const many = Array.from({ length: DEFAULT_QUERY_LIMIT + 10 }, (_, i) => ({
+    doc: Document.fromMarkdown(`# Note ${i}\n`),
+    path: `/test/time/2026/01/05-11/01-05/actions/notes/note-${i}.md`,
+  }))
+  const resolvers = createDomainResolvers(createTimeStore(many))
+
+  assert({
+    given: `${DEFAULT_QUERY_LIMIT + 10} documents and no limit argument`,
+    should: 'return at most the default cap',
+    actual: resolvers.documents({}).length,
+    expected: DEFAULT_QUERY_LIMIT,
+  })
+
+  assert({
+    given: 'an explicit limit above the default cap',
+    should: 'honor the explicit limit',
+    actual: resolvers.documents({ limit: DEFAULT_QUERY_LIMIT + 10 }).length,
+    expected: DEFAULT_QUERY_LIMIT + 10,
   })
 })

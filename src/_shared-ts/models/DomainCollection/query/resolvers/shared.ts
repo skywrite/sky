@@ -263,7 +263,7 @@ export type Entries = Array<{ doc: Document; path: string }>
  */
 export interface EntitySpec<F, R> {
   type: CollectionEntityType | '*'
-  /** Sort newest-first before limiting. Only day-partitioned entities do. */
+  /** Sort newest-first before limiting, so `limit` keeps the most recent. Set on day-partitioned entities and `documents`. */
   sortByDate?: boolean
   matches(doc: Document, filter: F, path: string, ctx: ResolverContext): boolean
   mapper(ctx: ResolverContext): (entries: Entries) => R[]
@@ -273,6 +273,13 @@ export interface EntitySpec<F, R> {
 export function perRow<R>(map: (doc: Document, path: string) => R): (entries: Entries) => R[] {
   return (entries) => entries.map(({ doc, path }) => map(doc, path))
 }
+
+/**
+ * Cap applied when a query specifies no `limit` — a runaway guard so a bare
+ * root-field query cannot return the whole notebook. Generous enough that
+ * deliberate broad sweeps still work; sorted types keep the newest N.
+ */
+export const DEFAULT_QUERY_LIMIT = 500
 
 /**
  * Build the root resolver for one entity: filter, sort, limit, map — the body
@@ -291,7 +298,7 @@ export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext)
       results = results.filter(({ doc, path }) => spec.matches(doc, where, path, ctx))
     }
     if (spec.sortByDate) results = sortByDateDesc(results)
-    if (args.limit) results = results.slice(0, args.limit)
+    results = results.slice(0, args.limit ?? DEFAULT_QUERY_LIMIT)
     return map(results)
   }
 }

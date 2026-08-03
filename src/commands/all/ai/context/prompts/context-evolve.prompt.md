@@ -2,7 +2,7 @@
 name: context-evolve
 schema: 0.2.0
 created: 2026-03-01
-updated: 2026-07-12
+updated: 2026-08-03
 description: Evolve GraphQL queries based on conversation direction
 ---
 
@@ -59,6 +59,9 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on every root field: meetings, messages, videos, journals, chats, days, people, orgs, projects, decisions, goals, ideas, streaks, places, documents
 - `documents` filters on tags but has no `tags` field to select — selecting it fails validation; select `type markdown path` there, or query the specific root field when you want the tags back
 - **Prefer `tagsStartsWith` for broad topics** — use the top-level category prefix (2 segments max). Example: `tagsStartsWith: "Acme/Finance/"`, NOT `"Acme/Finance/Treasury/"`. Always cut the prefix at the second `/` to catch all subtags in that category.
+- **Pick tags from the Tag Vocabulary section below.** Each entry reads `Name (23 files, last 2026-07)`: the count sizes the seam — small (≲15 files) means `tagsContains` fetches it whole, large means keep `limit` tight — and `last` dates its era. Dormant tags query exactly like active ones; history questions usually resolve through them.
+- A branch line `Category/… (14 tags, 92 files, last 2025-02)` rolls up tags not listed individually — open it with `tagsStartsWith: "Category/"`. One-off tags beyond the list are only counted, so an exact `tagsContains` guess can still hit.
+- When the conversation turns to a topic, initiative, or theme, check the vocabulary BEFORE reaching for `bodyContains` — a tag filter finds the curated seam, not incidental word matches.
 
 **Past AI chats** → `chats(...)`
 - Saved ai:chat conversations — brainstorms, analysis, and drafting sessions with the AI
@@ -89,6 +92,7 @@ Match informal user phrasing to the closest entity name above. For example:
 - "Acme Pay GTM" → project `Camino-Acme-Pay` + tag `Acme/Product/GTM`
 - "hiring decisions" → check Pending Decisions list for hiring-related names
 - "Bob" → Active People lists `Bob Smith (aka Bob)` → `involves: "Bob Smith"` + `people(where: { nameContains: "Bob Smith" })`
+- conversation turns to "that 2023 rebrand" → Tag Vocabulary shows `Brand/… (9 tags, 41 files, last 2023-06)` → add `{ documents(where: { tagsStartsWith: "Brand/" }, limit: 15) { type markdown path } }` — a dormant branch is the seam for a history question
 
 People are listed as `Canonical Name (aka Alias1, Alias2)` — always filter by the canonical name, not the alias.
 
