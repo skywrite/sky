@@ -1,13 +1,17 @@
 import { assert, test } from '#test'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import {
+  buildTagVocabulary,
   type EntityContext,
   formatEntityContext,
   formatPeopleBlock,
+  formatTagVocabulary,
   mergeScoredPeople,
   type PersonEntity,
-  selectTagVocabulary,
+  type TagVocabulary,
 } from './_entityContext.ts'
+
+const NO_TAGS: TagVocabulary = { active: [], branches: [], unlisted: 0 }
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -52,10 +56,14 @@ test('formatEntityContext - all sections populated', () => {
     projects: ['Camino-Acme-Pay', 'Website-Redesign'],
     decisions: ['Hire-CTO', 'Office-Location'],
     goals: ['Health: Run a marathon by June', 'Leadership: Ship v2 by March'],
-    tags: [
-      { name: 'Acme/Product/GTM', fileCount: 12, lastSeen: '2026-01-20' },
-      { name: 'Assets/Crypto/BTC', fileCount: 3, lastSeen: null },
-    ],
+    tags: {
+      active: [
+        { name: 'Acme/Product/GTM', fileCount: 12, lastSeen: '2026-01-20' },
+        { name: 'Atlas/Tokens/ABC', fileCount: 3, lastSeen: null },
+      ],
+      branches: [{ prefix: 'Archive', tagCount: 14, fileCount: 92, lastSeen: '2025-02-11' }],
+      unlisted: 7,
+    },
   }
   const result = formatEntityContext(ctx)
 
@@ -124,15 +132,8 @@ test('formatEntityContext - all sections populated', () => {
 
   assert({
     given: 'all sections populated',
-    should: 'contain Tag Vocabulary section',
-    actual: result.includes('### Tag Vocabulary (most active)'),
-    expected: true,
-  })
-
-  assert({
-    given: 'all sections populated',
-    should: 'render tags as bare names',
-    actual: result.includes('Acme/Product/GTM, Assets/Crypto/BTC'),
+    should: 'contain the annotated Tag Vocabulary section',
+    actual: result.includes('### Tag Vocabulary\nMost active: Acme/Product/GTM (12 files, last 2026-01)'),
     expected: true,
   })
 })
@@ -143,7 +144,7 @@ test('formatEntityContext - empty sections omitted', () => {
     projects: ['Only-Project'],
     decisions: [],
     goals: [],
-    tags: [{ name: 'Some/Tag', fileCount: 4, lastSeen: '2026-01-05' }],
+    tags: { active: [{ name: 'Some/Tag', fileCount: 4, lastSeen: '2026-01-05' }], branches: [], unlisted: 0 },
   }
   const result = formatEntityContext(ctx)
 
@@ -189,7 +190,7 @@ test('formatEntityContext - all empty returns empty string', () => {
     projects: [],
     decisions: [],
     goals: [],
-    tags: [],
+    tags: NO_TAGS,
   }
   const result = formatEntityContext(ctx)
 
@@ -320,46 +321,146 @@ test('formatPeopleBlock - empty returns empty string', () => {
 })
 
 // ---------------------------------------------------------------------------
-// selectTagVocabulary
+// buildTagVocabulary
 // ---------------------------------------------------------------------------
 
-test('selectTagVocabulary - keeps the top-scored tags, listed alphabetically', () => {
+/** Tight thresholds so tests stay small: 2 active, split branches over 2 tags, list lone tags at 3+ files. */
+const TEST_OPTS = { limit: 2, splitAt: 2, minLoneFiles: 3 }
+
+test('buildTagVocabulary - actives picked by score, listed alphabetically without it', () => {
   const rows = [
     { name: 'Work/Cloud', score: 9, lastSeen: '2026-01-27', fileCount: 40 },
-    { name: 'Atlas/Beta', score: 5, lastSeen: '2026-01-10', fileCount: 12 },
+    { name: 'Atlas/Beta', score: 5, lastSeen: null, fileCount: 12 },
     { name: 'Dormant/Theme', score: 0.2, lastSeen: '2024-06-01', fileCount: 80 },
   ]
 
   assert({
-    given: 'three scored tags and a limit of 2',
-    should: 'select by score but order the result alphabetically',
-    actual: selectTagVocabulary(rows, 2).map((t) => t.name),
-    expected: ['Atlas/Beta', 'Work/Cloud'],
+    given: 'three scored tags with an active limit of 2',
+    should: 'keep the top two by score, alphabetical, score dropped',
+    actual: buildTagVocabulary(rows, TEST_OPTS).active,
+    expected: [
+      { name: 'Atlas/Beta', fileCount: 12, lastSeen: null },
+      { name: 'Work/Cloud', fileCount: 40, lastSeen: '2026-01-27' },
+    ],
   })
 })
 
-test('selectTagVocabulary - carries fileCount and lastSeen through, dropping the score', () => {
-  const rows = [{ name: 'Atlas/Beta', score: 5, lastSeen: null, fileCount: 12 }]
+test('buildTagVocabulary - the long tail rolls up by prefix with aggregates', () => {
+  const rows = [
+    { name: 'Hot/One', score: 9, lastSeen: '2026-01-27', fileCount: 4 },
+    { name: 'Hot/Two', score: 8, lastSeen: '2026-01-20', fileCount: 4 },
+    { name: 'Archive/Old', score: 0.4, lastSeen: '2025-02-11', fileCount: 90 },
+    { name: 'Archive/Older', score: 0.2, lastSeen: '2024-06-01', fileCount: 2 },
+  ]
 
   assert({
-    given: 'a scored row',
-    should: 'map to a vocabulary entry without the score',
-    actual: selectTagVocabulary(rows),
-    expected: [{ name: 'Atlas/Beta', fileCount: 12, lastSeen: null }],
+    given: 'two remainder tags sharing a prefix',
+    should: 'aggregate tag count, file sum, and the latest lastSeen',
+    actual: buildTagVocabulary(rows, TEST_OPTS).branches,
+    expected: [{ prefix: 'Archive', tagCount: 2, fileCount: 92, lastSeen: '2025-02-11' }],
   })
 })
 
-test('selectTagVocabulary - does not reorder the caller’s array', () => {
+test('buildTagVocabulary - oversized branches split, pooling dust as a residual', () => {
+  const rows = [
+    { name: 'Active/A', score: 9, lastSeen: null, fileCount: 1 },
+    { name: 'Active/B', score: 8, lastSeen: null, fileCount: 1 },
+    { name: 'Big/Sub/One', score: 1, lastSeen: '2025-05-01', fileCount: 5 },
+    { name: 'Big/Sub/Two', score: 0.9, lastSeen: '2025-04-01', fileCount: 5 },
+    { name: 'Big/Lone', score: 0.8, lastSeen: '2024-03-01', fileCount: 7 },
+    { name: 'Big/Dust', score: 0.1, lastSeen: '2023-01-15', fileCount: 1 },
+  ]
+
+  assert({
+    given: 'a branch of four tags with splitAt 2',
+    should: 'list the multi-tag sub-branch and substantial lone tag, pool the dust after them',
+    actual: buildTagVocabulary(rows, TEST_OPTS).branches,
+    expected: [
+      { prefix: 'Big/Lone', tagCount: 1, fileCount: 7, lastSeen: '2024-03-01' },
+      { prefix: 'Big/Sub', tagCount: 2, fileCount: 10, lastSeen: '2025-05-01' },
+      { prefix: 'Big', tagCount: 1, fileCount: 1, lastSeen: '2023-01-15', residual: true },
+    ],
+  })
+})
+
+test('buildTagVocabulary - lone tags are listed when substantial, counted when dust', () => {
+  const rows = [
+    { name: 'Active/A', score: 9, lastSeen: null, fileCount: 1 },
+    { name: 'Active/B', score: 8, lastSeen: null, fileCount: 1 },
+    { name: 'Atlas-Legacy', score: 0.5, lastSeen: '2023-05-20', fileCount: 30 },
+    { name: 'one-off', score: 0.1, lastSeen: '2022-08-09', fileCount: 1 },
+  ]
+  const vocabulary = buildTagVocabulary(rows, TEST_OPTS)
+
+  assert({
+    given: 'a dormant 30-file lone tag and a 1-file one-off',
+    should: 'list the substantial tag as itself',
+    actual: vocabulary.branches,
+    expected: [{ prefix: 'Atlas-Legacy', tagCount: 1, fileCount: 30, lastSeen: '2023-05-20' }],
+  })
+
+  assert({
+    given: 'a dormant 30-file lone tag and a 1-file one-off',
+    should: 'count the one-off as unlisted',
+    actual: vocabulary.unlisted,
+    expected: 1,
+  })
+})
+
+test('buildTagVocabulary - does not reorder the caller’s array', () => {
   const rows = [
     { name: 'B/Low', score: 1, lastSeen: null, fileCount: 1 },
     { name: 'A/High', score: 9, lastSeen: null, fileCount: 9 },
   ]
-  selectTagVocabulary(rows, 1)
+  buildTagVocabulary(rows, TEST_OPTS)
 
   assert({
     given: 'a score-unsorted input array',
     should: 'leave the input untouched',
     actual: rows.map((r) => r.name),
     expected: ['B/Low', 'A/High'],
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatTagVocabulary
+// ---------------------------------------------------------------------------
+
+test('formatTagVocabulary - renders actives, branches, and the unlisted count', () => {
+  const rendered = formatTagVocabulary({
+    active: [
+      { name: 'Acme/Product/GTM', fileCount: 12, lastSeen: '2026-01-20' },
+      { name: 'Atlas/Tokens/ABC', fileCount: 3, lastSeen: null },
+    ],
+    branches: [
+      { prefix: 'Archive/Deals', tagCount: 14, fileCount: 92, lastSeen: '2025-02-11' },
+      { prefix: 'Archive', tagCount: 5, fileCount: 9, lastSeen: '2024-01-02', residual: true },
+      { prefix: 'Atlas-Legacy', tagCount: 1, fileCount: 30, lastSeen: '2023-05-20' },
+    ],
+    unlisted: 440,
+  })
+
+  assert({
+    given: 'a full vocabulary',
+    should: 'render every part in its place',
+    actual: rendered,
+    expected: [
+      '### Tag Vocabulary',
+      'Most active: Acme/Product/GTM (12 files, last 2026-01), Atlas/Tokens/ABC (3 files)',
+      '',
+      'Older and rarer (open a branch with tagsStartsWith): Archive/Deals/… (14 tags, 92 files, last 2025-02), ' +
+        'Archive/… (5 other tags, 9 files, last 2024-01), Atlas-Legacy (30 files, last 2023-05)',
+      '',
+      'Plus 440 one-off tags not listed.',
+    ].join('\n'),
+  })
+})
+
+test('formatTagVocabulary - empty vocabulary renders nothing', () => {
+  assert({
+    given: 'no active tags and no branches',
+    should: 'return empty string',
+    actual: formatTagVocabulary(NO_TAGS),
+    expected: '',
   })
 })

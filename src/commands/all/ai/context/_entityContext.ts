@@ -40,12 +40,35 @@ export interface TagVocabEntry {
   lastSeen: string | null
 }
 
+/** A rolled-up prefix group from the vocabulary's long tail. */
+export interface TagBranch {
+  /** Tag-path prefix (`Atlas`), or the full tag name when tagCount is 1 */
+  prefix: string
+  /** Number of tags aggregated under the prefix */
+  tagCount: number
+  /** Sum of the aggregated tags' file counts */
+  fileCount: number
+  /** Latest lastSeen across the aggregated tags */
+  lastSeen: string | null
+  /** True for a split branch's leftovers — tags not covered by its listed sub-branches */
+  residual?: boolean
+}
+
+export interface TagVocabulary {
+  /** The most-active tags by recency-weighted score */
+  active: TagVocabEntry[]
+  /** Everything else, rolled up by prefix; single substantial tags stay as themselves */
+  branches: TagBranch[]
+  /** One-off tags too minor to list — the model should know the list is not exhaustive */
+  unlisted: number
+}
+
 export interface EntityContext {
   people: PersonEntity[]
   projects: string[]
   decisions: string[]
   goals: string[]
-  tags: TagVocabEntry[]
+  tags: TagVocabulary
 }
 
 // ---------------------------------------------------------------------------
@@ -82,20 +105,117 @@ async function fetchTagVocabulary(): Promise<TagScoreRow[]> {
   }
 }
 
-export const TAG_VOCAB_LIMIT = 200
+export interface TagVocabOptions {
+  /** How many top-scored tags are listed individually */
+  limit: number
+  /** Branches with more tags than this split one level deeper */
+  splitAt: number
+  /** A lone tag below this many files is counted, not listed */
+  minLoneFiles: number
+}
+
+// Tuned against the real distribution (2,282 tags): ~200 active + ~170 branch
+// lines ≈ 4.5k tokens, with only true one-offs left unlisted.
+export const TAG_VOCAB_DEFAULTS: TagVocabOptions = { limit: 200, splitAt: 50, minLoneFiles: 3 }
+
+/** Aggregate accumulator for one prefix group. */
+interface Group {
+  rows: TagScoreRow[]
+  fileCount: number
+  lastSeen: string | null
+}
+
+/** Group rows by their first `depth` tag-path segments. */
+function groupByPrefix(rows: TagScoreRow[], depth: number): Map<string, Group> {
+  const groups = new Map<string, Group>()
+  for (const row of rows) {
+    const prefix = row.name.split('/').slice(0, depth).join('/')
+    const group = groups.get(prefix) ?? { rows: [], fileCount: 0, lastSeen: null }
+    group.rows.push(row)
+    group.fileCount += row.fileCount
+    if (row.lastSeen && (!group.lastSeen || row.lastSeen > group.lastSeen)) group.lastSeen = row.lastSeen
+    groups.set(prefix, group)
+  }
+  return groups
+}
 
 /**
- * Pick the vocabulary the prompts will see: the most-active tags by
- * recency-weighted score, listed alphabetically so hierarchies cluster.
- * Score only decides who makes the list — the entries carry fileCount and
- * lastSeen, which are meaningful to the model in a way the score is not.
+ * Build the vocabulary the prompts will see from the service's scored rows.
+ *
+ * The top `limit` tags by recency-weighted score are listed individually —
+ * the score only decides who makes that list and is then dropped, since
+ * fileCount and lastSeen are meaningful to the model in a way the score is
+ * not. The rest rolls up into per-prefix branches the model can open with
+ * `tagsStartsWith`; oversized branches split one level deeper, keeping their
+ * leftovers as a residual line. A lone tag with enough files is listed as
+ * itself (dormant-but-substantial is exactly what the recency-weighted top
+ * misses); anything smaller is just counted.
  */
-export function selectTagVocabulary(rows: TagScoreRow[], limit: number = TAG_VOCAB_LIMIT): TagVocabEntry[] {
-  return [...rows]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
+export function buildTagVocabulary(rows: TagScoreRow[], opts: TagVocabOptions = TAG_VOCAB_DEFAULTS): TagVocabulary {
+  const byScore = [...rows].sort((a, b) => b.score - a.score)
+  const active = byScore
+    .slice(0, opts.limit)
     .map(({ name, fileCount, lastSeen }) => ({ name, fileCount, lastSeen }))
     .sort((a, b) => a.name.localeCompare(b.name))
+
+  const branches: TagBranch[] = []
+  let unlisted = 0
+
+  const emit = (prefix: string, group: Group): void => {
+    if (group.rows.length === 1) {
+      const [row] = group.rows
+      if (row.fileCount >= opts.minLoneFiles) {
+        branches.push({ prefix: row.name, tagCount: 1, fileCount: row.fileCount, lastSeen: row.lastSeen })
+      } else {
+        unlisted += 1
+      }
+      return
+    }
+    branches.push({ prefix, tagCount: group.rows.length, fileCount: group.fileCount, lastSeen: group.lastSeen })
+  }
+
+  for (const [prefix, group] of groupByPrefix(byScore.slice(opts.limit), 1)) {
+    if (group.rows.length <= opts.splitAt) {
+      emit(prefix, group)
+      continue
+    }
+    // Oversized branch: list its two-segment sub-branches, pool the rest.
+    const residual: Group = { rows: [], fileCount: 0, lastSeen: null }
+    for (const [subPrefix, subGroup] of groupByPrefix(group.rows, 2)) {
+      if (subGroup.rows.length >= 2) {
+        branches.push({
+          prefix: subPrefix,
+          tagCount: subGroup.rows.length,
+          fileCount: subGroup.fileCount,
+          lastSeen: subGroup.lastSeen,
+        })
+      } else if (subGroup.rows[0].fileCount >= opts.minLoneFiles) {
+        emit(subPrefix, subGroup)
+      } else {
+        residual.rows.push(...subGroup.rows)
+        residual.fileCount += subGroup.fileCount
+        if (subGroup.lastSeen && (!residual.lastSeen || subGroup.lastSeen > residual.lastSeen)) {
+          residual.lastSeen = subGroup.lastSeen
+        }
+      }
+    }
+    if (residual.rows.length > 0) {
+      branches.push({
+        prefix,
+        tagCount: residual.rows.length,
+        fileCount: residual.fileCount,
+        lastSeen: residual.lastSeen,
+        residual: true,
+      })
+    }
+  }
+
+  // Alphabetical (by codepoint) so hierarchies cluster; the U+FFFF sentinel
+  // sorts a residual after the children split out of it.
+  const key = (b: TagBranch): string => b.prefix + (b.residual ? '\uffff' : '')
+  branches.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
+
+  return { active, branches, unlisted }
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +344,7 @@ export async function gatherEntityContext(config: Record<string, unknown>): Prom
   // Goals — "Area: Outcome"
   const goals = goalStore.getAllGoals().map((g) => `${g.area}: ${g.outcome}`)
 
-  return { people, projects, decisions, goals, tags: selectTagVocabulary(vocabulary) }
+  return { people, projects, decisions, goals, tags: buildTagVocabulary(vocabulary) }
 }
 
 // ---------------------------------------------------------------------------
@@ -260,15 +380,50 @@ export function formatEntityContext(ctx: EntityContext): string {
     sections.push(`### Active Goals\n${goalLines}`)
   }
 
-  if (ctx.tags.length > 0) {
-    // Rendered as bare names for now; counts, last-seen, and prefix rollups
-    // for the long tail land with the vocabulary formatting step.
-    sections.push(`### Tag Vocabulary (most active)\n${ctx.tags.map((t) => t.name).join(', ')}`)
-  }
+  const tagBlock = formatTagVocabulary(ctx.tags)
+  if (tagBlock) sections.push(tagBlock)
 
   if (sections.length === 0) return ''
 
   return `## Active Notebook Entities\n\n${sections.join('\n\n')}`
+}
+
+/** `(23 files, last 2026-07)` — the annotation shared by entries and branches. */
+function annotate(fileCount: number, lastSeen: string | null, countLabel?: string): string {
+  const parts = [countLabel ? `${countLabel}, ${fileCount} files` : `${fileCount} files`]
+  if (lastSeen) parts.push(`last ${lastSeen.slice(0, 7)}`)
+  return `(${parts.join(', ')})`
+}
+
+/**
+ * Render the tag vocabulary: the active list, then the rolled-up long tail,
+ * then a count of what remains unlisted. Returns empty string when there is
+ * nothing to show.
+ */
+export function formatTagVocabulary(tags: TagVocabulary): string {
+  if (tags.active.length === 0 && tags.branches.length === 0) return ''
+
+  const paragraphs: string[] = []
+
+  if (tags.active.length > 0) {
+    const entries = tags.active.map((t) => `${t.name} ${annotate(t.fileCount, t.lastSeen)}`)
+    paragraphs.push(`Most active: ${entries.join(', ')}`)
+  }
+
+  if (tags.branches.length > 0) {
+    const entries = tags.branches.map((b) => {
+      if (b.tagCount === 1) return `${b.prefix} ${annotate(b.fileCount, b.lastSeen)}`
+      const countLabel = b.residual ? `${b.tagCount} other tags` : `${b.tagCount} tags`
+      return `${b.prefix}/… ${annotate(b.fileCount, b.lastSeen, countLabel)}`
+    })
+    paragraphs.push(`Older and rarer (open a branch with tagsStartsWith): ${entries.join(', ')}`)
+  }
+
+  if (tags.unlisted > 0) {
+    paragraphs.push(`Plus ${tags.unlisted} one-off tags not listed.`)
+  }
+
+  return `### Tag Vocabulary\n${paragraphs.join('\n\n')}`
 }
 
 /**
