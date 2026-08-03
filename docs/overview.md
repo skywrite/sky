@@ -33,7 +33,6 @@ who: Jane Doe, John Smith
 when: 10:00 - 10:45
 medium: Zoom
 summary: Atlas sync — Q2 roadmap
-created: 2026-03-31
 rel:
   - Acme Corp
 tags: Product/Roadmap
@@ -50,8 +49,9 @@ value proposition rests on the fact that if Sky disappeared tomorrow you'd still
 word.
 
 The frontmatter is the structure the tooling leans on. `rel:` links documents to orgs and
-people, `tags:` builds a slash-hierarchy taxonomy, and `when:`/`created:` place a document
-in time. Commands maintain these for you, but nothing stops you from typing them by hand.
+people, `tags:` builds a slash-hierarchy taxonomy, and `when:` places a document in time
+(the day directory already dates it). Commands maintain these for you, but nothing stops
+you from typing them by hand.
 
 ## The day file
 

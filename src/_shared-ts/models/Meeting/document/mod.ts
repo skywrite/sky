@@ -1,6 +1,6 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const DEFAULT_TEMPLATE = `# Meeting
 
@@ -15,8 +15,9 @@ export default class MeetingDocument extends Document {
    * Parse an existing one: MeetingDocument.fromMarkdown(contents)
    *
    * When no markdown is provided (creation), builds YAML with known fields in
-   * display order and sets created/updated to today. Extra fields from input
-   * pass through via ...extra. The 'body' input field becomes markdown content.
+   * display order. Day-partitioned docs carry no created/updated stamps — the
+   * day dir dates them — so any incoming ones are stripped. Extra fields from
+   * input pass through via ...extra. The 'body' input field becomes markdown content.
    */
   constructor(input: Record<string, unknown>, markdown?: string, yamlError?: string) {
     let yaml: Record<string, unknown>
@@ -27,7 +28,6 @@ export default class MeetingDocument extends Document {
       const { when: whenRaw, created: _c, updated: _u, body, ...extra } = input
       const when = whenRaw instanceof PlainDateTime ? whenRaw.time : (whenRaw ?? new PlainDateTime().time)
       const medium = input['medium'] ?? 'Zoom'
-      const today = PlainDate.today().ymd
 
       yaml = {
         who: input['who'],
@@ -35,8 +35,6 @@ export default class MeetingDocument extends Document {
         medium,
         context: input['context'] ?? null,
         summary: input['summary'] ?? null,
-        created: today,
-        updated: today,
         rel: input['rel'] ?? null,
         tags: input['tags'] ?? null,
         ...extra,

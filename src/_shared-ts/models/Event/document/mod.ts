@@ -65,12 +65,7 @@ export default class EventDocument extends Document {
     }
 
     const markdown = props.body ?? EventDocument.createTemplate(yaml)
-    let event = new EventDocument(yaml, markdown)
-
-    // Ensure created/updated dates
-    event = event.ensureCreatedUpdated() as EventDocument
-
-    return event
+    return new EventDocument(yaml, markdown)
   }
 
   /**
