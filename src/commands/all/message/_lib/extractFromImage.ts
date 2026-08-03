@@ -17,7 +17,11 @@ const MessageSchema = z.object({
   time: z
     .string()
     .nullable()
-    .describe('Timestamp as shown next to the message (e.g. "14:32", "Yesterday 9:15 AM"). Null if not visible.'),
+    .describe(
+      'Timestamp for this message as "HH:MM", or "YYYY-MM-DD HH:MM" when it falls on a different day than the ' +
+        'conversation as a whole. Copy the wall clock exactly as displayed and resolve any relative label ' +
+        '("Today", "Yesterday") against the reference date. Null if this message carries no visible timestamp.',
+    ),
 })
 
 const ExtractionSchema = z.object({
@@ -124,8 +128,13 @@ export function collapseAdjacentDuplicates(messages: ExtractedMessage[]): Extrac
   return result
 }
 
+/**
+ * Messaging apps stamp only some messages in a run, so a timestamp is appended
+ * where the screenshot showed one and omitted otherwise — an invented time on
+ * every line would read as precision the screenshot did not have.
+ */
 export function renderDialogue(messages: ExtractedMessage[]): string {
-  return messages.map((m) => `**${m.sender}:** ${m.text}`).join('\n\n')
+  return messages.map((m) => `**${m.sender}:**${m.time ? ` (${m.time})` : ''} ${m.text}`).join('\n\n')
 }
 
 export async function extractMessageFromImage(
