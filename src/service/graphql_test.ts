@@ -5,6 +5,7 @@ import { realpathSync } from 'node:fs'
 import * as os from 'node:os'
 import { createServer } from '#service/server.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { FIXTURE_MARKDOWN_DIRS, FIXTURE_PATHS, FIXTURE_REFERENCE_DATE } from './fixtures/mod.ts'
 
 // realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and
 // /var are symlinks into /private)
@@ -169,6 +170,41 @@ test('GraphQL queries', async () => {
   } finally {
     server.stop()
     await cleanupTestDir()
+  }
+})
+
+test('GraphQL queries', async () => {
+  const given = 'a tagsWithScores query over the fixture notebook'
+  const should = "expose each tag's all-time fileCount and lastSeen"
+
+  const server = createServer({
+    port: 0,
+    markdownDirs: FIXTURE_MARKDOWN_DIRS,
+    paths: FIXTURE_PATHS,
+    enableFileWatcher: false,
+    referenceDate: FIXTURE_REFERENCE_DATE,
+  })
+  await server.start()
+
+  try {
+    const url = `http://localhost:${server.port}/graphql`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ tagsWithScores { name score lastSeen fileCount } }' }),
+    })
+
+    const result = (await response.json()) as {
+      data: { tagsWithScores: Array<{ name: string; score: number; lastSeen: string | null; fileCount: number }> }
+    }
+    // Work/Engineering appears in three dated fixture files, latest 2026-01-27
+    const engineering = result.data.tagsWithScores.find((t) => t.name === 'Work/Engineering')
+    const actual = { fileCount: engineering?.fileCount, lastSeen: engineering?.lastSeen }
+    const expected = { fileCount: 3, lastSeen: '2026-01-27' }
+
+    assert({ given, should, actual, expected })
+  } finally {
+    server.stop()
   }
 })
 
