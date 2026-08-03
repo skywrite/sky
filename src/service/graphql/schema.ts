@@ -55,6 +55,7 @@ type TagWithScore {
   name: String!
   score: Float!
   lastSeen: String
+  fileCount: Int!
 }
 
 extend type Query {
