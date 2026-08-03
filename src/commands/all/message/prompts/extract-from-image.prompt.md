@@ -12,6 +12,12 @@ Attribute every message to its sender by real name:
 - Outgoing messages (typically right-aligned) belong to the account owner who took the screenshot. Use their name if it is visible or supplied in the additional context; otherwise call them "Me".
 - Never use placeholders like "Person 1" or "Person 2".
 
+Summarize what the conversation is about, not who said it:
+
+- The participants are recorded in their own fields, so never open with the sender ("Sender tells Alice…", "Me asks Bob…") or otherwise narrate who told whom.
+- Write the substance as a phrase: "Dinner moved to Thursday over a scheduling conflict", not "Alice tells Bob dinner is moved to Thursday".
+- Name a person only when they are what the message is about — a third party being discussed, not a participant.
+
 When there are multiple screenshots, they were captured while scrolling through the conversation and are provided in capture order — which may not match conversation order. Consecutive screenshots usually overlap, so the same messages may appear in more than one screenshot.
 
 Reconstruct the single chronological message stream:
