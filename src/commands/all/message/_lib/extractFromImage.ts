@@ -29,7 +29,12 @@ const ExtractionSchema = z.object({
     ),
   from: z.string().nullable().describe('Who sent the message(s). Null if unclear.'),
   to: z.string().nullable().describe('Who received the message(s). Null if unclear.'),
-  summary: z.string().describe('Brief summary of the conversation in 5-15 words'),
+  summary: z
+    .string()
+    .describe(
+      'What the conversation is about, 5-15 words. Substance only — the participants are recorded in separate ' +
+        'fields, so do not name the sender or recipient and do not narrate who told whom.',
+    ),
   messages: z
     .array(MessageSchema)
     .describe(
