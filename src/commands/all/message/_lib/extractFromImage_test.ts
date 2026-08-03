@@ -110,11 +110,40 @@ test('senderSummary lists distinct senders with counts in first-appearance order
   })
 })
 
-test('renderDialogue formats messages as markdown', () => {
-  assert({
-    given: 'a list of messages',
-    should: 'render "**Name:** text" paragraphs',
-    actual: renderDialogue([msg('Alice', 'See you at 8'), msg('Bob', 'sounds good')]),
-    expected: '**Alice:** See you at 8\n\n**Bob:** sounds good',
+test('renderDialogue', async (t) => {
+  await t.step('formats untimed messages as markdown', () => {
+    assert({
+      given: 'a list of messages with no timestamps',
+      should: 'render "**Name:** text" paragraphs',
+      actual: renderDialogue([msg('Alice', 'See you at 8'), msg('Bob', 'sounds good')]),
+      expected: '**Alice:** See you at 8\n\n**Bob:** sounds good',
+    })
+  })
+
+  await t.step('appends a timestamp where the screenshot showed one', () => {
+    assert({
+      given: 'messages carrying times',
+      should: 'render the time in parentheses after the name',
+      actual: renderDialogue([msg('Alice', 'See you at 8', '16:18'), msg('Bob', 'sounds good', '16:22')]),
+      expected: '**Alice:** (16:18) See you at 8\n\n**Bob:** (16:22) sounds good',
+    })
+  })
+
+  await t.step('omits the timestamp only for the messages missing one', () => {
+    assert({
+      given: 'a stamped message followed by an unstamped one',
+      should: 'stamp the first and leave the second bare',
+      actual: renderDialogue([msg('Alice', 'See you at 8', '16:18'), msg('Alice', 'bring the map')]),
+      expected: '**Alice:** (16:18) See you at 8\n\n**Alice:** bring the map',
+    })
+  })
+
+  await t.step('keeps a cross-day stamp intact', () => {
+    assert({
+      given: 'a message on a different day than the conversation',
+      should: 'render the full date-time it was given',
+      actual: renderDialogue([msg('Bob', 'morning', '2026-01-21 09:15')]),
+      expected: '**Bob:** (2026-01-21 09:15) morning',
+    })
   })
 })

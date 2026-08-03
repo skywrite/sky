@@ -16,6 +16,7 @@ Date the conversation:
 
 - These screenshots are being filed under {{user.referenceDate}}. Resolve relative labels against that date — "Today" is {{user.referenceDate}}, "Yesterday" is the day before it.
 - `when` is the first message's timestamp, since that is when the conversation started. Copy its wall clock exactly as shown — only the date is yours to resolve.
+- Each message's own `time` follows the same rules. Messaging apps stamp only some messages in a run — leave the others null rather than inferring one from a neighbour.
 - If no timestamp or date separator is visible anywhere, return null rather than guessing.
 
 Summarize what the conversation is about, not who said it:
