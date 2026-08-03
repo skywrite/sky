@@ -15,6 +15,7 @@ import { MCPTool } from '#mcp/decorators.ts'
 import { extractMessageFromImage, renameSenders, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
 import { parseCorrections } from './_lib/parseCorrections.ts'
+import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
 
 function relativeAge(nowMs: number, filePath: string): string {
   // Parse macOS screenshot timestamp from filename (e.g. "Screenshot 2026-02-24 at 3.45.12 PM")
@@ -305,6 +306,16 @@ export default class MessageNewTask extends Command {
 
       if (corrections) {
         output.log(colors.gray('Parsing corrections...'))
+
+        // An explicitly typed `when:` is read here, not by the model — it can't
+        // then normalize an extended hour or roll the date forward. Applied
+        // before the call so a model failure can't discard it.
+        const typedTime = extractTypedTime(corrections)
+        if (typedTime) {
+          const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
+          when = new PlainDateTime(typedTime.hasDate ? typedTime.value : `${when.plainDate} ${typedTime.value}`)
+        }
+
         const c = await parseCorrections({
           from,
           to,
@@ -319,10 +330,12 @@ export default class MessageNewTask extends Command {
         if (c.to !== undefined) to = c.to ?? undefined
         if (c.medium) medium = c.medium
         if (c.summary) summary = c.summary
-        if (c.when) {
+        if (!typedTime && c.when) {
           const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
-          // AI may return "HH:MM" or "YYYY-MM-DD HH:MM"
-          const hasDate = c.when.includes('-')
+          // AI may return "HH:MM" or "YYYY-MM-DD HH:MM". Test for a leading
+          // date rather than for a hyphen anywhere: a negative hour ("-7:56",
+          // valid per docs/nbfs.md) carries one but has no date.
+          const hasDate = /^\d{4}-\d{2}-\d{2}\b/.test(c.when)
           const dateTimeStr = hasDate ? c.when : `${when.plainDate} ${c.when}`
           when = new PlainDateTime(dateTimeStr)
         }

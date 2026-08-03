@@ -3,6 +3,7 @@ import colors from 'picocolors'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
+import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
 import slugify from '#lib/string/slugify.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
@@ -103,6 +104,16 @@ export default class JournalNewTask extends Command {
         if (corrections) {
           output.log(colors.cyan('\nParsing corrections...'))
 
+          // An explicitly typed `when:` is read here, not by the model — it
+          // can't then normalize an extended hour or roll the date forward.
+          // Applied before the call so a model failure can't discard it.
+          const typedTime = extractTypedTime(corrections)
+          if (typedTime) {
+            journalWhen = new PlainDateTime(
+              typedTime.hasDate ? typedTime.value : `${journalWhen.date} ${typedTime.value}`,
+            )
+          }
+
           try {
             const parseResult = await generateText({
               ...aiModel('balanced'),
@@ -128,7 +139,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
 
             const parsed = extractJson<{ when?: string; rel?: string[] }>(parseResult.text)
 
-            if (parsed.when) {
+            if (!typedTime && parsed.when) {
               journalWhen = new PlainDateTime(parsed.when)
             }
             if (Array.isArray(parsed.rel)) {

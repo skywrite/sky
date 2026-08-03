@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
+import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -367,6 +368,14 @@ export default class AudioTranscriptSummaryTask extends Command {
       if (corrections) {
         output.log(colors.cyan('\nParsing corrections...'))
 
+        // An explicitly typed `time:` is read here, not by the model — it can't
+        // then normalize an extended hour or roll the date forward. Applied
+        // before the call so a model failure can't discard it either.
+        const typedTime = extractTypedTime(corrections)
+        if (typedTime) {
+          extractedTime = typedTime.value
+        }
+
         // Use AI to parse corrections - handles any format including comma-separated fields
         // Hoisted so the failure warn can carry the payload that failed to parse.
         let jsonText = ''
@@ -419,7 +428,7 @@ Example output: {"time": "2026-03-31 25:30"}`,
 
           // Apply parsed corrections
           if (parsed.title) extractedTitle = parsed.title
-          if (parsed.time) extractedTime = parsed.time
+          if (!typedTime && parsed.time) extractedTime = parsed.time
           if (parsed.durationMinutes !== undefined) extractedDuration = parsed.durationMinutes
           if (parsed.medium) extractedMedium = parsed.medium
           if (isMessageTemplate) {
