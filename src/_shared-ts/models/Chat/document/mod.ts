@@ -1,7 +1,7 @@
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import expand from '#shared/strings/expand.ts'
-import { type ContextTurnLog, splitContextLog } from './contextLog.ts'
+import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
 
 /**
  * A turn extracted from a chat document.
@@ -71,14 +71,14 @@ export default class ChatDocument extends SectionDocument {
     return this.root.children.filter((s) => s.level === 2).map(sectionToTurn)
   }
 
-  /** Per-turn context pipeline log parsed from the trailing TURN comments */
+  /** Per-turn context pipeline log parsed from the trailing CONTEXT-LOG comment */
   get contextLog(): ContextTurnLog[] {
     return splitContextLog(this.markdown).entries
   }
 
   /**
    * The conversation as role-tagged messages, ready to seed a live session:
-   * the trailing TURN log stripped, H2 headings the assistant emitted inside
+   * the trailing context log stripped, H2 headings the assistant emitted inside
    * a reply (split off as bogus speakers by the section parser) folded back
    * into the preceding message, and consecutive same-role messages merged so
    * the result alternates.

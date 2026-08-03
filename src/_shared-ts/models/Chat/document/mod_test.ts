@@ -4,7 +4,7 @@ import { assert, test } from '#test'
 import ChatDocument, { extractConversationSummary } from './mod.ts'
 import type { ChatTurn } from './mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
-import { serializeContextLog, splitContextLog } from './contextLog.ts'
+import { serializeContextLog, splitContextLog } from './ContextLog/mod.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 
@@ -516,11 +516,11 @@ test('extractConversationSummary - latest SUMMARY comment wins, fallback covers 
 
 // --- contextLog + conversation on a saved transcript ---
 
-test('ChatDocument - a saved transcript with a TURN log parses cleanly', async () => {
-  const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log.md'))
+test('ChatDocument - a v2 transcript parses conversation and log cleanly', async () => {
+  const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log-v2.md'))
 
   assert({
-    given: 'a saved chat with trailing TURN comments',
+    given: 'a saved chat with a trailing CONTEXT-LOG comment',
     should: 'expose the conversation without any log debris',
     actual: doc.conversation,
     expected: [
@@ -532,27 +532,10 @@ test('ChatDocument - a saved transcript with a TURN log parses cleanly', async (
   })
 
   assert({
-    given: 'a saved chat with trailing TURN comments',
+    given: 'a saved chat with a trailing CONTEXT-LOG comment',
     should: 'parse both log entries',
-    actual: doc.contextLog,
-    expected: [
-      {
-        turn: 1,
-        queries: ['{ documents(where: { bodyContains: "Atlas" }) { path } }'],
-        context: ['goals/2026.md', 'projects/Atlas/plan.md', 'time/2026/03-March/05/journal/entry.md'],
-        pruned: ['time/2026/03-March/01/notes.md (score=3, ~1200 tokens)'],
-      },
-      {
-        turn: 2,
-        queries: [
-          '{ documents(where: { bodyContains: "Atlas" }) { path } }',
-          '{ decisions(where: { pending: true }) { path } }',
-        ],
-        diff: ['decisions/pricing-tier.md'],
-        pruned: [],
-        errors: ['ai:context:evolve failed: fetch timeout'],
-      },
-    ],
+    actual: doc.contextLog.map((e) => e.turn),
+    expected: [1, 2],
   })
 
   // The fixture must be byte-for-byte what the ai:chat writer produces —
@@ -563,5 +546,28 @@ test('ChatDocument - a saved transcript with a TURN log parses cleanly', async (
     should: 'reassemble byte-identically from body + serialized log',
     actual: body + serializeContextLog(entries),
     expected: doc.markdown,
+  })
+})
+
+test('ChatDocument - a legacy TURN-log transcript keeps a clean conversation, no entries', async () => {
+  const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log.md'))
+
+  assert({
+    given: 'a saved chat with legacy trailing TURN comments',
+    should: 'expose the conversation without any log debris',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'What should I focus on for the Atlas launch this week?' },
+      { role: 'assistant', content: 'Focus on the demo script and the pricing page copy.' },
+      { role: 'user', content: 'Draft the announcement outline.' },
+      { role: 'assistant', content: 'Here is an outline: intro, demo, pricing, call to action.' },
+    ],
+  })
+
+  assert({
+    given: 'a saved chat with legacy trailing TURN comments',
+    should: 'parse no entries — the pre-JSON format is detected, never read',
+    actual: doc.contextLog,
+    expected: [],
   })
 })
