@@ -72,7 +72,7 @@ export default class MessageNewTask extends Command {
     postProcess: [validateAnyArgFlagExists('to', 'from', 'fromImage', 'fromAudio')],
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
     let { when, to, from, medium, summary, category, fromImage, fromAudio, aiContext } = args
     let body: string | undefined
@@ -232,13 +232,25 @@ export default class MessageNewTask extends Command {
           : '',
         aiContext ?? '',
       ].filter(Boolean)
-      const extraction = await extractMessageFromImage(imagePaths, hints.length > 0 ? hints.join(' ') : undefined)
+      const extraction = await extractMessageFromImage(imagePaths, {
+        aiContext: hints.length > 0 ? hints.join(' ') : undefined,
+        referenceDate: `${when.plainDate}`,
+      })
 
       // 3. Apply extracted values (CLI flags override AI)
       from = from || extraction.from || undefined
       to = to || extraction.to || undefined
       summary = summary || extraction.summary
       let messages = extraction.messages
+
+      // A visible timestamp beats the clock: `when` defaults to now, which is when
+      // the screenshot got filed, not when the conversation happened. rawArgs is
+      // the parse before defaults are applied, so a `when` key there means the user
+      // typed --when and meant it — that always wins over what the model read.
+      if (extraction.when && rawArgs.when === undefined) {
+        const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
+        when = new PlainDateTime(extraction.when)
+      }
 
       // 4. Resolve medium: CLI flag > AI detection > user prompt
       if (!medium && extraction.platform) {

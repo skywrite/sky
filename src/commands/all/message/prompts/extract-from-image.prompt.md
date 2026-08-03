@@ -12,6 +12,12 @@ Attribute every message to its sender by real name:
 - Outgoing messages (typically right-aligned) belong to the account owner who took the screenshot. Use their name if it is visible or supplied in the additional context; otherwise call them "Me".
 - Never use placeholders like "Person 1" or "Person 2".
 
+Date the conversation:
+
+- These screenshots are being filed under {{user.referenceDate}}. Resolve relative labels against that date — "Today" is {{user.referenceDate}}, "Yesterday" is the day before it.
+- `when` is the first message's timestamp, since that is when the conversation started. Copy its wall clock exactly as shown — only the date is yours to resolve.
+- If no timestamp or date separator is visible anywhere, return null rather than guessing.
+
 Summarize what the conversation is about, not who said it:
 
 - The participants are recorded in their own fields, so never open with the sender ("Sender tells Alice…", "Me asks Bob…") or otherwise narrate who told whom.

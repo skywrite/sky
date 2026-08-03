@@ -35,6 +35,14 @@ const ExtractionSchema = z.object({
       'What the conversation is about, 5-15 words. Substance only — the participants are recorded in separate ' +
         'fields, so do not name the sender or recipient and do not narrate who told whom.',
     ),
+  when: z
+    .string()
+    .nullable()
+    .describe(
+      'When the conversation took place, as "YYYY-MM-DD HH:MM". Take the wall clock from the first message\'s ' +
+        'visible timestamp exactly as displayed, and resolve its date from the date separator or relative label ' +
+        '("Today", "Yesterday") against the reference date given in the prompt. Null if no timestamp is visible.',
+    ),
   messages: z
     .array(MessageSchema)
     .describe(
@@ -55,8 +63,21 @@ export interface ImageExtraction {
   from: string | null
   to: string | null
   summary: string
+  when: string | null
   messages: ExtractedMessage[]
   continuityNotes: string | null
+}
+
+export interface ExtractOptions {
+  /** Extra guidance for the model — known participants, user-supplied --ai-context. */
+  aiContext?: string
+  /**
+   * `YYYY-MM-DD` the screenshots are being filed under, used to resolve "Today"
+   * and "Yesterday". Passed in rather than read from a clock here; for a
+   * screenshot captured on an earlier day those labels resolve to the filing
+   * date, which the corrections prompt can fix.
+   */
+  referenceDate?: string
 }
 
 export interface SenderRename {
@@ -107,7 +128,10 @@ export function renderDialogue(messages: ExtractedMessage[]): string {
   return messages.map((m) => `**${m.sender}:** ${m.text}`).join('\n\n')
 }
 
-export async function extractMessageFromImage(imagePaths: string[], aiContext?: string): Promise<ImageExtraction> {
+export async function extractMessageFromImage(
+  imagePaths: string[],
+  { aiContext, referenceDate }: ExtractOptions = {},
+): Promise<ImageExtraction> {
   const imageBlocks = await Promise.all(
     imagePaths.map(async (p) => {
       const { image, mediaType } = await loadImageForAI(p)
@@ -116,7 +140,9 @@ export async function extractMessageFromImage(imagePaths: string[], aiContext?: 
   )
 
   const promptContent = await readTextFile(PROMPT_FILE)
-  let { output: prompt } = renderPromptFile(promptContent, 'extract-from-image.prompt.md', {})
+  let { output: prompt } = renderPromptFile(promptContent, 'extract-from-image.prompt.md', {
+    user: { referenceDate: referenceDate ?? '(unknown)' },
+  })
   if (aiContext) {
     prompt += `\n\nAdditional context: ${aiContext}`
   }
