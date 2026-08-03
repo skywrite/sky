@@ -16,14 +16,16 @@ import truncate from '#shared/strings/truncate.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
 import {
+  type ContextDocRecord,
   type ContextTurnLog,
   serializeContextLog,
-  stripEntryAnnotation,
-} from '#shared/models/Chat/document/contextLog.ts'
+  type ToolCallRecord,
+  type TurnStats,
+} from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { resolveUniverse } from './resolveUniverse.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
+import ContextAssembler, { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -188,6 +190,18 @@ function buildContextPrompt({ ctx, days, activityMarkdown }: ContextInput): stri
 
 function formatDate(dt: PlainDateTime): string {
   return dt.plainDate.ymd
+}
+
+/** Short human digest of a tool input for the turn log — never the payload. */
+function toolInputDigest(input: unknown): string | undefined {
+  if (input == null) return undefined
+  if (typeof input === 'object') {
+    const o = input as Record<string, unknown>
+    for (const key of ['query', 'url', 'message', 'text']) {
+      if (typeof o[key] === 'string') return truncate(o[key] as string, 120)
+    }
+  }
+  return truncate(typeof input === 'string' ? input : JSON.stringify(input), 120)
 }
 
 function slugify(text: string, maxWords = 7): string {
@@ -499,7 +513,7 @@ export default class AiChatTask extends Command {
       'Resume: --resume lists the saved chats for the day (--when shifts the day,',
       'and Older… reaches previous days). The picked chat continues as if the',
       'session never exited — conversation reseeded, recorded context restored',
-      'from the TURN log — and exiting updates the same file in place. Saving is',
+      'from the context log — and exiting updates the same file in place. Saving is',
       'on by default when resuming; exiting with no new messages touches nothing.',
     ],
     usage: [
@@ -641,7 +655,15 @@ export default class AiChatTask extends Command {
     let pinnedPaths: ReadonlySet<string> = new Set()
     let peopleEntities: Awaited<ReturnType<typeof gatherPeopleEntities>> = []
 
-    // A resumed chat with a TURN log restores its recorded universe exactly —
+    // A session must never retrieve its own transcript into its own context.
+    // A resumed chat exists on disk mid-session, so recency/body queries can
+    // match it (observed: `chats(recent: "2d")` returning the very chat being
+    // continued — thousands of tokens duplicating the conversation the model
+    // already has). Fresh sessions only write at exit and cannot self-match.
+    const ownChatPath = resumeSession?.filePath ?? null
+    const excludeOwnChat = (paths: string[]): string[] => (ownChatPath ? paths.filter((p) => p !== ownChatPath) : paths)
+
+    // A resumed chat with a context log restores its recorded universe exactly —
     // no fresh baseline injection. New documents enter only through the
     // normal evolve path afterward. (Pre-log transcripts fall through to the
     // fresh gather below.)
@@ -653,7 +675,7 @@ export default class AiChatTask extends Command {
       const resolution = await resolveUniverse(resumeSession.state.universePaths, baseDir)
       peopleEntities = await gatherPeopleEntities(config as Record<string, unknown>)
       initialCollection = await mergePathsIntoCollection(
-        resolution.resolved.map((r) => path.join(baseDir, r)),
+        excludeOwnChat(resolution.resolved.map((r) => path.join(baseDir, r))),
         null,
       )
       // The recorded goals/decisions keep their never-prune pinning on resume.
@@ -807,7 +829,7 @@ export default class AiChatTask extends Command {
     let contextScrollOffset = 0
     let toolsAnnounced = false
 
-    // Per-turn context log, persisted as trailing TURN comments on save
+    // Per-turn context log, persisted as a trailing CONTEXT-LOG comment on save
     const contextLog: ContextTurnLog[] = []
     let turnNumber = 0
     // Context failures for the current turn. Reset when a turn starts (both
@@ -828,14 +850,12 @@ export default class AiChatTask extends Command {
       contextPaths = initialCollection?.paths ?? []
 
       let activityMarkdown: string | null = null
-      const turnPruned: string[] = []
-      const turnExcluded: string[] = []
-      // Annotated form of each universe path for CONTEXT/DIFF entries — same
-      // (score, ~tokens) shape PRUNED has always carried, so the saved log
-      // shows what every doc cost, not just the cut ones. Resume recovers the
-      // bare path via stripEntryAnnotation.
-      const entryAnnotations = new Map<string, string>()
-      let turnStats: string | undefined
+      let turnStats: TurnStats | undefined
+      // Typed record for every universe path — shipped docs carry a score
+      // (or pinned), cut docs additionally say why. One map serves the
+      // turn-1 universe list, the diff, and the pruned snapshot.
+      const docRecords = new Map<string, ContextDocRecord>()
+      const cutRecords: ContextDocRecord[] = []
 
       if (initialCollection) {
         const assembler = ContextAssembler.from(initialCollection, {
@@ -848,60 +868,72 @@ export default class AiChatTask extends Command {
             `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ${assembler.excluded.length} excluded, ~${assembler.totalTokens} tokens`,
           ),
         )
+        for (const s of assembler.kept) {
+          docRecords.set(
+            s.item.path,
+            s.verdict.keep === 'always'
+              ? { path: relPath(s.item.path), tokens: s.tokens, pinned: true }
+              : { path: relPath(s.item.path), score: s.score, tokens: s.tokens },
+          )
+        }
         for (const s of assembler.pruned) {
-          turnPruned.push(`${relPath(s.item.path)} (score=${s.score}, ~${s.tokens} tokens)`)
+          const rec: ContextDocRecord = { path: relPath(s.item.path), score: s.score, tokens: s.tokens, cut: 'budget' }
+          docRecords.set(s.item.path, rec)
+          cutRecords.push(rec)
         }
         for (const s of assembler.excluded) {
           const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
-          turnExcluded.push(`${relPath(s.item.path)} (${reason}, ~${s.tokens} tokens)`)
+          const rec: ContextDocRecord = { path: relPath(s.item.path), tokens: s.tokens, cut: reason }
+          docRecords.set(s.item.path, rec)
+          cutRecords.push(rec)
         }
-        for (const s of [...assembler.kept, ...assembler.pruned]) {
-          const note = s.verdict.keep === 'always' ? 'pinned' : `score=${s.score}`
-          entryAnnotations.set(s.item.path, `${relPath(s.item.path)} (${note}, ~${s.tokens} tokens)`)
+        turnStats = {
+          kept: assembler.size,
+          pruned: assembler.pruned.length,
+          excluded: assembler.excluded.length,
+          docTokens: assembler.totalTokens,
         }
-        turnStats = `kept=${assembler.size} pruned=${assembler.pruned.length} excluded=${assembler.excluded.length} ~tokens=${assembler.totalTokens}`
       }
 
-      // Compute diff: files new to the universe this turn
-      const turnDiff: string[] = []
+      // Compute diff: files new to the universe this turn. Query results
+      // repeat a path once per alias that matched it — dedupe within the
+      // pass so the diff lists each new doc once.
+      const turnDiff: ContextDocRecord[] = []
       if (newPaths) {
+        const seen = new Set<string>()
         for (const p of newPaths) {
-          if (!prevPaths.has(p)) turnDiff.push(entryAnnotations.get(p) ?? relPath(p))
+          if (prevPaths.has(p) || seen.has(p)) continue
+          seen.add(p)
+          turnDiff.push(docRecords.get(p) ?? { path: relPath(p), tokens: 0 })
         }
       }
 
       if (record) {
-        // Record turn log
-        const entry: ContextTurnLog = {
-          turn: turnNumber,
-          queries: [...contextQueries],
-          pruned: turnPruned,
-        }
-        if (turnStats) {
-          entry.stats = turnStats
-        }
-        if (turnErrors.length > 0) {
-          entry.errors = [...turnErrors]
-        }
+        const entry: ContextTurnLog = { turn: turnNumber, queries: [...contextQueries] }
+        if (turnStats) entry.stats = turnStats
         if (turnNumber === 1) {
-          entry.context = contextPaths.map((p) => entryAnnotations.get(p) ?? relPath(p)).sort()
+          // The full universe, shipped and cut alike — cut docs carry their
+          // reason inline, so turn 1 needs no separate pruned section.
+          entry.universe = contextPaths
+            .map((p) => docRecords.get(p) ?? { path: relPath(p), tokens: 0 })
+            .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+        } else {
+          if (turnDiff.length > 0) entry.diff = turnDiff
+          if (cutRecords.length > 0) entry.pruned = cutRecords
         }
-        if (turnDiff.length > 0) {
-          entry.diff = turnDiff
-        }
-        if (turnExcluded.length > 0) {
-          entry.excluded = turnExcluded
-        }
+        if (turnErrors.length > 0) entry.errors = [...turnErrors]
         contextLog.push(entry)
 
         // Changelog UI
-        if (turnNumber > 1 && (turnDiff.length > 0 || turnPruned.length > 0)) {
+        if (turnNumber > 1 && (turnDiff.length > 0 || cutRecords.length > 0)) {
           output.log(colors.dim('Context changed:'))
           for (const d of turnDiff) {
-            output.log(colors.dim(`  + ${d}`))
+            const note = d.pinned ? 'pinned' : d.score !== undefined ? `score=${d.score}` : 'unscored'
+            output.log(colors.dim(`  + ${d.path} (${note}, ~${d.tokens} tokens)`))
           }
-          for (const p of turnPruned) {
-            output.log(colors.dim(`  - ${p}`))
+          for (const r of cutRecords) {
+            const note = r.cut === 'budget' ? `score=${r.score}` : r.cut
+            output.log(colors.dim(`  - ${r.path} (${note}, ~${r.tokens} tokens)`))
           }
         }
       }
@@ -909,7 +941,7 @@ export default class AiChatTask extends Command {
       contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
     }
 
-    // Seed a resumed session: conversation, carried TURN log, query state,
+    // Seed a resumed session: conversation, carried context log, query state,
     // and turn numbering continue exactly where the transcript left off.
     if (resumeSession) {
       const state = resumeSession.state
@@ -922,12 +954,12 @@ export default class AiChatTask extends Command {
       if (restoring) {
         // Context restored — new messages continue through the evolve path.
         isFirstTurn = false
-        // Recorded DIFFs are the docs queries added in the original session,
+        // Recorded diffs are the docs queries added in the original session,
         // so they re-seed the query boost. Turn-1 query hits are mixed into
-        // CONTEXT with the baseline and stay unboosted — a best-effort
+        // the universe with the baseline and stay unboosted — a best-effort
         // restore, not an exact one.
         queryRelevantPaths = new Set(
-          state.contextLog.flatMap((e) => e.diff ?? []).map((d) => path.join(baseDir, stripEntryAnnotation(d))),
+          state.contextLog.flatMap((e) => e.diff ?? []).map((r) => path.join(baseDir, r.path)),
         )
         rebuildContext(undefined, false)
       } else {
@@ -1067,9 +1099,10 @@ export default class AiChatTask extends Command {
 
           if (filesResult.status === 'success' && filesResult.data?.paths?.length) {
             if (filesResult.data.query) contextQueries.push(filesResult.data.query)
-            queryRelevantPaths = new Set(filesResult.data.paths)
-            newPaths = filesResult.data.paths
-            initialCollection = await mergePathsIntoCollection(filesResult.data.paths, initialCollection)
+            const fetched = excludeOwnChat(filesResult.data.paths)
+            queryRelevantPaths = new Set(fetched)
+            newPaths = fetched
+            initialCollection = await mergePathsIntoCollection(fetched, initialCollection)
           } else if (filesResult.status !== 'success') {
             // markdown:sel already logged the query + GraphQL errors; record the pipeline impact
             const message = filesResult.message ?? 'ai:context:files failed'
@@ -1115,8 +1148,9 @@ export default class AiChatTask extends Command {
                   server: 'true',
                 })
                 if (execResult.status === 'success' && execResult.data?.paths?.length) {
-                  allNewPaths.push(...execResult.data.paths)
-                  initialCollection = await mergePathsIntoCollection(execResult.data.paths, initialCollection)
+                  const fetched = excludeOwnChat(execResult.data.paths)
+                  allNewPaths.push(...fetched)
+                  initialCollection = await mergePathsIntoCollection(fetched, initialCollection)
                 } else if (execResult.status !== 'success') {
                   // markdown:sel already logged the query + GraphQL errors
                   turnErrors.push(execResult.message ?? 'Context query failed')
@@ -1156,9 +1190,9 @@ export default class AiChatTask extends Command {
       if (turnErrors.length > 0) {
         // rebuildContext records this turn's entry (with errors) when it runs;
         // it doesn't run when evolve fails outright or returns no change, so
-        // record a minimal entry here to keep the saved-chat TURN log complete.
+        // record a minimal entry here to keep the saved-chat context log complete.
         if (contextLog.at(-1)?.turn !== turnNumber) {
-          contextLog.push({ turn: turnNumber, queries: [...contextQueries], pruned: [], errors: [...turnErrors] })
+          contextLog.push({ turn: turnNumber, queries: [...contextQueries], errors: [...turnErrors] })
         }
         const noun = turnErrors.length === 1 ? 'query' : 'queries'
         output.log(
@@ -1189,6 +1223,16 @@ export default class AiChatTask extends Command {
       output.log(colors.dim('Thinking...'))
 
       try {
+        // Every tool call this turn, for the saved log: executed ones are
+        // collected from the result steps, denials at the approval prompt.
+        const turnTools: ToolCallRecord[] = []
+        const deniedCallIds = new Set<string>()
+        // deno-lint-ignore no-explicit-any
+        const recordDeniedTool = (toolCall: any) => {
+          if (toolCall.toolCallId) deniedCallIds.add(toolCall.toolCallId)
+          turnTools.push({ tool: toolCall.toolName, input: toolInputDigest(toolCall.input), outcome: 'denied' })
+        }
+
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
         const notebookTools = await createNotebookTools(tasks)
         const allTools = { ...webTools, ...notebookTools }
@@ -1275,6 +1319,7 @@ export default class AiChatTask extends Command {
 
             // Auto-deny tools the user already rejected this turn
             if (deniedTools.has(toolCall.toolName)) {
+              recordDeniedTool(toolCall)
               approvals.push({
                 type: 'tool-approval-response',
                 approvalId,
@@ -1336,6 +1381,7 @@ export default class AiChatTask extends Command {
 
             if (p.isCancel(approved)) {
               deniedTools.add(toolCall.toolName)
+              recordDeniedTool(toolCall)
               approvals.push({
                 type: 'tool-approval-response',
                 approvalId,
@@ -1344,6 +1390,7 @@ export default class AiChatTask extends Command {
               })
             } else if (!approved) {
               deniedTools.add(toolCall.toolName)
+              recordDeniedTool(toolCall)
               approvals.push({
                 type: 'tool-approval-response',
                 approvalId,
@@ -1366,7 +1413,9 @@ export default class AiChatTask extends Command {
           result = await runTurn()
         }
 
-        // Collect source URLs from web search tool results
+        // Collect source URLs from web search results and record every
+        // executed tool call for the turn log (denials were recorded at the
+        // approval prompt; their ids are skipped so nothing double-counts).
         const sourceUrls: string[] = []
         for (const step of result.steps ?? []) {
           for (const tr of step.toolResults ?? []) {
@@ -1375,7 +1424,31 @@ export default class AiChatTask extends Command {
                 if (r.url) sourceUrls.push(r.url)
               }
             }
+            // deno-lint-ignore no-explicit-any
+            const trc = tr as any
+            if (trc.toolCallId && deniedCallIds.has(trc.toolCallId)) continue
+            const out = trc.output
+            turnTools.push({
+              tool: tr.toolName,
+              input: toolInputDigest(trc.input),
+              outcome: out !== null && typeof out === 'object' && out.success === false ? 'error' : 'ok',
+              tokens: estimateTokens(typeof out === 'string' ? out : JSON.stringify(out ?? '')),
+            })
           }
+        }
+
+        // Attach tool records to this turn's log entry — creating one when
+        // the turn changed no context and so recorded nothing else.
+        if (turnTools.length > 0) {
+          let turnEntry: ContextTurnLog | undefined
+          for (let i = contextLog.length - 1; i >= 0; i--) {
+            if (contextLog[i].turn === turnNumber) {
+              turnEntry = contextLog[i]
+              break
+            }
+          }
+          if (turnEntry) turnEntry.tools = turnTools
+          else contextLog.push({ turn: turnNumber, queries: [...contextQueries], tools: turnTools })
         }
 
         // Build assistant content with optional sources
