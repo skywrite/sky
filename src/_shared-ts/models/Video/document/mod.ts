@@ -22,8 +22,8 @@ export default class VideoDocument extends Document {
    * ...extra. The 'body' input field becomes markdown content, defaulting to
    * the summary/transcript template.
    *
-   * Unlike Meeting/Message, a video carries no created/updated stamps — the
-   * recording is a fixed artifact, so `when` is the only date that means anything.
+   * Like every day-partitioned doc, a video carries no created/updated stamps —
+   * the day dir dates it, so `when` is the only date that means anything.
    */
   constructor(input: Record<string, unknown>, markdown?: string, yamlError?: string) {
     let yaml: Record<string, unknown>

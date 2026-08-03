@@ -1,6 +1,6 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 export type MediumMessage =
   | 'Email'
@@ -14,6 +14,7 @@ export type MediumMessage =
   | 'Teams'
 
 export default class MessageDocument extends Document {
+  // created/updated appear only in legacy files — creation no longer stamps them
   static override yamlKeyOrder = [
     'from',
     'to',
@@ -32,8 +33,9 @@ export default class MessageDocument extends Document {
    * Parse an existing one: MessageDocument.fromMarkdown(contents)
    *
    * When no markdown is provided (creation), builds YAML with known fields in
-   * display order and sets created/updated to today. Extra fields from input
-   * (e.g., attachments from a previous capture) pass through via ...extra.
+   * display order. Day-partitioned docs carry no created/updated stamps — the
+   * day dir dates them — so any incoming ones are stripped. Extra fields from
+   * input (e.g., attachments from a previous capture) pass through via ...extra.
    */
   constructor(input: Record<string, unknown>, markdown?: string, yamlError?: string) {
     let yaml: Record<string, unknown>
@@ -42,7 +44,6 @@ export default class MessageDocument extends Document {
       // Creation: destructure fields that need normalization, rest passes through
       const { when: whenRaw, created: _c, updated: _u, ...extra } = input
       const when = whenRaw instanceof PlainDateTime ? whenRaw.time : (whenRaw ?? new PlainDateTime().time)
-      const today = PlainDate.today().ymd
 
       yaml = {
         from: input['from'] ?? null,
@@ -50,8 +51,6 @@ export default class MessageDocument extends Document {
         when,
         medium: input['medium'],
         summary: input['summary'] ?? null,
-        created: today,
-        updated: today,
         rel: input['rel'] ?? null,
         tags: input['tags'] ?? null,
         ...extra,
