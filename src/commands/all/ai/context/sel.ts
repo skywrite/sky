@@ -83,7 +83,7 @@ export default class AIContextSelectorTask extends Command {
     const [promptContent, schema, entityCtx] = await Promise.all([
       readTextFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
-      gatherEntityContext(config as Record<string, unknown>, tasks),
+      gatherEntityContext(config as Record<string, unknown>),
     ])
 
     const entityBlock = formatEntityContext(entityCtx)

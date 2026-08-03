@@ -98,7 +98,7 @@ export default class AIContextEvolveTask extends Command {
     const [promptContent, graphqlSchema, entityCtx] = await Promise.all([
       readTextFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
-      gatherEntityContext(config as Record<string, unknown>, tasks),
+      gatherEntityContext(config as Record<string, unknown>),
     ])
 
     const entityBlock = formatEntityContext(entityCtx)

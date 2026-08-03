@@ -1,12 +1,12 @@
 import { assert, test } from '#test'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import {
-  dedupeTags,
   type EntityContext,
   formatEntityContext,
   formatPeopleBlock,
   mergeScoredPeople,
   type PersonEntity,
+  selectTagVocabulary,
 } from './_entityContext.ts'
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,10 @@ test('formatEntityContext - all sections populated', () => {
     projects: ['Camino-Acme-Pay', 'Website-Redesign'],
     decisions: ['Hire-CTO', 'Office-Location'],
     goals: ['Health: Run a marathon by June', 'Leadership: Ship v2 by March'],
-    recentTags: ['Acme/Product/GTM', 'Assets/Crypto/BTC'],
+    tags: [
+      { name: 'Acme/Product/GTM', fileCount: 12, lastSeen: '2026-01-20' },
+      { name: 'Assets/Crypto/BTC', fileCount: 3, lastSeen: null },
+    ],
   }
   const result = formatEntityContext(ctx)
 
@@ -121,14 +124,14 @@ test('formatEntityContext - all sections populated', () => {
 
   assert({
     given: 'all sections populated',
-    should: 'contain Recent Tags section',
-    actual: result.includes('### Recent Tags (last 6 months)'),
+    should: 'contain Tag Vocabulary section',
+    actual: result.includes('### Tag Vocabulary (most active)'),
     expected: true,
   })
 
   assert({
     given: 'all sections populated',
-    should: 'contain tag names',
+    should: 'render tags as bare names',
     actual: result.includes('Acme/Product/GTM, Assets/Crypto/BTC'),
     expected: true,
   })
@@ -140,7 +143,7 @@ test('formatEntityContext - empty sections omitted', () => {
     projects: ['Only-Project'],
     decisions: [],
     goals: [],
-    recentTags: ['Some/Tag'],
+    tags: [{ name: 'Some/Tag', fileCount: 4, lastSeen: '2026-01-05' }],
   }
   const result = formatEntityContext(ctx)
 
@@ -174,8 +177,8 @@ test('formatEntityContext - empty sections omitted', () => {
 
   assert({
     given: 'projects and tags present',
-    should: 'contain Recent Tags section',
-    actual: result.includes('### Recent Tags'),
+    should: 'contain Tag Vocabulary section',
+    actual: result.includes('### Tag Vocabulary'),
     expected: true,
   })
 })
@@ -186,7 +189,7 @@ test('formatEntityContext - all empty returns empty string', () => {
     projects: [],
     decisions: [],
     goals: [],
-    recentTags: [],
+    tags: [],
   }
   const result = formatEntityContext(ctx)
 
@@ -317,43 +320,46 @@ test('formatPeopleBlock - empty returns empty string', () => {
 })
 
 // ---------------------------------------------------------------------------
-// dedupeTags
+// selectTagVocabulary
 // ---------------------------------------------------------------------------
 
-test('dedupeTags - flattens across collections, dedupes, and sorts', () => {
-  const data = {
-    meetings: [{ tags: ['Atlas/Finance', 'Blockchains/Stellar'] }, { tags: ['Atlas/Finance'] }],
-    messages: [{ tags: ['Assets/Crypto/BTC'] }],
-    journals: [{ tags: ['Blockchains/Stellar'] }],
-  }
+test('selectTagVocabulary - keeps the top-scored tags, listed alphabetically', () => {
+  const rows = [
+    { name: 'Work/Cloud', score: 9, lastSeen: '2026-01-27', fileCount: 40 },
+    { name: 'Atlas/Beta', score: 5, lastSeen: '2026-01-10', fileCount: 12 },
+    { name: 'Dormant/Theme', score: 0.2, lastSeen: '2024-06-01', fileCount: 80 },
+  ]
 
   assert({
-    given: 'tag arrays across three document types with duplicates',
-    should: 'return a sorted, deduplicated list',
-    actual: dedupeTags(data),
-    expected: ['Assets/Crypto/BTC', 'Atlas/Finance', 'Blockchains/Stellar'],
+    given: 'three scored tags and a limit of 2',
+    should: 'select by score but order the result alphabetically',
+    actual: selectTagVocabulary(rows, 2).map((t) => t.name),
+    expected: ['Atlas/Beta', 'Work/Cloud'],
   })
 })
 
-test('dedupeTags - tolerates missing and non-array tag fields', () => {
-  const data = {
-    meetings: [{ tags: ['A/One'] }, {}, { tags: undefined }],
-    messages: [],
-  } as Record<string, Array<{ tags?: string[] }>>
+test('selectTagVocabulary - carries fileCount and lastSeen through, dropping the score', () => {
+  const rows = [{ name: 'Atlas/Beta', score: 5, lastSeen: null, fileCount: 12 }]
 
   assert({
-    given: 'documents with absent or undefined tags',
-    should: 'skip them without throwing',
-    actual: dedupeTags(data),
-    expected: ['A/One'],
+    given: 'a scored row',
+    should: 'map to a vocabulary entry without the score',
+    actual: selectTagVocabulary(rows),
+    expected: [{ name: 'Atlas/Beta', fileCount: 12, lastSeen: null }],
   })
 })
 
-test('dedupeTags - empty input returns empty list', () => {
+test('selectTagVocabulary - does not reorder the caller’s array', () => {
+  const rows = [
+    { name: 'B/Low', score: 1, lastSeen: null, fileCount: 1 },
+    { name: 'A/High', score: 9, lastSeen: null, fileCount: 9 },
+  ]
+  selectTagVocabulary(rows, 1)
+
   assert({
-    given: 'no collections',
-    should: 'return an empty array',
-    actual: dedupeTags({}),
-    expected: [],
+    given: 'a score-unsorted input array',
+    should: 'leave the input untouched',
+    actual: rows.map((r) => r.name),
+    expected: ['B/Low', 'A/High'],
   })
 })

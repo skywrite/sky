@@ -6,6 +6,10 @@
  * People come from the notebook service's interaction-scored ranking
  * (frequency x recency), then get alias-merged through PeopleStore so the
  * AI sees "Bob Smith (aka Bob)" rather than raw name strings.
+ *
+ * Tags come from the service's all-time tag scoring (per-tag file count and
+ * last-seen date, no time window), trimmed to the most active by
+ * recency-weighted score.
  */
 
 import ProjectStore from '#shared/models/Store/ProjectStore/mod.ts'
@@ -14,7 +18,6 @@ import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import { PORT_SERVER } from '#shared/config.ts'
-import type CommandService from '#commands/lib/core/CommandService.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,60 +32,70 @@ export interface PersonEntity {
   org?: string
 }
 
+export interface TagVocabEntry {
+  name: string
+  /** All-time count of files carrying the tag */
+  fileCount: number
+  /** Latest YYYY-MM-DD the tag was seen; null when no file carrying it has a date */
+  lastSeen: string | null
+}
+
 export interface EntityContext {
   people: PersonEntity[]
   projects: string[]
   decisions: string[]
   goals: string[]
-  recentTags: string[]
+  tags: TagVocabEntry[]
 }
 
 // ---------------------------------------------------------------------------
-// Tag query (recent 6 months)
+// Tag vocabulary (all-time, from the service's tag scoring)
 // ---------------------------------------------------------------------------
 
-const TAGS_QUERY = `{
-  meetings(where: {recent: "6mo"}, limit: 2000) { tags }
-  messages(where: {recent: "6mo"}, limit: 2000) { tags }
-  journals(where: {recent: "6mo"}, limit: 2000) { tags }
-}`
-
-/** Tag arrays grouped by document type, as returned by either the service or markdown:sel. */
-type TagCollections = Record<string, Array<{ tags?: string[] }>>
+/** Raw row from the service's `tagsWithScores` field, score-descending. */
+interface TagScoreRow {
+  name: string
+  score: number
+  lastSeen: string | null
+  fileCount: number
+}
 
 /**
- * Fetch recent-document tags from the running notebook service.
- *
- * The service answers from its in-memory store (~0.2s); running the same
- * query locally rebuilds the full ~20k-file MarkdownStore from scratch
- * (~20s). Returns null when unreachable so the caller can fall back to a
- * local build.
+ * Fetch the all-time tag vocabulary from the running notebook service, which
+ * tracks every tag's recency-weighted score, file count, and last-seen date
+ * incrementally. Empty on any failure — the prompt simply gets no tag block.
  */
-async function fetchTagsFromServer(): Promise<TagCollections | null> {
+async function fetchTagVocabulary(): Promise<TagScoreRow[]> {
   try {
     const resp = await fetch(`http://localhost:${PORT_SERVER}/graphql`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: TAGS_QUERY }),
+      body: JSON.stringify({ query: '{ tagsWithScores { name score lastSeen fileCount } }' }),
     })
-    if (!resp.ok) return null
-    const json = (await resp.json()) as { data?: TagCollections }
-    return json?.data ?? null
+    if (!resp.ok) return []
+    const json = (await resp.json()) as { data?: { tagsWithScores?: TagScoreRow[] } }
+    const rows = json?.data?.tagsWithScores
+    if (!Array.isArray(rows)) return []
+    return rows.filter((r) => typeof r?.name === 'string')
   } catch {
-    return null
+    return []
   }
 }
 
-/** Flatten tag arrays across document types into a sorted, deduplicated list. */
-export function dedupeTags(data: TagCollections): string[] {
-  const allTags: string[] = []
-  for (const collection of Object.values(data)) {
-    if (!Array.isArray(collection)) continue
-    for (const doc of collection) {
-      if (Array.isArray(doc.tags)) allTags.push(...doc.tags)
-    }
-  }
-  return [...new Set(allTags)].sort()
+export const TAG_VOCAB_LIMIT = 200
+
+/**
+ * Pick the vocabulary the prompts will see: the most-active tags by
+ * recency-weighted score, listed alphabetically so hierarchies cluster.
+ * Score only decides who makes the list — the entries carry fileCount and
+ * lastSeen, which are meaningful to the model in a way the score is not.
+ */
+export function selectTagVocabulary(rows: TagScoreRow[], limit: number = TAG_VOCAB_LIMIT): TagVocabEntry[] {
+  return [...rows]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ name, fileCount, lastSeen }) => ({ name, fileCount, lastSeen }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -184,17 +197,13 @@ export async function gatherPeopleEntities(
  * Gather active entity context from the notebook.
  *
  * @param config - Notebook config (needs DIR_PROJECTS, DIR_DECISIONS, DIR_GOALS)
- * @param tasks  - CommandService for the local tags fallback when the service is down
  */
-export async function gatherEntityContext(
-  config: Record<string, unknown>,
-  tasks: CommandService,
-): Promise<EntityContext> {
-  const [projectStore, decisionStore, goalStore, serverTags, people] = await Promise.all([
+export async function gatherEntityContext(config: Record<string, unknown>): Promise<EntityContext> {
+  const [projectStore, decisionStore, goalStore, vocabulary, people] = await Promise.all([
     ProjectStore.build(config.DIR_PROJECTS as string),
     DecisionStore.build(config.DIR_DECISIONS as string),
     GoalStore.build(config.DIR_GOALS as string),
-    fetchTagsFromServer(),
+    fetchTagVocabulary(),
     gatherPeopleEntities(config),
   ])
 
@@ -215,18 +224,7 @@ export async function gatherEntityContext(
   // Goals — "Area: Outcome"
   const goals = goalStore.getAllGoals().map((g) => `${g.area}: ${g.outcome}`)
 
-  // Tags — prefer the running service; fall back to a local build only when
-  // it's down (the slow path that used to run on every call).
-  let tagData = serverTags
-  if (!tagData) {
-    const tagResult = await tasks.run('markdown:sel', { graphql: TAGS_QUERY, json: true })
-    if (tagResult.ok && tagResult.data?.data) {
-      tagData = tagResult.data.data as TagCollections
-    }
-  }
-  const recentTags = tagData ? dedupeTags(tagData) : []
-
-  return { people, projects, decisions, goals, recentTags }
+  return { people, projects, decisions, goals, tags: selectTagVocabulary(vocabulary) }
 }
 
 // ---------------------------------------------------------------------------
@@ -262,8 +260,10 @@ export function formatEntityContext(ctx: EntityContext): string {
     sections.push(`### Active Goals\n${goalLines}`)
   }
 
-  if (ctx.recentTags.length > 0) {
-    sections.push(`### Recent Tags (last 6 months)\n${ctx.recentTags.join(', ')}`)
+  if (ctx.tags.length > 0) {
+    // Rendered as bare names for now; counts, last-seen, and prefix rollups
+    // for the long tail land with the vocabulary formatting step.
+    sections.push(`### Tag Vocabulary (most active)\n${ctx.tags.map((t) => t.name).join(', ')}`)
   }
 
   if (sections.length === 0) return ''
