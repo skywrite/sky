@@ -1288,6 +1288,52 @@ export default class AiChatTask extends Command {
           }
         }
 
+        // Record executed tool calls and web-search source URLs from one
+        // invocation's result. Approval rounds re-invoke the model, so every
+        // result must be scanned — not just the last, which loses whatever
+        // ran in earlier rounds. An approved call executes at the start of
+        // the continuation and can surface in steps, content parts, or tool
+        // response messages depending on the SDK path; the seen set guards
+        // the overlap.
+        const seenToolCallIds = new Set<string>()
+        const sourceUrls: string[] = []
+        // deno-lint-ignore no-explicit-any
+        const recordExecutedTool = (toolName: string, trc: any) => {
+          if (trc?.toolCallId) {
+            if (deniedCallIds.has(trc.toolCallId) || seenToolCallIds.has(trc.toolCallId)) return
+            seenToolCallIds.add(trc.toolCallId)
+          }
+          const out = trc?.output
+          turnTools.push({
+            tool: toolName,
+            input: toolInputDigest(trc?.input),
+            outcome: out !== null && typeof out === 'object' && out.success === false ? 'error' : 'ok',
+            tokens: estimateTokens(typeof out === 'string' ? out : JSON.stringify(out ?? '')),
+          })
+        }
+        // deno-lint-ignore no-explicit-any
+        const collectToolActivity = (r: any) => {
+          for (const step of r.steps ?? []) {
+            for (const tr of step.toolResults ?? []) {
+              if (tr.toolName === 'web_search' && Array.isArray(tr.output)) {
+                for (const res of tr.output as SearchResult[]) {
+                  if (res.url) sourceUrls.push(res.url)
+                }
+              }
+              recordExecutedTool(tr.toolName, tr)
+            }
+          }
+          for (const part of r.content ?? []) {
+            if (part.type === 'tool-result') recordExecutedTool(part.toolName, part)
+          }
+          for (const message of r.responseMessages ?? []) {
+            if (message.role !== 'tool') continue
+            for (const part of Array.isArray(message.content) ? message.content : []) {
+              if (part.type === 'tool-result') recordExecutedTool(part.toolName, part)
+            }
+          }
+        }
+
         let result = await runTurn()
 
         // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
@@ -1410,32 +1456,15 @@ export default class AiChatTask extends Command {
           // deno-lint-ignore no-explicit-any
           messages.push({ role: 'tool', content: approvals } as any)
 
+          // Scan this round's result before the continuation replaces it —
+          // denials were recorded at the approval prompt; their ids are
+          // skipped so nothing double-counts.
+          collectToolActivity(result)
+
           result = await runTurn()
         }
 
-        // Collect source URLs from web search results and record every
-        // executed tool call for the turn log (denials were recorded at the
-        // approval prompt; their ids are skipped so nothing double-counts).
-        const sourceUrls: string[] = []
-        for (const step of result.steps ?? []) {
-          for (const tr of step.toolResults ?? []) {
-            if (tr.toolName === 'web_search' && Array.isArray(tr.output)) {
-              for (const r of tr.output as SearchResult[]) {
-                if (r.url) sourceUrls.push(r.url)
-              }
-            }
-            // deno-lint-ignore no-explicit-any
-            const trc = tr as any
-            if (trc.toolCallId && deniedCallIds.has(trc.toolCallId)) continue
-            const out = trc.output
-            turnTools.push({
-              tool: tr.toolName,
-              input: toolInputDigest(trc.input),
-              outcome: out !== null && typeof out === 'object' && out.success === false ? 'error' : 'ok',
-              tokens: estimateTokens(typeof out === 'string' ? out : JSON.stringify(out ?? '')),
-            })
-          }
-        }
+        collectToolActivity(result)
 
         // Attach tool records to this turn's log entry — creating one when
         // the turn changed no context and so recorded nothing else.
@@ -1449,6 +1478,12 @@ export default class AiChatTask extends Command {
           }
           if (turnEntry) turnEntry.tools = turnTools
           else contextLog.push({ turn: turnNumber, queries: [...contextQueries], tools: turnTools })
+        }
+
+        // Every turn writes an entry even when nothing changed and no tool
+        // ran — an absent turn is indistinguishable from a recording gap.
+        if (!contextLog.some((e) => e.turn === turnNumber)) {
+          contextLog.push({ turn: turnNumber, queries: [...contextQueries] })
         }
 
         // Build assistant content with optional sources
