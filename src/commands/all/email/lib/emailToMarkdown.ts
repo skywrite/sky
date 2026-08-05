@@ -5,7 +5,7 @@ import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { EmailMessage } from './imap-client.ts'
 import { sanitizeEmailHtml } from './sanitizeEmailHtml.ts'
 
-const PROMPT_FILE = new URL('../../../all/follow/email/prompts/email-to-markdown.prompt.md', import.meta.url).pathname
+const PROMPT_FILE = new URL('../prompts/email-to-markdown.prompt.md', import.meta.url).pathname
 
 /** Extract the text/plain part from a raw RFC 2822 email source */
 export function extractPlainText(raw: string): string {
