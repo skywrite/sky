@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import process from 'node:process'
+import { assert, test } from '#test'
 import fetchLocalHostName from './fetchLocalHostName.ts'
 
 // scutil is macOS-only

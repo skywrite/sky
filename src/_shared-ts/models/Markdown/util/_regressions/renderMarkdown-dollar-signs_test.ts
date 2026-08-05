@@ -40,8 +40,8 @@
  * renderMarkdown test to fail.
  */
 
-import { assert, test } from '#test'
 import * as marked from 'marked'
+import { assert, test } from '#test'
 import renderMarkdown from '../renderMarkdown.ts'
 
 // Test fixtures for various special replacement patterns

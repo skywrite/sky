@@ -2,10 +2,10 @@
  * Scan task files for @MCPTool decorator without importing them
  */
 
-import process from 'node:process'
 import { join } from 'node:path'
-import readTextFile from '#shared/fs/readTextFile.ts'
+import process from 'node:process'
 import { walk } from '#shared/fs/mod.ts'
+import readTextFile from '#shared/fs/readTextFile.ts'
 
 /**
  * Scan a TypeScript file for @MCPTool decorator

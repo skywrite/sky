@@ -1,6 +1,6 @@
-import * as path from 'node:path'
-import * as os from 'node:os'
 import { appendFile, mkdir } from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import type { Warning } from 'ai'
 import colors from 'picocolors'
 import { DIR_USER_DATA } from '#config'

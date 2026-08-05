@@ -1,9 +1,9 @@
 import ms from 'ms'
 import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { exists } from '#shared/fs/mod.ts'
-import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StoreError } from '../Store/types.ts'
+import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 
 interface SlackFollowEntry {
   follow: FollowFileEntry['follow']

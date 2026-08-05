@@ -1,16 +1,16 @@
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
-import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
-import { outputFile } from '#shared/fs/mod.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import slugify from '#lib/string/slugify.ts'
-import Follow from '#shared/models/Follow/mod.ts'
-import { createImapClient } from '#commands/all/email/lib/imap-client.ts'
 import { getInboxThreads } from '#commands/all/email/lib/getInboxThreads.ts'
 import type { InboxThread } from '#commands/all/email/lib/getInboxThreads.ts'
-import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
+import { createImapClient } from '#commands/all/email/lib/imap-client.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import slugify from '#lib/string/slugify.ts'
+import { outputFile } from '#shared/fs/mod.ts'
+import Follow from '#shared/models/Follow/mod.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),

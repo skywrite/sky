@@ -1,10 +1,8 @@
-import { assert, test } from '#test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { createServer, type PathConfig } from './server.ts'
-import { Store } from './store.ts'
+import { assert, test } from '#test'
 import {
   EXPECTED_ORGS,
   EXPECTED_PEOPLE,
@@ -14,6 +12,8 @@ import {
   HIGH_SCORE_ORGS,
   HIGH_SCORE_PEOPLE,
 } from './fixtures/mod.ts'
+import { createServer, type PathConfig } from './server.ts'
+import { Store } from './store.ts'
 
 // realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and
 // /var are symlinks into /private)

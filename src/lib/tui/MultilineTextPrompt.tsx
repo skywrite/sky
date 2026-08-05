@@ -12,8 +12,8 @@
  * this one — see streaks:new for the pattern.
  */
 
-import React, { useMemo, useRef, useState } from 'react'
 import { Box, render, Text, useApp, useInput } from 'ink'
+import React, { useMemo, useRef, useState } from 'react'
 
 const CURSOR_BLOCK = '█'
 // Bracketed paste markers: \x1b[200~ (start) and \x1b[201~ (end).

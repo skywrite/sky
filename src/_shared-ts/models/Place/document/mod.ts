@@ -1,7 +1,7 @@
-import Document from '#shared/models/Markdown/Document/mod.ts'
 import { slugify } from '#lib/string/mod.ts'
-import type { PlaceCreateInput, PlaceLocation } from './types.ts'
+import Document from '#shared/models/Markdown/Document/mod.ts'
 import { buildPlacePath, toDisplayString } from './path.ts'
+import type { PlaceCreateInput, PlaceLocation } from './types.ts'
 
 export default class PlaceDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {

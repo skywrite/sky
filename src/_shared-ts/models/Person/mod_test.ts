@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import Person from './mod.ts'
 import { PlainDate, PlainYearMonth } from '#universal/dates/nbdt/mod.ts'
+import Person from './mod.ts'
 
 test('Person.create - creates person with template', () => {
   const person = Person.create({

@@ -1,19 +1,18 @@
 import * as path from 'node:path'
+import { generateText } from 'ai'
+import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { generateText } from 'ai'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import { stringify } from '#shared/yaml/mod.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { dayDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { env } from '#shared/sys/mod.ts'
+import { stringify } from '#shared/yaml/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherWeekHealthData, type WeekHealthData } from './_health.ts'
 import { gatherWeekPriceData, type WeekPriceData } from './_prices.ts'
-
-import { env } from '#shared/sys/mod.ts'
 
 // Path to prompt template (relative to this file)
 const PROMPT_FILE = new URL('./prompts/week.prompt.md', import.meta.url).pathname

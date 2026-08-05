@@ -13,10 +13,10 @@
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params

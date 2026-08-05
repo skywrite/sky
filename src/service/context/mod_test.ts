@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import { FIXTURE_PATHS } from '../fixtures/mod.ts'
 import { resolveContext } from './mod.ts'
 

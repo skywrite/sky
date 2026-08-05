@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { createServer } from '#service/server.ts'
+import { assert, test } from '#test'
 import MarkdownSelectorTask from './sel.ts'
 
 // realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and

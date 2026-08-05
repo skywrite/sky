@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import { parse } from 'graphql'
-import { createResolvers, typeDefs } from './schema.ts'
+import { assert, test } from '#test'
 import type { Store } from '../store.ts'
+import { createResolvers, typeDefs } from './schema.ts'
 
 /**
  * Collect field names from every `type Query` / `extend type Query` block.

@@ -1,14 +1,14 @@
 import * as path from 'node:path'
+import { DIR_BASE, DIR_TIME } from '#config'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createJournalScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
-import { DIR_BASE, DIR_TIME } from '#config'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** Token budget for MI context assembly. Goals/decisions are pinned and always
  * kept; day files compete for the remaining budget. */

@@ -17,9 +17,9 @@
  * still matches it after.
  */
 
-import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import type PersonDocument from '#shared/models/Person/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
+import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import type { NameResolver } from './filters/involves.ts'
 
 // ---------------------------------------------------------------------------

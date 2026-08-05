@@ -1,8 +1,8 @@
-import { assert, test } from '#test'
-import DomainCollection from './mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
+import { assert, test } from '#test'
+import DomainCollection from './mod.ts'
 
 function md(yaml: string, body: string): string {
   return `---\n${yaml}\n---\n${body}`

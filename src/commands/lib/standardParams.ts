@@ -18,10 +18,10 @@
  * ```
  */
 
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
 import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Arg, Flag } from '#commands/lib/params.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Day Args (positional)

@@ -1,13 +1,13 @@
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import { slugify } from '#lib/string/mod.ts'
-import latinize from '#lib/string/latinize.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
+import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
+import latinize from '#lib/string/latinize.ts'
+import { slugify } from '#lib/string/mod.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
+import PersonDocument from '#shared/models/Person/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------

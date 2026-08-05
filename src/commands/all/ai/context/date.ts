@@ -7,12 +7,12 @@
  */
 
 import { generateObject } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
-import { readTextFile } from '#shared/fs/mod.ts'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 const PROMPT_FILE = new URL('./prompts/context-date.prompt.md', import.meta.url).pathname
 

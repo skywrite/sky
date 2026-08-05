@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import Document from './mod.ts'
 import type { Attachment } from './attachment.ts'
+import Document from './mod.ts'
 
 const fixtures = [
   {

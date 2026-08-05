@@ -1,11 +1,11 @@
-import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
 import { createOpenAI, openai, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
+import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
+import { AI_PROFILES } from '#config'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { PROFILES } from './defaultProfiles.ts'
-import { AI_PROFILES } from '#config'
 
 /**
  * Central registry for AI model selection.

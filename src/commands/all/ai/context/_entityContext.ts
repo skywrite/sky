@@ -12,12 +12,12 @@
  * recency-weighted score.
  */
 
-import ProjectStore from '#shared/models/Store/ProjectStore/mod.ts'
+import { PORT_SERVER } from '#shared/config.ts'
 import DecisionStore from '#shared/models/Store/DecisionStore/mod.ts'
 import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
-import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
-import { PORT_SERVER } from '#shared/config.ts'
+import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
+import ProjectStore from '#shared/models/Store/ProjectStore/mod.ts'
 
 // ---------------------------------------------------------------------------
 // Types

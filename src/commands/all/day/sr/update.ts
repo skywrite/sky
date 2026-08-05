@@ -1,5 +1,5 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 
 export default class DaySrUpdateTask extends Command {
   static override description: CommandDescription = {

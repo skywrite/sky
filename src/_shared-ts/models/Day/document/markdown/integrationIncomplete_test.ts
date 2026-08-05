@@ -1,6 +1,6 @@
-import { assert, loadFixturesSync, test } from '#test'
 import * as path from 'node:path'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { assert, loadFixturesSync, test } from '#test'
 
 const FIXTURES = loadFixturesSync(import.meta.url)
 

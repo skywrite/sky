@@ -1,9 +1,9 @@
-import type DayDocument from '../document/mod.ts'
+import type ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import RelSet from '#shared/models/RelSet/mod.ts'
 import type TagSet from '#shared/models/TagSet/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import type ItemList from '#shared/models/Markdown/ItemList/mod.ts'
-import RelSet from '#shared/models/RelSet/mod.ts'
+import type DayDocument from '../document/mod.ts'
 
 /**
  * Domain class for Day that composes DayDocument + MarkdownStore.

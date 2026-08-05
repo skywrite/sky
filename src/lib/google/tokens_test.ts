@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { assert, test } from '#test'
 import {
   deleteAccountTokens,
   listAccountEmails,

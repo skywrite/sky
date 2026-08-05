@@ -1,8 +1,8 @@
-import { assert, test } from '#test'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { assert, test } from '#test'
+import { GoogleApiError, GoogleClient } from './client.ts'
 import { GOOGLE_TOKEN_URL } from './oauth.ts'
 import { loadAccountTokens, saveAccountTokens } from './tokens.ts'
-import { GoogleApiError, GoogleClient } from './client.ts'
 
 const EMAIL = 'jane@example.com'
 const OAUTH_CLIENT = { clientId: 'id', clientSecret: 'sec' }

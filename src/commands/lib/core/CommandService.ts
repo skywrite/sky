@@ -1,12 +1,12 @@
 import colors from 'picocolors'
-import type { Args } from '#commands/lib/commands.d.ts'
-import type CommandContext from './CommandContext.ts'
-import type { Prompt } from './Prompt.ts'
-import { Command, CommandResult } from '#commands/mod.ts'
-import type { CommandArgs } from '#commands/lib/commands.d.ts'
-import type { CommandTypesRegistry } from './CommandTypesRegistry.ts'
-import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
 import { getManifest, type CommandEntry } from '#commands/all/cli/_commandsManifest.ts'
+import type { Args } from '#commands/lib/commands.d.ts'
+import type { CommandArgs } from '#commands/lib/commands.d.ts'
+import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
+import type CommandContext from './CommandContext.ts'
+import type { CommandTypesRegistry } from './CommandTypesRegistry.ts'
+import type { Prompt } from './Prompt.ts'
 
 /**
  * Shared task class cache (singleton)

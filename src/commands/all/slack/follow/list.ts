@@ -1,12 +1,12 @@
-import colors from 'picocolors'
 import ms from 'ms'
-import { exists } from '#shared/fs/mod.ts'
-import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
+import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
+import { exists } from '#shared/fs/mod.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

@@ -2,8 +2,8 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { MarkdownStore } from '#shared/models/Store/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { MarkdownStore } from '#shared/models/Store/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

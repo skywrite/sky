@@ -6,8 +6,8 @@
  */
 
 import * as p from '@clack/prompts'
-import type { Prompt } from './Prompt.ts'
 import type { CommandResult } from './CommandResult.ts'
+import type { Prompt } from './Prompt.ts'
 
 /**
  * Process prompts from an async generator and return the final result

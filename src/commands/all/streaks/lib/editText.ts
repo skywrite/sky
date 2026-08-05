@@ -1,6 +1,6 @@
+import { unlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { unlink } from 'node:fs/promises'
 import openEditor from 'open-editor'
 import { outputFile, readTextFile } from '#shared/fs/mod.ts'
 

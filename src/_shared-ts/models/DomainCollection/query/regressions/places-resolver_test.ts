@@ -7,11 +7,11 @@
  * the resolver factory returned no `places` function.
  */
 
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { createDomainResolvers } from '../resolvers/mod.ts'
+import { assert, test } from '#test'
 import { executeQuery } from '../execute.ts'
+import { createDomainResolvers } from '../resolvers/mod.ts'
 
 // =============================================================================
 // Fixtures

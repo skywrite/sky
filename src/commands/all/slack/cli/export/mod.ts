@@ -1,6 +1,3 @@
-import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { runCommand } from '#lib/sys/mod.ts'
 import {
   type AgentSlackFile,
   type AgentSlackMessage,
@@ -17,6 +14,9 @@ import {
   inferConversationType,
   resolveContent,
 } from '#commands/all/slack/lib/mod.ts'
+import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { runCommand } from '#lib/sys/mod.ts'
 
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),

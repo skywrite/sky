@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import type { LanguageModelV4, LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import { wrapLanguageModel } from 'ai'
+import { assert, test } from '#test'
 import { wellFormedPromptMiddleware } from './wellFormedPrompt.ts'
 
 /** A leading surrogate with nothing after it — the shape a mid-emoji cut leaves behind. */

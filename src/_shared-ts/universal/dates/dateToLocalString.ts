@@ -1,5 +1,5 @@
-import ymd from '#universal/dates/ymd.ts'
 import dateTo24H from '#universal/dates/dateTo24H.ts'
+import ymd from '#universal/dates/ymd.ts'
 import tzOffset from './timezones/timezoneOffset.ts'
 
 export default function dateToLocalString(date: Date): string {

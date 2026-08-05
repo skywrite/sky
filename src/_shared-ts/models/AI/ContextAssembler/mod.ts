@@ -1,10 +1,10 @@
+import type DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import {
   Collection,
   type CollectionItem,
   type Document,
   type MarkdownOutputOptions,
 } from '#shared/models/Markdown/mod.ts'
-import type DomainCollection from '#shared/models/DomainCollection/mod.ts'
 
 /**
  * A scorer's decision for a single document. Intent is explicit — there are

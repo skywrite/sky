@@ -1,14 +1,14 @@
 import * as path from 'node:path'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
-// import { fetchIpLocation } from '#lib/apis/ipwhois.ts'
-import { toUTCDateString } from '#universal/dates/dates.ts'
-import fetchMobileLocation from './location/fetchMobileLocation.ts'
-import fetchDeviceLocation from './location/fetchDeviceLocation.ts'
-import { assembleGoogleAddressComponents, fetchGoogleGeocode } from './location/fetchGoogleGeocode.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
+// import { fetchIpLocation } from '#lib/apis/ipwhois.ts'
+import { toUTCDateString } from '#universal/dates/dates.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
+import fetchDeviceLocation from './location/fetchDeviceLocation.ts'
+import { assembleGoogleAddressComponents, fetchGoogleGeocode } from './location/fetchGoogleGeocode.ts'
+import fetchMobileLocation from './location/fetchMobileLocation.ts'
 
 // TODO: if 'when' is passed (i.e. history)
 // should insert into records as opposed to append to the end

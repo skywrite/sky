@@ -1,6 +1,6 @@
 import { readlink } from 'node:fs/promises'
-import { isValidTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import delay from '#universal/async/delay.ts'
+import { isValidTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 
 export const LOCALTIME_PATH = '/etc/localtime'
 

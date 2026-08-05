@@ -1,10 +1,10 @@
+import * as config from '#config'
 import { test } from '#test'
 import { assert } from '#test'
-import CommandContext, { CommandPlatform } from './CommandContext.ts'
-import * as config from '#config'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { BufferedOutput } from '../output/BufferedOutput.ts'
 import { ConsoleOutput } from '../output/ConsoleOutput.ts'
-import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import CommandContext, { CommandPlatform } from './CommandContext.ts'
 
 // Factory Methods Tests
 

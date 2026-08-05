@@ -1,9 +1,9 @@
-import { createImapClient } from '../lib/imap-client.ts'
-import { fetchUnsavedThreads } from '../lib/fetchUnsavedThreads.ts'
-import type { FetchUnsavedResult } from '../lib/fetchUnsavedThreads.ts'
-import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
+import { fetchUnsavedThreads } from '../lib/fetchUnsavedThreads.ts'
+import type { FetchUnsavedResult } from '../lib/fetchUnsavedThreads.ts'
+import { createImapClient } from '../lib/imap-client.ts'
 
 export type { FetchedThread } from '../lib/fetchUnsavedThreads.ts'
 

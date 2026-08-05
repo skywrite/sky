@@ -4,8 +4,8 @@
  * Converts CSS-inspired selector syntax to GraphQL queries.
  */
 
-import { type ParsedAttribute, type ParsedPseudo, type ParsedSelector, parseSelector } from './parser.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { type ParsedAttribute, type ParsedPseudo, type ParsedSelector, parseSelector } from './parser.ts'
 
 /**
  * Result of transpilation.

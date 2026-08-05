@@ -4,15 +4,17 @@
  * Used by both run.ts (production) and server.ts (testing).
  */
 
+import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type { YogaServerInstance } from 'graphql-yoga'
-import { resolveContext } from '../context/mod.ts'
+import { searchNotebook } from './home/mod.ts'
+import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
   buildMarkdownDocumentEditorState,
   buildMarkdownPreviewPath,
@@ -25,8 +27,6 @@ import {
   resolveMarkdownPreviewTheme,
   saveMarkdownContent,
 } from './markdown-preview/mod.ts'
-import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
-import { searchNotebook } from './home/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 
 /**

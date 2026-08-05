@@ -1,9 +1,9 @@
-import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
+import * as config from '#shared/config.ts'
 import walk from '#shared/fs/walk.ts'
 // Imported directly from watch.ts, not fs/mod.ts — see fs/mod.ts for why
 import { type FsEventKind, type FsWatcher, watchFs } from '#shared/fs/watch.ts'
-import * as config from '#shared/config.ts'
 
 type MarkdownWatcherEventKind = FsEventKind
 

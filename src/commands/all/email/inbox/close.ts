@@ -1,15 +1,15 @@
-import * as p from '@clack/prompts'
-import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
+import * as path from 'node:path'
+import * as p from '@clack/prompts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
 import { outputFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { createImapClient } from '../lib/imap-client.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { createImapClient } from '../lib/imap-client.ts'
 
 const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),

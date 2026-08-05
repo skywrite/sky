@@ -10,13 +10,13 @@
 import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
+import { PORT_SERVER } from '#shared/config.ts'
 import { type ExecuteResult, executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import { dropInvalidSelections, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
-import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
 import { parseSelector } from '#shared/models/DomainCollection/query/parser.ts'
-import { PORT_SERVER } from '#shared/config.ts'
-import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
+import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
 const params = {
   dsl: Flag.string('CSS-like selector query', { short: 'd', optional: true }),

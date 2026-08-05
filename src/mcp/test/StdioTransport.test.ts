@@ -3,8 +3,8 @@
  */
 
 import { assert, test } from '#test'
-import { StdioTransport } from '../transports/StdioTransport.ts'
 import { TextLineStream } from '../core/TextLineStream.ts'
+import { StdioTransport } from '../transports/StdioTransport.ts'
 
 test('StdioTransport - initialization', () => {
   const transport = new StdioTransport()

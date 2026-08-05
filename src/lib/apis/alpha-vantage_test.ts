@@ -1,6 +1,6 @@
+import isOnline from '#shared/network/isOnline.ts'
 import { assert, test } from '#test'
 import { fetchEquityPrice } from './alpha-vantage.ts'
-import isOnline from '#shared/network/isOnline.ts'
 
 const ignore = true // !(await isOnline())
 

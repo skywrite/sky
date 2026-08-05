@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import { parseCsv } from './parseCsv.ts'
 
 const FIXTURES_DIR = new URL('./fixtures/', import.meta.url).pathname

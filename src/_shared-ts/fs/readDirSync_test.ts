@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import readDirSync, { type DirEntry } from './readDirSync.ts'
 
 test('readDirSync iterates over directory entries', () => {

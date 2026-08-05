@@ -1,5 +1,5 @@
-import * as path from 'node:path'
 import { closeSync, mkdirSync, openSync, readdirSync, statSync, unlinkSync, writeSync } from 'node:fs'
+import * as path from 'node:path'
 import {
   configureSync,
   getConsoleSink,

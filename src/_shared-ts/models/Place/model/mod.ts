@@ -1,8 +1,8 @@
-import type PlaceDocument from '../document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
-import type { PlaceLocation } from '../document/types.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
+import type PlaceDocument from '../document/mod.ts'
+import type { PlaceLocation } from '../document/types.ts'
 
 /**
  * Domain class for Place that composes PlaceDocument + MarkdownStore.

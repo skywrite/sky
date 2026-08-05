@@ -1,5 +1,5 @@
-import stripPunctuation from './stripPunctuation.ts'
 import latinize from './latinize.ts'
+import stripPunctuation from './stripPunctuation.ts'
 
 export interface SlugifyOptions {
   suggestedLength?: number

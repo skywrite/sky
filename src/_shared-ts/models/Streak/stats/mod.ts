@@ -1,6 +1,6 @@
 import DayDocument from '#shared/models/Day/mod.ts'
-import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import * as dateFns from '#universal/dates/dateFns/mod.ts'
+import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import StreakDocument, { STREAKS_LIST_TITLE } from '../document/mod.ts'
 
 const { addDays } = dateFns

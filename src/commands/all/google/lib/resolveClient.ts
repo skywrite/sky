@@ -1,5 +1,4 @@
 import * as p from '@clack/prompts'
-import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import {
   AccountResolutionError,
   AmbiguousAccountError,
@@ -8,6 +7,7 @@ import {
   loadOAuthClient,
   resolveAccountEmail,
 } from '#lib/google/mod.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 
 /**
  * Build an authenticated GoogleClient for the requested account.

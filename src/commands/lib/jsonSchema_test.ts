@@ -2,9 +2,9 @@
  * Tests for JSON Schema generation from task param definitions
  */
 
-import { assert, test } from '#test'
 import { Arg, Flag } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
+import { assert, test } from '#test'
 import { commandDescriptionToSchema, commandNameToToolName, toolNameToCommandName } from './jsonSchema.ts'
 
 // -- Helpers ------------------------------------------------------------------

@@ -1,5 +1,5 @@
-import { parse as parseYaml } from '#shared/yaml/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { parse as parseYaml } from '#shared/yaml/mod.ts'
 import type { ParsedPrompt, PromptFrontmatter } from './types.ts'
 import { compareSemver, PROMPT_SCHEMA_VERSION } from './types.ts'
 

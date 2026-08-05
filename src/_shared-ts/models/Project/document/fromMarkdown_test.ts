@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import ProjectDocument from './mod.ts'
 import { fixtures } from './fixtures.ts'
+import ProjectDocument from './mod.ts'
 
 test('ProjectDocument.fromMarkdown - parses basic project', () => {
   const doc = ProjectDocument.fromMarkdown(fixtures.basic)

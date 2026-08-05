@@ -12,10 +12,10 @@
 
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import colors from 'picocolors'
-import { readTextFile } from '#shared/fs/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Types

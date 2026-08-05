@@ -8,9 +8,9 @@
  *   - Deno.watchFs   (Deno-only)
  */
 
-import * as path from 'node:path'
 import { existsSync } from 'node:fs'
 import { watch as fsWatch, type WatchEventType } from 'node:fs'
+import * as path from 'node:path'
 
 export type FsEventKind = 'create' | 'modify' | 'remove' | 'access' | 'other'
 

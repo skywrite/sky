@@ -1,15 +1,15 @@
-import * as path from 'node:path'
 import { readFile } from 'node:fs/promises'
+import * as path from 'node:path'
+import { generateText } from 'ai'
+import * as XLSX from 'xlsx'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { generateText } from 'ai'
+import { isCommandAvailable, runCommand } from '#lib/sys/command.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import { isCommandAvailable, runCommand } from '#lib/sys/command.ts'
 import { env } from '#shared/sys/mod.ts'
-import * as XLSX from 'xlsx'
 
 const PROMPT_FILE = new URL('./prompts/doc.prompt.md', import.meta.url).pathname
 

@@ -1,8 +1,8 @@
+import * as path from 'node:path'
+import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
-import colors from 'picocolors'
 import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
 
 const params = {

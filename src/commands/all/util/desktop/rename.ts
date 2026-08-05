@@ -1,13 +1,13 @@
-import { Command, CommandResult } from '#commands/mod.ts'
-import * as path from 'node:path'
-import { readDir, rename } from '#shared/fs/mod.ts'
 import { mkdir } from 'node:fs/promises'
+import * as path from 'node:path'
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
+import skyPrompt, { SkyPromptStatus } from '#lib/gui/sky-prompt.ts'
+import { runCommand } from '#lib/sys/mod.ts'
+import { readDir, rename } from '#shared/fs/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { REGEX_YMD_EXACT } from '#universal/dates/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import skyPrompt, { SkyPromptStatus } from '#lib/gui/sky-prompt.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { runCommand } from '#lib/sys/mod.ts'
 
 export default class UtilDesktopRenameTask extends Command {
   static override description: CommandDescription = {

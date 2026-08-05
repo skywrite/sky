@@ -1,14 +1,14 @@
 import * as path from 'node:path'
+import { marked } from 'marked'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { marked } from 'marked'
 import { readTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { MarkdownPreviewDocument } from './components/MarkdownPreviewDocument.tsx'
+import { readMarkdownContent } from './content.ts'
 import { buildMarkdownDocumentEditorState } from './documentState.ts'
 import { buildMarkdownExplorerTree } from './explorer.ts'
 import { buildMarkdownContentApiPath, buildMarkdownDocumentApiPath, buildMarkdownPdfExportPath } from './request.ts'
-import { MarkdownPreviewDocument } from './components/MarkdownPreviewDocument.tsx'
-import { readMarkdownContent } from './content.ts'
 import type { MarkdownPreviewMode, MarkdownPreviewRenderOptions, MarkdownPreviewRequest } from './types.ts'
 
 const THEMES_DIR = new URL('../../../commands/all/markdown/pdf/themes', import.meta.url).pathname

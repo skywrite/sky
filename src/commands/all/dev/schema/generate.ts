@@ -6,9 +6,9 @@
  * Outputs to: _shared-ts/models/DomainCollection/query/schema.graphql
  */
 
-import { writeTextFile } from '#shared/fs/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Schema Definition (derived from document models)

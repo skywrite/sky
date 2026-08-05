@@ -1,18 +1,20 @@
 import * as path from 'node:path'
-import { generateText } from 'ai'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
-import { extractJson } from '#shared/ai/extractJson.ts'
-import { z } from 'zod'
 import * as p from '@clack/prompts'
-import colors from 'picocolors'
+import { generateText } from 'ai'
 import openEditor from 'open-editor'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import colors from 'picocolors'
+import { z } from 'zod'
+import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { extractJson } from '#shared/ai/extractJson.ts'
+import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
-import { desktopFilesByExt } from './lib/desktopFiles.ts'
-import ZoomVTT from './lib/ZoomVTT/mod.ts'
-import SRT from './lib/SRT/mod.ts'
+import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
+import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { fetchOrgs, fetchPeople, fetchProjects } from './lib/entityLists.ts'
 import {
   applyRulings,
@@ -22,10 +24,8 @@ import {
   renderGlossary,
   saveGlossary,
 } from './lib/glossary.ts'
-import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import SRT from './lib/SRT/mod.ts'
+import ZoomVTT from './lib/ZoomVTT/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

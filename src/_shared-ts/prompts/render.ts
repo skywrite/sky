@@ -5,6 +5,10 @@ import Handlebars from 'handlebars'
 // Preserve original behavior: return empty string for null/undefined
 Handlebars.Utils.escapeExpression = (str: string) => (str == null ? '' : str)
 
+import { DIR_BASE } from '#shared/config.ts'
+import { readTextFileSync } from '#shared/fs/mod.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
+import { parsePromptFile } from './parse.ts'
 import type {
   GlobalContext,
   ParsedPrompt,
@@ -14,11 +18,7 @@ import type {
   RenderWarning,
   RuntimeContext,
 } from './types.ts'
-import { parsePromptFile } from './parse.ts'
 import { getReservedFieldDefinition, isReservedNamespace } from './variables.ts'
-import { readTextFileSync } from '#shared/fs/mod.ts'
-import { DIR_BASE } from '#shared/config.ts'
-import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 
 // =============================================================================
 // Context Building

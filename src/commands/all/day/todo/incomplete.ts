@@ -1,9 +1,9 @@
-import DayDocument from '#shared/models/Day/mod.ts'
-import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { categoryTodo, Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { InferParams } from '#commands/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
+import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

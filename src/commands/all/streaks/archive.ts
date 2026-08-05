@@ -1,14 +1,14 @@
-import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
+import * as path from 'node:path'
 import colors from 'picocolors'
-import { DIR_STREAKS } from '#config'
-import { outputFile } from '#shared/fs/mod.ts'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
-import { computeStreakStats } from '#shared/models/Streak/mod.ts'
-import { loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_STREAKS } from '#config'
+import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
+import { outputFile } from '#shared/fs/mod.ts'
+import { computeStreakStats } from '#shared/models/Streak/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 
 const params = {
   name: Arg.string('Streak slug to archive'),

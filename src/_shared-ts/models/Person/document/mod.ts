@@ -1,10 +1,10 @@
-import Document from '#shared/models/Markdown/Document/mod.ts'
-import { stringify } from '#shared/yaml/mod.ts'
-import TagSet from '#shared/models/TagSet/mod.ts'
-import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
 import { slugify } from '#lib/string/mod.ts'
-import { PlainDate, PlainYear, PlainYearMonth } from '#universal/dates/nbdt/mod.ts'
+import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
+import Document from '#shared/models/Markdown/Document/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
+import { stringify } from '#shared/yaml/mod.ts'
 import { REGEX_YM_EXACT, REGEX_YMD_EXACT } from '#universal/dates/mod.ts'
+import { PlainDate, PlainYear, PlainYearMonth } from '#universal/dates/nbdt/mod.ts'
 
 export default class PersonDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {

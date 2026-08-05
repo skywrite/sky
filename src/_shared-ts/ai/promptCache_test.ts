@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import type { ModelMessage } from 'ai'
+import { assert, test } from '#test'
 import { cachedInstructions, PROMPT_CACHE_BOUNDARY, withCacheTail } from './promptCache.ts'
 
 const breakpoint = { anthropic: { cacheControl: { type: 'ephemeral' } } }

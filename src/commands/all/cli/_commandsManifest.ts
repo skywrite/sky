@@ -1,12 +1,12 @@
+import { existsSync } from 'node:fs'
+import { mkdir, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
-import { mkdir, stat } from 'node:fs/promises'
+import { isAIChatTool } from '#commands/lib/AIChatTool.ts'
+import type { ParamDef, ParamKind, ParamType, ParamsRecord } from '#commands/lib/params.ts'
+import { DIR_CODE_SRC, DIR_HOME, COMMAND_DIRS } from '#config'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { walk } from '#shared/fs/mod.ts'
-import { DIR_CODE_SRC, DIR_HOME, COMMAND_DIRS } from '#config'
-import { existsSync } from 'node:fs'
-import type { ParamDef, ParamKind, ParamType, ParamsRecord } from '#commands/lib/params.ts'
-import { isAIChatTool } from '#commands/lib/AIChatTool.ts'
 
 export interface FlagEntry {
   name: string

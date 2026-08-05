@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import { matchesInvolves } from './involves.ts'
 import type { NameResolver } from './involves.ts'
 

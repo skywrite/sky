@@ -2,9 +2,9 @@
  * Tests for DomainCollection GraphQL resolvers.
  */
 
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import { createDomainResolvers } from './resolvers/mod.ts'
 import { DEFAULT_QUERY_LIMIT } from './resolvers/shared.ts'
 

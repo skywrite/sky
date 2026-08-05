@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import { matchesDecided, matchesPending } from './decision.ts'
 
 function md(yaml: string): Document {

@@ -1,7 +1,7 @@
 import { DIR_TIME } from '#config'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import readDay from './readDay.ts'
 import fetchNow from './fetchNow.ts'
+import readDay from './readDay.ts'
 
 /**
  * Timezone for a specific day, read from its day file's `tz:` field.

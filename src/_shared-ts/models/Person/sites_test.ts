@@ -1,6 +1,6 @@
+import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
 import { assert, test } from '#test'
 import Person from './mod.ts'
-import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
 
 // Test fixtures for sites getter
 const sitesGetterFixtures = [

@@ -1,7 +1,7 @@
 import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
 import { exists } from '#shared/fs/mod.ts'
-import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 import type { StoreError } from '../Store/types.ts'
+import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 
 interface EmailFollowEntry {
   follow: FollowFileEntry['follow']

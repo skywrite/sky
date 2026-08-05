@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import StreakDocument from '#shared/models/Streak/mod.ts'
+import { assert, test } from '#test'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 
 function makeStreak(yamlLines: string[]): StreakDocument {

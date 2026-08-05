@@ -2,9 +2,9 @@
 
 import { DIR_TIME } from '#config'
 import DayDocument from '#shared/models/Day/mod.ts'
-import readDay from './readDay.ts'
-import { type FetchNowOptions } from './fetchNowSync.ts'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { type FetchNowOptions } from './fetchNowSync.ts'
+import readDay from './readDay.ts'
 
 export default async function fetchNow(options: FetchNowOptions = {}): Promise<ZonedDateTime> {
   const { timeDir = DIR_TIME, now = new ZonedDateTime() } = options

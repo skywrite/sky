@@ -1,6 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 

@@ -1,3 +1,6 @@
+import type GoalDocument from '#shared/models/Goal/mod.ts'
+import type IdeaDocument from '#shared/models/Idea/mod.ts'
+import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
 import {
   Collection,
   type CollectionEntityType,
@@ -5,21 +8,18 @@ import {
   type Document,
   type MarkdownOutputOptions,
 } from '#shared/models/Markdown/mod.ts'
-import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
-import type PersonDocument from '#shared/models/Person/mod.ts'
-import type OrganizationDocument from '#shared/models/Organization/mod.ts'
-import type ProjectDocument from '#shared/models/Project/mod.ts'
-import type GoalDocument from '#shared/models/Goal/mod.ts'
-import StreakDocument from '#shared/models/Streak/mod.ts'
-import type IdeaDocument from '#shared/models/Idea/mod.ts'
-import type PlaceDocument from '#shared/models/Place/mod.ts'
-import VideoDocument from '#shared/models/Video/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import type OrganizationDocument from '#shared/models/Organization/mod.ts'
+import type PersonDocument from '#shared/models/Person/mod.ts'
+import type PlaceDocument from '#shared/models/Place/mod.ts'
+import type ProjectDocument from '#shared/models/Project/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
+import StreakDocument from '#shared/models/Streak/mod.ts'
+import VideoDocument from '#shared/models/Video/mod.ts'
 import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 import { executeQuery } from './query/execute.ts'
-import { selectorToGraphQL } from './query/transpiler.ts'
 import { parseSelector } from './query/parser.ts'
+import { selectorToGraphQL } from './query/transpiler.ts'
 
 /** Options for building a collection */
 export type CollectionOptions = {

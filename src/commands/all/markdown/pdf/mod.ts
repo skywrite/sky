@@ -1,11 +1,11 @@
 import * as path from 'node:path'
-import { chromium } from 'playwright'
 import { marked } from 'marked'
+import { chromium } from 'playwright'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { env } from '#shared/sys/mod.ts'
 
 const THEMES_DIR = new URL('./themes', import.meta.url).pathname
 const AVAILABLE_THEMES = ['github', 'gothic', 'newsprint', 'night', 'pixyll', 'whitey'] as const

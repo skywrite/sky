@@ -10,9 +10,9 @@
  * If these tests compile, the types are working correctly.
  */
 
-import { assert, test } from '#test'
 import type { CommandTypesRegistry, InferParams } from '#commands/mod.ts'
 import { Flag } from '#commands/mod.ts'
+import { assert, test } from '#test'
 
 // -----------------------------------------------------------------------------
 // Test: Declaration Merging

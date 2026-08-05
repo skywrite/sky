@@ -1,6 +1,6 @@
 import * as path from 'node:path'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import normalizeToPlainDate from './normalizeToPlainDate.ts'
 
 export const FILE_DAY = 'day.md'

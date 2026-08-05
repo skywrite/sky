@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import { matchesContains, matchesExact, matchesNull, matchesPrefix, matchesSubstring, matchesSuffix } from './field.ts'
 
 function md(yaml: string): Document {

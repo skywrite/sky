@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
+import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 test('Document - created returns PlainDate when date string exists', () => {

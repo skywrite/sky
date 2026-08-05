@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 test(`${DayDocument.name}.toString()`, () => {

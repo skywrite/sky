@@ -1,13 +1,13 @@
-import * as path from 'node:path'
-import { copyFile, mkdir, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { copyFile, mkdir, readFile } from 'node:fs/promises'
+import * as path from 'node:path'
 import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { DIR_ATTACHMENTS } from '#config'
 import slugify from '#lib/string/slugify.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 export type SlackFileRef = {

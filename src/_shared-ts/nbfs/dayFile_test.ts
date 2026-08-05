@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
+import { assert, test } from '#test'
 import dayFile, { FILE_DAY } from './dayFile.ts'
 
 test(dayFile.name, () => {

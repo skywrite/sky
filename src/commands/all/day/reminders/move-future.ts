@@ -1,10 +1,10 @@
+import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 
 const params = {
   old: Flag.plainDate('Old Day (e.g., 27, 8-27, 2025-08-27)', {

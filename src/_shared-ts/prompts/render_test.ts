@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import type { RenderInput } from './types.ts'
 import { renderPromptFile, renderTemplate } from './render.ts'
+import type { RenderInput } from './types.ts'
 
 // =============================================================================
 // Basic Variable Substitution (0.2.0 namespaced syntax)

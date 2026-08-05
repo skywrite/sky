@@ -1,9 +1,9 @@
-import * as path from 'node:path'
-import * as os from 'node:os'
 import { readFileSync, existsSync, realpathSync } from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import process from 'node:process'
 import { parse } from 'jsonc-parser'
 import type { SkyConfig } from './types.ts'
-import process from 'node:process'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')

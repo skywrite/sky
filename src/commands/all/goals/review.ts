@@ -1,7 +1,7 @@
-import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import * as config from '#config'
+import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { type GoalCategory, GoalCoach, type Timeframe } from './_lib/GoalCoach.ts'
 
 // -----------------------------------------------------------------------------

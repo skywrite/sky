@@ -1,6 +1,6 @@
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
-import type { ConversationMessage } from '../type.d.ts'
 import expand from '#shared/strings/expand.ts'
+import type { ConversationMessage } from '../type.d.ts'
 import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
 
 /**

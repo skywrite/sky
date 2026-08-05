@@ -1,11 +1,11 @@
-import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import ollama from 'ollama'
 import OpenAI from 'openai'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { slugify } from '#lib/string/mod.ts'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
+import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 
 const params = {
   task: ArgOrFlag.string('Task to add', { short: 't', required: true }),

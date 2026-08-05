@@ -2,9 +2,9 @@
  * Tests for MCP adapter schema generation
  */
 
-import { assert, test } from '#test'
 import { Arg, Flag } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
+import { assert, test } from '#test'
 import { commandDescriptionToMCPSchema } from './adapter.ts'
 
 // -- Helpers ------------------------------------------------------------------

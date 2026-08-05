@@ -1,8 +1,8 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import * as path from 'node:path'
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { readDir, rename } from '#shared/fs/mod.ts'
 import { YMD } from '#universal/dates/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 
 export default class UtilDesktopSweepTask extends Command {
   static override description: CommandDescription = {

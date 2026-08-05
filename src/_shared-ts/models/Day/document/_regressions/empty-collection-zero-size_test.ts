@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 import readTextFile from '#shared/fs/readTextFile.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { assert, test } from '#test'
 
 const __dirname = new URL('.', import.meta.url).pathname
 const DIR_FIXTURES = path.join(__dirname, '..', 'markdown', '_fixtures')

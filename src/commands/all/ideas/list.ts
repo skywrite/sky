@@ -1,10 +1,10 @@
 import colors from 'picocolors'
-import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
-import { DIR_IDEAS } from '#config'
-import IdeaDocument from '#shared/models/Idea/mod.ts'
-import IdeaStore, { type IdeaStatus } from '#shared/models/Store/IdeaStore/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_IDEAS } from '#config'
+import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
+import IdeaDocument from '#shared/models/Idea/mod.ts'
+import IdeaStore, { type IdeaStatus } from '#shared/models/Store/IdeaStore/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

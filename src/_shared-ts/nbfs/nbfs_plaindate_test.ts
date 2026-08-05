@@ -1,8 +1,8 @@
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import dayFile from './dayFile.ts'
 import dayDir from './dayDir.ts'
+import dayFile from './dayFile.ts'
 import weekDir from './weekDir.ts'
 
 test('dayFile accepts PlainDate and YMD string', () => {

@@ -1,9 +1,9 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import url from 'node:url'
-import QRCode from 'qrcode'
 import ngrok from '@ngrok/ngrok'
 import open from 'open'
+import QRCode from 'qrcode'
 
 export type Location = {
   latitude: number

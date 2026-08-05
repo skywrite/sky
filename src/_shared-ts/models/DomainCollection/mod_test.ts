@@ -1,10 +1,10 @@
+import { Document } from '#shared/models/Markdown/mod.ts'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import OrganizationDocument from '#shared/models/Organization/mod.ts'
+import PersonDocument from '#shared/models/Person/mod.ts'
+import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 import { assert, test } from '#test'
 import DomainCollection from './mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
-import OrganizationDocument from '#shared/models/Organization/mod.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 
 // Helper to create markdown with YAML frontmatter
 function md(yaml: string, body: string): string {

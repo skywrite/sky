@@ -1,8 +1,8 @@
-import { SLACK_WORKSPACE } from '#config'
-import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 import { type AgentSlackAuthStatus, parseAuthTest } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { SLACK_WORKSPACE } from '#config'
+import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 
 const params = {
   check: Flag.boolean('Only test credentials — skip the Brave re-import when they are invalid'),

@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import daysOfQuarter from './daysOfQuarter.ts'
 import ymd from '#universal/dates/ymd.ts'
+import daysOfQuarter from './daysOfQuarter.ts'
 
 const FIXTURES = [
   { first: '2023-01-01', last: '2023-03-31' },

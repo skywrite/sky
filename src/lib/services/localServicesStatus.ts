@@ -1,6 +1,6 @@
-import type { ServiceStatus } from './types.ts'
-import localServicesInstalled from './localServicesInstalled.ts'
 import listNb from './listNb.ts'
+import localServicesInstalled from './localServicesInstalled.ts'
+import type { ServiceStatus } from './types.ts'
 
 export default async function localServicesStatus(): Promise<ServiceStatus[]> {
   const servicesInstalled = await localServicesInstalled()

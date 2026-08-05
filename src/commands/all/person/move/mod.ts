@@ -1,12 +1,12 @@
-import * as path from 'node:path'
 import { rm } from 'node:fs/promises'
+import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { exists, outputFile, readTextFile, walk } from '#shared/fs/mod.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { generatePersonHierarchyPath } from '../new.ts'
+import { exists, outputFile, readTextFile, walk } from '#shared/fs/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
+import { generatePersonHierarchyPath } from '../new.ts'
 
 const params = {
   search: ArgOrFlag.string('Person filename or path to search for (case-insensitive)', {

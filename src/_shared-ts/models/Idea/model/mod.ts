@@ -1,7 +1,7 @@
-import type IdeaDocument from '../document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
+import type IdeaDocument from '../document/mod.ts'
 
 /**
  * Domain class for Idea that composes IdeaDocument + MarkdownStore.

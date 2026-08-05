@@ -1,16 +1,16 @@
-import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
+import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import openEditor from 'open-editor'
 import * as p from '@clack/prompts'
+import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { exists, outputFile, readTextFile, walk, writeTextFile } from '#shared/fs/mod.ts'
-import { DIR_DECISIONS } from '#config'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
-import DecisionDocument from '#shared/models/Decision/mod.ts'
 import { Arg, categoryComplete, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_DECISIONS } from '#config'
+import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { exists, outputFile, readTextFile, walk, writeTextFile } from '#shared/fs/mod.ts'
+import DecisionDocument from '#shared/models/Decision/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 
 const params = {
   name: Arg.string('Name/slug of the decision to archive', { optional: true }),

@@ -1,7 +1,7 @@
 import colors from 'picocolors'
+import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import { discoverAIChatTools } from './_tools.ts'
 
 const params = {

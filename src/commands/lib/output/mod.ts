@@ -10,8 +10,8 @@ export type { OutputHandler } from './OutputHandler.ts'
 export { ConsoleOutput } from './ConsoleOutput.ts'
 export { BufferedOutput } from './BufferedOutput.ts'
 
-import { ConsoleOutput } from './ConsoleOutput.ts'
 import { BufferedOutput } from './BufferedOutput.ts'
+import { ConsoleOutput } from './ConsoleOutput.ts'
 
 /**
  * Create a default output handler for production use

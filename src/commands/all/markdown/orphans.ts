@@ -1,10 +1,10 @@
 import * as path from 'node:path'
 import colors from 'picocolors'
-import { walk } from '#shared/fs/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { Flag, type InferParams } from '#commands/lib/params.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
-import { Flag, type InferParams } from '#commands/lib/params.ts'
+import { walk } from '#shared/fs/mod.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
 const params = {
   count: Flag.boolean('Print only the count of orphan files', { default: false }),

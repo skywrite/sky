@@ -1,7 +1,7 @@
-// TODO: migrate to use ProjectStore.getOpen() instead of fetchOpenProjectDirs()
-import { fetchOpenProjectDirs } from '#lib/notebook/projects.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+// TODO: migrate to use ProjectStore.getOpen() instead of fetchOpenProjectDirs()
+import { fetchOpenProjectDirs } from '#lib/notebook/projects.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

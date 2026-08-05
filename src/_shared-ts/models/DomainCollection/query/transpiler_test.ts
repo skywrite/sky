@@ -5,9 +5,9 @@
  */
 
 import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { allFixtures } from './fixtures/mod.ts'
 import { selectorToGraphQL } from './transpiler.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // Use a fixed date for deterministic tests
 const TODAY = PlainDate.from('2025-01-30')

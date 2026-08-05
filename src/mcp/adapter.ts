@@ -8,13 +8,13 @@
  */
 
 import type { CommandDescription } from '#commands/lib/commands.d.ts'
-import type { ParamsRecord } from '#commands/lib/params.ts'
 import {
   commandDescriptionToSchema,
   commandNameToToolName,
   type InputSchema,
   toolNameToCommandName,
 } from '#commands/lib/jsonSchema.ts'
+import type { ParamsRecord } from '#commands/lib/params.ts'
 
 // Re-export under original names for existing MCP consumers
 export type MCPInputSchema = InputSchema

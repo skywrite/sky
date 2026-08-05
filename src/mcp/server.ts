@@ -5,10 +5,10 @@
  * allowing Claude to execute tasks like meeting:new directly.
  */
 
-import { MCPServer } from './core/MCPServer.ts'
-import { StdioTransport } from './transports/StdioTransport.ts'
-import { findMCPDecoratedCommands } from './discovery.ts'
 import { env, exit } from '#shared/sys/mod.ts'
+import { MCPServer } from './core/MCPServer.ts'
+import { findMCPDecoratedCommands } from './discovery.ts'
+import { StdioTransport } from './transports/StdioTransport.ts'
 
 async function main() {
   // Create the MCP server

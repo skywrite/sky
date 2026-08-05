@@ -5,10 +5,10 @@
  * Works on Deno, Bun, and Node.js.
  */
 
-import { type WebSocket, WebSocketServer } from 'ws'
 import { Buffer } from 'node:buffer'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { type WebSocket, WebSocketServer } from 'ws'
 import type { Store } from '../store.ts'
 
 /**

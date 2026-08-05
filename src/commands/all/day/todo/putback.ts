@@ -1,8 +1,8 @@
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
-import type ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import { categoryTodo, Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import type ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

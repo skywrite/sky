@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import * as marked from 'marked'
+import { assert, test } from '#test'
 
 // Test to ensure marked token types and structure remain compatible after upgrade
 test('marked token compatibility', () => {

@@ -1,12 +1,12 @@
 import * as path from 'node:path'
-import { DIR_ATTACHMENTS, DIR_TIME } from '#config'
-import { readDir, readTextFile, walk } from '#shared/fs/mod.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
+import colors from 'picocolors'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import colors from 'picocolors'
+import { DIR_ATTACHMENTS, DIR_TIME } from '#config'
+import { readDir, readTextFile, walk } from '#shared/fs/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { dayDir } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

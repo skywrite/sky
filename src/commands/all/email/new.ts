@@ -1,15 +1,15 @@
-import * as path from 'node:path'
 import { unlink } from 'node:fs/promises'
-import openEditor from '#lib/shell/openEditor.ts'
+import * as path from 'node:path'
+import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
+import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
+import { MCPTool } from '#mcp/decorators.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 
 const params = {
   to: ArgOrFlag.string('Person'),

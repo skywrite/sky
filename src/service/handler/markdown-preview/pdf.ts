@@ -1,6 +1,6 @@
+import { mkdir } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { mkdir } from 'node:fs/promises'
 import { marked } from 'marked'
 import { readTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'

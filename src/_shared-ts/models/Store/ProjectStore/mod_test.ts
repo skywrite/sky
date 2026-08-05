@@ -1,8 +1,8 @@
+import { mkdir, rm } from 'node:fs/promises'
+import * as path from 'node:path'
+import { writeTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import ProjectStore from './mod.ts'
-import { writeTextFile } from '#shared/fs/mod.ts'
-import * as path from 'node:path'
-import { mkdir, rm } from 'node:fs/promises'
 
 const TEST_DIR = '/tmp/project-store-test'
 

@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import { assert, test } from '#test'
 
 test(`${ItemList.name}.toMarkdown()`, () => {
   const dicEmpty = new ItemList('Professional Complete')

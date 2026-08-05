@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { assert, test } from '#test'
 
 test(`TagSet::fromString()`, () => {
   const given = 'A string with 3 tags'

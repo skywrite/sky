@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import { matchesBodyContains, matchesBodyMatches } from './body.ts'
 
 function md(yaml: string, body = ''): Document {

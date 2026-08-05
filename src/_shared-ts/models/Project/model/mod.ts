@@ -1,10 +1,10 @@
+import type ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
+import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type ProjectDocument from '../document/mod.ts'
 import type { ProjectStatus } from '../document/mod.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
-import type ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import RelSet from '#shared/models/RelSet/mod.ts'
 
 /**
  * ProjectDocument + MarkdownStore for relationship resolution.

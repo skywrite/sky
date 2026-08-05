@@ -1,11 +1,11 @@
-import * as path from 'node:path'
 import { mkdir, readdir, rename, rmdir } from 'node:fs/promises'
+import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { exists, walk } from '#shared/fs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import v1ParseDate from '#shared/nbfs/parseDateFromDayPath.ts'
 import { dayDir as v2DayDir, parseDateFromDayPath as v2ParseDate, weekDir as v2WeekDir } from '#shared/nbfs/v2/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   execute: Flag.boolean('Actually perform the migration (dry-run by default)', {

@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
+import { assert, test } from '#test'
 
 const BASE_DOC_NO_LISTS = `---
 tags: Test

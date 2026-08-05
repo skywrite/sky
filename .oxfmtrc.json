@@ -5,6 +5,7 @@
   "singleQuote": true,
   "proseWrap": "always",
   "sortPackageJson": false,
+  "sortImports": { "newlinesBetween": false },
   "ignorePatterns": [
     "**/*.md",
     "**/_build",

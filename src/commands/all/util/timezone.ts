@@ -1,7 +1,7 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { readSystemTimezone } from '#lib/sys/mod.ts'
+import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 
 export interface UtilTimezoneResult {
   iana: string

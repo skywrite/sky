@@ -1,14 +1,14 @@
+import { unlink } from 'node:fs/promises'
+import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import ms from 'ms'
-import * as path from 'node:path'
-import { unlink } from 'node:fs/promises'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import { DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import type Follow from '#shared/models/Follow/mod.ts'
-import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
+import { exists, outputFile } from '#shared/fs/mod.ts'
+import type Follow from '#shared/models/Follow/mod.ts'
+import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
 
 const params = {
   file: Arg.string('Follow file name (without .yaml extension)', { optional: true }),

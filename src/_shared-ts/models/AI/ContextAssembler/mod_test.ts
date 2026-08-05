@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
-import { Document, type MarkdownStore } from '#shared/models/Markdown/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { Document, type MarkdownStore } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import ContextAssembler, { estimateTokens, keepAlways, keepNever, type Scorer, scored } from './mod.ts'
 
 // ---------------------------------------------------------------------------

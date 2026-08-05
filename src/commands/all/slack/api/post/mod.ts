@@ -1,8 +1,8 @@
-import colors from 'picocolors'
 import { WebClient } from '@slack/web-api'
+import colors from 'picocolors'
+import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { renderSlackForTerminal } from '#lib/terminal/renderSlack.ts'
 
 const params = {

@@ -1,8 +1,8 @@
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
 import { Collection, Document } from '#shared/models/Markdown/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 
 /** Pattern to match DD/subpath */

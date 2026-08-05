@@ -1,8 +1,8 @@
 import { assert, test } from '#test'
-import type { AgentSlackUser } from './types.ts'
-import parseUser from './parseUser.ts'
-import localUser from './fixtures/agent-slack-user-local.json' with { type: 'json' }
 import connectUser from './fixtures/agent-slack-user-connect.json' with { type: 'json' }
+import localUser from './fixtures/agent-slack-user-local.json' with { type: 'json' }
+import parseUser from './parseUser.ts'
+import type { AgentSlackUser } from './types.ts'
 
 test('parseUser: local user prefers real_name', () => {
   assert({

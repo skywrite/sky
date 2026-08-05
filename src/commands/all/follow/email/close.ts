@@ -1,9 +1,9 @@
-import * as p from '@clack/prompts'
 import { unlink } from 'node:fs/promises'
+import * as p from '@clack/prompts'
 import { createImapClient, removeLabel } from '#commands/all/email/lib/imap-client.ts'
-import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 
 const params = {
   file: Arg.string('Follow file name (without .yaml extension)', { optional: true }),

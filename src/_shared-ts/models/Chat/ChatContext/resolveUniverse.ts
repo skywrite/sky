@@ -13,8 +13,8 @@
  * Anything still unresolved is reported, never silently dropped.
  */
 
-import * as path from 'node:path'
 import { readdir } from 'node:fs/promises'
+import * as path from 'node:path'
 import { exists } from '#shared/fs/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'

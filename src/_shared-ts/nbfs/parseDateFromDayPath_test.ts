@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
+import { assert, test } from '#test'
 import parseDateFromDayPath from './parseDateFromDayPath.ts'
 
 test(parseDateFromDayPath.name, () => {

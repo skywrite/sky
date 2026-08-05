@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import { assert, test } from '#test'
 
 test(`${ItemList.name}.insert(): item in the middle`, () => {
   let dic1 = new ItemList('Professional Complete')

@@ -3,12 +3,12 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import fetchDeviceLocation from '../util/location/fetchDeviceLocation.ts'
-import fetchMobileLocation from '../util/location/fetchMobileLocation.ts'
 import {
   assembleGoogleAddressComponents,
   buildPlacePath,
   fetchGoogleGeocode,
 } from '../util/location/fetchGoogleGeocode.ts'
+import fetchMobileLocation from '../util/location/fetchMobileLocation.ts'
 
 const params = {
   day: dayArg(),

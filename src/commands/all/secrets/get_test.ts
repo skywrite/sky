@@ -1,8 +1,8 @@
-import { assert, test } from '#test'
-import * as config from '#config'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
+import * as config from '#config'
 import { createLogin, createSecret } from '#lib/secrets/marshal.ts'
+import { assert, test } from '#test'
 import SecretsGetTask from './get.ts'
 
 function createContext(secrets: Record<string, import('#lib/secrets/types.ts').SecretEntry>) {

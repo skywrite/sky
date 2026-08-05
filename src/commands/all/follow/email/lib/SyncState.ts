@@ -1,8 +1,8 @@
 import * as path from 'node:path'
-import { parse, stringify } from '#shared/yaml/mod.ts'
+import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { outputFile } from '#shared/fs/mod.ts'
-import slugify from '#lib/string/slugify.ts'
+import { parse, stringify } from '#shared/yaml/mod.ts'
 
 export type SyncStateData = {
   account: string

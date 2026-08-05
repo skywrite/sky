@@ -9,8 +9,8 @@
  * the user their glossary.
  */
 
-import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
+import * as path from 'node:path'
 import { DIR_STATE } from '#config'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { normalizeTerm } from './dedupeIssues.ts'

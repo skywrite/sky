@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { assert, test } from '#test'
 import {
   beginEvent,
   configureLogging,

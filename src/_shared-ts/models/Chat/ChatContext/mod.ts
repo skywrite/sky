@@ -16,15 +16,14 @@
  */
 
 import * as path from 'node:path'
+import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
-import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { ConversationMessage } from '../type.d.ts'
 import {
   type ContextDocRecord,
   type ContextTurnLog,
@@ -32,9 +31,10 @@ import {
   type TurnStats,
 } from '../document/ContextLog/mod.ts'
 import type { ResumeState } from '../document/resume.ts'
+import type { ConversationMessage } from '../type.d.ts'
+import createDayLabeler from './dayLabel.ts'
 import { fetchContextFromServer } from './fetchContext.ts'
 import { resolveUniverse, type UniverseResolution } from './resolveUniverse.ts'
-import createDayLabeler from './dayLabel.ts'
 
 // -----------------------------------------------------------------------------
 // Producers — the query pipeline a host injects

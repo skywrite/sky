@@ -6,11 +6,11 @@
  * (root + resolved) as {path, type, markdown} triples.
  */
 
-import type { Document } from '#shared/models/Markdown/mod.ts'
-import _stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import _stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
+import type { Document } from '#shared/models/Markdown/mod.ts'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
 export interface ContextDocument {
   path: string

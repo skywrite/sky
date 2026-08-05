@@ -1,5 +1,5 @@
-import * as path from 'node:path'
 import * as os from 'node:os'
+import * as path from 'node:path'
 import { loadSkyConfig } from './config/loader.ts'
 import type { AiProfileConfig } from './config/types.ts'
 

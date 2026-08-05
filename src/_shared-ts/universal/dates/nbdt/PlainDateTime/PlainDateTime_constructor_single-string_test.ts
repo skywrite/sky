@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import PlainDateTime from './mod.ts'
 import { YMD } from '#universal/dates/mod.ts'
+import PlainDateTime from './mod.ts'
 
 const NOW = new Date()
 const [NOW_YEAR, NOW_MONTH, NOW_DAY] = YMD(NOW)

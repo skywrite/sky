@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput, useStdout } from 'ink'
 import type { DOMElement } from 'ink'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatInputPromptProps } from './types.ts'
 
 const MAX_PREVIEW_TURNS = 10

@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import * as marked from 'marked'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { assert, test } from '#test'
 
 test('Document.fromMarkdown - parses YAML frontmatter', () => {
   const markdown = `---

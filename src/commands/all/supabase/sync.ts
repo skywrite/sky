@@ -1,15 +1,14 @@
-import { SupabaseClient } from '@supabase/supabase-js'
 import { createHash } from 'node:crypto'
 import * as path from 'node:path'
-
+import { SupabaseClient } from '@supabase/supabase-js'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createSupabaseClient, type DayFileRow, getSupabaseEnv } from './lib/client.ts'
 
 function sha256(content: string): string {

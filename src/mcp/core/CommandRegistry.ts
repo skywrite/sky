@@ -3,8 +3,8 @@
  */
 
 import { Command, type CommandDescription, CommandResult } from '#commands/mod.ts'
-import { getMCPToolOptions, isMCPTool } from '../decorators.ts'
 import { commandNameToMCPToolName } from '../adapter.ts'
+import { getMCPToolOptions, isMCPTool } from '../decorators.ts'
 
 export interface RegisteredCommand {
   commandName: string

@@ -1,6 +1,6 @@
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
-import StreakDocument from '#shared/models/Streak/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
+import StreakDocument from '#shared/models/Streak/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 

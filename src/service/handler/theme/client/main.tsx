@@ -1,8 +1,8 @@
 import '@mantine/core/styles.css'
 import './shell.css'
+import { ActionIcon, Button, Checkbox, MantineProvider, Textarea, useMantineColorScheme } from '@mantine/core'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ActionIcon, Button, Checkbox, MantineProvider, Textarea, useMantineColorScheme } from '@mantine/core'
 import { skyTheme } from './theme.ts'
 
 /**

@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import PersonDocument from '#shared/models/Person/mod.ts'
+import { assert, test } from '#test'
 
 test('Person.slug - returns lowercase slugified name', () => {
   const person = new PersonDocument({ name: 'John Doe' })

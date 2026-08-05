@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import MostImportant from './mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import MostImportant from './mod.ts'
 
 const fixtures = [
   {

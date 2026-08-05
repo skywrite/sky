@@ -1,14 +1,14 @@
+import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
-import { rm } from 'node:fs/promises'
 import * as readline from 'node:readline'
 import colors from 'picocolors'
-import { exists, outputFile, readDir, readTextFile, walk } from '#shared/fs/mod.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { generatePersonHierarchyPath } from '../new.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
+import { exists, outputFile, readDir, readTextFile, walk } from '#shared/fs/mod.ts'
+import PersonDocument from '#shared/models/Person/mod.ts'
+import { generatePersonHierarchyPath } from '../new.ts'
 
 const params = {
   count: ArgOrFlag.number('Number of files to move', { short: 'n' }),

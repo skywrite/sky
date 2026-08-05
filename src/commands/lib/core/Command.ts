@@ -1,7 +1,7 @@
 import type { CommandArgs, CommandDescription } from '../commands.d.ts'
-import type { Prompt } from './Prompt.ts'
-import { processPrompts } from './processPrompts.ts'
 import { CommandResult } from './CommandResult.ts'
+import { processPrompts } from './processPrompts.ts'
+import type { Prompt } from './Prompt.ts'
 
 /**
  * Abstract base class for all tasks

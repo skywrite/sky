@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import { assert, test } from '#test'
 
 test(`${ItemList.name}.fromArray(): string arrays`, () => {
   const dic = ItemList.fromArray('Professional Complete', [

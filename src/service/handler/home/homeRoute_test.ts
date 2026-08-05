@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import { FIXTURES_DIR } from '../../fixtures/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 

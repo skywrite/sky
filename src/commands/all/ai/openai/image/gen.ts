@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
+import OpenAI from 'openai'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import * as path from 'node:path'
 import slugify from '#lib/string/slugify.ts'
-import OpenAI from 'openai'
 
 const params = {
   prompt: Arg.string('Prompt to generate images'),

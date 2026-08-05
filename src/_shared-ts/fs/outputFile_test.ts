@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import readTextFileSync from './readTextFileSync.ts'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import outputFile from './outputFile.ts'
+import readTextFileSync from './readTextFileSync.ts'
 
 test('outputFile creates directories and writes file', async () => {
   const data = 'hello world'

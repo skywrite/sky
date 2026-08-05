@@ -1,11 +1,11 @@
-import { setTimeout as delay } from 'node:timers/promises'
 import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
 import { Command, CommandResult, dayArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { dayFile } from '#lib/nbfs/mod.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
 
 const params = {
   day: dayArg(),

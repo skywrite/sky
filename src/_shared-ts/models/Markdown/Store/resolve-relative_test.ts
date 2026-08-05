@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { assert, test } from '#test'
 import MarkdownStore from './mod.ts'
 
 // Create a temp directory with fixture files for relative path resolution tests

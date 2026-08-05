@@ -1,7 +1,7 @@
 import { assert, test } from '#test'
-import type { ConversationType } from './types.ts'
-import resolveRecipient from './resolveRecipient.ts'
 import _dmPartnerAuthored from './fixtures/export-result-dm-partner-authored.json' with { type: 'json' }
+import resolveRecipient from './resolveRecipient.ts'
+import type { ConversationType } from './types.ts'
 
 const dmPartnerAuthored = {
   ..._dmPartnerAuthored,

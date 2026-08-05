@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
+import { assert, test } from '#test'
 import { matchesPattern, PatternMatcher } from './PatternMatcher.ts'
 
 test('PatternMatcher - EVERY-DAY pattern', () => {

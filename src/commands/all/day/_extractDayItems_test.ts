@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
+import { assert, test } from '#test'
 import extractDayItems from './_extractDayItems.ts'
 
 test('extractDayItems - legacy EVERY DAY pattern', () => {

@@ -9,21 +9,21 @@
  */
 
 import { generateObject, generateText } from 'ai'
+import colors from 'picocolors'
+import { z } from 'zod'
+import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
-import { z } from 'zod'
-import colors from 'picocolors'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import {
   dropInvalidSelections,
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
-import { logAIError } from '#shared/ai/errorLog.ts'
+import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
 
 const PROMPT_FILE = new URL('./prompts/context-evolve.prompt.md', import.meta.url).pathname

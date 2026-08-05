@@ -6,9 +6,9 @@
  * whole process shares one retries-exhausted state.
  */
 
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
-import { logAIError } from '#shared/ai/errorLog.ts'
 
 // A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
 // respawn the process, then the notebook rescan takes ~24s before the port

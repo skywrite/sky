@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 import { makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import extractAndDeleteDayItems from './_extractAndDeleteDayItems.ts'
 
 // Helper to create a test file with content

@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import Follow from './mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import Follow from './mod.ts'
 
 const SLACK_YAML = `\
 source: Slack

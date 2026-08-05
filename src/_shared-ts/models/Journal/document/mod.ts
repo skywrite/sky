@@ -1,9 +1,9 @@
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
-import type { JournalType, Question } from '../type.d.ts'
-import { JournalTypes } from '../mod.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { dayWord } from '#universal/dates/mod.ts'
 import expand from '#shared/strings/expand.ts'
+import { dayWord } from '#universal/dates/mod.ts'
+import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { JournalTypes } from '../mod.ts'
+import type { JournalType, Question } from '../type.d.ts'
 
 /**
  * A question extracted from a journal document.

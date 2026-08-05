@@ -7,8 +7,8 @@
  * cross-runtime compatibility (Deno, Node, Bun).
  */
 
-import { readTextFile, walk } from '#shared/fs/mod.ts'
 import colors from 'picocolors'
+import { readTextFile, walk } from '#shared/fs/mod.ts'
 import { exit } from '#shared/sys/mod.ts'
 
 interface Violation {

@@ -1,14 +1,14 @@
-import * as path from 'node:path'
-import { move } from '#lib/fs/mod.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { mkdir } from 'node:fs/promises'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
-import { slugify } from '#lib/string/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { fetchOpenProjectDirs } from '#lib/notebook/projects.ts'
-import ProjectDocument from '#shared/models/Project/mod.ts'
+import * as path from 'node:path'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { move } from '#lib/fs/mod.ts'
+import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { fetchOpenProjectDirs } from '#lib/notebook/projects.ts'
+import { slugify } from '#lib/string/mod.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import ProjectDocument from '#shared/models/Project/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 // TODO: consider a sub-folder flag
 // like '--sub-folder' or something similar

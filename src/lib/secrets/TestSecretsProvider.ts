@@ -1,6 +1,6 @@
+import { marshal, unmarshal } from './marshal.ts'
 import type { SecretsProvider } from './SecretsProvider.ts'
 import type { IndexEntry, SecretEntry } from './types.ts'
-import { marshal, unmarshal } from './marshal.ts'
 
 /**
  * In-memory SecretsProvider for tests.

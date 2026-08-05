@@ -5,8 +5,8 @@
 
 import process from 'node:process'
 import { Readable } from 'node:stream'
-import { BaseTransport } from '../core/Transport.ts'
 import { TextLineStream } from '../core/TextLineStream.ts'
+import { BaseTransport } from '../core/Transport.ts'
 
 /**
  * Transport implementation using stdin/stdout

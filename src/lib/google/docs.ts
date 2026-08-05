@@ -1,5 +1,5 @@
-import type { GoogleClient } from './client.ts'
 import { validateBatchRequests } from './batchValidate.ts'
+import type { GoogleClient } from './client.ts'
 
 export const DOCS_API_URL = 'https://docs.googleapis.com/v1/documents'
 

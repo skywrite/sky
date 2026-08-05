@@ -1,7 +1,6 @@
-import { assert, test } from '#test'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { assert, test } from '#test'
 import { GoogleClient } from './client.ts'
-import { saveAccountTokens } from './tokens.ts'
 import {
   EXPORT_MIME,
   WORKSPACE_MIME,
@@ -20,6 +19,7 @@ import {
   uploadFile,
   workspaceKind,
 } from './drive.ts'
+import { saveAccountTokens } from './tokens.ts'
 
 test('buildFilesQuery', () => {
   assert({

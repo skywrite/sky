@@ -1,8 +1,8 @@
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
-import { DAY_END_COMMANDS } from '#config'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DAY_END_COMMANDS } from '#config'
+import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

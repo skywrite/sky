@@ -1,10 +1,10 @@
 import colors from 'picocolors'
-import { fetchNow } from '#shared/nbfs/mod.ts'
-import { computeStreakStats, type StreakStats } from '#shared/models/Streak/mod.ts'
-import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
-import { loadAllStreaks, loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { loadAllStreaks, loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
+import { computeStreakStats, type StreakStats } from '#shared/models/Streak/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
+import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 
 const params = {
   all: Flag.boolean('Include archived streaks', { short: 'a', default: false }),

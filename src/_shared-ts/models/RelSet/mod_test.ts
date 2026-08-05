@@ -1,6 +1,6 @@
+import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 import { assert, test } from '#test'
 import RelSet from './mod.ts'
-import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 
 // Mock refs for testing
 const mockRefs: ResolvedRef[] = [

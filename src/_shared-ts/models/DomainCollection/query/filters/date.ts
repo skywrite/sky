@@ -3,8 +3,8 @@
  */
 
 import type { Document } from '#shared/models/Markdown/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { parseDuration } from './duration.ts'
 
 /**

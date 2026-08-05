@@ -7,13 +7,13 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { readTextFile } from '#shared/fs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type * as config from '#shared/config.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
+import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
+import { env } from '#shared/sys/mod.ts'
 
 // Debounce state for Supabase sync (per-date to handle multiple files)
 const syncTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map()

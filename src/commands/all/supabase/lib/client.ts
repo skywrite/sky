@@ -1,5 +1,4 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-
 import { CommandResult } from '#commands/mod.ts'
 
 /**

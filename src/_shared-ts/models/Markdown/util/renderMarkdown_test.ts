@@ -1,10 +1,10 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 // import marked from 'marked'
 import * as marked from 'marked'
-import { readTextFile, walk } from '#shared/fs/mod.ts'
 // import { DIR_NOTES, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME } from '#config'
 import { DIRS_MARKDOWN } from '#config'
+import { readTextFile, walk } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import renderMarkdown from './renderMarkdown.ts'
 
 // TODO: make more
