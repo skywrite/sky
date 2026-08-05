@@ -20,9 +20,19 @@ export default function renderMarkdown(
     if (!token?.tokens) {
       str += token.raw
     } else {
-      // Use a function for replacement to avoid special $ character interpretation
-      // In String.replace(), $$ in the replacement string means "insert a single $"
-      str += token.raw.replace(token.text, () => renderMarkdown(token.tokens!))
+      const text: string = token.text ?? ''
+      const rendered = renderMarkdown(token.tokens!)
+      // marked can leave trailing whitespace in `text` that no child `raw` carries —
+      // a blockquote wrapping a lazy-continuation list is one — so substituting the
+      // children back in would drop it. Whenever they agree apart from that
+      // whitespace, `raw` is already the faithful source.
+      if (!text || rendered === text || rendered === text.trimEnd()) {
+        str += token.raw
+      } else {
+        // Use a function for replacement to avoid special $ character interpretation
+        // In String.replace(), $$ in the replacement string means "insert a single $"
+        str += token.raw.replace(text, () => rendered)
+      }
     }
   }
 
