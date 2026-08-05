@@ -1,16 +1,16 @@
-import * as path from 'node:path'
 import { copyFile, mkdir, rename } from 'node:fs/promises'
+import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
-import MeetingDocument from '#shared/models/Meeting/mod.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
-import slugify from '#lib/string/slugify.ts'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import slugify from '#lib/string/slugify.ts'
 import { MCPTool } from '#mcp/decorators.ts'
+import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
+import MeetingDocument from '#shared/models/Meeting/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   who: Arg.string('Person or group (optional with --from-audio/--from-transcript)', { optional: true }),

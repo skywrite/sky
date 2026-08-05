@@ -1,13 +1,13 @@
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { chromium } from 'playwright'
-import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { generateText } from 'ai'
+import { chromium } from 'playwright'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
 import { dateToLocalString } from '#universal/dates/mod.ts'
+import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
 
 const params = {
   username: Flag.string('Twitter username to fetch stats for', { short: 'u', required: true }),

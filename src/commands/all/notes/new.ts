@@ -1,14 +1,14 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import * as path from 'node:path'
 import { copyFile, mkdir, rename } from 'node:fs/promises'
+import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary / Header of Notes', { short: 's', optional: true }),

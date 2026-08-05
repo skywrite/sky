@@ -1,10 +1,10 @@
-import type PersonDocument from '../document/mod.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
 import type ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
-import type { PlainDate, PlainYear, PlainYearMonth } from '#universal/dates/nbdt/mod.ts'
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import Organization from '#shared/models/Organization/model/mod.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
+import type { PlainDate, PlainYear, PlainYearMonth } from '#universal/dates/nbdt/mod.ts'
+import type PersonDocument from '../document/mod.ts'
 
 /**
  * Domain class for Person that composes PersonDocument + MarkdownStore.

@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import transformTypedParamsArgs from './mod.ts'
 import { Arg } from '../params.ts'
+import transformTypedParamsArgs from './mod.ts'
 
 test('resolves Arg from named key (tasks.run composition)', async () => {
   const params = {

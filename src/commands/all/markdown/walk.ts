@@ -1,10 +1,10 @@
 import * as path from 'node:path'
-import { readTextFile, walk } from '#shared/fs/mod.ts'
-import { consoleSize, writeStdout } from '#shared/sys/mod.ts'
 import colors from 'picocolors'
-import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import { readTextFile, walk } from '#shared/fs/mod.ts'
+import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
+import { consoleSize, writeStdout } from '#shared/sys/mod.ts'
 
 export default class MarkdownWalkTask extends Command {
   static override description: CommandDescription = {

@@ -1,8 +1,8 @@
-import colors from 'picocolors'
 import * as path from 'node:path'
+import colors from 'picocolors'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
+import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 
 export interface ExtractedItems {
   items: string[]

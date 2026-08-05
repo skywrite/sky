@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
+import { assert, test } from '#test'
 
 const FIXTURES: [string, string[]][] = [
   ['Read Alex follow-up [alex-follows-up][]', ['alex-follows-up']],

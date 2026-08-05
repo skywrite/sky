@@ -5,10 +5,10 @@
  * allowing remote API access from OpenAI, Claude, or other clients.
  */
 
-import { MCPServer } from './core/MCPServer.ts'
-import { HttpTransport } from './transports/HttpTransport.ts'
-import { findMCPDecoratedCommands } from './discovery.ts'
 import { env, exit } from '#shared/sys/mod.ts'
+import { MCPServer } from './core/MCPServer.ts'
+import { findMCPDecoratedCommands } from './discovery.ts'
+import { HttpTransport } from './transports/HttpTransport.ts'
 
 async function main() {
   // Get configuration from environment or use defaults

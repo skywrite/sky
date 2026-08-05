@@ -1,8 +1,8 @@
-import YMD from '../../ymd.ts'
 import dateTo24H from '../../dateTo24H.ts'
-import _parseDateTimeString from './_parseDateTimeString.ts'
-import formatTime from './_formatTime.ts'
+import YMD from '../../ymd.ts'
 import PlainDate from '../PlainDate/mod.ts'
+import formatTime from './_formatTime.ts'
+import _parseDateTimeString from './_parseDateTimeString.ts'
 
 /*
   Purpose:

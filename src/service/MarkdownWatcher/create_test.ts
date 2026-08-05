@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import { rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
+import { assert, test } from '#test'
 import MarkdownWatcher from './mod.ts'
 import { createTempDir, delay, type MarkdownWatcherEvent } from './test-helpers.ts'
 

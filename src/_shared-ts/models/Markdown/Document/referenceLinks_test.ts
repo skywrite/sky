@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
+import { assert, test } from '#test'
 
 const FIXTURE = `
 ---

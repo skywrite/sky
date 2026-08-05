@@ -1,5 +1,5 @@
-import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
 

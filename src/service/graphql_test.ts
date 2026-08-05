@@ -1,10 +1,10 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
+import * as path from 'node:path'
 import { createServer } from '#service/server.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { assert, test } from '#test'
 import { FIXTURE_MARKDOWN_DIRS, FIXTURE_PATHS, FIXTURE_REFERENCE_DATE } from './fixtures/mod.ts'
 
 // realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and

@@ -1,9 +1,9 @@
-import type VideoDocument from '../document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
 import Person from '#shared/models/Person/model/mod.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
+import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import type VideoDocument from '../document/mod.ts'
 
 /**
  * Domain class for Video that composes VideoDocument + MarkdownStore.

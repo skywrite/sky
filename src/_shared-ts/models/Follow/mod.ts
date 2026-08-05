@@ -1,7 +1,7 @@
 import ms from 'ms'
+import type { MediumMessage } from '#shared/models/Message/document/mod.ts'
 import { parse, stringify } from '#shared/yaml/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { MediumMessage } from '#shared/models/Message/document/mod.ts'
 
 const YAML_KEY_ORDER = [
   'source',

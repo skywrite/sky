@@ -1,9 +1,9 @@
-import { parse as parseYAML } from '#shared/yaml/mod.ts'
 import * as marked from 'marked'
-import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
-import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
+import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { parse as parseYAML } from '#shared/yaml/mod.ts'
 
 type numOrStr = number | string
 

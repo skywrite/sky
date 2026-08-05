@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import DayDocument from '#shared/models/Day/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { assert, test } from '#test'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 test('DayDocument.fromMarkdown - parses YAML with day data', () => {
   const markdown = `---

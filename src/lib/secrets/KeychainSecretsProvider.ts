@@ -1,11 +1,11 @@
 import * as path from 'node:path'
 import { deletePassword, getPassword, setPassword } from 'cross-keychain'
-import { outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { DIR_BASE } from '#config'
+import { outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { parse as parseYaml, stringify as stringifyYaml } from '#shared/yaml/mod.ts'
+import { createSecret, marshal, unmarshal } from './marshal.ts'
 import type { SecretsProvider } from './SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from './types.ts'
-import { createSecret, marshal, unmarshal } from './marshal.ts'
 
 const SERVICE_PREFIX = 'sky'
 const INDEX_PATH = path.join(DIR_BASE, 'secrets', 'index.yaml')

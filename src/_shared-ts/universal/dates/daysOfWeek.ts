@@ -1,7 +1,7 @@
-import isSameDay from './dateFns/isSameDay.ts'
-import addDays from './dateFns/addDays.ts'
 import firstDayOfWeek from '#universal/dates/firstDayOfWeek.ts'
 import lastDayOfWeek from '#universal/dates/lastDayOfWeek.ts'
+import addDays from './dateFns/addDays.ts'
+import isSameDay from './dateFns/isSameDay.ts'
 
 // TODO: given firstDayOfTheWeek and lastDayOfTheWeek
 // handles year crossings specific to the Notebook

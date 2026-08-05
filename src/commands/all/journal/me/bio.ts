@@ -1,9 +1,9 @@
 import * as path from 'node:path'
-import { exists, readTextFile } from '#shared/fs/mod.ts'
-import { DIR_BASE } from '#shared/config.ts'
-import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import { DIR_BASE } from '#shared/config.ts'
+import { exists, readTextFile } from '#shared/fs/mod.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 
 const ABOUT_ME_PATH = path.join(DIR_BASE, 'journal', 'about-me.md')
 

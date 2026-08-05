@@ -2,16 +2,16 @@
  * Tests for DomainCollection.fromStore()
  */
 
-import { assert, test } from '#test'
-import DomainCollection from './mod.ts'
-import { Collection, Document } from '#shared/models/Markdown/mod.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
-import OrganizationDocument from '#shared/models/Organization/mod.ts'
-import ProjectDocument from '#shared/models/Project/mod.ts'
 import DecisionDocument from '#shared/models/Decision/mod.ts'
 import GoalDocument from '#shared/models/Goal/mod.ts'
-import PlaceDocument from '#shared/models/Place/mod.ts'
+import { Collection, Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import OrganizationDocument from '#shared/models/Organization/mod.ts'
+import PersonDocument from '#shared/models/Person/mod.ts'
+import PlaceDocument from '#shared/models/Place/mod.ts'
+import ProjectDocument from '#shared/models/Project/mod.ts'
+import { assert, test } from '#test'
+import DomainCollection from './mod.ts'
 
 // Helper to create markdown with YAML frontmatter
 function md(yaml: string, body: string): string {

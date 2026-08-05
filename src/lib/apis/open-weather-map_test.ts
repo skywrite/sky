@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import { fetchWeather } from './open-weather-map.ts'
 import isOnline from '#shared/network/isOnline.ts'
 import { env } from '#shared/sys/mod.ts'
+import { assert, test } from '#test'
+import { fetchWeather } from './open-weather-map.ts'
 
 // Live API call — needs a key (absent on CI) and network.
 const ignore = !env.get('OPEN_WEATHER_MAP') || !(await isOnline())

@@ -1,5 +1,5 @@
-import * as path from 'node:path'
 import { stat } from 'node:fs/promises'
+import * as path from 'node:path'
 import { exists, readDir } from '#shared/fs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 

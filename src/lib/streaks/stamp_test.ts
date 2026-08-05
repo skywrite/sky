@@ -1,8 +1,8 @@
-import { assert, test } from '#test'
+import { stampStreaksList, strikeStreakItem } from '#lib/streaks/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument, { STREAKS_LIST_TITLE } from '#shared/models/Streak/mod.ts'
+import { assert, test } from '#test'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
-import { stampStreaksList, strikeStreakItem } from '#lib/streaks/mod.ts'
 
 function makeStreak(yamlLines: string[]): StreakDocument {
   return StreakDocument.fromMarkdown(`---\n${yamlLines.join('\n')}\n---\n\n# Test\n`)

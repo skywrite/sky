@@ -1,5 +1,5 @@
-import type { GoogleClient } from './client.ts'
 import { validateBatchRequests } from './batchValidate.ts'
+import type { GoogleClient } from './client.ts'
 
 export const SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets'
 

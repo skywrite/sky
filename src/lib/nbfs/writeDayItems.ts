@@ -1,7 +1,7 @@
 import { DIR_TIME } from '#config'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { normalizeToPlainDate, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
+import { normalizeToPlainDate, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 interface WriteDayItemsOptions {
   links?: Map<string, Link>

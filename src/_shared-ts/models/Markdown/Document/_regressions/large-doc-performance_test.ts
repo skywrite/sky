@@ -14,8 +14,8 @@
  * (or any real notebook content — see AGENTS.md) in the repo.
  */
 
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import _stripHtmlComments from '../_stripHtmlComments.ts'
 
 const ONE_MB = 1024 * 1024

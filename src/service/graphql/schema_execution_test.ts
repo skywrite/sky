@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import type { Store } from '../store.ts'
 import { createYogaInstance } from './schema.ts'
 

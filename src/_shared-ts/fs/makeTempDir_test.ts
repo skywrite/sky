@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { rm, stat } from 'node:fs/promises'
+import { assert, test } from '#test'
 import makeTempDir from './makeTempDir.ts'
 
 test('makeTempDir creates a temporary directory', async () => {

@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
-import ProjectDocument, { PROJECT_STATUSES, type ProjectStatus } from '#shared/models/Project/mod.ts'
 import { Collection, Document } from '#shared/models/Markdown/mod.ts'
+import ProjectDocument, { PROJECT_STATUSES, type ProjectStatus } from '#shared/models/Project/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 

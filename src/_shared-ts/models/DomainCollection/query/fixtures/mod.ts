@@ -4,21 +4,21 @@
  * Each fixture maps a selector string to expected GraphQL output.
  */
 
-import typeSelectors from './type-selectors.ts'
-import attributeExact from './attribute-exact.ts'
 import attributeContains from './attribute-contains.ts'
+import attributeExact from './attribute-exact.ts'
 import attributePrefix from './attribute-prefix.ts'
-import attributeSuffix from './attribute-suffix.ts'
 import attributeSubstring from './attribute-substring.ts'
-import pseudoTime from './pseudo-time.ts'
-import pseudoStatus from './pseudo-status.ts'
-import pseudoHas from './pseudo-has.ts'
-import pseudoInvolves from './pseudo-involves.ts'
-import pseudoContains from './pseudo-contains.ts'
-import pseudoNot from './pseudo-not.ts'
+import attributeSuffix from './attribute-suffix.ts'
 import combinedAnd from './combined-and.ts'
 import combinedOr from './combined-or.ts'
 import complex from './complex.ts'
+import pseudoContains from './pseudo-contains.ts'
+import pseudoHas from './pseudo-has.ts'
+import pseudoInvolves from './pseudo-involves.ts'
+import pseudoNot from './pseudo-not.ts'
+import pseudoStatus from './pseudo-status.ts'
+import pseudoTime from './pseudo-time.ts'
+import typeSelectors from './type-selectors.ts'
 
 export interface TranspilerFixture {
   selector: string

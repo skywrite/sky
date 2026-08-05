@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import type { Warning } from 'ai'
+import { assert, test } from '#test'
 import { formatAIWarning, routeAISDKWarningsToLog } from './errorLog.ts'
 
 test('formatAIWarning renders an "other" warning as its bare message', () => {

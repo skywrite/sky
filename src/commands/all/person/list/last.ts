@@ -1,10 +1,10 @@
 import colors from 'picocolors'
+import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import * as config from '#config'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

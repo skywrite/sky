@@ -1,13 +1,7 @@
-import { Command, CommandResult, isError, isFail } from '#commands/mod.ts'
-import colors from 'picocolors'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import * as config from '#config'
-import { parsedArgs as args } from '#lib/sys/mod.ts'
-import { env, exit } from '#shared/sys/mod.ts'
-import { exists } from '#shared/fs/mod.ts'
-import helpMessage from '#commands/lib/helpMessage.ts'
-import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
+import colors from 'picocolors'
+import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import type {
   CommandArgs,
   CommandDescription,
@@ -15,9 +9,15 @@ import type {
 } from '#commands/lib/commands.d.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
+import helpMessage from '#commands/lib/helpMessage.ts'
+import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
+import { Command, CommandResult, isError, isFail } from '#commands/mod.ts'
+import * as config from '#config'
+import { parsedArgs as args } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+import { exists } from '#shared/fs/mod.ts'
 import { configureLogging } from '#shared/log.ts'
+import { env, exit } from '#shared/sys/mod.ts'
 
 // Install before any command module loads, so AI SDK warnings from every
 // command — including ones that call providers directly, bypassing the

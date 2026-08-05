@@ -1,10 +1,10 @@
 import { stat } from 'node:fs/promises'
+import * as path from 'node:path'
+import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
 import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
-import colors from 'picocolors'
-import * as path from 'node:path'
 
 interface FileMatch {
   path: string

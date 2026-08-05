@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import rename from './rename.ts'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import exists from './exists.ts'
+import rename from './rename.ts'
 
 test('rename moves a file to a new name', async () => {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'rename-test-'))

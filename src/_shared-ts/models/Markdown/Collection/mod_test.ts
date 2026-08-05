@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import Collection from './mod.ts'
 import Document from '../Document/mod.ts'
+import Collection from './mod.ts'
 
 // Helper to create test documents
 function makeDoc(content: string): Document {

@@ -1,13 +1,13 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import { DIR_BASE } from '#shared/config.ts'
-import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Prompt } from '#commands/lib/core/Prompt.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { Prompt } from '#commands/lib/core/Prompt.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { DIR_BASE } from '#shared/config.ts'
+import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types

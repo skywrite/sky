@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import readDir, { type DirEntry } from './readDir.ts'
 
 test('readDir iterates over directory entries', async () => {

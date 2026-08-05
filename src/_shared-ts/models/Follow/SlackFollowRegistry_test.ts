@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import SlackFollowRegistry from './SlackFollowRegistry.ts'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import SlackFollowRegistry from './SlackFollowRegistry.ts'
 
 const ACTIVE_YAML = `\
 source: Slack

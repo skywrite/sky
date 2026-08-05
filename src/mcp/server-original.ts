@@ -5,24 +5,24 @@
  * allowing Claude to execute tasks like meeting:new directly.
  */
 
-import { Command, CommandResult } from '#commands/mod.ts'
-import CommandContext from '#commands/lib/core/CommandContext.ts'
-import CommandService from '#commands/lib/core/CommandService.ts'
 import { Server } from '@modelcontextprotocol/sdk/server'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { getMCPToolOptions, isMCPTool } from './decorators.ts'
-import { findMCPDecoratedCommands } from './discovery.ts'
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import CommandContext from '#commands/lib/core/CommandContext.ts'
+import CommandService from '#commands/lib/core/CommandService.ts'
+import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
+import * as config from '#config'
+import { env } from '#shared/sys/mod.ts'
 import {
   commandDescriptionToMCPSchema,
   commandNameToMCPToolName,
   mcpArgsToCommandArgs,
   mcpToolNameToCommandName,
 } from './adapter.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
-import * as config from '#config'
-import { env } from '#shared/sys/mod.ts'
+import { getMCPToolOptions, isMCPTool } from './decorators.ts'
+import { findMCPDecoratedCommands } from './discovery.ts'
 
 // Type for concrete Command class constructors with static properties
 type CommandConstructor = {

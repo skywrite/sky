@@ -1,12 +1,12 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import * as path from 'node:path'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
+import { DIR_TRACKING_LOCATION } from '#config'
 import { fetchWeather } from '#lib/apis/open-weather-map.ts'
 import { fetchLocation } from '#lib/misc/location.ts'
+import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { dateToLocalString } from '#universal/dates/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { DIR_TRACKING_LOCATION } from '#config'
+import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
 
 export default class UtilWeatherTask extends Command {
   static override description: CommandDescription = {

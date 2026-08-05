@@ -13,12 +13,12 @@
  */
 
 import { isStepCount, streamText, type SystemModelMessage, type ToolSet } from 'ai'
-import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import type { ConversationMessage } from '../type.d.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
+import type { ConversationMessage } from '../type.d.ts'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 

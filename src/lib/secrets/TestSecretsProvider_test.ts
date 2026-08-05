@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import { TestSecretsProvider } from './TestSecretsProvider.ts'
 import { createLogin, createSecret } from './marshal.ts'
+import { TestSecretsProvider } from './TestSecretsProvider.ts'
 import type { LoginEntry } from './types.ts'
 
 // ── Basic CRUD ───────────────────────────────────────────────────────

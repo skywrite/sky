@@ -1,10 +1,9 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { assert, test } from '#test'
 import type { FsEvent, FsEventKind } from './watch.ts'
-
 // Import the node:fs backend directly for testing (avoid Deno.watchFs in test context)
 // The public watchFs export may point to any backend; we test the contract.
 import { watchFs } from './watch.ts'

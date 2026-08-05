@@ -9,12 +9,12 @@
 
 import { jsonSchema, tool } from 'ai'
 import colors from 'picocolors'
-import { logAIError } from '#shared/ai/errorLog.ts'
+import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { ApprovalSessionKeyFn, FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
-import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 
 // -----------------------------------------------------------------------------
 // Discovery

@@ -1,10 +1,10 @@
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import ChatDocument, { extractConversationSummary } from './mod.ts'
-import type { ChatTurn } from './mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog, splitContextLog } from './ContextLog/mod.ts'
+import ChatDocument, { extractConversationSummary } from './mod.ts'
+import type { ChatTurn } from './mod.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 

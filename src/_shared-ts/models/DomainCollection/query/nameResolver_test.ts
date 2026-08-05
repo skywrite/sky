@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
+import { assert, test } from '#test'
 import { createNameResolver } from './nameResolver.ts'
 
 // ---------------------------------------------------------------------------

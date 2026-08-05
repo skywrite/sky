@@ -1,12 +1,12 @@
-import * as path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { DIR_ATTACHMENTS, DIR_STATE } from '#config'
-import slugify from '#lib/string/slugify.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_ATTACHMENTS, DIR_STATE } from '#config'
+import slugify from '#lib/string/slugify.ts'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   dryRun: Flag.boolean('Show messages without updating offset', { short: 'n' }),

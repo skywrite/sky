@@ -29,8 +29,8 @@
  * 4. Delete this file (service/store.ts).
  */
 import { EventEmitter } from 'node:events'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   INTERACTION_WEIGHTS,
   type OrgScore,

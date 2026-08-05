@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import ZonedDateTime from './mod.ts'
 import PlainDateTime from '../PlainDateTime/mod.ts'
+import ZonedDateTime from './mod.ts'
 
 test('ZonedDateTime constructor - no arguments', () => {
   const zdt = new ZonedDateTime()

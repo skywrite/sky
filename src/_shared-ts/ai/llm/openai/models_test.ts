@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import { listModels } from './listModels.ts'
 import isOnline from '#shared/network/isOnline.ts'
 import { env } from '#shared/sys/mod.ts'
+import { assert, test } from '#test'
+import { listModels } from './listModels.ts'
 
 // Live API call — needs a key (absent on CI) and network.
 const ignore = !env.get('OPENAI_API_KEY') || !(await isOnline())

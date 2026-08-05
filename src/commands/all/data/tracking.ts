@@ -1,12 +1,12 @@
 import * as path from 'node:path'
-import readTextFile from '#shared/fs/readTextFile.ts'
-import { parseCsv } from '#universal/encoding/csv/mod.ts'
-import { addDays, isSameDay } from '#universal/dates/dateFns/mod.ts'
-import { daysOfWeek, YMD } from '#universal/dates/mod.ts'
-import { weekDir } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import readTextFile from '#shared/fs/readTextFile.ts'
+import { weekDir } from '#shared/nbfs/mod.ts'
+import { addDays, isSameDay } from '#universal/dates/dateFns/mod.ts'
+import { daysOfWeek, YMD } from '#universal/dates/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { parseCsv } from '#universal/encoding/csv/mod.ts'
 
 const params = {
   type: Flag.string('Tracking data type', { short: 't', default: () => 'health/weight' }),

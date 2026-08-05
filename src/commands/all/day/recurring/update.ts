@@ -1,11 +1,11 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import readTextFile from '#shared/fs/readTextFile.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
-import extractDayItems from '../_extractDayItems.ts'
+import readTextFile from '#shared/fs/readTextFile.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
+import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
+import extractDayItems from '../_extractDayItems.ts'
 
 export default class DayRecurringUpdateTask extends Command {
   static override description: CommandDescription = {

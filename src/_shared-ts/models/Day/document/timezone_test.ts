@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import readTextFileSync from '#shared/fs/readTextFileSync.ts'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import Day from './mod.ts'
+import readTextFileSync from '#shared/fs/readTextFileSync.ts'
+import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import Day from './mod.ts'
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'markdown', '_fixtures')
 

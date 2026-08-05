@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import PlaceDocument from './mod.ts'
 import type { PlaceCreateInput } from './types.ts'
 

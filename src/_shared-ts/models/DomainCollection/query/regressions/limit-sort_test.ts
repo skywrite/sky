@@ -3,9 +3,9 @@
  * walk order meant limit:N returned the N oldest items instead of N newest.
  */
 
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import { createDomainResolvers } from '../resolvers/mod.ts'
 
 // =============================================================================

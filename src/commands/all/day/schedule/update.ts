@@ -1,9 +1,9 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import extractAndDeleteDayItems from '../_extractAndDeleteDayItems.ts'
 
 async function writeScheduleItems(day: PlainDate, category: string, items: string[], links: Map<string, Link>) {

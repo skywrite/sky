@@ -26,15 +26,15 @@
  */
 
 import * as path from 'node:path'
+import { DIR_BASE, DIR_TIME } from '#config'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createJournalScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { DIR_BASE, DIR_TIME } from '#config'
 import { gatherHealthData } from '../../summary/_health.ts'
 
 /** Token budget for journal context assembly.

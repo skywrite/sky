@@ -1,11 +1,11 @@
 import * as path from 'node:path'
-import openEditor from '#lib/shell/openEditor.ts'
+import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
+import openEditor from '#lib/shell/openEditor.ts'
 import { slugify } from '#lib/string/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
 import ProjectDocument from '#shared/models/Project/mod.ts'
-import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 import * as path from 'node:path'
 import colors from 'picocolors'
-import openEditor from '#lib/shell/openEditor.ts'
-import readDir from '#shared/fs/readDir.ts'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
-import { dayDir, fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import openEditor from '#lib/shell/openEditor.ts'
+import readDir from '#shared/fs/readDir.ts'
 import MostImportant from '#shared/models/MostImportant/mod.ts'
+import { dayDir, fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { suggestMostImportant } from './_lib/suggestMostImportant.ts'
 
 const params = {

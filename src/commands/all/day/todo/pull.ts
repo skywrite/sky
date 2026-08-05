@@ -1,8 +1,8 @@
+import { Arg, categoryTodo, Command, CommandResult } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { Arg, categoryTodo, Command, CommandResult } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {

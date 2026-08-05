@@ -1,11 +1,11 @@
-import { parse as parseYAML } from '#shared/yaml/mod.ts'
 import * as marked from 'marked'
+import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import ListDocument, { type ModificationOptions } from '#shared/models/Markdown/ListDocument/mod.ts'
+import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { parse as parseYAML } from '#shared/yaml/mod.ts'
+import durationStringToHours from '#universal/dates/durationStringToHours.ts'
 import { hoursToDurationString } from '#universal/dates/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import ListDocument, { type ModificationOptions } from '#shared/models/Markdown/ListDocument/mod.ts'
-import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
-import durationStringToHours from '#universal/dates/durationStringToHours.ts'
 
 export interface DayConstructorOptions {
   yaml?: string | Record<string, unknown>

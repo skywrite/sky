@@ -1,7 +1,7 @@
+import type { ImapFlow } from 'imapflow'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { fetchFromLabel, findInboxReplies, parseMessage } from './imap-client.ts'
 import type { EmailMessage } from './imap-client.ts'
-import type { ImapFlow } from 'imapflow'
 
 /** A message with its source mailbox tracked for later downloading */
 export type InboxMessage = EmailMessage & {

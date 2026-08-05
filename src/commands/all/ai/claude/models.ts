@@ -1,5 +1,5 @@
-import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { listModels } from '#shared/ai/llm/claude/listModels.ts'
 
 export default class AiClaudeModelsTask extends Command {

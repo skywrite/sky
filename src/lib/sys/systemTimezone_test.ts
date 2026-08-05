@@ -1,10 +1,10 @@
-import { assert, test } from '#test'
-import { mkdir, rm, symlink } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
+import { mkdir, rm, symlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { isValidTimezoneIANA } from '#universal/dates/timezones/mod.ts'
+import { assert, test } from '#test'
 import delay from '#universal/async/delay.ts'
+import { isValidTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import { readSystemTimezone, timezoneFromZoneinfoPath } from './systemTimezone.ts'
 
 // realpath so watcher/path comparisons see symlink-free paths (macOS /tmp and

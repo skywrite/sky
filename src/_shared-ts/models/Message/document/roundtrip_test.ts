@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import MessageDocument from './mod.ts'
 
 const __dirname = new URL('.', import.meta.url).pathname

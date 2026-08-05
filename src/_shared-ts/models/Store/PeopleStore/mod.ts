@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
+import PersonDocument from '#shared/models/Person/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 

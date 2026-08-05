@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { generateText, jsonSchema } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import {
   EXPORT_MIME,
   MAX_IMAGE_BYTES,
@@ -46,8 +45,9 @@ import {
   workspaceKind,
 } from '#lib/google/mod.ts'
 import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
-import { svgToPng, validateSvgSource } from './svgToPng.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
+import { svgToPng, validateSvgSource } from './svgToPng.ts'
 
 export interface MissionFile {
   id: string

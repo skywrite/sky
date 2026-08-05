@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import PersonDocument from '#shared/models/Person/mod.ts'
+import { assert, test } from '#test'
 
 // Test fixtures for current org getter
 const orgCurrentFixtures = [

@@ -1,8 +1,8 @@
-import Document from '#shared/models/Markdown/Document/mod.ts'
-import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import renderMarkdown from '#shared/models/Markdown/util/renderMarkdown.ts'
-import { parseWithError } from '#shared/yaml/mod.ts'
 import * as marked from 'marked'
+import Document from '#shared/models/Markdown/Document/mod.ts'
+import renderMarkdown from '#shared/models/Markdown/util/renderMarkdown.ts'
+import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { parseWithError } from '#shared/yaml/mod.ts'
 
 /** A line/character position within the markdown (after YAML is stripped). */
 export interface Position {

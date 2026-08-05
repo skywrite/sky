@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
+import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
+import { assert, test } from '#test'
 import makeTempDir from './makeTempDir.ts'
 import outputFile from './outputFile.ts'
 import walk, { type WalkEntry } from './walk.ts'
-import { rm } from 'node:fs/promises'
 
 test('walk', async () => {
   const fixtures: {

@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import exists from './exists.ts'
 import writeTextFile from './writeTextFile.ts'
 

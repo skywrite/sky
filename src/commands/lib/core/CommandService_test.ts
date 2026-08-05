@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
-import * as config from '#config'
-import CommandService from './CommandService.ts'
-import CommandContext, { CommandPlatform } from './CommandContext.ts'
-import { BufferedOutput } from '../output/BufferedOutput.ts'
 import { Command, type CommandArgs, type CommandDescription, CommandResult } from '#commands/mod.ts'
+import * as config from '#config'
+import { assert, test } from '#test'
+import { BufferedOutput } from '../output/BufferedOutput.ts'
+import CommandContext, { CommandPlatform } from './CommandContext.ts'
+import CommandService from './CommandService.ts'
 
 // Helper: Create a test context with buffered output
 function createTestContext(): CommandContext {

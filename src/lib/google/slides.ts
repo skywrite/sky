@@ -1,5 +1,5 @@
-import type { GoogleClient } from './client.ts'
 import { validateBatchRequests } from './batchValidate.ts'
+import type { GoogleClient } from './client.ts'
 
 export const SLIDES_API_URL = 'https://slides.googleapis.com/v1/presentations'
 

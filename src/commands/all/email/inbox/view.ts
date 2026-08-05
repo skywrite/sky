@@ -1,9 +1,9 @@
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { createImapClient } from '../lib/imap-client.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
+import { createImapClient } from '../lib/imap-client.ts'
 
 const params = {
   account: Flag.string('Account name from secrets (e.g. personal, work)'),

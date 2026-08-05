@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
+import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const __dirname = new URL('.', import.meta.url).pathname

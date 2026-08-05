@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
 import * as path from 'node:path'
 import { exists, makeTempDir, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
-import DayDirFileWriter from './DayDirFileWriter.ts'
+import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import DayDirFileWriter from './DayDirFileWriter.ts'
 
 test('DayDirFileWriter', async () => {
   const given = 'a file name that exists in the day dir'

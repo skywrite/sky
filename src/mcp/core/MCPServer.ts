@@ -2,11 +2,11 @@
  * Unified MCP Server that combines all components
  */
 
-import type { Transport } from './Transport.ts'
-import { type MCPCapabilities, MCPCore, type MCPServerInfo } from './MCPCore.ts'
-import { CommandRegistry } from './CommandRegistry.ts'
-import { ToolExecutor } from './ToolExecutor.ts'
 import { commandDescriptionToMCPSchema } from '../adapter.ts'
+import { CommandRegistry } from './CommandRegistry.ts'
+import { type MCPCapabilities, MCPCore, type MCPServerInfo } from './MCPCore.ts'
+import { ToolExecutor } from './ToolExecutor.ts'
+import type { Transport } from './Transport.ts'
 
 export interface MCPServerOptions {
   /**

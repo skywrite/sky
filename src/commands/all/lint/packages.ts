@@ -14,11 +14,11 @@
  * it's the module it re-exports from that went away.
  */
 
-import { exists, readDir, readTextFile } from '#shared/fs/mod.ts'
-import colors from 'picocolors'
-import { exit } from '#shared/sys/mod.ts'
 import * as path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import colors from 'picocolors'
+import { exists, readDir, readTextFile } from '#shared/fs/mod.ts'
+import { exit } from '#shared/sys/mod.ts'
 
 interface Violation {
   pkg: string

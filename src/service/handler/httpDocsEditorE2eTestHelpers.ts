@@ -3,13 +3,13 @@
 // Same root cause as http-docs-route_test.ts failures. The e2e tests are excluded
 // from bun test via --path-ignore-patterns. Fix the JSX runtime resolution to re-enable.
 
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { type Browser, chromium, type Page } from 'playwright'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
+import { type Browser, chromium, type Page } from 'playwright'
 import { env } from '#shared/sys/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 

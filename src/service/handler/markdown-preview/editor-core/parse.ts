@@ -1,5 +1,4 @@
 import * as marked from 'marked'
-import type { MarkdownSourceBlock, MarkdownSourceDocument, MarkdownSourceGap } from './types.ts'
 import type {
   BlockquoteNode,
   DefinitionClusterNode,
@@ -27,6 +26,7 @@ import type {
   TextInlineNode,
 } from './model.ts'
 import { parseMarkdownSourceDocument } from './sourceDocument.ts'
+import type { MarkdownSourceBlock, MarkdownSourceDocument, MarkdownSourceGap } from './types.ts'
 
 export function parseEditorDocument(source: string): EditorDocument {
   const sourceDocument = parseMarkdownSourceDocument(source)

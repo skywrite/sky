@@ -6,11 +6,11 @@
 
 import MarkdownDoc from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { REGEX_YMD_EXACT } from '#universal/dates/regex/mod.ts'
 import { INTERACTION_WEIGHTS, type Store } from '../store.ts'
 import { getInteractionWeight, parsePeopleFromField } from './entities.ts'
-import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
-import { REGEX_YMD_EXACT } from '#universal/dates/regex/mod.ts'
 
 /**
  * Entity type checker functions.

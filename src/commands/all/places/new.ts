@@ -1,12 +1,12 @@
 import * as path from 'node:path'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import openEditor from '#lib/shell/openEditor.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import openEditor from '#lib/shell/openEditor.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
 import { PlaceDocument, PLACE_TYPES } from '#shared/models/Place/mod.ts'
 import type { PlaceCreateInput } from '#shared/models/Place/mod.ts'
-import { assembleGoogleAddressComponents } from './_google.ts'
 import { fetchGoogleGeocode } from '../util/location/fetchGoogleGeocode.ts'
+import { assembleGoogleAddressComponents } from './_google.ts'
 import { resolveMapsUrlToCoords } from './_maps.ts'
 
 const params = {

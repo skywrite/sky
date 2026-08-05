@@ -1,7 +1,7 @@
 import { assert, test } from '#test'
-import PlainYear from './mod.ts'
 import PlainDate from '../PlainDate/mod.ts'
 import PlainYearMonth from '../PlainYearMonth/mod.ts'
+import PlainYear from './mod.ts'
 
 test('PlainYear constructor - no args uses current year', () => {
   const year = new PlainYear()

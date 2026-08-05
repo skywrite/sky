@@ -1,6 +1,6 @@
+import isOnline from '#shared/network/isOnline.ts'
 import { assert, test } from '#test'
 import { fetchWikipediaArticle, getWikipediaArticle, searchWikipedia } from './wikipedia.ts'
-import isOnline from '#shared/network/isOnline.ts'
 
 const ignore = !(await isOnline())
 

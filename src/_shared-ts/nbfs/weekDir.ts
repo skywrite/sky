@@ -1,6 +1,6 @@
 import * as path from 'node:path'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import daysOfWeek from '#universal/dates/daysOfWeek.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import normalizeToPlainDate from './normalizeToPlainDate.ts'
 
 /**

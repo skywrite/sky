@@ -1,9 +1,9 @@
-import { Command, CommandResult } from '#commands/mod.ts'
-import colors from 'picocolors'
 import * as path from 'node:path'
+import colors from 'picocolors'
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
+import { Command, CommandResult } from '#commands/mod.ts'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
 import MarkdownDoc from '#shared/models/Markdown/Document/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 
 export default class UtilCheckMarkdownTask extends Command {
   static override description: CommandDescription = {

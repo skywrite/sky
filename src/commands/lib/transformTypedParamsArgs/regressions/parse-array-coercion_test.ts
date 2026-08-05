@@ -1,3 +1,4 @@
+import { z } from 'zod'
 /**
  * Regression: Flag.string with parse returning array was coerced back to string
  *
@@ -8,9 +9,8 @@
  * Fix: Use schema: z.any() to bypass z.coerce.string() when parse returns non-string types.
  */
 import { assert, test } from '#test'
-import { z } from 'zod'
-import transformTypedParamsArgs from '../mod.ts'
 import { Flag } from '../../params.ts'
+import transformTypedParamsArgs from '../mod.ts'
 
 test('preserves array from parse when custom schema is used', async () => {
   const params = {

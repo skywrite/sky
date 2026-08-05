@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
+import { assert, test } from '#test'
 
 // Collapsed reference links [label][] lose their definitions when moved between
 // sections via removeItem + addItem. This is because replaceList's link cleanup

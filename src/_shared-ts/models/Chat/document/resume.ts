@@ -11,9 +11,9 @@
  * stays with the command.
  */
 
-import ChatDocument from './mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ContextTurnLog } from './ContextLog/mod.ts'
+import ChatDocument from './mod.ts'
 
 export interface ResumeState {
   /** Role-tagged conversation ready to seed a session's message history */

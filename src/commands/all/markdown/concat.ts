@@ -1,10 +1,10 @@
+import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { stringify } from '#shared/yaml/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   tags: Flag.string('Semicolon-separated tags to match (ANY)'),

@@ -1,5 +1,5 @@
-import { assert, loadFixturesSync, test } from '#test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
+import { assert, loadFixturesSync, test } from '#test'
 
 const FIXTURES = loadFixturesSync(import.meta.url)
 

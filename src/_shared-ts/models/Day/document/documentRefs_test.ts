@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { readFileSync } from 'node:fs'
+import { assert, test } from '#test'
 import DayDocument from './mod.ts'
 
 // Load fixture from file

@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import PersonDocument from '#shared/models/Person/mod.ts'
+import { assert, test } from '#test'
 
 test('Person constructor - normalizes who to name when who exists', () => {
   const person = new PersonDocument({ who: 'John Doe' })

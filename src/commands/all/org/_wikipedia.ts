@@ -1,14 +1,14 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import {
   fetchWikipediaArticle,
   searchWikipedia,
   type WikipediaArticle,
   type WikipediaSearchResult,
 } from '#lib/apis/wikipedia.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 /** Hard ceiling on the article select/disambiguate/validate calls — see _categorize.ts for why. */
 const AI_TIMEOUT_MS = 2 * 60 * 1000

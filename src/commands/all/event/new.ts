@@ -1,13 +1,13 @@
-import { setTimeout as delay } from 'node:timers/promises'
 import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
-import EventDocument from '#shared/models/Event/mod.ts'
-import slugify from '#lib/string/slugify.ts'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import slugify from '#lib/string/slugify.ts'
 import { MCPTool } from '#mcp/decorators.ts'
+import EventDocument from '#shared/models/Event/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   what: Arg.string('Event summary/description (optional with --from-audio)', { optional: true }),

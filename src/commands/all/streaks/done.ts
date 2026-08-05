@@ -1,8 +1,8 @@
 import colors from 'picocolors'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { computeStreakCounts, loadStreaks, strikeStreakItem } from '#lib/streaks/mod.ts'
 import { Arg, Command, CommandResult, dayArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { computeStreakCounts, loadStreaks, strikeStreakItem } from '#lib/streaks/mod.ts'
+import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 
 const params = {
   name: Arg.string('Streak slug to mark done'),

@@ -1,8 +1,8 @@
+import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import RelSet from '#shared/models/RelSet/mod.ts'
+import type TagSet from '#shared/models/TagSet/mod.ts'
 import type OrganizationDocument from '../document/mod.ts'
 import type { OrgKind } from '../document/mod.ts'
-import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import type TagSet from '#shared/models/TagSet/mod.ts'
-import RelSet from '#shared/models/RelSet/mod.ts'
 
 /**
  * Domain class for Organization that composes OrganizationDocument + MarkdownStore.

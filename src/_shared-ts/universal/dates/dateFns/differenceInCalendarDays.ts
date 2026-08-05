@@ -1,5 +1,5 @@
-import startOfDay from './startOfDay.ts'
 import getTimezoneOffsetInMilliseconds from './getTimezoneOffsetInMilliseconds.ts'
+import startOfDay from './startOfDay.ts'
 
 const millisecondsInDay = 86400000
 

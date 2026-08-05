@@ -1,13 +1,13 @@
-import * as path from 'node:path'
 import { readFile, unlink } from 'node:fs/promises'
+import * as path from 'node:path'
 import OpenAI, { toFile } from 'openai'
 import colors from 'picocolors'
-import { exists, writeTextFile } from '#shared/fs/mod.ts'
-import { desktopFilesByExt } from './lib/desktopFiles.ts'
-import { env } from '#shared/sys/mod.ts'
-import { runCommand } from '#lib/sys/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { runCommand } from '#lib/sys/mod.ts'
+import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { env } from '#shared/sys/mod.ts'
+import { desktopFilesByExt } from './lib/desktopFiles.ts'
 
 // -----------------------------------------------------------------------------
 // Provider Types

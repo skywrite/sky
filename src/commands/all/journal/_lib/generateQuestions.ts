@@ -1,10 +1,10 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { readTextFile } from '#shared/fs/mod.ts'
-import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
-import type { JournalContext } from './gatherContext.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
+import { renderPromptFile } from '#shared/prompts/mod.ts'
+import type { JournalContext } from './gatherContext.ts'
 
 const PROFILE = ROLES.reasoning
 const PROMPT_FILE = new URL('../prompts/generate-questions.prompt.md', import.meta.url).pathname

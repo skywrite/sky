@@ -1,8 +1,8 @@
-import { assert, test } from '#test'
 import * as config from '#config'
-import CommandService from './CommandService.ts'
-import CommandContext from './CommandContext.ts'
+import { assert, test } from '#test'
 import { BufferedOutput } from '../output/BufferedOutput.ts'
+import CommandContext from './CommandContext.ts'
+import CommandService from './CommandService.ts'
 
 test('CommandService.runSequential() returns success when all tasks succeed', async () => {
   const output = new BufferedOutput()

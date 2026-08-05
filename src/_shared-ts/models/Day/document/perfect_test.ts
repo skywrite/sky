@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { assert, test } from '#test'
 
 test('DayDocument.perfect returns true when all lists are clear', () => {
   const day = DayDocument.fromMarkdown(`

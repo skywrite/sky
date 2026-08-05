@@ -1,13 +1,13 @@
 import * as marked from 'marked'
-import splitYamlMarkdown from '../util/splitYamlMarkdown.ts'
-import TagSet from '#shared/models/TagSet/mod.ts'
 import ImmutableSet from '#shared/models/ImmutableSet/mod.ts'
-import renderMarkdown from '../util/renderMarkdown.ts'
-import { fetchLinksFromTokensList, type Link, linkMapToTokenLinks } from '../Link/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { parseWithError, stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { type Attachment, attachmentsToYaml, parseAttachments } from './attachment.ts'
+import { fetchLinksFromTokensList, type Link, linkMapToTokenLinks } from '../Link/mod.ts'
+import renderMarkdown from '../util/renderMarkdown.ts'
+import splitYamlMarkdown from '../util/splitYamlMarkdown.ts'
 import _stripHtmlComments from './_stripHtmlComments.ts'
+import { type Attachment, attachmentsToYaml, parseAttachments } from './attachment.ts'
 
 /** Reference-link definition line, e.g. `[label]: https://example.com` */
 const REFERENCE_DEFINITION = /^\[[^\]]+\]:\s/m

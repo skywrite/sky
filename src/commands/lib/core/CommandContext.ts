@@ -1,12 +1,12 @@
 import type * as ConfigModule from '#config'
-import type { OutputHandler } from '../output/OutputHandler.ts'
-import { ConsoleOutput } from '../output/ConsoleOutput.ts'
-import { BufferedOutput } from '../output/BufferedOutput.ts'
-import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { BufferedOutput } from '../output/BufferedOutput.ts'
+import { ConsoleOutput } from '../output/ConsoleOutput.ts'
+import type { OutputHandler } from '../output/OutputHandler.ts'
 
 /**
  * Platform where the task is executing

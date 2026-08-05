@@ -1,5 +1,5 @@
-import { FILE_SKY_CODE_ENV } from '../config.ts'
 import process from 'node:process'
+import { FILE_SKY_CODE_ENV } from '../config.ts'
 
 declare const Bun: unknown
 

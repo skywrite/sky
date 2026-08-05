@@ -1,9 +1,9 @@
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import { buildBlockCursorMaps } from './editor-core/cursorMap.ts'
-import { parseEditorDocument } from './editor-core/parse.ts'
-import type { EditorBlockNode } from './editor-core/model.ts'
 import { renderBlockPreview } from './blockPreview.ts'
 import type { EditableBlockDescriptor } from './components/BlockMarkdownEditor.tsx'
+import { buildBlockCursorMaps } from './editor-core/cursorMap.ts'
+import type { EditorBlockNode } from './editor-core/model.ts'
+import { parseEditorDocument } from './editor-core/parse.ts'
 
 export interface MarkdownDocumentEditorState {
   content: string

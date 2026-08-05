@@ -1,6 +1,6 @@
+import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // we don't pass a date arg since the historical timezone

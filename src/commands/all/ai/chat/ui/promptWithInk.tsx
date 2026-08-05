@@ -1,5 +1,5 @@
-import React from 'react'
 import { render } from 'ink'
+import React from 'react'
 import { ChatInputPrompt } from './ChatInputPrompt.tsx'
 import type { ChatPromptOptions, ChatPromptResult } from './types.ts'
 

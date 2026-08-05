@@ -1,6 +1,6 @@
 import { generateObject } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 

@@ -1,8 +1,8 @@
-import type PersonDocument from '#shared/models/Person/mod.ts'
-import type OrganizationDocument from '#shared/models/Organization/mod.ts'
-import type ProjectDocument from '#shared/models/Project/mod.ts'
-import type PlaceDocument from '#shared/models/Place/mod.ts'
 import type { Document } from '#shared/models/Markdown/mod.ts'
+import type OrganizationDocument from '#shared/models/Organization/mod.ts'
+import type PersonDocument from '#shared/models/Person/mod.ts'
+import type PlaceDocument from '#shared/models/Place/mod.ts'
+import type ProjectDocument from '#shared/models/Project/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 
 /** Collection of resolved references with typed accessors */

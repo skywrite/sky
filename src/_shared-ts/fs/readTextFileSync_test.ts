@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import readTextFileSync from './readTextFileSync.ts'
 
 test('readTextFileSync reads a simple text file', () => {

@@ -1,7 +1,7 @@
 import { assert, test } from '#test'
-import transformTypedParamsArgs from './mod.ts'
-import { Arg, ArgOrFlag, Flag } from '../params.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { Arg, ArgOrFlag, Flag } from '../params.ts'
+import transformTypedParamsArgs from './mod.ts'
 
 test('transformTypedParamsArgs handles basic string flag', async () => {
   const params = {

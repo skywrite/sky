@@ -1,14 +1,14 @@
 import * as path from 'node:path'
 import { generateObject } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
 import { z } from 'zod'
-import { readDir, readTextFile, rename, writeTextFile } from '#shared/fs/mod.ts'
-import { DIR_TIME } from '#shared/config.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
-import JournalDocument from '#shared/models/Journal/document/mod.ts'
-import slugify from '#lib/string/slugify.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import slugify from '#lib/string/slugify.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { DIR_TIME } from '#shared/config.ts'
+import { readDir, readTextFile, rename, writeTextFile } from '#shared/fs/mod.ts'
+import JournalDocument from '#shared/models/Journal/document/mod.ts'
+import { dayDir } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

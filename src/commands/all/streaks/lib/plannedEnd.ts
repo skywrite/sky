@@ -1,5 +1,5 @@
-import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import * as dateFns from '#universal/dates/dateFns/mod.ts'
+import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 
 const { addDays } = dateFns
 

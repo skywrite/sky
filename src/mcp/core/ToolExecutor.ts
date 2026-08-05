@@ -2,14 +2,14 @@
  * Tool executor for running MCP tasks
  */
 
-import { Command, type CommandArgs, CommandResult } from '#commands/mod.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import type { RegisteredCommand } from './CommandRegistry.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
-import { mcpArgsToCommandArgs } from '../adapter.ts'
+import { Command, type CommandArgs, CommandResult } from '#commands/mod.ts'
 import * as config from '#config'
 import { env } from '#shared/sys/mod.ts'
+import { mcpArgsToCommandArgs } from '../adapter.ts'
+import type { RegisteredCommand } from './CommandRegistry.ts'
 
 export interface ExecutionResult {
   status: 'success' | 'fail' | 'error'

@@ -1,6 +1,6 @@
 import * as path from 'node:path'
-import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import { DIR_PROJECTS_OPEN } from '#config'
+import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 
 export async function fetchOpenProjectDirs(projectsDir = DIR_PROJECTS_OPEN): Promise<Map<string, string>> {

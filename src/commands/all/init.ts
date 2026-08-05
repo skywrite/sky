@@ -1,15 +1,15 @@
-import * as path from 'node:path'
-import * as os from 'node:os'
 import { mkdir, stat } from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { parse as parseJSONC } from 'jsonc-parser'
-import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
 import { DIR_CODE, DIR_CODE_SERVICES, DIR_USER_SERVICES, SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
-import { parseWhoami } from './slack/cli/lib/agent-slack/mod.ts'
+import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
+import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { buildManifest } from './cli/_commandsManifest.ts'
+import { parseWhoami } from './slack/cli/lib/agent-slack/mod.ts'
 
 const CONTENT_DIRS = [
   'time',

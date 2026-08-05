@@ -1,6 +1,6 @@
-import { readDay } from '#shared/nbfs/mod.ts'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { readDay } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),

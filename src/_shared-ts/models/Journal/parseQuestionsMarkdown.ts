@@ -19,9 +19,9 @@
  * ```
  */
 
+import type { Tokens } from 'marked'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type { Question } from './type.d.ts'
-import type { Tokens } from 'marked'
 
 /**
  * Check if a heading matches a recurring pattern (e.g., EVERY-DAY, MONTHLY-1)

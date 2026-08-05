@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { assert, test } from '#test'
 import { matchesTagContains, matchesTagContainsAll, matchesTagContainsAny, matchesTagPrefix } from './tags.ts'
 
 function md(yaml: string): Document {

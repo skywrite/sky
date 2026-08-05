@@ -1,6 +1,6 @@
-import { assert, test } from '#test'
-import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
+import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
+import { assert, test } from '#test'
 
 test(`${ItemList.name}.toSorted(): return sorted list`, () => {
   const given = 'adding an item out of order'

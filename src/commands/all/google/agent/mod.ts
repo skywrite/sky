@@ -1,15 +1,12 @@
 import * as os from 'node:os'
 import * as path from 'node:path'
-import colors from 'picocolors'
-import open from 'open'
 import { isStepCount, streamText } from 'ai'
-import { aiModel } from '#shared/ai/models.ts'
-import { cachedInstructions } from '#shared/ai/promptCache.ts'
-import { readDir, readTextFile } from '#shared/fs/mod.ts'
-import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import open from 'open'
+import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import {
   AccountResolutionError,
   GoogleApiError,
@@ -21,11 +18,14 @@ import {
   workspaceKind,
 } from '#lib/google/mod.ts'
 import type { DriveFile } from '#lib/google/mod.ts'
-import { resolveGoogleClient } from '../lib/resolveClient.ts'
+import { aiModel } from '#shared/ai/models.ts'
+import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
+import { resolveGoogleClient } from '../lib/resolveClient.ts'
+import { writeDocArtifact } from './lib/artifact.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
-import { writeDocArtifact } from './lib/artifact.ts'
 
 const MAX_STEPS = 48
 /**

@@ -1,5 +1,5 @@
-import type { Document } from '#shared/models/Markdown/mod.ts'
 import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
+import type { Document } from '#shared/models/Markdown/mod.ts'
 import {
   type DatedFilter,
   type EntitySpec,

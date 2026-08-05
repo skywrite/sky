@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
-import Follow from './mod.ts'
 import type { StoreError } from '../Store/types.ts'
+import Follow from './mod.ts'
 
 export type FollowFileEntry = { follow: Follow; path: string }
 

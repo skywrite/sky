@@ -4,8 +4,8 @@ export type { Assertion } from '#shared/test/riteway.ts'
 
 // Deno-specific utilities
 import * as path from 'node:path'
-import { readDirSync, readTextFileSync } from '#shared/fs/mod.ts'
 import dirname from '#lib/util/dirnameFilename.ts'
+import { readDirSync, readTextFileSync } from '#shared/fs/mod.ts'
 
 export function loadFixturesSync(importMetaUrl: string): Record<string, string> {
   const fileData: Record<string, string> = {}

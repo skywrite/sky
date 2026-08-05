@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import { stringifyCsv } from './stringifyCsv.ts'
 import { parseCsv } from './parseCsv.ts'
+import { stringifyCsv } from './stringifyCsv.ts'
 
 test('stringifyCsv: basic stringify', () => {
   const FIXTURES = [

@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import PlainYearMonth from './mod.ts'
 import PlainDate from '../PlainDate/mod.ts'
+import PlainYearMonth from './mod.ts'
 
 // ============================================================================
 // Constructor tests

@@ -1,7 +1,7 @@
-import { assert, test } from '#test'
-import * as path from 'node:path'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { assert, test } from '#test'
 import EmailFollowRegistry from './EmailFollowRegistry.ts'
 
 const EMAIL_YAML = `\

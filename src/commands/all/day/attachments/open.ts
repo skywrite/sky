@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { runCommand } from '#lib/sys/mod.ts'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { runCommand } from '#lib/sys/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 
 const params = {
   day: dayNoFutureArg(),

@@ -1,9 +1,9 @@
-import { assert, test } from '#test'
 import * as config from '#config'
-import CommandService from '../CommandService.ts'
-import CommandContext from '../CommandContext.ts'
-import { BufferedOutput } from '../../output/BufferedOutput.ts'
+import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { BufferedOutput } from '../../output/BufferedOutput.ts'
+import CommandContext from '../CommandContext.ts'
+import CommandService from '../CommandService.ts'
 
 /**
  * REGRESSION TEST: CommandService.run() should override arguments with default + parse

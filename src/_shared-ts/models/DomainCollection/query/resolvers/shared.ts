@@ -8,8 +8,8 @@
  * that every root field is built from.
  */
 
-import type { Document } from '#shared/models/Markdown/mod.ts'
 import type { CollectionEntityType } from '#shared/models/Markdown/Collection/entityTypes.ts'
+import type { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import type DomainCollection from '../../mod.ts'
 import {

@@ -4,7 +4,6 @@
 
 import { assert, test } from '#test'
 import { MCPServer } from '../core/MCPServer.ts'
-import { MockTransport } from './mocks/MockTransport.ts'
 import {
   MockComplexCommand,
   MockDateCommand,
@@ -12,6 +11,7 @@ import {
   MockErrorCommand,
   MockNonMCPCommand,
 } from './mocks/MockCommand.ts'
+import { MockTransport } from './mocks/MockTransport.ts'
 
 test('MCPServer - initialization', () => {
   const server = new MCPServer({

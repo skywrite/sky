@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
-import PlainDateTime from './mod.ts'
 import PlainDate from '../PlainDate/mod.ts'
+import PlainDateTime from './mod.ts'
 
 test('PlainDateTime constructor with PlainDate only', () => {
   const plainDate = new PlainDate('2025-08-27')

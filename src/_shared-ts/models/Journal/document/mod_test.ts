@@ -2,9 +2,9 @@ import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { Question } from '../type.d.ts'
 import JournalDocument from './mod.ts'
 import type { JournalQuestion } from './mod.ts'
-import type { Question } from '../type.d.ts'
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 

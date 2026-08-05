@@ -2,9 +2,9 @@
  * Tests for GraphQL query execution against DomainCollection.
  */
 
-import { assert, test } from '#test'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { assert, test } from '#test'
 import { executeQuery, isGraphQL } from './execute.ts'
 
 // =============================================================================

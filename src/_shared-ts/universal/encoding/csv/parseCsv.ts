@@ -1,6 +1,6 @@
 import type { ZodObject, ZodRawShape } from 'zod'
-import type { CsvParseOptions, CsvParseOptionsWithSchema, CsvParseResult, InferSchema } from './types.ts'
 import { parseCsvLine } from './parseCsvLine.ts'
+import type { CsvParseOptions, CsvParseOptionsWithSchema, CsvParseResult, InferSchema } from './types.ts'
 
 /**
  * Parse a CSV string into headers and records with Zod schema validation.

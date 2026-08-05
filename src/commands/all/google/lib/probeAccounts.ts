@@ -1,5 +1,5 @@
-import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { GoogleClient, getFile, loadOAuthClient } from '#lib/google/mod.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 
 /**
  * Which of these connected accounts can see the file? Used when the mission

@@ -1,5 +1,5 @@
-import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import type { OAuthClient } from './oauth.ts'
 
 /** Keychain category for all Google entries (service `sky-google`). */

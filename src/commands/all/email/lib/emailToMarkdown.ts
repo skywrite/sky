@@ -1,8 +1,8 @@
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import type { EmailMessage } from './imap-client.ts'
 
 const PROMPT_FILE = new URL('../../../all/follow/email/prompts/email-to-markdown.prompt.md', import.meta.url).pathname

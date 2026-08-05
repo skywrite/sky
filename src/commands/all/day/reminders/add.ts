@@ -1,12 +1,12 @@
 import * as path from 'node:path'
 import OpenAI from 'openai'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { slugify } from '#lib/string/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 import { ArgOrFlag, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { dayFile } from '#lib/nbfs/mod.ts'
+import { slugify } from '#lib/string/mod.ts'
+import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
+import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 
 const params = {
   task: ArgOrFlag.string('Task to add', { short: 't', required: true }),

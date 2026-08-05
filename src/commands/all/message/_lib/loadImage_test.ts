@@ -1,9 +1,9 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { assert, test } from '#test'
 import { runCommand } from '#lib/sys/mod.ts'
 import { exists } from '#shared/fs/mod.ts'
+import { assert, test } from '#test'
 import { loadImageForAI, mediaTypeFromExt } from './loadImage.ts'
 
 // 1x1 transparent PNG

@@ -1,5 +1,5 @@
-import { assert, test } from '#test'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { assert, test } from '#test'
 
 const FIXTURES: [string, boolean][] = [
   ['~~Ask Sam about Alice reporting to Jane~~', true],

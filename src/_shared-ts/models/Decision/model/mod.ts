@@ -1,8 +1,8 @@
-import type DecisionDocument from '../document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import RelSet from '#shared/models/RelSet/mod.ts'
 import type TagSet from '#shared/models/TagSet/mod.ts'
 import type ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
-import RelSet from '#shared/models/RelSet/mod.ts'
+import type DecisionDocument from '../document/mod.ts'
 
 /**
  * Domain class for Decision that composes DecisionDocument + MarkdownStore.
