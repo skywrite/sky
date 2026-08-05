@@ -31,7 +31,13 @@
 
 // ── Core classes ──────────────────────────────────────────────────
 export { Command } from '../../../src/commands/lib/core/Command.ts'
-export { CommandResult, isError, isFail, isFailOrError, isSuccess } from '../../../src/commands/lib/core/CommandResult.ts'
+export {
+  CommandResult,
+  isError,
+  isFail,
+  isFailOrError,
+  isSuccess,
+} from '../../../src/commands/lib/core/CommandResult.ts'
 
 // ── Param builders ────────────────────────────────────────────────
 export { Arg, ArgOrFlag, Flag } from '../../../src/commands/lib/params.ts'

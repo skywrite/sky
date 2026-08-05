@@ -1,6 +1,4 @@
-export {
-  default as PlainDate,
-} from '../../../src/_shared-ts/universal/dates/nbdt/PlainDate/mod.ts'
+export { default as PlainDate } from '../../../src/_shared-ts/universal/dates/nbdt/PlainDate/mod.ts'
 
 export {
   default as PlainDateTime,
@@ -12,13 +10,9 @@ export {
   type ZonedDateTimeConstructorOptions,
 } from '../../../src/_shared-ts/universal/dates/nbdt/ZonedDateTime/mod.ts'
 
-export {
-  default as PlainYearMonth,
-} from '../../../src/_shared-ts/universal/dates/nbdt/PlainYearMonth/mod.ts'
+export { default as PlainYearMonth } from '../../../src/_shared-ts/universal/dates/nbdt/PlainYearMonth/mod.ts'
 
-export {
-  default as PlainYear,
-} from '../../../src/_shared-ts/universal/dates/nbdt/PlainYear/mod.ts'
+export { default as PlainYear } from '../../../src/_shared-ts/universal/dates/nbdt/PlainYear/mod.ts'
 
 export {
   default as Duration,
