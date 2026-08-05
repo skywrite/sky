@@ -172,7 +172,8 @@ export default class EmailInboxFollowSyncTask extends Command {
       // ── Phase 4: Archive processed threads from inbox ────────────────────
       // The per-message AI conversion in fetch can outlive the socket timeout;
       // reconnect if the shared connection died in the meantime.
-      const threadIds = fetchResult.threads.map((t) => t.threadId)
+      // Failed threads stay in the inbox so the next sync retries them.
+      const threadIds = fetchResult.threads.filter((t) => !t.failed).map((t) => t.threadId)
       if (threadIds.length > 0 && !client.usable) {
         output.log('  Connection expired — reconnecting for archive...')
         client = createImapClient(creds)

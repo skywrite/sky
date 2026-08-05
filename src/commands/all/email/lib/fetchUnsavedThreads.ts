@@ -19,6 +19,8 @@ export type FetchedThread = {
   from: string
   subject: string
   messages: { date: string; path: string }[]
+  /** A message's AI conversion threw — leave the thread in the inbox so the next sync retries it. */
+  failed?: boolean
 }
 
 export type FetchUnsavedResult = { fetched: number; threads: FetchedThread[] }
@@ -155,19 +157,29 @@ export async function fetchUnsavedThreads(
       }
     }
 
+    let failed = false
     for (const msg of threadMessages) {
-      const result = await saveMessage(
-        msg,
-        threadId,
-        createdEntries,
-        priorMarkdown,
-        previousPath,
-        inheritedTags,
-        inheritedRel,
-        effectiveWhen,
-        tasks,
-        output,
-      )
+      let result: { date: string; path: string } | null
+      try {
+        result = await saveMessage(
+          msg,
+          threadId,
+          createdEntries,
+          priorMarkdown,
+          previousPath,
+          inheritedTags,
+          inheritedRel,
+          effectiveWhen,
+          tasks,
+          output,
+        )
+      } catch (err) {
+        // Fail-and-retry: skip the rest of the thread and keep it in the inbox
+        // so the next sync re-attempts the unconverted messages.
+        output.log(`  Warning: conversion failed (${(err as Error).message}) — thread left in inbox for retry`)
+        failed = true
+        break
+      }
       if (result) {
         threadEntries.push(result)
         createdEntries.set(`${threadId}_${result.date}`, result)
@@ -180,6 +192,7 @@ export async function fetchUnsavedThreads(
       from: normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown'),
       subject: threadMessages[0].subject || '(no subject)',
       messages: threadEntries,
+      ...(failed ? { failed: true } : {}),
     })
   }
 
@@ -215,6 +228,10 @@ async function saveMessage(
   const converted = await emailToMarkdown(msg, {
     priorMessages: priorMarkdown.length > 0 ? priorMarkdown : undefined,
   })
+
+  if (converted.truncated) {
+    output.log('  Warning: capture truncated — source email exceeded the conversion budget')
+  }
 
   if (converted.markdown) {
     priorMarkdown.push(converted.markdown)
