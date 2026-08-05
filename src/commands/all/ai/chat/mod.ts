@@ -8,30 +8,20 @@ import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { mkdir, readdir, rename } from 'node:fs/promises'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
 import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
-import {
-  type ContextDocRecord,
-  type ContextTurnLog,
-  serializeContextLog,
-  type ToolCallRecord,
-  type TurnStats,
-} from '#shared/models/Chat/document/ContextLog/mod.ts'
+import { serializeContextLog, type ToolCallRecord } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
-import { resolveUniverse } from './resolveUniverse.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import ContextAssembler, { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
+import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
+import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
-import createDayLabeler from '../lib/dayLabel.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
@@ -220,117 +210,6 @@ function formatFilename(dt: PlainDateTime, summary: string): string {
   const timeStr = dt.time.replace(':', '-')
   const slug = slugify(summary)
   return `${timeStr}_${slug}.md`
-}
-
-// A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
-// respawn the process, then the notebook rescan takes ~24s before the port
-// binds — and a context fetch in that window used to fail hard: the turn
-// then ran without queried context. Spread ~90s of retries across the
-// window (mirrors markdown:sel's GraphQL fetch); once one fetch exhausts
-// them the service is down rather than restarting, so later fetches in the
-// same session fail fast instead of stacking retry waits. Any success
-// re-arms.
-const CONNECT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 15000, 15000, 15000, 15000]
-let connectRetriesExhausted = false
-
-async function fetchWithConnectRetry(url: string, init: RequestInit): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const response = await fetch(url, init)
-      connectRetriesExhausted = false
-      return response
-    } catch (err) {
-      if (connectRetriesExhausted || attempt >= CONNECT_RETRY_DELAYS_MS.length) {
-        connectRetriesExhausted = true
-        throw err
-      }
-      const delayMs = CONNECT_RETRY_DELAYS_MS[attempt]
-      console.warn(`[ai:chat] notebook service unreachable — retrying in ${delayMs / 1000}s...`)
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
-    }
-  }
-}
-
-/**
- * Fetch documents from the running notebook service via POST /context.
- * The server executes the GraphQL query, resolves relationships to the given depth,
- * and returns {path, type, markdown} triples.
- */
-async function fetchContextFromServer(query: string, depth = 1): Promise<Array<{ doc: Document; path: string }>> {
-  const url = `http://localhost:${PORT_SERVER}/context`
-  let resp: Response
-  try {
-    resp = await fetchWithConnectRetry(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, depth }),
-    })
-  } catch (err) {
-    const message = `notebook service unreachable at ${url}: ${(err as Error).message}`
-    console.warn(`[ai:chat] ${message}`)
-    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
-    return []
-  }
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '')
-    const message = `context fetch failed (${resp.status} ${resp.statusText}): ${body.slice(0, 200)}`
-    console.warn(`[ai:chat] ${message}`)
-    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
-    return []
-  }
-
-  let json: unknown
-  try {
-    json = await resp.json()
-  } catch (err) {
-    const message = `context response not valid JSON: ${(err as Error).message}`
-    console.warn(`[ai:chat] ${message}`)
-    await logAIError({ source: 'ai:chat', stage: 'context:server', message, query })
-    return []
-  }
-  const documents =
-    (json as { data?: { documents?: Array<{ path?: string; markdown?: string }> } })?.data?.documents ?? []
-  const docs: Array<{ doc: Document; path: string }> = []
-  for (const d of documents) {
-    if (d.path && d.markdown) {
-      try {
-        const doc = Document.fromMarkdown(d.markdown)
-          .stripHtmlComments()
-          .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-        docs.push({ doc, path: d.path })
-      } catch (err) {
-        console.warn(`[ai:chat] failed to parse context doc ${d.path}: ${(err as Error).message}`)
-      }
-    }
-  }
-  return docs
-}
-
-/**
- * Read the given files from disk and merge them into the collection,
- * stripping chat metadata comments and transcript sections. Builds DomainCollection without a local MarkdownStore.
- */
-async function mergePathsIntoCollection(
-  paths: string[],
-  existing: DomainCollection | null,
-): Promise<DomainCollection | null> {
-  if (paths.length === 0) return existing
-  const docs: Array<{ doc: Document; path: string }> = []
-  for (const filePath of paths) {
-    try {
-      const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content)
-        .stripHtmlComments()
-        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-      docs.push({ doc, path: filePath })
-    } catch (err) {
-      // Skip unreadable files
-      console.warn(`[ai:chat] skipping context file ${filePath}: ${(err as Error).message}`)
-    }
-  }
-  if (docs.length === 0) return existing
-  const newCollection = DomainCollection.fromDocuments(docs, null, { depth: 0 })
-  return existing ? existing.merge(newCollection) : newCollection
 }
 
 interface OlderChatRow {
@@ -560,7 +439,6 @@ export default class AiChatTask extends Command {
     const now = await fetchNow()
     const today = when?.plainDate ?? now.plainDateTime.plainDate
     const startTime = now.plainDateTime
-    const dayLabeler = createDayLabeler(today)
     output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
 
     // --resume: pick one of the day's saved chats (--when shifts the day)
@@ -647,45 +525,64 @@ export default class AiChatTask extends Command {
 
     const baseDir = <string>config.DIR_BASE
 
-    // Build context from the running notebook service: POST /context executes GraphQL +
-    // resolves relationships on the server (which already has MarkdownStore built),
-    // returning documents with markdown. Skips a local MarkdownStore.build() (~20k files).
-    let initialCollection: DomainCollection | null = null
-    let allFiles: string[] = []
-    let pinnedPaths: ReadonlySet<string> = new Set()
-    let peopleEntities: Awaited<ReturnType<typeof gatherPeopleEntities>> = []
+    // The chat's document context lives in ChatContext: the baseline
+    // universe, query-driven growth across turns, boost/pinning state, and
+    // the per-turn context log. The command wires the producers to the
+    // command pipeline and renders the reports the class returns.
+    const chatContext = new ChatContext({
+      today,
+      days,
+      baseDir,
+      ownChatPath: resumeSession?.filePath ?? null,
+      producers: {
+        produceInitialQuery: async (userMessage) => {
+          const r = await tasks.run<{ paths: string[]; query: string }>('ai:context:files', {
+            _: ['ai:context:files', userMessage],
+            server: true,
+          })
+          return r.status === 'success'
+            ? { ok: true, value: { paths: r.data?.paths ?? [], query: r.data?.query } }
+            : { ok: false, message: r.message ?? 'ai:context:files failed' }
+        },
+        evolveQueries: async (userMessage, queries, recentConversation) => {
+          const r = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
+            _: ['ai:context:evolve', userMessage],
+            queries: JSON.stringify(queries),
+            conversation: JSON.stringify(recentConversation),
+          })
+          return r.status === 'success'
+            ? { ok: true, value: { queries: r.data?.queries ?? [], changed: r.data?.changed ?? false } }
+            : { ok: false, message: r.message ?? 'ai:context:evolve failed' }
+        },
+        executeQuery: async (query) => {
+          const r = await tasks.run('markdown:sel', { graphql: query, raw: true, server: 'true' })
+          return r.status === 'success'
+            ? { ok: true, value: { paths: r.data?.paths ?? [] } }
+            : { ok: false, message: r.message ?? 'Context query failed' }
+        },
+      },
+      onProgress: (event) => {
+        if (event.type === 'queries-changed') output.log(colors.dim('Context shifting...'))
+        else if (event.type === 'no-new-queries') output.log(colors.dim('Queries unchanged, skipping re-execution.'))
+      },
+    })
 
-    // A session must never retrieve its own transcript into its own context.
-    // A resumed chat exists on disk mid-session, so recency/body queries can
-    // match it (observed: `chats(recent: "2d")` returning the very chat being
-    // continued — thousands of tokens duplicating the conversation the model
-    // already has). Fresh sessions only write at exit and cannot self-match.
-    const ownChatPath = resumeSession?.filePath ?? null
-    const excludeOwnChat = (paths: string[]): string[] => (ownChatPath ? paths.filter((p) => p !== ownChatPath) : paths)
+    let peopleEntities: Awaited<ReturnType<typeof gatherPeopleEntities>> = []
 
     // A resumed chat with a context log restores its recorded universe exactly —
     // no fresh baseline injection. New documents enter only through the
     // normal evolve path afterward. (Pre-log transcripts fall through to the
     // fresh gather below.)
     const restoring = resumeSession !== null && resumeSession.state.contextLog.length > 0
+    let restored: Awaited<ReturnType<ChatContext['restore']>> | null = null
 
     if (restoring && resumeSession) {
       output.log(colors.dim('[resume] Resolving recorded context universe...'))
       t0 = performance.now()
-      const resolution = await resolveUniverse(resumeSession.state.universePaths, baseDir)
+      restored = await chatContext.restore(resumeSession.state)
       peopleEntities = await gatherPeopleEntities(config as Record<string, unknown>)
-      initialCollection = await mergePathsIntoCollection(
-        excludeOwnChat(resolution.resolved.map((r) => path.join(baseDir, r))),
-        null,
-      )
-      // The recorded goals/decisions keep their never-prune pinning on resume.
-      pinnedPaths = new Set(
-        resolution.resolved
-          .filter((r) => r.startsWith('goals/') || r.startsWith('decisions/'))
-          .map((r) => path.join(baseDir, r)),
-      )
-      allFiles = initialCollection?.paths ?? []
 
+      const { resolution } = restored
       const parts = [`${resolution.resolved.length} of ${resumeSession.state.universePaths.length} restored`]
       if (resolution.remapped > 0) parts.push(`${resolution.remapped} via day-dir remap`)
       if (resolution.suffixMatched > 0) parts.push(`${resolution.suffixMatched} via basename match`)
@@ -702,94 +599,34 @@ export default class AiChatTask extends Command {
     } else {
       output.log(colors.dim(`[server] Fetching context from server...`))
 
-      const prevStart = today.addDays(-(days - 1))
-      const yesterday = today.addDays(-1)
-
-      // Parallel: fetch all four sets of documents from server at once,
-      // plus the interaction-ranked people list for system prompt grounding
-      t0 = performance.now()
-      // pathContains scopes the date sweeps to the time tree: project folder
-      // files carry created: dates too, and large project docs in a date
-      // sweep cost seconds of serialize for content the query-targeted rel
-      // path (ai:context:files) is meant to fetch when relevant.
-      const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, people] = await Promise.all([
-        fetchContextFromServer(`{ documents(where: { date: "${today}", pathContains: "/time/" }) { path } }`, 1),
-        fetchContextFromServer(
-          `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
-          0,
-        ),
-        fetchContextFromServer(`{ goals { path } }`, 0),
-        fetchContextFromServer(`{ decisions(where: { pending: true }) { path } }`, 0),
+      // Parallel: the baseline gather and the interaction-ranked people
+      // list for system prompt grounding
+      const [seed, people] = await Promise.all([
+        chatContext.seedBaseline(),
         gatherPeopleEntities(config as Record<string, unknown>),
       ])
       peopleEntities = people
       output.log(
         colors.dim(
-          `[server] POST /context x4: ${(performance.now() - t0).toFixed(
+          `[server] POST /context x4: ${seed.fetchMs.toFixed(
             0,
-          )}ms — today=${todayDocs.length}, prev=${prevDocsRaw.length}, goals=${goalDocs.length}, decisions=${decisionDocs.length}`,
+          )}ms — today=${seed.counts.today}, prev=${seed.counts.prev}, goals=${seed.counts.goals}, decisions=${seed.counts.decisions}`,
         ),
       )
 
-      // Group previous docs by date and apply per-day strategy
-      const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
-      for (const d of prevDocsRaw) {
-        if (!d.path.includes('/time/')) continue
-        const date = parseDateFromDayPath(d.path)?.toString()
-        if (!date) continue
-        const list = byDate.get(date) ?? []
-        list.push(d)
-        byDate.set(date, list)
-      }
-
-      const prevDocs: Array<{ doc: Document; path: string }> = []
-      for (const [, files] of byDate) {
-        const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
-        if (hasSummary) {
-          // Summary replaces raw activity, but journals and AI chats carry
-          // context the summary doesn't (mirrors journal:new's gatherContext)
-          prevDocs.push(
-            ...files.filter(
-              (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
-            ),
-          )
-        } else {
-          prevDocs.push(...files)
-        }
-      }
-
-      // Deduplicate all docs by path
-      const seen = new Set<string>()
-      const allDocs: Array<{ doc: Document; path: string }> = []
-      for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
-        if (!seen.has(d.path)) {
-          seen.add(d.path)
-          allDocs.push(d)
-        }
-      }
-
-      // Goals and pending decisions are the strategic spine — never prune them.
-      // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
-      // query-boosted (+10) document when the token budget forces pruning.
-      pinnedPaths = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
-
-      allFiles = allDocs.map((d) => d.path)
-
       if (inspectInitialContext) {
-        const sorted = allFiles.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+        const sorted = chatContext.paths.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
         for (const f of sorted) {
           output.log(f)
         }
         return CommandResult.success({ turns: 0 })
       }
 
-      t0 = performance.now()
-      initialCollection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
-      output.log(colors.dim(`[server] DomainCollection: ${(performance.now() - t0).toFixed(0)}ms`))
+      output.log(colors.dim(`[server] DomainCollection: ${seed.collectionMs.toFixed(0)}ms`))
     }
 
     output.log(`Found:`)
-    output.log(`  - ${allFiles.length} documents (including summaries)`)
+    output.log(`  - ${chatContext.paths.length} documents (including summaries)`)
     output.log(`  - ${peopleEntities.length} active people`)
     output.log(`  - ${ctx.health.length} days of health data`)
     output.log(`  - ${ctx.prices.length} days of price data`)
@@ -822,146 +659,46 @@ export default class AiChatTask extends Command {
     const createdDate = resumeSession?.created ?? formatDate(startTime)
     let isFirstTurn = true
     let hasNewMessages = false
-    let contextPaths: string[] = initialCollection?.paths ?? []
-    let contextQueries: string[] = []
-    let queryRelevantPaths: ReadonlySet<string> = new Set()
     let splitViewEnabled = false
     let contextScrollOffset = 0
     let toolsAnnounced = false
 
-    // Per-turn context log, persisted as a trailing CONTEXT-LOG comment on save
-    const contextLog: ContextTurnLog[] = []
-    let turnNumber = 0
-    // Context failures for the current turn. Reset when a turn starts (both
-    // first-turn and evolve paths), recorded into the turn's ContextTurnLog
-    // entry by rebuildContext, and surfaced as a warning after gathering —
-    // the chat used to swallow these and answer from silently thinner context.
-    let turnErrors: string[] = []
-
-    function relPath(p: string): string {
-      return p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p
-    }
-
-    // Rebuild system prompt with latest context and record the turn log
-    // (record=false for the resume-setup rebuild, which must not append a
-    // duplicate entry for an already-recorded turn)
-    function rebuildContext(newPaths?: string[], record = true) {
-      const prevPaths = new Set(contextPaths)
-      contextPaths = initialCollection?.paths ?? []
-
-      let activityMarkdown: string | null = null
-      let turnStats: TurnStats | undefined
-      // Typed record for every universe path — shipped docs carry a score
-      // (or pinned), cut docs additionally say why. One map serves the
-      // turn-1 universe list, the diff, and the pruned snapshot.
-      const docRecords = new Map<string, ContextDocRecord>()
-      const cutRecords: ContextDocRecord[] = []
-
-      if (initialCollection) {
-        const assembler = ContextAssembler.from(initialCollection, {
-          scorer: withPinnedPaths(createRecencyTypeScorer(today, { priorityPaths: queryRelevantPaths }), pinnedPaths),
-          maxTokens: 300_000,
-        })
-        activityMarkdown = assembler.toMarkdown({ relativeTo: baseDir, delimited: true, label: dayLabeler })
+    // Render one ChatContext rebuild: the stats line, the changelog (for
+    // recorded turns past the first), and the refreshed context prompt.
+    const renderContextReport = (report: RebuildReport) => {
+      if (report.stats) {
         output.log(
           colors.dim(
-            `Context: ${assembler.size} kept, ${assembler.pruned.length} pruned, ${assembler.excluded.length} excluded, ~${assembler.totalTokens} tokens`,
+            `Context: ${report.stats.kept} kept, ${report.stats.pruned} pruned, ${report.stats.excluded} excluded, ~${report.stats.docTokens} tokens`,
           ),
         )
-        for (const s of assembler.kept) {
-          docRecords.set(
-            s.item.path,
-            s.verdict.keep === 'always'
-              ? { path: relPath(s.item.path), tokens: s.tokens, pinned: true }
-              : { path: relPath(s.item.path), score: s.score, tokens: s.tokens },
-          )
+      }
+      if (report.recorded && report.turn > 1 && (report.added.length > 0 || report.cut.length > 0)) {
+        output.log(colors.dim('Context changed:'))
+        for (const d of report.added) {
+          const note = d.pinned ? 'pinned' : d.score !== undefined ? `score=${d.score}` : 'unscored'
+          output.log(colors.dim(`  + ${d.path} (${note}, ~${d.tokens} tokens)`))
         }
-        for (const s of assembler.pruned) {
-          const rec: ContextDocRecord = { path: relPath(s.item.path), score: s.score, tokens: s.tokens, cut: 'budget' }
-          docRecords.set(s.item.path, rec)
-          cutRecords.push(rec)
-        }
-        for (const s of assembler.excluded) {
-          const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
-          const rec: ContextDocRecord = { path: relPath(s.item.path), tokens: s.tokens, cut: reason }
-          docRecords.set(s.item.path, rec)
-          cutRecords.push(rec)
-        }
-        turnStats = {
-          kept: assembler.size,
-          pruned: assembler.pruned.length,
-          excluded: assembler.excluded.length,
-          docTokens: assembler.totalTokens,
+        for (const r of report.cut) {
+          const note = r.cut === 'budget' ? `score=${r.score}` : r.cut
+          output.log(colors.dim(`  - ${r.path} (${note}, ~${r.tokens} tokens)`))
         }
       }
-
-      // Compute diff: files new to the universe this turn. Query results
-      // repeat a path once per alias that matched it — dedupe within the
-      // pass so the diff lists each new doc once.
-      const turnDiff: ContextDocRecord[] = []
-      if (newPaths) {
-        const seen = new Set<string>()
-        for (const p of newPaths) {
-          if (prevPaths.has(p) || seen.has(p)) continue
-          seen.add(p)
-          turnDiff.push(docRecords.get(p) ?? { path: relPath(p), tokens: 0 })
-        }
-      }
-
-      if (record) {
-        const entry: ContextTurnLog = { turn: turnNumber, queries: [...contextQueries] }
-        if (turnStats) entry.stats = turnStats
-        if (turnNumber === 1) {
-          // The full universe, shipped and cut alike — cut docs carry their
-          // reason inline, so turn 1 needs no separate pruned section.
-          entry.universe = contextPaths
-            .map((p) => docRecords.get(p) ?? { path: relPath(p), tokens: 0 })
-            .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-        } else {
-          if (turnDiff.length > 0) entry.diff = turnDiff
-          if (cutRecords.length > 0) entry.pruned = cutRecords
-        }
-        if (turnErrors.length > 0) entry.errors = [...turnErrors]
-        contextLog.push(entry)
-
-        // Changelog UI
-        if (turnNumber > 1 && (turnDiff.length > 0 || cutRecords.length > 0)) {
-          output.log(colors.dim('Context changed:'))
-          for (const d of turnDiff) {
-            const note = d.pinned ? 'pinned' : d.score !== undefined ? `score=${d.score}` : 'unscored'
-            output.log(colors.dim(`  + ${d.path} (${note}, ~${d.tokens} tokens)`))
-          }
-          for (const r of cutRecords) {
-            const note = r.cut === 'budget' ? `score=${r.score}` : r.cut
-            output.log(colors.dim(`  - ${r.path} (${note}, ~${r.tokens} tokens)`))
-          }
-        }
-      }
-
-      contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown })
+      contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown: report.activityMarkdown })
     }
 
     // Seed a resumed session: conversation, carried context log, query state,
-    // and turn numbering continue exactly where the transcript left off.
+    // and turn numbering continue exactly where the transcript left off
+    // (the context side happened in chatContext.restore above).
     if (resumeSession) {
       const state = resumeSession.state
       turns.push(...state.conversation)
       messages.push(...state.conversation.map((m) => ({ role: m.role, content: m.content })))
-      contextLog.push(...state.contextLog)
-      contextQueries = [...state.queries]
-      turnNumber = state.lastTurn
 
-      if (restoring) {
+      if (restoring && restored) {
         // Context restored — new messages continue through the evolve path.
         isFirstTurn = false
-        // Recorded diffs are the docs queries added in the original session,
-        // so they re-seed the query boost. Turn-1 query hits are mixed into
-        // the universe with the baseline and stay unboosted — a best-effort
-        // restore, not an exact one.
-        queryRelevantPaths = new Set(
-          state.contextLog.flatMap((e) => e.diff ?? []).map((r) => path.join(baseDir, r.path)),
-        )
-        rebuildContext(undefined, false)
+        renderContextReport(restored.rebuild)
       } else {
         output.log(colors.yellow('No context log in this transcript — gathering fresh context for your next message.'))
       }
@@ -1021,7 +758,9 @@ export default class AiChatTask extends Command {
         output.log(formatUserMsg(userMessage))
         output.log('')
       } else {
-        const contextFiles = contextPaths.map((p) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p)).sort()
+        const contextFiles = chatContext.paths
+          .map((p) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p))
+          .sort()
 
         const promptResult = await promptWithInk({
           saveOnExit: !ephemeral,
@@ -1075,129 +814,33 @@ export default class AiChatTask extends Command {
       }
       if (userMessage === '/no-context') {
         isFirstTurn = false
-        initialCollection = null
-        contextPaths = []
+        chatContext.clear()
         contextScrollOffset = 0
         output.log(colors.dim('Context gathering skipped.'))
         continue
       }
 
-      // On first turn, gather targeted context via ai:context:files and merge
+      // On first turn, gather targeted context via ai:context:files and merge;
+      // subsequent turns evolve the queries if the conversation direction shifted
+      let turnContext: TurnContextReport
       if (isFirstTurn) {
         isFirstTurn = false
-        turnNumber = 1
-        turnErrors = []
-
         output.log(colors.dim('Gathering context...'))
-
-        let newPaths: string[] | undefined
-        try {
-          const filesResult = await tasks.run<{ paths: string[]; query: string }>('ai:context:files', {
-            _: ['ai:context:files', userMessage],
-            server: true,
-          })
-
-          if (filesResult.status === 'success' && filesResult.data?.paths?.length) {
-            if (filesResult.data.query) contextQueries.push(filesResult.data.query)
-            const fetched = excludeOwnChat(filesResult.data.paths)
-            queryRelevantPaths = new Set(fetched)
-            newPaths = fetched
-            initialCollection = await mergePathsIntoCollection(fetched, initialCollection)
-          } else if (filesResult.status !== 'success') {
-            // markdown:sel already logged the query + GraphQL errors; record the pipeline impact
-            const message = filesResult.message ?? 'ai:context:files failed'
-            turnErrors.push(message)
-            await logAIError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
-          }
-        } catch (err) {
-          const message = (err as Error).message
-          turnErrors.push(message)
-          await logAIError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
-        }
-
-        rebuildContext(newPaths)
-        output.log(colors.dim(`Context loaded (${initialCollection?.size ?? 0} documents)`))
+        turnContext = await chatContext.firstTurn(userMessage)
+        if (turnContext.rebuilt) renderContextReport(turnContext.rebuilt)
+        output.log(colors.dim(`Context loaded (${turnContext.rebuilt?.collectionSize ?? 0} documents)`))
       } else {
-        // Subsequent turns — evolve queries if conversation direction shifted
-        turnNumber++
-        turnErrors = []
-        try {
-          const evolveResult = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
-            _: ['ai:context:evolve', userMessage],
-            queries: JSON.stringify(contextQueries),
-            conversation: JSON.stringify(turns.slice(-6)),
-          })
-
-          if (evolveResult.status === 'success' && evolveResult.data?.changed && evolveResult.data.queries.length > 0) {
-            output.log(colors.dim('Context shifting...'))
-            const prevQuerySet = new Set(contextQueries)
-            contextQueries = evolveResult.data.queries
-
-            // Only execute queries that are actually new or modified
-            const newQueries = evolveResult.data.queries.filter((q) => !prevQuerySet.has(q))
-            if (newQueries.length === 0) {
-              output.log(colors.dim('Queries unchanged, skipping re-execution.'))
-            }
-
-            const allNewPaths: string[] = []
-            for (const query of newQueries) {
-              try {
-                const execResult = await tasks.run('markdown:sel', {
-                  graphql: query,
-                  raw: true,
-                  server: 'true',
-                })
-                if (execResult.status === 'success' && execResult.data?.paths?.length) {
-                  const fetched = excludeOwnChat(execResult.data.paths)
-                  allNewPaths.push(...fetched)
-                  initialCollection = await mergePathsIntoCollection(fetched, initialCollection)
-                } else if (execResult.status !== 'success') {
-                  // markdown:sel already logged the query + GraphQL errors
-                  turnErrors.push(execResult.message ?? 'Context query failed')
-                }
-              } catch (err) {
-                const message = (err as Error).message
-                turnErrors.push(message)
-                await logAIError({
-                  source: 'ai:chat',
-                  stage: 'context:evolve:query',
-                  message,
-                  query,
-                  question: userMessage,
-                })
-              }
-            }
-
-            // The boost accumulates over what queries actually returned.
-            // Seeding it from the whole universe instead hands every document
-            // the same +10, which cancels out and lets the recency baseline
-            // outrank deliberate retrieval under budget pressure.
-            queryRelevantPaths = new Set([...queryRelevantPaths, ...allNewPaths])
-            rebuildContext(allNewPaths)
-          } else if (evolveResult.status !== 'success') {
-            const message = evolveResult.message ?? 'ai:context:evolve failed'
-            turnErrors.push(message)
-            await logAIError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
-          }
-        } catch (err) {
-          const message = (err as Error).message
-          turnErrors.push(message)
-          await logAIError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
-        }
+        turnContext = await chatContext.evolveTurn(userMessage, turns.slice(-6))
+        if (turnContext.rebuilt) renderContextReport(turnContext.rebuilt)
       }
 
-      // Surface context failures instead of silently answering without that context
-      if (turnErrors.length > 0) {
-        // rebuildContext records this turn's entry (with errors) when it runs;
-        // it doesn't run when evolve fails outright or returns no change, so
-        // record a minimal entry here to keep the saved-chat context log complete.
-        if (contextLog.at(-1)?.turn !== turnNumber) {
-          contextLog.push({ turn: turnNumber, queries: [...contextQueries], errors: [...turnErrors] })
-        }
-        const noun = turnErrors.length === 1 ? 'query' : 'queries'
+      // Surface context failures instead of silently answering without that
+      // context (chatContext already recorded them in the turn log)
+      if (turnContext.errors.length > 0) {
+        const noun = turnContext.errors.length === 1 ? 'query' : 'queries'
         output.log(
           colors.yellow(
-            `${turnErrors.length} context ${noun} failed — answering with incomplete context (logged to ${AI_ERROR_LOG_DISPLAY})`,
+            `${turnContext.errors.length} context ${noun} failed — answering with incomplete context (logged to ${AI_ERROR_LOG_DISPLAY})`,
           ),
         )
       }
@@ -1468,23 +1111,7 @@ export default class AiChatTask extends Command {
 
         // Attach tool records to this turn's log entry — creating one when
         // the turn changed no context and so recorded nothing else.
-        if (turnTools.length > 0) {
-          let turnEntry: ContextTurnLog | undefined
-          for (let i = contextLog.length - 1; i >= 0; i--) {
-            if (contextLog[i].turn === turnNumber) {
-              turnEntry = contextLog[i]
-              break
-            }
-          }
-          if (turnEntry) turnEntry.tools = turnTools
-          else contextLog.push({ turn: turnNumber, queries: [...contextQueries], tools: turnTools })
-        }
-
-        // Every turn writes an entry even when nothing changed and no tool
-        // ran — an absent turn is indistinguishable from a recording gap.
-        if (!contextLog.some((e) => e.turn === turnNumber)) {
-          contextLog.push({ turn: turnNumber, queries: [...contextQueries] })
-        }
+        chatContext.recordTurnTools(turnTools)
 
         // Build assistant content with optional sources
         let assistantContent = result.text
@@ -1556,7 +1183,7 @@ export default class AiChatTask extends Command {
       // Append per-turn context log as hidden trailing comments (resume
       // reads this back via splitContextLog — the format is locked by
       // contextLog_test.ts, byte for byte)
-      markdown += serializeContextLog(contextLog)
+      markdown += serializeContextLog(chatContext.log)
 
       if (resumeSession) {
         const rs = resumeSession
