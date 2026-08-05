@@ -1,0 +1,605 @@
+/**
+ * The session-lived context state machine behind ai:chat.
+ *
+ * ChatContext decides what is in the candidate document pool and remembers
+ * why; ContextAssembler (models/AI) decides what fits the token budget each
+ * turn and renders it. Everything that shapes the model-facing document
+ * context lives here — the baseline gather, query-driven growth across
+ * turns, the accumulating relevance boost, goal/decision pinning,
+ * own-transcript exclusion, and the per-turn context log that makes a
+ * session resumable.
+ *
+ * The class is host-neutral: it never prints and never talks to a terminal.
+ * A host (the CLI command today, a web session later) injects the query
+ * producers, calls one method per turn, and renders the returned report
+ * however it likes.
+ */
+
+import * as path from 'node:path'
+import { readTextFile } from '#shared/fs/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
+import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
+import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
+import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import type { ConversationMessage } from '../type.d.ts'
+import {
+  type ContextDocRecord,
+  type ContextTurnLog,
+  type ToolCallRecord,
+  type TurnStats,
+} from '../document/ContextLog/mod.ts'
+import type { ResumeState } from '../document/resume.ts'
+import { fetchContextFromServer } from './fetchContext.ts'
+import { resolveUniverse, type UniverseResolution } from './resolveUniverse.ts'
+import createDayLabeler from './dayLabel.ts'
+
+// -----------------------------------------------------------------------------
+// Producers — the query pipeline a host injects
+// -----------------------------------------------------------------------------
+
+/**
+ * A producer either delivers a value or reports why it couldn't. The two
+ * failure channels are deliberate: `ok: false` means the pipeline ran and
+ * failed (it already logged its own details — the class records only the
+ * turn impact), while a thrown error means the pipeline itself broke and
+ * the class logs it to the AI error log.
+ */
+export type ProducerResult<T> = { ok: true; value: T } | { ok: false; message: string }
+
+export interface ContextProducers {
+  /** Turn 1: question → GraphQL query + matching paths. CLI: ai:context:files. */
+  produceInitialQuery(userMessage: string): Promise<ProducerResult<{ paths: string[]; query?: string }>>
+  /** Turns 2+: should the query set change, and to what. CLI: ai:context:evolve. */
+  evolveQueries(
+    userMessage: string,
+    queries: string[],
+    recentConversation: ConversationMessage[],
+  ): Promise<ProducerResult<{ queries: string[]; changed: boolean }>>
+  /** Execute one GraphQL query → matching paths. CLI: markdown:sel. */
+  executeQuery(query: string): Promise<ProducerResult<{ paths: string[] }>>
+}
+
+// -----------------------------------------------------------------------------
+// Reports — what a host renders
+// -----------------------------------------------------------------------------
+
+/** One reassembly of the context: what shipped, what changed, what was cut. */
+export interface RebuildReport {
+  /** Rendered kept-documents markdown, null when the universe is empty. */
+  activityMarkdown: string | null
+  stats?: TurnStats
+  /** Docs new to the universe this turn (turn 1 records them in the log's universe instead). */
+  added: ContextDocRecord[]
+  /** Docs cut this rebuild: budget-pruned and scorer-excluded alike. */
+  cut: ContextDocRecord[]
+  turn: number
+  /** Documents in the universe, for the host's "Context loaded (N documents)" line. */
+  collectionSize: number
+  /** False for the resume-setup rebuild, which must not render a changelog. */
+  recorded: boolean
+}
+
+/** What a turn's context work produced. */
+export interface TurnContextReport {
+  /** Set when the context was reassembled — the host must rebuild its context prompt. */
+  rebuilt?: RebuildReport
+  /** Context failures this turn, already recorded in the log and error file. */
+  errors: string[]
+}
+
+export interface SeedReport {
+  counts: { today: number; prev: number; goals: number; decisions: number }
+  fetchMs: number
+  collectionMs: number
+  /** Deduplicated universe size — the host's "Found: N documents" count. */
+  size: number
+}
+
+export interface RestoreReport {
+  resolution: UniverseResolution
+  rebuild: RebuildReport
+}
+
+/** Mid-turn signals a host may surface while a turn's context work runs. */
+export type ContextProgressEvent = { type: 'queries-changed' } | { type: 'no-new-queries' }
+
+// -----------------------------------------------------------------------------
+// Options
+// -----------------------------------------------------------------------------
+
+export interface ChatContextOptions {
+  /** The session's anchor day — recency scoring and the baseline window key off it. */
+  today: PlainDate
+  /** Days of history the baseline sweeps (today plus days-1 previous). */
+  days: number
+  /** Absolute notebook root; log paths relativize and universe paths resolve against it. */
+  baseDir: string
+  /** The query pipeline. See ContextProducers for the CLI implementations. */
+  producers: ContextProducers
+  /** Token budget for the assembled document context. */
+  maxTokens?: number
+  /**
+   * This session's own transcript path. A session must never retrieve its
+   * own transcript into its own context: a resumed chat exists on disk
+   * mid-session, so recency/body queries can match it (observed:
+   * `chats(recent: "2d")` returning the very chat being continued —
+   * thousands of tokens duplicating the conversation the model already
+   * has). Fresh sessions only write at exit and cannot self-match.
+   */
+  ownChatPath?: string | null
+  onProgress?: (event: ContextProgressEvent) => void
+  /** Test seams — production uses the real service fetch and error log. */
+  fetchContext?: typeof fetchContextFromServer
+  logError?: (entry: AIErrorEntry) => Promise<void>
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Read the given files from disk and merge them into the collection,
+ * stripping chat metadata comments and transcript sections. Builds DomainCollection without a local MarkdownStore.
+ */
+async function mergePathsIntoCollection(
+  paths: string[],
+  existing: DomainCollection | null,
+): Promise<DomainCollection | null> {
+  if (paths.length === 0) return existing
+  const docs: Array<{ doc: Document; path: string }> = []
+  for (const filePath of paths) {
+    try {
+      const content = await readTextFile(filePath)
+      const doc = Document.fromMarkdown(content)
+        .stripHtmlComments()
+        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
+      docs.push({ doc, path: filePath })
+    } catch (err) {
+      // Skip unreadable files
+      console.warn(`[ai:chat] skipping context file ${filePath}: ${(err as Error).message}`)
+    }
+  }
+  if (docs.length === 0) return existing
+  const newCollection = DomainCollection.fromDocuments(docs, null, { depth: 0 })
+  return existing ? existing.merge(newCollection) : newCollection
+}
+
+// -----------------------------------------------------------------------------
+// ChatContext
+// -----------------------------------------------------------------------------
+
+export default class ChatContext {
+  private readonly today: PlainDate
+  private readonly days: number
+  private readonly baseDir: string
+  private readonly maxTokens: number
+  private readonly ownChatPath: string | null
+  private readonly producers: ContextProducers
+  private readonly onProgress?: (event: ContextProgressEvent) => void
+  private readonly fetchContext: typeof fetchContextFromServer
+  private readonly logError: (entry: AIErrorEntry) => Promise<void>
+  private readonly dayLabel: (path: string) => string | undefined
+
+  private collection: DomainCollection | null = null
+  private contextPaths: string[] = []
+  private queries: string[] = []
+  private queryRelevantPaths: ReadonlySet<string> = new Set()
+  private pinnedPaths: ReadonlySet<string> = new Set()
+  private contextLog: ContextTurnLog[] = []
+  private turnNumber = 0
+  // Context failures for the current turn. Reset when a turn starts (both
+  // first-turn and evolve paths), recorded into the turn's ContextTurnLog
+  // entry by rebuild, and returned for the host to surface — the chat used
+  // to swallow these and answer from silently thinner context.
+  private turnErrors: string[] = []
+
+  constructor(opts: ChatContextOptions) {
+    this.today = opts.today
+    this.days = opts.days
+    this.baseDir = opts.baseDir
+    this.maxTokens = opts.maxTokens ?? 300_000
+    this.ownChatPath = opts.ownChatPath ?? null
+    this.producers = opts.producers
+    this.onProgress = opts.onProgress
+    this.fetchContext = opts.fetchContext ?? fetchContextFromServer
+    this.logError = opts.logError ?? logAIError
+    this.dayLabel = createDayLabeler(opts.today)
+  }
+
+  /** Universe paths as of the last rebuild (what the model would see). */
+  get paths(): string[] {
+    return this.contextPaths
+  }
+
+  /** The per-turn context log, for serialization on save. */
+  get log(): ContextTurnLog[] {
+    return this.contextLog
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session setup — exactly one of seedBaseline/restore runs per session
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fresh session: gather the baseline universe from the notebook service —
+   * today's documents, the previous days' activity, goals, and pending
+   * decisions.
+   */
+  async seedBaseline(): Promise<SeedReport> {
+    const prevStart = this.today.addDays(-(this.days - 1))
+    const yesterday = this.today.addDays(-1)
+
+    // pathContains scopes the date sweeps to the time tree: project folder
+    // files carry created: dates too, and large project docs in a date
+    // sweep cost seconds of serialize for content the query-targeted rel
+    // path (ai:context:files) is meant to fetch when relevant.
+    let t0 = performance.now()
+    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
+      this.fetchContext(`{ documents(where: { date: "${this.today}", pathContains: "/time/" }) { path } }`, 1),
+      this.fetchContext(
+        `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
+        0,
+      ),
+      this.fetchContext(`{ goals { path } }`, 0),
+      this.fetchContext(`{ decisions(where: { pending: true }) { path } }`, 0),
+    ])
+    const fetchMs = performance.now() - t0
+
+    // Group previous docs by date and apply per-day strategy
+    const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
+    for (const d of prevDocsRaw) {
+      if (!d.path.includes('/time/')) continue
+      const date = parseDateFromDayPath(d.path)?.toString()
+      if (!date) continue
+      const list = byDate.get(date) ?? []
+      list.push(d)
+      byDate.set(date, list)
+    }
+
+    const prevDocs: Array<{ doc: Document; path: string }> = []
+    for (const [, files] of byDate) {
+      const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
+      if (hasSummary) {
+        // Summary replaces raw activity, but journals and AI chats carry
+        // context the summary doesn't (mirrors journal:new's gatherContext)
+        prevDocs.push(
+          ...files.filter(
+            (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
+          ),
+        )
+      } else {
+        prevDocs.push(...files)
+      }
+    }
+
+    // Deduplicate all docs by path
+    const seen = new Set<string>()
+    const allDocs: Array<{ doc: Document; path: string }> = []
+    for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
+      if (!seen.has(d.path)) {
+        seen.add(d.path)
+        allDocs.push(d)
+      }
+    }
+
+    // Goals and pending decisions are the strategic spine — never prune them.
+    // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
+    // query-boosted (+10) document when the token budget forces pruning.
+    this.pinnedPaths = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
+
+    t0 = performance.now()
+    this.collection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
+    const collectionMs = performance.now() - t0
+    this.contextPaths = this.collection?.paths ?? []
+
+    return {
+      counts: {
+        today: todayDocs.length,
+        prev: prevDocsRaw.length,
+        goals: goalDocs.length,
+        decisions: decisionDocs.length,
+      },
+      fetchMs,
+      collectionMs,
+      size: allDocs.length,
+    }
+  }
+
+  /**
+   * Resumed session with a context log: restore the recorded universe
+   * exactly — no fresh baseline injection. New documents enter only through
+   * the normal evolve path afterward. The rebuild is not recorded: it must
+   * not append a duplicate entry for an already-recorded turn.
+   */
+  async restore(state: ResumeState): Promise<RestoreReport> {
+    // Carry the recorded log state forward so a re-save appends rather
+    // than restarts, and turn numbering continues where it left off.
+    this.contextLog.push(...state.contextLog)
+    this.queries = [...state.queries]
+    this.turnNumber = state.lastTurn
+
+    const resolution = await resolveUniverse(state.universePaths, this.baseDir)
+    this.collection = await mergePathsIntoCollection(
+      this.excludeOwnChat(resolution.resolved.map((r) => path.join(this.baseDir, r))),
+      null,
+    )
+    // The recorded goals/decisions keep their never-prune pinning on resume.
+    this.pinnedPaths = new Set(
+      resolution.resolved
+        .filter((r) => r.startsWith('goals/') || r.startsWith('decisions/'))
+        .map((r) => path.join(this.baseDir, r)),
+    )
+    // Recorded diffs are the docs queries added in the original session,
+    // so they re-seed the query boost. Turn-1 query hits are mixed into
+    // the universe with the baseline and stay unboosted — a best-effort
+    // restore, not an exact one.
+    this.queryRelevantPaths = new Set(
+      state.contextLog.flatMap((e) => e.diff ?? []).map((r) => path.join(this.baseDir, r.path)),
+    )
+
+    return { resolution, rebuild: this.rebuild(undefined, false) }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Turns
+  // ---------------------------------------------------------------------------
+
+  /** Turn 1: produce the initial query from the question and merge its results. */
+  async firstTurn(userMessage: string): Promise<TurnContextReport> {
+    this.turnNumber = 1
+    this.turnErrors = []
+
+    let newPaths: string[] | undefined
+    try {
+      const produced = await this.producers.produceInitialQuery(userMessage)
+      if (produced.ok && produced.value.paths.length > 0) {
+        if (produced.value.query) this.queries.push(produced.value.query)
+        const fetched = this.excludeOwnChat(produced.value.paths)
+        this.queryRelevantPaths = new Set(fetched)
+        newPaths = fetched
+        this.collection = await mergePathsIntoCollection(fetched, this.collection)
+      } else if (!produced.ok) {
+        // The producer already logged the query + GraphQL errors; record the pipeline impact
+        this.turnErrors.push(produced.message)
+        await this.logError({
+          source: 'ai:chat',
+          stage: 'context:files',
+          message: produced.message,
+          question: userMessage,
+        })
+      }
+    } catch (err) {
+      const message = (err as Error).message
+      this.turnErrors.push(message)
+      await this.logError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
+    }
+
+    const rebuilt = this.rebuild(newPaths, true)
+    this.ensureErrorEntry()
+    return { rebuilt, errors: [...this.turnErrors] }
+  }
+
+  /**
+   * Turns 2+: evolve the query set if the conversation direction shifted,
+   * execute whatever queries are genuinely new, and reassemble when
+   * anything changed. An unchanged turn returns no rebuild — the host's
+   * context prompt stays as it was.
+   */
+  async evolveTurn(userMessage: string, recentConversation: ConversationMessage[]): Promise<TurnContextReport> {
+    this.turnNumber++
+    this.turnErrors = []
+
+    let rebuilt: RebuildReport | undefined
+    try {
+      const evolved = await this.producers.evolveQueries(userMessage, [...this.queries], recentConversation)
+      if (evolved.ok && evolved.value.changed && evolved.value.queries.length > 0) {
+        this.onProgress?.({ type: 'queries-changed' })
+        const prevQuerySet = new Set(this.queries)
+        this.queries = evolved.value.queries
+
+        // Only execute queries that are actually new or modified
+        const newQueries = evolved.value.queries.filter((q) => !prevQuerySet.has(q))
+        if (newQueries.length === 0) {
+          this.onProgress?.({ type: 'no-new-queries' })
+        }
+
+        const allNewPaths: string[] = []
+        for (const query of newQueries) {
+          try {
+            const executed = await this.producers.executeQuery(query)
+            if (executed.ok && executed.value.paths.length > 0) {
+              const fetched = this.excludeOwnChat(executed.value.paths)
+              allNewPaths.push(...fetched)
+              this.collection = await mergePathsIntoCollection(fetched, this.collection)
+            } else if (!executed.ok) {
+              // The producer already logged the query + GraphQL errors
+              this.turnErrors.push(executed.message)
+            }
+          } catch (err) {
+            const message = (err as Error).message
+            this.turnErrors.push(message)
+            await this.logError({
+              source: 'ai:chat',
+              stage: 'context:evolve:query',
+              message,
+              query,
+              question: userMessage,
+            })
+          }
+        }
+
+        // The boost accumulates over what queries actually returned.
+        // Seeding it from the whole universe instead hands every document
+        // the same +10, which cancels out and lets the recency baseline
+        // outrank deliberate retrieval under budget pressure.
+        this.queryRelevantPaths = new Set([...this.queryRelevantPaths, ...allNewPaths])
+        rebuilt = this.rebuild(allNewPaths, true)
+      } else if (!evolved.ok) {
+        this.turnErrors.push(evolved.message)
+        await this.logError({
+          source: 'ai:chat',
+          stage: 'context:evolve',
+          message: evolved.message,
+          question: userMessage,
+        })
+      }
+    } catch (err) {
+      const message = (err as Error).message
+      this.turnErrors.push(message)
+      await this.logError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
+    }
+
+    this.ensureErrorEntry()
+    return { rebuilt, errors: [...this.turnErrors] }
+  }
+
+  /**
+   * Attach the turn's tool records to its log entry — creating one when the
+   * turn changed no context and so recorded nothing else. Every turn writes
+   * an entry even when nothing changed and no tool ran: an absent turn is
+   * indistinguishable from a recording gap.
+   */
+  recordTurnTools(turnTools: ToolCallRecord[]): void {
+    if (turnTools.length > 0) {
+      let turnEntry: ContextTurnLog | undefined
+      for (let i = this.contextLog.length - 1; i >= 0; i--) {
+        if (this.contextLog[i].turn === this.turnNumber) {
+          turnEntry = this.contextLog[i]
+          break
+        }
+      }
+      if (turnEntry) turnEntry.tools = turnTools
+      else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], tools: turnTools })
+    }
+
+    if (!this.contextLog.some((e) => e.turn === this.turnNumber)) {
+      this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries] })
+    }
+  }
+
+  /** Drop the whole universe (the /no-context escape hatch). */
+  clear(): void {
+    this.collection = null
+    this.contextPaths = []
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------------
+
+  private excludeOwnChat(paths: string[]): string[] {
+    return this.ownChatPath ? paths.filter((p) => p !== this.ownChatPath) : paths
+  }
+
+  private relPath(p: string): string {
+    return p.startsWith(this.baseDir) ? p.slice(this.baseDir.length + 1) : p
+  }
+
+  /**
+   * A turn whose pipeline failed outright never reaches rebuild, so its
+   * errors would vanish from the saved log — record a minimal entry.
+   */
+  private ensureErrorEntry(): void {
+    if (this.turnErrors.length > 0 && this.contextLog.at(-1)?.turn !== this.turnNumber) {
+      this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], errors: [...this.turnErrors] })
+    }
+  }
+
+  /** Reassemble the context from the current universe and record the turn log. */
+  private rebuild(newPaths: string[] | undefined, record: boolean): RebuildReport {
+    const prevPaths = new Set(this.contextPaths)
+    this.contextPaths = this.collection?.paths ?? []
+
+    let activityMarkdown: string | null = null
+    let turnStats: TurnStats | undefined
+    // Typed record for every universe path — shipped docs carry a score
+    // (or pinned), cut docs additionally say why. One map serves the
+    // turn-1 universe list, the diff, and the pruned snapshot.
+    const docRecords = new Map<string, ContextDocRecord>()
+    const cutRecords: ContextDocRecord[] = []
+
+    if (this.collection) {
+      const assembler = ContextAssembler.from(this.collection, {
+        scorer: withPinnedPaths(
+          createRecencyTypeScorer(this.today, { priorityPaths: this.queryRelevantPaths }),
+          this.pinnedPaths,
+        ),
+        maxTokens: this.maxTokens,
+      })
+      activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
+      for (const s of assembler.kept) {
+        docRecords.set(
+          s.item.path,
+          s.verdict.keep === 'always'
+            ? { path: this.relPath(s.item.path), tokens: s.tokens, pinned: true }
+            : { path: this.relPath(s.item.path), score: s.score, tokens: s.tokens },
+        )
+      }
+      for (const s of assembler.pruned) {
+        const rec: ContextDocRecord = {
+          path: this.relPath(s.item.path),
+          score: s.score,
+          tokens: s.tokens,
+          cut: 'budget',
+        }
+        docRecords.set(s.item.path, rec)
+        cutRecords.push(rec)
+      }
+      for (const s of assembler.excluded) {
+        const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
+        const rec: ContextDocRecord = { path: this.relPath(s.item.path), tokens: s.tokens, cut: reason }
+        docRecords.set(s.item.path, rec)
+        cutRecords.push(rec)
+      }
+      turnStats = {
+        kept: assembler.size,
+        pruned: assembler.pruned.length,
+        excluded: assembler.excluded.length,
+        docTokens: assembler.totalTokens,
+      }
+    }
+
+    // Compute diff: files new to the universe this turn. Query results
+    // repeat a path once per alias that matched it — dedupe within the
+    // pass so the diff lists each new doc once.
+    const turnDiff: ContextDocRecord[] = []
+    if (newPaths) {
+      const seen = new Set<string>()
+      for (const p of newPaths) {
+        if (prevPaths.has(p) || seen.has(p)) continue
+        seen.add(p)
+        turnDiff.push(docRecords.get(p) ?? { path: this.relPath(p), tokens: 0 })
+      }
+    }
+
+    if (record) {
+      const entry: ContextTurnLog = { turn: this.turnNumber, queries: [...this.queries] }
+      if (turnStats) entry.stats = turnStats
+      if (this.turnNumber === 1) {
+        // The full universe, shipped and cut alike — cut docs carry their
+        // reason inline, so turn 1 needs no separate pruned section.
+        entry.universe = this.contextPaths
+          .map((p) => docRecords.get(p) ?? { path: this.relPath(p), tokens: 0 })
+          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+      } else {
+        if (turnDiff.length > 0) entry.diff = turnDiff
+        if (cutRecords.length > 0) entry.pruned = cutRecords
+      }
+      if (this.turnErrors.length > 0) entry.errors = [...this.turnErrors]
+      this.contextLog.push(entry)
+    }
+
+    return {
+      activityMarkdown,
+      stats: turnStats,
+      added: turnDiff,
+      cut: cutRecords,
+      turn: this.turnNumber,
+      collectionSize: this.collection?.size ?? 0,
+      recorded: record,
+    }
+  }
+}
