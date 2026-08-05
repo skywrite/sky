@@ -3,21 +3,20 @@ import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
 import colors from 'picocolors'
 import openEditor from 'open-editor'
-import { generateText, isStepCount, jsonSchema, streamText } from 'ai'
+import { generateText, jsonSchema } from 'ai'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { mkdir, readdir, rename } from 'node:fs/promises'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import truncate from '#shared/strings/truncate.ts'
 import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
-import { serializeContextLog, type ToolCallRecord } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
-import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
+import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -76,8 +75,6 @@ const params = {
 type Params = InferParams<typeof params>
 
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
-
-type Message = { role: 'user' | 'assistant'; content: string }
 
 type Result = { saved?: string; turns?: number }
 
@@ -180,18 +177,6 @@ function buildContextPrompt({ ctx, days, activityMarkdown }: ContextInput): stri
 
 function formatDate(dt: PlainDateTime): string {
   return dt.plainDate.ymd
-}
-
-/** Short human digest of a tool input for the turn log — never the payload. */
-function toolInputDigest(input: unknown): string | undefined {
-  if (input == null) return undefined
-  if (typeof input === 'object') {
-    const o = input as Record<string, unknown>
-    for (const key of ['query', 'url', 'message', 'text']) {
-      if (typeof o[key] === 'string') return truncate(o[key] as string, 120)
-    }
-  }
-  return truncate(typeof input === 'string' ? input : JSON.stringify(input), 120)
 }
 
 function slugify(text: string, maxWords = 7): string {
@@ -652,7 +637,6 @@ export default class AiChatTask extends Command {
 
     // Conversation state
     const turns: ConversationMessage[] = []
-    const messages: Message[] = []
     // "toolName:key" entries the user approved with "don't ask again this
     // session" (e.g. google_agent scoped to one file id). Session-lived only.
     const sessionApprovals = new Set<string>()
@@ -662,6 +646,76 @@ export default class AiChatTask extends Command {
     let splitViewEnabled = false
     let contextScrollOffset = 0
     let toolsAnnounced = false
+
+    // The model turn-runner. Everything interactive about approvals lives
+    // in this handler — the engine drives the protocol around it and owns
+    // the model-facing message history.
+    const chatEngine = new ChatEngine({
+      model: reasoning,
+      approvalHandler: async ({ toolName, input }) => {
+        // A tool may scope approval to a stable key (e.g. the targeted
+        // file id); a key the user already blessed skips the prompt.
+        const sessionKey = getApprovalSessionKey(toolName)?.(input as Record<string, unknown>)
+        const sessionEntry = sessionKey ? `${toolName}:${sessionKey}` : undefined
+
+        // Use task-specific formatter if available, generic fallback otherwise
+        const formatter = getApprovalFormatter(toolName)
+        if (formatter) {
+          formatter(input as Record<string, unknown>, output)
+        } else {
+          output.log('')
+          output.log(colors.bold(`Approve ${toolName}?`))
+          for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+            if (typeof value === 'string' && value.includes('\n')) {
+              output.log(colors.dim(`${key}:`))
+              output.log(value)
+            } else {
+              output.log(colors.dim(`${key}: `) + String(value))
+            }
+          }
+        }
+
+        if (sessionEntry && sessionApprovals.has(sessionEntry)) {
+          output.log(colors.dim('Auto-approved — you allowed this file for the rest of the session.'))
+          return { approved: true, reason: 'Auto-approved: the user allowed this file for the session' }
+        }
+
+        let approved: boolean | symbol
+        if (sessionEntry) {
+          const choice = await p.select({
+            message: 'Approve?',
+            options: [
+              { value: 'yes', label: 'Yes' },
+              { value: 'always', label: "Yes — don't ask again for this file this session" },
+              { value: 'no', label: 'No' },
+            ],
+          })
+          if (!p.isCancel(choice) && choice === 'always') sessionApprovals.add(sessionEntry)
+          approved = p.isCancel(choice) ? choice : choice !== 'no'
+        } else {
+          approved = await p.confirm({ message: 'Approve?' })
+        }
+
+        if (p.isCancel(approved)) {
+          return { approved: false, reason: 'User cancelled. Do not request this tool again.' }
+        }
+        if (!approved) {
+          return { approved: false, reason: 'User declined. Do not request this tool again.' }
+        }
+        return { approved: true, reason: 'User approved' }
+      },
+      onToolCall: (tc) => {
+        if (tc.toolName === 'web_search') {
+          const input = tc.input as { query: string }
+          output.log(colors.dim(`Searching: "${input.query}"...`))
+        } else if (tc.toolName === 'web_fetch') {
+          const input = tc.input as { url: string }
+          output.log(colors.dim(`Reading: ${input.url}`))
+        } else {
+          output.log(colors.dim(`Running: ${tc.toolName}...`))
+        }
+      },
+    })
 
     // Render one ChatContext rebuild: the stats line, the changelog (for
     // recorded turns past the first), and the refreshed context prompt.
@@ -693,7 +747,7 @@ export default class AiChatTask extends Command {
     if (resumeSession) {
       const state = resumeSession.state
       turns.push(...state.conversation)
-      messages.push(...state.conversation.map((m) => ({ role: m.role, content: m.content })))
+      chatEngine.seedConversation(state.conversation)
 
       if (restoring && restored) {
         // Context restored — new messages continue through the evolve path.
@@ -855,27 +909,12 @@ export default class AiChatTask extends Command {
       } else {
         turns.push({ role: 'user', content: userMessage })
       }
-      const priorMsg = messages.at(-1)
-      if (priorMsg?.role === 'user' && typeof priorMsg.content === 'string') {
-        priorMsg.content += '\n\n' + userMessage
-      } else {
-        messages.push({ role: 'user', content: userMessage })
-      }
+      chatEngine.appendUserMessage(userMessage)
 
       // Get AI response
       output.log(colors.dim('Thinking...'))
 
       try {
-        // Every tool call this turn, for the saved log: executed ones are
-        // collected from the result steps, denials at the approval prompt.
-        const turnTools: ToolCallRecord[] = []
-        const deniedCallIds = new Set<string>()
-        // deno-lint-ignore no-explicit-any
-        const recordDeniedTool = (toolCall: any) => {
-          if (toolCall.toolCallId) deniedCallIds.add(toolCall.toolCallId)
-          turnTools.push({ tool: toolCall.toolName, input: toolInputDigest(toolCall.input), outcome: 'denied' })
-        }
-
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
         const notebookTools = await createNotebookTools(tasks)
         const allTools = { ...webTools, ...notebookTools }
@@ -890,245 +929,31 @@ export default class AiChatTask extends Command {
           output.log(colors.dim(names.length > 0 ? `Tools: ${names.join(', ')}` : 'Tools: none available'))
         }
 
-        const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
-          for (const tc of toolCalls ?? []) {
-            if (tc.toolName === 'web_search') {
-              const input = tc.input as { query: string }
-              output.log(colors.dim(`Searching: "${input.query}"...`))
-            } else if (tc.toolName === 'web_fetch') {
-              const input = tc.input as { url: string }
-              output.log(colors.dim(`Reading: ${input.url}`))
-            } else {
-              output.log(colors.dim(`Running: ${tc.toolName}...`))
-            }
-          }
+        const result = await chatEngine.runTurn({
+          instructions: [baseSystemPrompt, contextPrompt],
+          tools: allTools,
+          toolApproval,
+        })
+        if (result.approvalRoundsExhausted) {
+          output.log(colors.dim('Too many approval requests, moving on.'))
         }
-
-        // Stream the reasoning turn rather than issuing a single blocking
-        // request. A non-streaming call holds an idle socket for the entire
-        // (potentially many-minute) generation; on flaky networks or past
-        // Anthropic's ~10-min non-streaming ceiling that connection gets
-        // dropped ("socket connection was closed unexpectedly"). Streaming
-        // keeps SSE bytes flowing the whole time. Awaiting the result promises
-        // consumes the stream and rejects on a mid-stream error, which the
-        // surrounding try/catch handles. Shape mirrors the old generateText
-        // result so the approval loop and downstream rendering are unchanged.
-        const runTurn = async () => {
-          const stream = streamText({
-            ...reasoning,
-            instructions: cachedInstructions([baseSystemPrompt, contextPrompt]),
-            messages: withCacheTail(messages),
-            tools: allTools,
-            toolApproval,
-            stopWhen: isStepCount(5),
-            onStepEnd,
-          })
-          return {
-            text: await stream.text,
-            content: await stream.content,
-            steps: await stream.steps,
-            responseMessages: await stream.responseMessages,
-          }
-        }
-
-        // Record executed tool calls and web-search source URLs from one
-        // invocation's result. Approval rounds re-invoke the model, so every
-        // result must be scanned — not just the last, which loses whatever
-        // ran in earlier rounds. An approved call executes at the start of
-        // the continuation and can surface in steps, content parts, or tool
-        // response messages depending on the SDK path; the seen set guards
-        // the overlap.
-        const seenToolCallIds = new Set<string>()
-        const sourceUrls: string[] = []
-        // deno-lint-ignore no-explicit-any
-        const recordExecutedTool = (toolName: string, trc: any) => {
-          if (trc?.toolCallId) {
-            if (deniedCallIds.has(trc.toolCallId) || seenToolCallIds.has(trc.toolCallId)) return
-            seenToolCallIds.add(trc.toolCallId)
-          }
-          const out = trc?.output
-          turnTools.push({
-            tool: toolName,
-            input: toolInputDigest(trc?.input),
-            outcome: out !== null && typeof out === 'object' && out.success === false ? 'error' : 'ok',
-            tokens: estimateTokens(typeof out === 'string' ? out : JSON.stringify(out ?? '')),
-          })
-        }
-        // deno-lint-ignore no-explicit-any
-        const collectToolActivity = (r: any) => {
-          for (const step of r.steps ?? []) {
-            for (const tr of step.toolResults ?? []) {
-              if (tr.toolName === 'web_search' && Array.isArray(tr.output)) {
-                for (const res of tr.output as SearchResult[]) {
-                  if (res.url) sourceUrls.push(res.url)
-                }
-              }
-              recordExecutedTool(tr.toolName, tr)
-            }
-          }
-          for (const part of r.content ?? []) {
-            if (part.type === 'tool-result') recordExecutedTool(part.toolName, part)
-          }
-          for (const message of r.responseMessages ?? []) {
-            if (message.role !== 'tool') continue
-            for (const part of Array.isArray(message.content) ? message.content : []) {
-              if (part.type === 'tool-result') recordExecutedTool(part.toolName, part)
-            }
-          }
-        }
-
-        let result = await runTurn()
-
-        // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
-        const deniedTools = new Set<string>()
-        const maxApprovalRounds = 3
-        let approvalRound = 0
-        // deno-lint-ignore no-explicit-any
-        while (result.content?.some((part: any) => part.type === 'tool-approval-request')) {
-          if (++approvalRound > maxApprovalRounds) {
-            output.log(colors.dim('Too many approval requests, moving on.'))
-            break
-          }
-
-          // deno-lint-ignore no-explicit-any
-          messages.push(...(result.responseMessages as any))
-
-          // deno-lint-ignore no-explicit-any
-          const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
-          const approvals: Array<{
-            type: 'tool-approval-response'
-            approvalId: string
-            approved: boolean
-            reason?: string
-          }> = []
-
-          for (const request of approvalRequests) {
-            // deno-lint-ignore no-explicit-any
-            const { approvalId, toolCall } = request as any
-
-            // Auto-deny tools the user already rejected this turn
-            if (deniedTools.has(toolCall.toolName)) {
-              recordDeniedTool(toolCall)
-              approvals.push({
-                type: 'tool-approval-response',
-                approvalId,
-                approved: false,
-                reason: `User already denied ${toolCall.toolName}. Do not request it again.`,
-              })
-              continue
-            }
-
-            // A tool may scope approval to a stable key (e.g. the targeted
-            // file id); a key the user already blessed skips the prompt.
-            const sessionKey = getApprovalSessionKey(toolCall.toolName)?.(toolCall.input as Record<string, unknown>)
-            const sessionEntry = sessionKey ? `${toolCall.toolName}:${sessionKey}` : undefined
-
-            // Use task-specific formatter if available, generic fallback otherwise
-            const formatter = getApprovalFormatter(toolCall.toolName)
-            if (formatter) {
-              formatter(toolCall.input as Record<string, unknown>, output)
-            } else {
-              output.log('')
-              output.log(colors.bold(`Approve ${toolCall.toolName}?`))
-              const input = toolCall.input as Record<string, unknown>
-              for (const [key, value] of Object.entries(input)) {
-                if (typeof value === 'string' && value.includes('\n')) {
-                  output.log(colors.dim(`${key}:`))
-                  output.log(value)
-                } else {
-                  output.log(colors.dim(`${key}: `) + String(value))
-                }
-              }
-            }
-
-            if (sessionEntry && sessionApprovals.has(sessionEntry)) {
-              output.log(colors.dim('Auto-approved — you allowed this file for the rest of the session.'))
-              approvals.push({
-                type: 'tool-approval-response',
-                approvalId,
-                approved: true,
-                reason: 'Auto-approved: the user allowed this file for the session',
-              })
-              continue
-            }
-
-            let approved: boolean | symbol
-            if (sessionEntry) {
-              const choice = await p.select({
-                message: 'Approve?',
-                options: [
-                  { value: 'yes', label: 'Yes' },
-                  { value: 'always', label: "Yes — don't ask again for this file this session" },
-                  { value: 'no', label: 'No' },
-                ],
-              })
-              if (!p.isCancel(choice) && choice === 'always') sessionApprovals.add(sessionEntry)
-              approved = p.isCancel(choice) ? choice : choice !== 'no'
-            } else {
-              approved = await p.confirm({ message: 'Approve?' })
-            }
-
-            if (p.isCancel(approved)) {
-              deniedTools.add(toolCall.toolName)
-              recordDeniedTool(toolCall)
-              approvals.push({
-                type: 'tool-approval-response',
-                approvalId,
-                approved: false,
-                reason: 'User cancelled. Do not request this tool again.',
-              })
-            } else if (!approved) {
-              deniedTools.add(toolCall.toolName)
-              recordDeniedTool(toolCall)
-              approvals.push({
-                type: 'tool-approval-response',
-                approvalId,
-                approved: false,
-                reason: 'User declined. Do not request this tool again.',
-              })
-            } else {
-              approvals.push({
-                type: 'tool-approval-response',
-                approvalId,
-                approved: true,
-                reason: 'User approved',
-              })
-            }
-          }
-
-          // deno-lint-ignore no-explicit-any
-          messages.push({ role: 'tool', content: approvals } as any)
-
-          // Scan this round's result before the continuation replaces it —
-          // denials were recorded at the approval prompt; their ids are
-          // skipped so nothing double-counts.
-          collectToolActivity(result)
-
-          result = await runTurn()
-        }
-
-        collectToolActivity(result)
 
         // Attach tool records to this turn's log entry — creating one when
         // the turn changed no context and so recorded nothing else.
-        chatContext.recordTurnTools(turnTools)
+        chatContext.recordTurnTools(result.toolRecords)
 
         // Build assistant content with optional sources
         let assistantContent = result.text
-        if (sourceUrls.length > 0) {
-          const uniqueUrls = [...new Set(sourceUrls)]
+        const uniqueUrls = [...new Set(result.sourceUrls)]
+        if (uniqueUrls.length > 0) {
           assistantContent += '\n\nSources:\n' + uniqueUrls.map((u) => `- ${u}`).join('\n')
         }
 
         turns.push({ role: 'assistant', content: assistantContent })
-        // Push all response messages (including tool_use/tool_result pairs) to preserve valid conversation history
-        // deno-lint-ignore no-explicit-any
-        messages.push(...(result.responseMessages as any))
 
         output.log('')
         output.log(result.text)
-        if (sourceUrls.length > 0) {
-          const uniqueUrls = [...new Set(sourceUrls)]
+        if (uniqueUrls.length > 0) {
           output.log('')
           output.log(colors.dim('Sources:'))
           for (const url of uniqueUrls) {
