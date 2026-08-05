@@ -47,14 +47,17 @@ export function extractPlainText(raw: string): string {
 export async function emailToMarkdown(
   msg: EmailMessage,
   opts?: { priorMessages?: string[] },
-): Promise<{ markdown: string }> {
-  if (!msg.bodyText && !msg.bodyHtml) return { markdown: '' }
+): Promise<{ markdown: string; truncated: boolean }> {
+  if (!msg.bodyText && !msg.bodyHtml) return { markdown: '', truncated: false }
 
   // Prefer HTML (authoritative in Gmail) over text/plain (auto-generated, often incomplete)
   const body = msg.bodyHtml ? sanitizeEmailHtml(msg.bodyHtml) : msg.bodyText
   const plainText = body.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
-  const maxChars = 12000
-  const truncated = plainText.length > maxChars ? plainText.slice(0, maxChars) + '\n...(truncated)' : plainText
+  // Rail against absurd inputs (~34k tokens of prose); the finishReason check
+  // below catches the rare output-side clip on token-dense content.
+  const maxChars = 128000
+  const inputTruncated = plainText.length > maxChars
+  const capped = inputTruncated ? plainText.slice(0, maxChars) + '\n...(truncated)' : plainText
 
   const now = new Date()
   const tz = currentTimezoneIANA()
@@ -67,25 +70,28 @@ export async function emailToMarkdown(
       )}\n</prior_messages>\n`
     : ''
 
-  try {
-    const promptContent = await readTextFile(PROMPT_FILE)
-    const renderInput: RenderInput = {
-      email: { body: truncated, currentTime, priorContext },
-    }
-    const { output: prompt } = renderPromptFile(promptContent, 'email-to-markdown.prompt.md', renderInput)
-
-    const { text } = await generateText({
-      ...aiModel('balanced'),
-      prompt,
-    })
-
-    // Strip any WHEN: line the AI might still include (no longer used for timestamps)
-    const lines = text.trim().split('\n')
-    if (lines[0]?.match(/^WHEN:\s*/)) {
-      return { markdown: lines.slice(1).join('\n').trim() }
-    }
-    return { markdown: text.trim() }
-  } catch {
-    return { markdown: plainText.slice(0, 2000) }
+  // AI failures propagate: the caller skips the message and leaves its thread
+  // in the inbox, so the next sync retries the conversion from scratch.
+  const promptContent = await readTextFile(PROMPT_FILE)
+  const renderInput: RenderInput = {
+    email: { body: capped, currentTime, priorContext },
   }
+  const { output: prompt } = renderPromptFile(promptContent, 'email-to-markdown.prompt.md', renderInput)
+
+  const { text, finishReason } = await generateText({
+    ...aiModel('balanced'),
+    prompt,
+  })
+
+  // Strip any WHEN: line the AI might still include (no longer used for timestamps)
+  const lines = text.trim().split('\n')
+  const cleaned = lines[0]?.match(/^WHEN:\s*/) ? lines.slice(1).join('\n').trim() : text.trim()
+
+  // 'length' = generation stopped at the output-token ceiling — the tail of
+  // the source never made it into the conversion.
+  const truncated = inputTruncated || finishReason === 'length'
+  const markdown = truncated
+    ? `${cleaned}\n\n*(capture truncated — the source email exceeded the conversion budget)*`
+    : cleaned
+  return { markdown, truncated }
 }
