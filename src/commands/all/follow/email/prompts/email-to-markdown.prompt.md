@@ -1,15 +1,17 @@
 ---
 schema: 0.2.0
 created: 2026-03-09
-updated: 2026-03-22
+updated: 2026-08-05
 description: Convert raw email text to clean markdown for notebook storage
 ---
 
 Convert this email message into clean markdown.
 
+Reproduce the content word-for-word. Never summarize, condense, or reword — your only changes are structural: convert markup to markdown and apply the removals below. A long email produces a long output.
+
 Extract ONLY the sender's new content. Discard any quoted previous messages (e.g. "On ... wrote:" blocks, `<blockquote>` sections, `>` quoted text from earlier replies). We store each message separately, so quoted replies are redundant.
 
-**Exception — forwarded messages**: If this email contains forwarded content, preserve it. The forwarded content is the whole point — do not discard it.
+**Exception — forwarded messages**: If this email contains forwarded content, preserve it in full. The forwarded content is the whole point — do not discard it, and if it contains an earlier reply chain, include the complete chain verbatim.
 
 Recognize ALL forward styles:
 - Gmail: `---------- Forwarded message ---------` or `---------- Forwarded message ----------`
@@ -30,8 +32,6 @@ Format the output as:
 > Forwarded content here...
 ```
 
-If the forwarded content itself contains earlier messages in a chain (e.g. a reply thread that was forwarded), include the most recent forwarded message in full and summarize or omit the deeper replies — they are progressively less important.
-
 Extract the original sender, date, and subject from the forwarded headers.
 
 Clean up formatting artifacts (e.g. line wrapping, escaped characters, quoted-printable encoding, HTML tags).
@@ -44,15 +44,7 @@ Remove:
 - Confidentiality notices
 - Quoted previous messages / reply chains (but NOT forwarded content — see above)
 
-If the time is relative, the current time is: {{email.currentTime}}
-
-If you can determine when this email was sent, include the time at the very first line of your output in the format:
-
-WHEN: YYYY-MM-DD HH:mm
-
-If a timestamp doesn't include a year, assume it's the current year.
-
-Then follow with the clean markdown content.
+Output the markdown only — no preamble and no code fence wrapping the message.
 
 {{email.priorContext}}
 Email text:
