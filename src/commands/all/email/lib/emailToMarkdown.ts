@@ -4,6 +4,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import type { EmailMessage } from './imap-client.ts'
+import { sanitizeEmailHtml } from './sanitizeEmailHtml.ts'
 
 const PROMPT_FILE = new URL('../../../all/follow/email/prompts/email-to-markdown.prompt.md', import.meta.url).pathname
 
@@ -50,7 +51,7 @@ export async function emailToMarkdown(
   if (!msg.bodyText && !msg.bodyHtml) return { markdown: '' }
 
   // Prefer HTML (authoritative in Gmail) over text/plain (auto-generated, often incomplete)
-  const body = msg.bodyHtml ?? msg.bodyText
+  const body = msg.bodyHtml ? sanitizeEmailHtml(msg.bodyHtml) : msg.bodyText
   const plainText = body.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
   const maxChars = 12000
   const truncated = plainText.length > maxChars ? plainText.slice(0, maxChars) + '\n...(truncated)' : plainText
