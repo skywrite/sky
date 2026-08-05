@@ -1,9 +1,0 @@
-{
-  "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "printWidth": 120,
-  "semi": false,
-  "singleQuote": true,
-  "proseWrap": "always",
-  "sortPackageJson": false,
-  "ignorePatterns": ["**/*.md", "**/_build", "**/dist", "**/*.min.js", "**/vendor"]
-}

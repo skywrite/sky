@@ -18,7 +18,11 @@
   "scripts": {
     "build": "echo 'TODO: bundle for publishing'"
   },
-  "files": ["src", "dist", "README.md"],
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
