@@ -2,7 +2,6 @@ import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import type { EmailMessage } from './imap-client.ts'
 import { sanitizeEmailHtml } from './sanitizeEmailHtml.ts'
 
@@ -59,13 +58,9 @@ export async function emailToMarkdown(
   const inputTruncated = plainText.length > maxChars
   const capped = inputTruncated ? plainText.slice(0, maxChars) + '\n...(truncated)' : plainText
 
-  const now = new Date()
-  const tz = currentTimezoneIANA()
-  const currentTime = `${now.toISOString().slice(0, 10)} ${now.toTimeString().slice(0, 5)} ${tz}`
-
   // Build thread context for deduplication
   const priorContext = opts?.priorMessages?.length
-    ? `\n\nThe following messages from this thread have ALREADY been saved. Strip any content that duplicates what is already captured below — only include what is new in this message.\n\n<prior_messages>\n${opts.priorMessages.join(
+    ? `\n\nThe following messages from this thread have ALREADY been saved. Strip only content that literally duplicates what is captured below (quoted repeats of earlier messages) — the sender's new content must still be reproduced word-for-word in full.\n\n<prior_messages>\n${opts.priorMessages.join(
         '\n---\n',
       )}\n</prior_messages>\n`
     : ''
@@ -74,7 +69,7 @@ export async function emailToMarkdown(
   // in the inbox, so the next sync retries the conversion from scratch.
   const promptContent = await readTextFile(PROMPT_FILE)
   const renderInput: RenderInput = {
-    email: { body: capped, currentTime, priorContext },
+    email: { body: capped, priorContext },
   }
   const { output: prompt } = renderPromptFile(promptContent, 'email-to-markdown.prompt.md', renderInput)
 
@@ -83,9 +78,7 @@ export async function emailToMarkdown(
     prompt,
   })
 
-  // Strip any WHEN: line the AI might still include (no longer used for timestamps)
-  const lines = text.trim().split('\n')
-  const cleaned = lines[0]?.match(/^WHEN:\s*/) ? lines.slice(1).join('\n').trim() : text.trim()
+  const cleaned = text.trim()
 
   // 'length' = generation stopped at the output-token ceiling — the tail of
   // the source never made it into the conversion.
