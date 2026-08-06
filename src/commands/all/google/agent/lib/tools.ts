@@ -15,6 +15,7 @@ import {
   createReply,
   deleteComment,
   listComments,
+  listDocSuggestionIds,
   shareFile,
   createDocFromMarkdown,
   createPresentation,
@@ -47,6 +48,7 @@ import {
 import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
+import { suggestDocsEdit } from './browserSuggestions.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
 
 export interface MissionFile {
@@ -801,6 +803,76 @@ export function createAgentTools(deps: {
           return found
             ? { anchored: true }
             : { anchored: true, warning: 'submitted, but not yet listed via the API — verify before relying on it' }
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
+    suggest_doc_edit: {
+      description:
+        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited. replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands, so never re-issue it — note the uncertainty in your report instead.',
+      inputSchema: jsonSchema<{ fileId: string; searchText: string; replacement: string }>({
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          searchText: {
+            type: 'string',
+            description: 'Verbatim unique text from the document that the suggestion replaces',
+          },
+          replacement: {
+            type: 'string',
+            description: 'Text to stand in its place — "" to propose deletion',
+          },
+        },
+        required: ['fileId', 'searchText', 'replacement'],
+      }),
+      execute: async ({
+        fileId,
+        searchText,
+        replacement,
+      }: {
+        fileId: string
+        searchText: string
+        replacement: string
+      }) => {
+        if (!searchText.trim()) return 'Error: searchText is empty'
+        if (/[\n\r\t]/.test(searchText)) {
+          return 'Error: searchText cannot span paragraphs or contain tabs — anchor on a snippet within one paragraph'
+        }
+        if (searchText === replacement) return 'Error: replacement equals searchText — nothing to suggest'
+        if (searchText.length > 300) {
+          return 'Error: searchText is too long (max 300 chars) — anchor on a shorter distinctive snippet'
+        }
+        if (replacement.length > 1500) {
+          return 'Error: replacement is too long (max 1500 chars) — suggest passage-sized changes; a full rewrite belongs in a comment or a direct edit'
+        }
+        try {
+          const file = await getFile(client, fileId)
+          if (workspaceKind(file.mimeType) !== 'doc') return `Error: "${file.name}" is not a Google Doc`
+          // On a find miss the browser flow would type at an unanchored caret —
+          // prove the anchor exists in the doc's literal text before launching.
+          const text = await exportFile(client, fileId, 'text/plain')
+          const occurrences = text.split(searchText).length - 1
+          if (occurrences === 0) {
+            return 'Error: searchText does not occur in the document — pass text exactly as it reads there (read_file shows markdown; drop its syntax)'
+          }
+          const before = new Set(await listDocSuggestionIds(client, fileId))
+          await suggestDocsEdit({ documentId: fileId, searchText, replacement })
+          // The UI flow is blind; the API is the witness — a landed suggestion
+          // brings new pending-suggestion ids.
+          const found = (await listDocSuggestionIds(client, fileId)).some((id) => !before.has(id))
+          track(state, 'updated', file)
+          log(`Suggested an edit on "${file.name}" (text "${searchText.slice(0, 40)}")`)
+          const result: Record<string, unknown> = found
+            ? { suggested: true }
+            : {
+                suggested: true,
+                warning:
+                  'submitted, but no new pending suggestion is visible via the API yet — verify before relying on it',
+              }
+          if (occurrences > 1) result.note = `searchText occurs ${occurrences} times — the first occurrence was edited`
+          return result
         } catch (err) {
           return toolError(err)
         }

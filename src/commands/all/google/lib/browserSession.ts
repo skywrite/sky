@@ -82,6 +82,30 @@ export async function launchGoogleBrowser(options: { headless?: boolean } = {}):
   })
 }
 
+// Chromium allows one process per profile dir, so concurrent flows collide:
+// the loser throws on the SingletonLock or, losing the startup race, hangs
+// in launch until its 3-minute timeout. Agent missions DO issue browser
+// tool calls concurrently (the AI SDK runs a step's tool calls in
+// parallel) — queue whole flows instead of letting them fight.
+let profileQueue: Promise<unknown> = Promise.resolve()
+
+/** Run one launch → work → close flow with exclusive use of the automation profile. */
+export async function withGoogleBrowser<T>(
+  options: { headless?: boolean },
+  fn: (context: BrowserContext) => Promise<T>,
+): Promise<T> {
+  const run = profileQueue.then(async () => {
+    const context = await launchGoogleBrowser(options)
+    try {
+      return await fn(context)
+    } finally {
+      await context.close()
+    }
+  })
+  profileQueue = run.catch(() => undefined)
+  return await run
+}
+
 // Signed-out redirects land on the account chooser for editor URLs, but on
 // the marketing site for bare drive.google.com — treat both as signed out.
 const LOGIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com', 'workspace.google.com']
