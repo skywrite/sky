@@ -5,9 +5,9 @@
  * why; ContextAssembler (models/AI) decides what fits the token budget each
  * turn and renders it. Everything that shapes the model-facing document
  * context lives here — the baseline gather, query-driven growth across
- * turns, the accumulating relevance boost, goal/decision pinning,
- * own-transcript exclusion, and the per-turn context log that makes a
- * session resumable.
+ * turns, the retrieval evidence and topic terms feeding the chat scorer
+ * (score.ts), goal/decision pinning, own-transcript exclusion, and the
+ * per-turn context log that makes a session resumable.
  *
  * The class is host-neutral: it never prints and never talks to a terminal.
  * A host (the CLI command today, a web session later) injects the query
@@ -18,8 +18,8 @@
 import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createRecencyTypeScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import ContextAssembler, { type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
+import { withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
@@ -35,6 +35,7 @@ import type { ConversationMessage } from '../type.d.ts'
 import createDayLabeler from './dayLabel.ts'
 import { fetchContextFromServer } from './fetchContext.ts'
 import { resolveUniverse, type UniverseResolution } from './resolveUniverse.ts'
+import { createChatScorer, type DocProvenance, extractTopicTerms, strongerTier, tierForResultSize } from './score.ts'
 
 // -----------------------------------------------------------------------------
 // Producers — the query pipeline a host injects
@@ -186,7 +187,8 @@ export default class ChatContext {
   private collection: DomainCollection | null = null
   private contextPaths: string[] = []
   private queries: string[] = []
-  private queryRelevantPaths: ReadonlySet<string> = new Set()
+  private provenance = new Map<string, DocProvenance>()
+  private topicTerms: string[] = []
   private pinnedPaths: ReadonlySet<string> = new Set()
   private contextLog: ContextTurnLog[] = []
   private turnNumber = 0
@@ -333,12 +335,22 @@ export default class ChatContext {
         .map((r) => path.join(this.baseDir, r)),
     )
     // Recorded diffs are the docs queries added in the original session,
-    // so they re-seed the query boost. Turn-1 query hits are mixed into
-    // the universe with the baseline and stay unboosted — a best-effort
-    // restore, not an exact one.
-    this.queryRelevantPaths = new Set(
-      state.contextLog.flatMap((e) => e.diff ?? []).map((r) => path.join(this.baseDir, r.path)),
-    )
+    // so they re-seed the retrieval evidence. Result-set sizes weren't
+    // recorded; each diff's own length stands in for selectivity —
+    // understating evidence rather than inventing it. Turn-1 query hits
+    // are mixed into the universe with the baseline and stay unboosted —
+    // a best-effort restore, not an exact one.
+    for (const entry of state.contextLog) {
+      if (!entry.diff || entry.diff.length === 0) continue
+      const diffPaths = entry.diff.map((r) => path.join(this.baseDir, r.path))
+      this.recordRetrieval(diffPaths, entry.diff.length, entry.turn)
+    }
+    const recentUser = state.conversation
+      .filter((m) => m.role === 'user')
+      .slice(-3)
+      .map((m) => m.content)
+      .reverse()
+    this.topicTerms = extractTopicTerms(recentUser.join('\n') || undefined, this.queries)
 
     return { resolution, rebuild: this.rebuild(undefined, false) }
   }
@@ -358,7 +370,9 @@ export default class ChatContext {
       if (produced.ok && produced.value.paths.length > 0) {
         if (produced.value.query) this.queries.push(produced.value.query)
         const fetched = this.excludeOwnChat(produced.value.paths)
-        this.queryRelevantPaths = new Set(fetched)
+        // Selectivity from the raw result size — excluding the own chat
+        // doesn't change how targeted the query was.
+        this.recordRetrieval(fetched, produced.value.paths.length)
         newPaths = fetched
         this.collection = await mergePathsIntoCollection(fetched, this.collection)
       } else if (!produced.ok) {
@@ -377,6 +391,9 @@ export default class ChatContext {
       await this.logError({ source: 'ai:chat', stage: 'context:files', message, question: userMessage })
     }
 
+    // Terms come from the question even when the query pipeline failed —
+    // lexical scoring still works over the baseline universe.
+    this.topicTerms = extractTopicTerms(userMessage, this.queries)
     const rebuilt = this.rebuild(newPaths, true)
     this.ensureErrorEntry()
     return { rebuilt, errors: [...this.turnErrors] }
@@ -412,6 +429,7 @@ export default class ChatContext {
             const executed = await this.producers.executeQuery(query)
             if (executed.ok && executed.value.paths.length > 0) {
               const fetched = this.excludeOwnChat(executed.value.paths)
+              this.recordRetrieval(fetched, executed.value.paths.length)
               allNewPaths.push(...fetched)
               this.collection = await mergePathsIntoCollection(fetched, this.collection)
             } else if (!executed.ok) {
@@ -431,11 +449,16 @@ export default class ChatContext {
           }
         }
 
-        // The boost accumulates over what queries actually returned.
-        // Seeding it from the whole universe instead hands every document
-        // the same +10, which cancels out and lets the recency baseline
-        // outrank deliberate retrieval under budget pressure.
-        this.queryRelevantPaths = new Set([...this.queryRelevantPaths, ...allNewPaths])
+        // Evidence was recorded per query execution above. Terms follow
+        // the current queries plus the recent conversation window — the
+        // current message alone loses subjects still under discussion
+        // (a drafting turn that stops naming the person it is about),
+        // while old queries dropping out still tracks real drift.
+        const recentUser = recentConversation
+          .filter((m) => m.role === 'user')
+          .map((m) => m.content)
+          .reverse()
+        this.topicTerms = extractTopicTerms([userMessage, ...recentUser].join('\n'), this.queries)
         rebuilt = this.rebuild(allNewPaths, true)
       } else if (!evolved.ok) {
         this.turnErrors.push(evolved.message)
@@ -494,8 +517,48 @@ export default class ChatContext {
     return this.ownChatPath ? paths.filter((p) => p !== this.ownChatPath) : paths
   }
 
+  /**
+   * Record retrieval evidence for query-returned paths. Evidence
+   * accumulates over what queries actually returned — never the whole
+   * universe, which would hand every document the same boost and let the
+   * recency baseline outrank deliberate retrieval (the old binary +10's
+   * failure mode). Alias-repeated paths within one execution count once;
+   * `hits` counts distinct executions.
+   */
+  private recordRetrieval(paths: string[], resultSize: number, turn = this.turnNumber): void {
+    const tier = tierForResultSize(resultSize)
+    for (const p of new Set(paths)) {
+      const prev = this.provenance.get(p)
+      this.provenance.set(
+        p,
+        prev
+          ? { tier: strongerTier(prev.tier, tier), hits: prev.hits + 1, lastHitTurn: turn }
+          : { tier, hits: 1, lastHitTurn: turn },
+      )
+    }
+  }
+
   private relPath(p: string): string {
     return p.startsWith(this.baseDir) ? p.slice(this.baseDir.length + 1) : p
+  }
+
+  /**
+   * Log record for a scored doc with its explainable score parts: the
+   * lexical component when it contributed, and the retrieval tier when
+   * queries returned the doc. Scores round for log legibility; ranking
+   * uses the raw values.
+   */
+  private scoredRecord(s: ScoredItem, lexicalByPath: ReadonlyMap<string, number>): ContextDocRecord {
+    const rec: ContextDocRecord = {
+      path: this.relPath(s.item.path),
+      score: Math.round(s.score * 100) / 100,
+      tokens: s.tokens,
+    }
+    const lex = lexicalByPath.get(s.item.path) ?? 0
+    if (lex >= 0.05) rec.lex = Math.round(lex * 10) / 10
+    const prov = this.provenance.get(s.item.path)
+    if (prov) rec.prov = prov.tier
+    return rec
   }
 
   /**
@@ -522,11 +585,14 @@ export default class ChatContext {
     const cutRecords: ContextDocRecord[] = []
 
     if (this.collection) {
+      const { scorer, lexicalByPath } = createChatScorer({
+        today: this.today,
+        collection: this.collection,
+        terms: this.topicTerms,
+        provenance: this.provenance,
+      })
       const assembler = ContextAssembler.from(this.collection, {
-        scorer: withPinnedPaths(
-          createRecencyTypeScorer(this.today, { priorityPaths: this.queryRelevantPaths }),
-          this.pinnedPaths,
-        ),
+        scorer: withPinnedPaths(scorer, this.pinnedPaths),
         maxTokens: this.maxTokens,
       })
       activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
@@ -535,16 +601,11 @@ export default class ChatContext {
           s.item.path,
           s.verdict.keep === 'always'
             ? { path: this.relPath(s.item.path), tokens: s.tokens, pinned: true }
-            : { path: this.relPath(s.item.path), score: s.score, tokens: s.tokens },
+            : this.scoredRecord(s, lexicalByPath),
         )
       }
       for (const s of assembler.pruned) {
-        const rec: ContextDocRecord = {
-          path: this.relPath(s.item.path),
-          score: s.score,
-          tokens: s.tokens,
-          cut: 'budget',
-        }
+        const rec: ContextDocRecord = { ...this.scoredRecord(s, lexicalByPath), cut: 'budget' }
         docRecords.set(s.item.path, rec)
         cutRecords.push(rec)
       }

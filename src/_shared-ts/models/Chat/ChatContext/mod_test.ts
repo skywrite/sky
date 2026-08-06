@@ -205,6 +205,31 @@ test('ChatContext.firstTurn - producer failure', async () => {
   })
 })
 
+test('ChatContext.firstTurn - score parts recorded', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: '{ people { path } }' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane?')
+
+  const rec = context.log[0].universe?.find((r) => r.path === 'people/Jane-Doe.md')
+  assert({
+    given: 'a first turn whose targeted query returned the person the question names',
+    should: 'record the retrieval tier and lexical part on the universe record',
+    actual: {
+      prov: rec?.prov,
+      lexRecorded: (rec?.lex ?? 0) > 0,
+      scoreCarriesBoost: (rec?.score ?? 0) >= 16,
+    },
+    expected: { prov: 'targeted', lexRecorded: true, scoreCarriesBoost: true },
+  })
+})
+
 // ---------------------------------------------------------------------------
 // evolveTurn
 // ---------------------------------------------------------------------------
@@ -430,6 +455,35 @@ test('ChatContext.restore - turn numbering continues', async () => {
     should: 'number the next evolve turn 4',
     actual: context.log.at(-1)?.turn,
     expected: 4,
+  })
+})
+
+test('ChatContext.restore - retrieval evidence survives budget pressure', async () => {
+  const meetingRel = 'time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'
+  const state: ResumeState = {
+    conversation: [],
+    universePaths: ['people/Jane-Doe.md', meetingRel],
+    queries: ['q1'],
+    lastTurn: 2,
+    contextLog: [
+      { turn: 1, queries: ['q1'] },
+      { turn: 2, queries: ['q1'], diff: [{ path: 'people/Jane-Doe.md', score: 16, tokens: 9 }] },
+    ],
+  }
+  // A budget with room for one doc: without the re-seeded evidence the
+  // week-old meeting (6.94) outranks the undated person card (6) and the
+  // diff-restored doc would be the one cut.
+  const { context } = makeContext({ maxTokens: 12 })
+  const report = await context.restore(state)
+
+  assert({
+    given: 'a restored universe under budget pressure with a recorded diff doc',
+    should: 're-seed retrieval evidence so the diff doc outranks the recenter meeting',
+    actual: {
+      kept: report.rebuild.stats?.kept,
+      cutPaths: report.rebuild.cut.map((r) => r.path),
+    },
+    expected: { kept: 1, cutPaths: [meetingRel] },
   })
 })
 

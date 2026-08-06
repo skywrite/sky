@@ -192,41 +192,6 @@ test('recencyTypeScorer — org at depth 3 returns -Infinity', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Priority paths boost — query-relevant files get +10
-// ---------------------------------------------------------------------------
-
-test('recencyTypeScorer — priority path gets +10 boost', () => {
-  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md'])
-  const scorer = createRecencyTypeScorer(TODAY, { priorityPaths })
-
-  assert({
-    given: 'a document in priorityPaths',
-    should: 'add +10 to base score (recency 5 + type 0 + boost 10 = 15)',
-    actual: verdictScore(
-      scorer(
-        makeItem({
-          path: '/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md',
-          type: 'document',
-        }),
-      ),
-    ),
-    expected: 15,
-  })
-})
-
-test('recencyTypeScorer — non-priority path is unaffected', () => {
-  const priorityPaths = new Set(['/Notebook/time/2026/02/23-01/02-23/actions/videos/Video_James.md'])
-  const scorer = createRecencyTypeScorer(TODAY, { priorityPaths })
-
-  assert({
-    given: 'a document NOT in priorityPaths',
-    should: 'score normally without boost',
-    actual: verdictScore(scorer(makeItem({ path: '/people/Alice.md', type: 'person' }))),
-    expected: 6,
-  })
-})
-
-// ---------------------------------------------------------------------------
 // Project status penalty — open > completed > whiteboard > canceled > hold
 // ---------------------------------------------------------------------------
 
@@ -273,17 +238,5 @@ projectStatusFixtures.forEach((fixture) => {
       actual: verdictScore(scorer(makeItem({ path: fixture.path, type: fixture.type }))),
       expected: fixture.expected,
     })
-  })
-})
-
-test('recencyTypeScorer — priority boost outweighs the status penalty', () => {
-  const path = '/projects/completed/2022/Old-Thing/retro.md'
-  const scorer = createRecencyTypeScorer(TODAY, { priorityPaths: new Set([path]) })
-
-  assert({
-    given: 'a query-relevant file in a completed project',
-    should: 'score 9 (0 + 0 + boost 10 - penalty 1)',
-    actual: verdictScore(scorer(makeItem({ path, type: 'document' }))),
-    expected: 9,
   })
 })

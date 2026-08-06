@@ -181,6 +181,33 @@ test('serializeContextLog - escapes --> so it cannot terminate the comment', () 
   })
 })
 
+test('contextLog - score-part fields round-trip within v2', () => {
+  // lex/prov are additive v2 fields — records carrying them and records
+  // without them coexist in one log, and neither direction loses data.
+  const entries: ContextTurnLog[] = [
+    {
+      turn: 1,
+      queries: ['{ people(where: { nameContains: "Jane" }) { path } }'],
+      universe: [
+        { path: 'people/Jane-Doe.md', score: 21.3, tokens: 900, lex: 5.3, prov: 'targeted' },
+        { path: 'time/2026/03/02-08/03-05/day.md', score: 7.9, tokens: 1200 },
+      ],
+    },
+    {
+      turn: 2,
+      queries: [],
+      pruned: [{ path: 'projects/Atlas/plan.md', score: 4.4, tokens: 2100, lex: 0.8, prov: 'broad', cut: 'budget' }],
+    },
+  ]
+  const serialized = serializeContextLog(entries)
+  assert({
+    given: 'records carrying the Stage 2 lex/prov score parts',
+    should: 'round-trip through serialize and parse unchanged',
+    actual: splitContextLog('# T\n\nBody.\n' + serialized).entries,
+    expected: entries,
+  })
+})
+
 test('splitContextLog - an unreadable CONTEXT-LOG block stays inert in the body', () => {
   const broken = '# T\n\nBody.\n\n\n<!-- CONTEXT-LOG\n{ broken json\n-->\n'
   const { body, entries } = splitContextLog(broken)
