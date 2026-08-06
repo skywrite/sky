@@ -11,6 +11,7 @@
 import type { CollectionEntityType } from '#shared/models/Markdown/Collection/entityTypes.ts'
 import type { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { When } from '#universal/dates/nbdt/mod.ts'
 import type DomainCollection from '../../mod.ts'
 import {
   matchesBodyContains,
@@ -130,6 +131,36 @@ export function getField(doc: Document, field: string): unknown {
 export function getStringField(doc: Document, field: string, defaultValue = ''): string {
   const val = doc.yaml[field]
   return typeof val === 'string' ? val : defaultValue
+}
+
+export type MappedWhen = {
+  datetime: string
+  duration: string | null
+  durationMinutes: number | null
+  end: string | null
+}
+
+/**
+ * Map the `when:` object onto its GraphQL shape.
+ *
+ * Returns null rather than throwing when the field is missing or unreadable —
+ * a handful of documents record no time at all, and one of them must not be
+ * able to take down a query spanning the whole notebook.
+ */
+export function getWhenField(doc: Document): MappedWhen | null {
+  const raw = doc.yaml['when']
+  if (raw === undefined || raw === null) return null
+  try {
+    const when = When.fromYaml(raw)
+    return {
+      datetime: when.datetime.toString(),
+      duration: when.duration,
+      durationMinutes: when.durationMinutes,
+      end: when.end?.toString() ?? null,
+    }
+  } catch {
+    return null
+  }
 }
 
 export function getOptionalStringField(doc: Document, field: string): string | null {

@@ -17,6 +17,7 @@ import {
   matchesInvolvesFilter,
   matchesTagFilter,
   matchesTextFilter,
+  getWhenField,
   perRow,
 } from './shared.ts'
 
@@ -65,7 +66,7 @@ export function docToVideo(doc: Document, path: string, day: MappedDay | null = 
   return {
     from: getOptionalStringField(doc, 'from'),
     to: getOptionalStringField(doc, 'to'),
-    when: getStringField(doc, 'when'),
+    when: getWhenField(doc),
     medium: getStringField(doc, 'medium', 'Video'),
     summary: getOptionalStringField(doc, 'summary'),
     url: url ?? null,

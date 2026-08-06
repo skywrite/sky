@@ -16,6 +16,7 @@ import {
   matchesInvolvesFilter,
   matchesTagFilter,
   matchesTextFilter,
+  getWhenField,
   perRow,
 } from './shared.ts'
 
@@ -51,7 +52,7 @@ export function matchesMeetingFilter(
 export function docToMeeting(doc: Document, path: string, day: MappedDay | null = null) {
   return {
     who: getStringField(doc, 'who'),
-    when: getStringField(doc, 'when'),
+    when: getWhenField(doc),
     medium: getStringField(doc, 'medium'),
     context: getOptionalStringField(doc, 'context'),
     summary: getOptionalStringField(doc, 'summary'),

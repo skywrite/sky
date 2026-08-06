@@ -16,6 +16,7 @@ import {
   matchesInvolvesFilter,
   matchesTagFilter,
   matchesTextFilter,
+  getWhenField,
   perRow,
 } from './shared.ts'
 
@@ -49,7 +50,7 @@ export function docToMessage(doc: Document, path: string, day: MappedDay | null 
   return {
     from: getOptionalStringField(doc, 'from'),
     to: getOptionalStringField(doc, 'to'),
-    when: getStringField(doc, 'when'),
+    when: getWhenField(doc),
     medium: getStringField(doc, 'medium'),
     summary: getOptionalStringField(doc, 'summary'),
     date: getDateForDocument(doc, path) ?? '',
