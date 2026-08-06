@@ -43,18 +43,21 @@ export function editWindow(searchText: string, replacement: string): EditWindow 
 
 /**
  * Suggested edit anchored to text in a Doc: the editor's own find selects the
- * first occurrence of searchText (which stays selected after the find bar
+ * requested occurrence of searchText (which stays selected after the find bar
  * closes), then the caret walks to the edit window and types — in Suggesting
  * mode, so the keystrokes record as one Accept/Reject-able suggestion instead
- * of an edit. Callers pre-verify that searchText occurs in the document: on a
- * find miss the caret is unanchored, and typing there would suggest text at a
- * random spot.
+ * of an edit. Callers pre-verify that searchText occurs in the document at
+ * least occurrence times: on a find miss the caret is unanchored, and typing
+ * there would suggest text at a random spot.
  */
 export async function suggestDocsEdit(options: {
   documentId: string
   searchText: string
   replacement: string
+  /** 1-based match to edit in reading order (default: the first). */
+  occurrence?: number
 }): Promise<void> {
+  const occurrence = options.occurrence ?? 1
   const window = editWindow(options.searchText, options.replacement)
   await withGoogleBrowser({ headless: true }, async (context) => {
     const page = await openGooglePage(context, docsCommentUrl(options.documentId))
@@ -73,8 +76,12 @@ export async function suggestDocsEdit(options: {
     await page.waitForTimeout(800)
     await page.keyboard.type(options.searchText, { delay: 15 })
     await page.waitForTimeout(1200)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(500)
+    // The first Enter lands on the first match; each further Enter advances
+    // one match in reading order.
+    for (let i = 0; i < occurrence; i++) {
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(500)
+    }
     // Closing the find bar keeps the match selected.
     await page.keyboard.press('Escape')
     await page.waitForTimeout(600)
