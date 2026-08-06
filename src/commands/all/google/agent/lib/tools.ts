@@ -811,8 +811,8 @@ export function createAgentTools(deps: {
 
     suggest_doc_edit: {
       description:
-        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited. replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands, so never re-issue it — note the uncertainty in your report instead.',
-      inputSchema: jsonSchema<{ fileId: string; searchText: string; replacement: string }>({
+        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited unless you pass occurrence (1-based, reading order). replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands, so never re-issue it — note the uncertainty in your report instead.',
+      inputSchema: jsonSchema<{ fileId: string; searchText: string; replacement: string; occurrence?: number }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
@@ -824,6 +824,10 @@ export function createAgentTools(deps: {
             type: 'string',
             description: 'Text to stand in its place — "" to propose deletion',
           },
+          occurrence: {
+            type: 'number',
+            description: 'When searchText repeats: which match to edit, 1-based in reading order (default 1)',
+          },
         },
         required: ['fileId', 'searchText', 'replacement'],
       }),
@@ -831,12 +835,17 @@ export function createAgentTools(deps: {
         fileId,
         searchText,
         replacement,
+        occurrence,
       }: {
         fileId: string
         searchText: string
         replacement: string
+        occurrence?: number
       }) => {
         if (!searchText.trim()) return 'Error: searchText is empty'
+        if (occurrence !== undefined && (!Number.isInteger(occurrence) || occurrence < 1)) {
+          return 'Error: occurrence must be a positive integer (1-based)'
+        }
         if (/[\n\r\t]/.test(searchText)) {
           return 'Error: searchText cannot span paragraphs or contain tabs — anchor on a snippet within one paragraph'
         }
@@ -857,8 +866,12 @@ export function createAgentTools(deps: {
           if (occurrences === 0) {
             return 'Error: searchText does not occur in the document — pass text exactly as it reads there (read_file shows markdown; drop its syntax)'
           }
+          const target = occurrence ?? 1
+          if (target > occurrences) {
+            return `Error: searchText occurs ${occurrences} time(s) — occurrence ${target} does not exist`
+          }
           const before = new Set(await listDocSuggestionIds(client, fileId))
-          await suggestDocsEdit({ documentId: fileId, searchText, replacement })
+          await suggestDocsEdit({ documentId: fileId, searchText, replacement, occurrence: target })
           // The UI flow is blind; the API is the witness — a landed suggestion
           // brings new pending-suggestion ids.
           const found = (await listDocSuggestionIds(client, fileId)).some((id) => !before.has(id))
@@ -871,7 +884,7 @@ export function createAgentTools(deps: {
                 warning:
                   'submitted, but no new pending suggestion is visible via the API yet — verify before relying on it',
               }
-          if (occurrences > 1) result.note = `searchText occurs ${occurrences} times — the first occurrence was edited`
+          if (occurrences > 1) result.note = `searchText occurs ${occurrences} times — occurrence ${target} was edited`
           return result
         } catch (err) {
           return toolError(err)
