@@ -64,6 +64,7 @@ export {
   DOCS_API_URL,
   batchUpdateDoc,
   getDocOutline,
+  listDocSuggestionIds,
   summarizeDocument,
   validateDocsRequests,
 } from './docs.ts'

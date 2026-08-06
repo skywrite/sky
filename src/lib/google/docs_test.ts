@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { summarizeDocument, validateDocsRequests } from './docs.ts'
+import { collectSuggestionIds, summarizeDocument, validateDocsRequests } from './docs.ts'
 
 test('validateDocsRequests', () => {
   assert({
@@ -106,5 +106,57 @@ test('summarizeDocument', () => {
       endIndex: 90,
     },
     actual: summarizeDocument(doc),
+  })
+})
+
+test('collectSuggestionIds', () => {
+  const doc = {
+    body: {
+      content: [
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'kept ', suggestedInsertionIds: ['suggest.a1'] } },
+              { textRun: { content: 'cut ', suggestedDeletionIds: ['suggest.a1'] } },
+            ],
+          },
+        },
+        {
+          table: {
+            tableRows: [
+              {
+                tableCells: [
+                  {
+                    content: [
+                      {
+                        paragraph: {
+                          elements: [{ textRun: { content: 'cell', suggestedInsertionIds: ['suggest.b2'] } }],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  }
+
+  assert({
+    given: 'a documents.get tree with suggestion ids at several depths',
+    should: 'collect each id once',
+    expected: ['suggest.a1', 'suggest.b2'],
+    actual: collectSuggestionIds(doc),
+  })
+
+  assert({
+    given: 'a document without pending suggestions',
+    should: 'return no ids',
+    expected: [],
+    actual: collectSuggestionIds({
+      body: { content: [{ paragraph: { elements: [{ textRun: { content: 'hi' } }] } }] },
+    }),
   })
 })

@@ -1,5 +1,5 @@
 import type { Page } from 'playwright'
-import { launchGoogleBrowser, openGooglePage } from '../../lib/browserSession.ts'
+import { openGooglePage, withGoogleBrowser } from '../../lib/browserSession.ts'
 
 // Real anchored comments, which the Drive API cannot create on editor files
 // (anchors are opaque internal ids — see comments.ts): drive the actual
@@ -47,8 +47,7 @@ export async function addSlidesComment(options: {
 }): Promise<{ level: 'element' | 'slide' }> {
   // Headless: input is injected via the automation protocol, so no visible
   // window is needed — and a popping window would steal the user's focus.
-  const context = await launchGoogleBrowser({ headless: true })
-  try {
+  return await withGoogleBrowser({ headless: true }, async (context) => {
     const page = await openGooglePage(context, slidesCommentUrl(options.presentationId, options.slideObjectId))
     await page.waitForTimeout(3000)
     let level: 'element' | 'slide' = 'slide'
@@ -72,9 +71,7 @@ export async function addSlidesComment(options: {
     }
     await typeComment(page, options.comment)
     return { level }
-  } finally {
-    await context.close()
-  }
+  })
 }
 
 /**
@@ -88,8 +85,7 @@ export async function addDocsComment(options: {
   searchText: string
   comment: string
 }): Promise<void> {
-  const context = await launchGoogleBrowser({ headless: true })
-  try {
+  await withGoogleBrowser({ headless: true }, async (context) => {
     const page = await openGooglePage(context, docsCommentUrl(options.documentId))
     await page.waitForTimeout(4000)
     // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
@@ -107,9 +103,7 @@ export async function addDocsComment(options: {
     await page.keyboard.press('Escape')
     await page.waitForTimeout(600)
     await typeComment(page, options.comment)
-  } finally {
-    await context.close()
-  }
+  })
 }
 
 /** Comment anchored to one cell: the #gid=…&range=… fragment selects it on load. */
@@ -119,12 +113,9 @@ export async function addSheetsComment(options: {
   range: string
   comment: string
 }): Promise<void> {
-  const context = await launchGoogleBrowser({ headless: true })
-  try {
+  await withGoogleBrowser({ headless: true }, async (context) => {
     const page = await openGooglePage(context, sheetsCommentUrl(options.spreadsheetId, options.sheetId, options.range))
     await page.waitForTimeout(2500)
     await typeComment(page, options.comment)
-  } finally {
-    await context.close()
-  }
+  })
 }

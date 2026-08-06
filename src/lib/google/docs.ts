@@ -126,3 +126,43 @@ export async function getDocOutline(client: GoogleClient, fileId: string): Promi
   const doc = await client.getJson<RawDocument>(url.toString())
   return summarizeDocument(doc)
 }
+
+// ── Pending suggestions ────────────────────────────────────────────────
+
+/**
+ * Every suggestion id under a suggestedInsertionIds/suggestedDeletionIds
+ * key, anywhere in a documents.get tree (text runs, paragraph marks, table
+ * cells), each once.
+ */
+export function collectSuggestionIds(node: unknown): string[] {
+  const ids = new Set<string>()
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if ((key === 'suggestedInsertionIds' || key === 'suggestedDeletionIds') && Array.isArray(child)) {
+        for (const id of child) if (typeof id === 'string') ids.add(id)
+      } else {
+        walk(child)
+      }
+    }
+  }
+  walk(node)
+  return [...ids]
+}
+
+/**
+ * Ids of the pending suggested edits in a document. The Docs API cannot
+ * CREATE suggestions — they only enter through the editor UI (see
+ * browserSuggestions.ts) — but it lists them faithfully, so comparing the
+ * ids before and after proves a UI-driven suggestion actually landed.
+ */
+export async function listDocSuggestionIds(client: GoogleClient, fileId: string): Promise<string[]> {
+  const url = new URL(`${DOCS_API_URL}/${encodeURIComponent(fileId)}`)
+  url.searchParams.set('fields', 'body')
+  const doc = await client.getJson<unknown>(url.toString())
+  return collectSuggestionIds(doc)
+}
