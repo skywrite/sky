@@ -21,9 +21,17 @@
  * the parser tolerates a collapsed final newline. Any `-->` inside a string
  * value is escaped as `--\u003e` so it cannot terminate the comment early;
  * JSON.parse restores the original text, keeping the law exact.
+ *
+ * Fields grow within a version additively — v2 records gained the optional
+ * `lex`/`prov` score parts with the Stage 2 scorer. Optional fields never
+ * bump the version: the reader tolerates their absence, and a bump would
+ * orphan resume for every transcript already on disk.
  */
 
 export const CONTEXT_LOG_VERSION = 2
+
+/** How deliberately queries retrieved a doc, from result-set selectivity. */
+export type RetrievalTier = 'targeted' | 'medium' | 'broad'
 
 /** One document the context pipeline saw this turn. */
 export interface ContextDocRecord {
@@ -33,6 +41,10 @@ export interface ContextDocRecord {
   score?: number
   /** Estimated tokens of the document's markdown */
   tokens: number
+  /** Lexical topic-match part of the score (0–8); absent when ~0 */
+  lex?: number
+  /** Best retrieval-evidence tier; absent = baseline or expansion doc */
+  prov?: RetrievalTier
   /** Pinned docs bypass scoring and the budget */
   pinned?: true
   /** Why the doc was NOT shipped: 'budget' or a scorer-verdict reason. Absent = shipped. */

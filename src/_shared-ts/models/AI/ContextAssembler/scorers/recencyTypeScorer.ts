@@ -24,8 +24,8 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
 // Project material fades by status when the token budget forces cuts:
 // open > completed > whiteboard > canceled > hold. Completed projects are
 // real accomplished work; hold is indefinite limbo. Penalties, not
-// exclusions — a direct question about an archived project still wins via
-// the priority boost.
+// exclusions — ai:chat's retrieval-evidence boost (Chat/ChatContext/score.ts)
+// still lifts a directly-asked-about archived project.
 const PROJECT_STATUS_PENALTIES: ReadonlyArray<[string, number]> = [
   ['/projects/completed/', 1],
   ['/projects/whiteboard/', 1.5],
@@ -41,15 +41,12 @@ function projectStatusPenalty(path: string): number {
 }
 
 export interface RecencyTypeScorerOptions {
-  /** Paths retrieved by ai:context:files — these are query-relevant and get a score boost. */
-  priorityPaths?: ReadonlySet<string>
   /** Recency horizon in days. Default 540 (18 months). */
   horizonDays?: number
 }
 
 export function createRecencyTypeScorer(today: PlainDate, opts?: RecencyTypeScorerOptions): Scorer {
   const todayMs = today.toDate().getTime()
-  const priorityPaths = opts?.priorityPaths ?? new Set()
   const horizonDays = opts?.horizonDays ?? 540
 
   return (item: CollectionItem<Document>) => {
@@ -64,9 +61,6 @@ export function createRecencyTypeScorer(today: PlainDate, opts?: RecencyTypeScor
     // Depth penalty (0-3)
     const depthPenalty = Math.min(item.depth, 3)
 
-    // Priority boost: files retrieved by ai:context:files are query-relevant
-    const priorityBoost = priorityPaths.has(item.path) ? 10 : 0
-
-    return scored(recency + typeScore - depthPenalty + priorityBoost - projectStatusPenalty(item.path))
+    return scored(recency + typeScore - depthPenalty - projectStatusPenalty(item.path))
   }
 }
