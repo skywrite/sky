@@ -1,7 +1,7 @@
 ---
 from: Jane Doe
 to: Atlas Team
-when: 09:46
+when: 2026-01-15 09:46
 medium: Loom
 summary: Weekly product update
 video:

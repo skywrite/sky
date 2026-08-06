@@ -1,7 +1,7 @@
 ---
 from: Sarah Mitchell
 to: JP
-when: 10:30
+when: 2026-01-23 10:30
 medium: Slack
 context: #team-engineering
 summary: Infrastructure Budget Discussion

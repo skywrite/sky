@@ -32,7 +32,7 @@ test(`EmailDocument.fromMarkdown() with fixture`, async () => {
     given,
     should: 'parse when correctly',
     expected: '09:15',
-    actual: e.when.time,
+    actual: e.when.datetime.time,
   })
 })
 
@@ -83,7 +83,7 @@ test(`new EmailDocument()`, () => {
     given,
     should: 'have correct when time',
     expected: '09:15',
-    actual: e.when.time,
+    actual: e.when.datetime.time,
   })
 
   assert({

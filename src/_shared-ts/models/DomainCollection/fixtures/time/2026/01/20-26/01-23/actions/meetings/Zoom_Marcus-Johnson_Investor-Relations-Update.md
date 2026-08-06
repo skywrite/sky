@@ -1,6 +1,6 @@
 ---
 who: Marcus Johnson
-when: 16:30 - 17:00
+when: 2026-01-23 16:30 30m
 medium: Zoom
 context:
 summary: Investor Relations Update

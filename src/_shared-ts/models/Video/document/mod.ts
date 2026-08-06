@@ -1,6 +1,6 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const DEFAULT_TEMPLATE = `# Video
 
@@ -31,7 +31,7 @@ export default class VideoDocument extends Document {
 
     if (markdown === undefined) {
       const { when: whenRaw, body, ...extra } = input
-      const when = whenRaw instanceof PlainDateTime ? whenRaw.time : (whenRaw ?? new PlainDateTime().time)
+      const when = When.from(whenRaw as Parameters<typeof When.from>[0]).toYaml()
       const medium = input['medium'] ?? 'Video'
 
       yaml = {
@@ -67,15 +67,8 @@ export default class VideoDocument extends Document {
     return this.yaml['to'] as string | undefined
   }
 
-  get when(): PlainDateTime {
-    const when = this.yaml['when']
-    if (typeof when === 'string') {
-      return PlainDateTime.fromString(when)
-    }
-    if (when instanceof PlainDateTime) {
-      return when
-    }
-    return new PlainDateTime()
+  get when(): When {
+    return When.fromYaml(this.yaml['when'])
   }
 
   get medium(): string {

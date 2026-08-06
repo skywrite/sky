@@ -1,7 +1,7 @@
 ---
 from: Alice
 to: Bob
-when: 14:30
+when: 2026-01-15 14:30
 medium: Slack
 summary:
 created:

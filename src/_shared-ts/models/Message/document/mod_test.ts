@@ -32,7 +32,7 @@ test(`MessageDocument.fromMarkdown() with fixture`, async () => {
     given,
     should: 'parse when correctly',
     expected: '14:30',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 
   assert({
@@ -74,7 +74,7 @@ test(`new MessageDocument()`, () => {
     given,
     should: 'have correct when time',
     expected: '14:30',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 
   assert({
