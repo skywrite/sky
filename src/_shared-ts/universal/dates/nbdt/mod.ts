@@ -16,5 +16,7 @@ export { default as PlainYear } from './PlainYear/mod.ts'
 export { default as Duration } from './Duration/mod.ts'
 export type { DurationLike, DurationUnit } from './Duration/mod.ts'
 
+export { default as When } from './When/mod.ts'
+
 // Future exports:
 // export { default as PlainTime } from './PlainTime/mod.ts'
