@@ -1,7 +1,7 @@
 ---
 from: Chen Wei
 to: JP
-when: 14:00
+when: 2026-01-23 14:00
 medium: Slack
 context: "#eng"
 summary: API migration update - blocker found

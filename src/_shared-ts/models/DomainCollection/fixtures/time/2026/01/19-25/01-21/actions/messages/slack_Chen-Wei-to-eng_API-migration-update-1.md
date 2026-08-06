@@ -1,7 +1,7 @@
 ---
 from: Chen Wei
 to: JP
-when: 09:00
+when: 2026-01-21 09:00
 medium: Slack
 context: "#eng"
 summary: API migration update - initial plan

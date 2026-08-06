@@ -1,6 +1,6 @@
 ---
 who: Maria Santos
-when: 14:00 - 14:45
+when: 2026-01-23 14:00 45m
 medium: FaceTime Audio
 context:
 summary: Mobile App Redesign Discussion

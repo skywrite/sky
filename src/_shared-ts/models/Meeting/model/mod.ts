@@ -2,7 +2,7 @@ import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import Person from '#shared/models/Person/model/mod.ts'
 import RelSet from '#shared/models/RelSet/mod.ts'
 import type TagSet from '#shared/models/TagSet/mod.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { When } from '#universal/dates/nbdt/mod.ts'
 import type MeetingDocument from '../document/mod.ts'
 
 /**
@@ -25,7 +25,7 @@ export default class Meeting {
   }
 
   // Delegated data properties
-  get when(): PlainDateTime {
+  get when(): When {
     return this.doc.when
   }
 

@@ -1,6 +1,6 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 export default class EventDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
@@ -19,15 +19,9 @@ export default class EventDocument extends Document {
     return (this.yaml['what'] as string) ?? ''
   }
 
-  get when(): PlainDateTime | undefined {
-    const when = this.yaml['when']
-    if (typeof when === 'string') {
-      return PlainDateTime.fromString(when)
-    }
-    if (when instanceof PlainDateTime) {
-      return when
-    }
-    return undefined
+  get when(): When | undefined {
+    if (this.yaml['when'] === undefined || this.yaml['when'] === null) return undefined
+    return When.fromYaml(this.yaml['when'])
   }
 
   get where(): string | undefined {
@@ -57,7 +51,7 @@ export default class EventDocument extends Document {
   }): EventDocument {
     const yaml: Record<string, unknown> = {
       what: props.what,
-      when: props.when ? props.when.time : undefined,
+      when: props.when ? When.from(props.when).toYaml() : undefined,
       where: props.where || null,
       who: props.who || null,
       rel: props.rel || null,

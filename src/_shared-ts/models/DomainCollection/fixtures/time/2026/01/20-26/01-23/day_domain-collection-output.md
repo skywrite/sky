@@ -376,7 +376,7 @@ Modernize cloud infrastructure to improve reliability and reduce costs. Includes
 ---
 from: Sarah Mitchell
 to: JP
-when: 10:30
+when: 2026-01-23 10:30
 medium: Slack
 context:
 summary: Infrastructure Budget Discussion
@@ -413,7 +413,7 @@ Approved the reserved instance purchase. Asked Sarah to present full cost optimi
 <!-- time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md -->
 ---
 who: Chen Wei
-when: 09:00 - 10:00
+when: 2026-01-23 09:00 60m
 medium: Zoom
 context:
 summary: Q1 Product Roadmap Review
@@ -458,7 +458,7 @@ Chen Wei and I reviewed the Q1 product roadmap, focusing on feature prioritizati
 <!-- time/2026/01/20-26/01-23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md -->
 ---
 who: Maria Santos
-when: 14:00 - 14:45
+when: 2026-01-23 14:00 45m
 medium: FaceTime Audio
 context:
 summary: Mobile App Redesign Discussion
@@ -503,7 +503,7 @@ Discussed Maria's design proposal for the mobile app redesign. She presented thr
 <!-- time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md -->
 ---
 who: Marcus Johnson
-when: 16:30 - 17:00
+when: 2026-01-23 16:30 30m
 medium: Zoom
 context:
 summary: Investor Relations Update

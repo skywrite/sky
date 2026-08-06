@@ -15,7 +15,7 @@ test(`VideoDocument.fromMarkdown() with fixture`, async () => {
 
   assert({ given, should: 'restore from', expected: 'Jane Doe', actual: v.from })
   assert({ given, should: 'restore to', expected: 'Atlas Team', actual: v.to })
-  assert({ given, should: 'parse when correctly', expected: '09:46', actual: v.when.time })
+  assert({ given, should: 'parse when correctly', expected: '09:46', actual: v.when.datetime.time })
   assert({ given, should: 'parse medium correctly', expected: 'Loom', actual: v.medium })
   assert({ given, should: 'parse summary correctly', expected: 'Weekly product update', actual: v.summary })
 })
@@ -28,7 +28,7 @@ test(`new VideoDocument()`, () => {
 
   assert({ given, should: 'have correct from', expected: 'Jane Doe', actual: v.from })
   assert({ given, should: 'have correct to', expected: 'Atlas Team', actual: v.to })
-  assert({ given, should: 'have correct when time', expected: '20:24', actual: v.when.time })
+  assert({ given, should: 'have correct when time', expected: '20:24', actual: v.when.datetime.time })
   assert({ given, should: 'have correct medium', expected: 'YouTube', actual: v.medium })
   assert({ given, should: 'have correct summary', expected: 'test summary', actual: v.summary })
 })
@@ -39,7 +39,7 @@ test(`new VideoDocument() defaults`, () => {
   const v = new VideoDocument({ summary: 'test' })
 
   assert({ given, should: 'default medium to Video', expected: 'Video', actual: v.medium })
-  assert({ given, should: 'have a default when time', expected: true, actual: v.when.time.length > 0 })
+  assert({ given, should: 'have a default when time', expected: true, actual: v.when.datetime.time.length > 0 })
   assert({ given, should: 'omit from when not given', expected: undefined, actual: v.from })
   assert({ given, should: 'omit to when not given', expected: undefined, actual: v.to })
   assert({ given, should: 'default video url to null', expected: undefined, actual: v.videoUrl })
@@ -74,7 +74,7 @@ test(`VideoDocument.toMarkdown()`, () => {
 
   assert({ given, should: 'render yaml frontmatter', expected: true, actual: md.startsWith('---\n') })
   assert({ given, should: 'include from field', expected: true, actual: md.includes('from: Jane Doe') })
-  assert({ given, should: 'include when field', expected: true, actual: md.includes('when: 20:24') })
+  assert({ given, should: 'include when field', expected: true, actual: md.includes('when: 2022-11-17 20:24') })
   assert({ given, should: 'include medium field', expected: true, actual: md.includes('medium: Loom') })
   assert({ given, should: 'include the nested video key', expected: true, actual: md.includes('video:\n  url:') })
   assert({ given, should: 'include default heading', expected: true, actual: md.includes('# Video') })

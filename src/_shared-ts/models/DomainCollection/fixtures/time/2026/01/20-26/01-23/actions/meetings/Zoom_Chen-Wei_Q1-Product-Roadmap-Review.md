@@ -1,6 +1,6 @@
 ---
 who: Chen Wei
-when: 09:00 - 10:00
+when: 2026-01-23 09:00 60m
 medium: Zoom
 context:
 summary: Q1 Product Roadmap Review

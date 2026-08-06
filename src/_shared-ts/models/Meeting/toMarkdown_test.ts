@@ -25,7 +25,7 @@ test(`MeetingDocument.fromMarkdown() with fixture`, async () => {
     given,
     should: 'parse when correctly',
     expected: '20:24',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 
   assert({
@@ -54,7 +54,7 @@ test(`new MeetingDocument()`, () => {
     given,
     should: 'have correct when time',
     expected: '20:24',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 
   assert({
@@ -98,7 +98,7 @@ test(`Meeting.toMarkdown()`, () => {
     given,
     should: 'include when field',
     expected: true,
-    actual: md.includes('when: 20:24'),
+    actual: md.includes('when: 2022-11-17 20:24'),
   })
 
   assert({
@@ -136,7 +136,7 @@ test(`MeetingDocument.fromMarkdown()`, () => {
 
   const markdown = `---
 who: test/person
-when: 14:30
+when: 2026-01-15 14:30
 medium: Phone
 context: business
 summary: quarterly review
@@ -161,7 +161,7 @@ Some notes here.
     given,
     should: 'parse when correctly',
     expected: '14:30',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 
   assert({
@@ -203,7 +203,7 @@ test(`new MeetingDocument() defaults`, () => {
     given,
     should: 'have a default when time',
     expected: true,
-    actual: m.when.time.length > 0,
+    actual: m.when.datetime.time.length > 0,
   })
 })
 
@@ -230,15 +230,17 @@ test(`new MeetingDocument() with In Person medium`, () => {
 })
 
 test(`new MeetingDocument() with when as string`, () => {
-  const given = 'Create Meeting with when as time string'
+  const given = 'Create Meeting with when as a full datetime string'
   const should = 'parse when correctly'
 
-  const m = new MeetingDocument({ who: 'test/person', when: '15:30' })
+  // A bare time is no longer accepted: the date is part of the field now, and
+  // the CLI layer resolves "15:30" against the notebook day before it gets here.
+  const m = new MeetingDocument({ who: 'test/person', when: '2026-01-15 15:30' })
 
   assert({
     given,
     should,
     expected: '15:30',
-    actual: m.when.time,
+    actual: m.when.datetime.time,
   })
 })

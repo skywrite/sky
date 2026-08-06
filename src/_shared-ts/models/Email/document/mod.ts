@@ -1,5 +1,5 @@
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 export default class EmailDocument extends MessageDocument {
   // created/updated appear only in legacy files — creation no longer stamps them
@@ -32,7 +32,7 @@ export default class EmailDocument extends MessageDocument {
     if (markdown === undefined) {
       // Creation: destructure fields that need normalization, rest passes through
       const { when: whenRaw, created: _c, updated: _u, cc, bcc, ...extra } = input
-      const when = whenRaw instanceof PlainDateTime ? whenRaw.time : (whenRaw ?? new PlainDateTime().time)
+      const when = When.from(whenRaw as Parameters<typeof When.from>[0]).toYaml()
 
       yaml = {
         from: input['from'] ?? null,
