@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-07-28T13:01:40.462Z
+# Generated at: 2026-08-06T01:17:04.711Z
 # =============================================================================
 
 type Query {
@@ -36,11 +36,21 @@ type Query {
 # =============================================================================
 
 """
+A point in time with an optional length. End is derived, never stored.
+"""
+type When {
+  datetime: String! # YYYY-MM-DD HH:MM (hours may exceed 24 for late nights)
+  duration: String # Length as an ms-style string, e.g. "70m"
+  durationMinutes: Int # Length in whole minutes
+  end: String # Derived end time, YYYY-MM-DD HH:MM
+}
+
+"""
 Meeting notes with attendees and outcomes
 """
 type Meeting {
   who: String! # Attendees (comma-separated names)
-  when: String! # Time of meeting (HH:MM)
+  when: When # When it happened, with optional duration
   medium: String! # Meeting type: Zoom, Phone, In Person, etc.
   context: String # Context or purpose
   summary: String # Brief summary
@@ -59,7 +69,7 @@ Video recording with transcript and summary
 type Video {
   from: String # Presenter/creator
   to: String # Intended audience: person name(s), or "#channel-name" for videos posted to a Slack channel
-  when: String! # Time (HH:MM)
+  when: When # When it happened, with optional duration
   medium: String! # Video platform: Video, Loom, YouTube, etc.
   summary: String # Brief summary
   url: String # Video URL
@@ -77,7 +87,7 @@ Messages from Slack, email, text, etc.
 type Message {
   from: String # Sender name
   to: String # Recipient(s): person name(s), or "#channel-name" for Slack channel messages
-  when: String! # Time (HH:MM)
+  when: When # When it happened, with optional duration
   medium: String! # Platform: Slack, Email, iMessage, etc.
   summary: String # Brief summary
   date: String! # Date (YYYY-MM-DD)
@@ -253,7 +263,7 @@ Saved AI chat conversation (ai:chat transcript)
 type Chat {
   date: String! # Date (YYYY-MM-DD)
   day: Day # The day this chat happened on
-  when: String # Start time (HH:MM)
+  when: String # Start time from the filename (HH:MM)
   summary: String # Conversation summary
   provider: String # AI provider (claude, openai, etc.)
   model: String # Model name

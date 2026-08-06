@@ -30,13 +30,26 @@ interface FilterDef {
   fields: Record<string, string>
 }
 
+// Shared value types (not documents in their own right)
+const VALUE_TYPES: Record<string, TypeDef> = {
+  When: {
+    description: 'A point in time with an optional length. End is derived, never stored.',
+    fields: {
+      datetime: { type: 'String!', description: 'YYYY-MM-DD HH:MM (hours may exceed 24 for late nights)' },
+      duration: { type: 'String', description: 'Length as an ms-style string, e.g. "70m"', nullable: true },
+      durationMinutes: { type: 'Int', description: 'Length in whole minutes', nullable: true },
+      end: { type: 'String', description: 'Derived end time, YYYY-MM-DD HH:MM', nullable: true },
+    },
+  },
+}
+
 // Document types derived from _shared-ts/models/*/document/mod.ts
 const DOCUMENT_TYPES: Record<string, TypeDef> = {
   Meeting: {
     description: 'Meeting notes with attendees and outcomes',
     fields: {
       who: { type: 'String', description: 'Attendees (comma-separated names)' },
-      when: { type: 'String', description: 'Time of meeting (HH:MM)' },
+      when: { type: 'When', description: 'When it happened, with optional duration', nullable: true },
       medium: { type: 'String', description: 'Meeting type: Zoom, Phone, In Person, etc.' },
       context: { type: 'String', description: 'Context or purpose', nullable: true },
       summary: { type: 'String', description: 'Brief summary', nullable: true },
@@ -58,7 +71,7 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
         description: 'Intended audience: person name(s), or "#channel-name" for videos posted to a Slack channel',
         nullable: true,
       },
-      when: { type: 'String', description: 'Time (HH:MM)' },
+      when: { type: 'When', description: 'When it happened, with optional duration', nullable: true },
       medium: { type: 'String', description: 'Video platform: Video, Loom, YouTube, etc.' },
       summary: { type: 'String', description: 'Brief summary', nullable: true },
       url: { type: 'String', description: 'Video URL', nullable: true },
@@ -79,7 +92,7 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
         description: 'Recipient(s): person name(s), or "#channel-name" for Slack channel messages',
         nullable: true,
       },
-      when: { type: 'String', description: 'Time (HH:MM)' },
+      when: { type: 'When', description: 'When it happened, with optional duration', nullable: true },
       medium: { type: 'String', description: 'Platform: Slack, Email, iMessage, etc.' },
       summary: { type: 'String', description: 'Brief summary', nullable: true },
       date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
@@ -248,7 +261,7 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     fields: {
       date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
       day: { type: 'Day', description: 'The day this chat happened on', nullable: true },
-      when: { type: 'String', description: 'Start time (HH:MM)', nullable: true },
+      when: { type: 'String', description: 'Start time from the filename (HH:MM)', nullable: true },
       summary: { type: 'String', description: 'Conversation summary', nullable: true },
       provider: { type: 'String', description: 'AI provider (claude, openai, etc.)', nullable: true },
       model: { type: 'String', description: 'Model name', nullable: true },
@@ -600,8 +613,9 @@ function generateSchema(): string {
   lines.push('# ' + '='.repeat(77))
   lines.push('')
 
-  // Document types
-  for (const [typeName, typeDef] of Object.entries(DOCUMENT_TYPES)) {
+  // Value types and document types share one emitter — a value type is just a
+  // type the documents point at rather than one a root field returns.
+  for (const [typeName, typeDef] of Object.entries({ ...VALUE_TYPES, ...DOCUMENT_TYPES })) {
     if (typeDef.description) {
       lines.push('"""', typeDef.description, '"""')
     }

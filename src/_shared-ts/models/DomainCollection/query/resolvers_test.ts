@@ -5,6 +5,7 @@
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
+import { docToMeeting } from './resolvers/meeting.ts'
 import { createDomainResolvers } from './resolvers/mod.ts'
 import { DEFAULT_QUERY_LIMIT } from './resolvers/shared.ts'
 
@@ -25,7 +26,7 @@ function createMockStore(): MarkdownStore {
     {
       doc: Document.fromMarkdown(`---
 who: Alice, Bob
-when: "14:00"
+when: 2026-02-01 14:00 - 15:00
 medium: Zoom
 date: "2026-02-01"
 summary: Project kickoff
@@ -37,7 +38,7 @@ Meeting notes here.`),
     {
       doc: Document.fromMarkdown(`---
 who: Charlie
-when: "10:00"
+when: 2026-01-28 10:00
 medium: Phone
 date: "2026-01-28"
 summary: Quick sync
@@ -54,7 +55,7 @@ Phone call notes.`),
       doc: Document.fromMarkdown(`---
 from: Tanisha
 to: JP
-when: "18:18"
+when: 2026-01-28 18:18
 medium: Slack
 summary: M&A candidate
 created: 2026-02-18
@@ -66,7 +67,7 @@ Old message saved later.`),
       doc: Document.fromMarkdown(`---
 from: Kevin
 to: JP
-when: "09:00"
+when: 2026-01-28 09:00
 medium: Slack
 summary: Status update
 created: 2026-02-17
@@ -1082,7 +1083,7 @@ function createVideoStore(): MarkdownStore {
       doc: Document.fromMarkdown(`---
 from: Jane Doe
 to: "#engineering"
-when: "09:46"
+when: 2026-01-28 09:46
 medium: Loom
 summary: Weekly product update
 video:
@@ -1095,7 +1096,7 @@ Transcript mentions the Atlas rollout.`),
       doc: Document.fromMarkdown(`---
 from: John Smith
 to: Atlas Team
-when: "11:00"
+when: 2026-01-28 11:00
 medium: YouTube
 summary: Conference talk
 ---
@@ -1300,5 +1301,47 @@ test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () =>
     should: 'honor the explicit limit',
     actual: resolvers.documents({ limit: DEFAULT_QUERY_LIMIT + 10 }).length,
     expected: DEFAULT_QUERY_LIMIT + 10,
+  })
+})
+
+// The when: mapping had no coverage at all: getWhenField swallows a value it
+// cannot read and returns null, so a broken mapping would have looked like a
+// passing suite rather than a failure.
+const MEETING_PATH = '/test/time/2026/02/02-08/02-01/actions/meetings/x.md'
+
+test('docToMeeting maps when to its structured shape', () => {
+  const doc = Document.fromMarkdown(`---
+who: Alice, Bob
+when: 2026-02-01 14:00 - 15:00
+medium: Zoom
+---
+Notes.`)
+
+  assert({
+    given: 'a meeting written as a range',
+    should: 'expose datetime, derived duration and derived end',
+    actual: JSON.stringify(docToMeeting(doc, MEETING_PATH).when),
+    expected: JSON.stringify({
+      datetime: '2026-02-01 14:00',
+      duration: '60m',
+      durationMinutes: 60,
+      end: '2026-02-01 15:00',
+    }),
+  })
+})
+
+test('docToMeeting maps an unreadable when to null rather than throwing', () => {
+  const doc = Document.fromMarkdown(`---
+who: Dana
+when:
+medium: Zoom
+---
+No time was ever recorded.`)
+
+  assert({
+    given: 'a document whose when: records no time',
+    should: 'yield null instead of failing the whole query',
+    actual: docToMeeting(doc, MEETING_PATH).when,
+    expected: null,
   })
 })
