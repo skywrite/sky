@@ -48,7 +48,17 @@ function buildFixture(): string {
 test('sanitizeEmailHtml removes non-content machinery', () => {
   const out = sanitizeEmailHtml(buildFixture())
 
-  for (const gone of ['<style', '<head', '<title', 'DOCTYPE', '<?xml', '@font-face', '<meta', 'OfficeDocumentSettings', 'supportLists']) {
+  for (const gone of [
+    '<style',
+    '<head',
+    '<title',
+    'DOCTYPE',
+    '<?xml',
+    '@font-face',
+    '<meta',
+    'OfficeDocumentSettings',
+    'supportLists',
+  ]) {
     assert({
       given: 'a Word/Outlook-style email',
       should: `drop ${gone}`,
@@ -130,7 +140,11 @@ test('sanitizeEmailHtml reduces images to their alt text', () => {
   assert({
     given: 'image srcs, tracking pixels, and data: URIs',
     should: 'drop them all',
-    actual: out.includes('cdn.example.com') || out.includes('track.example.com') || out.includes('data:image') || out.includes('AAAAA'),
+    actual:
+      out.includes('cdn.example.com') ||
+      out.includes('track.example.com') ||
+      out.includes('data:image') ||
+      out.includes('AAAAA'),
     expected: false,
   })
 })
