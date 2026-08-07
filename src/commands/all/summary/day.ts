@@ -5,9 +5,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import openEditor from '#lib/shell/openEditor.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { DayDocument } from '#shared/models/Day/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
+import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
@@ -16,6 +15,7 @@ import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData, type HealthData } from './_health.ts'
 import { type DayPriceData, gatherDayPriceData } from './_prices.ts'
+import gatherDayDocs from './lib/gatherDayDocs.ts'
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
@@ -93,29 +93,21 @@ export default class SummaryDayTask extends Command {
 
     output.log(`Generating Daily Summary for ${day.ymd}...`)
 
-    // 1. Get all files for the day via markdown:filter
-    //
-    // CONSIDERATION: Could use DayDocument.allDocumentRefs instead, which parses
-    // day.md and extracts linked meetings/messages/notes. That would be cleaner
-    // than grabbing everything by directory. However, journals (journal/*.md)
-    // are NOT linked from day.md - they're just in the subdirectory. So we'd
-    // miss them. Sticking with markdown:filter for now to get everything.
-    //
-    const filterResult = await tasks.run<{ files: string[] }>('markdown:filter', {
-      day,
-      raw: true,
-    })
+    // 1. Gather the day's documents in reading order: journals first, actions
+    // chronologically, day.md last — HTML comments stripped, summary.md excluded.
+    const { docs, skipped } = await gatherDayDocs(dayDirPath)
 
-    if (filterResult.status !== 'success') {
-      return CommandResult.error(new Error('Failed to filter files'), 'Failed to get day files')
+    const skippedCount = skipped.tiny.length + skipped.yamlError.length + skipped.unreadable.length
+    if (skippedCount > 0) {
+      output.log(
+        `Skipped ${skippedCount} file(s): ${skipped.tiny.length} stub, ${skipped.yamlError.length} bad YAML, ${skipped.unreadable.length} unreadable`,
+      )
+      for (const p of [...skipped.yamlError, ...skipped.unreadable]) {
+        output.log(`  ! ${p}`)
+      }
     }
 
-    const files = filterResult.data?.files || []
-
-    // Filter out summary.md from the file list
-    const dayFiles = files.filter((f) => !f.endsWith('summary.md'))
-
-    if (dayFiles.length === 0) {
+    if (docs.length === 0) {
       return CommandResult.fail('No files found for this day')
     }
 
@@ -129,63 +121,53 @@ export default class SummaryDayTask extends Command {
       timeDirs: [timeDir],
     })
 
-    // 3. Load all day files as documents
-    output.log('Loading day documents...')
-    const docs: Array<{ doc: Document; path: string }> = []
-
-    for (const file of dayFiles) {
-      try {
-        const content = await readTextFile(file)
-        // Skip empty or very short files
-        if (content.length < 50) continue
-        const doc = Document.fromMarkdown(content)
-        docs.push({ doc, path: file })
-      } catch {
-        // Skip files that can't be read
-      }
-    }
-
-    if (docs.length === 0) {
-      return CommandResult.fail('No readable documents found for this day')
-    }
-
-    // 4. Build DomainCollection - this resolves relationships to people, orgs, projects
+    // 3. Build DomainCollection - this resolves relationships to people, orgs, projects
     output.log('Building domain collection with resolved relationships...')
     const collection = DomainCollection.fromDocuments(docs, store)
 
     const healthData = await gatherHealthData(day, timeDir)
     const priceData = await gatherDayPriceData(day, <string>config.DIR_TRACKING)
 
-    // Load day document for location metadata
-    const dayMdPath = path.join(dayDirPath, 'day.md')
-    let location: string | undefined
-    try {
-      const dayContent = await readTextFile(dayMdPath)
-      const dayDoc = DayDocument.fromMarkdown(dayContent)
-      location = dayDoc.location
-    } catch {
-      // Day file may not exist or be readable
-    }
+    // Location metadata from the already-gathered day.md
+    const dayEntry = docs.find((d) => d.kind === 'day')
+    const location = dayEntry?.doc.yaml['location'] as string | undefined
 
-    // 5. Generate collated markdown input for Claude
-    const collatedMarkdown = collection.toMarkdown({
-      relativeTo: timeDir,
-      delimited: true,
-    })
+    // 4. Collate the model input: background section first (entities and
+    // anything else relationship traversal pulled in, type-priority order),
+    // then the day's documents in gathered order — day.md stays last, closest
+    // to the generation point, so the model can lean on it.
+    const baseDir = <string>config.DIR_BASE
+    const rootPaths = new Set(docs.map((d) => d.path))
+    const background = collection.allItems.filter((item) => !rootPaths.has(item.path))
+    const sections = [
+      Collection.from(background.map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))).toMarkdown({
+        relativeTo: baseDir,
+        delimited: true,
+      }),
+      Collection.from(docs.map((d) => ({ doc: d.doc, path: d.path }))).toMarkdown({
+        relativeTo: timeDir,
+        delimited: true,
+        sorted: false,
+      }),
+    ]
+    const collatedMarkdown = sections.filter((s) => s.length > 0).join('\n\n')
 
-    // 6. Extract rel for output file metadata
+    // 5. Extract rel for output file metadata
     const rel: string[] = [
       ...collection.orgs.map((o) => o.name),
       ...collection.people.map((p) => p.name),
       ...collection.projects.map((p) => `projects/${p.name}`),
     ]
 
-    // 7. Load prompt template
+    // 6. Load prompt template
     const promptTemplate = await this.loadPromptTemplate()
 
-    // 8. Build user prompt (date context + collated markdown + health data + prices + location)
+    // 7. Build user prompt (date context + collated markdown + health data + prices + location)
     const userPrompt = this.buildUserPrompt(day, collatedMarkdown, healthData, priceData, location)
 
+    const kinds = { journal: 0, action: 0, day: 0 }
+    for (const d of docs) kinds[d.kind]++
+    output.log(`Day documents: ${docs.length} (${kinds.journal} journal, ${kinds.action} actions, ${kinds.day} day)`)
     output.log(`Collection: ${collection.size} documents`)
     output.log(`  - Orgs: ${collection.orgs.length}`)
     output.log(`  - People: ${collection.people.length}`)
@@ -199,7 +181,7 @@ export default class SummaryDayTask extends Command {
       return CommandResult.success({ dryRun: true })
     }
 
-    // 9. Call Claude
+    // 8. Call Claude
     output.log('Calling Claude...')
     let response: string
     try {
@@ -218,7 +200,7 @@ export default class SummaryDayTask extends Command {
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
 
-    // 10. Build output file
+    // 9. Build output file
     const yamlHeader: Record<string, unknown> = {
       title: 'Daily Summary',
       day: day.ymd,
@@ -236,7 +218,6 @@ export default class SummaryDayTask extends Command {
 
     // Append context file paths as hidden comment (same pattern as ai:chat)
     const contextPaths = collection.paths
-    const baseDir = <string>config.DIR_BASE
     if (contextPaths.length > 0) {
       const relativePaths = contextPaths
         .map((p) => {
@@ -249,7 +230,7 @@ export default class SummaryDayTask extends Command {
       outputContent += '\n\n\n<!--\nCONTEXT:\n\n' + pathLines + '\n\nEND\n-->\n'
     }
 
-    // 11. Output
+    // 10. Output
     if (stdout) {
       output.log(outputContent)
       return CommandResult.success({ stdout: true })
@@ -259,7 +240,7 @@ export default class SummaryDayTask extends Command {
     await writeTextFile(summaryPath, outputContent)
     output.log(`Daily Summary written to ${summaryPath}`)
 
-    // 12. Open in editor if requested
+    // 11. Open in editor if requested
     if (open) {
       await openEditor([{ file: summaryPath }])
     }
