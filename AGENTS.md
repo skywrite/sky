@@ -115,6 +115,19 @@ It's fine to use a real value transiently to **verify** behavior (run the comman
 
 **Mandatory before every commit:** grep the staged diff for every real name/value you encountered during the session (`git diff --staged | grep -i "<name>"`). If you explored the notebook at all, assume leakage until the grep proves otherwise.
 
+## Subsystem Docs — Design Notes & Problem Logs
+
+Non-obvious design context lives next to the code that owns it, in a `docs/` folder beside the module (index: `git ls-files '*docs/*.md'`). Before non-trivial work in a subsystem, check for one and read its README.
+
+- `docs/README.md` — current design: the mental model needed before changing this code. Keep it true when behavior changes.
+- `docs/YYYY-MM-DD-<slug>.md` — dated problem narratives: what was wrong, what was tried and rejected, why the fix works. Append-only, never retro-edited — a dated file is allowed to be stale.
+- Every doc opens with YAML frontmatter carrying `created:` and `updated:` dates (`YYYY-MM-DD`). Bump `updated:` on every edit.
+- One home per topic — the module where the pieces compose, not where the mechanisms live. Other dirs the topic touches get a pointer line in their README, never a copy.
+- Cross-cutting topics with no owning module: `docs/topics/<slug>/` at repo root.
+- These files obey the mock-data rule above. Distill narratives with synthetic examples; raw session transcripts containing real notebook content stay out of the repo.
+
+After solving a problem whose reasoning isn't visible in the resulting code, add a dated entry at the topic's home (create `docs/` if needed).
+
 ## Key Conventions
 
 ### Imports
