@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { isStepCount, streamText } from 'ai'
@@ -12,6 +13,7 @@ import {
   GoogleApiError,
   deleteFile,
   getFile,
+  importFileAsDoc,
   listAccountEmails,
   resolveFileRef,
   slideDesignPromptSection,
@@ -24,6 +26,7 @@ import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
 import { writeDocArtifact } from './lib/artifact.ts'
+import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
 
@@ -45,6 +48,9 @@ const params = {
     required: true,
   }),
   file: Flag.string('Target an existing document (Google URL or file id)', { short: 'f' }),
+  import: Flag.string(
+    'Local document (.pdf, .docx, .md, .txt) uploaded converted to a Google Doc — the new Doc becomes the mission target',
+  ),
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
@@ -68,13 +74,14 @@ export default class GoogleAgentTask extends Command {
       'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself.',
     descriptionLong: [
       'Runs a focused sub-agent that executes one Google Workspace mission end',
-      'to end: find/read files, create docs from markdown (visually reviewed',
-      'as rendered PDF pages), build styled decks slide by slide with visual',
-      'verification via rendered thumbnails, place local images into docs and',
-      'decks, read/leave/reply-to comments, suggest tracked edits in Docs,',
-      'and build spreadsheets with live formulas, styling and native charts',
-      'embeddable into decks as linked charts. Progress streams as it works;',
-      'touched files are recorded in the notebook under actions/docs/.',
+      'to end: find/read files, import local documents (PDF, docx) as Docs,',
+      'create docs from markdown (visually reviewed as rendered PDF pages),',
+      'build styled decks slide by slide with visual verification via',
+      'rendered thumbnails, place local images into docs and decks,',
+      'read/leave/reply-to comments, suggest tracked edits in Docs, and build',
+      'spreadsheets with live formulas, styling and native charts embeddable',
+      'into decks as linked charts. Progress streams as it works; touched',
+      'files are recorded in the notebook under actions/docs/.',
     ],
     usage: [
       'sky google:agent "Create a doc titled Atlas Q3 Plan with: ..."',
@@ -82,6 +89,7 @@ export default class GoogleAgentTask extends Command {
       'sky google:agent "Make a budget sheet with a column chart" -d spend.csv',
       'sky google:agent "Photo-background deck pitching Atlas, dark and moody" -i ~/decks/backgrounds',
       'sky google:agent "Tighten the Outlook section" -f <doc-url>',
+      'sky google:agent "Review this contract; leave anchored comments on risky clauses" --import ~/deals/atlas-msa.pdf',
       'sky google:agent "Suggest edits fixing passive voice" -f <doc-url>',
       'sky google:agent "..." -a work',
     ],
@@ -91,6 +99,7 @@ export default class GoogleAgentTask extends Command {
   static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
     output.log(`  Mission: ${String(input.mission ?? '')}`)
     if (input.file) output.log(`  Target:  ${String(input.file)}`)
+    if (input.import) output.log(`  Import:  ${String(input.import)}`)
     output.log(`  Account: ${input.account ? String(input.account) : '(default)'}`)
   }
 
@@ -102,7 +111,7 @@ export default class GoogleAgentTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
-    const { mission, file, account } = args
+    const { mission, file, account, import: importPath } = args
 
     if (!mission?.trim()) {
       return CommandResult.fail('Provide a mission, e.g. sky google:agent "Create a doc titled X with ..."')
@@ -129,6 +138,10 @@ export default class GoogleAgentTask extends Command {
       open(url).catch(() => undefined)
     }
 
+    if (file && importPath) {
+      return CommandResult.fail('Pass either --file (existing Google file) or --import (local document), not both.')
+    }
+
     let target: { fileId: string; kind?: string } | null = null
     let targetFile: DriveFile | undefined
     if (file) {
@@ -152,6 +165,37 @@ export default class GoogleAgentTask extends Command {
         }
         throw err
       }
+    }
+
+    let importedFrom: string | undefined
+    if (importPath) {
+      const source = resolveImportSource(importPath)
+      if (!source) {
+        return CommandResult.fail(`--import handles ${IMPORT_EXTENSIONS} files, got: ${importPath}`)
+      }
+      let data: Uint8Array
+      try {
+        data = new Uint8Array(await readFile(source.filePath))
+      } catch {
+        return CommandResult.fail(`Could not read --import file: ${importPath}`)
+      }
+      if (data.length > MAX_IMPORT_BYTES) {
+        const mb = (n: number) => Math.round(n / (1024 * 1024))
+        return CommandResult.fail(
+          `--import file is too large for Doc conversion (${mb(data.length)}MB > ${mb(MAX_IMPORT_BYTES)}MB)`,
+        )
+      }
+      importedFrom = path.basename(source.filePath)
+      try {
+        targetFile = await importFileAsDoc(client, { title: source.title, data, contentType: source.contentType })
+      } catch (err) {
+        if (err instanceof GoogleApiError) {
+          return CommandResult.fail(`Drive could not convert ${importedFrom} to a Google Doc: ${err.message}`)
+        }
+        throw err
+      }
+      target = { fileId: targetFile.id }
+      output.log(colors.dim(`◦ Imported ${importedFrom} as Google Doc "${targetFile.name}"`))
     }
 
     let missionData: string | undefined
@@ -193,13 +237,23 @@ export default class GoogleAgentTask extends Command {
     const state = createMissionState()
     state.onFileTracked = (missionFile) => openInBrowser(missionFile.url)
     if (targetFile) openInBrowser(targetFile.webViewLink)
+    // The imported Doc is a mission artifact even when the agent only reads it.
+    if (importedFrom && target && targetFile) {
+      state.files.push({
+        id: target.fileId,
+        title: targetFile.name,
+        url: targetFile.webViewLink,
+        kind: 'doc',
+        action: 'created',
+      })
+    }
     const log = (line: string) => output.log(colors.dim(`◦ ${line}`))
     const tools = createAgentTools({ client, log, state, critiquePrompt, deckCritiquePrompt, docCritiquePrompt })
 
     const missionMessage = [
       `Mission: ${mission.trim()}`,
       target && targetFile
-        ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})`
+        ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})${importedFrom ? ` — just created by converting the local file ${importedFrom}; the mission concerns this Doc` : ''}`
         : undefined,
       missionData ? `Data (pass verbatim to set_values via its csv parameter):\n\n${missionData.trim()}` : undefined,
       imagePaths.length > 0
