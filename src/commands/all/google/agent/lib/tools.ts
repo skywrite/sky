@@ -16,6 +16,7 @@ import {
   deleteComment,
   listComments,
   listDocSuggestionIds,
+  listDocSuggestions,
   shareFile,
   createDocFromMarkdown,
   createPresentation,
@@ -811,7 +812,7 @@ export function createAgentTools(deps: {
 
     suggest_doc_edit: {
       description:
-        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited unless you pass occurrence (1-based, reading order). replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands, so never re-issue it — note the uncertainty in your report instead.',
+        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited unless you pass occurrence (1-based, reading order). replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands — check list_doc_suggestions before any re-issue.',
       inputSchema: jsonSchema<{ fileId: string; searchText: string; replacement: string; occurrence?: number }>({
         type: 'object',
         properties: {
@@ -886,6 +887,34 @@ export function createAgentTools(deps: {
               }
           if (occurrences > 1) result.note = `searchText occurs ${occurrences} times — occurrence ${target} was edited`
           return result
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
+    list_doc_suggestions: {
+      description:
+        'Read the pending suggested text edits on a Google Doc (Docs only): per suggestion its id, the text it deletes, the text it inserts, and the base text just before it for locating. Check before a suggest pass so you never duplicate a pending suggestion (including one whose suggest_doc_edit call timed out), and use it to verify at the end of a suggest mission; also the work list for missions about existing suggestions. Read-only — accepting or rejecting stays with the doc owner in the editor. The API carries no author per suggestion.',
+      inputSchema: jsonSchema<{ fileId: string }>({
+        type: 'object',
+        properties: { fileId: { type: 'string' } },
+        required: ['fileId'],
+      }),
+      execute: async ({ fileId }: { fileId: string }) => {
+        try {
+          const file = await getFile(client, fileId)
+          if (workspaceKind(file.mimeType) !== 'doc') return `Error: "${file.name}" is not a Google Doc`
+          const suggestions = await listDocSuggestions(client, fileId)
+          log(`Read ${suggestions.length} pending suggestion(s)`)
+          return {
+            suggestions: suggestions.map((s) => ({
+              id: s.id,
+              deletes: s.deletes.slice(0, 300),
+              inserts: s.inserts.slice(0, 300),
+              context: s.context,
+            })),
+          }
         } catch (err) {
           return toolError(err)
         }

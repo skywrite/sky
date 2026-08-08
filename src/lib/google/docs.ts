@@ -166,3 +166,77 @@ export async function listDocSuggestionIds(client: GoogleClient, fileId: string)
   const doc = await client.getJson<unknown>(url.toString())
   return collectSuggestionIds(doc)
 }
+
+export interface DocSuggestion {
+  id: string
+  /** Text this suggestion strikes out ('' for pure insertions). */
+  deletes: string
+  /** Text this suggestion adds ('' for pure deletions). */
+  inserts: string
+  /** Base text just before the change — for locating it in the document. */
+  context: string
+}
+
+interface SuggestParagraphElement {
+  textRun?: { content?: string; suggestedInsertionIds?: string[]; suggestedDeletionIds?: string[] }
+}
+
+interface SuggestStructuralElement {
+  paragraph?: { elements?: SuggestParagraphElement[] }
+  table?: { tableRows?: Array<{ tableCells?: Array<{ content?: SuggestStructuralElement[] }> }> }
+}
+
+interface RawSuggestDocument {
+  body?: { content?: SuggestStructuralElement[] }
+}
+
+/**
+ * Compact the pending suggested TEXT edits out of a documents.get response,
+ * in reading order, aggregated per suggestion id: a replacement typed over a
+ * selection arrives as deletion runs plus insertion runs sharing one id.
+ * Context is base text only — inserted text is excluded so it matches what
+ * anchoring (the plain-text export) sees; struck-out text is still base.
+ * Style-only suggestions are not surfaced, and the API carries no authors.
+ */
+export function summarizeDocSuggestions(doc: RawSuggestDocument): DocSuggestion[] {
+  const byId = new Map<string, DocSuggestion>()
+  let tail = ''
+  const pushBase = (text: string) => {
+    tail = (tail + text).slice(-80)
+  }
+  const visit = (elements: SuggestStructuralElement[]): void => {
+    for (const element of elements) {
+      for (const pe of element.paragraph?.elements ?? []) {
+        const run = pe.textRun
+        if (!run?.content) continue
+        const inserts = run.suggestedInsertionIds ?? []
+        const deletes = run.suggestedDeletionIds ?? []
+        if (inserts.length === 0 && deletes.length === 0) {
+          pushBase(run.content)
+          continue
+        }
+        for (const id of [...inserts, ...deletes]) {
+          if (!byId.has(id)) byId.set(id, { id, deletes: '', inserts: '', context: tail.trim() })
+        }
+        for (const id of inserts) byId.get(id)!.inserts += run.content
+        for (const id of deletes) {
+          byId.get(id)!.deletes += run.content
+          pushBase(run.content)
+        }
+      }
+      for (const row of element.table?.tableRows ?? []) {
+        for (const cell of row.tableCells ?? []) visit(cell.content ?? [])
+      }
+    }
+  }
+  visit(doc.body?.content ?? [])
+  return [...byId.values()]
+}
+
+/** The pending suggested text edits in a document, in reading order. */
+export async function listDocSuggestions(client: GoogleClient, fileId: string): Promise<DocSuggestion[]> {
+  const url = new URL(`${DOCS_API_URL}/${encodeURIComponent(fileId)}`)
+  url.searchParams.set('fields', 'body')
+  const doc = await client.getJson<RawSuggestDocument>(url.toString())
+  return summarizeDocSuggestions(doc)
+}
