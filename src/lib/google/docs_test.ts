@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { collectSuggestionIds, summarizeDocument, validateDocsRequests } from './docs.ts'
+import { collectSuggestionIds, summarizeDocSuggestions, summarizeDocument, validateDocsRequests } from './docs.ts'
 
 test('validateDocsRequests', () => {
   assert({
@@ -156,6 +156,66 @@ test('collectSuggestionIds', () => {
     should: 'return no ids',
     expected: [],
     actual: collectSuggestionIds({
+      body: { content: [{ paragraph: { elements: [{ textRun: { content: 'hi' } }] } }] },
+    }),
+  })
+})
+
+test('summarizeDocSuggestions', () => {
+  const doc = {
+    body: {
+      content: [
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'The launch is ' } },
+              { textRun: { content: 'delayed', suggestedDeletionIds: ['suggest.r1'] } },
+              { textRun: { content: 'on track', suggestedInsertionIds: ['suggest.r1'] } },
+              { textRun: { content: ' for spring.\n' } },
+            ],
+          },
+        },
+        {
+          table: {
+            tableRows: [
+              {
+                tableCells: [
+                  {
+                    content: [
+                      {
+                        paragraph: {
+                          elements: [
+                            { textRun: { content: 'Owner: ' } },
+                            { textRun: { content: 'Jane Doe', suggestedInsertionIds: ['suggest.i2'] } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  }
+
+  assert({
+    given: 'a replacement suggestion and a table-cell insertion',
+    should: 'aggregate deletes/inserts per id with preceding base text as context',
+    expected: [
+      { id: 'suggest.r1', deletes: 'delayed', inserts: 'on track', context: 'The launch is' },
+      { id: 'suggest.i2', deletes: '', inserts: 'Jane Doe', context: 'The launch is delayed for spring.\nOwner:' },
+    ],
+    actual: summarizeDocSuggestions(doc),
+  })
+
+  assert({
+    given: 'a document without pending suggestions',
+    should: 'return an empty list',
+    expected: [],
+    actual: summarizeDocSuggestions({
       body: { content: [{ paragraph: { elements: [{ textRun: { content: 'hi' } }] } }] },
     }),
   })

@@ -65,10 +65,11 @@ export {
   batchUpdateDoc,
   getDocOutline,
   listDocSuggestionIds,
+  listDocSuggestions,
   summarizeDocument,
   validateDocsRequests,
 } from './docs.ts'
-export type { DocOutline, DocOutlineEntry } from './docs.ts'
+export type { DocOutline, DocOutlineEntry, DocSuggestion } from './docs.ts'
 
 export {
   SLIDES_ALLOWED_REQUESTS,
