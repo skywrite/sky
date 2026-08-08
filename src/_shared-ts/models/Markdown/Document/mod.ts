@@ -233,8 +233,12 @@ export default class Document {
     return doc as this
   }
 
-  public ensureCreatedUpdated(): this {
-    const today = PlainDate.today().ymd
+  /**
+   * Stamp `updated` (and `created` when absent). Pass a YYYY-MM-DD to stamp a
+   * specific date — e.g. notebook time — instead of the system clock's today.
+   */
+  public ensureCreatedUpdated(on?: string): this {
+    const today = on ?? PlainDate.today().ymd
     const updates: Record<string, unknown> = { updated: today }
 
     // Only set created if it doesn't exist

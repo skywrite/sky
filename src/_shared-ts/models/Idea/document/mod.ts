@@ -42,6 +42,8 @@ export default class IdeaDocument extends Document {
     body?: string
     tags?: string | TagSet
     rel?: string[]
+    /** YYYY-MM-DD to stamp created/updated with (e.g. notebook time) instead of the system clock */
+    createdOn?: string
   }): IdeaDocument {
     const yaml: Record<string, unknown> = {
       name: input.name,
@@ -57,7 +59,7 @@ export default class IdeaDocument extends Document {
     })
 
     let idea = new IdeaDocument(yaml, markdown)
-    idea = idea.ensureCreatedUpdated() as IdeaDocument
+    idea = idea.ensureCreatedUpdated(input.createdOn) as IdeaDocument
 
     return idea
   }

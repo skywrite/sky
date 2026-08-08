@@ -101,13 +101,25 @@ export function categoryTodo() {
 }
 
 /**
+ * Normalize a category name: strip an already-present list suffix and fix
+ * case variants of the two documented categories, so "-c personal" and
+ * "-c 'Personal Complete'" both land on "Personal" instead of growing a
+ * doubled suffix. Unknown categories pass through untouched.
+ */
+function normalizeCategory(val: string): string {
+  const base = val.trim().replace(/\s+(?:Complete|Todos)$/i, '')
+  const known = ['Personal', 'Professional'].find((k) => k.toLowerCase() === base.toLowerCase())
+  return known ?? base
+}
+
+/**
  * Category flag for complete operations. Defaults to 'Professional Complete'.
  * Use this with APIs that expect the full list name (e.g., writeDayItems).
  */
 export function categoryComplete() {
   return Flag.string('Category: "Personal" or "Professional"', {
     short: 'c',
-    parse: (val: string) => `${val} Complete`,
+    parse: (val: string) => `${normalizeCategory(val)} Complete`,
     default: () => 'Professional Complete',
   })
 }

@@ -128,3 +128,32 @@ updated: 2025-10-11
   assert({ actual: updated.created?.ymd, expected: '2025-10-10' })
   assert({ actual: updated.updated?.ymd, expected: today })
 })
+
+test('Document.ensureCreatedUpdated - stamps a provided date instead of today', () => {
+  const markdown = `---
+title: Test
+---
+
+# Test`
+
+  const doc = Document.fromMarkdown(markdown)
+  const updated = doc.ensureCreatedUpdated('2026-03-05')
+
+  assert({ actual: updated.created?.ymd, expected: '2026-03-05' })
+  assert({ actual: updated.updated?.ymd, expected: '2026-03-05' })
+})
+
+test('Document.ensureCreatedUpdated - provided date never rewrites existing created', () => {
+  const markdown = `---
+title: Test
+created: 2025-10-10
+---
+
+# Test`
+
+  const doc = Document.fromMarkdown(markdown)
+  const updated = doc.ensureCreatedUpdated('2026-03-05')
+
+  assert({ actual: updated.created?.ymd, expected: '2025-10-10' })
+  assert({ actual: updated.updated?.ymd, expected: '2026-03-05' })
+})

@@ -4,11 +4,13 @@ import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { z } from 'zod'
+import { categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_DECISIONS } from '#config'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -16,9 +18,10 @@ import DecisionDocument from '#shared/models/Decision/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -29,11 +32,7 @@ const params = {
     short: 'n',
     optional: true,
   }),
-  category: Flag.string('Category for day item: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Professional Complete',
-  }),
+  category: categoryComplete(),
 }
 
 type Params = InferParams<typeof params>
@@ -63,13 +62,44 @@ const MAX_OUTCOME_ROUNDS = 4
 // Helpers
 // -----------------------------------------------------------------------------
 
-type ClarifierResult =
-  | { status: 'clear'; decision: string; summary: string }
-  | { status: 'unclear'; question: string; reason: string }
+// AI responses are validated against the prompt contracts so a malformed
+// reply degrades loudly instead of writing a half-empty document.
 
-type OutcomeResult =
-  | { status: 'clear'; outcomes: string; summary: string }
-  | { status: 'unclear'; question: string; reason: string }
+const clarifierSchema = z.union([
+  z.object({ status: z.literal('clear'), decision: z.string().min(1), summary: z.string() }),
+  z.object({ status: z.literal('unclear'), question: z.string().min(1), reason: z.string() }),
+])
+type ClarifierResult = z.infer<typeof clarifierSchema>
+
+const outcomeSchema = z.union([
+  z.object({ status: z.literal('clear'), outcomes: z.string().min(1), summary: z.string() }),
+  z.object({ status: z.literal('unclear'), question: z.string().min(1), reason: z.string() }),
+])
+type OutcomeResult = z.infer<typeof outcomeSchema>
+
+const formatSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  target: z.string().nullish(),
+  contextSummary: z.string(),
+  outcomesSummary: z.string(),
+  rel: z.array(z.string()).nullish(),
+})
+
+/**
+ * Mirror of DecisionDocument's target parsing ("YYYY-MM-DD" or
+ * "YYYY-MM-DD HH:MM") — a value that fails here would be written to YAML
+ * only to silently read back as undefined ever after.
+ */
+function isParseableTarget(value: string): boolean {
+  try {
+    if (value.includes(' ')) new PlainDateTime(value)
+    else new PlainDate(value)
+    return true
+  } catch {
+    return false
+  }
+}
 
 interface ClarifyResult {
   /** The final refined statement */
@@ -116,9 +146,10 @@ async function clarifyDecision(
         prompt: renderedClarifier,
       })
 
-      clarifierResult = extractJson<typeof clarifierResult>(result.text)
-    } catch {
+      clarifierResult = clarifierSchema.parse(extractJson(result.text))
+    } catch (err) {
       spinner.stop('Clarification failed')
+      await logAIError({ source: 'decisions:new', stage: 'clarify', message: (err as Error).message })
       return { statement: currentInput, conversation: conversationHistory }
     }
 
@@ -227,9 +258,10 @@ async function clarifyOutcomes(
         prompt: renderedOutcomes,
       })
 
-      outcomeResult = extractJson<typeof outcomeResult>(result.text)
-    } catch {
+      outcomeResult = outcomeSchema.parse(extractJson(result.text))
+    } catch (err) {
       spinner.stop('Outcome clarification failed')
+      await logAIError({ source: 'decisions:new', stage: 'outcomes', message: (err as Error).message })
       return { statement: currentInput, conversation: conversationHistory }
     }
 
@@ -330,6 +362,7 @@ export default class DecisionsNewTask extends Command {
     spinner.start('Gathering context...')
 
     let notebookContext: string | undefined
+    let relCandidates: string[] = []
     const baseDir = config.DIR_BASE as string
 
     try {
@@ -355,6 +388,8 @@ export default class DecisionsNewTask extends Command {
         if (docs.length > 0) {
           const collection = DomainCollection.fromDocuments(docs, store)
           notebookContext = collection.toMarkdown({ relativeTo: baseDir, delimited: true })
+          // rel frontmatter values are notebook-relative paths without .md
+          relCandidates = docs.map((d) => path.relative(baseDir, d.path).replace(/\.md$/, '')).slice(0, 12)
         }
       }
     } catch {
@@ -398,7 +433,20 @@ export default class DecisionsNewTask extends Command {
       return CommandResult.fail('User cancelled')
     }
 
-    // Step 6: Extract title, slug, target + synthesize context summary
+    // Step 6: Optional tags
+    const tagsInput = await p.text({
+      message: 'Tags (comma-separated, or press Enter to skip)\n',
+      placeholder: 'e.g., hiring, leadership',
+    })
+
+    if (p.isCancel(tagsInput)) {
+      p.cancel('Cancelled')
+      return CommandResult.fail('User cancelled')
+    }
+
+    const tags = (tagsInput as string)?.trim() ? TagSet.fromArray((tagsInput as string).split(',')) : undefined
+
+    // Step 7: Extract title, slug, target + synthesize context summary
     spinner.start('Formatting your decision...')
 
     const now = await fetchNow()
@@ -417,18 +465,13 @@ export default class DecisionsNewTask extends Command {
         decisionConversation: decisionResult.conversation || undefined,
         outcomesConversation: outcomesResult.conversation || undefined,
         desiredOutcomes: outcomesResult.statement,
+        relatedPaths: relCandidates.length > 0 ? relCandidates.join('\n') : undefined,
       },
     }
 
     const { output: renderedFormat } = renderPromptFile(formatContent, 'decisions-new.prompt.md', formatInput)
 
-    let aiResponse: {
-      title: string
-      slug: string
-      target: string | null
-      contextSummary: string
-      outcomesSummary: string
-    }
+    let aiResponse: z.infer<typeof formatSchema>
 
     try {
       const result = await generateText({
@@ -436,47 +479,66 @@ export default class DecisionsNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      aiResponse = extractJson<typeof aiResponse>(result.text)
+      aiResponse = formatSchema.parse(extractJson(result.text))
       spinner.stop('Decision formatted')
     } catch (err) {
       spinner.stop('Failed to format decision')
+      await logAIError({ source: 'decisions:new', stage: 'format', message: (err as Error).message })
       output.error(`AI Error: ${(err as Error).message}`)
       return CommandResult.error(err as Error, 'Failed to format decision with AI')
     }
 
-    // Step 7: Determine final name/slug
+    // Step 8: Determine final name/slug — every source passes through slugify
+    // so an AI- or user-supplied value can't smuggle path separators into the
+    // filename
     const finalName =
-      overrideName ?? aiResponse.slug ?? slugify(decisionResult.statement, { suggestedLength: 25, preserveCase: true })
+      (overrideName ? slugify(overrideName, { preserveCase: true }) : '') ||
+      slugify(aiResponse.slug, { suggestedLength: 25, preserveCase: true }) ||
+      slugify(decisionResult.statement, { suggestedLength: 25, preserveCase: true })
 
-    // Step 8: Create the Decision document
+    if (!finalName) {
+      return CommandResult.fail('Could not derive a usable slug — rerun with --name')
+    }
+
+    // Step 9: Create the Decision document
+    let target = aiResponse.target ?? undefined
+    if (target && !isParseableTarget(target)) {
+      output.log(colors.yellow(`Ignoring unparseable AI target date: "${target}"`))
+      target = undefined
+    }
+
+    // Only rel values the AI picked from the offered candidate list survive
+    const rel = (aiResponse.rel ?? []).filter((r) => relCandidates.includes(r))
+
     const identified = new ZonedDateTime(now.plainDateTime, now.timezone)
     const decision = DecisionDocument.create({
       name: finalName,
       identified,
-      target: aiResponse.target ?? undefined,
+      target,
       title: aiResponse.title,
       context: aiResponse.contextSummary,
       desiredOutcomes: aiResponse.outcomesSummary,
+      tags,
+      rel,
     })
 
-    // Step 9: Write to file in pending/month-identified/
+    // Step 10: Write to file in pending/month-identified/
     const year = now.plainDateTime.plainDate.year
     const month = String(now.plainDateTime.plainDate.month).padStart(2, '0')
     const decisionsFullPath = path.join(DIR_DECISIONS, String(year), 'pending', month, `${finalName}.md`)
 
-    // Ensure directory exists
-    const decisionsDir = path.dirname(decisionsFullPath)
-    if (!(await exists(decisionsDir))) {
-      await outputFile(path.join(decisionsDir, '.gitkeep'), '')
+    if (await exists(decisionsFullPath)) {
+      return CommandResult.fail(
+        `A decision named "${finalName}" already exists this month: ${decisionsFullPath} — rerun with --name to pick a different slug.`,
+      )
     }
 
-    // Write the decision file
     const markdownContent = decision.toMarkdown()
     await outputFile(decisionsFullPath, markdownContent)
 
     output.log(colors.green(`\nCreated decision: ${decisionsFullPath}`))
 
-    // Step 10: Add day item
+    // Step 11: Add day item
     const entryTime = now.plainDateTime.time
     const dayItem = `${entryTime} > decisions/${finalName} -> Identified | ${aiResponse.title}`
 
@@ -487,7 +549,7 @@ export default class DecisionsNewTask extends Command {
       output.log(colors.yellow(`Warning: Could not add day item: ${(err as Error).message}`))
     }
 
-    // Step 11: Open in editor
+    // Step 12: Open in editor
     try {
       openEditor([{ file: decisionsFullPath, line: markdownContent.split('\n').length }])
       await delay(500)

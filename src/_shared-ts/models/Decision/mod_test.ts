@@ -324,3 +324,23 @@ test(`DecisionDocument.formatZonedDateTime()`, () => {
     actual: formatted.includes('10:30'),
   })
 })
+
+test(`DecisionDocument.create() stamps created/updated from the identified date`, () => {
+  const given = 'Create Decision with an explicit identified datetime'
+  const identified = new ZonedDateTime('2026-03-05 09:15', 'America/Chicago')
+  const d = DecisionDocument.create({ name: 'stamp-test', identified, title: 'Stamp Test' })
+
+  assert({
+    given,
+    should: 'stamp created from identified, not the system clock',
+    expected: '2026-03-05',
+    actual: d.created?.ymd,
+  })
+
+  assert({
+    given,
+    should: 'stamp updated from identified as well',
+    expected: '2026-03-05',
+    actual: d.updated?.ymd,
+  })
+})
