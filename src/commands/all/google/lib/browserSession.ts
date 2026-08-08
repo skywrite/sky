@@ -69,11 +69,18 @@ export async function launchGoogleBrowser(options: { headless?: boolean } = {}):
     throw new GoogleBrowserError('No Chromium-family browser found for automation')
   }
   await clearProfileLockOrThrow()
-  return await chromium.launchPersistentContext(GOOGLE_BROWSER_PROFILE_DIR, {
+  const context = await chromium.launchPersistentContext(GOOGLE_BROWSER_PROFILE_DIR, {
     executablePath,
     headless: options.headless ?? false,
     viewport: { width: 1440, height: 900 },
   })
+  // Session debris: crashed runs leave their tabs in the profile's session
+  // state, and the restore makes pages()[0] targeting ambiguous (and buried
+  // the google:browser sign-in form under 62 tabs once). Any tab present at
+  // launch belongs to a dead session — one browser per profile — so start on
+  // a single tab. Best-effort: late-restoring tabs drain on later launches.
+  for (const page of context.pages().slice(1)) await page.close().catch(() => undefined)
+  return context
 }
 
 // Chromium allows one process per profile dir, so concurrent flows collide:
