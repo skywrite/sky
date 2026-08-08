@@ -27,6 +27,13 @@ export type CollectionOptions = {
   depth?: number
   /** Whether to include the root document(s) in output (default: true) */
   includeRoot?: boolean
+  /**
+   * Maximum number of `previous:` links to follow per chain (default:
+   * Infinity). Chains ignore `depth` — a thread's immediate antecedents are
+   * what make a reply readable — so this is the only bound on how far back
+   * a long-running thread gets pulled in.
+   */
+  previousHops?: number
 }
 
 /** Options for markdown output - re-export from Collection */
@@ -48,6 +55,7 @@ export type MarkdownOptions = MarkdownOutputOptions
 export default class DomainCollection {
   private collection: Collection<Document>
   private store: MarkdownStore | null
+  private previousHops = Infinity
 
   private constructor(store: MarkdownStore | null = null) {
     this.collection = Collection.empty()
@@ -64,7 +72,8 @@ export default class DomainCollection {
     opts: CollectionOptions = {},
   ): DomainCollection {
     const domain = new DomainCollection(store)
-    const { depth = Infinity, includeRoot = true } = opts
+    const { depth = Infinity, includeRoot = true, previousHops = Infinity } = opts
+    domain.previousHops = previousHops
 
     if (includeRoot) {
       domain.addDocument(doc, path, 0)
@@ -84,7 +93,8 @@ export default class DomainCollection {
     opts: CollectionOptions = {},
   ): DomainCollection {
     const domain = new DomainCollection(store)
-    const { depth = Infinity, includeRoot = true } = opts
+    const { depth = Infinity, includeRoot = true, previousHops = Infinity } = opts
+    domain.previousHops = previousHops
 
     for (const { doc, path } of docs) {
       if (includeRoot) {
@@ -102,7 +112,8 @@ export default class DomainCollection {
    */
   static fromRefs(refs: ResolvedRef[], store: MarkdownStore, opts: CollectionOptions = {}): DomainCollection {
     const domain = new DomainCollection(store)
-    const { depth = Infinity } = opts
+    const { depth = Infinity, previousHops = Infinity } = opts
+    domain.previousHops = previousHops
 
     for (const ref of refs) {
       if (
@@ -364,11 +375,18 @@ export default class DomainCollection {
   }
 
   /**
-   * Follow `previous` YAML links to pull in full message chains.
-   * Only follows `previous` — no `rel` fan-out from chained documents.
+   * Follow `previous` YAML links to pull in message chains, up to
+   * `previousHops` links deep (default unbounded). Only follows `previous`
+   * — no `rel` fan-out from chained documents.
    */
-  private traversePreviousChain(doc: Document, docPath: string, currentDepth: number): void {
+  private traversePreviousChain(
+    doc: Document,
+    docPath: string,
+    currentDepth: number,
+    hopsRemaining = this.previousHops,
+  ): void {
     if (!this.store) return
+    if (hopsRemaining <= 0) return
     const prev = doc.yaml['previous']
     if (typeof prev !== 'string') return
 
@@ -390,7 +408,7 @@ export default class DomainCollection {
 
     // Keep following the chain (only previous, not rel)
     if (!alreadyExists) {
-      this.traversePreviousChain(ref.value, ref.path, currentDepth)
+      this.traversePreviousChain(ref.value, ref.path, currentDepth, hopsRemaining - 1)
     }
   }
 
