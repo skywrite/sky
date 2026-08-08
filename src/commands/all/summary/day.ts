@@ -3,7 +3,8 @@ import { generateText } from 'ai'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
+import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createSummaryScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
@@ -30,9 +31,13 @@ const CONTEXT_BUDGET_TOKENS = 120_000
 // context without dragging in a week-old tail.
 const PREVIOUS_HOPS = 2
 
+// The summary is the day's canonical record and feeds every downstream
+// consumer — worth the top-tier model.
+const DEFAULT_PROFILE = 'default-fable-5'
+
 const params = {
   day: dayNoFutureArg(),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => ROLES.reasoning }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
   force: Flag.boolean('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
   stdout: Flag.boolean('Output summary to stdout instead of file', { default: false }),
@@ -100,6 +105,15 @@ export default class SummaryDayTask extends Command {
     // Check if summary already exists (skip if outputting to stdout or dry-run)
     if (!stdout && !dryRun && !force && (await exists(summaryPath))) {
       return CommandResult.fail('Summary already exists. Use --force to overwrite.')
+    }
+
+    // Resolve the profile up front — a bad -m should fail before any work,
+    // and the resolved model id gets stamped into the output frontmatter.
+    let modelId: string
+    try {
+      modelId = getProfile(model).model
+    } catch (err) {
+      return CommandResult.fail((err as Error).message)
     }
 
     output.log(`Generating Daily Summary for ${day.ymd}...`)
@@ -211,19 +225,24 @@ export default class SummaryDayTask extends Command {
     // 8. Call Claude
     output.log('Calling Claude...')
     let response: string
+    let usage = ''
     try {
-      // Temperature 0 = greedy decoding (always pick highest probability token).
-      // This makes output nearly deterministic, which is appropriate for a factual
-      // summary. It also helps when iterating on prompts—you can tell if output
-      // changes are from prompt edits vs random variation. Thinking profiles
-      // reject sampling params; the resolver drops the override there.
       const result = await generateText({
-        ...aiModelByProfile(model, { temperature: 0 }),
+        ...aiModelByProfile(model),
         instructions: promptTemplate,
         prompt: userPrompt,
       })
       response = result.text
+      const { inputTokens, outputTokens } = result.usage
+      if (inputTokens !== undefined && outputTokens !== undefined) {
+        usage = `${inputTokens} in, ${outputTokens} out`
+      }
     } catch (err) {
+      await logAIError({
+        source: 'summary:day',
+        stage: 'generate',
+        message: err instanceof Error ? err.message : String(err),
+      })
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
 
@@ -232,7 +251,8 @@ export default class SummaryDayTask extends Command {
       title: 'Daily Summary',
       day: day.ymd,
       generated: new Date().toISOString(),
-      model,
+      model: modelId,
+      ...(usage ? { usage } : {}),
       tags: 'Summary/Daily',
     }
 
