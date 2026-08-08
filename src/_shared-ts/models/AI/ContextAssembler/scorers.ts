@@ -2,6 +2,7 @@
 export {
   createJournalScorer,
   createRecencyTypeScorer,
+  createSummaryScorer,
   ENTITY_TYPES,
   recencyScore,
   type RecencyTypeScorerOptions,

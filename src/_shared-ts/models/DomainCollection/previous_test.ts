@@ -258,6 +258,74 @@ test('previous chain - works alongside rel traversal', async () => {
   })
 })
 
+test('previous chain - previousHops bounds how far back a chain is followed', async () => {
+  const { store } = await loadStore()
+  const content = await loadFixture(
+    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+  )
+  const doc = Document.fromMarkdown(content)
+  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+
+  const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0, previousHops: 1 })
+
+  assert({
+    given: 'message-4 with a 3-link previous chain and previousHops: 1',
+    should: 'include the immediate antecedent (message-3)',
+    actual: itemByPath(collection, 'API-migration-update-3.md') !== undefined,
+    expected: true,
+  })
+
+  assert({
+    given: 'message-4 with a 3-link previous chain and previousHops: 1',
+    should: 'stop before message-2 and message-1',
+    actual: [
+      itemByPath(collection, 'API-migration-update-2.md'),
+      itemByPath(collection, 'API-migration-update-1.md'),
+    ].every((i) => i === undefined),
+    expected: true,
+  })
+})
+
+test('previous chain - previousHops 0 disables chain following', async () => {
+  const { store } = await loadStore()
+  const content = await loadFixture(
+    `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`,
+  )
+  const doc = Document.fromMarkdown(content)
+  const path = `${FIXTURES_DIR}${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md`
+
+  const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0, previousHops: 0 })
+
+  assert({
+    given: 'message-3 with previousHops: 0',
+    should: 'include only the root, no chained messages',
+    actual: collection.paths.length,
+    expected: 1,
+  })
+})
+
+test('previous chain - fromDocuments honors previousHops', async () => {
+  const { store } = await loadStore()
+  const content = await loadFixture(
+    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+  )
+  const doc = Document.fromMarkdown(content)
+  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+
+  const collection = DomainCollection.fromDocuments([{ doc, path }], store, { depth: 0, previousHops: 2 })
+
+  assert({
+    given: 'fromDocuments with previousHops: 2 on a 3-link chain',
+    should: 'include messages 3 and 2 but not the chain root',
+    actual: [
+      itemByPath(collection, 'API-migration-update-3.md') !== undefined,
+      itemByPath(collection, 'API-migration-update-2.md') !== undefined,
+      itemByPath(collection, 'API-migration-update-1.md') === undefined,
+    ].every(Boolean),
+    expected: true,
+  })
+})
+
 test('previous chain - follows MM-DD/subpath across month boundaries', async () => {
   const { store } = await loadStore()
   // message-4 is in Feb, its previous uses 01-23/subpath to reach Jan message-3
