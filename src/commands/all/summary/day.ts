@@ -6,8 +6,7 @@ import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createSummaryScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -22,10 +21,11 @@ import gatherDayDocs from './lib/gatherDayDocs.ts'
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
-// Outlier guard, not a target: a normal day's context sits well under this,
-// so nothing is pruned. It exists to keep a runaway day (huge chats, dozens
-// of entity pulls) from swamping the model.
-const CONTEXT_BUDGET_TOKENS = 120_000
+// Hard ceiling, matching ai:chat's context budget. The summary is the day's
+// complete record, so there is no notion of pruning it to fit — a day whose
+// context estimates over this refuses to generate instead. Heaviest observed
+// day: ~62k tokens.
+const CONTEXT_BUDGET_TOKENS = 300_000
 
 // Follow previous: links two hops back — enough to read a reply in thread
 // context without dragging in a week-old tail.
@@ -157,32 +157,26 @@ export default class SummaryDayTask extends Command {
     const dayEntry = docs.find((d) => d.kind === 'day')
     const location = dayEntry?.doc.yaml['location'] as string | undefined
 
-    // 4. Score and budget the collection, then collate: background section
-    // first (entities and thread antecedents, type-priority order), then the
-    // day's kept documents in gathered order — day.md stays last, closest to
-    // the generation point, so the model can lean on it.
-    const assembler = ContextAssembler.from(collection, {
-      scorer: createSummaryScorer(dayDirPath),
-      maxTokens: CONTEXT_BUDGET_TOKENS,
-    })
-
+    // 4. Collate: background section first (entities and thread antecedents,
+    // type-priority order), then the day's documents in gathered order —
+    // day.md stays last, closest to the generation point, so the model can
+    // lean on it.
     const baseDir = <string>config.DIR_BASE
     const rootPaths = new Set(docs.map((d) => d.path))
-    const keptPaths = new Set(assembler.kept.map((s) => s.item.path))
-    const background = assembler.kept.filter((s) => !rootPaths.has(s.item.path)).map((s) => s.item)
-    const dayStream = docs.filter((d) => keptPaths.has(d.path))
+    const background = collection.allItems.filter((item) => !rootPaths.has(item.path))
     const sections = [
       Collection.from(background.map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))).toMarkdown({
         relativeTo: baseDir,
         delimited: true,
       }),
-      Collection.from(dayStream.map((d) => ({ doc: d.doc, path: d.path }))).toMarkdown({
+      Collection.from(docs.map((d) => ({ doc: d.doc, path: d.path }))).toMarkdown({
         relativeTo: timeDir,
         delimited: true,
         sorted: false,
       }),
     ]
     const collatedMarkdown = sections.filter((s) => s.length > 0).join('\n\n')
+    const contextTokens = estimateTokens(collatedMarkdown)
 
     // 5. Extract rel for output file metadata
     const rel: string[] = [
@@ -205,14 +199,8 @@ export default class SummaryDayTask extends Command {
     output.log(`  - People: ${collection.people.length}`)
     output.log(`  - Projects: ${collection.projects.length}`)
     output.log(
-      `Context: ${assembler.size} docs kept (~${Math.round(assembler.totalTokens / 1000)}k tokens), ${assembler.pruned.length} pruned`,
+      `Context: ${docs.length + background.length} docs, ~${Math.round(contextTokens / 1000)}k tokens (budget ${CONTEXT_BUDGET_TOKENS / 1000}k)`,
     )
-    for (const s of assembler.pruned) {
-      output.log(`  pruned: ${path.relative(baseDir, s.item.path)}`)
-    }
-    if (assembler.overBudget) {
-      output.log('Warning: kept documents exceed the context budget on their own')
-    }
 
     if (dryRun) {
       output.log('\n=== SYSTEM PROMPT ===')
@@ -222,7 +210,15 @@ export default class SummaryDayTask extends Command {
       return CommandResult.success({ dryRun: true })
     }
 
-    // 8. Call Claude
+    // 8. Hard fail over budget — never generate from a trimmed day
+    if (contextTokens > CONTEXT_BUDGET_TOKENS) {
+      return CommandResult.fail(
+        `Day context is ~${Math.round(contextTokens / 1000)}k tokens, over the ${CONTEXT_BUDGET_TOKENS / 1000}k budget. ` +
+          'Refusing to generate from a partial day — inspect with --dry-run to find the outlier.',
+      )
+    }
+
+    // 9. Call Claude
     output.log('Calling Claude...')
     let response: string
     let usage = ''
@@ -246,7 +242,7 @@ export default class SummaryDayTask extends Command {
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
 
-    // 9. Build output file
+    // 10. Build output file
     const yamlHeader: Record<string, unknown> = {
       title: 'Daily Summary',
       day: day.ymd,
@@ -264,8 +260,8 @@ export default class SummaryDayTask extends Command {
     let outputContent = ['---', stringify(yamlHeader).trim(), '---', '', response].join('\n')
 
     // Append context file paths as hidden comment (same pattern as ai:chat).
-    // Kept documents only — this records what the model actually read.
-    const contextPaths = assembler.kept.map((s) => s.item.path)
+    // This records exactly what the model read.
+    const contextPaths = [...background.map((i) => i.path), ...docs.map((d) => d.path)]
     if (contextPaths.length > 0) {
       const relativePaths = contextPaths
         .map((p) => {
@@ -278,7 +274,7 @@ export default class SummaryDayTask extends Command {
       outputContent += '\n\n\n<!--\nCONTEXT:\n\n' + pathLines + '\n\nEND\n-->\n'
     }
 
-    // 10. Output
+    // 11. Output
     if (stdout) {
       output.log(outputContent)
       return CommandResult.success({ stdout: true })
@@ -288,7 +284,7 @@ export default class SummaryDayTask extends Command {
     await writeTextFile(summaryPath, outputContent)
     output.log(`Daily Summary written to ${summaryPath}`)
 
-    // 11. Open in editor if requested
+    // 12. Open in editor if requested
     if (open) {
       await openEditor([{ file: summaryPath }])
     }
