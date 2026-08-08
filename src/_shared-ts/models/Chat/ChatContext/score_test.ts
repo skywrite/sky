@@ -1,12 +1,13 @@
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { verdictScore } from '#shared/models/AI/ContextAssembler/mod.ts'
+import ContextAssembler, { verdictScore } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { type CollectionItem, Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
+  CHAT_SCORE,
   createChatScorer,
   type DocProvenance,
   extractTopicTerms,
@@ -29,6 +30,8 @@ const FIX = {
   digest: abs('time/2026/01/26-01/01-27/actions/messages/slack_Atlas-Bot-to-atlas-general_Weekly-Digest.md'),
   deal: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Contract-Countersigned.md'),
   vendor: abs('time/2026/01/26-01/01-27/actions/notes/Vendor-Landscape.md'),
+  glossary: abs('reference/Atlas-Glossary.md'),
+  escrow: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Escrow-Timeline.md'),
 }
 
 async function fixtureCollection(absPaths: string[]): Promise<DomainCollection> {
@@ -187,6 +190,48 @@ test('createChatScorer - header channels outrank body mentions', async () => {
   })
 })
 
+test('createChatScorer - rel channel matches bare entity names', async () => {
+  // Real notebooks carry rel: both as paths ('orgs/Nimbus.md') and as
+  // bare names ('Nimbus') — the channel must serve both spellings.
+  const collection = await fixtureCollection([FIX.escrow, FIX.vendor, FIX.goal])
+  const { scorer, lexicalByPath } = createChatScorer({
+    today: TODAY,
+    collection,
+    terms: ['nimbus'],
+    provenance: new Map(),
+  })
+  collection.allItems.forEach((i) => scorer(i))
+
+  assert({
+    given: 'a doc whose rel entry is the bare entity name and no other doc rel-matching it',
+    should: 'earn full rel-channel credit',
+    actual: lexicalByPath.get(FIX.escrow),
+    expected: 8,
+  })
+})
+
+test('createChatScorer - routing segments earn no name evidence', async () => {
+  const collection = await fixtureCollection([FIX.deal, FIX.goal])
+  // "ops" and "deals" appear only in the sender-to-channel segment of
+  // 'slack_Ops-to-atlas-deals_…' — the segment names a sender and a
+  // channel, not a subject. Were it not excluded from the name channel,
+  // every message on that channel would score as if titled with it.
+  const { scorer, lexicalByPath } = createChatScorer({
+    today: TODAY,
+    collection,
+    terms: ['ops', 'deals'],
+    provenance: new Map(),
+  })
+  collection.allItems.forEach((i) => scorer(i))
+
+  assert({
+    given: "terms that occur only in a message filename's routing segment",
+    should: 'credit the message nothing',
+    actual: lexicalByPath.get(FIX.deal),
+    expected: 0,
+  })
+})
+
 test('createChatScorer - tags channel carries taxonomy terms', async () => {
   const collection = await fixtureCollection([FIX.deal, FIX.vendor, FIX.goal])
   // "acquisitions" appears only as a tag segment on the deal message.
@@ -203,6 +248,42 @@ test('createChatScorer - tags channel carries taxonomy terms', async () => {
     should: 'credit that doc fully through the tags channel',
     actual: { dealLex: lexicalByPath.get(FIX.deal), vendorLex: lexicalByPath.get(FIX.vendor) },
     expected: { dealLex: 8, vendorLex: 0 },
+  })
+})
+
+test('createChatScorer - targeted retrieval clears the floor even at a strong top score', async () => {
+  // The Aug-7 live eval found zero floored-then-requeried docs across 28
+  // turns; this pins that as a property at the realistic worst case: the
+  // floor derived from a maxed-out top doc (full name coverage + targeted
+  // multi-hit ≈ 25) against a targeted doc with ZERO lexical signal and a
+  // zero ambient prior (undated plain document). Its provenance boost
+  // alone must clear the floor. (The theoretical exception — a targeted
+  // doc carrying a project-status penalty at an above-observed top — is
+  // documented, not defended.)
+  const collection = await fixtureCollection([FIX.person, FIX.glossary, FIX.goal])
+  const provenance = new Map<string, DocProvenance>([
+    [FIX.person, { tier: 'targeted', hits: 2, lastHitTurn: 2 }],
+    [FIX.glossary, { tier: 'targeted', hits: 1, lastHitTurn: 1 }],
+  ])
+  const { scorer } = createChatScorer({ today: TODAY, collection, terms: ['jane', 'doe'], provenance })
+  const asm = ContextAssembler.from(collection, {
+    scorer,
+    maxTokens: 300_000,
+    floorFraction: CHAT_SCORE.floorFraction,
+  })
+
+  const keptPaths = asm.kept.map((s) => s.item.path)
+  assert({
+    given: 'a floor at 0.35 of a ~25-score top and a zero-signal doc a targeted query returned',
+    should: 'keep the targeted doc on its provenance boost alone while flooring the ambient doc',
+    actual: {
+      floor: Math.round((asm.floorValue ?? 0) * 100) / 100,
+      glossaryKept: keptPaths.includes(FIX.glossary),
+      // The unpinned goal sits at exactly 8 (recency 3 + type 5, no term
+      // overlap) — deterministically under the 8.75 line.
+      goalFloored: asm.floored.some((s) => s.item.path === FIX.goal),
+    },
+    expected: { floor: 8.75, glossaryKept: true, goalFloored: true },
   })
 })
 
