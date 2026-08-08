@@ -31,11 +31,11 @@ function isMissingStartedColumnError(error: { message?: string; details?: string
 }
 
 const params = {
-  force: Flag.boolean('Force upload even if unchanged', { short: 'f', default: false }),
+  force: Flag.bool('Force upload even if unchanged', { short: 'f', default: false }),
   days: Flag.number('Number of days to sync (default: 2)', { short: 'd', default: 2 }),
   date: Flag.string('Sync a specific date (YYYY-MM-DD)'),
-  pushOnly: Flag.boolean('Only push local changes, do not pull', { default: false }),
-  pullOnly: Flag.boolean('Only pull remote changes, do not push', { default: false }),
+  pushOnly: Flag.bool('Only push local changes, do not pull', { default: false }),
+  pullOnly: Flag.bool('Only pull remote changes, do not push', { default: false }),
 }
 
 type Params = InferParams<typeof params>

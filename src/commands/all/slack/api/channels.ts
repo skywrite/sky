@@ -9,10 +9,10 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   token: Flag.string('Slack user token (or set SLACK_USER_TOKEN env var)', { short: 't' }),
   limit: Flag.number('How many channels to show (default 25)', { short: 'l', default: 25 }),
-  all: Flag.boolean('Show all channels (no limit)'),
-  private: Flag.boolean('Only show private channels'),
-  public: Flag.boolean('Only show public channels'),
-  debug: Flag.boolean('Show debug output'),
+  all: Flag.bool('Show all channels (no limit)'),
+  private: Flag.bool('Only show private channels'),
+  public: Flag.bool('Only show public channels'),
+  debug: Flag.bool('Show debug output'),
 }
 
 type Params = InferParams<typeof params>

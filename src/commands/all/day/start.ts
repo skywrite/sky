@@ -57,9 +57,9 @@ async function reconcileStreaks(targetDay: PlainDate) {
 
 const params = {
   day: dayArg(),
-  journal: Flag.boolean('Create journal files for the day', { short: 'j', default: false }),
+  journal: Flag.bool('Create journal files for the day', { short: 'j', default: false }),
   tz: Flag.string('IANA timezone (e.g., America/New_York)', { optional: true }),
-  skipLocation: Flag.boolean('Skip setting location on the day', { default: false }),
+  skipLocation: Flag.bool('Skip setting location on the day', { default: false }),
 }
 
 type Params = InferParams<typeof params>

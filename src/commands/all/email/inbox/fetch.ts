@@ -13,7 +13,7 @@ const params = {
   limit: Flag.number('Max new messages to fetch', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   threadId: Flag.string('Fetch a specific thread by ID', { hidden: true }),
-  collapseNewThreads: Flag.boolean('Collapse first-time (unfollowed) threads into one file dated today', {
+  collapseNewThreads: Flag.bool('Collapse first-time (unfollowed) threads into one file dated today', {
     default: false,
     hidden: true,
   }),

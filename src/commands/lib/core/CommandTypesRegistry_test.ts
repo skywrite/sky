@@ -22,7 +22,7 @@ import { assert, test } from '#test'
 const testCommandParams = {
   name: Flag.string('User name'),
   count: Flag.number('Count', { default: 10 }),
-  verbose: Flag.boolean('Verbose', { optional: true }),
+  verbose: Flag.bool('Verbose', { optional: true }),
 }
 
 // Result type for the test task

@@ -33,10 +33,10 @@ function validateFromAudioRequiresTypes(_result: Record<string, unknown>, rawArg
 }
 
 const params = {
-  all: Flag.boolean('Generate all journals', { short: 'a', default: false }),
-  ai: Flag.boolean('Generate AI-powered contextual questions', { default: false }),
-  inspectInitialContext: Flag.boolean('List initial context file paths and exit', { default: false }),
-  dryRun: Flag.boolean('Show context and AI questions without creating files', { default: false }),
+  all: Flag.bool('Generate all journals', { short: 'a', default: false }),
+  ai: Flag.bool('Generate AI-powered contextual questions', { default: false }),
+  inspectInitialContext: Flag.bool('List initial context file paths and exit', { default: false }),
+  dryRun: Flag.bool('Show context and AI questions without creating files', { default: false }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop. Requires --types.', {
     optional: true,
   }),

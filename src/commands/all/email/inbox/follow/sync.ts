@@ -20,7 +20,7 @@ const params = {
   account: Flag.string('Account name from secrets (e.g. user@example.com)'),
   label: Flag.string('Gmail label to sync', { default: () => 'Sky/Follow' }),
   limit: Flag.number('Max messages to fetch', { default: () => 250 }),
-  pick: Flag.boolean('Interactively pick a single tagged thread to sync (for testing/triage)', {
+  pick: Flag.bool('Interactively pick a single tagged thread to sync (for testing/triage)', {
     default: false,
   }),
 }

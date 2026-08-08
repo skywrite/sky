@@ -11,19 +11,19 @@ import IdeaStore, { type IdeaStatus } from '#shared/models/Store/IdeaStore/mod.t
 // -----------------------------------------------------------------------------
 
 const params = {
-  all: Flag.boolean('Show all ideas (default: draft only)', {
+  all: Flag.bool('Show all ideas (default: draft only)', {
     short: 'A',
     default: false,
   }),
-  exploring: Flag.boolean('Show only exploring ideas', {
+  exploring: Flag.bool('Show only exploring ideas', {
     short: 'e',
     default: false,
   }),
-  actioned: Flag.boolean('Show only actioned ideas', {
+  actioned: Flag.bool('Show only actioned ideas', {
     short: 'a',
     default: false,
   }),
-  archived: Flag.boolean('Show only archived ideas', {
+  archived: Flag.bool('Show only archived ideas', {
     default: false,
   }),
   tag: Flag.string('Filter by tag', {

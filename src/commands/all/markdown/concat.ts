@@ -22,8 +22,8 @@ const params = {
   }),
   output: Flag.string('Output file path (default: stdout)', { short: 'o' }),
   excludeSections: Flag.string('Semicolon-separated section headings to exclude'),
-  noSeparators: Flag.boolean('Omit file separators between documents', { default: false }),
-  noHeader: Flag.boolean('Omit YAML header', { default: false }),
+  noSeparators: Flag.bool('Omit file separators between documents', { default: false }),
+  noHeader: Flag.bool('Omit YAML header', { default: false }),
   limit: Flag.number('Limit number of files'),
 }
 

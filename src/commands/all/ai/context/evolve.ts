@@ -58,7 +58,7 @@ const params = {
     short: 's',
     optional: true,
   }),
-  json: Flag.boolean('Output as JSON', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
 }
 
 const schema = z.object({

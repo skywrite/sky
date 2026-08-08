@@ -7,8 +7,8 @@ import { walk } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
 const params = {
-  count: Flag.boolean('Print only the count of orphan files', { default: false }),
-  files: Flag.boolean('Print raw file paths (one per line)', { default: false }),
+  count: Flag.bool('Print only the count of orphan files', { default: false }),
+  files: Flag.bool('Print raw file paths (one per line)', { default: false }),
 }
 
 type Params = InferParams<typeof params>

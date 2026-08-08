@@ -9,13 +9,13 @@ import { type GoalCategory, GoalCoach, type Timeframe } from './_lib/GoalCoach.t
 // -----------------------------------------------------------------------------
 
 const params = {
-  personal: Flag.boolean('Personal goals', { short: 'p', default: false }),
-  professional: Flag.boolean('Professional goals', { short: 'P', default: false }),
+  personal: Flag.bool('Personal goals', { short: 'p', default: false }),
+  professional: Flag.bool('Professional goals', { short: 'P', default: false }),
   // Timeframe flags
-  weekly: Flag.boolean('Weekly goal', { short: 'w', default: false }),
-  monthly: Flag.boolean('Monthly goal', { short: 'm', default: false }),
-  quarterly: Flag.boolean('Quarterly goal', { short: 'q', default: false }),
-  annual: Flag.boolean('Annual goal', { short: 'a', default: false }),
+  weekly: Flag.bool('Weekly goal', { short: 'w', default: false }),
+  monthly: Flag.bool('Monthly goal', { short: 'm', default: false }),
+  quarterly: Flag.bool('Quarterly goal', { short: 'q', default: false }),
+  annual: Flag.bool('Annual goal', { short: 'a', default: false }),
 }
 
 type Params = InferParams<typeof params>

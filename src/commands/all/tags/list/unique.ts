@@ -6,10 +6,10 @@ import { readTextFile, walk } from '#shared/fs/mod.ts'
 import MarkdownDocument from '#shared/models/Markdown/Document/mod.ts'
 
 const params = {
-  count: Flag.boolean('Show count of tags containing each word'),
+  count: Flag.bool('Show count of tags containing each word'),
   limit: Flag.number('Limit the number of words to display'),
   filter: Flag.string('Filter words by pattern (case-insensitive)'),
-  raw: Flag.boolean('Output raw list without colors or metadata (for piping)'),
+  raw: Flag.bool('Output raw list without colors or metadata (for piping)'),
 }
 
 type Params = InferParams<typeof params>

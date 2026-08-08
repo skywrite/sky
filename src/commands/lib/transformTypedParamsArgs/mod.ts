@@ -131,7 +131,7 @@ export default async function transformTypedParamsArgs(
     // Reject duplicate flags (mri turns repeated --flag into an array)
     // TODO: support an 'array' param type (e.g. Flag.array('...')) that accepts
     // repeated flags like --tag="a" --tag="b" → ["a", "b"]
-    if (Array.isArray(rawValue) && param.type !== 'boolean') {
+    if (Array.isArray(rawValue) && param.type !== 'bool') {
       throw new Error(`Flag "--${camelToKebab(name)}" was specified multiple times`)
     }
 

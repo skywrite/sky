@@ -38,11 +38,11 @@ const DEFAULT_PROFILE = 'default-fable-5'
 const params = {
   day: dayNoFutureArg(),
   model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
-  force: Flag.boolean('Overwrite existing summary file', { short: 'f', default: false }),
-  dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
-  stdout: Flag.boolean('Output summary to stdout instead of file', { default: false }),
-  open: Flag.boolean('Open summary in editor after creation', { short: 'o', default: false }),
-  export: Flag.boolean('Export summary as PDF to ~/Desktop', { short: 'e', default: false }),
+  force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
+  dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
+  stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),
+  open: Flag.bool('Open summary in editor after creation', { short: 'o', default: false }),
+  export: Flag.bool('Export summary as PDF to ~/Desktop', { short: 'e', default: false }),
 }
 
 type Params = InferParams<typeof params>

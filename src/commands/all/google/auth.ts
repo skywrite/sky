@@ -21,10 +21,10 @@ import {
 } from '#lib/google/mod.ts'
 
 const params = {
-  list: Flag.boolean('List authorized accounts', { short: 'l', default: false }),
+  list: Flag.bool('List authorized accounts', { short: 'l', default: false }),
   remove: Flag.string('Remove a stored account (email or unique part of it)'),
-  setup: Flag.boolean('Print the one-time Google Cloud walkthrough', { default: false }),
-  print: Flag.boolean('Print the authorization URL instead of opening the browser', { default: false }),
+  setup: Flag.bool('Print the one-time Google Cloud walkthrough', { default: false }),
+  print: Flag.bool('Print the authorization URL instead of opening the browser', { default: false }),
 }
 
 type Params = InferParams<typeof params>

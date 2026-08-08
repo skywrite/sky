@@ -23,7 +23,7 @@ const params = {
   previous: Flag.string('Previous message ref', { hidden: true }),
   tags: Flag.string('Tags to propagate from previous message', { hidden: true }),
   rel: Flag.string('Related reference to propagate from previous message', { hidden: true }),
-  noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
+  noEditor: Flag.bool('Skip opening editor', { hidden: true }),
   when: whenNBTime(),
   category: category(),
 }

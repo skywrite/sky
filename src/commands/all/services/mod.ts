@@ -6,12 +6,12 @@ import * as services from '#lib/services/mod.ts'
 
 const params = {
   service: Arg.string('The service name', { optional: true }),
-  start: Flag.boolean('Start a service', { default: false }),
-  stop: Flag.boolean('Stop a service', { default: false }),
-  load: Flag.boolean('Load a service', { default: false }),
-  unload: Flag.boolean('Unload a service', { default: false }),
-  reload: Flag.boolean('Unload a service, then load it', { default: false }),
-  restart: Flag.boolean('Stop a service, then start it', { default: false }),
+  start: Flag.bool('Start a service', { default: false }),
+  stop: Flag.bool('Stop a service', { default: false }),
+  load: Flag.bool('Load a service', { default: false }),
+  unload: Flag.bool('Unload a service', { default: false }),
+  reload: Flag.bool('Unload a service, then load it', { default: false }),
+  restart: Flag.bool('Stop a service, then start it', { default: false }),
 }
 
 type Params = InferParams<typeof params>

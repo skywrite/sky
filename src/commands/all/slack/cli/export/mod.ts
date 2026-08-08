@@ -21,7 +21,7 @@ import { runCommand } from '#lib/sys/mod.ts'
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
   workspace: Flag.string('Workspace URL (if needed for disambiguation)', { short: 'w' }),
-  debug: Flag.boolean('Show parsed payload JSON'),
+  debug: Flag.bool('Show parsed payload JSON'),
 }
 
 type Params = InferParams<typeof params>

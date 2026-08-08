@@ -12,7 +12,7 @@ import { dayDir } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),
-  dryRun: Flag.boolean('Preview renames without executing', { short: 'd', default: false }),
+  dryRun: Flag.bool('Preview renames without executing', { short: 'd', default: false }),
 }
 
 type Params = InferParams<typeof params>

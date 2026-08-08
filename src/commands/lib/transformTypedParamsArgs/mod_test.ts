@@ -35,7 +35,7 @@ test('transformTypedParamsArgs handles number flag with coercion', async () => {
 
 test('transformTypedParamsArgs handles boolean flag', async () => {
   const params = {
-    verbose: Flag.boolean('Verbose mode'),
+    verbose: Flag.bool('Verbose mode'),
   }
 
   const result = await transformTypedParamsArgs(params, { _: ['task'], verbose: true })
@@ -146,7 +146,7 @@ test('transformTypedParamsArgs handles ArgOrFlag - positional fallback', async (
 
 test('transformTypedParamsArgs handles short flag', async () => {
   const params = {
-    verbose: Flag.boolean('Verbose', { short: 'v' }),
+    verbose: Flag.bool('Verbose', { short: 'v' }),
   }
 
   const result = await transformTypedParamsArgs(params, { _: ['task'], v: true })

@@ -25,7 +25,7 @@ import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/m
 export type ParamKind = 'arg' | 'flag' | 'arg-or-flag'
 
 /** Supported parameter types */
-export type ParamType = 'string' | 'number' | 'boolean' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
+export type ParamType = 'string' | 'number' | 'bool' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
 
 /** JSON type for MCP schema generation */
 export type ParamJsonType = 'string' | 'number' | 'boolean'
@@ -196,11 +196,19 @@ function createBuilder<K extends ParamKind>(kind: K) {
       return buildParam('number', 'number', description, z.coerce.number(), options)
     },
 
+    bool<O extends ParamOptions<boolean> = ParamOptions<boolean>>(
+      description: string,
+      options?: O,
+    ): BuilderReturn<boolean, O, K> {
+      return buildParam('bool', 'boolean', description, z.coerce.boolean(), options)
+    },
+
+    /** @deprecated Use `bool()` — kept so in-flight branches keep compiling until migrated. */
     boolean<O extends ParamOptions<boolean> = ParamOptions<boolean>>(
       description: string,
       options?: O,
     ): BuilderReturn<boolean, O, K> {
-      return buildParam('boolean', 'boolean', description, z.coerce.boolean(), options)
+      return buildParam('bool', 'boolean', description, z.coerce.boolean(), options)
     },
 
     plainDate<O extends ParamOptions<PlainDate> = ParamOptions<PlainDate>>(

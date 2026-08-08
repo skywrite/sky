@@ -10,15 +10,15 @@ import DecisionDocument from '#shared/models/Decision/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
-  all: Flag.boolean('Show all decisions (default: pending only)', {
+  all: Flag.bool('Show all decisions (default: pending only)', {
     short: 'A',
     default: false,
   }),
-  resolved: Flag.boolean('Show only resolved decisions (not archived)', {
+  resolved: Flag.bool('Show only resolved decisions (not archived)', {
     short: 'r',
     default: false,
   }),
-  archived: Flag.boolean('Show only archived decisions', {
+  archived: Flag.bool('Show only archived decisions', {
     short: 'a',
     default: false,
   }),

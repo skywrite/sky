@@ -4,7 +4,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   category: Arg.string('Service or category (e.g. gmail, anthropic, slack)'),
   name: Arg.string('Account or entry name (e.g. personal, work, main)'),
-  reveal: Flag.boolean('Show unmasked values', { default: () => false }),
+  reveal: Flag.bool('Show unmasked values', { default: () => false }),
 }
 
 type Params = InferParams<typeof params>

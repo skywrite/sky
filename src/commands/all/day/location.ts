@@ -14,7 +14,7 @@ const params = {
   day: dayArg(),
   lat: Flag.string('Latitude'),
   long: Flag.string('Longitude'),
-  mobile: Flag.boolean('Use mobile device location via QR code', { default: false }),
+  mobile: Flag.bool('Use mobile device location via QR code', { default: false }),
 }
 
 type Params = InferParams<typeof params>

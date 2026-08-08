@@ -7,7 +7,7 @@ import { fetchNow } from '#shared/nbfs/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 
 const params = {
-  all: Flag.boolean('Include archived streaks', { short: 'a', default: false }),
+  all: Flag.bool('Include archived streaks', { short: 'a', default: false }),
 }
 
 type Params = InferParams<typeof params>

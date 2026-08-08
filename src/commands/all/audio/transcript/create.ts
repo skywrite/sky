@@ -39,11 +39,11 @@ const params = {
     short: 'o',
     optional: true,
   }),
-  save: Flag.boolean('Auto-save to source directory with .md extension', {
+  save: Flag.bool('Auto-save to source directory with .md extension', {
     short: 's',
     default: false,
   }),
-  delete: Flag.boolean('Delete source audio file after transcription', {
+  delete: Flag.bool('Delete source audio file after transcription', {
     short: 'd',
     default: false,
   }),
@@ -55,7 +55,7 @@ const params = {
     short: 'p',
     default: () => 'openai' as TranscriptionProvider,
   }),
-  diarize: Flag.boolean('Enable speaker diarization (mistral only)', {
+  diarize: Flag.bool('Enable speaker diarization (mistral only)', {
     default: false,
   }),
 }

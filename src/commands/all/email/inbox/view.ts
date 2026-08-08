@@ -10,7 +10,7 @@ const params = {
   label: Flag.string('Gmail label / IMAP folder to read', { default: () => 'Sky/Follow' }),
   limit: Flag.number('Max messages to fetch', { default: () => 250 }),
   since: Flag.string('Only fetch messages since this date (YYYY-MM-DD)'),
-  debug: Flag.boolean('Show debug info for message discovery'),
+  debug: Flag.bool('Show debug info for message discovery'),
 }
 
 type Params = InferParams<typeof params>

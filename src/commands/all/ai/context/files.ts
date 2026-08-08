@@ -23,12 +23,12 @@ const params = {
     short: 's',
     default: () => 'auto',
   }),
-  server: Flag.boolean('Use the running notebook service instead of building MarkdownStore locally', {
+  server: Flag.bool('Use the running notebook service instead of building MarkdownStore locally', {
     short: 'S',
     default: false,
   }),
-  raw: Flag.boolean('Output just file paths, one per line', { default: false }),
-  json: Flag.boolean('Output as JSON', { default: false }),
+  raw: Flag.bool('Output just file paths, one per line', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
   limit: Flag.number('Limit number of results', { optional: true }),
 }
 

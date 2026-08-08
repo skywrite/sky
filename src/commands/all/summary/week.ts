@@ -32,24 +32,24 @@ const params = {
     short: 'm',
     default: () => ROLES.reasoning,
   }),
-  force: Flag.boolean('Overwrite existing summary file', {
+  force: Flag.bool('Overwrite existing summary file', {
     short: 'f',
     default: false,
   }),
-  allowMissing: Flag.boolean('Continue even if some days are missing summaries', {
+  allowMissing: Flag.bool('Continue even if some days are missing summaries', {
     default: false,
   }),
-  dryRun: Flag.boolean('Show prompt without calling AI', {
+  dryRun: Flag.bool('Show prompt without calling AI', {
     default: false,
   }),
-  stdout: Flag.boolean('Output summary to stdout instead of file', {
+  stdout: Flag.bool('Output summary to stdout instead of file', {
     default: false,
   }),
-  open: Flag.boolean('Open summary in editor after creation', {
+  open: Flag.bool('Open summary in editor after creation', {
     short: 'o',
     default: false,
   }),
-  export: Flag.boolean('Export summary as PDF to ~/Desktop', {
+  export: Flag.bool('Export summary as PDF to ~/Desktop', {
     default: false,
   }),
 }

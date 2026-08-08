@@ -22,11 +22,11 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  verbose: Flag.boolean('Show all loaded names', {
+  verbose: Flag.bool('Show all loaded names', {
     short: 'v',
     default: false,
   }),
-  warnings: Flag.boolean('Show warnings (files with issues)', {
+  warnings: Flag.bool('Show warnings (files with issues)', {
     short: 'w',
     default: false,
   }),

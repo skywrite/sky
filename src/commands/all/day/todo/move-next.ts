@@ -5,7 +5,7 @@ import type { InferParams } from '#commands/mod.ts'
 const params = {
   day: dayNoFutureArg(),
   category: categoryTodo(),
-  noIncomplete: Flag.boolean('Do not create an Incomplete section in the source day', {
+  noIncomplete: Flag.bool('Do not create an Incomplete section in the source day', {
     short: 'I',
     default: false,
   }),

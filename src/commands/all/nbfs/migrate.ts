@@ -8,7 +8,7 @@ import { dayDir as v2DayDir, parseDateFromDayPath as v2ParseDate, weekDir as v2W
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  execute: Flag.boolean('Actually perform the migration (dry-run by default)', {
+  execute: Flag.bool('Actually perform the migration (dry-run by default)', {
     default: false,
   }),
 }

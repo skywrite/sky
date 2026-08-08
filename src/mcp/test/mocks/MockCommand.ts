@@ -12,7 +12,7 @@ import { MCPTool } from '../../decorators.ts'
  */
 const echoParams = {
   message: Arg.string('Message to echo'),
-  uppercase: Flag.boolean('Convert to uppercase', { default: false }),
+  uppercase: Flag.bool('Convert to uppercase', { default: false }),
   repeat: Flag.number('Number of times to repeat', { default: 1 }),
 }
 
@@ -88,7 +88,7 @@ const complexParams = {
   optional: Arg.string('Optional argument', { optional: true }),
   string: Flag.string('String flag'),
   number: Flag.number('Number flag'),
-  boolean: Flag.boolean('Boolean flag', { default: false }),
+  boolean: Flag.bool('Boolean flag', { default: false }),
   array: Flag.string('Array flag (comma-separated)'),
   date: Flag.string('Date flag (ISO format)'),
 }

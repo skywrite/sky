@@ -17,7 +17,7 @@ const params = {
   notes: Arg.string('Why I am in this location?', { default: '' }),
   lat: Flag.string('Latitude'),
   long: Flag.string('Longitude'),
-  mobile: Flag.boolean('Use mobile device location via QR code', { default: false }),
+  mobile: Flag.bool('Use mobile device location via QR code', { default: false }),
   when: Flag.plainDateTime('Date/time in reverse format', { default: () => new PlainDateTime() }),
 }
 

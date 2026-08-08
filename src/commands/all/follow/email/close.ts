@@ -7,7 +7,7 @@ import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 
 const params = {
   file: Arg.string('Follow file name (without .yaml extension)', { optional: true }),
-  dryRun: Flag.boolean('Show what would be closed without deleting', { default: false }),
+  dryRun: Flag.bool('Show what would be closed without deleting', { default: false }),
 }
 
 type Params = InferParams<typeof params>

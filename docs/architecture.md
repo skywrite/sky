@@ -69,7 +69,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 
 const params = {
   name: Arg.string('Name of the item'),
-  verbose: Flag.boolean('Show details', { short: 'v', default: false }),
+  verbose: Flag.bool('Show details', { short: 'v', default: false }),
 }
 
 type Params = InferParams<typeof params>

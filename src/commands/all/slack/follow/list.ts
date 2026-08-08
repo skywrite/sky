@@ -13,7 +13,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
-  all: Flag.boolean('Show all follows including paused (default: active only)', {
+  all: Flag.bool('Show all follows including paused (default: active only)', {
     short: 'a',
     default: false,
   }),

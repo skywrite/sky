@@ -70,18 +70,18 @@ test('Flag.number creates a number flag param', () => {
   })
 })
 
-test('Flag.boolean creates a boolean flag param', () => {
-  const param = Flag.boolean('Enable feature', { short: 'e' })
+test('Flag.bool creates a boolean flag param', () => {
+  const param = Flag.bool('Enable feature', { short: 'e' })
 
   assert({
-    given: 'Flag.boolean',
-    should: 'have type=boolean',
+    given: 'Flag.bool',
+    should: 'have type=bool',
     actual: param.type,
-    expected: 'boolean',
+    expected: 'bool',
   })
 
   assert({
-    given: 'Flag.boolean',
+    given: 'Flag.bool',
     should: 'have jsonType=boolean',
     actual: param.jsonType,
     expected: 'boolean',
@@ -239,7 +239,7 @@ test('Number param schema coerces and validates numbers', () => {
 })
 
 test('Boolean param schema coerces and validates booleans', () => {
-  const param = Flag.boolean('Enabled')
+  const param = Flag.bool('Enabled')
 
   const boolResult = param.schema?.safeParse(true)
   assert({
@@ -338,7 +338,7 @@ test('InferParams correctly infers types from params record', () => {
   const params = {
     name: Flag.string('Name'),
     count: Flag.number('Count'),
-    enabled: Flag.boolean('Enabled'),
+    enabled: Flag.bool('Enabled'),
     when: Flag.plainDateTime('When'),
   }
 

@@ -24,8 +24,8 @@ const params = {
   server: Flag.string('Server URL (default: localhost:9999). Use without value for default, or pass host:port', {
     short: 'S',
   }),
-  raw: Flag.boolean('Output just file paths, one per line', { default: false }),
-  json: Flag.boolean('Output full JSON result (for GraphQL)', { default: false }),
+  raw: Flag.bool('Output just file paths, one per line', { default: false }),
+  json: Flag.bool('Output full JSON result (for GraphQL)', { default: false }),
   limit: Flag.number('Limit number of results', { optional: true }),
 }
 

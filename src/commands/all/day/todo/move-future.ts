@@ -20,7 +20,7 @@ const params = {
     parse: (input: string) => parsePartialDate(input, { rejectFuture: false }),
   }),
   category: categoryTodo(),
-  noIncomplete: Flag.boolean('Do not create an Incomplete section in the source day', {
+  noIncomplete: Flag.bool('Do not create an Incomplete section in the source day', {
     short: 'I',
     default: false,
   }),

@@ -3,8 +3,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { buildManifest, updateManifest } from './_commandsManifest.ts'
 
 const params = {
-  rebuild: Flag.boolean('Force rebuild the manifest', { default: false }),
-  verbose: Flag.boolean('Include descriptions in output', { short: 'v', default: false }),
+  rebuild: Flag.bool('Force rebuild the manifest', { default: false }),
+  verbose: Flag.bool('Include descriptions in output', { short: 'v', default: false }),
 }
 
 type Params = InferParams<typeof params>

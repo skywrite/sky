@@ -16,13 +16,13 @@ interface FileMatch {
 const params = {
   pattern: Arg.string('Tag pattern(s) to match - can specify multiple patterns'),
   mode: Flag.string('Matching mode: all (AND), any (OR), exact (default: any)', { default: 'any' }),
-  ignoreCase: Flag.boolean('Case-insensitive matching (default: case-sensitive)', { default: false }),
-  showTags: Flag.boolean('Show which tags matched in each file', { default: false }),
+  ignoreCase: Flag.bool('Case-insensitive matching (default: case-sensitive)', { default: false }),
+  showTags: Flag.bool('Show which tags matched in each file', { default: false }),
   sort: Flag.string('Sort by: name, count, date (default: count)', { default: 'count' }),
   limit: Flag.number('Limit number of results'),
-  raw: Flag.boolean('Output raw file paths for piping', { default: false }),
-  countOnly: Flag.boolean('Show only the total count of matching files', { default: false }),
-  verbose: Flag.boolean('Show detailed matching information', { default: false }),
+  raw: Flag.bool('Output raw file paths for piping', { default: false }),
+  countOnly: Flag.bool('Show only the total count of matching files', { default: false }),
+  verbose: Flag.bool('Show detailed matching information', { default: false }),
 }
 
 type Params = InferParams<typeof params>
