@@ -104,10 +104,22 @@ export function estimateTokens(text: string): number {
  * 2. **Partitions** by verdict: `always` → kept, `never` → excluded,
  *    `scored` → sorted by score and budget-walked into kept or pruned
  *
- * The result is three lists:
+ * The result is four lists:
  * - `kept`     — pinned documents plus the highest-scored ones that fit the budget
  * - `pruned`   — eligible documents that didn't fit (budget's fault; recoverable)
+ * - `floored`  — scored documents under the relevance floor (irrelevance's
+ *               fault; a looser budget does NOT recover them)
  * - `excluded` — documents the scorer banned outright (intent's fault; never recovered)
+ *
+ * ## Relevance floor
+ *
+ * With `floorFraction` set, scored items below `floorFraction × the top
+ * scored item's score` are floored before the budget walk — context sizes
+ * to the question instead of filling the budget with weak matches. The top
+ * item always clears its own floor, so a floor can never empty the
+ * eligible set, and an ambient universe (top score ≤ 0) gets no floor at
+ * all. Pinned items are exempt. Without `floorFraction` (the default)
+ * nothing changes — `floored` stays empty.
  *
  * ## Immutability
  *
@@ -148,21 +160,33 @@ export default class ContextAssembler {
 
   private readonly _kept: readonly ScoredItem[]
   private readonly _pruned: readonly ScoredItem[]
+  private readonly _floored: readonly ScoredItem[]
   private readonly _excluded: readonly ScoredItem[]
+  private readonly _floorValue: number | null
   private readonly _totalTokens: number
 
   // These are stored so with*() methods can derive new instances
   private readonly _scorer: Scorer
   private readonly _maxTokens: number
+  private readonly _floorFraction: number | undefined
   private readonly _collection: DomainCollection
 
-  private constructor(parts: Partitioned, scorer: Scorer, maxTokens: number, collection: DomainCollection) {
+  private constructor(
+    parts: Partitioned,
+    scorer: Scorer,
+    maxTokens: number,
+    floorFraction: number | undefined,
+    collection: DomainCollection,
+  ) {
     this._kept = parts.kept
     this._pruned = parts.pruned
+    this._floored = parts.floored
     this._excluded = parts.excluded
+    this._floorValue = parts.floorValue
     this._totalTokens = parts.kept.reduce((sum, s) => sum + s.tokens, 0)
     this._scorer = scorer
     this._maxTokens = maxTokens
+    this._floorFraction = floorFraction
     this._collection = collection
   }
 
@@ -174,14 +198,25 @@ export default class ContextAssembler {
    * Build a ContextAssembler from a DomainCollection.
    *
    * This is the main entry point. It scores every document, partitions by
-   * verdict, and budget-walks the scored bucket.
+   * verdict, applies the relevance floor, and budget-walks the scored bucket.
    *
    * @param maxTokens - Token budget. Defaults to Infinity (keep everything eligible).
+   * @param floorFraction - Relevance floor as a fraction of the top scored
+   *   item's score. Defaults to none (no floor).
    */
-  static from(collection: DomainCollection, opts: { scorer: Scorer; maxTokens?: number }): ContextAssembler {
-    const { scorer, maxTokens = Infinity } = opts
+  static from(
+    collection: DomainCollection,
+    opts: { scorer: Scorer; maxTokens?: number; floorFraction?: number },
+  ): ContextAssembler {
+    const { scorer, maxTokens = Infinity, floorFraction } = opts
     const items = scoreItems(collection, scorer)
-    return new ContextAssembler(partition(items, maxTokens), scorer, maxTokens, collection)
+    return new ContextAssembler(
+      partition(items, maxTokens, floorFraction),
+      scorer,
+      maxTokens,
+      floorFraction,
+      collection,
+    )
   }
 
   // ---------------------------------------------------------------------------
@@ -196,6 +231,20 @@ export default class ContextAssembler {
   /** Eligible documents that were cut to stay within budget, in score order. */
   get pruned(): readonly ScoredItem[] {
     return this._pruned
+  }
+
+  /**
+   * Scored documents under the relevance floor, in score order. Unlike
+   * `pruned`, a looser budget never recovers them — only a new score or a
+   * different floor can.
+   */
+  get floored(): readonly ScoredItem[] {
+    return this._floored
+  }
+
+  /** The floor applied this partition (floorFraction × top score), null when none was. */
+  get floorValue(): number | null {
+    return this._floorValue
   }
 
   /** Documents excluded by scorer verdict (`keep: 'never'`), regardless of budget. */
@@ -235,8 +284,14 @@ export default class ContextAssembler {
    * by every re-partition.
    */
   withBudget(maxTokens: number): ContextAssembler {
-    const all = [...this._kept, ...this._pruned, ...this._excluded]
-    return new ContextAssembler(partition(all, maxTokens), this._scorer, maxTokens, this._collection)
+    const all = [...this._kept, ...this._pruned, ...this._floored, ...this._excluded]
+    return new ContextAssembler(
+      partition(all, maxTokens, this._floorFraction),
+      this._scorer,
+      maxTokens,
+      this._floorFraction,
+      this._collection,
+    )
   }
 
   /**
@@ -244,7 +299,11 @@ export default class ContextAssembler {
    * Re-scores from scratch (new docs need new scores).
    */
   withCollection(collection: DomainCollection): ContextAssembler {
-    return ContextAssembler.from(collection, { scorer: this._scorer, maxTokens: this._maxTokens })
+    return ContextAssembler.from(collection, {
+      scorer: this._scorer,
+      maxTokens: this._maxTokens,
+      floorFraction: this._floorFraction,
+    })
   }
 
   /**
@@ -252,7 +311,11 @@ export default class ContextAssembler {
    * Re-scores from scratch (different scorer = different scores).
    */
   withScorer(scorer: Scorer): ContextAssembler {
-    return ContextAssembler.from(this._collection, { scorer, maxTokens: this._maxTokens })
+    return ContextAssembler.from(this._collection, {
+      scorer,
+      maxTokens: this._maxTokens,
+      floorFraction: this._floorFraction,
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -279,7 +342,9 @@ export default class ContextAssembler {
 interface Partitioned {
   kept: readonly ScoredItem[]
   pruned: readonly ScoredItem[]
+  floored: readonly ScoredItem[]
   excluded: readonly ScoredItem[]
+  floorValue: number | null
 }
 
 /**
@@ -312,20 +377,24 @@ function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
 }
 
 /**
- * Partition scored items by verdict, then budget-walk the scored bucket.
+ * Partition scored items by verdict, apply the relevance floor, then
+ * budget-walk the scored bucket.
  *
  * The single partition implementation shared by `from()` and `withBudget()`,
  * so construction and re-budgeting cannot disagree about verdict semantics:
  * - `always` → kept unconditionally, first, counted against the budget
  * - `never`  → excluded unconditionally, regardless of available room
- * - `scored` → sorted by score desc, kept while the budget allows
+ * - `scored` → floored below floorFraction × top score, the rest sorted by
+ *   score desc and kept while the budget allows
  *
  * Among scored items, at least one is kept even if it alone exceeds the
- * budget (never produce empty output when eligible items exist).
+ * budget (never produce empty output when eligible items exist). The floor
+ * cannot violate that: the top item always clears its own floor, and an
+ * ambient universe (top score ≤ 0) gets no floor at all.
  */
-function partition(items: ScoredItem[], maxTokens: number): Partitioned {
+function partition(items: ScoredItem[], maxTokens: number, floorFraction?: number): Partitioned {
   const always: ScoredItem[] = []
-  const eligible: ScoredItem[] = []
+  let eligible: ScoredItem[] = []
   const excluded: ScoredItem[] = []
 
   for (const s of items) {
@@ -346,6 +415,15 @@ function partition(items: ScoredItem[], maxTokens: number): Partitioned {
   eligible.sort(byScoreDescThenSizeAsc)
   excluded.sort(byScoreDescThenSizeAsc)
 
+  let floored: ScoredItem[] = []
+  let floorValue: number | null = null
+  if (floorFraction !== undefined && eligible.length > 0 && eligible[0].score > 0) {
+    floorValue = eligible[0].score * floorFraction
+    const floor = floorValue
+    floored = eligible.filter((s) => s.score < floor)
+    eligible = eligible.filter((s) => s.score >= floor)
+  }
+
   const kept: ScoredItem[] = [...always]
   const pruned: ScoredItem[] = []
   let usedTokens = kept.reduce((sum, s) => sum + s.tokens, 0)
@@ -362,6 +440,8 @@ function partition(items: ScoredItem[], maxTokens: number): Partitioned {
   return {
     kept: Object.freeze(kept),
     pruned: Object.freeze(pruned),
+    floored: Object.freeze(floored),
     excluded: Object.freeze(excluded),
+    floorValue,
   }
 }

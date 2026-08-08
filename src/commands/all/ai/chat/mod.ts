@@ -48,6 +48,9 @@ const params = {
     short: 'd',
     default: () => 7,
   }),
+  contextTokens: Flag.number('Token budget ceiling for the assembled document context', {
+    default: () => 300_000,
+  }),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', {
     default: false,
   }),
@@ -396,6 +399,7 @@ export default class AiChatTask extends Command {
       reasoning: reasoningProfileName,
       fast: fastProfileName,
       days,
+      contextTokens,
       inspectInitialContext,
       category,
       when,
@@ -515,6 +519,7 @@ export default class AiChatTask extends Command {
       today,
       days,
       baseDir,
+      maxTokens: contextTokens,
       ownChatPath: resumeSession?.filePath ?? null,
       producers: {
         produceInitialQuery: async (userMessage) => {
@@ -718,9 +723,10 @@ export default class AiChatTask extends Command {
     // recorded turns past the first), and the refreshed context prompt.
     const renderContextReport = (report: RebuildReport) => {
       if (report.stats) {
+        const floored = report.stats.floored !== undefined ? `, ${report.stats.floored} floored` : ''
         output.log(
           colors.dim(
-            `Context: ${report.stats.kept} kept, ${report.stats.pruned} pruned, ${report.stats.excluded} excluded, ~${report.stats.docTokens} tokens`,
+            `Context: ${report.stats.kept} kept, ${report.stats.pruned} pruned${floored}, ${report.stats.excluded} excluded, ~${report.stats.docTokens} tokens`,
           ),
         )
       }

@@ -131,7 +131,7 @@ test('ChatContext.firstTurn', async () => {
     },
   })
   await context.seedBaseline()
-  const report = await context.firstTurn('who is Jane?')
+  const report = await context.firstTurn('who is Jane Doe?')
 
   const entry = context.log[0]
   assert({
@@ -142,7 +142,10 @@ test('ChatContext.firstTurn', async () => {
       queries: entry.queries,
       universePaths: entry.universe?.map((r) => r.path),
       goalPinned: entry.universe?.find((r) => r.path === 'goals/2026.md')?.pinned,
+      // The boosted, name-matched person raises the turn's floor above the
+      // ambient day file — kept is the goal and the person.
       kept: entry.stats?.kept,
+      dayCut: entry.universe?.find((r) => r.path.endsWith('/day.md'))?.cut,
       merged: context.paths.includes(FIX.person),
       collectionSize: report.rebuilt?.collectionSize,
       errors: report.errors,
@@ -152,7 +155,8 @@ test('ChatContext.firstTurn', async () => {
       queries: ['{ people { path } }'],
       universePaths: ['goals/2026.md', 'people/Jane-Doe.md', 'time/2026/01/26-01/01-27/day.md'],
       goalPinned: true,
-      kept: 3,
+      kept: 2,
+      dayCut: 'floor',
       merged: true,
       collectionSize: 3,
       errors: [],
@@ -227,6 +231,49 @@ test('ChatContext.firstTurn - score parts recorded', async () => {
       scoreCarriesBoost: (rec?.score ?? 0) >= 16,
     },
     expected: { prov: 'targeted', lexRecorded: true, scoreCarriesBoost: true },
+  })
+})
+
+test('ChatContext.firstTurn - relevance floor sizes context to the question', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({
+      today: [FIX.day],
+      prev: [FIX.summary, FIX.journal],
+      goals: [FIX.goal],
+    }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: '{ people { path } }' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+
+  const entry = context.log[0]
+  const summary = entry.universe?.find((r) => r.path.endsWith('/summary.md'))
+  const person = entry.universe?.find((r) => r.path === 'people/Jane-Doe.md')
+  assert({
+    given: 'a targeted person question against an ambient baseline',
+    should: 'floor the off-topic baseline docs and record the floor parameters in stats',
+    actual: {
+      summaryCut: summary?.cut,
+      personKept: person?.cut === undefined,
+      kept: entry.stats?.kept,
+      floored: entry.stats?.floored,
+      floorApplied: (entry.stats?.floor ?? 0) > 0,
+      budget: entry.stats?.budget,
+      scoring: entry.stats?.scoring,
+    },
+    expected: {
+      summaryCut: 'floor',
+      personKept: true,
+      kept: 2,
+      floored: 3,
+      floorApplied: true,
+      budget: 300_000,
+      scoring: 's3',
+    },
   })
 })
 

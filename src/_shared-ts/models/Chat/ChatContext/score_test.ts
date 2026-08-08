@@ -27,6 +27,8 @@ const FIX = {
   goal: abs('goals/2026.md'),
   day: abs('time/2026/01/26-01/01-27/day.md'),
   digest: abs('time/2026/01/26-01/01-27/actions/messages/slack_Atlas-Bot-to-atlas-general_Weekly-Digest.md'),
+  deal: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Contract-Countersigned.md'),
+  vendor: abs('time/2026/01/26-01/01-27/actions/notes/Vendor-Landscape.md'),
 }
 
 async function fixtureCollection(absPaths: string[]): Promise<DomainCollection> {
@@ -156,6 +158,51 @@ test('createChatScorer - short terms match whole words only', async () => {
     should: 'credit no document',
     actual: [lexicalByPath.get(FIX.person), lexicalByPath.get(FIX.digest)],
     expected: [0, 0],
+  })
+})
+
+test('createChatScorer - header channels outrank body mentions', async () => {
+  const collection = await fixtureCollection([FIX.deal, FIX.vendor, FIX.goal])
+  // "nimbus" lives only in the deal message's rel and tags — its body and
+  // filename never say it — while the vendor note mentions it once in a
+  // long body. The authored linkage must win.
+  const { scorer, lexicalByPath } = createChatScorer({
+    today: TODAY,
+    collection,
+    terms: ['nimbus'],
+    provenance: new Map(),
+  })
+  collection.allItems.forEach((i) => scorer(i))
+  const dealLex = lexicalByPath.get(FIX.deal) ?? 0
+  const vendorLex = lexicalByPath.get(FIX.vendor) ?? 0
+
+  assert({
+    given: "a term present only in one doc's rel/tags and once in another doc's long body",
+    should: 'give the rel/tags doc full credit and the body mention a damped partial',
+    actual: {
+      dealLex,
+      vendorPartial: vendorLex > 0 && vendorLex < dealLex / 2,
+    },
+    expected: { dealLex: 8, vendorPartial: true },
+  })
+})
+
+test('createChatScorer - tags channel carries taxonomy terms', async () => {
+  const collection = await fixtureCollection([FIX.deal, FIX.vendor, FIX.goal])
+  // "acquisitions" appears only as a tag segment on the deal message.
+  const { scorer, lexicalByPath } = createChatScorer({
+    today: TODAY,
+    collection,
+    terms: ['acquisitions'],
+    provenance: new Map(),
+  })
+  collection.allItems.forEach((i) => scorer(i))
+
+  assert({
+    given: "a term that exists only in one doc's tag taxonomy",
+    should: 'credit that doc fully through the tags channel',
+    actual: { dealLex: lexicalByPath.get(FIX.deal), vendorLex: lexicalByPath.get(FIX.vendor) },
+    expected: { dealLex: 8, vendorLex: 0 },
   })
 })
 

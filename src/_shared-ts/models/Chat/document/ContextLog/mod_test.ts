@@ -188,9 +188,19 @@ test('contextLog - score-part fields round-trip within v2', () => {
     {
       turn: 1,
       queries: ['{ people(where: { nameContains: "Jane" }) { path } }'],
+      stats: {
+        kept: 1,
+        pruned: 0,
+        excluded: 0,
+        docTokens: 900,
+        budget: 300000,
+        scoring: 's3',
+        floor: 7.46,
+        floored: 1,
+      },
       universe: [
         { path: 'people/Jane-Doe.md', score: 21.3, tokens: 900, lex: 5.3, prov: 'targeted' },
-        { path: 'time/2026/03/02-08/03-05/day.md', score: 7.9, tokens: 1200 },
+        { path: 'time/2026/03/02-08/03-05/day.md', score: 7.9, tokens: 1200, cut: 'floor' },
       ],
     },
     {
