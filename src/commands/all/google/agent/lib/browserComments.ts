@@ -1,5 +1,6 @@
 import type { Page } from 'playwright'
 import { openGooglePage, withGoogleBrowser } from '../../lib/browserSession.ts'
+import { selectDocMatch } from './findBar.ts'
 
 // Real anchored comments, which the Drive API cannot create on editor files
 // (anchors are opaque internal ids — see comments.ts): drive the actual
@@ -93,15 +94,11 @@ export async function addDocsComment(options: {
     await page.waitForTimeout(800)
     await page.mouse.click(700, 300)
     await page.waitForTimeout(800)
-    await page.keyboard.press('Meta+KeyF')
-    await page.waitForTimeout(800)
-    await page.keyboard.type(options.searchText, { delay: 15 })
-    await page.waitForTimeout(1200)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(500)
-    // Closing the find bar keeps the match selected — the comment binds to it.
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(600)
+    // The counter-driven find selects the true first match — the blind
+    // type-and-Enter it replaces landed on match TWO whenever the snippet
+    // repeated (fill focuses match 1; Enter advances). The comment binds to
+    // the selection left behind.
+    await selectDocMatch(page, options.searchText, 1)
     await typeComment(page, options.comment)
   })
 }
