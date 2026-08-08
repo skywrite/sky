@@ -5,7 +5,7 @@ import { createSupabaseClient, getSupabaseEnv } from '../lib/client.ts'
 const params = {
   from: Flag.string('Date or start date (YYYY-MM-DD)', { required: true }),
   to: Flag.string('End date (YYYY-MM-DD), inclusive. If omitted, deletes single day.'),
-  dryRun: Flag.boolean('Show what would be deleted without deleting', {
+  dryRun: Flag.bool('Show what would be deleted without deleting', {
     default: false,
   }),
 }

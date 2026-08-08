@@ -29,7 +29,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 const params = {
   message: Arg.string('Natural language message to extract temporal info from'),
-  json: Flag.boolean('Output as JSON', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
 }
 
 const schema = z.object({

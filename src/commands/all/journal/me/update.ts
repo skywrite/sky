@@ -14,7 +14,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
-  full: Flag.boolean('Run full questionnaire (ignore quarterly cadence)', {
+  full: Flag.bool('Run full questionnaire (ignore quarterly cadence)', {
     short: 'f',
     default: false,
   }),

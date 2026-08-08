@@ -5,7 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { discoverAIChatTools } from './_tools.ts'
 
 const params = {
-  schema: Flag.boolean('Show full JSON Schema for each tool', { default: false }),
+  schema: Flag.bool('Show full JSON Schema for each tool', { default: false }),
 }
 
 type Params = InferParams<typeof params>

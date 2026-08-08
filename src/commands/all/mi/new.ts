@@ -11,16 +11,16 @@ import { suggestMostImportant } from './_lib/suggestMostImportant.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary of the most important task', { short: 's' }),
-  ai: Flag.boolean('Use AI to suggest the most important thing', {
+  ai: Flag.bool('Use AI to suggest the most important thing', {
     default: false,
   }),
-  dryRun: Flag.boolean('Show AI suggestion without creating file', {
+  dryRun: Flag.bool('Show AI suggestion without creating file', {
     default: false,
   }),
-  inspect: Flag.boolean('Open the AI prompt in VSCode without calling AI', {
+  inspect: Flag.bool('Open the AI prompt in VSCode without calling AI', {
     default: false,
   }),
-  depend: Flag.boolean('Add questions about depending upon others', {
+  depend: Flag.bool('Add questions about depending upon others', {
     short: 'd',
     default: false,
   }),

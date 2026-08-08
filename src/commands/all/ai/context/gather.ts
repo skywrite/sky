@@ -24,8 +24,8 @@ import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
 const params = {
   question: Arg.string('Question to gather context for'),
-  raw: Flag.boolean('Output raw markdown without formatting', { default: false }),
-  json: Flag.boolean('Output as JSON', { default: false }),
+  raw: Flag.bool('Output raw markdown without formatting', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
   depth: Flag.number('Entity resolution depth', { default: () => Infinity }),
 }
 

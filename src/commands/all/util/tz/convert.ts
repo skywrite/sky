@@ -19,7 +19,7 @@ const SYSTEM_PROMPT_FILE = new URL('./prompts/tz-convert-system.prompt.md', impo
 
 const params = {
   query: Arg.string('Natural language timezone query'),
-  json: Flag.boolean('Output as JSON', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
 }
 
 type Params = InferParams<typeof params>

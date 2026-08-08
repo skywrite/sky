@@ -48,27 +48,24 @@ const params = {
     short: 'd',
     default: () => 7,
   }),
-  inspectInitialContext: Flag.boolean('List initial context file paths and exit', {
+  inspectInitialContext: Flag.bool('List initial context file paths and exit', {
     default: false,
   }),
   category: Flag.string('Category for the chat (e.g., reflection, planning)', {
     short: 'c',
     optional: true,
   }),
-  log: Flag.boolean('Log chat to day file as complete item', {
+  log: Flag.bool('Log chat to day file as complete item', {
     default: false,
   }),
-  ephemeral: Flag.boolean('Chat without saving conversation to file', {
+  ephemeral: Flag.bool('Chat without saving conversation to file', {
     short: 'E',
     default: true,
   }),
-  noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
-  resume: Flag.boolean(
-    'Resume a saved chat from the current day: conversation and context restored, same file updated',
-    {
-      default: false,
-    },
-  ),
+  noEditor: Flag.bool('Skip opening editor', { hidden: true }),
+  resume: Flag.bool('Resume a saved chat from the current day: conversation and context restored, same file updated', {
+    default: false,
+  }),
   when: whenNBTime(),
 }
 

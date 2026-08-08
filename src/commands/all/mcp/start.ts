@@ -3,7 +3,7 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
 const params = {
-  stdio: Flag.boolean('Use stdio transport (default)', { default: true }),
+  stdio: Flag.bool('Use stdio transport (default)', { default: true }),
   port: Flag.number('Port for HTTP transport (future)', { default: 3000 }),
 }
 

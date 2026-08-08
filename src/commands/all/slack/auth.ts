@@ -5,7 +5,7 @@ import { SLACK_WORKSPACE } from '#config'
 import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 
 const params = {
-  check: Flag.boolean('Only test credentials — skip the Brave re-import when they are invalid'),
+  check: Flag.bool('Only test credentials — skip the Brave re-import when they are invalid'),
 }
 
 type Params = InferParams<typeof params>

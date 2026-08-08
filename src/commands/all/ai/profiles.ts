@@ -3,7 +3,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { getAllProfiles, PROFILES } from '#shared/ai/models.ts'
 
 const params = {
-  details: Flag.boolean('Show provider, model, and options for each profile', {
+  details: Flag.bool('Show provider, model, and options for each profile', {
     short: 'd',
     default: false,
   }),

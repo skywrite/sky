@@ -3,7 +3,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { createSupabaseClient, type DayFileRow, getSupabaseEnv } from '../lib/client.ts'
 
 const params = {
-  json: Flag.boolean('Output as JSON', { default: false }),
+  json: Flag.bool('Output as JSON', { default: false }),
   limit: Flag.number('Limit number of results'),
 }
 

@@ -49,8 +49,8 @@ const params = {
   // Defaults to the registry's reasoning role so repoints reach this command
   // (and the VS Code extension's attachment summaries, which shell to it).
   model: Flag.string('Model profile to use', { short: 'm', default: () => ROLES.reasoning }),
-  dryRun: Flag.boolean('Show prompt without calling AI', { default: false }),
-  stdout: Flag.boolean('Output summary to stdout', { default: false }),
+  dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
+  stdout: Flag.bool('Output summary to stdout', { default: false }),
   output: Flag.string('Write summary to this file path', { short: 'o' }),
 }
 

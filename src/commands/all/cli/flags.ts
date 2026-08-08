@@ -31,7 +31,7 @@ export default class CliFlagsTask extends Command {
 
     for (const flag of entry.flags) {
       if (flag.kind !== 'flag' && flag.kind !== 'arg-or-flag') continue
-      const isBoolStr = flag.type === 'boolean' ? 'bool' : 'non-bool'
+      const isBoolStr = flag.type === 'bool' ? 'bool' : 'non-bool'
       output.log(`--${flag.name}: ${flag.description}|${isBoolStr}`)
       if (flag.short) {
         output.log(`-${flag.short}: ${flag.description}|${isBoolStr}`)

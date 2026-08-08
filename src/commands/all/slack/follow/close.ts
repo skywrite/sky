@@ -15,7 +15,7 @@ const params = {
   inactiveThan: Flag.string('Close all follows inactive for longer than duration (e.g. 7d, 2w)', {
     short: 'i',
   }),
-  dryRun: Flag.boolean('Show what would be closed without archiving', { default: false }),
+  dryRun: Flag.bool('Show what would be closed without archiving', { default: false }),
 }
 
 type Params = InferParams<typeof params>

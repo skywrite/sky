@@ -20,8 +20,8 @@ interface RenameResult {
 const params = {
   from: Flag.string('Tag to rename from', { required: true }),
   to: Flag.string('Tag to rename to', { required: true }),
-  interactive: Flag.boolean('Open each file in VSCode for inspection before renaming'),
-  dryRun: Flag.boolean('Preview changes without modifying files'),
+  interactive: Flag.bool('Open each file in VSCode for inspection before renaming'),
+  dryRun: Flag.bool('Preview changes without modifying files'),
   limit: Flag.number('Maximum number of files with the tag to process'),
 }
 

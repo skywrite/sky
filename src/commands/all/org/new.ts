@@ -16,7 +16,7 @@ const params = {
   name: Arg.string('Organization name to use (not auto-detected)', { required: true }),
   site: Flag.string('Organization website for enrichment'),
   wikipedia: Flag.string('Wikipedia search query or exact article title', { short: 'p' }),
-  noWikipedia: Flag.boolean('Skip Wikipedia enrichment'),
+  noWikipedia: Flag.bool('Skip Wikipedia enrichment'),
   sector: Flag.string('Force specific sector', { short: 's' }),
   subcategory: Flag.string('Force specific subcategory', { short: 'c' }),
 }

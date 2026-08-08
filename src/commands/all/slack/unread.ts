@@ -33,10 +33,10 @@ const params = {
   token: Flag.string('Slack user token (or set SLACK_USER_TOKEN env var)', { short: 't' }),
   limit: Flag.number('Max messages per channel', { short: 'l', default: 5 }),
   max: Flag.number('Max conversations to scan (default: all)'),
-  channelsOnly: Flag.boolean('Only show channel messages, skip DMs'),
-  dmsOnly: Flag.boolean('Only show DM messages, skip channels'),
-  search: Flag.boolean('Use search.messages path (experimental)'),
-  debug: Flag.boolean('Show debug output'),
+  channelsOnly: Flag.bool('Only show channel messages, skip DMs'),
+  dmsOnly: Flag.bool('Only show DM messages, skip channels'),
+  search: Flag.bool('Use search.messages path (experimental)'),
+  debug: Flag.bool('Show debug output'),
 }
 
 type Params = InferParams<typeof params>

@@ -10,7 +10,7 @@ import { MarkdownStore } from '#shared/models/Store/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
-  warnings: Flag.boolean('Show warning details', { short: 'w', default: false }),
+  warnings: Flag.bool('Show warning details', { short: 'w', default: false }),
 }
 
 type Params = InferParams<typeof params>

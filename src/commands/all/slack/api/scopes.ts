@@ -4,7 +4,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   token: Flag.string('Slack user token (or set SLACK_USER_TOKEN env var)', { short: 't' }),
   required: Flag.string('Comma-separated scopes to verify'),
-  debug: Flag.boolean('Show debug output'),
+  debug: Flag.bool('Show debug output'),
 }
 
 type Params = InferParams<typeof params>

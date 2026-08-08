@@ -13,7 +13,7 @@ import DecisionDocument from '#shared/models/Decision/mod.ts'
 
 const params = {
   name: Arg.string('Name/slug of the decision to export', { optional: true }),
-  all: Flag.boolean('Include resolved and archived decisions in the picker', {
+  all: Flag.bool('Include resolved and archived decisions in the picker', {
     short: 'A',
     default: false,
   }),

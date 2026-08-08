@@ -32,7 +32,7 @@ const params = {
   rel: Flag.string('Related entity', { hidden: true }),
   follow: Flag.string('Follow file name', { hidden: true }),
   previous: Flag.string('Previous message ref', { hidden: true }),
-  noEditor: Flag.boolean('Skip opening editor', { hidden: true }),
+  noEditor: Flag.bool('Skip opening editor', { hidden: true }),
   slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:new)', { hidden: true }),
 }
 

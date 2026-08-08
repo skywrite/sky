@@ -36,7 +36,7 @@ test('jsonSchema - number param produces type: number', () => {
 })
 
 test('jsonSchema - boolean param produces type: boolean', () => {
-  const schema = schemaFor({ verbose: Flag.boolean('Verbose output', { default: false }) })
+  const schema = schemaFor({ verbose: Flag.bool('Verbose output', { default: false }) })
   assert({
     given: 'a boolean param',
     should: 'produce type boolean',
@@ -157,7 +157,7 @@ test('jsonSchema - optional args are not required', () => {
 })
 
 test('jsonSchema - flags with defaults are not required', () => {
-  const schema = schemaFor({ verbose: Flag.boolean('Verbose', { default: false }) })
+  const schema = schemaFor({ verbose: Flag.bool('Verbose', { default: false }) })
   assert({
     given: 'a flag with default',
     should: 'not be in the required array',

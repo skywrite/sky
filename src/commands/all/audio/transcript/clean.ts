@@ -53,7 +53,7 @@ const params = {
     short: 'o',
     optional: true,
   }),
-  save: Flag.boolean('Auto-save to Desktop', {
+  save: Flag.bool('Auto-save to Desktop', {
     short: 's',
     default: false,
   }),

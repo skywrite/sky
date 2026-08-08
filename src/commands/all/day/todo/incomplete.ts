@@ -8,11 +8,11 @@ import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 const params = {
   day: dayNoFutureArg(),
   category: categoryTodo(),
-  dryRun: Flag.boolean('Return incomplete items without modifying the day', {
+  dryRun: Flag.bool('Return incomplete items without modifying the day', {
     short: 'd',
     default: false,
   }),
-  cleanOnly: Flag.boolean('Clean todos but do not create Incomplete section', {
+  cleanOnly: Flag.bool('Clean todos but do not create Incomplete section', {
     short: 'C',
     default: false,
   }),

@@ -15,7 +15,7 @@ const params = {
   name: Arg.string('Name/slug of the decision to delete', {
     optional: true,
   }),
-  force: Flag.boolean('Skip confirmation prompt', {
+  force: Flag.bool('Skip confirmation prompt', {
     short: 'f',
     default: false,
   }),

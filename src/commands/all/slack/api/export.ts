@@ -5,7 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
   token: Flag.string('Slack user token (or set SLACK_USER_TOKEN env var)', { short: 't' }),
-  debug: Flag.boolean('Show parsed payload JSON'),
+  debug: Flag.bool('Show parsed payload JSON'),
 }
 
 type Params = InferParams<typeof params>

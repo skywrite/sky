@@ -9,7 +9,7 @@ import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  dryRun: Flag.boolean('Show messages without updating offset', { short: 'n' }),
+  dryRun: Flag.bool('Show messages without updating offset', { short: 'n' }),
 }
 
 type Params = InferParams<typeof params>

@@ -48,7 +48,7 @@ const params = {
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  noOpen: Flag.boolean('Do not open touched files in the browser', { default: false }),
+  noOpen: Flag.bool('Do not open touched files in the browser', { default: false }),
 }
 
 type Params = InferParams<typeof params>

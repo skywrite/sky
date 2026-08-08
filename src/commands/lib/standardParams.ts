@@ -128,7 +128,7 @@ export function categoryComplete() {
  * Dry run flag. Defaults to false.
  */
 export function dryRun() {
-  return Flag.boolean('Preview without changes', {
+  return Flag.bool('Preview without changes', {
     short: 'd',
     default: false,
   })

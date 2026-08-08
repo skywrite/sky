@@ -2,9 +2,9 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
 const params = {
-  throw: Flag.boolean('Throw an error instead of returning CommandResult'),
-  error: Flag.boolean('Return CommandResult.error()', { short: 'e' }),
-  fail: Flag.boolean('Return CommandResult.fail()', { short: 'f' }),
+  throw: Flag.bool('Throw an error instead of returning CommandResult'),
+  error: Flag.bool('Return CommandResult.error()', { short: 'e' }),
+  fail: Flag.bool('Return CommandResult.fail()', { short: 'f' }),
 }
 
 type Params = InferParams<typeof params>

@@ -12,10 +12,10 @@ import { generatePersonHierarchyPath } from '../new.ts'
 
 const params = {
   count: ArgOrFlag.number('Number of files to move', { short: 'n' }),
-  preview: Flag.boolean('Preview only - show what would be moved without making changes', { short: 'p' }),
-  previewOpen: Flag.boolean('Open source files in VSCode without moving', { short: 'o' }),
-  remaining: Flag.boolean('Show count of files remaining in people-old/', { short: 'r' }),
-  skipOpen: Flag.boolean('Skip opening files in VSCode after copying', { short: 's' }),
+  preview: Flag.bool('Preview only - show what would be moved without making changes', { short: 'p' }),
+  previewOpen: Flag.bool('Open source files in VSCode without moving', { short: 'o' }),
+  remaining: Flag.bool('Show count of files remaining in people-old/', { short: 'r' }),
+  skipOpen: Flag.bool('Skip opening files in VSCode after copying', { short: 's' }),
 }
 
 type Params = InferParams<typeof params>

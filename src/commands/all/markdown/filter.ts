@@ -83,10 +83,10 @@ const params = {
       return parsePartialDate(input)
     },
   }),
-  raw: Flag.boolean('Output just file paths (for piping)', { default: false }),
+  raw: Flag.bool('Output just file paths (for piping)', { default: false }),
   limit: Flag.number('Limit number of results'),
   sort: Flag.string('Sort by: name, date (default: name)', { default: () => 'name' }),
-  showMatches: Flag.boolean('Show which tags/rel matched', { default: false }),
+  showMatches: Flag.bool('Show which tags/rel matched', { default: false }),
 }
 
 type Params = InferParams<typeof params>
