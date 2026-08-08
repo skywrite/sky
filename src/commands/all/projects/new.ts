@@ -1,12 +1,11 @@
 import * as path from 'node:path'
-import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { slugify } from '#lib/string/mod.ts'
-import outputFile from '#shared/fs/outputFile.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
 import ProjectDocument from '#shared/models/Project/mod.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -18,14 +17,8 @@ const params = {
     short: 'd',
     optional: true,
   }),
-  when: Flag.plainDateTime('Date/time in reverse format', {
-    default: () => new PlainDateTime(),
-  }),
-  category: Flag.string('Category: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Professional Complete',
-  }),
+  when: whenNBTime(),
+  category: categoryComplete(),
 }
 
 type Params = InferParams<typeof params>
@@ -64,6 +57,12 @@ export default class ProjectsNewTask extends Command {
 
     const projectDataDir = path.join(projectDir, '_project')
     const projectOverviewFile = path.join(projectDataDir, 'overview.md')
+
+    if (await exists(projectOverviewFile)) {
+      return CommandResult.fail(
+        `A project overview already exists: ${projectOverviewFile} — pick a different name or --dir.`,
+      )
+    }
 
     const doc = ProjectDocument.create({ name: projectSlug })
 

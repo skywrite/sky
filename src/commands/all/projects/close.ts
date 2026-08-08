@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { move } from '#lib/fs/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
@@ -24,11 +24,7 @@ const params = {
   when: Flag.plainDateTime('Date/time in reverse format', {
     default: () => new PlainDateTime(),
   }),
-  category: Flag.string('Category: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Professional Complete',
-  }),
+  category: categoryComplete(),
 }
 
 type Params = InferParams<typeof params>
