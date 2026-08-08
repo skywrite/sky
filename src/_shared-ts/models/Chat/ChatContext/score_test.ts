@@ -32,6 +32,7 @@ const FIX = {
   vendor: abs('time/2026/01/26-01/01-27/actions/notes/Vendor-Landscape.md'),
   glossary: abs('reference/Atlas-Glossary.md'),
   escrow: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Escrow-Timeline.md'),
+  accented: abs('people/Zoë-Núñez.md'),
 }
 
 async function fixtureCollection(absPaths: string[]): Promise<DomainCollection> {
@@ -61,6 +62,24 @@ test('extractTopicTerms', () => {
     should: 'keep content words, years, and quoted literals; drop stopwords, field names, and short or numeric tokens',
     actual: terms,
     expected: ['decide', 'atlas', 'rollout', '2026', 'milestones'],
+  })
+})
+
+test('extractTopicTerms - accented words survive as whole terms', () => {
+  assert({
+    given: 'a question naming someone whose name carries diacritics',
+    should: 'fold to whole ASCII terms rather than splitting at each accent',
+    actual: extractTopicTerms('what did Zoë Núñez decide?', []),
+    expected: ['zoe', 'nunez', 'decide'],
+  })
+})
+
+test('extractTopicTerms - accented and unaccented spellings converge', () => {
+  assert({
+    given: 'the same name typed with and without its accents',
+    should: 'produce identical terms, so either spelling retrieves the same docs',
+    actual: extractTopicTerms('Zoë Núñez', []),
+    expected: extractTopicTerms('Zoe Nunez', []),
   })
 })
 
@@ -187,6 +206,27 @@ test('createChatScorer - header channels outrank body mentions', async () => {
       vendorPartial: vendorLex > 0 && vendorLex < dealLex / 2,
     },
     expected: { dealLex: 8, vendorPartial: true },
+  })
+})
+
+test('createChatScorer - an accented card is found by its unaccented spelling', async () => {
+  // Before folding, "Núñez" tokenized to nothing at all — the card was
+  // unreachable by name from either spelling, and its own title produced
+  // no name words to cover.
+  const collection = await fixtureCollection([FIX.accented, FIX.vendor, FIX.goal])
+  const { scorer, lexicalByPath } = createChatScorer({
+    today: TODAY,
+    collection,
+    terms: extractTopicTerms('who is Zoe Nunez?', []),
+    provenance: new Map(),
+  })
+  collection.allItems.forEach((i) => scorer(i))
+
+  assert({
+    given: 'a question typing an accented name without its accents',
+    should: 'fully cover the accented filename and credit the card',
+    actual: lexicalByPath.get(FIX.accented),
+    expected: 8,
   })
 })
 

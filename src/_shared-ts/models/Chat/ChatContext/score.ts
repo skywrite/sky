@@ -223,11 +223,32 @@ const STOPWORDS = new Set([
 ])
 
 const YEAR = /^\d{4}$/
+const COMBINING_MARKS = /[\u0300-\u036f]/g
+
+/**
+ * Lowercase and strip accents, so "Núñez" and "nunez" are one string.
+ *
+ * The tokenizer splits on everything outside [a-z0-9], which makes an
+ * accent a separator INSIDE a word: "Núñez" produced no terms at all
+ * (every fragment fell under the length floor) and "José" produced the
+ * junk fragment "jos". Folding first makes the alphabet match the
+ * intent — split on non-letters, not on non-ASCII-letters.
+ *
+ * Apply symmetrically: to the terms AND to every channel they are
+ * matched against. Folding one side alone would stop folded terms from
+ * matching unfolded document text at all — strictly worse than the bug.
+ *
+ * Two gaps left open, both questions about the tokenizer's alphabet
+ * rather than this correction: ß does not decompose under NFD, and
+ * non-Latin scripts are still dropped wholesale by the split.
+ */
+function fold(text: string): string {
+  return text.normalize('NFD').replace(COMBINING_MARKS, '').toLowerCase()
+}
 
 /** Content words: 3+ letters and not a stopword; among numbers only years survive. */
 function termsFrom(text: string): string[] {
-  return text
-    .toLowerCase()
+  return fold(text)
     .split(/[^a-z0-9]+/)
     .filter((t) => YEAR.test(t) || (t.length >= 3 && !/^\d+$/.test(t) && !STOPWORDS.has(t)))
 }
@@ -343,12 +364,12 @@ function createLexicalScorer(collection: DomainCollection, terms: string[]): (pa
     { header: Record<HeaderChannel, string>; body: string; names: string[]; tokens: number }
   >()
   for (const item of collection.allItems) {
-    const body = item.doc.toMarkdown({ yaml: false }).toLowerCase()
+    const body = fold(item.doc.toMarkdown({ yaml: false }))
     texts.set(item.path, {
       header: {
-        rel: [...item.doc.rel].join('\n').toLowerCase(),
-        tags: String(item.doc.tags).toLowerCase(),
-        summary: String(item.doc.yaml['summary'] ?? '').toLowerCase(),
+        rel: fold([...item.doc.rel].join('\n')),
+        tags: fold(String(item.doc.tags)),
+        summary: fold(String(item.doc.yaml['summary'] ?? '')),
       },
       body,
       names: nameWords(item.path),
