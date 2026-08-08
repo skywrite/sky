@@ -241,14 +241,6 @@ function createBuilder<K extends ParamKind>(kind: K) {
       return buildParam('bool', 'boolean', description, boolSchema, options)
     },
 
-    /** @deprecated Use `bool()` — kept so in-flight branches keep compiling until migrated. */
-    boolean<O extends ParamOptions<boolean> = ParamOptions<boolean>>(
-      description: string,
-      options?: O,
-    ): BuilderReturn<boolean, O, K> {
-      return buildParam('bool', 'boolean', description, boolSchema, options)
-    },
-
     /**
      * A string flag that may be given bare: `--flag=value` (or `value` in
      * composition) yields the string; bare `--flag` (or `true`) resolves to
