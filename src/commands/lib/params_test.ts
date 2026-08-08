@@ -354,3 +354,98 @@ test('InferParams correctly infers types from params record', () => {
     expected: ['count', 'enabled', 'name', 'when'],
   })
 })
+
+test('Flag.stringOrBool resolves presence signals through bareValue', () => {
+  const param = Flag.stringOrBool('Server host', { short: 'S', bareValue: 'localhost:9999' })
+
+  assert({
+    given: 'boolean true (bare flag / composition presence signal)',
+    should: 'resolve to bareValue',
+    actual: param.schema?.parse(true),
+    expected: 'localhost:9999',
+  })
+
+  assert({
+    given: "the literal string 'true'",
+    should: 'resolve to bareValue',
+    actual: param.schema?.parse('true'),
+    expected: 'localhost:9999',
+  })
+
+  assert({
+    given: 'boolean false (absent / inherited default)',
+    should: 'resolve to undefined',
+    actual: param.schema?.parse(false),
+    expected: undefined,
+  })
+
+  assert({
+    given: "the literal string 'false'",
+    should: 'resolve to undefined',
+    actual: param.schema?.parse('false'),
+    expected: undefined,
+  })
+
+  assert({
+    given: 'a host string',
+    should: 'pass through unchanged',
+    actual: param.schema?.parse('192.168.10.3'),
+    expected: '192.168.10.3',
+  })
+
+  assert({
+    given: 'a number (mri numifies bare values)',
+    should: 'stringify',
+    actual: param.schema?.parse(9999),
+    expected: '9999',
+  })
+})
+
+test('Flag.stringOrBool without bareValue throws at definition time', () => {
+  let threw = false
+  try {
+    // @ts-expect-error bareValue is mandatory
+    Flag.stringOrBool('Server host', {})
+  } catch {
+    threw = true
+  }
+
+  assert({
+    given: 'stringOrBool defined without bareValue',
+    should: 'throw at definition time',
+    actual: threw,
+    expected: true,
+  })
+})
+
+test('Flag.bool accepts only canonical boolean spellings', () => {
+  const param = Flag.bool('Toggle', { default: false })
+
+  assert({
+    given: "the string 'true'",
+    should: 'parse to true',
+    actual: param.schema?.parse('true'),
+    expected: true,
+  })
+
+  assert({
+    given: "the string 'false'",
+    should: 'parse to false, not truthy-coerce',
+    actual: param.schema?.parse('false'),
+    expected: false,
+  })
+
+  let threw = false
+  try {
+    param.schema?.parse('yes')
+  } catch {
+    threw = true
+  }
+
+  assert({
+    given: "a non-canonical string like 'yes'",
+    should: 'fail loudly instead of truthifying',
+    actual: threw,
+    expected: true,
+  })
+})

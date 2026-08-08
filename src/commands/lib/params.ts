@@ -25,7 +25,7 @@ import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/m
 export type ParamKind = 'arg' | 'flag' | 'arg-or-flag'
 
 /** Supported parameter types */
-export type ParamType = 'string' | 'number' | 'bool' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
+export type ParamType = 'string' | 'number' | 'bool' | 'stringOrBool' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
 
 /** JSON type for MCP schema generation */
 export type ParamJsonType = 'string' | 'number' | 'boolean'
@@ -78,6 +78,14 @@ export interface ParamDef<T = unknown> {
   position?: number
   hidden?: boolean
   complete?: string
+  /** stringOrBool only: what bare usage (--flag, or `true` in composition) resolves to */
+  bareValue?: string
+}
+
+/** Options for stringOrBool params — bareValue is mandatory: a flag that can be given bare must declare what bare means */
+export type StringOrBoolOptions = ParamOptions<string> & {
+  /** What bare usage (--flag with no value, or `true` from a composing command) resolves to */
+  bareValue: string
 }
 
 /** Record of parameter definitions */
@@ -94,6 +102,26 @@ type InferParamType<P extends ParamDef> =
       ? T | undefined
       : T
     : never
+
+/**
+ * Input-side type of a param: what the CLI or a composing command may write.
+ * Differs from InferParamType only for stringOrBool, whose boolean presence
+ * signal (true → bareValue, false → absent) is resolved before run() sees it.
+ */
+type InferParamInputType<P extends ParamDef> = P extends { bareValue: string }
+  ? P extends { optional: true }
+    ? string | boolean | undefined
+    : string | boolean
+  : InferParamType<P>
+
+/**
+ * Input-side types for a params record — use for `paramsIn` in a command's
+ * CommandTypesRegistry entry when any param accepts a wider write shape than
+ * run() reads (currently: stringOrBool).
+ */
+export type InferParamsInput<P extends ParamsRecord> = {
+  [K in keyof P]: InferParamInputType<P[K]>
+}
 
 /** Infer TypeScript types from a params record */
 export type InferParams<P extends ParamsRecord> = {
@@ -134,6 +162,16 @@ const zonedDateTimeSchema: ZodType<ZonedDateTime> = z.preprocess((val) => {
   }
   return val
 }, z.instanceof(ZonedDateTime)) as ZodType<ZonedDateTime>
+
+// mri hands over booleans for bare flags and strings for --flag=value; accept
+// only the two canonical spellings so "--flag=no" (and the old footgun
+// "--flag=false", where Boolean('false') === true) fails loudly instead of
+// silently truthifying.
+const boolSchema: ZodType<boolean> = z.preprocess((val) => {
+  if (val === 'true') return true
+  if (val === 'false') return false
+  return val
+}, z.boolean()) as ZodType<boolean>
 
 // -----------------------------------------------------------------------------
 // Builder Implementation
@@ -200,7 +238,7 @@ function createBuilder<K extends ParamKind>(kind: K) {
       description: string,
       options?: O,
     ): BuilderReturn<boolean, O, K> {
-      return buildParam('bool', 'boolean', description, z.coerce.boolean(), options)
+      return buildParam('bool', 'boolean', description, boolSchema, options)
     },
 
     /** @deprecated Use `bool()` — kept so in-flight branches keep compiling until migrated. */
@@ -208,7 +246,34 @@ function createBuilder<K extends ParamKind>(kind: K) {
       description: string,
       options?: O,
     ): BuilderReturn<boolean, O, K> {
-      return buildParam('bool', 'boolean', description, z.coerce.boolean(), options)
+      return buildParam('bool', 'boolean', description, boolSchema, options)
+    },
+
+    /**
+     * A string flag that may be given bare: `--flag=value` (or `value` in
+     * composition) yields the string; bare `--flag` (or `true`) resolves to
+     * the declared bareValue; `false`/'false' means not present. run() reads
+     * the resolved `string | undefined` — declare `paramsIn` in the command's
+     * registry entry (via InferParamsInput) so composing callers get the
+     * `string | boolean` write type.
+     */
+    stringOrBool<O extends StringOrBoolOptions>(
+      description: string,
+      options: O,
+    ): BuilderReturn<string, O, K> & { bareValue: string } {
+      const { bareValue } = options
+      if (typeof bareValue !== 'string' || bareValue.length === 0) {
+        throw new Error('stringOrBool requires a non-empty bareValue: the string bare usage resolves to')
+      }
+      const schema = z.preprocess((val) => {
+        if (val === true || val === 'true') return bareValue
+        if (val === false || val === 'false') return undefined
+        if (typeof val === 'number') return String(val)
+        return val
+      }, z.string().optional()) as unknown as ZodType<string>
+      return buildParam('stringOrBool', 'string', description, schema, options) as BuilderReturn<string, O, K> & {
+        bareValue: string
+      }
     },
 
     plainDate<O extends ParamOptions<PlainDate> = ParamOptions<PlainDate>>(

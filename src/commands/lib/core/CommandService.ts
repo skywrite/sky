@@ -240,10 +240,15 @@ export default class CommandService {
    * const result = await tasks.run<LocationData>('util:location')
    * ```
    */
-  // Overload 1: Registered task - fully typed params and result
+  // Overload 1: Registered task - fully typed params and result.
+  // Overrides use the entry's input-side `paramsIn` when declared (params
+  // whose write shape is wider than what run() reads, e.g. stringOrBool),
+  // falling back to `params`.
   async run<K extends keyof CommandTypesRegistry>(
     commandName: K,
-    argsOverride?: Partial<CommandTypesRegistry[K]['params']>,
+    argsOverride?: CommandTypesRegistry[K] extends { paramsIn: infer I }
+      ? Partial<I>
+      : Partial<CommandTypesRegistry[K]['params']>,
   ): Promise<CommandResult<CommandTypesRegistry[K]['result']>>
 
   // Overload 2: Unregistered task - loose typing (backward compat)
@@ -280,6 +285,16 @@ export default class CommandService {
     // Server/MCP handlers should pre-parse values before calling CommandService.
     // Priority: task defaults < parent args < overrides
     const finalArgs = { ...transformedArgs, ...argsOverride }
+
+    // stringOrBool overrides are presence signals, not parsed values — the
+    // raw re-spread above would hand run() the caller's boolean (true) where
+    // it expects the resolved string, so re-resolve them through the schema
+    for (const [name, def] of Object.entries(commandDescription?.params ?? {})) {
+      if (def.type === 'stringOrBool' && def.schema && name in finalArgs) {
+        const resolved = def.schema.safeParse(finalArgs[name])
+        if (resolved.success) finalArgs[name] = resolved.data
+      }
+    }
 
     // Step 3: Create child context with nested output and incremented composition depth
     const childOutput = this.context.output.child?.(commandName) ?? this.context.output

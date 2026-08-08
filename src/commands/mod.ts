@@ -7,7 +7,7 @@ export { default as CommandService } from '#commands/lib/core/CommandService.ts'
 
 // Param builders for typed task arguments
 export { Arg, ArgOrFlag, Flag } from '#commands/lib/params.ts'
-export type { InferParams, ParamDef, ParamOptions, ParamsRecord } from '#commands/lib/params.ts'
+export type { InferParams, InferParamsInput, ParamDef, ParamOptions, ParamsRecord } from '#commands/lib/params.ts'
 
 // Standard params for common patterns
 export {

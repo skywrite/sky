@@ -123,7 +123,7 @@ export default class AIContextFilesTask extends Command {
       graphql: query,
       raw: true, // Suppress formatted output from markdown:sel
       limit,
-      ...(server ? { server: 'true' } : {}),
+      server,
     })
 
     if (execResult.status !== 'success') {
