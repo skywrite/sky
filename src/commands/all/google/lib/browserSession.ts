@@ -1,10 +1,10 @@
 import { readlink, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import process from 'node:process'
 import { chromium } from 'playwright'
 import type { BrowserContext, Page } from 'playwright'
 import { exists } from '#shared/fs/mod.ts'
+import { acquireProfileLock, isProcessAlive } from './profileLock.ts'
 
 // A dedicated persistent browser profile for Google UI automation. Google
 // blocks CDP attachment to a browser's default profile (Chromium 136+), so
@@ -13,6 +13,9 @@ import { exists } from '#shared/fs/mod.ts'
 // features Google's APIs refuse to expose — e.g. anchored comments.
 
 export const GOOGLE_BROWSER_PROFILE_DIR = path.join(os.homedir(), '.sky', 'google-browser-profile')
+
+/** Cross-process turn-taking lock (see profileLock.ts) — beside the profile, not inside Chromium's dir. */
+export const GOOGLE_BROWSER_PROFILE_LOCK = path.join(os.homedir(), '.sky', 'google-browser-profile.lock')
 
 export const CHROMIUM_PATHS = [
   '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
@@ -32,15 +35,6 @@ export class GoogleBrowserError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'GoogleBrowserError'
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
 
@@ -95,11 +89,18 @@ export async function withGoogleBrowser<T>(
   fn: (context: BrowserContext) => Promise<T>,
 ): Promise<T> {
   const run = profileQueue.then(async () => {
-    const context = await launchGoogleBrowser(options)
+    // Turn-taking across sky processes; within this process the queue above
+    // already serializes, so the lock is uncontended here.
+    const release = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK)
     try {
-      return await fn(context)
+      const context = await launchGoogleBrowser(options)
+      try {
+        return await fn(context)
+      } finally {
+        await context.close()
+      }
     } finally {
-      await context.close()
+      await release()
     }
   })
   profileQueue = run.catch(() => undefined)
