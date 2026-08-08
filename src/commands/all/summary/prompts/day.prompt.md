@@ -113,6 +113,16 @@ Transcripts of {{me.firstName}} working with an AI tool. `## JP` headings are {{
 
 ---
 
+## Waiting On
+
+[The mirror of Commitments Made: what others owe {{me.firstName}} - his explicit asks of them, and their explicit promises to him - still open at day's end. Omit the section entirely if nothing is pending.]
+
+| Waiting On | From Whom | Expected |
+|------------|----------|----------|
+| [What's owed] | [Person] | [When, if stated] |
+
+---
+
 ## Health
 
 [Rows with recorded data only - the header's Health Data block first, journal statements second. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
@@ -173,7 +183,11 @@ A commitment is a promise to a specific person with a deadline (explicit or impl
 Do NOT include:
 - Vague intentions
 - Internal notes-to-self
-- Things others committed to do
+- Things others committed to do - those belong in Waiting On
+
+### Track what {{me.firstName}} is owed
+
+A Waiting On row is an explicit ask he made of someone, or an explicit promise someone made to him, that the day's later evidence doesn't show fulfilled. Check before adding: if the reply or deliverable arrived later the same day, the loop is closed - leave it out. Never infer that he's "probably waiting" on something; only stated asks and stated promises qualify.
 
 ### What counts as Done
 
@@ -243,6 +257,15 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 | Review API migration plan | Chen Wei | Monday |
 | Send updated roadmap to stakeholders | Team | This week |
 | Compile 3 customer case studies | Marcus (for Northwind) | End of January |
+
+---
+
+## Waiting On
+
+| Waiting On | From Whom | Expected |
+|------------|----------|----------|
+| Payment integration timeline | Chen Wei | Thursday |
+| Redesign cost estimate | Maria | - |
 
 ---
 
