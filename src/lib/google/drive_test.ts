@@ -13,6 +13,7 @@ import {
   escapeDriveQueryValue,
   exportFile,
   getFile,
+  importFileAsDoc,
   replaceFileWithMarkdown,
   searchFiles,
   shareFile,
@@ -126,6 +127,52 @@ test('workspace mime maps', () => {
   })
 })
 
+test('importFileAsDoc', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, 'jane@example.com', { refreshToken: 'rt', accessToken: 'at', scopes: [] })
+
+  const requests: Array<{ url: string; body: string }> = []
+  const fetchFn = (async (url: unknown, init?: RequestInit) => {
+    requests.push({ url: String(url), body: new TextDecoder().decode(init?.body as Uint8Array) })
+    return new Response(JSON.stringify({ id: 'f1', name: 'Atlas MSA', mimeType: WORKSPACE_MIME.doc }), {
+      status: 200,
+    })
+  }) as typeof fetch
+  const client = new GoogleClient({
+    secrets,
+    email: 'jane@example.com',
+    client: { clientId: 'id', clientSecret: 'sec' },
+    fetchFn,
+    sleep: async () => {},
+  })
+
+  await importFileAsDoc(client, {
+    title: 'Atlas MSA',
+    data: new TextEncoder().encode('%PDF-1.7'),
+    contentType: 'application/pdf',
+    ocrLanguage: 'en',
+  })
+
+  const url = new URL(requests[0].url)
+  assert({
+    given: 'a PDF import with an OCR hint',
+    should: 'multipart-upload with the hint on the query string',
+    expected: ['multipart', 'en'],
+    actual: [url.searchParams.get('uploadType'), url.searchParams.get('ocrLanguage')],
+  })
+
+  assert({
+    given: 'the multipart body',
+    should: 'pair Doc-conversion metadata with the original content type and bytes',
+    expected: [true, true, true],
+    actual: [
+      requests[0].body.includes(`"mimeType":"${WORKSPACE_MIME.doc}"`),
+      requests[0].body.includes('Content-Type: application/pdf'),
+      requests[0].body.includes('%PDF-1.7'),
+    ],
+  })
+})
+
 test('every files and permissions request opts into shared drives', async () => {
   const secrets = new TestSecretsProvider()
   await saveAccountTokens(secrets, 'jane@example.com', { refreshToken: 'rt', accessToken: 'at', scopes: [] })
@@ -150,13 +197,14 @@ test('every files and permissions request opts into shared drives', async () => 
   await shareFile(client, 'f1', { role: 'reader', emailAddress: 'jane@example.com' })
   await uploadFile(client, { name: 'logo.png', mimeType: 'image/png', data: new Uint8Array([1]) })
   await createDocFromMarkdown(client, { title: 'Atlas Plan', markdown: '# Hi' })
+  await importFileAsDoc(client, { title: 'Atlas MSA', data: new Uint8Array([1]), contentType: 'application/pdf' })
   await replaceFileWithMarkdown(client, 'f1', '# Hi')
   await exportFile(client, 'f1', 'text/plain')
 
   assert({
     given: 'every Drive files/permissions call plus a files.export',
     should: 'carry supportsAllDrives everywhere except export, which has no such switch',
-    expected: ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', null],
+    expected: ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', null],
     actual: urls.map((u) => new URL(u).searchParams.get('supportsAllDrives')),
   })
 
