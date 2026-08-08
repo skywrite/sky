@@ -55,8 +55,15 @@ export default class ProjectDocument extends Document {
     return new ProjectDocument(doc._yaml, doc.markdown, doc.yamlError)
   }
 
-  static create(input: { name: string; tags?: string | TagSet; rel?: string[] }): ProjectDocument {
-    const now = PlainDate.today()
+  static create(input: {
+    name: string
+    tags?: string | TagSet
+    rel?: string[]
+    body?: string
+    /** Notebook date for the created/updated stamps; wall clock only as fallback */
+    created?: PlainDate
+  }): ProjectDocument {
+    const now = input.created ?? PlainDate.today()
 
     const yaml: Record<string, unknown> = {
       name: input.name,
@@ -67,7 +74,7 @@ export default class ProjectDocument extends Document {
       rel: input.rel && input.rel.length > 0 ? input.rel : undefined,
     }
 
-    const markdown = ProjectDocument.createTemplate({ name: input.name })
+    const markdown = input.body ?? ProjectDocument.createTemplate({ name: input.name })
 
     return new ProjectDocument(yaml, markdown)
   }
