@@ -227,6 +227,34 @@ export async function createDocFromMarkdown(
 }
 
 /**
+ * Upload local document bytes (PDF, docx, …) converted to a Google Doc via
+ * Drive's import conversion — the only commentable/editable surface for a
+ * PDF's text, since Drive renders API comments on PDF files nowhere.
+ * Image-only pages are OCRed automatically; ocrLanguage (BCP 47) hints it.
+ */
+export async function importFileAsDoc(
+  client: GoogleClient,
+  options: { title: string; data: Uint8Array; contentType: string; ocrLanguage?: string },
+): Promise<DriveFile> {
+  const url = driveApiUrl(DRIVE_UPLOAD_URL)
+  url.searchParams.set('uploadType', 'multipart')
+  url.searchParams.set('fields', FILE_FIELDS)
+  if (options.ocrLanguage) url.searchParams.set('ocrLanguage', options.ocrLanguage)
+  const boundary = `sky-multipart-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`
+  const res = await client.request(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: buildBinaryMultipartBody(
+      { name: options.title, mimeType: WORKSPACE_MIME.doc },
+      options.data,
+      options.contentType,
+      boundary,
+    ),
+  })
+  return (await res.json()) as DriveFile
+}
+
+/**
  * Replace a Google Doc's entire content by re-importing markdown.
  * Destructive by design; prior content stays in Drive version history.
  */

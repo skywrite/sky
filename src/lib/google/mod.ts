@@ -51,6 +51,7 @@ export {
   exportFile,
   exportFileBytes,
   getFile,
+  importFileAsDoc,
   replaceFileWithMarkdown,
   searchFiles,
   shareFile,
