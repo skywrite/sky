@@ -61,6 +61,7 @@ export async function suggestDocsEdit(options: {
   const occurrence = options.occurrence ?? 1
   const window = editWindow(options.searchText, options.replacement)
   await withGoogleBrowser({ headless: true }, async (context) => {
+    await context.grantPermissions(['clipboard-write'], { origin: 'https://docs.google.com' })
     const page = await openGooglePage(context, docsCommentUrl(options.documentId))
     await page.waitForTimeout(4000)
     // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
@@ -79,7 +80,16 @@ export async function suggestDocsEdit(options: {
     for (let i = 0; i < window.caretAdvance; i++) await page.keyboard.press('ArrowRight')
     for (let i = 0; i < window.selectCount; i++) await page.keyboard.press('Shift+ArrowRight')
     if (window.typeText) {
-      await page.keyboard.type(window.typeText, { delay: 12 })
+      // Paste, not keystrokes: a single insertion event replaces the selection
+      // and bypasses the editor's keystroke autocorrect (smart quotes, auto-
+      // capitalization, substitutions) — probe-verified exact, quotes and
+      // double hyphens included. The headless browser's clipboard is isolated
+      // from the macOS pasteboard (pbpaste-verified), so nothing the user
+      // copied is touched — and long replacements land instantly.
+      await page.evaluate(async (text) => {
+        await navigator.clipboard.writeText(text)
+      }, window.typeText)
+      await page.keyboard.press('Meta+KeyV')
     } else if (window.selectCount > 0) {
       await page.keyboard.press('Backspace')
     }

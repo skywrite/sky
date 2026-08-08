@@ -49,7 +49,9 @@ test(
         suggestDocsEdit({
           documentId: doc.id,
           searchText: 'consectetur adipiscing elit',
-          replacement: 'consectetur tempor elit',
+          // The apostrophe is autocorrect bait: it lands verbatim only while
+          // text entry stays on the paste path (smart quotes would curl it).
+          replacement: "consectetur tem'por elit",
         }),
         suggestDocsEdit({
           documentId: doc.id,
@@ -73,11 +75,11 @@ test(
         actual: suggestions.length,
       })
 
-      const swap = suggestions.find((s) => s.inserts === 'tempor')
+      const swap = suggestions.find((s) => s.inserts === "tem'por")
       assert({
-        given: 'a word-swap suggestion (shared prefix and suffix trimmed)',
-        should: 'strike exactly the old word and insert the new one at its anchor',
-        expected: { deletes: 'adipiscing', inserts: 'tempor', anchored: true },
+        given: 'a word-swap suggestion carrying autocorrect bait',
+        should: 'strike exactly the old word and insert the new one verbatim at its anchor',
+        expected: { deletes: 'adipiscing', inserts: "tem'por", anchored: true },
         actual: swap && {
           deletes: swap.deletes,
           inserts: swap.inserts,
