@@ -277,6 +277,55 @@ test('ChatContext.firstTurn - relevance floor sizes context to the question', as
   })
 })
 
+test('ChatContext.firstTurn - alias-repeated paths earn no multi-hit bonus', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      // Real query results repeat a path once per matching alias — one
+      // execution, one hit.
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person, FIX.person], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+
+  const rec = context.log[0].universe?.find((r) => r.path === 'people/Jane-Doe.md')
+  assert({
+    given: 'a turn-1 query returning the same path under two aliases',
+    should: 'score it as one targeted hit (prior 6 + lex 8 + boost 10), not two',
+    actual: rec?.score,
+    expected: 24,
+  })
+})
+
+test('ChatContext.restore - distinct recorded executions accumulate the multi-hit bonus', async () => {
+  const state: ResumeState = {
+    conversation: [],
+    universePaths: ['people/Jane-Doe.md', 'time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'],
+    queries: ['q1'],
+    lastTurn: 3,
+    contextLog: [
+      { turn: 1, queries: ['q1'] },
+      { turn: 2, queries: ['q1'], diff: [{ path: 'people/Jane-Doe.md', score: 16, tokens: 9 }] },
+      { turn: 3, queries: ['q1'], diff: [{ path: 'people/Jane-Doe.md', score: 16, tokens: 9 }] },
+    ],
+  }
+  const { context } = makeContext()
+  const report = await context.restore(state)
+
+  // The floor is 0.35 × the top score, so it reads the top score back
+  // out: two recorded executions → 6 + 10 + 1 = 17 → floor 5.95. A
+  // single hit would floor at 5.6.
+  assert({
+    given: "a resume log where two different turns' diffs returned the same doc",
+    should: 'restore two hits and surface the multi-hit bonus in the floor',
+    actual: report.rebuild.stats?.floor,
+    expected: 5.95,
+  })
+})
+
 // ---------------------------------------------------------------------------
 // evolveTurn
 // ---------------------------------------------------------------------------
@@ -321,6 +370,35 @@ test('ChatContext.evolveTurn', async () => {
       merged: true,
       rebuilt: true,
     },
+  })
+})
+
+test('ChatContext.evolveTurn - a floored doc rejoins when the topic shifts onto it', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: ['q1', 'q2'], changed: true })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+  const dayAtTurn1 = context.log[0].universe?.find((r) => r.path.endsWith('/day.md'))
+  // Observed live on Aug 7: floored counts fall across turns as the term
+  // set grows to match more docs. Rejoining is intentional — the floor is
+  // per-rebuild, not a permanent verdict.
+  const turn2 = await context.evolveTurn('what is the status of the atlas rollout checklist?', [])
+
+  assert({
+    given: 'a day file floored by a person question, then a question about its content',
+    should: 'floor it at turn 1 and ship it again at turn 2',
+    actual: {
+      turn1Cut: dayAtTurn1?.cut,
+      turn2Floored: turn2.rebuilt?.stats?.floored,
+      dayShipsAgain: turn2.rebuilt?.activityMarkdown?.includes('rollout checklist'),
+    },
+    expected: { turn1Cut: 'floor', turn2Floored: 0, dayShipsAgain: true },
   })
 })
 
