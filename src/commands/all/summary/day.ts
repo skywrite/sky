@@ -318,7 +318,7 @@ export default class SummaryDayTask extends Command {
       parts.push(`**Location**: ${location}`)
       parts.push('')
     }
-    parts.push('Below is the collated input for this day. Generate the Daily Intelligence Brief.')
+    parts.push('Below is the collated input for this day. Generate the Daily Summary.')
     parts.push('')
 
     // Price data section
