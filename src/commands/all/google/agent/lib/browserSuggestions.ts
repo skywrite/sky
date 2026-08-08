@@ -1,5 +1,6 @@
 import { openGooglePage, withGoogleBrowser } from '../../lib/browserSession.ts'
 import { docsCommentUrl } from './browserComments.ts'
+import { selectDocMatch } from './findBar.ts'
 
 // Real suggested edits (tracked changes), which the Docs API cannot create —
 // batchUpdate always applies edits directly, and Suggesting mode exists only
@@ -72,19 +73,7 @@ export async function suggestDocsEdit(options: {
     // commenter access, where the editor is suggest-only anyway.
     await page.keyboard.press('Meta+Alt+Shift+KeyX')
     await page.waitForTimeout(800)
-    await page.keyboard.press('Meta+KeyF')
-    await page.waitForTimeout(800)
-    await page.keyboard.type(options.searchText, { delay: 15 })
-    await page.waitForTimeout(1200)
-    // The first Enter lands on the first match; each further Enter advances
-    // one match in reading order.
-    for (let i = 0; i < occurrence; i++) {
-      await page.keyboard.press('Enter')
-      await page.waitForTimeout(500)
-    }
-    // Closing the find bar keeps the match selected.
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(600)
+    await selectDocMatch(page, options.searchText, occurrence)
     // Collapse to the anchor start, then walk to the edit window.
     await page.keyboard.press('ArrowLeft')
     for (let i = 0; i < window.caretAdvance; i++) await page.keyboard.press('ArrowRight')
