@@ -380,3 +380,119 @@ test('from — legacy infinite scores normalize to always/never verdicts', () =>
     expected: [['/goals/g.md', '/people/p.md'], ['/orgs/o.md']],
   })
 })
+
+// ---------------------------------------------------------------------------
+// Relevance floor
+// ---------------------------------------------------------------------------
+
+const FLOOR_SCORES: Record<string, number> = {
+  '/notes/top.md': 10,
+  '/notes/mid.md': 4,
+  '/notes/low.md': 2,
+}
+const FLOOR_SCORER: Scorer = (item) => scored(FLOOR_SCORES[item.path] ?? 0)
+
+function floorDomain(): DomainCollection {
+  return makeDomain([
+    { doc: makeDoc('x'.repeat(40)), path: '/notes/top.md' },
+    { doc: makeDoc('y'.repeat(40)), path: '/notes/mid.md' },
+    { doc: makeDoc('z'.repeat(40)), path: '/notes/low.md' },
+  ])
+}
+
+test('from — floor: scored docs below fractionOfTop are floored', () => {
+  const asm = ContextAssembler.from(floorDomain(), { scorer: FLOOR_SCORER, maxTokens: 10000, floorFraction: 0.35 })
+
+  assert({
+    given: 'scores 10/4/2 with a 0.35 floor fraction (floor 3.5) and ample budget',
+    should: 'keep the docs above the floor and floor the rest without pruning',
+    actual: {
+      kept: asm.kept.map((s) => s.item.path),
+      floored: asm.floored.map((s) => s.item.path),
+      pruned: asm.pruned.length,
+      floorValue: Math.round((asm.floorValue ?? 0) * 100) / 100,
+    },
+    expected: {
+      kept: ['/notes/top.md', '/notes/mid.md'],
+      floored: ['/notes/low.md'],
+      pruned: 0,
+      floorValue: 3.5,
+    },
+  })
+})
+
+test('from — floor: the top doc always clears its own floor', () => {
+  const domain = makeDomain([{ doc: makeDoc('only'), path: '/notes/solo.md' }])
+  const asm = ContextAssembler.from(domain, { scorer: () => scored(1), maxTokens: 10000, floorFraction: 0.9 })
+
+  assert({
+    given: 'a single eligible doc and a high floor fraction',
+    should: 'keep it — the floor is a fraction of its own score',
+    actual: [asm.size, asm.floored.length],
+    expected: [1, 0],
+  })
+})
+
+test('from — floor: an ambient universe (top score <= 0) gets no floor', () => {
+  const scorer: Scorer = (item) => scored(item.path.includes('zero') ? 0 : -2)
+  const domain = makeDomain([
+    { doc: makeDoc('a'), path: '/notes/zero.md' },
+    { doc: makeDoc('b'), path: '/notes/negative.md' },
+  ])
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 10000, floorFraction: 0.35 })
+
+  assert({
+    given: 'no doc scoring above zero',
+    should: 'apply no floor and keep everything the budget allows',
+    actual: [asm.floorValue, asm.floored.length, asm.size],
+    expected: [null, 0, 2],
+  })
+})
+
+test('from — floor: pinned docs are exempt', () => {
+  const scorer: Scorer = (item) => (item.path.startsWith('/goals/') ? keepAlways('pinned') : FLOOR_SCORER(item))
+  const domain = makeDomain([
+    { doc: makeDoc('pin'), path: '/goals/g.md' },
+    { doc: makeDoc('x'.repeat(40)), path: '/notes/top.md' },
+    { doc: makeDoc('z'.repeat(40)), path: '/notes/low.md' },
+  ])
+  const asm = ContextAssembler.from(domain, { scorer, maxTokens: 10000, floorFraction: 0.35 })
+
+  assert({
+    given: 'a pinned doc alongside a floored one',
+    should: 'keep the pinned doc unconditionally and floor only scored docs',
+    actual: {
+      kept: asm.kept.map((s) => s.item.path),
+      floored: asm.floored.map((s) => s.item.path),
+    },
+    expected: {
+      kept: ['/goals/g.md', '/notes/top.md'],
+      floored: ['/notes/low.md'],
+    },
+  })
+})
+
+test('withBudget — a looser budget recovers pruned docs but never floored ones', () => {
+  // Budget 12 fits only the top doc (~11 tokens each): mid is pruned, low floored.
+  const tight = ContextAssembler.from(floorDomain(), { scorer: FLOOR_SCORER, maxTokens: 12, floorFraction: 0.35 })
+  const loose = tight.withBudget(10000)
+
+  assert({
+    given: 'a re-budget from tight to ample with a floor in place',
+    should: 'recover the budget-pruned doc while the floored doc stays out',
+    actual: {
+      tightKept: tight.kept.map((s) => s.item.path),
+      tightPruned: tight.pruned.map((s) => s.item.path),
+      tightFloored: tight.floored.map((s) => s.item.path),
+      looseKept: loose.kept.map((s) => s.item.path),
+      looseFloored: loose.floored.map((s) => s.item.path),
+    },
+    expected: {
+      tightKept: ['/notes/top.md'],
+      tightPruned: ['/notes/mid.md'],
+      tightFloored: ['/notes/low.md'],
+      looseKept: ['/notes/top.md', '/notes/mid.md'],
+      looseFloored: ['/notes/low.md'],
+    },
+  })
+})

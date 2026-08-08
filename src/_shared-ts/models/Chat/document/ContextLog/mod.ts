@@ -23,9 +23,12 @@
  * JSON.parse restores the original text, keeping the law exact.
  *
  * Fields grow within a version additively — v2 records gained the optional
- * `lex`/`prov` score parts with the Stage 2 scorer. Optional fields never
- * bump the version: the reader tolerates their absence, and a bump would
- * orphan resume for every transcript already on disk.
+ * `lex`/`prov` score parts with the Stage 2 scorer, and stats gained the
+ * operative scoring parameters (`budget`/`scoring`/`floor`/`floored`) with
+ * Stage 3 — recorded because they are tunable and a logged score is only
+ * interpretable against the parameters that produced it. Optional fields
+ * never bump the version: the reader tolerates their absence, and a bump
+ * would orphan resume for every transcript already on disk.
  */
 
 export const CONTEXT_LOG_VERSION = 2
@@ -67,6 +70,14 @@ export interface TurnStats {
   excluded: number
   /** Estimated tokens of shipped document markdown (the assembler budget) */
   docTokens: number
+  /** Token budget ceiling in effect this turn */
+  budget?: number
+  /** Scoring-semantics tag (see Chat/ChatContext/score.ts SCORING) */
+  scoring?: string
+  /** Relevance floor applied this turn (floorFraction × top score) */
+  floor?: number
+  /** Docs cut by the floor this turn (their records carry cut: 'floor') */
+  floored?: number
 }
 
 export interface ContextTurnLog {

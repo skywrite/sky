@@ -44,6 +44,12 @@ export const CHAT_SCORE = {
   lexicalMax: 8,
   /** Body-occurrence density (per 1k tokens) that earns full term credit. */
   fullCreditDensity: 2,
+  /**
+   * Body-channel damping. The authored header fields — rel, tags,
+   * summary, title — are the strong topical signals; body text is the
+   * tiebreaker, not the driver.
+   */
+  bodyWeight: 0.5,
   /** Docs measure as at least this long — a mention in a tiny doc is its subject. */
   minDocTokens: 200,
   /** Terms this short match whole words only; longer terms match substrings. */
@@ -52,7 +58,23 @@ export const CHAT_SCORE = {
   maxEvidenceTerms: 5,
   /** Terms beyond this are dropped — bounds the per-rebuild scan cost. */
   maxTerms: 64,
+  /**
+   * Relevance floor: scored docs below this fraction of the turn's top
+   * score are cut regardless of budget room — context sizes to the
+   * question instead of filling to the cap. Adapts by construction: a
+   * strong-evidence turn floors high and sheds ambient chatter, a
+   * no-evidence turn (top ~8) floors low and keeps the baseline.
+   */
+  floorFraction: 0.35,
 } as const
+
+/**
+ * Scoring-semantics tag recorded in each turn's stats. Bump when the
+ * score composition or weights change materially — logged scores are only
+ * interpretable against the semantics that produced them ('s3' = composed
+ * scorer + relevance floor).
+ */
+export const SCORING = 's3'
 
 // -----------------------------------------------------------------------------
 // Provenance — retrieval evidence accumulated by ChatContext
@@ -244,22 +266,28 @@ export function extractTopicTerms(userMessage: string | undefined, queries: stri
 /**
  * Lexical topic match, BM25-shaped but hand-rolled for interpretability.
  *
- * Per term a doc earns BODY evidence: occurrence DENSITY (a passing
- * mention in a long document is weak, the same mention in a short one
- * is the document's subject — BM25's length normalization in
- * interpretable form; without it, long recent messages that graze many
- * terms out-accumulate the short entity cards the topic is actually
- * about) scaled by the term's RARITY across the universe —
- * log(N/df)/log(N), 1 for a term matching one doc, 0 for one matching
- * all.
+ * Header channels dominate. Per term a doc earns the best evidence
+ * across its authored metadata — `rel:` (deliberate linkage: rel
+ * containing the org under discussion is as strong as signals get),
+ * `tags:` (curated taxonomy), `summary:` (the one-line abstract) — and
+ * its BODY, damped by bodyWeight: occurrence DENSITY (a passing mention
+ * in a long document is weak, the same mention in a short one is the
+ * document's subject — BM25's length normalization in interpretable
+ * form; without it, long recent messages that graze many terms
+ * out-accumulate the short entity cards the topic is actually about).
+ *
+ * Every channel hit is scaled by the term's RARITY measured WITHIN that
+ * channel — log(N/df)/log(N), 1 for a term matching one doc, 0 for one
+ * matching all. Per-channel df matters: a term saturating message
+ * bodies can still be a precise signal in the handful of docs whose
+ * rel or tags carry it.
  *
  * The doc additionally earns one NAME evidence: the fraction of its
  * title's content words the terms cover. Full coverage means the doc IS
  * the thing the conversation names ("Jane-Doe.md" against terms
- * jane+doe) and counts as full credit regardless of how often the name
- * saturates other docs' bodies — rarity must not dilute the entity
- * card itself. Partial coverage (one word of a six-word message title)
- * stays proportionally weak.
+ * jane+doe) and counts as full credit regardless of df — rarity must
+ * not dilute the entity card itself. Partial coverage (one word of a
+ * six-word message title) stays proportionally weak.
  *
  * The doc's strongest maxEvidenceTerms evidences accumulate noisy-or
  * (1 − Π(1 − evidence)) and scale to lexicalMax: one perfect hit is
@@ -303,10 +331,25 @@ function createLexicalScorer(collection: DomainCollection, terms: string[]): (pa
     return termsFrom(title)
   }
 
-  const texts = new Map<string, { body: string; names: string[]; tokens: number }>()
+  // Header channels come from the parsed frontmatter, body from the
+  // yaml-stripped render — a rel/tags hit must not double-count as body
+  // text, and the old flat-text scan actively PENALIZED header hits (one
+  // rel: line in a 5k-token meeting scored as a passing mention).
+  const HEADER_CHANNELS = ['rel', 'tags', 'summary'] as const
+  type HeaderChannel = (typeof HEADER_CHANNELS)[number]
+
+  const texts = new Map<
+    string,
+    { header: Record<HeaderChannel, string>; body: string; names: string[]; tokens: number }
+  >()
   for (const item of collection.allItems) {
-    const body = item.doc.toMarkdown().toLowerCase()
+    const body = item.doc.toMarkdown({ yaml: false }).toLowerCase()
     texts.set(item.path, {
+      header: {
+        rel: [...item.doc.rel].join('\n').toLowerCase(),
+        tags: String(item.doc.tags).toLowerCase(),
+        summary: String(item.doc.yaml['summary'] ?? '').toLowerCase(),
+      },
       body,
       names: nameWords(item.path),
       tokens: Math.max(estimateTokens(body), CHAT_SCORE.minDocTokens),
@@ -316,15 +359,27 @@ function createLexicalScorer(collection: DomainCollection, terms: string[]): (pa
   const docCount = texts.size
   if (docCount <= 1) return () => 0
   const logN = Math.log(docCount)
+  const rarity = (df: number) => (df === 0 ? 0 : Math.log(docCount / df) / logN)
 
-  const weighted: Array<{ probe: RegExp; counter: RegExp; bodyRarity: number }> = []
-  for (const { probe, counter } of matchers) {
-    let bodyDf = 0
+  const weighted = matchers.map(({ probe, counter }) => {
+    const dfs: Record<HeaderChannel | 'body', number> = { rel: 0, tags: 0, summary: 0, body: 0 }
     for (const t of texts.values()) {
-      if (probe.test(t.body)) bodyDf++
+      for (const c of HEADER_CHANNELS) {
+        if (probe.test(t.header[c])) dfs[c]++
+      }
+      if (probe.test(t.body)) dfs.body++
     }
-    weighted.push({ probe, counter, bodyRarity: bodyDf === 0 ? 0 : Math.log(docCount / bodyDf) / logN })
-  }
+    return {
+      probe,
+      counter,
+      rarities: {
+        rel: rarity(dfs.rel),
+        tags: rarity(dfs.tags),
+        summary: rarity(dfs.summary),
+        body: rarity(dfs.body),
+      },
+    }
+  })
 
   return (path: string) => {
     const t = texts.get(path)
@@ -335,10 +390,18 @@ function createLexicalScorer(collection: DomainCollection, terms: string[]): (pa
       if (matchers.some(({ probe }) => probe.test(w))) namesMatched++
     }
     if (namesMatched > 0) evidences.push(namesMatched / t.names.length)
-    for (const { counter, bodyRarity } of weighted) {
-      if (bodyRarity === 0) continue
-      const density = (countMatches(t.body, counter) / t.tokens) * 1000
-      const evidence = Math.min(density / CHAT_SCORE.fullCreditDensity, 1) * bodyRarity
+    for (const { probe, counter, rarities } of weighted) {
+      let evidence = 0
+      for (const c of HEADER_CHANNELS) {
+        if (rarities[c] > evidence && probe.test(t.header[c])) evidence = rarities[c]
+      }
+      if (rarities.body > 0) {
+        const density = (countMatches(t.body, counter) / t.tokens) * 1000
+        evidence = Math.max(
+          evidence,
+          Math.min(density / CHAT_SCORE.fullCreditDensity, 1) * rarities.body * CHAT_SCORE.bodyWeight,
+        )
+      }
       if (evidence > 0) evidences.push(evidence)
     }
     let miss = 1

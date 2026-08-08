@@ -35,7 +35,15 @@ import type { ConversationMessage } from '../type.d.ts'
 import createDayLabeler from './dayLabel.ts'
 import { fetchContextFromServer } from './fetchContext.ts'
 import { resolveUniverse, type UniverseResolution } from './resolveUniverse.ts'
-import { createChatScorer, type DocProvenance, extractTopicTerms, strongerTier, tierForResultSize } from './score.ts'
+import {
+  CHAT_SCORE,
+  createChatScorer,
+  type DocProvenance,
+  extractTopicTerms,
+  SCORING,
+  strongerTier,
+  tierForResultSize,
+} from './score.ts'
 
 // -----------------------------------------------------------------------------
 // Producers — the query pipeline a host injects
@@ -594,6 +602,7 @@ export default class ChatContext {
       const assembler = ContextAssembler.from(this.collection, {
         scorer: withPinnedPaths(scorer, this.pinnedPaths),
         maxTokens: this.maxTokens,
+        floorFraction: CHAT_SCORE.floorFraction,
       })
       activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
       for (const s of assembler.kept) {
@@ -609,17 +618,31 @@ export default class ChatContext {
         docRecords.set(s.item.path, rec)
         cutRecords.push(rec)
       }
+      for (const s of assembler.floored) {
+        const rec: ContextDocRecord = { ...this.scoredRecord(s, lexicalByPath), cut: 'floor' }
+        docRecords.set(s.item.path, rec)
+        cutRecords.push(rec)
+      }
       for (const s of assembler.excluded) {
         const reason = s.verdict.keep === 'never' ? (s.verdict.reason ?? 'excluded') : 'excluded'
         const rec: ContextDocRecord = { path: this.relPath(s.item.path), tokens: s.tokens, cut: reason }
         docRecords.set(s.item.path, rec)
         cutRecords.push(rec)
       }
+      // The scoring parameters in effect ride along in stats: recorded
+      // scores and cuts are only interpretable against them, and none are
+      // reconstructable from the transcript once they become tunable.
       turnStats = {
         kept: assembler.size,
         pruned: assembler.pruned.length,
         excluded: assembler.excluded.length,
         docTokens: assembler.totalTokens,
+        budget: this.maxTokens,
+        scoring: SCORING,
+      }
+      if (assembler.floorValue !== null) {
+        turnStats.floor = Math.round(assembler.floorValue * 100) / 100
+        turnStats.floored = assembler.floored.length
       }
     }
 
