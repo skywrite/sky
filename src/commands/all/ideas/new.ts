@@ -4,18 +4,21 @@ import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { z } from 'zod'
+import { categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_IDEAS } from '#config'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { outputFile, readTextFile } from '#shared/fs/mod.ts'
+import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import IdeaDocument from '#shared/models/Idea/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
@@ -28,11 +31,7 @@ const params = {
     short: 'n',
     optional: true,
   }),
-  category: Flag.string('Category for day item: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Professional Complete',
-  }),
+  category: categoryComplete(),
 }
 
 type Params = InferParams<typeof params>
@@ -60,22 +59,41 @@ const MAX_CLARIFICATION_ROUNDS = 3
 // Helpers
 // -----------------------------------------------------------------------------
 
-type ClarifierResult =
-  | { status: 'clear'; idea: string; summary: string }
-  | { status: 'unclear'; question: string; reason: string }
+// AI responses are validated against the prompt contracts so a malformed
+// reply degrades loudly instead of writing a half-empty document.
+
+const clarifierSchema = z.union([
+  z.object({ status: z.literal('clear'), idea: z.string().min(1), summary: z.string() }),
+  z.object({ status: z.literal('unclear'), question: z.string().min(1), reason: z.string() }),
+])
+type ClarifierResult = z.infer<typeof clarifierSchema>
+
+const formatSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  body: z.string().min(1),
+  rel: z.array(z.string()).nullish(),
+})
+
+interface ClarifyResult {
+  /** The final refined statement */
+  statement: string
+  /** Full conversation history (Q&A exchanges) */
+  conversation: string
+}
 
 /**
  * Run the idea clarifier to ensure the idea is well-formed.
- * Returns the clarified idea statement, or null if user cancels.
+ * Returns the clarified idea statement + conversation, or null if user cancels.
  */
 async function clarifyIdea(
   initialInput: string,
   spinner: ReturnType<typeof p.spinner>,
   notebookContext?: string,
-): Promise<string | null> {
+): Promise<ClarifyResult | null> {
   const clarifierContent = await readTextFile(CLARIFIER_FILE)
   let currentInput = initialInput
-  let conversationHistory = ''
+  let conversationHistory = `User's initial description: "${initialInput}"`
 
   for (let round = 0; round < MAX_CLARIFICATION_ROUNDS; round++) {
     spinner.start('Thinking about your idea...')
@@ -102,10 +120,11 @@ async function clarifyIdea(
         prompt: renderedClarifier,
       })
 
-      clarifierResult = extractJson<typeof clarifierResult>(result.text)
-    } catch {
+      clarifierResult = clarifierSchema.parse(extractJson(result.text))
+    } catch (err) {
       spinner.stop('Clarification failed')
-      return currentInput
+      await logAIError({ source: 'ideas:new', stage: 'clarify', message: (err as Error).message })
+      return { statement: currentInput, conversation: conversationHistory }
     }
 
     if (clarifierResult.status === 'clear') {
@@ -123,7 +142,7 @@ async function clarifyIdea(
       }
 
       if (confirmed) {
-        return clarifierResult.idea
+        return { statement: clarifierResult.idea, conversation: conversationHistory }
       }
 
       const edited = await p.text({
@@ -157,7 +176,7 @@ async function clarifyIdea(
   }
 
   // Max rounds reached - proceed with what we have
-  return currentInput
+  return { statement: currentInput, conversation: conversationHistory }
 }
 
 // -----------------------------------------------------------------------------
@@ -207,6 +226,7 @@ export default class IdeasNewTask extends Command {
     spinner.start('Gathering context...')
 
     let notebookContext: string | undefined
+    let relCandidates: string[] = []
     const baseDir = config.DIR_BASE as string
 
     try {
@@ -232,6 +252,8 @@ export default class IdeasNewTask extends Command {
         if (docs.length > 0) {
           const collection = DomainCollection.fromDocuments(docs, store)
           notebookContext = collection.toMarkdown({ relativeTo: baseDir, delimited: true })
+          // rel frontmatter values are notebook-relative paths without .md
+          relCandidates = docs.map((d) => path.relative(baseDir, d.path).replace(/\.md$/, '')).slice(0, 12)
         }
       }
     } catch {
@@ -241,9 +263,9 @@ export default class IdeasNewTask extends Command {
     spinner.stop(notebookContext ? colors.dim('Context loaded') : colors.dim('No additional context found'))
 
     // Step 3: Clarify the idea until it's well-formed
-    const clarifiedIdea = await clarifyIdea(initialDescription as string, spinner, notebookContext)
+    const ideaResult = await clarifyIdea(initialDescription as string, spinner, notebookContext)
 
-    if (clarifiedIdea === null) {
+    if (ideaResult === null) {
       p.cancel('Cancelled')
       return CommandResult.fail('User cancelled')
     }
@@ -259,13 +281,7 @@ export default class IdeasNewTask extends Command {
       return CommandResult.fail('User cancelled')
     }
 
-    const tags = (tagsInput as string)?.trim()
-      ? (tagsInput as string)
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-          .join(', ')
-      : undefined
+    const tags = (tagsInput as string)?.trim() ? TagSet.fromArray((tagsInput as string).split(',')) : undefined
 
     // Step 5: Format the idea with AI
     spinner.start('Formatting your idea...')
@@ -274,15 +290,16 @@ export default class IdeasNewTask extends Command {
 
     const formatInput: RenderInput = {
       idea: {
-        description: clarifiedIdea,
-        clarificationContext: clarifiedIdea !== (initialDescription as string) ? clarifiedIdea : undefined,
+        description: ideaResult.statement,
+        clarificationContext: ideaResult.conversation || undefined,
         notebookContext,
+        relatedPaths: relCandidates.length > 0 ? relCandidates.join('\n') : undefined,
       },
     }
 
     const { output: renderedFormat } = renderPromptFile(formatContent, 'ideas-format.prompt.md', formatInput)
 
-    let aiResponse: { title: string; slug: string; body: string }
+    let aiResponse: z.infer<typeof formatSchema>
 
     try {
       const result = await generateText({
@@ -290,31 +307,52 @@ export default class IdeasNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      aiResponse = extractJson<typeof aiResponse>(result.text)
+      aiResponse = formatSchema.parse(extractJson(result.text))
       spinner.stop('Idea formatted')
     } catch (err) {
       spinner.stop('Failed to format idea')
+      await logAIError({ source: 'ideas:new', stage: 'format', message: (err as Error).message })
       output.error(`AI Error: ${(err as Error).message}`)
       return CommandResult.error(err as Error, 'Failed to format idea with AI')
     }
 
-    // Step 6: Determine final name/slug
+    // Step 6: Determine final name/slug — every source passes through slugify
+    // so an AI- or user-supplied value can't smuggle path separators into the
+    // filename
     const finalName =
-      overrideName ?? aiResponse.slug ?? slugify(clarifiedIdea, { suggestedLength: 25, preserveCase: true })
+      (overrideName ? slugify(overrideName, { preserveCase: true }) : '') ||
+      slugify(aiResponse.slug, { suggestedLength: 25, preserveCase: true }) ||
+      slugify(ideaResult.statement, { suggestedLength: 25, preserveCase: true })
+
+    if (!finalName) {
+      return CommandResult.fail('Could not derive a usable slug — rerun with --name')
+    }
 
     // Step 7: Create the Idea document
+    const now = await fetchNow()
+
+    // Only rel values the AI picked from the offered candidate list survive
+    const rel = (aiResponse.rel ?? []).filter((r) => relCandidates.includes(r))
+
     const idea = IdeaDocument.create({
       name: finalName,
       title: aiResponse.title,
       body: aiResponse.body,
       tags,
+      rel,
+      createdOn: now.plainDateTime.date,
     })
 
     // Step 8: Write to file in draft/{month}/
-    const now = await fetchNow()
     const year = now.plainDateTime.plainDate.year
     const month = String(now.plainDateTime.plainDate.month).padStart(2, '0')
     const ideaFullPath = path.join(DIR_IDEAS, String(year), 'draft', month, `${finalName}.md`)
+
+    if (await exists(ideaFullPath)) {
+      return CommandResult.fail(
+        `An idea named "${finalName}" already exists this month: ${ideaFullPath} — rerun with --name to pick a different slug.`,
+      )
+    }
 
     const markdownContent = idea.toMarkdown()
     await outputFile(ideaFullPath, markdownContent)

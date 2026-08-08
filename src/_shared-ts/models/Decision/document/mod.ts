@@ -8,7 +8,7 @@ import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
  * DecisionDocument model - represents a decision with minimal queryable metadata in YAML
  * and free-form narrative in markdown.
  *
- * Stored at: $SKY_DIR/decisions/{year}/{month}/{name}.md
+ * Stored at: $SKY_DIR/decisions/{year}/{pending|resolved|archived}/{month}/{name}.md
  */
 export default class DecisionDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
@@ -178,8 +178,9 @@ export default class DecisionDocument extends Document {
 
     let decision = new DecisionDocument(yaml, markdown)
 
-    // Ensure created/updated dates
-    decision = decision.ensureCreatedUpdated() as DecisionDocument
+    // created/updated follow the identified date so the stamps stay on
+    // notebook time rather than whatever the system clock says right now
+    decision = decision.ensureCreatedUpdated(identified.date) as DecisionDocument
 
     return decision
   }
