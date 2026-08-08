@@ -17,6 +17,7 @@ import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData, type HealthData } from './_health.ts'
 import { type DayPriceData, gatherDayPriceData } from './_prices.ts'
+import { serializeSummaryContext } from './lib/contextRecord.ts'
 import gatherDayDocs from './lib/gatherDayDocs.ts'
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
@@ -41,7 +42,7 @@ const params = {
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),
-  open: Flag.bool('Open summary in editor after creation', { short: 'o', default: false }),
+  open: Flag.bool('Open summary in editor after creation', { short: 'o', default: true }),
   export: Flag.bool('Export summary as PDF to ~/Desktop', { short: 'e', default: false }),
 }
 
@@ -163,9 +164,11 @@ export default class SummaryDayTask extends Command {
     // lean on it.
     const baseDir = <string>config.DIR_BASE
     const rootPaths = new Set(docs.map((d) => d.path))
-    const background = collection.allItems.filter((item) => !rootPaths.has(item.path))
+    const background = collection.allItems
+      .filter((item) => !rootPaths.has(item.path))
+      .map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))
     const sections = [
-      Collection.from(background.map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))).toMarkdown({
+      Collection.from(background).toMarkdown({
         relativeTo: baseDir,
         delimited: true,
       }),
@@ -259,20 +262,30 @@ export default class SummaryDayTask extends Command {
 
     let outputContent = ['---', stringify(yamlHeader).trim(), '---', '', response].join('\n')
 
-    // Append context file paths as hidden comment (same pattern as ai:chat).
-    // This records exactly what the model read.
-    const contextPaths = [...background.map((i) => i.path), ...docs.map((d) => d.path)]
-    if (contextPaths.length > 0) {
-      const relativePaths = contextPaths
-        .map((p) => {
-          if (p.startsWith(timeDir)) return p.slice(timeDir.length + 1)
-          if (p.startsWith(baseDir)) return p.slice(baseDir.length + 1)
-          return p
-        })
-        .sort()
-      const pathLines = relativePaths.map((p) => ` - ${p}`).join('\n')
-      outputContent += '\n\n\n<!--\nCONTEXT:\n\n' + pathLines + '\n\nEND\n-->\n'
-    }
+    // Append the SUMMARY-CONTEXT record: what the model read (with token
+    // estimates, in shipped order) and what was skipped, for staleness
+    // detection and missing-input debugging.
+    const relPath = (p: string) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p)
+    const skipReasons: Array<[string[], string]> = [
+      [skipped.tiny, 'tiny'],
+      [skipped.yamlError, 'yamlError'],
+      [skipped.unreadable, 'unreadable'],
+    ]
+    outputContent += serializeSummaryContext({
+      scope: 'day',
+      budget: CONTEXT_BUDGET_TOKENS,
+      kept: [
+        ...background.map((b) => ({
+          path: relPath(b.path),
+          tokens: estimateTokens(b.doc.toMarkdown()),
+          kind: 'background',
+        })),
+        ...docs.map((d) => ({ path: relPath(d.path), tokens: estimateTokens(d.doc.toMarkdown()), kind: d.kind })),
+      ],
+      skipped: skipReasons.flatMap(([paths, reason]) =>
+        paths.map((p) => ({ path: relPath(path.join(dayDirPath, p)), reason })),
+      ),
+    })
 
     // 11. Output
     if (stdout) {
