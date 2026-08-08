@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { Arg } from '../params.ts'
+import { Arg, Flag } from '../params.ts'
 import transformTypedParamsArgs from './mod.ts'
 
 test('resolves Arg from named key (tasks.run composition)', async () => {
@@ -112,5 +112,41 @@ test('still throws for missing required Arg with no named key', async () => {
     should: 'throw error',
     actual: error?.message.includes('file'),
     expected: true,
+  })
+})
+
+test('inherited boolean false does not leak into a stringOrBool param (server-leak regression)', async () => {
+  const params = {
+    graphql: Flag.string('GraphQL query', { optional: true }),
+    server: Flag.stringOrBool('Service host', { short: 'S', bareValue: 'localhost:9999' }),
+  }
+
+  // ai:context:files' merged args carry its own `server: false` bool default
+  // into subtask transforms; pre-stringOrBool this coerced to the truthy
+  // hostname "false" and markdown:sel queried http://false/graphql
+  const leaked = await transformTypedParamsArgs(
+    params,
+    { _: [], server: false, graphql: '{ days { path } }' },
+    { compositionDepth: 1 },
+  )
+
+  assert({
+    given: 'parent-inherited server: false',
+    should: 'resolve to undefined (local mode)',
+    actual: leaked.server,
+    expected: undefined,
+  })
+
+  const enabled = await transformTypedParamsArgs(
+    params,
+    { _: [], server: true, graphql: '{ days { path } }' },
+    { compositionDepth: 1 },
+  )
+
+  assert({
+    given: 'server: true from a composing command',
+    should: 'resolve to the declared bareValue',
+    actual: enabled.server,
+    expected: 'localhost:9999',
   })
 })

@@ -9,7 +9,7 @@
 
 import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams, InferParamsInput } from '#commands/mod.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { type ExecuteResult, executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
@@ -21,8 +21,9 @@ import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 const params = {
   dsl: Flag.string('CSS-like selector query', { short: 'd', optional: true }),
   graphql: Flag.string('GraphQL query', { short: 'g', optional: true }),
-  server: Flag.string('Server URL (default: localhost:9999). Use without value for default, or pass host:port', {
+  server: Flag.stringOrBool('Service host/URL — bare --server (or server: true) queries the local service', {
     short: 'S',
+    bareValue: `localhost:${PORT_SERVER}`,
   }),
   raw: Flag.bool('Output just file paths, one per line', { default: false }),
   json: Flag.bool('Output full JSON result (for GraphQL)', { default: false }),
@@ -30,6 +31,7 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
+type ParamsIn = InferParamsInput<typeof params>
 
 interface QueryResult {
   paths: string[]
@@ -39,7 +41,7 @@ interface QueryResult {
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'markdown:sel': { params: Params; result: QueryResult }
+    'markdown:sel': { params: Params; paramsIn: ParamsIn; result: QueryResult }
   }
 }
 
@@ -78,10 +80,6 @@ async function fetchGraphQL(url: string, query: string, output: CommandArgs['con
  * Resolve --server value to a full GraphQL URL.
  */
 function resolveServerUrl(server: string): string {
-  // Bare --server flag (mri gives true, zod coerces to "true")
-  if (server === 'true' || server === '') {
-    return `http://localhost:${PORT_SERVER}/graphql`
-  }
   const url = new URL('/graphql', server.startsWith('http') ? server : `http://${server}`)
   return url.href
 }
