@@ -38,7 +38,7 @@ You are a professional editor synthesizing a project-scoping conversation into a
 {{#if project.relatedPaths}}
 ## Related Notebook Documents
 
-Notebook paths (one per line) that were gathered as context for this project:
+Notebook references (one per line) for documents gathered as context for this project:
 
 {{project.relatedPaths}}
 {{/if}}
@@ -53,7 +53,7 @@ Produce the content for the project's overview.md sections:
 4. **whyItMatters**: 1-2 short paragraphs on why this project matters now — the motivation surfaced in the conversation. If the why never came up, keep it to one honest sentence of the most plausible motivation rather than inventing stakes.
 5. **doneLooksLike**: The done-criteria as a short paragraph or a tight bullet list of observable conditions. Concrete and checkable.
 6. **firstStep**: The user's stated first step, lightly cleaned up (fix grammar, keep their intent — do not invent a different step).
-7. **Related paths (`rel`)**: From the Related Notebook Documents list only — never invent paths — select the paths genuinely related to this project, the documents someone reading it would want linked. Return [] when none qualify or no list was provided.
+7. **Related references (`rel`)**: From the Related Notebook Documents list only — never invent references — select those genuinely related to this project, the documents someone reading it would want linked. Return them verbatim. Return [] when none qualify or no list was provided.
 
 Formatting rules for all sections: short paragraphs (2-3 sentences max), blank line between paragraphs, never one monolithic block. Markdown allowed (bullets, bold), but no headings — the document supplies them.
 
@@ -67,6 +67,6 @@ Return ONLY valid JSON:
   "whyItMatters": "Markdown for the 'Why does this matter?' section",
   "doneLooksLike": "Markdown for the 'What does done look like?' section",
   "firstStep": "Markdown for the 'What is the first concrete step?' section",
-  "rel": ["path/from-the-list"]
+  "rel": ["reference-from-the-list"]
 }
 ```
