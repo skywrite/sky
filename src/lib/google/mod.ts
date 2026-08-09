@@ -116,3 +116,12 @@ export type { CompactComment, DriveComment, DriveReply } from './comments.ts'
 
 export { MAX_IMAGE_BYTES, driveImageUrl, sniffImageMime } from './images.ts'
 export type { ImageMime } from './images.ts'
+
+export {
+  CALENDAR_API_URL,
+  CALENDAR_READONLY_SCOPE,
+  hasCalendarScope,
+  listEvents,
+  meetingDropReason,
+} from './calendar.ts'
+export type { CalendarAttendee, CalendarEvent } from './calendar.ts'

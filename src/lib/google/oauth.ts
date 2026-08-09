@@ -5,8 +5,10 @@ export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 export const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo'
 
-// Workspace scopes for the docs/sheets/slides feature. The identity scopes let
-// auth learn which account granted access so tokens can be stored per email.
+// Workspace scopes for the docs/sheets/slides feature, plus read-only Calendar
+// for the day:end missed-meeting check. The identity scopes let auth learn
+// which account granted access so tokens can be stored per email. Adding a
+// scope means stored grants lack it until google:auth is re-run per account.
 export const GOOGLE_SCOPES = [
   'openid',
   'email',
@@ -14,6 +16,7 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/presentations',
+  'https://www.googleapis.com/auth/calendar.readonly',
 ]
 
 /** BYO OAuth client pair. Google treats installed-app secrets as non-confidential, ours still lives in the keychain. */
