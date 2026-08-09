@@ -10,9 +10,24 @@ import { writeDayItems } from '#lib/nbfs/mod.ts'
 import { exists, outputFile } from '#shared/fs/mod.ts'
 import DecisionDocument from '#shared/models/Decision/mod.ts'
 import type TagSet from '#shared/models/TagSet/mod.ts'
-import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 export class SlugCollisionError extends Error {}
+
+/**
+ * Mirror of DecisionDocument's target parsing ("YYYY-MM-DD" or
+ * "YYYY-MM-DD HH:MM") — a value that fails here would be written to YAML
+ * only to silently read back as undefined ever after.
+ */
+export function isParseableTarget(value: string): boolean {
+  try {
+    if (value.includes(' ')) new PlainDateTime(value)
+    else new PlainDate(value)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export interface WriteDecisionInput {
   /** Slugified file/entity name — the caller owns slug derivation */
