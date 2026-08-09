@@ -5,6 +5,7 @@ import {
   collectUserIds,
   parseUser,
 } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
+import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import {
   type ConversationType,
   extractWorkspaceUrl,
@@ -97,7 +98,7 @@ export default class SlackCliExportTask extends Command {
       getArgs.push('--workspace', args.workspace)
     }
 
-    const getResult = await runCommand('agent-slack', getArgs)
+    const getResult = await runAgentSlack(getArgs)
     if (getResult.code !== 0) {
       const detail = getResult.stderr.trim() || getResult.stdout.trim()
       const hint = detail.includes('invalid_auth') ? ' — credentials expired, run `sky slack:auth`' : ''
@@ -121,7 +122,7 @@ export default class SlackCliExportTask extends Command {
         listArgs.push('--workspace', args.workspace)
       }
 
-      const listResult = await runCommand('agent-slack', listArgs)
+      const listResult = await runAgentSlack(listArgs)
       if (listResult.code === 0) {
         try {
           const threadData: { messages?: AgentSlackMessage[] } = JSON.parse(listResult.stdout)
@@ -250,7 +251,7 @@ async function resolveUserNames(userIds: string[]): Promise<Map<string, string>>
   const map = new Map<string, string>()
   await Promise.all(
     userIds.map(async (id) => {
-      const result = await runCommand('agent-slack', ['user', 'get', id])
+      const result = await runAgentSlack(['user', 'get', id])
       if (result.code === 0) {
         try {
           const user: AgentSlackUser = JSON.parse(result.stdout)
@@ -273,7 +274,7 @@ async function resolveUserName(
   let name = userNames.get(userId)
   if (name) return name
   let hasFullName = false
-  const result = await runCommand('agent-slack', ['user', 'get', userId])
+  const result = await runAgentSlack(['user', 'get', userId])
   if (result.code === 0) {
     try {
       const user: AgentSlackUser = JSON.parse(result.stdout)
