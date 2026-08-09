@@ -27,13 +27,13 @@ Weight the review toward what I have flagged, without dropping anything material
 
 ## Leaving your findings
 
-Put every finding on the document itself, prioritized, at most 12 anchored comments — the material ones. Fold anything lighter into the summary rather than burying the important findings among nits.
+Put every finding on the document itself as a real anchored comment — add_anchored_comment, with searchText copied verbatim from the clause — so the passage shows highlighted with your comment pinned to it. Prioritized, at most 12 anchored comments — the material ones. Fold anything lighter into the summary rather than burying the important findings among nits.
 
 Each comment opens with its severity in brackets — `[High]`, `[Medium]`, `[Low]` — then says in plain language what the provision does to me and what to ask for instead. High is real exposure or a right I lose; medium is worth negotiating; low is cleanup and clarity. Write for a smart reader who is not a lawyer: no citation formatting, no hedging into uselessness, and never quote a clause back at me without saying what it means.
 
 When a finding has a concrete rewrite, propose it as a suggested edit as well, so I can accept it with one click, and keep the reasoning in the comment.
 
-Finish with one summary comment titled `[Summary] Contract review`: the three or four things I should actually negotiate, the lighter findings you folded in, anything you could not assess because it referred to a missing schedule or exhibit, and one line noting this is a careful review, not legal advice.
+Finish with one summary comment titled `[Summary] Contract review`, left with the file-level add_comment tool — a whole-document note belongs in the comments panel, and it is the only comment that does: the three or four things I should actually negotiate, the lighter findings you folded in, anything you could not assess because it referred to a missing schedule or exhibit, and one line noting this is a careful review, not legal advice.
 
 Then report back what you found — the headline risks and what you left on the document.
 
@@ -41,5 +41,7 @@ Then report back what you found — the headline risks and what you left on the 
 
 - Do not edit the document text directly. Comments and suggested edits only — this document is a record of what the other side sent.
 - Anchor to text you copied verbatim from the document, and never invent a term, number or date the document does not contain.
+- Findings never go to the comments panel. When the browser session fails and an anchored comment cannot be placed, do not fall back to add_comment — even though that tool's description suggests it. Carry every unplaced finding into your closing report instead (severity, the clause's verbatim text, what you would have said) and note that the session needs `sky google:browser`. The `[Summary]` comment is the one legitimate panel comment.
+- If a suggested edit cannot be placed, keep its anchored comment and move on; never demote a finding or a rewrite to a panel comment.
 - Report a missing protection as a finding in its own right; absence is as material as bad wording.
 - This Doc may have been converted from a PDF, so layout artifacts — broken tables, split lines, lost numbering — are conversion noise, not drafting defects. Ignore them, and say so if the conversion left the text unreadable in places.

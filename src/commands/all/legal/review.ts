@@ -1,13 +1,14 @@
 import * as path from 'node:path'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { resolveFileRef } from '#lib/google/mod.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { IMPORT_EXTENSIONS, resolveImportSource } from '../google/agent/lib/importFile.ts'
 import type { MissionFile } from '../google/agent/lib/tools.ts'
+import { GOOGLE_BROWSER_PROFILE_DIR, findChromiumBrowser } from '../google/lib/browserSession.ts'
 
 const PROMPT_NAME = 'review.prompt.md'
 
@@ -43,8 +44,10 @@ export default class LegalReviewTask extends Command {
       'renewal, termination, liability and indemnity, IP, confidentiality,',
       'data and compliance, assignment, and dispute terms. Findings land on',
       'the document as severity-tagged anchored comments, concrete rewrites',
-      'as suggested edits, plus one summary comment. The document text itself',
-      'is never edited. A careful review, not legal advice.',
+      'as suggested edits, plus one summary comment. Needs the automation',
+      'browser session (sky google:browser) — findings anchor to the text',
+      'itself, never the comments panel. The document text itself is never',
+      'edited. A careful review, not legal advice.',
     ],
     usage: [
       'sky legal:review ~/deals/atlas-msa.pdf',
@@ -76,6 +79,22 @@ export default class LegalReviewTask extends Command {
       return CommandResult.fail(
         `Not a Google Doc URL/id, and not a document sky can import (${IMPORT_EXTENSIONS}): ${document}`,
       )
+    }
+
+    // Findings land as browser-anchored comments; without the automation
+    // browser the mission could only degrade to file-level panel comments,
+    // so refuse to start. (Test contexts skip the machine probe.)
+    if (context.platform !== CommandPlatform.Test) {
+      if (!(await findChromiumBrowser())) {
+        return CommandResult.fail(
+          'Anchored comments need Chromium or Google Chrome installed — legal:review does not degrade to panel comments',
+        )
+      }
+      if (!(await exists(GOOGLE_BROWSER_PROFILE_DIR))) {
+        return CommandResult.fail(
+          'Anchored comments need the Google automation browser session — run sky google:browser once to set it up',
+        )
+      }
     }
 
     if (!import.meta.dirname) return CommandResult.error('Cannot locate the legal prompt directory')
