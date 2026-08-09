@@ -16,6 +16,7 @@ import dayFile from '#shared/nbfs/dayFile.ts'
 import { fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
+import { autoTagSlackMessage } from './lib/autoTag.ts'
 import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
 import resolveRecipient from './lib/resolveRecipient.ts'
 import { summarizeSlackMessage } from './lib/summarize.ts'
@@ -33,6 +34,7 @@ const params = {
   follow: Flag.string('Follow file name', { hidden: true }),
   previous: Flag.string('Previous message ref', { hidden: true }),
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-thread tag corpus', { default: false }),
   slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:new)', { hidden: true }),
 }
 
@@ -58,7 +60,7 @@ export default class SlackNewTask extends Command {
     const { output } = context
     let { to, from, when, summary, markdown } = args
     let { fromLink } = args
-    const { category, tags, rel, follow, previous, noEditor, slackFiles } = args
+    const { category, tags, rel, follow, previous, noEditor, noAutoTag, slackFiles } = args
 
     // If first arg is a Slack link with no other context, treat as --from-link
     if (to && !from && !summary && !fromLink && /^https?:\/\/[^/]*\.slack\.com\/archives\//.test(to)) {
@@ -118,6 +120,14 @@ export default class SlackNewTask extends Command {
       }
     }
 
+    // Auto-tag only when no tags are in play — caller-supplied tags (follow
+    // inheritance, --tags) and preserved hand-written tags always win.
+    let resolvedTags = tags
+    if (!resolvedTags && !preservedYaml['tags'] && !noAutoTag) {
+      resolvedTags = await autoTagSlackMessage({ channel: to ?? from, from, summary, body: markdown ?? '' })
+      if (resolvedTags) output.log(`  Auto-tags: ${resolvedTags}`)
+    }
+
     const message = new MessageDocument({
       ...preservedYaml,
       from,
@@ -126,7 +136,7 @@ export default class SlackNewTask extends Command {
       medium: 'Slack',
       summary,
       ...(attachments.length > 0 ? { attachments } : {}),
-      ...(tags ? { tags } : {}),
+      ...(resolvedTags ? { tags: resolvedTags } : {}),
       ...(rel ? { rel } : {}),
       ...(follow ? { follow } : {}),
       ...(previous ? { previous } : {}),
