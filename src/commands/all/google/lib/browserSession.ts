@@ -1,6 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { readlink, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import process from 'node:process'
 import { chromium } from 'playwright'
 import type { BrowserContext, Page } from 'playwright'
 import { exists } from '#shared/fs/mod.ts'
@@ -38,42 +40,102 @@ export class GoogleBrowserError extends Error {
   }
 }
 
-/**
- * Chromium refuses to start on a profile whose SingletonLock names another
- * process. A crashed or Ctrl-C'd run leaves the lock (and sometimes a whole
- * orphaned browser) behind — self-heal the stale case, name the live one.
- */
-async function clearProfileLockOrThrow(): Promise<void> {
-  const lockPath = path.join(GOOGLE_BROWSER_PROFILE_DIR, 'SingletonLock')
-  let target: string
+/** Pid named by the profile's Chromium SingletonLock, if any. */
+async function profileLockPid(): Promise<number | null> {
   try {
-    target = await readlink(lockPath)
+    const target = await readlink(path.join(GOOGLE_BROWSER_PROFILE_DIR, 'SingletonLock'))
+    const pid = Number.parseInt(target.split('-').pop() ?? '', 10)
+    return Number.isFinite(pid) ? pid : null
   } catch {
-    return
+    return null
   }
-  const pid = Number.parseInt(target.split('-').pop() ?? '', 10)
-  if (Number.isFinite(pid) && isProcessAlive(pid)) {
-    throw new GoogleBrowserError(
-      `The automation profile is already in use by a running browser (pid ${pid}) — close that window, or: kill ${pid}`,
-    )
-  }
+}
+
+async function removeSingletonFiles(): Promise<void> {
   for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
     await rm(path.join(GOOGLE_BROWSER_PROFILE_DIR, name), { force: true }).catch(() => undefined)
   }
 }
 
+/**
+ * SIGKILL a wedged headless automation browser. Proof before force: the
+ * pid's command line must name our profile dir (so it is our automation
+ * Chromium, not an unrelated process that reused the pid) AND carry
+ * --headless (so it is never the visible `sky google:browser` sign-in
+ * window). Returns false when nothing can be safely killed.
+ */
+function killWedgedProfileBrowser(pid: number): boolean {
+  let command = ''
+  try {
+    command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
+  } catch {
+    return false
+  }
+  if (!command.includes(GOOGLE_BROWSER_PROFILE_DIR) || !command.includes('--headless')) return false
+  try {
+    process.kill(pid, 'SIGKILL')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Chromium refuses to start on a profile whose SingletonLock names another
+ * process. A crashed or Ctrl-C'd run leaves the lock (and sometimes a whole
+ * orphaned browser) behind — self-heal the stale case, name the live one.
+ * With takeover, a live-but-wedged HEADLESS holder is killed too: agent
+ * flows hold the cross-process profile lock, so any headless Chromium still
+ * squatting on the profile is a leftover that would wedge the launch. The
+ * visible sign-in window never qualifies (no --headless) and keeps the
+ * polite error.
+ */
+async function clearProfileLockOrThrow(options: { takeover?: boolean } = {}): Promise<void> {
+  const pid = await profileLockPid()
+  if (pid !== null && isProcessAlive(pid)) {
+    const killed = options.takeover === true && killWedgedProfileBrowser(pid)
+    if (!killed) {
+      throw new GoogleBrowserError(
+        `The automation profile is already in use by a running browser (pid ${pid}) — close that window, or: kill ${pid}`,
+      )
+    }
+    // Give the killed process a beat to die before clearing its files.
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  await removeSingletonFiles()
+}
+
+/** Launches that lose a Chromium startup race hang, not fail — bound them. */
+const LAUNCH_TIMEOUT_MS = 60_000
+
 /** Launch the persistent automation profile. Callers must close() the context. */
-export async function launchGoogleBrowser(options: { headless?: boolean } = {}): Promise<BrowserContext> {
+export async function launchGoogleBrowser(
+  options: { headless?: boolean; takeover?: boolean } = {},
+): Promise<BrowserContext> {
   const executablePath = await findChromiumBrowser()
   if (!executablePath) {
     throw new GoogleBrowserError('No Chromium-family browser found for automation')
   }
-  await clearProfileLockOrThrow()
-  const context = await chromium.launchPersistentContext(GOOGLE_BROWSER_PROFILE_DIR, {
-    executablePath,
-    headless: options.headless ?? false,
-    viewport: { width: 1440, height: 900 },
-  })
+  await clearProfileLockOrThrow({ takeover: options.takeover })
+  const launch = () =>
+    chromium.launchPersistentContext(GOOGLE_BROWSER_PROFILE_DIR, {
+      executablePath,
+      headless: options.headless ?? false,
+      viewport: { width: 1440, height: 900 },
+      timeout: LAUNCH_TIMEOUT_MS,
+    })
+  let context: BrowserContext
+  try {
+    context = await launch()
+  } catch (err) {
+    // A not-quite-dead predecessor wedges the launch to its deadline. Kill
+    // it — headless on our profile only — and try once more.
+    const pid = await profileLockPid()
+    if (!options.takeover || pid === null || !killWedgedProfileBrowser(pid)) throw err
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await removeSingletonFiles()
+    context = await launch()
+  }
   // Session debris: crashed runs leave their tabs in the profile's session
   // state, and the restore makes pages()[0] targeting ambiguous (and buried
   // the google:browser sign-in form under 62 tabs once). Any tab present at
@@ -85,29 +147,114 @@ export async function launchGoogleBrowser(options: { headless?: boolean } = {}):
 
 // Chromium allows one process per profile dir, so concurrent flows collide:
 // the loser throws on the SingletonLock or, losing the startup race, hangs
-// in launch until its 3-minute timeout. Agent missions DO issue browser
-// tool calls concurrently (the AI SDK runs a step's tool calls in
-// parallel) — queue whole flows instead of letting them fight.
+// in launch. Agent missions DO issue browser tool calls concurrently (the
+// AI SDK runs a step's tool calls in parallel) — queue whole flows instead
+// of letting them fight.
 let profileQueue: Promise<unknown> = Promise.resolve()
 
-/** Run one launch → work → close flow with exclusive use of the automation profile. */
+/**
+ * The launch → close boundary between consecutive flows is both the wedge
+ * surface (rapid relaunch on a persistent profile can hang Chromium) and
+ * ~20s of overhead per anchored comment. So the browser stays WARM between
+ * flows: one launch serves a whole mission, and an idle timer folds the
+ * session — and releases the cross-process lock — shortly after the last
+ * call. Other sky processes wait on the lock up to 120s; the 90s idle close
+ * frees it inside their window.
+ */
+const WARM_IDLE_MS = 90_000
+
+/**
+ * Hard ceiling per flow, between the slowest legitimate flow (an anchored
+ * comment ≈ 90s) and the agent's 180s tool timer. A wedged page operation
+ * gets its browser closed from under it so the queue advances — instead of
+ * every queued call timing out behind it in turn.
+ */
+const FLOW_DEADLINE_MS = 150_000
+
+interface WarmBrowser {
+  context: BrowserContext
+  release: () => Promise<void>
+  headless: boolean
+  closed: boolean
+  idleTimer?: ReturnType<typeof setTimeout>
+}
+
+let warm: WarmBrowser | null = null
+
+async function closeWarmBrowser(): Promise<void> {
+  const session = warm
+  warm = null
+  if (!session) return
+  clearTimeout(session.idleTimer)
+  // close() can hang on a wedged browser — bound it; the takeover path in
+  // the next launch cleans up whatever survives.
+  await Promise.race([
+    session.context.close().catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ])
+  await session.release()
+}
+
+/** Run one browser flow with exclusive use of the automation profile. */
 export async function withGoogleBrowser<T>(
   options: { headless?: boolean },
   fn: (context: BrowserContext) => Promise<T>,
 ): Promise<T> {
   const run = profileQueue.then(async () => {
-    // Turn-taking across sky processes; within this process the queue above
-    // already serializes, so the lock is uncontended here.
-    const release = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK)
-    try {
-      const context = await launchGoogleBrowser(options)
+    const headless = options.headless ?? false
+    if (warm && (warm.closed || warm.headless !== headless)) await closeWarmBrowser()
+    let session = warm
+    if (session) {
+      clearTimeout(session.idleTimer)
+    } else {
+      // Turn-taking across sky processes; within this process the queue
+      // already serializes, so the lock is uncontended here. Held while the
+      // browser stays warm.
+      const release = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK)
       try {
-        return await fn(context)
-      } finally {
-        await context.close()
+        const context = await launchGoogleBrowser({ headless, takeover: true })
+        const created: WarmBrowser = { context, release, headless, closed: false }
+        context.once('close', () => {
+          created.closed = true
+        })
+        session = created
+        warm = created
+      } catch (err) {
+        await release()
+        throw err
       }
+    }
+    const active = session
+    let deadlineHit = false
+    const deadline = setTimeout(() => {
+      deadlineHit = true
+      void closeWarmBrowser()
+    }, FLOW_DEADLINE_MS)
+    try {
+      return await fn(active.context)
+    } catch (err) {
+      if (deadlineHit) {
+        throw new GoogleBrowserError(
+          `The browser flow exceeded ${FLOW_DEADLINE_MS / 1000}s and was force-closed — the next call starts a fresh browser`,
+        )
+      }
+      throw err
     } finally {
-      await release()
+      clearTimeout(deadline)
+      if (warm === active && !active.closed) {
+        // Park warm. The teardown rides the queue, so it can never close the
+        // browser under a flow that grabbed the queue first; unref lets a
+        // one-shot CLI process exit without serving the idle window.
+        active.idleTimer = setTimeout(() => {
+          profileQueue = profileQueue
+            .then(() => (warm === active ? closeWarmBrowser() : undefined))
+            .catch(() => undefined)
+        }, WARM_IDLE_MS)
+        ;(active.idleTimer as unknown as { unref?: () => void }).unref?.()
+      } else if (warm === active) {
+        // The context died mid-flow — release the lock now rather than idle.
+        await closeWarmBrowser()
+      }
     }
   })
   profileQueue = run.catch(() => undefined)
