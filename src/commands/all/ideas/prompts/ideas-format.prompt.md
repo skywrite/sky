@@ -27,7 +27,7 @@ The following documents from the user's notebook are relevant to this idea. Use 
 {{#if idea.relatedPaths}}
 ## Related Notebook Documents
 
-Notebook paths (one per line) that were gathered as context for this idea:
+Notebook references (one per line) for documents gathered as context for this idea:
 
 {{idea.relatedPaths}}
 {{/if}}
@@ -37,7 +37,7 @@ Notebook paths (one per line) that were gathered as context for this idea:
 1. Generate a concise title (a clear name for the idea, no "Idea:" prefix)
 2. Generate a short URL-safe slug (preserve case, hyphens, max 25 chars, e.g., "AI-Daily-Review-Coach")
 3. Write a clear body (1-3 paragraphs) that captures the idea well - what it is, why it matters, and what it might look like in practice. Draw on insights from the clarification conversation. Do NOT use Q&A format - write it as a clean narrative.
-4. Select related paths (`rel`): from the Related Notebook Documents list only — never invent paths — pick those genuinely related to this idea. Return [] when none qualify or no list was provided.
+4. Select related references (`rel`): from the Related Notebook Documents list only — never invent references — pick those genuinely related to this idea, returned verbatim. Return [] when none qualify or no list was provided.
 
 The body should:
 - Start with what the idea IS (the proposal)
@@ -53,6 +53,6 @@ Return ONLY valid JSON:
   "title": "Idea title",
   "slug": "Short-Slug-With-Case",
   "body": "The formatted markdown body (use \\n for newlines)",
-  "rel": ["path/from-the-list"]
+  "rel": ["reference-from-the-list"]
 }
 ```

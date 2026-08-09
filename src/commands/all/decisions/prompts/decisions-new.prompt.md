@@ -38,7 +38,7 @@ You are a professional editor synthesizing a decision-making conversation into a
 {{#if decision.relatedPaths}}
 ## Related Notebook Documents
 
-Notebook paths (one per line) that were gathered as context for this decision:
+Notebook references (one per line) for documents gathered as context for this decision:
 
 {{decision.relatedPaths}}
 {{/if}}
@@ -62,7 +62,7 @@ Notebook paths (one per line) that were gathered as context for this decision:
    - **IMPORTANT: Use short paragraphs (2-3 sentences max per paragraph). Separate each paragraph with a blank line. Never write a single monolithic block of text. White space is your friend.**
 5. **Outcomes summary**: A clear statement of desired outcomes, synthesized from the conversation.
    - **IMPORTANT: Use short paragraphs (2-3 sentences max per paragraph). Separate each paragraph with a blank line. One idea per paragraph. Never write one giant block.**
-6. **Related paths (`rel`)**: From the Related Notebook Documents list only — never invent paths — select the paths genuinely related to this decision, the documents someone reading it would want linked. Return [] when none qualify or no list was provided.
+6. **Related references (`rel`)**: From the Related Notebook Documents list only — never invent references — select those genuinely related to this decision, the documents someone reading it would want linked. Return them verbatim. Return [] when none qualify or no list was provided.
 
 Return ONLY valid JSON:
 
@@ -73,6 +73,6 @@ Return ONLY valid JSON:
   "target": "YYYY-MM-DD" or null,
   "contextSummary": "Markdown narrative synthesizing the decision context",
   "outcomesSummary": "Markdown narrative of desired outcomes",
-  "rel": ["path/from-the-list"]
+  "rel": ["reference-from-the-list"]
 }
 ```

@@ -1,7 +1,6 @@
 /**
  * Shared building blocks for AI-guided "new document" interview commands
- * (projects:new; decisions:new and ideas:new still carry local copies of
- * these, pending migration).
+ * (projects:new, decisions:new, ideas:new).
  *
  * The single-round judge (runClarifierRound) is transport-free so the clack
  * loop here and the ai:chat tools can run the same prompts identically.
