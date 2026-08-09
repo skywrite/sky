@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import ms from 'ms'
+import { autoTagSlackMessage } from '#commands/all/slack/lib/autoTag.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -157,6 +158,18 @@ export default class SlackFollowNewTask extends Command {
       const sortedDays = [...byDay.keys()].sort()
       output.log(`  Smart split: ${allMessages.length} messages across ${sortedDays.length} days`)
 
+      // One thread-level classification over the full transcript; every split
+      // day gets the same tags. Per-day auto-tag stays off either way — day
+      // bodies are fragments (day 1 is often just the root header) and would
+      // classify inconsistently.
+      const fullBodyParts: string[] = [`# ${summary}`, '']
+      for (const msg of allMessages) {
+        fullBodyParts.push(`## ${msg.timeLabel} - **${msg.userName}**`, '')
+        fullBodyParts.push(msg.text, '', '')
+      }
+      const threadTags = await autoTagSlackMessage({ channel: to, from, summary, body: fullBodyParts.join('\n') })
+      if (threadTags) output.log(`  Auto-tags: ${threadTags}`)
+
       for (let i = 0; i < sortedDays.length; i++) {
         const dayStr = sortedDays[i]
         const dayMessages = byDay.get(dayStr)!
@@ -184,6 +197,7 @@ export default class SlackFollowNewTask extends Command {
           when: dayWhen,
           markdown: bodyParts.join('\n'),
           follow: fileNameNoExt,
+          ...(threadTags ? { tags: threadTags } : { noAutoTag: true }),
           ...(previous ? { previous } : {}),
           ...(dayFiles.length > 0 ? { slackFiles: JSON.stringify(dayFiles) } : {}),
           noEditor: true,
