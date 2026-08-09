@@ -20,6 +20,7 @@ import {
   workspaceKind,
 } from '#lib/google/mod.ts'
 import type { DriveFile } from '#lib/google/mod.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
@@ -32,12 +33,14 @@ import type { MissionFile } from './lib/tools.ts'
 
 const MAX_STEPS = 48
 /**
- * A live stream ticks constantly (reasoning/text deltas, tool events), and
- * tool calls answer within their own 3-minute ceiling — so a silent stretch
- * this long can only be a socket that died without erroring. Abort and
- * report what completed instead of spinning forever.
+ * A live stream ticks constantly (reasoning/text deltas, tool events), tool
+ * calls answer within their own 3-minute ceiling, and the Anthropic provider
+ * itself already aborts and re-issues a wedged request after 90s of network
+ * silence (up to 3 tries ≈ 270s, invisible to this stream) — so a silent
+ * stretch this long means even the transport guard gave up. Abort and report
+ * what completed instead of spinning forever.
  */
-const STREAM_STALL_MS = 240_000
+const STREAM_STALL_MS = 360_000
 const MAX_DATA_CHARS = 262_144
 const MAX_MISSION_IMAGES = 24
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif)$/i
@@ -271,7 +274,9 @@ export default class GoogleAgentTask extends Command {
       // Streamed for the same reason as ai:chat: long generations hold the
       // socket past Anthropic's non-streaming ceiling on flaky networks.
       const stream = streamText({
-        ...aiModel('reasoning'),
+        // A mission is expensive to lose — ride out 429/529 bursts with more
+        // patience than the SDK's default 2 retries.
+        ...aiModel('reasoning', { maxRetries: 4 }),
         instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
         messages: [{ role: 'user', content: missionMessage }],
         tools,
@@ -289,14 +294,25 @@ export default class GoogleAgentTask extends Command {
       }
       let report = ''
       let steps = 0
+      let finishedSteps = 0
+      let lastEvent = 'none'
       try {
         arm()
-        for await (const _part of stream.fullStream) arm()
+        for await (const part of stream.fullStream) {
+          arm()
+          lastEvent = part.type
+          if (part.type === 'finish-step') finishedSteps++
+        }
         report = (await stream.text).trim()
         steps = (await stream.steps).length
       } catch (err) {
         if (!stalled) throw err
         log(`No stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted as stalled`)
+        void logAIError({
+          source: 'google:agent',
+          stage: 'stream-stall',
+          message: `no stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted after ${finishedSteps} completed step(s); last stream event: ${lastEvent}`,
+        })
       } finally {
         clearTimeout(watchdog)
       }
@@ -308,7 +324,7 @@ export default class GoogleAgentTask extends Command {
         )
         report = [
           stalled
-            ? 'The mission stalled (no stream activity for 4 minutes) and was aborted. Files touched before the stall:'
+            ? `The mission stalled (no stream activity for ${STREAM_STALL_MS / 60_000} minutes) and was aborted. Files touched before the stall:`
             : `The mission ended after ${steps} steps without a final report${steps >= MAX_STEPS ? ' (step limit reached)' : ''}. Files touched:`,
           ...(touched.length > 0 ? touched : ['(none)']),
         ].join('\n')
