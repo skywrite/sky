@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises'
+import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
@@ -21,7 +23,13 @@ const params = {
   desiredOutcomes: Flag.string('Markdown narrative of the desired outcomes, from decisions_clarify', {
     required: true,
   }),
-  target: Flag.string('Decide-by date: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"', { optional: true }),
+  decision: Flag.string(
+    'The decision as made — pass when the call is already settled; the document lands resolved with this in its Decision section. Omit for a still-open decision.',
+    { optional: true },
+  ),
+  target: Flag.string('Decide-by date for a still-open decision: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"', {
+    optional: true,
+  }),
   name: Flag.string('Slug override (otherwise derived from the title)', { short: 'n', optional: true }),
   tags: Flag.string('Comma- or semicolon-separated tags; omit unless the user named some', { optional: true }),
   rel: Flag.string('Semicolon-separated notebook references, from decisions_clarify', { optional: true }),
@@ -46,7 +54,7 @@ export default class DecisionsCreateTask extends Command {
   static override description: CommandDescription = {
     name: 'decisions:create',
     description:
-      'Write a decision document into the notebook (pending/) plus its day item. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
+      'Write a decision document into the notebook plus its day item — pending/ for an open decision, resolved/ when `decision` carries the call already made. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
     descriptionLong: [
       'Creates the Decision document and day item exactly as decisions:new',
       'would, from explicit fields. No AI calls — pure write.',
@@ -57,6 +65,8 @@ export default class DecisionsCreateTask extends Command {
 
   static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
     output.log(`  Decision: ${String(input.title ?? '')}`)
+    output.log(`  Status:   ${input.decision ? 'decided — lands in resolved/' : 'pending'}`)
+    if (input.decision) output.log(`  The call: ${String(input.decision)}`)
     if (input.target) output.log(`  Target:   ${String(input.target)}`)
     if (input.tags) output.log(`  Tags:     ${String(input.tags)}`)
     if (input.rel) output.log(`  Rel:      ${String(input.rel)}`)
@@ -65,8 +75,15 @@ export default class DecisionsCreateTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { title, target, name, category } = args
+    const { title, name, category } = args
+    const decision = args.decision?.trim() || undefined
 
+    let target = args.target
+    if (decision && target) {
+      // A made decision has no decide-by date — execution dates live in the narrative
+      output.log(colors.dim(`Ignoring target "${target}" — the decision is already made.`))
+      target = undefined
+    }
     if (target && !isParseableTarget(target)) {
       return CommandResult.fail(`Target "${target}" is not "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"`)
     }
@@ -106,6 +123,7 @@ export default class DecisionsCreateTask extends Command {
         context: args.context,
         desiredOutcomes: args.desiredOutcomes,
         target,
+        decision,
         tags,
         rel,
         now,
@@ -121,6 +139,13 @@ export default class DecisionsCreateTask extends Command {
     output.log(colors.green(`Created decision: ${written.file}`))
     if (written.dayItemWarning) {
       output.log(colors.yellow(`Warning: Could not add day item: ${written.dayItemWarning}`))
+    }
+
+    try {
+      openEditor([{ file: written.file, line: written.markdown.split('\n').length }])
+      await delay(500)
+    } catch {
+      // Editor opening is best-effort
     }
 
     return CommandResult.success({ file: written.file, name: finalName, dayItem: written.dayItem })

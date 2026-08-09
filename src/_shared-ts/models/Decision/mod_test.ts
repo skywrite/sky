@@ -344,3 +344,36 @@ test(`DecisionDocument.create() stamps created/updated from the identified date`
     actual: d.updated?.ymd,
   })
 })
+
+test(`DecisionDocument.create() with a made call is born resolved`, () => {
+  const given = 'Create Decision carrying the decision text and resolved time'
+  const when = new ZonedDateTime('2026-03-05 09:15', 'America/Chicago')
+  const d = DecisionDocument.create({
+    name: 'ship-widget',
+    identified: when,
+    resolved: when,
+    title: 'Ship Widget',
+    decision: 'Widget ships flagged off.',
+  })
+
+  assert({
+    given,
+    should: 'not be pending',
+    expected: false,
+    actual: d.isPending,
+  })
+
+  assert({
+    given,
+    should: 'stamp resolved from the provided time',
+    expected: '2026-03-05',
+    actual: d.resolved?.date,
+  })
+
+  assert({
+    given,
+    should: 'fill the Decision section',
+    expected: true,
+    actual: d.toMarkdown().includes('Widget ships flagged off.'),
+  })
+})

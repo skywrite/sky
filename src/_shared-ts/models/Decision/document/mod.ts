@@ -151,6 +151,10 @@ export default class DecisionDocument extends Document {
     title?: string
     context?: string
     desiredOutcomes?: string
+    /** The decision as made — fills the Decision section */
+    decision?: string
+    /** When the decision was made; a decision captured after the fact is born resolved */
+    resolved?: ZonedDateTime
     tags?: string | TagSet
     rel?: string[]
   }): DecisionDocument {
@@ -163,7 +167,7 @@ export default class DecisionDocument extends Document {
       summary: input.summary ?? input.title ?? input.name,
       identified: DecisionDocument.formatZonedDateTime(identified),
       target: input.target ? DecisionDocument.formatTargetDate(input.target) : null,
-      resolved: null,
+      resolved: input.resolved ? DecisionDocument.formatZonedDateTime(input.resolved) : null,
       created: null, // placeholder, filled by ensureCreatedUpdated
       updated: null, // placeholder, filled by ensureCreatedUpdated
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
@@ -174,6 +178,7 @@ export default class DecisionDocument extends Document {
       title: input.title ?? input.name,
       context: input.context,
       desiredOutcomes: input.desiredOutcomes,
+      decision: input.decision,
     })
 
     let decision = new DecisionDocument(yaml, markdown)

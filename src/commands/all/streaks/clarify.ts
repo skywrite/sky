@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import { gatherNotebookContext, runClarifierRound, runPromptJson } from '#commands/lib/interview.ts'
+import { gatherNotebookContext, runPromptJson } from '#commands/lib/interview.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { logAIError } from '#shared/ai/errorLog.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -16,36 +16,34 @@ const params = {
     short: 'i',
     required: true,
   }),
-  details: Flag.string('Detailed rules for the streak, if the user provided any (kept verbatim)', {
+  details: Flag.string('Rules the user already stated, kept verbatim inside the drafted rule doc', {
     optional: true,
   }),
-  schedule: Flag.string('Schedule: "daily" or "weekdays" — ask the user if unstated', {
-    optional: true,
-  }),
-  conversation: Flag.string('Relevant conversation excerpts: questions asked and answers given so far', {
+  schedule: Flag.string('Schedule if discussed: "daily" or "weekdays"', { optional: true }),
+  start: Flag.string('Start day if discussed, "YYYY-MM-DD"', { optional: true }),
+  conversation: Flag.string('Relevant conversation excerpts: what was discussed, answered, and settled', {
     optional: true,
   }),
 }
 
 type Params = InferParams<typeof params>
 
-interface ReviewQuestion {
+interface OpenQuestion {
   question: string
-  why: string
+  why?: string
+  proposed: string
 }
 
-type Result =
-  | { status: 'unclear'; question: string; reason?: string }
-  | {
-      status: 'ready'
-      habit: string
-      title: string
-      slug: string
-      why: string
-      rel: string[]
-      /** Loophole-hunting questions about the detailed rules — ask the user, fold answers into details, call again */
-      reviewQuestions: ReviewQuestion[]
-    }
+type Result = {
+  title: string
+  name: string
+  schedule: string
+  start: string | null
+  why: string
+  details: string
+  rel: string[]
+  openQuestions: OpenQuestion[]
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -57,23 +55,23 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Constants
 // -----------------------------------------------------------------------------
 
-const CLARIFIER_FILE = new URL('./prompts/streaks-clarifier.prompt.md', import.meta.url).pathname
-const REVIEW_FILE = new URL('./prompts/streaks-review.prompt.md', import.meta.url).pathname
-const FORMAT_FILE = new URL('./prompts/streaks-format.prompt.md', import.meta.url).pathname
+const DRAFT_FILE = new URL('./prompts/streaks-draft.prompt.md', import.meta.url).pathname
 
-const reviewSchema = z.union([
-  z.object({ status: z.literal('tight'), note: z.string().optional() }),
-  z.object({
-    status: z.literal('questions'),
-    questions: z.array(z.object({ question: z.string().min(1), why: z.string() })),
-  }),
-])
+const openQuestionSchema = z.object({
+  question: z.string().min(1),
+  why: z.string().optional(),
+  proposed: z.string().min(1),
+})
 
-const formatSchema = z.object({
+const draftSchema = z.object({
   title: z.string().min(1),
   slug: z.string().min(1),
   why: z.string().min(1),
+  schedule: z.enum(['daily', 'weekdays']),
+  start: z.string().nullish(),
+  details: z.string().min(1),
   rel: z.array(z.string()).nullish(),
+  openQuestions: z.array(openQuestionSchema).nullish(),
 })
 
 // -----------------------------------------------------------------------------
@@ -85,11 +83,11 @@ export default class StreaksClarifyTask extends Command {
   static override description: CommandDescription = {
     name: 'streaks:clarify',
     description:
-      'Judge whether a habit is streak-worthy (binary, small, controllable) and, once it is, return the formatted fields for streaks_create. Returns either a clarifying question, or ready fields plus reviewQuestions that probe the detailed rules for loopholes — relay those, fold answers into details, and call again.',
+      'Draft a complete streak rule document from the conversation in one call — including the full detailed rules — plus openQuestions that close loopholes, each carrying a proposed tightening. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Fields match streaks_create params. Writes nothing.',
     descriptionLong: [
-      'Runs the streak clarifier, rules review, and format prompts (the same',
-      'ones behind streaks:new) over conversation-supplied inputs. Writes',
-      'nothing — pair with streaks:create.',
+      'Runs the streaks-draft prompt over conversation-supplied inputs and',
+      'returns a full rule-doc draft plus loophole questions with proposed',
+      'defaults. Writes nothing — pair with streaks:create.',
     ],
     usage: ['sky streaks:clarify "Eat clean - no sugar, no seed oils" --schedule daily'],
     params,
@@ -97,88 +95,53 @@ export default class StreaksClarifyTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
-    const { habit, details, conversation } = args
-    const schedule = args.schedule === 'weekdays' ? 'weekdays' : 'daily'
+    const { habit, details, schedule, start, conversation } = args
 
     const baseDir = config.DIR_BASE as string
     const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, habit)
 
     try {
-      const round = await runClarifierRound({
-        promptContent: await readTextFile(CLARIFIER_FILE),
-        promptName: 'streaks-clarifier.prompt.md',
+      const now = await fetchNow()
+      const draft = await runPromptJson({
+        promptContent: await readTextFile(DRAFT_FILE),
+        promptName: 'streaks-draft.prompt.md',
         input: {
-          clarifier: {
-            currentInput: habit,
-            conversationHistory: conversation || undefined,
-            notebookContext,
-          },
-        },
-        clearKey: 'habit',
-        errorSource: 'streaks:clarify',
-        errorStage: 'clarify',
-      })
-
-      if (round.kind === 'question') {
-        output.log(`Needs clarification: ${round.question}`)
-        return CommandResult.success({ status: 'unclear', question: round.question, reason: round.reason })
-      }
-
-      // Review the detailed rules for loopholes. Failures degrade to no
-      // questions — the review sharpens rules, it must never block creation.
-      let reviewQuestions: ReviewQuestion[] = []
-      if (details?.trim()) {
-        try {
-          const review = await runPromptJson({
-            promptContent: await readTextFile(REVIEW_FILE),
-            promptName: 'streaks-review.prompt.md',
-            input: { review: { habit: round.statement, schedule, details } },
-            schema: reviewSchema,
-            errorSource: 'streaks:clarify',
-            errorStage: 'review',
-          })
-          if (review.status === 'questions') {
-            reviewQuestions = review.questions.slice(0, 3)
-          }
-        } catch (err) {
-          await logAIError({ source: 'streaks:clarify', stage: 'review', message: (err as Error).message })
-        }
-      }
-
-      const formatted = await runPromptJson({
-        promptContent: await readTextFile(FORMAT_FILE),
-        promptName: 'streaks-format.prompt.md',
-        input: {
+          context: { notebookDate: now.plainDateTime.date },
           streak: {
-            description: round.statement,
-            schedule,
-            details,
+            habit,
+            details: details || undefined,
+            schedule: schedule || undefined,
+            start: start || undefined,
+            conversation: conversation || undefined,
+            notebookContext,
             relatedPaths: relCandidates.length > 0 ? relCandidates.join('\n') : undefined,
           },
         },
-        schema: formatSchema,
+        schema: draftSchema,
         errorSource: 'streaks:clarify',
-        errorStage: 'format',
+        errorStage: 'draft',
       })
 
-      const slug = slugify(formatted.slug, { suggestedLength: 20 }) || slugify(formatted.title, { suggestedLength: 20 })
+      const name = slugify(draft.slug, { suggestedLength: 20 }) || slugify(draft.title, { suggestedLength: 20 })
 
       // Only rel values picked from the offered candidate list survive
-      const rel = (formatted.rel ?? []).filter((r) => relCandidates.includes(r))
+      const rel = (draft.rel ?? []).filter((r) => relCandidates.includes(r))
+      const openQuestions = draft.openQuestions ?? []
 
-      output.log(`Ready: "${formatted.title}" (${slug})`)
+      output.log(`Draft ready: "${draft.title}" (${name}) — ${openQuestions.length} open question(s)`)
 
       return CommandResult.success({
-        status: 'ready',
-        habit: round.statement,
-        title: formatted.title,
-        slug,
-        why: formatted.why,
+        title: draft.title,
+        name,
+        schedule: draft.schedule,
+        start: draft.start ?? null,
+        why: draft.why,
+        details: draft.details,
         rel,
-        reviewQuestions,
+        openQuestions,
       })
     } catch (err) {
-      return CommandResult.error(err as Error, 'Streak clarification failed')
+      return CommandResult.error(err as Error, 'Streak drafting failed')
     }
   }
 }

@@ -40,6 +40,57 @@ export interface DiscoveredTool {
   commandClass: any
 }
 
+/** A question a tool wants the user to settle, with the default it proposes. */
+export interface ToolOpenQuestion {
+  question: string
+  why?: string
+  proposed: string
+}
+
+/** The user's settled answer to one ToolOpenQuestion. */
+export interface ToolQuestionAnswer {
+  question: string
+  answer: string
+}
+
+/**
+ * Native question breakout: invoked between a tool's execution and its result
+ * reaching the model, so the user answers in-terminal — Enter per question,
+ * no chat turns, no context pipeline. Returning undefined leaves the result
+ * untouched (the model narrates the questions instead).
+ */
+export type OnOpenQuestions = (
+  toolName: string,
+  questions: ToolOpenQuestion[],
+) => Promise<ToolQuestionAnswer[] | undefined>
+
+export interface CreateNotebookToolsOptions {
+  onOpenQuestions?: OnOpenQuestions
+}
+
+/**
+ * Extract a well-formed openQuestions array from a tool result payload.
+ * Convention: any AI chat tool may return `openQuestions` in this shape to
+ * request the native breakout; malformed shapes are ignored.
+ */
+function extractOpenQuestions(payload: Record<string, unknown>): ToolOpenQuestion[] | undefined {
+  const raw = payload.openQuestions
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const questions: ToolOpenQuestion[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) return undefined
+    const q = item as Record<string, unknown>
+    if (typeof q.question !== 'string' || !q.question.trim()) return undefined
+    if (typeof q.proposed !== 'string' || !q.proposed.trim()) return undefined
+    questions.push({
+      question: q.question,
+      why: typeof q.why === 'string' ? q.why : undefined,
+      proposed: q.proposed,
+    })
+  }
+  return questions
+}
+
 const discoveredTools: DiscoveredTool[] = []
 
 /**
@@ -105,7 +156,10 @@ export async function discoverAIChatTools(): Promise<DiscoveredTool[]> {
  * Filters the on-disk command manifest by `aiChatTool`, then imports each
  * matching file to read its CommandDescription params and decorator options.
  */
-export async function createNotebookTools(tasks: CommandService): Promise<Record<string, unknown>> {
+export async function createNotebookTools(
+  tasks: CommandService,
+  options: CreateNotebookToolsOptions = {},
+): Promise<Record<string, unknown>> {
   const discovered = await discoverAIChatTools()
   const tools: Record<string, unknown> = {}
 
@@ -121,10 +175,25 @@ export async function createNotebookTools(tasks: CommandService): Promise<Record
       inputSchema: jsonSchema<Record<string, unknown>>(schema),
       execute: async (input: Record<string, unknown>) => {
         const result = await tasks.run(entry.commandName, input)
-        if (result.status === 'success') {
-          return { success: true, ...(result.data as Record<string, unknown>) }
+        if (result.status !== 'success') {
+          return { success: false, error: result.error ?? result.message ?? `Failed: ${entry.commandName}` }
         }
-        return { success: false, error: result.error ?? result.message ?? `Failed: ${entry.commandName}` }
+
+        const payload: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
+
+        // Tools returning openQuestions get the native breakout: the user
+        // settles them here, between execution and the model seeing the
+        // result — no chat turns spent on Q&A
+        const questions = extractOpenQuestions(payload)
+        if (questions && options.onOpenQuestions) {
+          const answers = await options.onOpenQuestions(entry.toolName, questions)
+          if (answers) {
+            payload.answers = answers
+            payload.openQuestions = []
+          }
+        }
+
+        return payload
       },
     })
   }
