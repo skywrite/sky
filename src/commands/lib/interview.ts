@@ -2,6 +2,9 @@
  * Shared building blocks for AI-guided "new document" interview commands
  * (projects:new; decisions:new and ideas:new still carry local copies of
  * these, pending migration).
+ *
+ * The single-round judge (runClarifierRound) is transport-free so the clack
+ * loop here and the ai:chat tools can run the same prompts identically.
  */
 
 import * as path from 'node:path'
@@ -26,8 +29,56 @@ import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 export interface NotebookContext {
   /** Delimited markdown of related documents, ready to embed in a prompt */
   notebookContext?: string
-  /** Notebook-relative paths (no .md) to offer the AI as rel candidates */
+  /** Entity references (rel: vocabulary) to offer the AI as rel candidates */
   relCandidates: string[]
+}
+
+/**
+ * Map a notebook-relative file path to the entity reference `rel:` frontmatter
+ * uses — the vocabulary MarkdownStore.resolve understands: bare person/org
+ * names, `projects/<name>`, `decisions/<slug>`, `ideas/<slug>`,
+ * `streaks/<slug>`, `goals/<category>`, `places/<place-path>`, and
+ * `YYYY-MM-DD/<subpath>` for time documents. Returns undefined for files with
+ * no reference form (notes, journal, data). Callers should still verify with
+ * store.canResolve — a ref that doesn't resolve is dead metadata.
+ */
+export function refForNotebookPath(relPath: string): string | undefined {
+  const parts = relPath.split('/')
+  const family = parts[0]
+  const stem = parts[parts.length - 1].replace(/\.md$/, '')
+
+  switch (family) {
+    case 'people':
+    case 'people-old':
+    case 'orgs':
+      // People and orgs resolve by name, which by convention is the file stem
+      return stem || undefined
+    case 'projects':
+      // projects/<status>/<name>/... — the reference names the project itself
+      return parts.length >= 3 ? `projects/${parts[2].replace(/\.md$/, '')}` : undefined
+    case 'decisions':
+    case 'ideas':
+    case 'streaks':
+      return relPath.endsWith('.md') ? `${family}/${stem}` : undefined
+    case 'goals':
+      return stem === 'personal' || stem === 'professional' ? `goals/${stem}` : undefined
+    case 'places': {
+      if (!relPath.endsWith('.md')) return undefined
+      const rest = parts
+        .slice(1)
+        .join('/')
+        .replace(/\.md$/, '')
+        .replace(/^locations\//, '')
+      return rest ? `places/${rest}` : undefined
+    }
+    case 'time': {
+      // time/<yyyy>/<mm>/<week>/<mm-dd>/<subpath>.md → <yyyy>-<mm-dd>/<subpath>
+      const match = relPath.match(/^time\/(\d{4})\/\d{2}\/[^/]+\/(\d{2}-\d{2})\/(.+)\.md$/)
+      return match ? `${match[1]}-${match[2]}/${match[3]}` : undefined
+    }
+    default:
+      return undefined
+  }
 }
 
 /**
@@ -54,8 +105,7 @@ export async function gatherNotebookContext(
     const docs: Array<{ doc: Document; path: string }> = []
     for (const filePath of filesResult.data.paths) {
       try {
-        const content = await readTextFile(filePath)
-        docs.push({ doc: Document.fromMarkdown(content), path: filePath })
+        docs.push({ doc: Document.fromMarkdown(await readTextFile(filePath)), path: filePath })
       } catch {
         // Skip unreadable files
       }
@@ -67,10 +117,20 @@ export async function gatherNotebookContext(
 
     const collection = DomainCollection.fromDocuments(docs, store)
 
+    // Candidates are entity references, not file paths, and only refs the
+    // store actually resolves are offered — so the AI can never pick a value
+    // that would sit in rel: as a dead link
+    const relCandidates = [
+      ...new Set(
+        docs
+          .map((d) => refForNotebookPath(path.relative(baseDir, d.path)))
+          .filter((ref): ref is string => ref !== undefined && store.canResolve(ref)),
+      ),
+    ].slice(0, 12)
+
     return {
       notebookContext: collection.toMarkdown({ relativeTo: baseDir, delimited: true }),
-      // rel frontmatter values are notebook-relative paths without .md
-      relCandidates: docs.map((d) => path.relative(baseDir, d.path).replace(/\.md$/, '')).slice(0, 12),
+      relCandidates,
     }
   } catch {
     // Context gathering failed — continue without it
@@ -79,20 +139,82 @@ export async function gatherNotebookContext(
 }
 
 // -----------------------------------------------------------------------------
-// Clarifier loop
+// Clarifier round (transport-free judge)
 // -----------------------------------------------------------------------------
 
 // The "clear" variant is loose because the statement key varies per prompt
-// ("decision", "idea", "statement"); the key itself is checked in the loop so
+// ("decision", "idea", "statement"); the key itself is checked after parsing so
 // a malformed reply degrades loudly instead of writing a half-empty document.
 const clarifierResponseSchema = z.union([
-  z.looseObject({ status: z.literal('clear'), summary: z.string() }),
+  z.looseObject({ status: z.literal('clear'), summary: z.string().optional() }),
   z.object({ status: z.literal('unclear'), question: z.string().min(1), reason: z.string() }),
 ])
 
-type RoundOutcome =
-  | { kind: 'clear'; statement: string; summary: string }
+export type ClarifierRound =
+  | { kind: 'clear'; statement: string; summary?: string }
   | { kind: 'question'; question: string; reason: string }
+
+export interface ClarifierRoundOptions {
+  /** Contents of the .prompt.md file */
+  promptContent: string
+  /** Prompt filename, for render error reporting */
+  promptName: string
+  /** Render input for this round */
+  input: RenderInput
+  /** JSON key holding the refined statement in a "clear" response */
+  clearKey: string
+  /** Source/stage recorded via logAIError when the round fails */
+  errorSource: string
+  errorStage: string
+}
+
+/**
+ * One clarifier judgment: render the prompt, run the model, parse the
+ * clear-or-question contract. Transport-free — the clack loop below and the
+ * ai:chat tools share it, so both paths run the same prompts identically.
+ *
+ * Render warnings and all failures are logged via logAIError; failures
+ * rethrow so each caller picks its own degrade policy.
+ */
+export async function runClarifierRound(opts: ClarifierRoundOptions): Promise<ClarifierRound> {
+  try {
+    const { output: rendered, warnings } = renderPromptFile(opts.promptContent, opts.promptName, opts.input)
+
+    if (warnings.length > 0) {
+      // A namespace/field mismatch renders a hollow prompt section and the
+      // model answers from it — surface it where AI failures are diagnosed
+      await logAIError({
+        source: opts.errorSource,
+        stage: `${opts.errorStage}:render`,
+        message: `${opts.promptName}: ${warnings.map((w) => w.message).join('; ')}`,
+      })
+    }
+
+    const result = await generateText({
+      ...aiModel('reasoning'),
+      prompt: rendered,
+    })
+
+    const parsed = clarifierResponseSchema.parse(extractJson(result.text))
+
+    if (parsed.status === 'clear') {
+      const value = (parsed as Record<string, unknown>)[opts.clearKey]
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error(`Clarifier "clear" response is missing "${opts.clearKey}"`)
+      }
+      return { kind: 'clear', statement: value, summary: parsed.summary }
+    }
+
+    return { kind: 'question', question: parsed.question, reason: parsed.reason }
+  } catch (err) {
+    await logAIError({ source: opts.errorSource, stage: opts.errorStage, message: (err as Error).message })
+    throw err
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Clarifier loop (clack transport)
+// -----------------------------------------------------------------------------
 
 export interface ClarifierLabels {
   /** Spinner text while the AI evaluates a round */
@@ -134,8 +256,9 @@ export interface ClarifyResult {
 /**
  * Run an AI clarifier loop until the input is well-formed, the user cancels,
  * or maxRounds is reached (then the current input is returned as-is). AI
- * failures also degrade to the current input rather than aborting.
- * Returns null only when the user cancels.
+ * failures degrade to the current input — or, when there is no input yet,
+ * fall back to asking the user directly rather than returning an empty
+ * statement. Returns null only when the user cancels.
  *
  * An empty initialInput runs in extract-or-ask mode: the first round has no
  * user statement, so the prompt must be written to either extract the answer
@@ -152,44 +275,48 @@ export async function runClarifierLoop(
   for (let round = 0; round < opts.maxRounds; round++) {
     opts.spinner.start(opts.labels.thinking)
 
-    const { output: rendered } = renderPromptFile(
-      promptContent,
-      opts.promptName,
-      opts.buildInput(currentInput, conversationHistory),
-    )
-
-    let outcome: RoundOutcome
+    let outcome: ClarifierRound
 
     try {
-      const result = await generateText({
-        ...aiModel('reasoning'),
-        prompt: rendered,
+      outcome = await runClarifierRound({
+        promptContent,
+        promptName: opts.promptName,
+        input: opts.buildInput(currentInput, conversationHistory),
+        clearKey: opts.clearKey,
+        errorSource: opts.errorSource,
+        errorStage: opts.errorStage,
+      })
+    } catch {
+      // Already logged by the round. With input in hand, degrade to it; in
+      // extract-or-ask mode there is nothing to degrade to — ask the user
+      // directly rather than handing an empty statement downstream.
+      if (currentInput.trim()) {
+        opts.spinner.stop('Clarification failed — keeping your description as written')
+        return { statement: currentInput, conversation: conversationHistory }
+      }
+
+      opts.spinner.stop('Clarification failed')
+
+      const manual = await p.text({
+        message: `${opts.labels.edit}\n`,
+        validate: (value) => {
+          if (!value.trim()) return 'Please provide an answer'
+        },
       })
 
-      const parsed = clarifierResponseSchema.parse(extractJson(result.text))
-
-      if (parsed.status === 'clear') {
-        const value = (parsed as Record<string, unknown>)[opts.clearKey]
-        if (typeof value !== 'string' || value.trim() === '') {
-          throw new Error(`Clarifier "clear" response is missing "${opts.clearKey}"`)
-        }
-        outcome = { kind: 'clear', statement: value, summary: parsed.summary }
-      } else {
-        outcome = { kind: 'question', question: parsed.question, reason: parsed.reason }
+      if (p.isCancel(manual)) {
+        return null
       }
-    } catch (err) {
-      opts.spinner.stop('Clarification failed')
-      await logAIError({ source: opts.errorSource, stage: opts.errorStage, message: (err as Error).message })
-      return { statement: currentInput, conversation: conversationHistory }
+
+      return { statement: (manual as string).trim(), conversation: conversationHistory }
     }
 
     if (outcome.kind === 'clear') {
       opts.spinner.stop(colors.green(opts.labels.clear))
 
+      const summaryLine = outcome.summary ? `\n\n  ${colors.dim(outcome.summary)}` : ''
       const confirmed = await p.confirm({
-        message: `${colors.bold(opts.labels.confirm)} ${outcome.statement}\n\n  ${colors.dim(
-          outcome.summary,
-        )}\n\n  Is this correct?`,
+        message: `${colors.bold(opts.labels.confirm)} ${outcome.statement}${summaryLine}\n\n  Is this correct?`,
         initialValue: true,
       })
 
@@ -211,7 +338,9 @@ export async function runClarifierLoop(
       }
 
       currentInput = edited as string
-      conversationHistory += `\nUser refined to: "${currentInput}"`
+      // Record what was rejected, not just the replacement — later rounds
+      // shouldn't re-propose a statement the user already turned down
+      conversationHistory += `\nAI proposed: "${outcome.statement}"\nUser revised to: "${currentInput}"`
       continue
     }
 
@@ -221,6 +350,9 @@ export async function runClarifierLoop(
     const answer = await p.text({
       message: `${outcome.question}\n`,
       placeholder: 'Your answer...',
+      validate: (value) => {
+        if (!value.trim()) return 'An empty answer spends a round — answer, or press ESC to cancel'
+      },
     })
 
     if (p.isCancel(answer)) {
@@ -232,5 +364,6 @@ export async function runClarifierLoop(
   }
 
   // Max rounds reached - proceed with what we have
+  p.log.message(colors.dim('Max clarification rounds reached — proceeding with the description as it stands'))
   return { statement: currentInput, conversation: conversationHistory }
 }
