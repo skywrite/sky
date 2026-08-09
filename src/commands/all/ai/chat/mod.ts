@@ -919,7 +919,36 @@ export default class AiChatTask extends Command {
 
       try {
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
-        const notebookTools = await createNotebookTools(tasks)
+        const notebookTools = await createNotebookTools(tasks, {
+          // Native question breakout: settle a tool's openQuestions in-place —
+          // Enter accepts the proposed answer, typing overrides, ESC accepts
+          // all remaining. No chat turns, no context pipeline.
+          onOpenQuestions: async (_toolName, questions) => {
+            output.log('')
+            output.log(
+              colors.bold(`${questions.length} question${questions.length === 1 ? '' : 's'} to settle`) +
+                colors.dim(' — Enter keeps the proposed answer, ESC keeps the rest'),
+            )
+
+            const answers: { question: string; answer: string }[] = []
+            for (let i = 0; i < questions.length; i++) {
+              const q = questions[i]
+              const message = `${q.question}${q.why ? `\n  ${colors.dim(q.why)}` : ''}\n`
+              const res = await p.text({ message, initialValue: q.proposed })
+
+              if (p.isCancel(res)) {
+                for (const rest of questions.slice(i)) {
+                  answers.push({ question: rest.question, answer: rest.proposed })
+                }
+                break
+              }
+
+              answers.push({ question: q.question, answer: (res as string).trim() || q.proposed })
+            }
+
+            return answers
+          },
+        })
         const allTools = { ...webTools, ...notebookTools }
         const toolApproval = createToolApprovalConfig()
 

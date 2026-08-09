@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import { gatherNotebookContext, runClarifierRound, runPromptJson } from '#commands/lib/interview.ts'
+import { gatherNotebookContext, runPromptJson } from '#commands/lib/interview.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -15,16 +15,26 @@ const params = {
     short: 's',
     required: true,
   }),
-  conversation: Flag.string('Relevant conversation excerpts: questions asked and answers given so far', {
+  conversation: Flag.string('Relevant conversation excerpts: what was discussed, answered, and settled', {
     optional: true,
   }),
 }
 
 type Params = InferParams<typeof params>
 
-type Result =
-  | { status: 'unclear'; question: string; reason?: string }
-  | { status: 'ready'; statement: string; title: string; slug: string; body: string; rel: string[] }
+interface OpenQuestion {
+  question: string
+  why?: string
+  proposed: string
+}
+
+type Result = {
+  title: string
+  name: string
+  body: string
+  rel: string[]
+  openQuestions: OpenQuestion[]
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -36,14 +46,20 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Constants
 // -----------------------------------------------------------------------------
 
-const CLARIFIER_FILE = new URL('./prompts/ideas-clarifier.prompt.md', import.meta.url).pathname
-const FORMAT_FILE = new URL('./prompts/ideas-format.prompt.md', import.meta.url).pathname
+const DRAFT_FILE = new URL('./prompts/ideas-draft.prompt.md', import.meta.url).pathname
 
-const formatSchema = z.object({
+const openQuestionSchema = z.object({
+  question: z.string().min(1),
+  why: z.string().optional(),
+  proposed: z.string().min(1),
+})
+
+const draftSchema = z.object({
   title: z.string().min(1),
   slug: z.string().min(1),
   body: z.string().min(1),
   rel: z.array(z.string()).nullish(),
+  openQuestions: z.array(openQuestionSchema).nullish(),
 })
 
 // -----------------------------------------------------------------------------
@@ -55,11 +71,11 @@ export default class IdeasClarifyTask extends Command {
   static override description: CommandDescription = {
     name: 'ideas:clarify',
     description:
-      'Judge whether an idea is well-formed and, once it is, return the formatted fields for ideas_create. Returns either a clarifying question to ask the user, or ready-to-write fields (title, slug, body, rel). Call again with refined inputs after each answer.',
+      'Draft a complete idea document from the conversation in one call. Returns create-ready fields (matching ideas_create params) plus openQuestions, each carrying a proposed answer. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Writes nothing.',
     descriptionLong: [
-      'Runs the idea clarifier and format prompts (the same ones behind',
-      'ideas:new) over conversation-supplied inputs. Writes nothing — pair',
-      'with ideas:create.',
+      'Runs the ideas-draft prompt over conversation-supplied inputs and',
+      'returns a full draft plus open questions with proposed defaults.',
+      'Writes nothing — pair with ideas:create.',
     ],
     usage: ['sky ideas:clarify "An AI coach that reviews my daily journal"'],
     params,
@@ -73,61 +89,41 @@ export default class IdeasClarifyTask extends Command {
     const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, statement)
 
     try {
-      const round = await runClarifierRound({
-        promptContent: await readTextFile(CLARIFIER_FILE),
-        promptName: 'ideas-clarifier.prompt.md',
-        input: {
-          clarifier: {
-            currentInput: statement,
-            conversationHistory: conversation || undefined,
-            notebookContext,
-          },
-        },
-        clearKey: 'idea',
-        errorSource: 'ideas:clarify',
-        errorStage: 'clarify',
-      })
-
-      if (round.kind === 'question') {
-        output.log(`Needs clarification: ${round.question}`)
-        return CommandResult.success({ status: 'unclear', question: round.question, reason: round.reason })
-      }
-
-      const formatted = await runPromptJson({
-        promptContent: await readTextFile(FORMAT_FILE),
-        promptName: 'ideas-format.prompt.md',
+      const draft = await runPromptJson({
+        promptContent: await readTextFile(DRAFT_FILE),
+        promptName: 'ideas-draft.prompt.md',
         input: {
           idea: {
-            description: round.statement,
-            clarificationContext: conversation || undefined,
+            statement,
+            conversation: conversation || undefined,
             notebookContext,
             relatedPaths: relCandidates.length > 0 ? relCandidates.join('\n') : undefined,
           },
         },
-        schema: formatSchema,
+        schema: draftSchema,
         errorSource: 'ideas:clarify',
-        errorStage: 'format',
+        errorStage: 'draft',
       })
 
-      const slug =
-        slugify(formatted.slug, { suggestedLength: 25, preserveCase: true }) ||
-        slugify(formatted.title, { suggestedLength: 25, preserveCase: true })
+      const name =
+        slugify(draft.slug, { suggestedLength: 25, preserveCase: true }) ||
+        slugify(draft.title, { suggestedLength: 25, preserveCase: true })
 
       // Only rel values picked from the offered candidate list survive
-      const rel = (formatted.rel ?? []).filter((r) => relCandidates.includes(r))
+      const rel = (draft.rel ?? []).filter((r) => relCandidates.includes(r))
+      const openQuestions = draft.openQuestions ?? []
 
-      output.log(`Ready: "${formatted.title}" (${slug})`)
+      output.log(`Draft ready: "${draft.title}" (${name}) — ${openQuestions.length} open question(s)`)
 
       return CommandResult.success({
-        status: 'ready',
-        statement: round.statement,
-        title: formatted.title,
-        slug,
-        body: formatted.body,
+        title: draft.title,
+        name,
+        body: draft.body,
         rel,
+        openQuestions,
       })
     } catch (err) {
-      return CommandResult.error(err as Error, 'Idea clarification failed')
+      return CommandResult.error(err as Error, 'Idea drafting failed')
     }
   }
 }

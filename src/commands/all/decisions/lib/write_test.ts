@@ -42,6 +42,48 @@ test('writeDecision - writes the document under pending/ keyed to notebook now',
   })
 })
 
+test('writeDecision - a made call lands resolved with the Decision section filled', async () => {
+  const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+
+  const result = await writeDecision(
+    {
+      name: 'Ship-Widget',
+      title: 'Ship Widget in the next release',
+      context: 'The build is done and gated on one signature.',
+      desiredOutcomes: 'Widget live without incident.',
+      decision: 'Widget ships flagged off; config flips on signature.',
+      now: NOW,
+      category: 'Professional Complete',
+    },
+    { decisionsDir, timeDir },
+  )
+
+  assert({
+    given: 'a decision that was already made',
+    should: 'land under resolved/, not pending/',
+    actual: result.file,
+    expected: path.join(decisionsDir, '2026', 'resolved', '03', 'Ship-Widget.md'),
+  })
+
+  const content = await readTextFile(result.file)
+  assert({ actual: content.includes('resolved: 2026-03-05'), expected: true })
+  assert({ actual: content.includes('target:'), expected: true })
+  assert({
+    given: 'the made call',
+    should: 'fill the Decision section',
+    actual: content.includes('Widget ships flagged off; config flips on signature.'),
+    expected: true,
+  })
+
+  assert({
+    given: 'a resolved-at-birth decision',
+    should: 'record a Decided day item, not Identified',
+    actual: result.dayItem,
+    expected: '09:15 > decisions/Ship-Widget -> Decided | Ship Widget in the next release',
+  })
+})
+
 test('writeDecision - refuses a slug collision instead of overwriting', async () => {
   const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
   const timeDir = await makeTempDir({ prefix: 'time-' })

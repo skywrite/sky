@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises'
+import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
@@ -155,6 +157,13 @@ export default class StreaksCreateTask extends Command {
     }
     if (written.dayItemWarning) {
       output.log(colors.yellow(`Warning: Could not add day item: ${written.dayItemWarning}`))
+    }
+
+    try {
+      openEditor([{ file: written.file }])
+      await delay(500)
+    } catch {
+      // Editor opening is best-effort
     }
 
     return CommandResult.success({
