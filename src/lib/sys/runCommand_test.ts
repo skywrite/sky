@@ -105,3 +105,42 @@ test('runCommand - handles multi-line output', async () => {
     expected: 'line1\nline2\nline3\n',
   })
 })
+
+test('runCommand - env option reaches the child', async () => {
+  const result = await runCommand('printenv', ['SKY_RUNCOMMAND_TEST_VAR'], {
+    env: { SKY_RUNCOMMAND_TEST_VAR: 'from-options' },
+  })
+
+  assert({
+    given: 'an env entry passed via options',
+    should: 'be visible to the child',
+    actual: result.stdout,
+    expected: 'from-options\n',
+  })
+})
+
+test('runCommand - env option merges over the process env, not replaces it', async () => {
+  const result = await runCommand('printenv', ['PATH'], {
+    env: { SKY_RUNCOMMAND_TEST_VAR: 'x' },
+  })
+
+  assert({
+    given: 'an env option alongside inherited variables',
+    should: 'still expose the inherited PATH',
+    actual: result.success && result.stdout.trim().length > 0,
+    expected: true,
+  })
+})
+
+test('runCommand - env option does not leak into the parent process', async () => {
+  await runCommand('printenv', ['SKY_RUNCOMMAND_TEST_VAR'], {
+    env: { SKY_RUNCOMMAND_TEST_VAR: 'x' },
+  })
+
+  assert({
+    given: 'a child-only env entry',
+    should: 'not appear in process.env afterwards',
+    actual: process.env.SKY_RUNCOMMAND_TEST_VAR,
+    expected: undefined,
+  })
+})

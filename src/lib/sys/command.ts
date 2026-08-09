@@ -27,14 +27,17 @@ export async function isCommandAvailable(commandName: string): Promise<boolean> 
  * Execute a command and return its output
  * @param commandName The command to execute
  * @param args Arguments to pass to the command
+ * @param options Optional settings; `env` entries are merged over the current process env
  * @returns Object with success status, stdout, and stderr
  */
 export async function runCommand(
   commandName: string,
   args: string[] = [],
+  options: { env?: Record<string, string> } = {},
 ): Promise<{ success: boolean; code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await execFile(commandName, args)
+    const execOptions = options.env ? { env: { ...process.env, ...options.env } } : {}
+    const { stdout, stderr } = await execFile(commandName, args, execOptions)
 
     return {
       success: true,
