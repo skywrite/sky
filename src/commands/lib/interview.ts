@@ -168,15 +168,25 @@ export interface ClarifierRoundOptions {
   errorStage: string
 }
 
+export interface PromptJsonOptions<T> {
+  /** Contents of the .prompt.md file */
+  promptContent: string
+  /** Prompt filename, for render error reporting */
+  promptName: string
+  input: RenderInput
+  /** Contract the model's JSON reply must satisfy */
+  schema: z.ZodType<T>
+  /** Source/stage recorded via logAIError on failure */
+  errorSource: string
+  errorStage: string
+}
+
 /**
- * One clarifier judgment: render the prompt, run the model, parse the
- * clear-or-question contract. Transport-free — the clack loop below and the
- * ai:chat tools share it, so both paths run the same prompts identically.
- *
+ * Render a prompt, run the model, and parse + validate its JSON reply.
  * Render warnings and all failures are logged via logAIError; failures
  * rethrow so each caller picks its own degrade policy.
  */
-export async function runClarifierRound(opts: ClarifierRoundOptions): Promise<ClarifierRound> {
+export async function runPromptJson<T>(opts: PromptJsonOptions<T>): Promise<T> {
   try {
     const { output: rendered, warnings } = renderPromptFile(opts.promptContent, opts.promptName, opts.input)
 
@@ -195,21 +205,42 @@ export async function runClarifierRound(opts: ClarifierRoundOptions): Promise<Cl
       prompt: rendered,
     })
 
-    const parsed = clarifierResponseSchema.parse(extractJson(result.text))
-
-    if (parsed.status === 'clear') {
-      const value = (parsed as Record<string, unknown>)[opts.clearKey]
-      if (typeof value !== 'string' || value.trim() === '') {
-        throw new Error(`Clarifier "clear" response is missing "${opts.clearKey}"`)
-      }
-      return { kind: 'clear', statement: value, summary: parsed.summary }
-    }
-
-    return { kind: 'question', question: parsed.question, reason: parsed.reason }
+    return opts.schema.parse(extractJson(result.text))
   } catch (err) {
     await logAIError({ source: opts.errorSource, stage: opts.errorStage, message: (err as Error).message })
     throw err
   }
+}
+
+/**
+ * One clarifier judgment: render the prompt, run the model, parse the
+ * clear-or-question contract. Transport-free — the clack loop below and the
+ * ai:chat tools share it, so both paths run the same prompts identically.
+ *
+ * Render warnings and all failures are logged via logAIError; failures
+ * rethrow so each caller picks its own degrade policy.
+ */
+export async function runClarifierRound(opts: ClarifierRoundOptions): Promise<ClarifierRound> {
+  const parsed = await runPromptJson({
+    promptContent: opts.promptContent,
+    promptName: opts.promptName,
+    input: opts.input,
+    schema: clarifierResponseSchema,
+    errorSource: opts.errorSource,
+    errorStage: opts.errorStage,
+  })
+
+  if (parsed.status === 'clear') {
+    const value = (parsed as Record<string, unknown>)[opts.clearKey]
+    if (typeof value !== 'string' || value.trim() === '') {
+      const err = new Error(`Clarifier "clear" response is missing "${opts.clearKey}"`)
+      await logAIError({ source: opts.errorSource, stage: opts.errorStage, message: err.message })
+      throw err
+    }
+    return { kind: 'clear', statement: value, summary: parsed.summary }
+  }
+
+  return { kind: 'question', question: parsed.question, reason: parsed.reason }
 }
 
 // -----------------------------------------------------------------------------

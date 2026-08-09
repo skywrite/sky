@@ -15,8 +15,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { SlugCollisionError, writeDecision } from './lib/write.ts'
+import { isParseableTarget, SlugCollisionError, writeDecision } from './lib/write.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -67,21 +66,6 @@ const formatSchema = z.object({
   outcomesSummary: z.string(),
   rel: z.array(z.string()).nullish(),
 })
-
-/**
- * Mirror of DecisionDocument's target parsing ("YYYY-MM-DD" or
- * "YYYY-MM-DD HH:MM") — a value that fails here would be written to YAML
- * only to silently read back as undefined ever after.
- */
-function isParseableTarget(value: string): boolean {
-  try {
-    if (value.includes(' ')) new PlainDateTime(value)
-    else new PlainDate(value)
-    return true
-  } catch {
-    return false
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Command
