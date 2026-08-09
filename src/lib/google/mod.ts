@@ -125,3 +125,19 @@ export {
   meetingDropReason,
 } from './calendar.ts'
 export type { CalendarAttendee, CalendarEvent } from './calendar.ts'
+
+export {
+  GMAIL_API_URL,
+  GMAIL_SCOPE,
+  getAttachment,
+  getMessage,
+  getThread,
+  hasGmailScope,
+  listLabels,
+  listThreads,
+  modifyThread,
+  resolveLabelId,
+  threadIdFromDecimal,
+  threadIdToDecimal,
+} from './gmail.ts'
+export type { GmailAddress, GmailAttachment, GmailLabel, GmailMessage, GmailThreadRef } from './gmail.ts'
