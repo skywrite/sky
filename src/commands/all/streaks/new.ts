@@ -1,27 +1,27 @@
-import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { z } from 'zod'
+import { type ClarifierRound, gatherNotebookContext, runClarifierRound } from '#commands/lib/interview.ts'
+import { categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STREAKS } from '#config'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
-import { loadAllStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { promptMultiline } from '#lib/tui/MultilineTextPrompt.tsx'
 import { textSpinner, type TextSpinner } from '#lib/tui/textSpinner.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
-import StreakDocument, { type StreakSchedule } from '#shared/models/Streak/mod.ts'
-import { fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import type { StreakSchedule } from '#shared/models/Streak/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import * as dateFns from '#universal/dates/dateFns/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import { editText, stripEmbeddedComments } from './lib/editText.ts'
 import { plannedEndAfter, type PlannedEndUnit } from './lib/plannedEnd.ts'
+import { SlugCollisionError, TitleCollisionError, writeStreak } from './lib/write.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -36,11 +36,7 @@ const params = {
     short: 's',
     optional: true,
   }),
-  category: Flag.string('Category for day item: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Personal Complete',
-  }),
+  category: categoryComplete({ defaultCategory: 'Personal' }),
 }
 
 type Params = InferParams<typeof params>
@@ -69,9 +65,23 @@ const MAX_CLARIFICATION_ROUNDS = 3
 // Helpers
 // -----------------------------------------------------------------------------
 
-type ClarifierResult =
-  | { status: 'clear'; habit: string; summary: string }
-  | { status: 'unclear'; question: string; reason: string }
+// AI responses are validated against the prompt contracts so a malformed
+// reply degrades loudly instead of writing a half-empty document.
+
+const reviewSchema = z.union([
+  z.object({ status: z.literal('tight'), note: z.string().optional() }),
+  z.object({
+    status: z.literal('questions'),
+    questions: z.array(z.object({ question: z.string().min(1), why: z.string() })),
+  }),
+])
+
+const formatSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().min(1),
+  why: z.string().min(1),
+  rel: z.array(z.string()).nullish(),
+})
 
 /**
  * Echo captured input (pastes expanded) right below the prompt, so the exact
@@ -88,57 +98,54 @@ function echoCaptured(log: (msg: string) => void, text: string): void {
 
 /**
  * Run the streak clarifier until the habit is binary, small, and controllable.
- * Returns the clarified habit statement, or null if the user cancels.
- * Multi-line answers (pasted rule blocks) are collected into capturedBlocks
- * so the details step can seed the editor with them.
+ * The judgment inside each round is the shared runClarifierRound; the shell
+ * stays streaks-specific because answers use the Ink multiline prompt (pasted
+ * rule blocks arrive intact and are collected into capturedBlocks to seed the
+ * details editor). Returns the clarified habit statement, or null on cancel.
  */
 async function clarifyHabit(
   initialInput: string,
   spinner: TextSpinner,
   log: (msg: string) => void,
   capturedBlocks: string[],
+  notebookContext?: string,
 ): Promise<string | null> {
-  const clarifierContent = await readTextFile(CLARIFIER_FILE)
+  const promptContent = await readTextFile(CLARIFIER_FILE)
   let currentInput = initialInput
-  let conversationHistory = ''
+  let conversationHistory = `User's initial description: "${initialInput}"`
 
   for (let round = 0; round < MAX_CLARIFICATION_ROUNDS; round++) {
     spinner.start('Thinking about your habit...')
 
-    const clarifierInput: RenderInput = {
-      clarifier: {
-        currentInput,
-        conversationHistory: conversationHistory || undefined,
-      },
-    }
-
-    const { output: renderedClarifier } = renderPromptFile(
-      clarifierContent,
-      'streaks-clarifier.prompt.md',
-      clarifierInput,
-    )
-
-    let clarifierResult: ClarifierResult
+    let outcome: ClarifierRound
 
     try {
-      const result = await generateText({
-        ...aiModel('reasoning'),
-        prompt: renderedClarifier,
+      outcome = await runClarifierRound({
+        promptContent,
+        promptName: 'streaks-clarifier.prompt.md',
+        input: {
+          clarifier: {
+            currentInput,
+            conversationHistory: conversationHistory || undefined,
+            notebookContext,
+          },
+        },
+        clearKey: 'habit',
+        errorSource: 'streaks:new',
+        errorStage: 'clarify',
       })
-
-      clarifierResult = extractJson<typeof clarifierResult>(result.text)
     } catch {
-      spinner.stop('Clarification failed')
+      // Already logged by the round
+      spinner.stop('Clarification failed — keeping your description as written')
       return currentInput
     }
 
-    if (clarifierResult.status === 'clear') {
+    if (outcome.kind === 'clear') {
       spinner.stop(colors.green('Habit is streak-worthy'))
 
+      const summaryLine = outcome.summary ? `\n\n  ${colors.dim(outcome.summary)}` : ''
       const confirmed = await p.confirm({
-        message: `${colors.bold('Habit:')} ${clarifierResult.habit}\n\n  ${colors.dim(
-          clarifierResult.summary,
-        )}\n\n  Is this correct?`,
+        message: `${colors.bold('Habit:')} ${outcome.statement}${summaryLine}\n\n  Is this correct?`,
         initialValue: true,
       })
 
@@ -147,7 +154,7 @@ async function clarifyHabit(
       }
 
       if (confirmed) {
-        return clarifierResult.habit
+        return outcome.statement
       }
 
       // clack p.text on purpose: this edits the one-line habit statement, and
@@ -156,7 +163,7 @@ async function clarifyHabit(
       // reads under bun). Multi-line pasting lives in the answer prompts.
       const edited = await p.text({
         message: 'How would you describe the habit?\n',
-        initialValue: clarifierResult.habit,
+        initialValue: outcome.statement,
       })
 
       if (p.isCancel(edited)) {
@@ -164,15 +171,17 @@ async function clarifyHabit(
       }
 
       currentInput = edited as string
-      conversationHistory += `\nUser refined to: "${currentInput}"`
+      // Record what was rejected, not just the replacement — later rounds
+      // shouldn't re-propose a statement the user already turned down
+      conversationHistory += `\nAI proposed: "${outcome.statement}"\nUser revised to: "${currentInput}"`
       continue
     }
 
     // Habit is unclear - ask the clarifying question
-    spinner.stop(colors.dim(clarifierResult.reason))
+    spinner.stop(colors.dim(outcome.reason))
 
     const answer = await promptMultiline({
-      message: clarifierResult.question,
+      message: outcome.question,
       placeholder: 'Your answer - pasted blocks arrive intact...',
     })
 
@@ -183,20 +192,13 @@ async function clarifyHabit(
     echoCaptured(log, answer)
     if (answer.includes('\n')) capturedBlocks.push(answer)
 
-    conversationHistory += `\nAI asked: "${clarifierResult.question}"\nUser answered: "${answer}"`
+    conversationHistory += `\nAI asked: "${outcome.question}"\nUser answered: "${answer}"`
     currentInput = `${currentInput}\n\nClarification: ${answer}`
   }
 
   // Max rounds reached - proceed with what we have
   return currentInput
 }
-
-interface ReviewQuestion {
-  question: string
-  why: string
-}
-
-type ReviewResult = { status: 'tight'; note?: string } | { status: 'questions'; questions: ReviewQuestion[] }
 
 /**
  * Review the detailed rules for the gaps that kill streaks: loopholes,
@@ -209,7 +211,7 @@ type ReviewResult = { status: 'tight'; note?: string } | { status: 'questions'; 
 async function reviewDetails(habit: string, schedule: string, details: string, spinner: TextSpinner): Promise<string> {
   spinner.start('Reviewing the rules...')
 
-  let review: ReviewResult
+  let review: z.infer<typeof reviewSchema>
   try {
     const reviewContent = await readTextFile(REVIEW_FILE)
     const { output: rendered } = renderPromptFile(reviewContent, 'streaks-review.prompt.md', {
@@ -221,13 +223,14 @@ async function reviewDetails(habit: string, schedule: string, details: string, s
       prompt: rendered,
     })
 
-    review = extractJson<typeof review>(result.text)
-  } catch {
+    review = reviewSchema.parse(extractJson(result.text))
+  } catch (err) {
+    await logAIError({ source: 'streaks:new', stage: 'review', message: (err as Error).message })
     spinner.stop('Review unavailable - keeping the rules as written')
     return details
   }
 
-  if (review.status !== 'questions' || !Array.isArray(review.questions) || review.questions.length === 0) {
+  if (review.status !== 'questions' || review.questions.length === 0) {
     const note = review.status === 'tight' && review.note ? `  ${colors.dim(review.note)}` : ''
     spinner.stop(colors.green('Rules look tight') + note)
     return details
@@ -286,8 +289,8 @@ export default class StreaksNewTask extends Command {
     params,
   }
 
-  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output } = context
+  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    const { output, config } = context
     const { name: overrideName, schedule: scheduleFlag, category } = args
 
     p.intro(colors.bold(colors.cyan('New Streak')))
@@ -312,15 +315,21 @@ export default class StreaksNewTask extends Command {
     echoCaptured(log, initialDescription)
     if (initialDescription.includes('\n')) capturedBlocks.push(initialDescription)
 
-    // Step 2: Clarify until streak-worthy
-    const clarifiedHabit = await clarifyHabit(initialDescription, spinner, log, capturedBlocks)
+    // Step 2: Gather notebook context
+    spinner.start('Gathering context...')
+    const baseDir = config.DIR_BASE as string
+    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, initialDescription)
+    spinner.stop(notebookContext ? colors.dim('Context loaded') : colors.dim('No additional context found'))
+
+    // Step 3: Clarify until streak-worthy
+    const clarifiedHabit = await clarifyHabit(initialDescription, spinner, log, capturedBlocks, notebookContext)
 
     if (clarifiedHabit === null) {
       p.cancel('Cancelled')
       return CommandResult.fail('User cancelled')
     }
 
-    // Step 3: Schedule
+    // Step 4: Schedule
     let schedule: StreakSchedule
     if (scheduleFlag === 'daily' || scheduleFlag === 'weekdays') {
       schedule = scheduleFlag
@@ -342,7 +351,7 @@ export default class StreaksNewTask extends Command {
       schedule = selected as StreakSchedule
     }
 
-    // Step 4: When does it start? Creation day and start day are independent -
+    // Step 5: When does it start? Creation day and start day are independent -
     // creating on a Sunday for a Monday start is the normal case.
     const now = await fetchNow()
     const today = now.plainDateTime.plainDate
@@ -389,7 +398,7 @@ export default class StreaksNewTask extends Command {
       startDay = new PlainDate((dateInput as string).trim())
     }
 
-    // Step 5: When does it end? (planned end, stored as the inclusive `end` date)
+    // Step 6: When does it end? (planned end, stored as the inclusive `end` date)
     let end: PlainDate | undefined
     const endKind = await p.select({
       message: 'When does it end?',
@@ -450,7 +459,7 @@ export default class StreaksNewTask extends Command {
       output.log(colors.dim(`  Tracked ${startDay.ymd} through ${end.ymd}`))
     }
 
-    // Step 6: Optional freeform definition (the detailed rules), via the editor.
+    // Step 7: Optional freeform definition (the detailed rules), via the editor.
     // Blocks pasted during clarification become the seed - what you pasted is
     // what lands in the rule doc, ready to review.
     let details: string | undefined
@@ -491,12 +500,12 @@ export default class StreaksNewTask extends Command {
       }
     }
 
-    // Step 7: AI review of the rules - questions that make the streak completable
+    // Step 8: AI review of the rules - questions that make the streak completable
     if (details) {
       details = await reviewDetails(clarifiedHabit, schedule, details, spinner)
     }
 
-    // Step 8: Format with AI - title, slug, why
+    // Step 9: Format with AI - title, slug, why
     spinner.start('Formatting your streak...')
 
     const formatContent = await readTextFile(FORMAT_FILE)
@@ -505,12 +514,13 @@ export default class StreaksNewTask extends Command {
         description: clarifiedHabit,
         schedule,
         details,
+        relatedPaths: relCandidates.length > 0 ? relCandidates.join('\n') : undefined,
       },
     }
 
     const { output: renderedFormat } = renderPromptFile(formatContent, 'streaks-format.prompt.md', formatInput)
 
-    let aiResponse: { title: string; slug: string; why: string }
+    let aiResponse: z.infer<typeof formatSchema>
 
     try {
       const result = await generateText({
@@ -518,80 +528,73 @@ export default class StreaksNewTask extends Command {
         prompt: renderedFormat,
       })
 
-      aiResponse = extractJson<typeof aiResponse>(result.text)
+      aiResponse = formatSchema.parse(extractJson(result.text))
       spinner.stop('Streak formatted')
     } catch (err) {
       spinner.stop('Failed to format streak')
+      await logAIError({ source: 'streaks:new', stage: 'format', message: (err as Error).message })
       output.error(`AI Error: ${(err as Error).message}`)
       return CommandResult.error(err as Error, 'Failed to format streak with AI')
     }
 
-    // Step 9: Final name + collision checks
-    const finalName = overrideName ?? aiResponse.slug ?? slugify(clarifiedHabit, { suggestedLength: 20 })
-    const title = aiResponse.title ?? finalName
+    // Step 10: Final name — every source passes through slugify so an AI- or
+    // user-supplied value can't smuggle path separators into the filename
+    const finalName =
+      (overrideName ? slugify(overrideName, { preserveCase: true }) : '') ||
+      slugify(aiResponse.slug, { suggestedLength: 20 }) ||
+      slugify(clarifiedHabit, { suggestedLength: 20 })
 
-    const existing = await loadAllStreaks()
-    const nameTaken = existing.find(({ streak }) => streak.name === finalName)
-    if (nameTaken) {
-      output.error(`A streak named "${finalName}" already exists (${nameTaken.status}). Pick another with --name.`)
-      return CommandResult.fail(`Streak "${finalName}" already exists`)
+    if (!finalName) {
+      return CommandResult.fail('Could not derive a usable slug — rerun with --name')
     }
 
-    // Titles are the join key in day files - they must be unique among active streaks
-    const titleTaken = existing.find(({ streak, status }) => status === 'active' && streak.title === title)
-    if (titleTaken) {
-      output.error(`Active streak "${titleTaken.streak.name}" already uses the title "${title}".`)
-      return CommandResult.fail(`Title "${title}" already in use`)
-    }
+    const title = aiResponse.title
 
-    // Step 10: Create and write the rule doc
-    const streak = StreakDocument.create({
-      name: finalName,
-      title,
-      schedule,
-      start: startDay,
-      end,
-      why: aiResponse.why,
-      details,
-    })
+    // Only rel values the AI picked from the offered candidate list survive
+    const rel = (aiResponse.rel ?? []).filter((r) => relCandidates.includes(r))
 
-    const streakPath = path.join(DIR_STREAKS, 'active', `${finalName}.md`)
-    if (await exists(streakPath)) {
-      output.error(`File already exists: ${streakPath}`)
-      return CommandResult.fail('Streak file already exists')
-    }
-
-    await outputFile(streakPath, streak.toMarkdown())
-    output.log(colors.green(`\nCreated streak: ${streakPath}`))
-
-    // Step 11: Stamp the start day's file so the item shows up immediately -
-    // its day file may already exist even for a future start (week:new runs ahead)
+    // Step 11: Create the rule doc, stamp the start day, add the day item
+    let written
     try {
-      const dayModel = await readDay(startDay)
-      const stamped = stampStreaksList(dayModel, [streak], startDay)
-      if (stamped !== dayModel) {
-        await writeDay(stamped)
-        output.log(colors.gray(`Stamped "${title}" into the ${startDay.ymd} Streaks list`))
+      written = await writeStreak({
+        name: finalName,
+        title,
+        schedule,
+        start: startDay,
+        end,
+        why: aiResponse.why,
+        details,
+        rel,
+        now,
+        category,
+      })
+    } catch (err) {
+      if (err instanceof SlugCollisionError || err instanceof TitleCollisionError) {
+        output.error(`${err.message}. Pick another with --name.`)
+        return CommandResult.fail(err.message)
       }
-    } catch {
+      throw err
+    }
+
+    output.log(colors.green(`\nCreated streak: ${written.file}`))
+
+    if (written.stamped) {
+      output.log(colors.gray(`Stamped "${title}" into the ${startDay.ymd} Streaks list`))
+    } else if (written.stampWarning) {
       output.log(
         colors.yellow(`Note: no day file for ${startDay.ymd} yet - the item appears via week:new or day:start`),
       )
     }
 
-    // Step 12: Add day item (on the creation day - starting later is part of the record)
-    const startsNote = startDay.ymd === today.ymd ? '' : ` (starts ${startDay.ymd})`
-    const dayItem = `${now.plainDateTime.time} > streaks/${finalName} -> Started | ${title}${startsNote}`
-    try {
-      await writeDayItems(today, category, dayItem)
-      output.log(colors.gray(`Added to ${category}: ${dayItem}`))
-    } catch (err) {
-      output.log(colors.yellow(`Warning: Could not add day item: ${(err as Error).message}`))
+    if (written.dayItemWarning) {
+      output.log(colors.yellow(`Warning: Could not add day item: ${written.dayItemWarning}`))
+    } else {
+      output.log(colors.gray(`Added to ${category}: ${written.dayItem}`))
     }
 
-    // Step 13: Open in editor
+    // Step 12: Open in editor
     try {
-      openEditor([{ file: streakPath }])
+      openEditor([{ file: written.file }])
       await delay(500)
     } catch {
       // Editor opening is best-effort
@@ -599,6 +602,6 @@ export default class StreaksNewTask extends Command {
 
     p.outro(colors.green(`Streak "${finalName}" created`))
 
-    return CommandResult.success({ file: streakPath, name: finalName })
+    return CommandResult.success({ file: written.file, name: finalName })
   }
 }
