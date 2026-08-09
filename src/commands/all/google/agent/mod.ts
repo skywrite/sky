@@ -33,14 +33,17 @@ import type { MissionFile } from './lib/tools.ts'
 
 const MAX_STEPS = 48
 /**
- * A live stream ticks constantly (reasoning/text deltas, tool events), tool
- * calls answer within their own 3-minute ceiling, and the Anthropic provider
- * itself already aborts and re-issues a wedged request after 90s of network
- * silence (up to 3 tries ≈ 270s, invisible to this stream) — so a silent
- * stretch this long means even the transport guard gave up. Abort and report
- * what completed instead of spinning forever.
+ * The watchdog counts EVERY stream frame: includeRawChunks surfaces the
+ * provider's raw SSE events, so Anthropic's keep-alive pings re-arm it even
+ * while the model thinks silently for minutes (deep thinking streams no
+ * visible parts, but pings keep flowing). A stretch this long without even a
+ * ping means the transport died beyond what the provider's own idle guard
+ * (90s × 3 tries) could recover. Abort and report what completed instead of
+ * spinning forever.
  */
 const STREAM_STALL_MS = 360_000
+/** A visibly quiet stream gets a progress line at each multiple of this. */
+const HEARTBEAT_MS = 120_000
 const MAX_DATA_CHARS = 262_144
 const MAX_MISSION_IMAGES = 24
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif)$/i
@@ -282,6 +285,9 @@ export default class GoogleAgentTask extends Command {
         tools,
         stopWhen: isStepCount(MAX_STEPS),
         abortSignal: abort.signal,
+        // Raw SSE frames (pings included) feed the stall watchdog, so a long
+        // silent think is not mistaken for a dead stream.
+        includeRawChunks: true,
       })
       let stalled = false
       let watchdog: ReturnType<typeof setTimeout> | undefined
@@ -296,10 +302,33 @@ export default class GoogleAgentTask extends Command {
       let steps = 0
       let finishedSteps = 0
       let lastEvent = 'none'
+      let rawSinceVisible = 0
+      let lastVisibleAt = Date.now()
+      let heartbeatsLogged = 0
+      // Deep thinking streams nothing visible for minutes — show life so a
+      // long think does not read as a hang.
+      const heartbeat = setInterval(() => {
+        const quietMs = Date.now() - lastVisibleAt
+        const bucket = Math.floor(quietMs / HEARTBEAT_MS)
+        if (bucket <= 0) {
+          heartbeatsLogged = 0
+        } else if (bucket > heartbeatsLogged) {
+          heartbeatsLogged = bucket
+          log(`Still working — model thinking (${Math.round(quietMs / 60_000)}m quiet)`)
+        }
+      }, 30_000)
       try {
         arm()
         for await (const part of stream.fullStream) {
           arm()
+          // Raw frames (SSE pings and friends) prove the transport is alive;
+          // they re-arm the watchdog but are not mission progress.
+          if (part.type === 'raw') {
+            rawSinceVisible++
+            continue
+          }
+          rawSinceVisible = 0
+          lastVisibleAt = Date.now()
           lastEvent = part.type
           if (part.type === 'finish-step') finishedSteps++
         }
@@ -308,13 +337,14 @@ export default class GoogleAgentTask extends Command {
       } catch (err) {
         if (!stalled) throw err
         log(`No stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted as stalled`)
-        void logAIError({
+        await logAIError({
           source: 'google:agent',
           stage: 'stream-stall',
-          message: `no stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted after ${finishedSteps} completed step(s); last stream event: ${lastEvent}`,
+          message: `no stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted after ${finishedSteps} completed step(s); last visible event: ${lastEvent}; raw frames after it: ${rawSinceVisible}`,
         })
       } finally {
         clearTimeout(watchdog)
+        clearInterval(heartbeat)
       }
       // A mission that hits the step cap (or stalls) ends with no final
       // text — the user must still get every file and URL it touched.
