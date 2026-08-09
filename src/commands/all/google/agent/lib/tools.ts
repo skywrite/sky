@@ -91,7 +91,37 @@ function track(
   state.onFileTracked?.(tracked)
 }
 
-const READ_LIMIT_CHARS = 40_000
+export const READ_LIMIT_CHARS = 40_000
+
+export interface ReadPage {
+  content: string
+  /** Clamped offset the page actually starts at. */
+  start: number
+  /** One past the last content char returned (the next page's offset). */
+  end: number
+  /** True when the page reaches the end of the file. */
+  complete: boolean
+}
+
+/**
+ * Slice one read_file page out of an export. A truncated page carries a
+ * self-directing continuation marker so the model knows there is more and
+ * exactly how to get it. Returns null for an offset past the end.
+ */
+export function paginateRead(full: string, offset = 0): ReadPage | null {
+  const start = Math.max(0, Math.floor(offset))
+  if (start > 0 && start >= full.length) return null
+  const end = Math.min(full.length, start + READ_LIMIT_CHARS)
+  const complete = end >= full.length
+  const body = full.slice(start, end)
+  return {
+    content: complete ? body : `${body}\n\n[Truncated — ${full.length} chars total; continue with offset: ${end}]`,
+    start,
+    end,
+    complete,
+  }
+}
+
 /** Ceiling for a doc's rendered PDF sent to the vision reviewer (Anthropic's request cap is 32MB). */
 const MAX_DOC_PDF_BYTES = 15 * 1024 * 1024
 
@@ -186,21 +216,30 @@ export function createAgentTools(deps: {
     },
 
     read_file: {
-      description: 'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text.',
-      inputSchema: jsonSchema<{ fileId: string }>({
+      description:
+        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs.',
+      inputSchema: jsonSchema<{ fileId: string; offset?: number }>({
         type: 'object',
-        properties: { fileId: { type: 'string' } },
+        properties: {
+          fileId: { type: 'string' },
+          offset: { type: 'number', description: 'Character offset a truncated read told you to continue from' },
+        },
         required: ['fileId'],
       }),
-      execute: async ({ fileId }: { fileId: string }) => {
+      execute: async ({ fileId, offset }: { fileId: string; offset?: number }) => {
         try {
           const file = await getFile(client, fileId)
           const kind = workspaceKind(file.mimeType)
           if (!kind) return `Error: "${file.name}" is not a Doc/Sheet/Slides file (${file.mimeType})`
           const full = await exportFile(client, file.id, EXPORT_MIME[kind])
-          const content = full.length > READ_LIMIT_CHARS ? `${full.slice(0, READ_LIMIT_CHARS)}\n\n[Truncated]` : full
-          log(`Read "${file.name}" (${kind}, ${full.length} chars)`)
-          return { id: file.id, name: file.name, kind, content }
+          const page = paginateRead(full, offset)
+          if (!page) return `Error: offset ${offset} is past the end — "${file.name}" is ${full.length} chars`
+          log(
+            page.start > 0
+              ? `Read "${file.name}" (${kind}, chars ${page.start}-${page.end} of ${full.length})`
+              : `Read "${file.name}" (${kind}, ${full.length} chars${page.complete ? '' : `, first ${page.end} returned`})`,
+          )
+          return { id: file.id, name: file.name, kind, content: page.content }
         } catch (err) {
           return toolError(err)
         }
