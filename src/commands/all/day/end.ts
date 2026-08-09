@@ -54,9 +54,6 @@ export default class DayEndTask extends Command {
 
     await writeDay(dayObj)
 
-    // Delete the day from Supabase
-    await tasks.run('supabase:days:delete', { from: dayYMD })
-
     // Add entry to current day
     const dayItem = `${notebookNow.plainDateTime.time} > Notebook -> ${dayYMD} End`
     await writeDayItems(notebookNow.plainDateTime.plainDate, 'Professional Complete', dayItem)

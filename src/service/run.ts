@@ -13,7 +13,6 @@ import { createJsonResponse } from './response.ts'
 import { processFileUpdate } from './scanner/walkDirs.ts'
 import { createServer } from './server.ts'
 import store from './store.ts'
-import { isDayFile, scheduleDayFileSync, subscribeToMobileChanges } from './sync/supabase.ts'
 
 // First thing, before anything can log: route this process's records to the
 // service stream. Under launchd stdout is not a TTY, so records go to the
@@ -111,7 +110,6 @@ export default async function run() {
   const scanStarted = performance.now()
   await server.scan()
   boot.set({ scanMs: Math.round(performance.now() - scanStarted) })
-  subscribeToMobileChanges(config)
 
   // Heartbeat: periodic cadence runner (follow checks, inbox scans, etc.)
   // See docs/ideas/heartbeat-system.md for design
@@ -361,11 +359,6 @@ async function watchFiles() {
     }
     if (tagScoresUpdated) {
       store.emitTagScoresUpdated()
-    }
-
-    // Trigger Supabase sync for day file changes (debounced)
-    if (isDayFile(ret.file, config.DIR_TIME)) {
-      scheduleDayFileSync(ret.file, config)
     }
   }
 }
