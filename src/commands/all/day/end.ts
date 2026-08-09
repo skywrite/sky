@@ -30,6 +30,9 @@ export default class DayEndTask extends Command {
     // Get YMD format for display
     const dayYMD = day.ymd
 
+    // Warn about unlogged meetings while the day can still be amended.
+    await tasks.run('day:meeting:check', { day })
+
     let dayObj = await readDay(day)
 
     dayObj = dayObj.setEnded(notebookNow) // Pass full ZonedDateTime to preserve timezone

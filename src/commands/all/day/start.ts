@@ -84,6 +84,9 @@ export default class DayStartTask extends Command {
     // Wake the heartbeat in case it's sleeping (best-effort)
     fetch(`http://localhost:${PORT_SERVER}/heartbeat/wake`, { method: 'POST' }).catch(() => {})
 
+    // Yesterday's meetings, checked before today starts: amending is cheapest now
+    await tasks.run('day:meeting:check', { day: (day ?? new PlainDate()).addDays(-1) })
+
     // Run configurable startup commands in parallel (day.start in config)
     const startResults = await Promise.allSettled(
       DAY_START_COMMANDS.map((cmd) =>
