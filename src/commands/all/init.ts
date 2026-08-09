@@ -6,10 +6,11 @@ import { parse as parseJSONC } from 'jsonc-parser'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
 import { DIR_CODE, DIR_CODE_SERVICES, DIR_USER_SERVICES, SKY_CONFIG_DIR, SKY_CONFIG_PATH } from '#config'
-import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
+import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { exists, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { buildManifest } from './cli/_commandsManifest.ts'
 import { parseWhoami } from './slack/cli/lib/agent-slack/mod.ts'
+import { runAgentSlack } from './slack/lib/agentSlack.ts'
 
 const CONTENT_DIRS = [
   'time',
@@ -244,7 +245,7 @@ export default class InitCommand extends Command {
     s.start('Detecting agent-slack CLI...')
     let slackWorkspace = preservedSlackWorkspace
     if (await isCommandAvailable('agent-slack')) {
-      const whoami = await runCommand('agent-slack', ['auth', 'whoami'])
+      const whoami = await runAgentSlack(['auth', 'whoami'])
       const parsed = whoami.success ? parseWhoami(whoami.stdout) : undefined
       const detected = parsed?.defaultWorkspaceUrl ?? parsed?.workspaceUrls[0]
       if (detected) slackWorkspace = detected
