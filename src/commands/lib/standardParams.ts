@@ -112,15 +112,20 @@ function normalizeCategory(val: string): string {
   return known ?? base
 }
 
+export interface CategoryCompleteOptions {
+  /** Category used when the flag is omitted (default "Professional") */
+  defaultCategory?: 'Personal' | 'Professional'
+}
+
 /**
  * Category flag for complete operations. Defaults to 'Professional Complete'.
  * Use this with APIs that expect the full list name (e.g., writeDayItems).
  */
-export function categoryComplete() {
+export function categoryComplete(opts?: CategoryCompleteOptions) {
   return Flag.string('Category: "Personal" or "Professional"', {
     short: 'c',
     parse: (val: string) => `${normalizeCategory(val)} Complete`,
-    default: () => 'Professional Complete',
+    default: () => `${opts?.defaultCategory ?? 'Professional'} Complete`,
   })
 }
 

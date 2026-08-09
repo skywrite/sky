@@ -157,6 +157,8 @@ export default class StreakDocument extends Document {
     details?: string
     tags?: string | TagSet
     rel?: string[]
+    /** YYYY-MM-DD to stamp created/updated with (e.g. notebook time) instead of the system clock */
+    createdOn?: string
   }): StreakDocument {
     const title = input.title ?? input.name
     const start = input.start ?? PlainDate.today()
@@ -176,7 +178,7 @@ export default class StreakDocument extends Document {
     const markdown = StreakDocument.createTemplate({ title, why: input.why, details: input.details })
 
     let streak = new StreakDocument(yaml, markdown)
-    streak = streak.ensureCreatedUpdated() as StreakDocument
+    streak = streak.ensureCreatedUpdated(input.createdOn) as StreakDocument
 
     return streak
   }

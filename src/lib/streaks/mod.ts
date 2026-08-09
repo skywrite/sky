@@ -25,8 +25,8 @@ export interface LoadedStreak {
 }
 
 /** Load all streak rule docs of one status, sorted by name for stable stamping order. */
-export async function loadStreaks(status: StreakStatus = 'active'): Promise<LoadedStreak[]> {
-  const dir = path.join(DIR_STREAKS, status)
+export async function loadStreaks(status: StreakStatus = 'active', baseDir = DIR_STREAKS): Promise<LoadedStreak[]> {
+  const dir = path.join(baseDir, status)
   if (!(await exists(dir))) return []
 
   const loaded: LoadedStreak[] = []
@@ -43,8 +43,8 @@ export async function loadStreaks(status: StreakStatus = 'active'): Promise<Load
   return loaded
 }
 
-export async function loadAllStreaks(): Promise<LoadedStreak[]> {
-  return [...(await loadStreaks('active')), ...(await loadStreaks('archived'))]
+export async function loadAllStreaks(baseDir = DIR_STREAKS): Promise<LoadedStreak[]> {
+  return [...(await loadStreaks('active', baseDir)), ...(await loadStreaks('archived', baseDir))]
 }
 
 /**
