@@ -7,6 +7,10 @@ const FIXTURES: [string, string[]][] = [
   ['No reference here', []],
   ['Multiple [first][first-ref] and [second][second-ref]', ['first-ref', 'second-ref']],
   ['Complex case with [inline][] and [text][ref] and [another-ref][]', ['inline', 'ref', 'another-ref']],
+  // Whitespace-only labels are not reference links — pasted rich text emits them
+  ['Pasted numbering {[1][ ][ Review the list', []],
+  ['Blank shortcut [ ][] stays out', []],
+  ['Mixed [1][ ] and [real][ref]', ['ref']],
 ]
 
 test('Document#extractReferenceLabels', function () {
