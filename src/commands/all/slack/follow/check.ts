@@ -10,7 +10,7 @@ import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, convertToNotebookTimezone, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
 
 const params = {
   file: Flag.string('Check a specific follow by filename (skip due filtering)', { short: 'f' }),
@@ -224,11 +224,16 @@ export default class SlackFollowCheckTask extends Command {
           output.log(`[check] ${fileName}: ${newReplies.length} new replies`)
           withActivity.push({ fileName, newReplies: newReplies.length })
 
-          // 4a. Update lastChecked + lastActivity, reset checkInterval (activity resets backoff)
+          // 4a. Update lastChecked + lastActivity, reset checkInterval —
+          // lastActivity is the newest reply's real time, not the check time:
+          // a stale reply discovered late must not look like fresh activity
           const checkedAt = (await fetchNow()).plainDateTime
-          const newInterval = Follow.backoffInterval(checkedAt, checkedAt)
+          const lastActivityAt = latestReply.timeLabel
+            ? await convertToNotebookTimezone(latestReply.timeLabel)
+            : checkedAt
+          const newInterval = Follow.backoffInterval(checkedAt, lastActivityAt)
           const updated = follow
-            .updateLastActivity(checkedAt)
+            .updateLastActivity(lastActivityAt)
             .updateLastChecked(checkedAt)
             .updateCheckInterval(newInterval)
           await writeTextFile(followPath, updated.toYaml())
