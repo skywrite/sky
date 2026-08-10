@@ -1,16 +1,20 @@
 import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import ms from 'ms'
+import openEditor from 'open-editor'
+import { autoRelSlackMessage } from '#commands/all/slack/lib/autoRel.ts'
 import { autoTagSlackMessage } from '#commands/all/slack/lib/autoTag.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
+import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { exists, outputFile } from '#shared/fs/mod.ts'
+import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
+import MessageDocument from '#shared/models/Message/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -167,8 +171,13 @@ export default class SlackFollowNewTask extends Command {
         fullBodyParts.push(`## ${msg.timeLabel} - **${msg.userName}**`, '')
         fullBodyParts.push(msg.text, '', '')
       }
-      const threadTags = await autoTagSlackMessage({ channel: to, from, summary, body: fullBodyParts.join('\n') })
+      const enrichInput = { channel: to, from, summary, body: fullBodyParts.join('\n') }
+      const [threadTags, threadRel] = await Promise.all([
+        autoTagSlackMessage(enrichInput),
+        autoRelSlackMessage(enrichInput),
+      ])
       if (threadTags) output.log(`  Auto-tags: ${threadTags}`)
+      if (threadRel) output.log(`  Auto-rel: ${threadRel.join('; ')}`)
 
       for (let i = 0; i < sortedDays.length; i++) {
         const dayStr = sortedDays[i]
@@ -198,6 +207,7 @@ export default class SlackFollowNewTask extends Command {
           markdown: bodyParts.join('\n'),
           follow: fileNameNoExt,
           ...(threadTags ? { tags: threadTags } : { noAutoTag: true }),
+          noAutoRel: true,
           ...(previous ? { previous } : {}),
           ...(dayFiles.length > 0 ? { slackFiles: JSON.stringify(dayFiles) } : {}),
           noEditor: true,
@@ -206,9 +216,31 @@ export default class SlackFollowNewTask extends Command {
         const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
         if (relPath) {
           const ddfw = new DayDirFileWriter(dayWhen.plainDate)
-          initialMessages.push({ date: dayStr, path: `time/${ddfw.dayDir}/${relPath}` })
+          const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
+          initialMessages.push({ date: dayStr, path: fullTimePath })
           output.log(`  ${dayStr}: ${relPath} (${dayMessages.length} message${dayMessages.length > 1 ? 's' : ''})`)
+
+          // rel is an array, which the slack:new string param can't carry —
+          // patch it onto the written file (same trick as follow:check)
+          if (threadRel) {
+            try {
+              const absPath = path.join(DIR_BASE, fullTimePath)
+              const doc = MessageDocument.fromMarkdown(await readTextFile(absPath))
+              await writeTextFile(
+                absPath,
+                new MessageDocument({ ...doc.yaml, rel: threadRel }, doc.markdown).toMarkdown(),
+              )
+            } catch {
+              // day file unreadable — leave rel absent
+            }
+          }
         }
+      }
+
+      // The per-day writes ran with noEditor — open everything created for review
+      if (initialMessages.length > 0) {
+        openEditor(initialMessages.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
+        await delay(500)
       }
     } else {
       // Standard path: single file with all messages on one day
