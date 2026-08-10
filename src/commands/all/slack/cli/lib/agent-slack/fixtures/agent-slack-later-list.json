@@ -1,0 +1,27 @@
+{
+  "counts": {
+    "in_progress": 2,
+    "archived": 0,
+    "completed": 5,
+    "total": 7
+  },
+  "items": [
+    {
+      "channel_id": "C012ABC3DEF",
+      "channel_name": "atlas-rollout",
+      "ts": "1700000000.000100",
+      "state": "in_progress",
+      "date_saved": 1700086400,
+      "message": {
+        "content": "Rollout checkpoint two is done.\nSample dataset migrated without issues."
+      }
+    },
+    {
+      "channel_id": "D045XYZ6GHI",
+      "ts": "1700172800.000200",
+      "state": "in_progress",
+      "date_saved": 1700259200
+    }
+  ],
+  "next_cursor": "c3ludGhldGljLWN1cnNvcg=="
+}

@@ -27,3 +27,18 @@ export type AgentSlackUser = {
   real_name?: string
   name?: string
 }
+
+export type AgentSlackLaterItem = {
+  channel_id: string
+  channel_name?: string
+  ts: string
+  state?: string
+  /** Epoch seconds of the save action (agent-slack maps the API's date_created) */
+  date_saved?: number
+  message?: { content?: string }
+}
+
+export type AgentSlackLaterList = {
+  items: AgentSlackLaterItem[]
+  counts: { in_progress?: number; total?: number }
+}
