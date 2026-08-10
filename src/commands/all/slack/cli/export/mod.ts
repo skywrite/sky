@@ -61,6 +61,8 @@ type Result = {
   channelName?: string
   channelMembers?: string[]
   conversationType: ConversationType
+  /** The current user's display name — resolved only when a DM's author is its partner */
+  selfName?: string
   messageTs: string
   threadTs?: string
   message: FetchedMessage
@@ -157,6 +159,15 @@ export default class SlackCliExportTask extends Command {
       if (info.detectedType) conversationType = info.detectedType
     }
 
+    // An unanswered DM has the current user's name nowhere in its messages —
+    // resolveRecipient needs it, so fetch it exactly when a DM's author is its
+    // partner (heartbeat polls of ordinary DMs pay nothing)
+    let selfName: string | undefined
+    const authorName = data.message.author?.user_id ? userNames.get(data.message.author.user_id) : undefined
+    if (workspaceUrl && conversationType === 'dm' && authorName && channelMembers?.[0] === authorName) {
+      selfName = await resolveSelfName(userNames, workspaceUrl)
+    }
+
     // Resolve permalink
     const permalink = workspaceUrl ? await resolvePermalink(channelId, data.message.ts, workspaceUrl) : undefined
 
@@ -196,6 +207,7 @@ export default class SlackCliExportTask extends Command {
       channelName,
       channelMembers,
       conversationType,
+      selfName,
       messageTs: data.message.ts,
       threadTs: data.message.thread_ts,
       message,
@@ -377,6 +389,14 @@ async function resolveChannelInfo(
   // Regular channel — use the name field
   const name = channel.name as string | undefined
   return { name, detectedType: 'channel' }
+}
+
+/** The current user's display name via auth.test on the keychain creds. */
+async function resolveSelfName(userNames: Map<string, string>, workspaceUrl: string): Promise<string | undefined> {
+  const json = await slackApiCall(workspaceUrl, 'auth.test', {})
+  const selfId = json?.user_id as string | undefined
+  if (!selfId) return undefined
+  return resolveUserName(selfId, userNames, workspaceUrl)
 }
 
 /** Resolve mpdm slug handles ("bob.smith") to display names via agent-slack; the handle itself is the fallback. */
