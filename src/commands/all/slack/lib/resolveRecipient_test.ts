@@ -32,6 +32,40 @@ test('resolveRecipient: DM fixture — you replied, to is the partner', () => {
   })
 })
 
+test('resolveRecipient: unanswered DM uses selfName from the export', () => {
+  assert({
+    given: 'a DM the partner authored with no replies and a resolved selfName',
+    should: 'return the current user',
+    actual: resolveRecipient(
+      {
+        channelId: 'D0123DMABC',
+        channelName: 'DM with Sarah Chen',
+        channelMembers: ['Sarah Chen'],
+        conversationType: 'dm',
+        selfName: 'Jane Smith',
+      },
+      'Sarah Chen',
+    ),
+    expected: 'Jane Smith',
+  })
+})
+
+test('resolveRecipient: unanswered DM without selfName falls back to partner', () => {
+  assert({
+    given: 'legacy export data with no selfName',
+    should: 'keep the old partner fallback',
+    actual: resolveRecipient(
+      {
+        channelId: 'D0123DMABC',
+        channelMembers: ['Sarah Chen'],
+        conversationType: 'dm',
+      },
+      'Sarah Chen',
+    ),
+    expected: 'Sarah Chen',
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Channel
 // ---------------------------------------------------------------------------

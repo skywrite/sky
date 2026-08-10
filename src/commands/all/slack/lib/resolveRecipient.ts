@@ -10,6 +10,8 @@ type ExportResult = {
   channelName?: string
   channelMembers?: string[]
   conversationType: ConversationType
+  /** The current user's display name — resolved by the export when a DM's author is its partner */
+  selfName?: string
   thread?: { replies: ThreadReply[] }
 }
 
@@ -44,8 +46,10 @@ export default function resolveRecipient(data: ExportResult, from?: string): str
       if (otherReply?.userName) return otherReply.userName
     }
 
-    // No thread or no replies from the other person — fall back to partner
-    return partner
+    // Unanswered DM: the current user never wrote, so their name appears
+    // nowhere in the messages — the export resolves it via auth.test instead.
+    // Without it (legacy data), fall back to the partner.
+    return data.selfName ?? partner
   }
 
   // Group DM: exclude the message author
