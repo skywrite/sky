@@ -275,7 +275,12 @@ export default class SlackFollowNewTask extends Command {
       }
     }
 
-    // 4. Build follow with lastChecked set (initial check just happened)
+    // 4. Build follow with lastChecked set (initial check just happened).
+    // lastActivity is the thread's real last message time, not now — a follow
+    // created on a quiet thread must not look freshly active, or backoff and
+    // expiry anchor on a fiction.
+    const lastReplyLabel = data.thread?.replies.at(-1)?.timeLabel
+    const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
     const now = fetchNowSync().plainDateTime
 
     const follow = Follow.create({
@@ -290,7 +295,7 @@ export default class SlackFollowNewTask extends Command {
       followSince: now,
       expires,
       lastChecked: now,
-      lastActivity: now,
+      lastActivity,
       messages: initialMessages,
       status: 'active',
     })
