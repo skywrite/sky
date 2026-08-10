@@ -26,10 +26,18 @@ const params = {
     { short: 'e' },
   ),
   when: whenNBTime(),
+  force: Flag.bool('Follow even when the thread is already inactive past the expiry window', { default: false }),
+  noEditor: Flag.bool('Skip opening editors for created files', { hidden: true, default: false }),
 }
 
 type Params = InferParams<typeof params>
-type Result = { file: string }
+type Result = {
+  /** Follow YAML path — absent when the thread was archived without a follow */
+  file?: string
+  followed: boolean
+  /** Notebook-relative paths (time/...) of the slack files written */
+  slackFiles: string[]
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -126,6 +134,65 @@ export default class SlackFollowNewTask extends Command {
     const rootFiles: FileRef[] = data.message.files ?? []
     const replyFiles: FileRef[][] = data.thread?.replies.map((r) => r.files ?? []) ?? []
 
+    // lastActivity is the thread's real last message time, not now — a follow
+    // created on a quiet thread must not look freshly active, or backoff and
+    // expiry anchor on a fiction.
+    const lastReplyLabel = data.thread?.replies.at(-1)?.timeLabel
+    const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
+    const now = fetchNowSync().plainDateTime
+
+    const wholeThreadBody = (): string => {
+      const bodyParts: string[] = [`# ${summary}`, '']
+      bodyParts.push(`## ${data.message.timeLabel || ''} - **${data.message.userName || '-'}**`, '')
+      bodyParts.push(messageText || '(empty)', '', '')
+      for (const reply of data.thread?.replies ?? []) {
+        bodyParts.push(`## ${reply.timeLabel || reply.ts} - **${reply.userName || reply.userId || '-'}**`, '')
+        bodyParts.push(reply.text || '(empty)', '', '')
+      }
+      return bodyParts.join('\n')
+    }
+
+    // A follow that would be born expired is declined: a thread already quiet
+    // past the inactivity window is an archive, not something to watch.
+    const candidate = Follow.create({
+      source: 'Slack',
+      ref: {
+        channel: data.channelId,
+        ...(data.threadTs ? { thread_ts: data.threadTs } : {}),
+        link: data.link,
+      },
+      summary,
+      checkInterval: interval,
+      followSince: now,
+      expires,
+      lastChecked: now,
+      lastActivity,
+      messages: [],
+      status: 'active',
+    })
+    if (!args.force && candidate.isExpired(now)) {
+      output.log(
+        `  Thread inactive since ${lastActivity.date} (over ${Follow.DEFAULT_MAX_INACTIVE}) — archiving without a follow (--force to follow anyway).`,
+      )
+      const allFiles = [...rootFiles, ...replyFiles.flat()]
+      const slackResult = await tasks.run('slack:new', {
+        from,
+        to,
+        summary,
+        when,
+        markdown: wholeThreadBody(),
+        link: data.message.permalink ?? link,
+        ...(allFiles.length > 0 ? { slackFiles: JSON.stringify(allFiles) } : {}),
+        ...(args.noEditor ? { noEditor: true } : {}),
+      })
+      const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
+      if (!relPath) {
+        return CommandResult.fail(`Failed to archive thread: ${slackResult.ok ? 'no file path' : slackResult.message}`)
+      }
+      const ddfw = new DayDirFileWriter(when.plainDate)
+      return CommandResult.success({ followed: false, slackFiles: [`time/${ddfw.dayDir}/${relPath}`] })
+    }
+
     if (shouldSmartSplit) {
       // Collect all messages (root + replies) with their notebook-timezone times
       type DayMsg = { timeLabel: string; userName: string; text: string; when: PlainDateTime; files: FileRef[] }
@@ -206,6 +273,7 @@ export default class SlackFollowNewTask extends Command {
           when: dayWhen,
           markdown: bodyParts.join('\n'),
           follow: fileNameNoExt,
+          link: data.message.permalink ?? link,
           ...(threadTags ? { tags: threadTags } : { noAutoTag: true }),
           noAutoRel: true,
           ...(previous ? { previous } : {}),
@@ -238,34 +306,23 @@ export default class SlackFollowNewTask extends Command {
       }
 
       // The per-day writes ran with noEditor — open everything created for review
-      if (initialMessages.length > 0) {
+      if (initialMessages.length > 0 && !args.noEditor) {
         openEditor(initialMessages.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
         await delay(500)
       }
     } else {
       // Standard path: single file with all messages on one day
-      const bodyParts: string[] = [`# ${summary}`, '']
-      const msgWho = data.message.userName || '-'
-      const msgTime = data.message.timeLabel || ''
-      bodyParts.push(`## ${msgTime} - **${msgWho}**`, '')
-      bodyParts.push(messageText || '(empty)', '', '')
-      if (data.thread && data.thread.replies.length > 0) {
-        for (const reply of data.thread.replies) {
-          const who = reply.userName || reply.userId || '-'
-          bodyParts.push(`## ${reply.timeLabel || reply.ts} - **${who}**`, '')
-          bodyParts.push(reply.text || '(empty)', '', '')
-        }
-      }
-
       const allFiles = [...rootFiles, ...replyFiles.flat()]
       const slackResult = await tasks.run('slack:new', {
         from,
         to,
         summary,
         when,
-        markdown: bodyParts.length > 0 ? bodyParts.join('\n') : undefined,
+        markdown: wholeThreadBody(),
         follow: fileNameNoExt,
+        link: data.message.permalink ?? link,
         ...(allFiles.length > 0 ? { slackFiles: JSON.stringify(allFiles) } : {}),
+        ...(args.noEditor ? { noEditor: true } : {}),
       })
 
       const slackFilePath = slackResult.ok ? slackResult.data?.filePath : undefined
@@ -275,14 +332,7 @@ export default class SlackFollowNewTask extends Command {
       }
     }
 
-    // 4. Build follow with lastChecked set (initial check just happened).
-    // lastActivity is the thread's real last message time, not now — a follow
-    // created on a quiet thread must not look freshly active, or backoff and
-    // expiry anchor on a fiction.
-    const lastReplyLabel = data.thread?.replies.at(-1)?.timeLabel
-    const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
-    const now = fetchNowSync().plainDateTime
-
+    // 4. Build follow with lastChecked set (initial check just happened)
     const follow = Follow.create({
       source: 'Slack',
       ref: {
@@ -317,7 +367,7 @@ export default class SlackFollowNewTask extends Command {
     output.log(`  Follow:   ${filePath}`)
     output.log('')
 
-    return CommandResult.success({ file: filePath })
+    return CommandResult.success({ file: filePath, followed: true, slackFiles: initialMessages.map((m) => m.path) })
   }
 }
 
