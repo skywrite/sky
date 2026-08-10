@@ -76,7 +76,14 @@ export default async function summarizeTranscript(): Promise<void> {
     return
   }
 
-  const transcript = transcriptSection.content
+  // `.content` holds only the tokens directly under the heading — a transcript
+  // that opens with a `###` subheading puts every line in a child section and
+  // leaves `.content` empty. Slice the whole subtree out of the markdown instead.
+  const markdownLines = doc.markdown.split('\n')
+  const transcript = markdownLines
+    .slice(transcriptSection.start.line + 1, transcriptSection.end.line)
+    .join('\n')
+    .trim()
   if (!transcript.trim()) {
     vscode.window.showWarningMessage('## Transcript section is empty')
     return
