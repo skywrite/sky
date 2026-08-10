@@ -15,6 +15,7 @@ import {
   inferConversationType,
   resolveContent,
 } from '#commands/all/slack/lib/mod.ts'
+import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
@@ -363,7 +364,12 @@ async function resolveChannelInfo(
   }
 
   if (channel.is_mpim === true) {
-    const memberNames = await resolveGroupDmMembers(channelId, userNames, workspaceUrl)
+    let memberNames = await resolveGroupDmMembers(channelId, userNames, workspaceUrl)
+    if (memberNames.length === 0) {
+      // Enterprise Grid blocks conversations.members (enterprise_is_restricted) —
+      // fall back to the member handles encoded in the mpdm channel name itself
+      memberNames = await resolveMpdmSlugMembers(channel.name as string | undefined)
+    }
     const name = memberNames.length > 0 ? `DM with ${formatNameList(memberNames)}` : undefined
     return { name, members: memberNames.length > 0 ? memberNames : undefined, detectedType: 'group' }
   }
@@ -371,6 +377,24 @@ async function resolveChannelInfo(
   // Regular channel — use the name field
   const name = channel.name as string | undefined
   return { name, detectedType: 'channel' }
+}
+
+/** Resolve mpdm slug handles ("bob.smith") to display names via agent-slack; the handle itself is the fallback. */
+async function resolveMpdmSlugMembers(channelName: string | undefined): Promise<string[]> {
+  const names: string[] = []
+  for (const handle of mpdmMemberHandles(channelName)) {
+    const result = await runAgentSlack(['user', 'get', handle])
+    let resolved: string | undefined
+    if (result.code === 0) {
+      try {
+        resolved = parseUser(JSON.parse(result.stdout) as AgentSlackUser)
+      } catch {
+        /* fall through to the handle */
+      }
+    }
+    names.push(resolved || handle)
+  }
+  return names
 }
 
 async function resolveGroupDmMembers(
