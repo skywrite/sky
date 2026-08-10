@@ -12,6 +12,7 @@ export type MessageRecord = {
   from?: string
   summary?: string
   tags: string[]
+  rel: string[]
   body: string
 }
 
@@ -38,8 +39,18 @@ export function recordFromMarkdown(filePath: string, contents: string, medium: s
     from: str(doc.yaml['from']),
     summary: str(doc.yaml['summary']),
     tags: Array.from(doc.tags),
+    rel: relStrings(doc.yaml['rel']),
     body: doc.markdown,
   }
+}
+
+/** rel: is a string or a YAML array in the wild — normalize to trimmed strings. */
+function relStrings(value: unknown): string[] {
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : []
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim())
+  }
+  return []
 }
 
 /**
@@ -85,20 +96,47 @@ export function channelHistory(records: MessageRecord[], channel: string | undef
   return buildTagMenu(records.filter((r) => r.channel === channel))
 }
 
+/** Rel values previously used in the channel, most-used first. */
+export function channelRelHistory(records: MessageRecord[], channel: string | undefined): TagCount[] {
+  if (!channel) return []
+  const counts = new Map<string, number>()
+  for (const r of records) {
+    if (r.channel !== channel) continue
+    for (const value of r.rel) counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return Array.from(counts, ([tag, count]) => ({ tag, count })).sort(
+    (a, b) => b.count - a.count || (a.tag < b.tag ? -1 : 1),
+  )
+}
+
 /** Most frequent exact tag-set previously used in the channel — the rubber-stamp baseline. */
 export function channelMajoritySet(records: MessageRecord[], channel: string | undefined): string[] {
+  return channelMajorityBy(records, channel, (r) => r.tags)
+}
+
+/** Most frequent exact rel-set previously used in the channel. */
+export function channelMajorityRel(records: MessageRecord[], channel: string | undefined): string[] {
+  return channelMajorityBy(records, channel, (r) => r.rel)
+}
+
+function channelMajorityBy(
+  records: MessageRecord[],
+  channel: string | undefined,
+  valuesOf: (record: MessageRecord) => string[],
+): string[] {
   if (!channel) return []
-  const counts = new Map<string, { tags: string[]; count: number }>()
+  const counts = new Map<string, { values: string[]; count: number }>()
   for (const r of records) {
-    if (r.channel !== channel || r.tags.length === 0) continue
-    const key = [...r.tags].sort().join('; ')
+    const values = valuesOf(r)
+    if (r.channel !== channel || values.length === 0) continue
+    const key = [...values].sort().join('; ')
     const existing = counts.get(key)
     if (existing) existing.count++
-    else counts.set(key, { tags: r.tags, count: 1 })
+    else counts.set(key, { values, count: 1 })
   }
-  let best: { tags: string[]; count: number } | undefined
+  let best: { values: string[]; count: number } | undefined
   for (const entry of counts.values()) {
     if (!best || entry.count > best.count) best = entry
   }
-  return best?.tags ?? []
+  return best?.values ?? []
 }

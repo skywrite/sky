@@ -81,8 +81,27 @@ test('recordFromMarkdown falls back to from when to is absent', () => {
   assert({ given: 'no to field', should: 'use from as channel', actual: record.channel, expected: 'Jane Doe' })
 })
 
+test('recordFromMarkdown reads rel arrays and strings', () => {
+  const arrayForm = recordFromMarkdown(DAY_PATH, FILE, 'slack')
+  assert({ given: 'a YAML rel array', should: 'collect entries', actual: arrayForm.rel, expected: ['Atlas'] })
+  const inline = FILE.replace('rel:\n  - Atlas\n', 'rel: Jane Doe\n')
+  assert({
+    given: 'an inline rel string',
+    should: 'wrap it in an array',
+    actual: recordFromMarkdown(DAY_PATH, inline, 'slack').rel,
+    expected: ['Jane Doe'],
+  })
+  const none = FILE.replace('rel:\n  - Atlas\n', '')
+  assert({
+    given: 'no rel key',
+    should: 'return empty',
+    actual: recordFromMarkdown(DAY_PATH, none, 'slack').rel,
+    expected: [],
+  })
+})
+
 function rec(date: string, channel: string, tags: string[]): MessageRecord {
-  return { path: `${date}/${channel}`, date, medium: 'slack', channel, tags, body: '' }
+  return { path: `${date}/${channel}`, date, medium: 'slack', channel, tags, rel: [], body: '' }
 }
 
 const RECORDS = [
