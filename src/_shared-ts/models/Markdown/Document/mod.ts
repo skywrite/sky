@@ -336,6 +336,13 @@ export default class Document {
       // If it's in the format [label][] (second group empty)
       // use the first group, otherwise use the second group
       const label = match[2] || match[1]
+
+      // A whitespace-only label is not a reference link (CommonMark requires at
+      // least one non-whitespace character), and can never match a definition.
+      // Pasted rich text produces bracket runs like `[1][ ]` that would
+      // otherwise be reported as a missing link with a blank label.
+      if (label.trim() === '') continue
+
       labels.push(label)
     }
 
