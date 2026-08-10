@@ -38,6 +38,7 @@ const params = {
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-thread tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:new)', { hidden: true }),
+  link: Flag.string('Slack permalink identifying the captured message', { hidden: true }),
 }
 
 type Params = InferParams<typeof params>
@@ -63,6 +64,7 @@ export default class SlackNewTask extends Command {
     let { to, from, when, summary, markdown } = args
     let { fromLink } = args
     const { category, tags, rel, follow, previous, noEditor, noAutoTag, noAutoRel, slackFiles } = args
+    let resolvedLink = args.link
 
     // If first arg is a Slack link with no other context, treat as --from-link
     if (to && !from && !summary && !fromLink && /^https?:\/\/[^/]*\.slack\.com\/archives\//.test(to)) {
@@ -78,6 +80,7 @@ export default class SlackNewTask extends Command {
       if (!resolved.ok) return resolved.result!
       ;({ from, to, summary, markdown, when } = resolved)
       resolvedFiles = resolved.slackFiles
+      resolvedLink = resolved.link ?? resolvedLink
     }
 
     // Collect slack files from either resolveFromLink or the slackFiles param
@@ -101,21 +104,39 @@ export default class SlackNewTask extends Command {
     const ddfw = new DayDirFileWriter(whenDate)
 
     // Build the key for matching existing items
-    const key = `${when.time} > ${who} Slack`
+    const baseKey = `${when.time} > ${who} Slack`
 
-    // Check for existing item and delete old file if found
+    // A key hit only means "same message" when the links agree — distinct
+    // same-minute messages (rapid DMs) must not replace each other. Walk
+    // (2), (3)… until a slot whose link matches (a true re-capture), an empty
+    // slot, or — when either side has no link (legacy files, non-link
+    // captures) — settle on the original replace-in-place behavior.
     let dayDoc = await readDay(whenDate)
-    const existing = dayDoc.getCompleteItem(key, category)
+    let key = baseKey
+    let existing = dayDoc.getCompleteItem(key, category)
+    let existingDoc: MessageDocument | undefined
+    let suffix = 2
+    while (existing) {
+      existingDoc = undefined
+      try {
+        existingDoc = MessageDocument.fromMarkdown(await readTextFile(path.join(ddfw.fullDir, existing.path)))
+      } catch {
+        // File may not exist, that's ok
+      }
+      const oldLink = existingDoc?.yaml['link']
+      const differentMessage = !!resolvedLink && typeof oldLink === 'string' && oldLink !== resolvedLink
+      if (!differentMessage) break
+      key = `${baseKey} (${suffix})`
+      suffix++
+      existing = dayDoc.getCompleteItem(key, category)
+    }
 
     // Preserve all user-curated YAML fields from existing file, then overwrite system-generated ones
     let preservedYaml: Record<string, unknown> = {}
     if (existing) {
+      preservedYaml = { ...existingDoc?.yaml }
       try {
-        const oldFilePath = path.join(ddfw.fullDir, existing.path)
-        const oldContents = await readTextFile(oldFilePath)
-        const oldDoc = MessageDocument.fromMarkdown(oldContents)
-        preservedYaml = { ...oldDoc.yaml }
-        await unlink(oldFilePath)
+        await unlink(path.join(ddfw.fullDir, existing.path))
         output.log(`  Replacing existing Slack entry (deleted ${existing.path})`)
       } catch {
         // File may not exist, that's ok
@@ -147,6 +168,7 @@ export default class SlackNewTask extends Command {
       ...(rel ? { rel } : autoRel ? { rel: autoRel } : {}),
       ...(follow ? { follow } : {}),
       ...(previous ? { previous } : {}),
+      ...(resolvedLink ? { link: resolvedLink } : {}),
     })
     let data = message.toMarkdown()
 
@@ -239,7 +261,11 @@ export default class SlackNewTask extends Command {
     output.log(`  From link: ${from} → ${to}`)
     output.log(`  Summary:   ${summary}`)
 
-    return { ok: true as const, from, to, summary, markdown, when, slackFiles }
+    // The resolved permalink is the message's canonical identity — the same
+    // message re-captured from any link form (workspace vs enterprise domain,
+    // constructed archives URL) resolves to one spelling, so the replacement
+    // gate compares like with like.
+    return { ok: true as const, from, to, summary, markdown, when, slackFiles, link: data.message.permalink ?? link }
   }
 }
 
