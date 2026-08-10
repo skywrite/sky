@@ -8,8 +8,7 @@ import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { SLACK_WORKSPACE } from '#config'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { DIR_BASE, SLACK_WORKSPACE } from '#config'
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { oneLine, parseSelection } from './lib/pick.ts'
@@ -60,10 +59,12 @@ export default class SlackLaterDayTask extends Command {
       'falls on the given notebook day (--saved-on matches the day you saved',
       'them instead). Listing is read-only.',
       '',
-      'With --capture, each picked item runs through the normal slack:new',
-      'from-link flow — summary, auto-tags, and auto-rel included — and is then',
-      'marked complete in Slack, so the Later list itself is the ledger of what',
-      'remains. Captured files open in the editor when done.',
+      'With --capture, each picked item runs through slack:follow:new: live',
+      'threads are captured AND followed for new replies; threads quiet past',
+      'the follow expiry window archive without a follow. Summary, auto-tags,',
+      'and auto-rel apply either way, the item is then marked complete in',
+      'Slack — the Later list stays the ledger of what remains — and captured',
+      'files open in the editor when done.',
     ],
     usage: [
       'sky slack:later:day',
@@ -177,15 +178,31 @@ export default class SlackLaterDayTask extends Command {
     for (const d of picked) {
       output.log('')
       output.log(`Capturing ${d.link}`)
-      const result = await tasks.run('slack:new', { fromLink: d.link, noEditor: true })
-      const relPath = result.ok ? result.data?.filePath : undefined
-      if (!relPath) {
-        failures.push(`${d.link}: ${result.ok ? 'no file path returned' : result.message}`)
+      const result = await tasks.run('slack:follow:new', { link: d.link, noEditor: true })
+
+      if (!result.ok) {
+        // An already-followed thread is already flowing into the notebook via
+        // follow:check — completing the Later item is still the right move
+        if (result.message?.includes('Duplicate follow')) {
+          output.log('  Already followed — skipping capture')
+          const done = await runAgentSlack(['later', 'complete', d.link])
+          if (done.success) completed++
+          else
+            failures.push(`${d.link}: already followed; complete failed — ${oneLine(done.stderr || done.stdout, 120)}`)
+          continue
+        }
+        failures.push(`${d.link}: ${result.message}`)
         continue
       }
-      const ddfw = new DayDirFileWriter(new PlainDate(d.messageDay))
-      captured.push(`time/${ddfw.dayDir}/${relPath}`)
-      openTargets.push(path.join(ddfw.fullDir, relPath))
+
+      const files = result.data?.slackFiles ?? []
+      if (files.length === 0) {
+        failures.push(`${d.link}: no files written`)
+        continue
+      }
+      if (result.data?.followed) output.log('  Live thread — following for new replies')
+      captured.push(...files)
+      openTargets.push(...files.map((p) => path.join(DIR_BASE, p)))
 
       const done = await runAgentSlack(['later', 'complete', d.link])
       if (done.success) {
