@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { MCPTool } from '#mcp/decorators.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -110,14 +110,16 @@ export default class MeetingNewTask extends Command {
     const whenDate = when.plainDate
     const entryWhen = when.time
     const whoSlug = slugify(who, { preserveCase: true, suggestedLength: 30 })
-    let fileSlug = whoSlug
-
-    if (summary) fileSlug += `_${slugify(<string>summary, { suggestedLength: 40, preserveCase: true })}`
+    const summarySlug = summary ? slugify(<string>summary, { suggestedLength: 40, preserveCase: true }) : ''
 
     // only one that matters is "In Person"
-    fileSlug = slugify(medium, { preserveCase: true }) + '_' + fileSlug
+    const mediumSlug = slugify(medium, { preserveCase: true })
 
-    const meetingFileName = `actions/meetings/${fileSlug}.md`
+    // Shared by the meeting file and the imported transcript, so the two names
+    // still read as a pair in their separate directories.
+    const fileSlug = [mediumSlug, whoSlug, summarySlug].filter(Boolean).join('_')
+
+    const fileName = meetingFileName(when, fileSlug)
 
     // Move the source transcript into the day's attachments so the notebook owns it,
     // then point the meeting file at it. A failure here must not lose the summary the
@@ -148,7 +150,7 @@ export default class MeetingNewTask extends Command {
 
     let file: string
     try {
-      file = await ddfw.write(meetingFileName, data)
+      file = await ddfw.write(fileName, data)
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to write meeting file')
     }

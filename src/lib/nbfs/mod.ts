@@ -1,5 +1,6 @@
 export { default as dayFile } from '../../_shared-ts/nbfs/dayFile.ts'
 export { default as dayAttachmentsDir } from '../../_shared-ts/nbfs/dayAttachmentsDir.ts'
 export { default as DayDirFileWriter } from './DayDirFileWriter.ts'
+export { default as meetingFileName } from './meetingFileName.ts'
 export { default as messageFileName } from './messageFileName.ts'
 export { default as writeDayItems } from './writeDayItems.ts'
