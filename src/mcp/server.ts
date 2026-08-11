@@ -10,7 +10,7 @@ import { MCPServer } from './core/MCPServer.ts'
 import { findMCPDecoratedCommands } from './discovery.ts'
 import { StdioTransport } from './transports/StdioTransport.ts'
 
-async function main() {
+export async function main() {
   // Create the MCP server
   const server = new MCPServer({
     serverInfo: {

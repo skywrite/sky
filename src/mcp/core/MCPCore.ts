@@ -73,7 +73,9 @@ export class MCPCore {
       // We mark as initialized immediately to work around this issue.
       // See: https://github.com/anthropics/claude-code/issues/1604
       this.initialized = true
-      console.log('[MCPCore] Marked as initialized (Claude workaround)')
+      // stderr, not stdout: under the stdio transport stdout is the JSON-RPC
+      // channel, and one unparseable line on it breaks the attached client.
+      console.error('[MCPCore] Marked as initialized (Claude workaround)')
 
       return {
         protocolVersion: '2025-06-18',
@@ -85,7 +87,7 @@ export class MCPCore {
     // Initialized notification handler (no response needed)
     // Note: Claude doesn't send this due to a bug, but we keep it for spec compliance
     this.registerHandler('notifications/initialized', async () => {
-      console.log('[MCPCore] Received notifications/initialized')
+      console.error('[MCPCore] Received notifications/initialized')
       this.initialized = true
       // No response for notifications
       return null
