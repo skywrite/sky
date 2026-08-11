@@ -1,6 +1,5 @@
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import normalizeToPlainDate from '../normalizeToPlainDate.ts'
-import nbfsWeekNumber from './nbfsWeekNumber.ts'
 
 /**
  * Get the month directory number for a date's week.
@@ -18,7 +17,7 @@ import nbfsWeekNumber from './nbfsWeekNumber.ts'
  */
 export default function nbfsWeekMonth(date: PlainDate | string): number {
   const d = normalizeToPlainDate(date)
-  const week = nbfsWeekNumber(d)
+  const week = Week.of(d).number
 
   // Overflow buckets have fixed months
   if (week === 0) return 1

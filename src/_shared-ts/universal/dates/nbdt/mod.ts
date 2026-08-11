@@ -18,5 +18,7 @@ export type { DurationLike, DurationUnit } from './Duration/mod.ts'
 
 export { default as When } from './When/mod.ts'
 
+export { default as Week } from './Week/mod.ts'
+
 // Future exports:
 // export { default as PlainTime } from './PlainTime/mod.ts'

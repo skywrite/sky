@@ -140,6 +140,26 @@ test('buildRulings()', () => {
     ),
     expected: [{ wrong: 'Novaks', right: 'Novak' }],
   })
+
+  assert({
+    given: 'corrections where neither side names anything',
+    should: 'drop them — a standing rule for ordinary English misfires on its legitimate uses',
+    actual: buildRulings(
+      [
+        { type: 'unclear', originalText: 'Her plan changed' }, // capital only for starting the sentence
+        { type: 'unclear', originalText: 'worked' },
+        { type: 'unclear', originalText: '$4.99' },
+        { type: 'unclear', originalText: 'at less' }, // survives via the entity on the right side
+      ],
+      [
+        { issueIndex: 0, correction: 'their plan changed', action: 'custom' },
+        { issueIndex: 1, correction: 'works', action: 'custom' },
+        { issueIndex: 2, correction: '499', action: 'custom' },
+        { issueIndex: 3, correction: 'Atlas', action: 'custom' },
+      ],
+    ),
+    expected: [{ wrong: 'at less', right: 'Atlas' }],
+  })
 })
 
 test('applyRulings()', () => {
@@ -230,5 +250,38 @@ test('renderGlossary()', () => {
       'Leave as-is (do not flag):',
       '- "Atlas"',
     ].join('\n'),
+  })
+
+  const legacyFragment: Glossary = {
+    version: 1,
+    entries: [
+      {
+        wrong: 'Her plan changed',
+        right: 'Their plan changed',
+        action: 'correct',
+        count: 1,
+        firstSeen: '2026-07-01',
+        lastSeen: '2026-07-01',
+      },
+      {
+        wrong: 'Jane Doh',
+        right: 'Jane Doe',
+        action: 'correct',
+        count: 1,
+        firstSeen: '2026-07-01',
+        lastSeen: '2026-07-01',
+      },
+    ],
+  }
+  assert({
+    given: 'a stored fragment whose only capital starts the sentence, next to a real name',
+    should: 'demote the fragment to a context-judged hint while the name stays confirmed',
+    actual: renderGlossary(legacyFragment)
+      .split('\n\n')
+      .map((section) => section.split('\n')[0]?.split(' (')[0] + ' :: ' + section.split('\n')[1]),
+    expected: [
+      'Confirmed corrections :: - "Jane Doh" → "Jane Doe" (confirmed 1×, last 2026-07-01)',
+      'Sounds-like hints :: - "Her plan changed" → "Their plan changed" (confirmed 1×, last 2026-07-01)',
+    ],
   })
 })
