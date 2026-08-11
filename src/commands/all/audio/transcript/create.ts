@@ -95,7 +95,7 @@ export default class AudioTranscriptCreateTask extends Command {
       'Takes an audio file path, or if not provided, finds the newest audio file on the Desktop.',
       '',
       'Providers:',
-      '  - openai (default): Uses gpt-4o-transcribe model',
+      '  - openai (default): Uses gpt-transcribe model',
       '  - mistral: Uses voxtral-mini-latest model with optional speaker diarization',
       '',
       'By default, outputs to stdout for piping. Use --save to write a .md file next to the',
@@ -277,15 +277,14 @@ ${transcriptText}
 
     const result = await client.audio.transcriptions.create({
       file: audioFile,
-      model: 'gpt-4o-transcribe',
+      model: 'gpt-transcribe',
       response_format: 'json',
     })
 
     return {
       text: result.text,
-      // gpt-4o-transcribe with 'json' format doesn't return duration/language
-      durationSeconds: undefined,
-      language: undefined,
+      durationSeconds: result.usage?.type === 'duration' ? result.usage.seconds : undefined,
+      language: result.languages?.map((l) => l.code).join(', ') || undefined,
     }
   }
 
