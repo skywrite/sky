@@ -81,10 +81,16 @@ function walk(file: string): void {
   } catch {
     return
   }
+  // Collapse braced specifier lists onto a single line before matching: oxfmt
+  // wraps a long `import { a, b, c } from '...'` across lines, and IMPORT_RES
+  // deliberately stops at a newline, so a wrapped import would contribute no
+  // specifier at all — silently shrinking the graph this guard walks. Only
+  // innermost brace groups collapse, which is exactly what a specifier list is.
+  const flat = src.replace(/\{[^{}]*\}/g, (m) => m.replace(/\s+/g, ' '))
   for (const re of IMPORT_RES) {
     re.lastIndex = 0
     let m: RegExpExecArray | null
-    while ((m = re.exec(src)) !== null) {
+    while ((m = re.exec(flat)) !== null) {
       const spec = m[1]
       if (!spec.startsWith('.') && !spec.startsWith('#')) continue
       const r = resolveSpec(spec, file)
@@ -105,7 +111,9 @@ for (const f of [...seen].sort()) {
   } catch (err) {
     failures.push({
       file: path.relative(ROOT, f),
-      msg: String((err as Error).message).split('\n')[0].slice(0, 140),
+      msg: String((err as Error).message)
+        .split('\n')[0]
+        .slice(0, 140),
     })
   }
 }
