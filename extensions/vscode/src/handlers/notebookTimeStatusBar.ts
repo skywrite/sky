@@ -7,10 +7,7 @@ class NotebookTimeStatusBar {
 
   constructor(context: vscode.ExtensionContext) {
     // Create status bar item on the left side, high priority (shows first)
-    this.statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left,
-      1000,
-    )
+    this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000)
 
     this.statusBarItem.text = '$(clock) --:--'
     this.updateStatusBar()

@@ -1,8 +1,8 @@
-import * as vscode from 'vscode'
 import { readFileSync } from 'node:fs'
+import * as vscode from 'vscode'
+import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 
 /**
  * The template ships next to this file. Read on use rather than at import so
@@ -67,9 +67,7 @@ export default async function summarizeTranscript(): Promise<void> {
   const doc = SectionDocument.fromMarkdown(text)
 
   // Find ## Transcript section
-  const transcriptSection = doc.findSection(
-    (s) => s.level === 2 && s.heading.toLowerCase() === 'transcript',
-  )
+  const transcriptSection = doc.findSection((s) => s.level === 2 && s.heading.toLowerCase() === 'transcript')
 
   if (!transcriptSection) {
     vscode.window.showWarningMessage('No ## Transcript section found in this document')
@@ -116,16 +114,12 @@ export default async function summarizeTranscript(): Promise<void> {
           .join('\n')
 
         // Render prompt using the prompt system
-        const { output: prompt } = renderPromptFile(
-          promptTemplate(),
-          'transcript-summary.prompt.md',
-          {
-            user: {
-              yamlContext,
-              transcript,
-            },
+        const { output: prompt } = renderPromptFile(promptTemplate(), 'transcript-summary.prompt.md', {
+          user: {
+            yamlContext,
+            transcript,
           },
-        )
+        })
 
         // The provider reads the key from the environment; fail with a clear
         // message rather than a deep SDK error when it's absent.

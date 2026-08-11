@@ -19,7 +19,5 @@ export function filterByPrefix(items: string[], prefix: string): string[] {
   }
 
   const lowerPrefix = prefix.toLowerCase()
-  return items.filter(
-    (item) => item.slice(0, prefix.length).toLowerCase() === lowerPrefix
-  )
+  return items.filter((item) => item.slice(0, prefix.length).toLowerCase() === lowerPrefix)
 }

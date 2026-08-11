@@ -8,11 +8,11 @@
  * `vscode.env.openExternal()` rather than trying to open it in the editor.
  */
 
-import * as vscode from 'vscode'
 import * as path from 'node:path'
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import * as vscode from 'vscode'
 import { DIR_ATTACHMENTS } from '#config'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 
 /** Regex to match the YAML frontmatter block */
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/
@@ -21,10 +21,7 @@ const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/
 export const COMMAND_OPEN_FOLDER = 'notebook.openFolderExternal'
 
 export default class AttachmentsFieldDocumentLinkProvider implements vscode.DocumentLinkProvider {
-  provideDocumentLinks(
-    document: vscode.TextDocument,
-    _token: vscode.CancellationToken,
-  ): vscode.DocumentLink[] {
+  provideDocumentLinks(document: vscode.TextDocument, _token: vscode.CancellationToken): vscode.DocumentLink[] {
     // Only work for files in the time/ directory
     if (!document.fileName.includes('/time/')) return []
 

@@ -80,9 +80,7 @@ export default class PersonFieldDocumentLinkProvider implements vscode.DocumentL
    *     - Alice
    *     - JP, Jane Doe
    */
-  private extractPersonEntries(
-    frontmatter: string,
-  ): Array<{ value: string; range: vscode.Range }> {
+  private extractPersonEntries(frontmatter: string): Array<{ value: string; range: vscode.Range }> {
     const entries: Array<{ value: string; range: vscode.Range }> = []
     const lines = frontmatter.split('\n')
 
@@ -170,7 +168,7 @@ export default class PersonFieldDocumentLinkProvider implements vscode.DocumentL
 
       if (!response.ok) return null
 
-      const result = await response.json() as { data?: { resolveRefs: ResolvedRef[] } }
+      const result = (await response.json()) as { data?: { resolveRefs: ResolvedRef[] } }
       return result.data?.resolveRefs ?? null
     } catch {
       // Server not running or network error

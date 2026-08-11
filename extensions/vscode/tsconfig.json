@@ -37,11 +37,6 @@
     "skipLibCheck": true,
     "types": ["node", "vscode", "mocha"]
   },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    ".vscode-test"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", ".vscode-test"]
 }

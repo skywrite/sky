@@ -61,7 +61,7 @@ export default class DayItemCompletionProvider implements vscode.CompletionItemP
     const allOrganizations = this.store.getOrganizations()
 
     // Exclude tags with prefixes handled by dedicated completion providers
-    const filteredTags = allTags.filter(tag => !tag.startsWith('projects/'))
+    const filteredTags = allTags.filter((tag) => !tag.startsWith('projects/'))
     const matchingTags = filterByPrefix(filteredTags, searchTerm)
     const matchingPeople = filterByPrefix(allPeople, searchTerm)
     const matchingOrganizations = filterByPrefix(allOrganizations, searchTerm)

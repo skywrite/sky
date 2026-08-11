@@ -1,6 +1,6 @@
-import * as vscode from 'vscode'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { isCursorInYamlFrontmatter } from '../util.ts'
 
 export default class CurrentDirCompletionProvider implements vscode.CompletionItemProvider {

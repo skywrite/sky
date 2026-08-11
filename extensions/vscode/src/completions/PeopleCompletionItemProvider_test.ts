@@ -37,12 +37,10 @@ async function completions(
   })
   const position = new vscode.Position(line, character ?? document.lineAt(line).text.length)
 
-  return provider.provideCompletionItems(
-    document,
-    position,
-    new vscode.CancellationTokenSource().token,
-    { triggerKind: vscode.CompletionTriggerKind.Invoke, triggerCharacter: undefined },
-  )
+  return provider.provideCompletionItems(document, position, new vscode.CancellationTokenSource().token, {
+    triggerKind: vscode.CompletionTriggerKind.Invoke,
+    triggerCharacter: undefined,
+  })
 }
 
 function summarize(items: vscode.CompletionItem[] | undefined): Summary[] | 'no completions' {
@@ -165,14 +163,22 @@ test('PeopleCompletionItemProvider - replaces the typed term', async () => {
       given: 'a partially typed name',
       lines: ['---', 'who: Jane', '---', ''],
       line: 1,
-      expected: [[5, 9], [5, 9]],
+      expected: [
+        [5, 9],
+        [5, 9],
+      ],
       should: 'replace the four typed characters',
     },
     {
       given: 'an empty field',
       lines: ['---', 'who: ', '---', ''],
       line: 1,
-      expected: [[5, 5], [5, 5], [5, 5], [5, 5]],
+      expected: [
+        [5, 5],
+        [5, 5],
+        [5, 5],
+        [5, 5],
+      ],
       should: 'insert at the cursor without replacing anything',
     },
   ]

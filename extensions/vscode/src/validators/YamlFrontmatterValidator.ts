@@ -87,12 +87,7 @@ class YamlFrontmatterValidator {
         const docStartLine = startLine // The "---" is line 0, so YAML line 1 = doc line 1
         const docEndLine = endLine
 
-        const range = new vscode.Range(
-          docStartLine,
-          startCol,
-          docEndLine,
-          endCol,
-        )
+        const range = new vscode.Range(docStartLine, startCol, docEndLine, endCol)
 
         const message = this.extractErrorMessage(yamlError)
         const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error)

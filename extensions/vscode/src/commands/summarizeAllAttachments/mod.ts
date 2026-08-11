@@ -1,5 +1,5 @@
-import * as vscode from 'vscode'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import { SUPPORTED_EXTENSIONS } from '../summarizeAttachment/mod.ts'
 
@@ -65,8 +65,6 @@ export default async function summarizeAllAttachments(): Promise<void> {
   if (failed.length === 0) {
     vscode.window.showInformationMessage(`Summarized all ${succeeded} attachment${succeeded === 1 ? '' : 's'}`)
   } else {
-    vscode.window.showWarningMessage(
-      `Summarized ${succeeded}/${supported.length}. Failed: ${failed.join(', ')}`,
-    )
+    vscode.window.showWarningMessage(`Summarized ${succeeded}/${supported.length}. Failed: ${failed.join(', ')}`)
   }
 }

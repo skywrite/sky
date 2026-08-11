@@ -1,11 +1,11 @@
-import * as vscode from 'vscode'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import { isCursorInYamlFrontmatter } from '../util.ts'
-import isCursorInRelevantYamlKey from '../util/isCursorInRelevantYamlKey.ts'
+import * as vscode from 'vscode'
 import { DIR_ATTACHMENTS } from '#config'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { isCursorInYamlFrontmatter } from '../util.ts'
+import isCursorInRelevantYamlKey from '../util/isCursorInRelevantYamlKey.ts'
 import { filterByPrefix } from './utils/matching.ts'
 import { createReplacementRange } from './utils/ranges.ts'
 
@@ -51,9 +51,7 @@ export default class AttachmentsCompletionItemProvider implements vscode.Complet
     try {
       const dirEntries = await fs.readdir(attachmentsDir, { withFileTypes: true })
       // Only include files, not directories
-      files = dirEntries
-        .filter(entry => entry.isFile())
-        .map(entry => entry.name)
+      files = dirEntries.filter((entry) => entry.isFile()).map((entry) => entry.name)
     } catch (error) {
       // Directory doesn't exist or can't be read - return empty completions
       return
@@ -63,7 +61,7 @@ export default class AttachmentsCompletionItemProvider implements vscode.Complet
     const matchingFiles = filterByPrefix(files, searchTerm)
 
     // Create completion items for each file
-    return matchingFiles.map(filename => {
+    return matchingFiles.map((filename) => {
       const item = new vscode.CompletionItem(filename, vscode.CompletionItemKind.File)
       item.insertText = filename
       item.range = createReplacementRange(position, searchTerm.length)

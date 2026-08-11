@@ -194,10 +194,7 @@ export class CompletionDataStore {
               this.subscribe('people', 'peopleUpdated')
               this.subscribe('organizations', 'organizationsUpdated')
               this.subscribe('peopleWithScores', 'peopleWithScoresUpdated { name score }')
-              this.subscribe(
-                'organizationsWithScores',
-                'organizationsWithScoresUpdated { name score }',
-              )
+              this.subscribe('organizationsWithScores', 'organizationsWithScoresUpdated { name score }')
               this.subscribe('tagsWithScores', 'tagsWithScoresUpdated { name score }')
               this.startPingInterval()
               break
@@ -294,10 +291,7 @@ export class CompletionDataStore {
       case 'organizationsWithScores':
         if (payload.data.organizationsWithScoresUpdated) {
           this.organizationsWithScores = payload.data.organizationsWithScoresUpdated
-          console.log(
-            '[CompletionDataStore] Organizations with scores updated:',
-            this.organizationsWithScores.length,
-          )
+          console.log('[CompletionDataStore] Organizations with scores updated:', this.organizationsWithScores.length)
         }
         break
 
@@ -413,10 +407,7 @@ export class CompletionDataStore {
 
     // Calculate delay with exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
     const baseDelay = 1000
-    const delay = Math.min(
-      baseDelay * Math.pow(2, this.reconnectAttempts),
-      this.maxReconnectDelay
-    )
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay)
 
     this.reconnectAttempts++
     console.log(`[CompletionDataStore] Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})`)

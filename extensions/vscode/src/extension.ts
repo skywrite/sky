@@ -1,38 +1,63 @@
-import * as vscode from 'vscode'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_CODE } from '#config'
-import openWithEditor from './commands/openWithEditor.ts'
 import insertLifts from './commands/insertLifts.ts'
-import summarizeTranscript from './commands/summarizeTranscript/mod.ts'
-import summarizeAttachment from './commands/summarizeAttachment/mod.ts'
+import openWithEditor from './commands/openWithEditor.ts'
 import summarizeAllAttachments from './commands/summarizeAllAttachments/mod.ts'
+import summarizeAttachment from './commands/summarizeAttachment/mod.ts'
+import summarizeTranscript from './commands/summarizeTranscript/mod.ts'
+import AttachmentsCompletionItemProvider from './completions/AttachmentsCompletionItemProvider.ts'
+import {
+  activate as activateCompleteTimeInsert,
+  deactivate as deactivateCompleteTimeInsert,
+} from './completions/CompleteTimeInsertProvider.ts'
 import CurrentDirCompletionProvider from './completions/CurrentDirCompletionItemProvider.ts'
+import DayCompletionProvider from './completions/DayCompletionProvider.ts'
+import DayItemCompletionProvider from './completions/DayItemCompletionProvider.ts'
 import DecisionsCompletionProvider from './completions/DecisionsCompletionItemProvider.ts'
 import IdeasCompletionProvider from './completions/IdeasCompletionItemProvider.ts'
-import PlacesCompletionProvider from './completions/PlacesCompletionItemProvider.ts'
 import NotesCompletionProvider from './completions/NotesCompletionItemProvider.ts'
-import ProjectsCompletionProvider from './completions/ProjectsCompletionItemProvider.ts'
-import DayCompletionProvider from './completions/DayCompletionProvider.ts'
-import TagsCompletionItemProvider from './completions/TagsCompletionItemProvider.ts'
-import PeopleCompletionItemProvider from './completions/PeopleCompletionItemProvider.ts'
 import OrganizationsCompletionItemProvider from './completions/OrganizationsCompletionItemProvider.ts'
-import DayItemCompletionProvider from './completions/DayItemCompletionProvider.ts'
-import AttachmentsCompletionItemProvider from './completions/AttachmentsCompletionItemProvider.ts'
+import PeopleCompletionItemProvider from './completions/PeopleCompletionItemProvider.ts'
+import PlacesCompletionProvider from './completions/PlacesCompletionItemProvider.ts'
+import ProjectsCompletionProvider from './completions/ProjectsCompletionItemProvider.ts'
 import RecurringPatternCompletionProvider from './completions/RecurringPatternCompletionProvider.ts'
-import TimezoneCompletionItemProvider from './completions/TimezoneCompletionItemProvider.ts'
 import { CompletionDataStore } from './completions/store/CompletionDataStore.ts'
-import AttachmentsFieldDocumentLinkProvider, { COMMAND_OPEN_FOLDER } from './providers/AttachmentsFieldDocumentLinkProvider.ts'
-import RelDocumentLinkProvider from './providers/RelDocumentLinkProvider.ts'
+import TagsCompletionItemProvider from './completions/TagsCompletionItemProvider.ts'
+import TimezoneCompletionItemProvider from './completions/TimezoneCompletionItemProvider.ts'
+import {
+  activate as activateCBHandler,
+  deactivate as deactivateCBHandler,
+} from './handlers/dayMarkdownCheckBoxHandler.ts'
+import {
+  activate as activateDroppedHandler,
+  deactivate as deactivateDroppedHandler,
+} from './handlers/dayMarkdownDroppedHandler.ts'
+import {
+  activate as activateReminderHandler,
+  deactivate as deactivateReminderHandler,
+} from './handlers/dayMarkdownReminderHandler.ts'
+import {
+  activate as activateTodoHandler,
+  deactivate as deactivateTodoHandler,
+} from './handlers/dayMarkdownTodoHandler.ts'
+import {
+  activate as activateNotebookTime,
+  deactivate as deactivateNotebookTime,
+} from './handlers/notebookTimeStatusBar.ts'
+import {
+  activate as activatePatternHighlighter,
+  deactivate as deactivatePatternHighlighter,
+} from './highlighters/RecurringPatternHighlighter.ts'
+import AttachmentsFieldDocumentLinkProvider, {
+  COMMAND_OPEN_FOLDER,
+} from './providers/AttachmentsFieldDocumentLinkProvider.ts'
 import PersonFieldDocumentLinkProvider from './providers/PersonFieldDocumentLinkProvider.ts'
-
-import { activate as activateCBHandler, deactivate as deactivateCBHandler } from './handlers/dayMarkdownCheckBoxHandler.ts'
-import { activate as activateDroppedHandler, deactivate as deactivateDroppedHandler } from './handlers/dayMarkdownDroppedHandler.ts'
-import { activate as activateReminderHandler, deactivate as deactivateReminderHandler } from './handlers/dayMarkdownReminderHandler.ts'
-import { activate as activateTodoHandler, deactivate as deactivateTodoHandler } from './handlers/dayMarkdownTodoHandler.ts'
-import { activate as activatePatternHighlighter, deactivate as deactivatePatternHighlighter } from './highlighters/RecurringPatternHighlighter.ts'
-import { activate as activateNotebookTime, deactivate as deactivateNotebookTime } from './handlers/notebookTimeStatusBar.ts'
-import { activate as activateCompleteTimeInsert, deactivate as deactivateCompleteTimeInsert } from './completions/CompleteTimeInsertProvider.ts'
-import { activate as activateYamlValidator, deactivate as deactivateYamlValidator } from './validators/YamlFrontmatterValidator.ts'
+import RelDocumentLinkProvider from './providers/RelDocumentLinkProvider.ts'
+import {
+  activate as activateYamlValidator,
+  deactivate as deactivateYamlValidator,
+} from './validators/YamlFrontmatterValidator.ts'
 
 export function activate(context: vscode.ExtensionContext) {
   // TODO: Port embedded ENV keys (e.g., ANTHROPIC_API_KEY) to VSCode user settings
@@ -56,24 +81,16 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable5)
 
   // AI-powered transcript summary command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('transcript.summarize', summarizeTranscript),
-  )
+  context.subscriptions.push(vscode.commands.registerCommand('transcript.summarize', summarizeTranscript))
 
   // AI-powered attachment summary command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('attachment.summarize', summarizeAttachment),
-  )
+  context.subscriptions.push(vscode.commands.registerCommand('attachment.summarize', summarizeAttachment))
 
   // AI-powered summarize ALL attachments command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('attachment.summarizeAll', summarizeAllAttachments),
-  )
+  context.subscriptions.push(vscode.commands.registerCommand('attachment.summarizeAll', summarizeAllAttachments))
 
   // Insert lifts from Strong CSV
-  context.subscriptions.push(
-    vscode.commands.registerCommand('lifts.insert', insertLifts),
-  )
+  context.subscriptions.push(vscode.commands.registerCommand('lifts.insert', insertLifts))
 
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider('markdown', new CurrentDirCompletionProvider(), '.', '/'),
@@ -144,9 +161,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   // Cmd+Click on rel: values in YAML frontmatter
-  context.subscriptions.push(
-    vscode.languages.registerDocumentLinkProvider('markdown', new RelDocumentLinkProvider()),
-  )
+  context.subscriptions.push(vscode.languages.registerDocumentLinkProvider('markdown', new RelDocumentLinkProvider()))
 
   // Cmd+Click on person names in who/to/from/cc/bcc frontmatter fields
   context.subscriptions.push(

@@ -42,10 +42,7 @@ class CompleteTimeInsertHandler {
     }
   }
 
-  private async processChange(
-    editor: vscode.TextEditor,
-    change: vscode.TextDocumentContentChangeEvent,
-  ) {
+  private async processChange(editor: vscode.TextEditor, change: vscode.TextDocumentContentChangeEvent) {
     // Only interested in single character insertions
     if (change.text.length !== 1) return
 
