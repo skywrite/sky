@@ -1,7 +1,7 @@
-import * as vscode from 'vscode'
-import * as fs from 'node:fs/promises'
 import { Dirent } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_PLACES_LOCATIONS } from '#config'
 
 const rootPath = DIR_PLACES_LOCATIONS
@@ -26,8 +26,8 @@ export default class PlacesCompletionProvider implements vscode.CompletionItemPr
     }
 
     return dirEntries
-      .filter(entry => !entry.name.startsWith('.'))
-      .map(entry => {
+      .filter((entry) => !entry.name.startsWith('.'))
+      .map((entry) => {
         const name = path.parse(entry.name).name // chop off file extension (noop for dirs)
         const item = new vscode.CompletionItem(name)
         item.range = new vscode.Range(position, position)
@@ -36,7 +36,7 @@ export default class PlacesCompletionProvider implements vscode.CompletionItemPr
           item.insertText = `${name}/`
           item.command = {
             command: 'editor.action.triggerSuggest',
-            title: 'Trigger Suggest'
+            title: 'Trigger Suggest',
           }
         } else if (entry.isFile() && entry.name.endsWith('.md')) {
           item.insertText = name

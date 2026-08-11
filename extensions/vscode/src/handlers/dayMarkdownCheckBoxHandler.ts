@@ -141,7 +141,7 @@ class CheckboxController {
     if (!editor || !this.isValidMarkdownFile(editor.document)) return
 
     // If line is provided, use it. Otherwise use current cursor position
-    const lineNumber = (line !== undefined) ? line : editor.selection.active.line
+    const lineNumber = line !== undefined ? line : editor.selection.active.line
     await this.toggleCheckboxAndStrikethrough(editor, lineNumber)
   }
 
@@ -159,7 +159,9 @@ class CheckboxController {
     // Check if we're in the Reminders section and show a warning
     const listTitle = findListTitle(document, line)
     if (listTitle === 'Reminders') {
-      vscode.window.showInformationMessage('Reminders are for acknowledgment, not tracking. Use Todos for tasks you want to complete.')
+      vscode.window.showInformationMessage(
+        'Reminders are for acknowledgment, not tracking. Use Todos for tasks you want to complete.',
+      )
     }
 
     // Check if the content starts with a time in 24-hour format

@@ -155,7 +155,7 @@ export default class RelDocumentLinkProvider implements vscode.DocumentLinkProvi
 
       if (!response.ok) return null
 
-      const result = await response.json() as { data?: { resolveRefs: ResolvedRef[] } }
+      const result = (await response.json()) as { data?: { resolveRefs: ResolvedRef[] } }
       return result.data?.resolveRefs ?? null
     } catch {
       // Server not running or network error

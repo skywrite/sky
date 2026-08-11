@@ -1,6 +1,6 @@
-import * as vscode from 'vscode'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_PROJECTS_OPEN } from '#config'
 
 const rootPath = DIR_PROJECTS_OPEN
@@ -27,8 +27,8 @@ export default class ProjectsCompletionProvider implements vscode.CompletionItem
     }
 
     return dirEntries
-      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map(entry => {
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => {
         const name = entry.name
         const item = new vscode.CompletionItem(name)
         item.kind = vscode.CompletionItemKind.Folder
@@ -36,10 +36,7 @@ export default class ProjectsCompletionProvider implements vscode.CompletionItem
         item.filterText = 'projects/' + name
         item.sortText = '!' + name // rank above word completions
         item.insertText = name
-        item.range = new vscode.Range(
-          position.translate(0, -afterTrigger.length),
-          position,
-        )
+        item.range = new vscode.Range(position.translate(0, -afterTrigger.length), position)
         return item
       })
   }

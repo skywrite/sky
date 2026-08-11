@@ -1,7 +1,7 @@
-import Mocha from 'mocha'
 import { readdirSync } from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import Mocha from 'mocha'
 
 export async function run(): Promise<void> {
   const mocha = new Mocha({

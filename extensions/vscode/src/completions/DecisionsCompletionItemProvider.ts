@@ -1,6 +1,6 @@
-import * as vscode from 'vscode'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_DECISIONS } from '#config'
 
 /**
@@ -35,10 +35,7 @@ export default class DecisionsCompletionProvider implements vscode.CompletionIte
       item.kind = vscode.CompletionItemKind.Event
       item.detail = `decisions/${decision.year}/${decision.status}/${decision.month}/${decision.slug}`
       item.insertText = decision.slug
-      item.range = new vscode.Range(
-        position.translate(0, -afterTrigger.length),
-        position
-      )
+      item.range = new vscode.Range(position.translate(0, -afterTrigger.length), position)
       return item
     })
   }

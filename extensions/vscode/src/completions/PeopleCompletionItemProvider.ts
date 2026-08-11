@@ -47,7 +47,8 @@ export default class PeopleCompletionItemProvider implements vscode.CompletionIt
       people = [linePrefix.replace('-', '').trim()]
     } else {
       // Extract the current people entries based on delimiters (; or ,)
-      people = linePrefix.replace(/^[^:]+:/, '') // Remove the key part (e.g., "who:")
+      people = linePrefix
+        .replace(/^[^:]+:/, '') // Remove the key part (e.g., "who:")
         .split(/[,;]/) // Split by either comma or semicolon
         .map((p) => p.trim())
         .filter((p) => p)
@@ -58,9 +59,7 @@ export default class PeopleCompletionItemProvider implements vscode.CompletionIt
 
     // Get people with scores and filter by prefix
     const allPeopleWithScores = this.source.getPeopleWithScores()
-    const matchingPeople = allPeopleWithScores.filter((p) =>
-      p.name.toLowerCase().startsWith(searchLower)
-    )
+    const matchingPeople = allPeopleWithScores.filter((p) => p.name.toLowerCase().startsWith(searchLower))
 
     // Create completion items with score-based sorting
     return matchingPeople.map((person) => {

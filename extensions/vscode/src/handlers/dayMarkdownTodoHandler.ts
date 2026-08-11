@@ -74,7 +74,7 @@ class TodoController {
       return
     }
 
-    const lineNumber = (line !== undefined) ? line : editor.selection.active.line
+    const lineNumber = line !== undefined ? line : editor.selection.active.line
     const document = editor.document
     const lineText = document.lineAt(lineNumber).text
 

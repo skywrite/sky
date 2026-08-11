@@ -1,8 +1,8 @@
 import * as vscode from 'vscode'
 import Day from '#shared/models/Day/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
-import { setDocumentContent } from './util.ts'
 import type { SmartTodoClipboard } from './dayMarkdownTodoHandler.ts'
+import { setDocumentContent } from './util.ts'
 
 /**
  * Clipboard format for smart copy/paste of reminders with reference links.
@@ -80,7 +80,7 @@ class ReminderController {
     if (!editor || !this.isValidMarkdownFile(editor.document)) return
     if (!editor.document.fileName.endsWith('day.md')) return
 
-    const lineNumber = (line !== undefined) ? line : editor.selection.active.line
+    const lineNumber = line !== undefined ? line : editor.selection.active.line
     const document = editor.document
     const lineText = document.lineAt(lineNumber).text
 

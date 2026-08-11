@@ -34,7 +34,8 @@ export default class TagsCompletionItemProvider implements vscode.CompletionItem
 
     if (!line.startsWith('tags:')) return
 
-    const tags = line.replace('tags:', '')
+    const tags = line
+      .replace('tags:', '')
       .split(';')
       .map((t) => t.trim())
       .filter((t) => t)
@@ -43,9 +44,7 @@ export default class TagsCompletionItemProvider implements vscode.CompletionItem
     const searchLower = searchTag.toLowerCase()
 
     const allTagsWithScores = this.source.getTagsWithScores()
-    const matchingTags = allTagsWithScores.filter((t) =>
-      t.name.toLowerCase().startsWith(searchLower)
-    )
+    const matchingTags = allTagsWithScores.filter((t) => t.name.toLowerCase().startsWith(searchLower))
 
     return matchingTags.map((tag, index) => {
       const completionItem = new vscode.CompletionItem(tag.name)

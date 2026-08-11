@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
+import { patterns } from '#universal/dates/recurring/patterns.ts'
 import { filterByPrefix } from './utils/matching.ts'
 import { createReplacementRange } from './utils/ranges.ts'
-import { patterns } from '#universal/dates/recurring/patterns.ts'
 
 /** All supported recurring patterns with descriptions */
 const RECURRING_PATTERNS = patterns

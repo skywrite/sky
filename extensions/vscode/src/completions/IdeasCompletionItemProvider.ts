@@ -1,6 +1,6 @@
-import * as vscode from 'vscode'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_IDEAS } from '#config'
 
 /**
@@ -32,10 +32,7 @@ export default class IdeasCompletionProvider implements vscode.CompletionItemPro
       item.kind = vscode.CompletionItemKind.Event
       item.detail = `ideas/${idea.year}/${idea.status}/${idea.month}/${idea.slug}`
       item.insertText = idea.slug
-      item.range = new vscode.Range(
-        position.translate(0, -afterTrigger.length),
-        position,
-      )
+      item.range = new vscode.Range(position.translate(0, -afterTrigger.length), position)
       return item
     })
   }

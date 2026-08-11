@@ -70,7 +70,9 @@ const importKeys = Object.keys(importsMap).sort()
 const pathKeys = Object.keys(pathsMap).sort()
 
 if (importKeys.join('|') !== pathKeys.join('|')) {
-  console.log(`FAIL  imports/paths namespaces differ:\n        imports: ${importKeys.join(', ') || '(none)'}\n        paths:   ${pathKeys.join(', ') || '(none)'}`)
+  console.log(
+    `FAIL  imports/paths namespaces differ:\n        imports: ${importKeys.join(', ') || '(none)'}\n        paths:   ${pathKeys.join(', ') || '(none)'}`,
+  )
   bad++
 } else {
   for (const key of importKeys) {

@@ -53,7 +53,8 @@ export default class OrganizationsCompletionItemProvider implements vscode.Compl
       orgs = [linePrefix.replace('-', '').trim()]
     } else {
       // Extract the current org entries based on delimiters (; or ,)
-      orgs = linePrefix.replace(/^[^:]+:/, '') // Remove the key part (e.g., "org:")
+      orgs = linePrefix
+        .replace(/^[^:]+:/, '') // Remove the key part (e.g., "org:")
         .split(/[,;]/) // Split by either comma or semicolon
         .map((o) => o.trim())
         .filter((o) => o)
@@ -63,9 +64,7 @@ export default class OrganizationsCompletionItemProvider implements vscode.Compl
     const searchLower = searchOrg.toLowerCase()
 
     const allOrgsWithScores = this.source.getOrganizationsWithScores()
-    const matchingOrgs = allOrgsWithScores.filter((org) =>
-      org.name.toLowerCase().startsWith(searchLower)
-    )
+    const matchingOrgs = allOrgsWithScores.filter((org) => org.name.toLowerCase().startsWith(searchLower))
 
     return matchingOrgs.map((org) => {
       const completionItem = new vscode.CompletionItem(org.name)

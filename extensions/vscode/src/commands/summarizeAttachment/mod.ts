@@ -1,20 +1,42 @@
-import * as vscode from 'vscode'
-import * as path from 'node:path'
-import * as os from 'node:os'
 import { execFile } from 'node:child_process'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
-import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import * as vscode from 'vscode'
 import { DIR_ATTACHMENTS, DIR_CODE } from '#config'
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 
 export const SUPPORTED_EXTENSIONS = new Set([
-  '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp',
-  '.csv', '.md', '.txt', '.json', '.xml', '.html', '.htm',
-  '.yaml', '.yml', '.toml', '.log', '.tsv',
-  '.docx', '.doc', '.rtf', '.odt', '.pages',
-  '.pptx', '.keynote',
-  '.xlsx', '.xls', '.numbers',
+  '.pdf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.csv',
+  '.md',
+  '.txt',
+  '.json',
+  '.xml',
+  '.html',
+  '.htm',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.log',
+  '.tsv',
+  '.docx',
+  '.doc',
+  '.rtf',
+  '.odt',
+  '.pages',
+  '.pptx',
+  '.keynote',
+  '.xlsx',
+  '.xls',
+  '.numbers',
 ])
 
 const SKY_BIN = path.join(DIR_CODE, 'bin', 'sky')
@@ -24,21 +46,26 @@ const SKY_BIN = path.join(DIR_CODE, 'bin', 'sky')
  */
 function runSummaryDoc(filePath: string, tmpFile: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(SKY_BIN, ['summary:doc', filePath, '-o', tmpFile], {
-      timeout: 5 * 60 * 1000,
-      env: { ...process.env, PATH: process.env.PATH },
-    }, async (error) => {
-      if (error) {
-        reject(new Error(`sky summary:doc failed: ${error.message}`))
-        return
-      }
-      try {
-        const result = await readFile(tmpFile, 'utf-8')
-        resolve(result)
-      } catch (err) {
-        reject(new Error(`Failed to read summary output: ${(err as Error).message}`))
-      }
-    })
+    execFile(
+      SKY_BIN,
+      ['summary:doc', filePath, '-o', tmpFile],
+      {
+        timeout: 5 * 60 * 1000,
+        env: { ...process.env, PATH: process.env.PATH },
+      },
+      async (error) => {
+        if (error) {
+          reject(new Error(`sky summary:doc failed: ${error.message}`))
+          return
+        }
+        try {
+          const result = await readFile(tmpFile, 'utf-8')
+          resolve(result)
+        } catch (err) {
+          reject(new Error(`Failed to read summary output: ${(err as Error).message}`))
+        }
+      },
+    )
   })
 }
 
@@ -49,21 +76,24 @@ function runSummaryDoc(filePath: string, tmpFile: string): Promise<string> {
  * - `### X` → `##### X`
  */
 function transformHeadings(summary: string, filename: string): string {
-  return summary.split('\n').map((line) => {
-    // Match heading lines: # through ###
-    const match = line.match(/^(#{1,3}) (.+)$/)
-    if (!match) return line
+  return summary
+    .split('\n')
+    .map((line) => {
+      // Match heading lines: # through ###
+      const match = line.match(/^(#{1,3}) (.+)$/)
+      if (!match) return line
 
-    const [, hashes, text] = match
-    const level = hashes.length
+      const [, hashes, text] = match
+      const level = hashes.length
 
-    if (level === 1) {
-      // Top-level summary heading → ### Summary (filename)
-      return `### Summary (${filename})`
-    }
-    // Bump by 2 levels
-    return '#'.repeat(level + 2) + ' ' + text
-  }).join('\n')
+      if (level === 1) {
+        // Top-level summary heading → ### Summary (filename)
+        return `### Summary (${filename})`
+      }
+      // Bump by 2 levels
+      return '#'.repeat(level + 2) + ' ' + text
+    })
+    .join('\n')
 }
 
 /**
@@ -135,7 +165,11 @@ export default async function summarizeAttachment(targetFile?: string): Promise<
         const summary = await runSummaryDoc(filePath, tmpFile)
 
         // Clean up temp file
-        try { await unlink(tmpFile) } catch { /* ignore */ }
+        try {
+          await unlink(tmpFile)
+        } catch {
+          /* ignore */
+        }
 
         if (!summary.trim()) {
           vscode.window.showWarningMessage('Summary was empty')
@@ -198,7 +232,11 @@ export default async function summarizeAttachment(targetFile?: string): Promise<
         vscode.window.showInformationMessage(`Attachment summary inserted for ${selectedFile}`)
       } catch (error) {
         // Clean up temp file on error
-        try { await unlink(tmpFile) } catch { /* ignore */ }
+        try {
+          await unlink(tmpFile)
+        } catch {
+          /* ignore */
+        }
         const message = error instanceof Error ? error.message : String(error)
         vscode.window.showErrorMessage(`Failed to summarize attachment: ${message}`)
         console.error('Summarize attachment error:', error)

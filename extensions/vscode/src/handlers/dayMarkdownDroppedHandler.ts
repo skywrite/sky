@@ -59,7 +59,7 @@ class DroppedController {
     if (!editor || !this.isValidMarkdownFile(editor.document)) return
     if (!editor.document.fileName.endsWith('day.md')) return
 
-    const lineNumber = (line !== undefined) ? line : editor.selection.active.line
+    const lineNumber = line !== undefined ? line : editor.selection.active.line
     await this.moveTaskToDropped(editor, lineNumber)
   }
 

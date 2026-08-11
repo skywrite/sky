@@ -1,5 +1,5 @@
-import * as vscode from 'vscode'
 import * as cp from 'node:child_process'
+import * as vscode from 'vscode'
 import { uriToDocument } from '../util.ts'
 
 const APP_PATH = '/Applications/Typora.app'
