@@ -70,13 +70,14 @@ A command manifest (`~/.sky/sky.commands.json`) caches discovered commands for f
 All commands run from `src/`:
 
 ```bash
-bun run dev:fmt          # Format (oxfmt)
+bun run dev:check        # Full gate: fmt + lint + typecheck + extension checks
+bun run dev:fmt          # Format (oxfmt) — fixes what dev:check's fmt step flags
 bun run dev:lint         # Lint (oxlint + banned-apis + tasks)
 bun run dev:typecheck    # Type check (tsc)
 bun run dev:test:unit    # Run tests (bun test)
 ```
 
-**All three checks (fmt, lint, typecheck) are mandatory after code changes.**
+**`dev:check` is mandatory after code changes.** It chains fmt (check-only), lint, typecheck, and the VS Code extension's own checks; if the fmt step fails, run `dev:fmt` to fix and re-run.
 
 ## Testing
 
@@ -226,15 +227,13 @@ Only write code when explicitly asked: "do it", "yes", "go ahead", "build it".
 
 ## Code Quality
 
-After modifying any TypeScript code, run all three checks from `src/`:
+After modifying any TypeScript code, run the full gate from `src/`:
 
 ```bash
-bun run dev:fmt        # Format
-bun run dev:lint       # Lint
-bun run dev:typecheck  # Type check
+bun run dev:check
 ```
 
-Fix any errors before proceeding. Run them after creating/editing TypeScript files and before committing.
+It chains fmt (check-only), lint, typecheck, and the VS Code extension's checks (stripcheck, depparity, syncTitles). If the fmt step fails, `bun run dev:fmt` fixes it. Fix any errors before proceeding. Run it after creating/editing TypeScript files and before committing.
 
 ## Git and Commits
 
