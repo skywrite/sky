@@ -1,6 +1,5 @@
 export { default as dayDir } from './dayDir.ts'
 export { default as dayFile } from './dayFile.ts'
 export { default as nbfsWeekMonth } from './nbfsWeekMonth.ts'
-export { default as nbfsWeekNumber } from './nbfsWeekNumber.ts'
 export { default as parseDateFromDayPath } from './parseDateFromDayPath.ts'
 export { default as weekDir } from './weekDir.ts'

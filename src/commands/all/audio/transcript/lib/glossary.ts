@@ -62,6 +62,21 @@ function isTermShaped(text: string): boolean {
 }
 
 /**
+ * Entity-shaped text earns confirmed-tier replay; everything else is ordinary
+ * English that was misheard in one context, and replaying it blindly would
+ * corrupt legitimate uses of the words. A single word counts with any capital
+ * (Novack). A multi-word span needs a capital past the sentence-initial
+ * position — inside the first word (NovaPay) or on a later word (Jane Doh) —
+ * because a fragment like "He said maybe" is capitalized for starting a
+ * sentence, not for naming anything.
+ */
+function isEntityShaped(text: string): boolean {
+  const words = collapseWhitespace(text).split(' ')
+  if (words.length === 1) return /\p{Lu}/u.test(text)
+  return /\p{Lu}/u.test(words[0].slice(1)) || words.slice(1).some((word) => /\p{Lu}/u.test(word))
+}
+
+/**
  * A correction that merely trims words off an edge of the wrong text is an
  * artifact deletion (caption bleed like a trailing "Thanks"), not a term —
  * the exact padded span never recurs. Word-level on purpose: a character-level
@@ -123,6 +138,8 @@ export async function saveGlossary(glossary: Glossary, filePath: string = GLOSSA
  * - sentence-shaped spans are dropped — only term-shaped text recurs
  * - edge-trims (right = wrong minus edge words) are dropped — caption-bleed
  *   artifacts, not terms
+ * - corrections where neither side is entity-shaped are dropped — a standing
+ *   rule for ordinary English (works → worked) misfires on legitimate uses
  */
 export function buildRulings(
   issues: Array<{ type: string; originalText: string }>,
@@ -148,6 +165,7 @@ export function buildRulings(
       continue
     }
     if (isEdgeTrim(wrong, right)) continue
+    if (!isEntityShaped(wrong) && !isEntityShaped(right)) continue
     rulings.push({ wrong, right })
   }
   return rulings
@@ -181,23 +199,13 @@ export function applyRulings(glossary: Glossary, rulings: GlossaryRuling[], toda
   }
 }
 
-/**
- * Name-shaped wrongs (any uppercase letter) replay as confirmed replacements.
- * All-lowercase wrongs are ordinary English that was misheard as an entity in
- * one context — replaying those blindly would corrupt legitimate uses of the
- * words, so they render as context-judged hints instead.
- */
-function isNameShaped(text: string): boolean {
-  return /\p{Lu}/u.test(text)
-}
-
 /** Prompt block for the analysis phase. */
 export function renderGlossary(glossary: Glossary): string {
   if (glossary.entries.length === 0) return '(none yet)'
 
   const corrects = glossary.entries.filter((e) => e.action === 'correct')
-  const confirmed = corrects.filter((e) => isNameShaped(e.wrong))
-  const hints = corrects.filter((e) => !isNameShaped(e.wrong))
+  const confirmed = corrects.filter((e) => isEntityShaped(e.wrong))
+  const hints = corrects.filter((e) => !isEntityShaped(e.wrong))
   const keeps = glossary.entries.filter((e) => e.action === 'keep')
   const entryLine = (e: GlossaryEntry) => `- "${e.wrong}" → "${e.right}" (confirmed ${e.count}×, last ${e.lastSeen})`
 
