@@ -19,10 +19,12 @@ import { fetchOrgs, fetchPeople, fetchProjects } from './lib/entityLists.ts'
 import {
   applyRulings,
   buildRulings,
+  capForPrompt,
   GLOSSARY_FILE,
   loadGlossary,
   renderGlossary,
   saveGlossary,
+  touchLastSeen,
 } from './lib/glossary.ts'
 import SRT from './lib/SRT/mod.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
@@ -304,10 +306,18 @@ export default class AudioTranscriptCleanTask extends Command {
     // User glossary: rulings from past reviews, corrected at HIGH confidence and
     // never re-asked. Null means the file is malformed — never overwrite it then.
     const glossary = await loadGlossary()
+    let glossaryTouched = 0
+    let glossaryCap = null as ReturnType<typeof capForPrompt> | null
     if (glossary === null) {
       output.log(colors.yellow(`Glossary unreadable — fix or delete ${GLOSSARY_FILE} (new rulings won't be saved)`))
     } else if (glossary.entries.length > 0) {
-      output.log(colors.gray(`Loaded ${glossary.entries.length} glossary rulings`))
+      glossaryTouched = touchLastSeen(glossary, transcript, context.notebookNow.date)
+      glossaryCap = capForPrompt(glossary)
+      const counts =
+        glossaryCap.rendered < glossaryCap.total
+          ? `${glossaryCap.total} glossary rulings (rendered ${glossaryCap.rendered})`
+          : `${glossaryCap.total} glossary rulings`
+      output.log(colors.gray(`Loaded ${counts}`))
     }
 
     // 3. Load and render analysis prompt
@@ -325,7 +335,7 @@ export default class AudioTranscriptCleanTask extends Command {
         knownPeople,
         knownOrgs,
         knownProjects,
-        glossary: glossary ? renderGlossary(glossary) : '(none yet)',
+        glossary: glossaryCap ? renderGlossary(glossaryCap.capped) : '(none yet)',
       },
     }
 
@@ -399,14 +409,19 @@ export default class AudioTranscriptCleanTask extends Command {
     // 5. Interactive Q&A loop (only for medium/low confidence issues)
     const reviewCorrections = await this.interactiveCorrection(output, reviewIssues)
 
-    // Persist the user's rulings so future runs stop asking about settled terms.
+    // Persist the user's rulings, plus lastSeen touches from this transcript,
+    // so future runs stop asking about settled terms.
     if (glossary !== null) {
       const rulings = buildRulings(reviewIssues, reviewCorrections)
-      if (rulings.length > 0) {
-        applyRulings(glossary, rulings, context.notebookNow.date)
+      if (rulings.length > 0) applyRulings(glossary, rulings, context.notebookNow.date)
+      if (rulings.length > 0 || glossaryTouched > 0) {
+        const changes = [
+          ...(rulings.length > 0 ? [`${rulings.length} rulings`] : []),
+          ...(glossaryTouched > 0 ? [`${glossaryTouched} seen`] : []),
+        ]
         try {
           await saveGlossary(glossary)
-          output.log(colors.gray(`Glossary updated (${rulings.length} rulings): ${GLOSSARY_FILE}`))
+          output.log(colors.gray(`Glossary updated (${changes.join(', ')}): ${GLOSSARY_FILE}`))
         } catch (err) {
           output.error(`Failed to save glossary: ${(err as Error).message}`)
         }
