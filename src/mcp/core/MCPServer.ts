@@ -75,7 +75,7 @@ export class MCPServer {
       // WORKAROUND: Claude may request tools/list immediately after initialize
       // without sending notifications/initialized due to a bug.
       // We allow this request even if not technically initialized per spec.
-      console.log('[MCPServer] Handling tools/list request')
+      console.error('[MCPServer] Handling tools/list request')
 
       const tasks = this.registry.getAll()
       const tools = tasks.map((task) => ({
@@ -84,7 +84,7 @@ export class MCPServer {
         inputSchema: commandDescriptionToMCPSchema(task.commandDescription),
       }))
 
-      console.log(`[MCPServer] Returning ${tools.length} tools`)
+      console.error(`[MCPServer] Returning ${tools.length} tools`)
       return { tools }
     })
 

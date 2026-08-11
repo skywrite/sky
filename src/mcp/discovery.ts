@@ -2,8 +2,6 @@
  * Scan task files for @MCPTool decorator without importing them
  */
 
-import { join } from 'node:path'
-import process from 'node:process'
 import { walk } from '#shared/fs/mod.ts'
 import readTextFile from '#shared/fs/readTextFile.ts'
 
@@ -27,10 +25,13 @@ async function hasMMCPToolDecorator(filePath: string): Promise<boolean> {
  * Find all task files that have the @MCPTool decorator
  */
 export async function findMCPDecoratedCommands(): Promise<string[]> {
-  const tasksDir = join(process.cwd(), 'tasks', 'all')
+  // Resolved from this module rather than the process's working directory:
+  // `bin/sky` pushd's into src/ before running, so a cwd-relative path answers
+  // to wherever the user happened to be standing.
+  const commandsDir = new URL('../commands/all', import.meta.url).pathname
   const decoratedTasks: string[] = []
 
-  for await (const entry of walk(tasksDir, { exts: ['.ts'], includeDirs: false })) {
+  for await (const entry of walk(commandsDir, { exts: ['.ts'], includeDirs: false })) {
     if (entry.path.includes('_test.ts')) continue // Skip test files
 
     if (await hasMMCPToolDecorator(entry.path)) {
