@@ -7,6 +7,14 @@
  * notebook); editing or deleting the file is the unlearn path. A malformed
  * file loads as null and is never overwritten — a bad hand-edit must not cost
  * the user their glossary.
+ *
+ * Growth policy: entries never expire from the file — successful confirmed
+ * corrections are invisible to review (they fire silently), so time-based
+ * eviction would kill the best entries first. Instead, touchLastSeen() marks
+ * entries relevant to each transcript, and capForPrompt() bounds what renders
+ * into the prompt. Storage aging (archiving count-1 entries whose touched
+ * lastSeen goes ~180 days stale) is deliberate future work for when the render
+ * caps first trigger.
  */
 
 import { mkdir } from 'node:fs/promises'
@@ -196,6 +204,64 @@ export function applyRulings(glossary: Glossary, rulings: GlossaryRuling[], toda
       entry.action = 'correct'
       entry.right = ruling.right
     }
+  }
+}
+
+/**
+ * Bump lastSeen on every entry whose wrong or right side appears in the
+ * transcript, making lastSeen mean "last relevant" rather than "last
+ * hand-ruled" — review never re-surfaces a correction that fires, so without
+ * this the entries doing the most work look permanently stale. Returns how
+ * many entries changed (same-day repeats don't count, so a no-op run doesn't
+ * force a save).
+ */
+export function touchLastSeen(glossary: Glossary, transcript: string, today: string): number {
+  const haystack = normalizeTerm(transcript)
+  let touched = 0
+  for (const entry of glossary.entries) {
+    if (entry.lastSeen === today) continue
+    const seen =
+      haystack.includes(normalizeTerm(entry.wrong)) ||
+      (entry.right !== undefined && haystack.includes(normalizeTerm(entry.right)))
+    if (seen) {
+      entry.lastSeen = today
+      touched += 1
+    }
+  }
+  return touched
+}
+
+export interface RenderCaps {
+  confirmed: number
+  hints: number
+}
+
+export const DEFAULT_RENDER_CAPS: RenderCaps = { confirmed: 150, hints: 60 }
+
+/**
+ * Bound what renders into the prompt without touching the file: keeps are
+ * uncapped (one suppression line each), confirmed and hint corrections keep
+ * the top entries by count then lastSeen — hints tightest, since every hint
+ * line asks the model for a context judgment and they degrade first. Callers
+ * log rendered vs total so truncation is never silent.
+ */
+export function capForPrompt(
+  glossary: Glossary,
+  caps: RenderCaps = DEFAULT_RENDER_CAPS,
+): { capped: Glossary; total: number; rendered: number } {
+  const byPriority = (a: GlossaryEntry, b: GlossaryEntry) => b.count - a.count || b.lastSeen.localeCompare(a.lastSeen)
+  const corrects = glossary.entries.filter((e) => e.action === 'correct')
+  const confirmed = corrects.filter((e) => isEntityShaped(e.wrong))
+  const hints = corrects.filter((e) => !isEntityShaped(e.wrong))
+  const selected = new Set<GlossaryEntry>([
+    ...glossary.entries.filter((e) => e.action === 'keep'),
+    ...confirmed.toSorted(byPriority).slice(0, caps.confirmed),
+    ...hints.toSorted(byPriority).slice(0, caps.hints),
+  ])
+  return {
+    capped: { version: 1, entries: glossary.entries.filter((e) => selected.has(e)) },
+    total: glossary.entries.length,
+    rendered: selected.size,
   }
 }
 

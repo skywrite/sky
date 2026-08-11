@@ -1,5 +1,13 @@
 import { assert, test } from '#test'
-import { applyRulings, buildRulings, emptyGlossary, parseGlossary, renderGlossary } from './glossary.ts'
+import {
+  applyRulings,
+  buildRulings,
+  capForPrompt,
+  emptyGlossary,
+  parseGlossary,
+  renderGlossary,
+  touchLastSeen,
+} from './glossary.ts'
 import type { Glossary } from './glossary.ts'
 
 test('parseGlossary()', () => {
@@ -283,5 +291,68 @@ test('renderGlossary()', () => {
       'Confirmed corrections :: - "Jane Doh" → "Jane Doe" (confirmed 1×, last 2026-07-01)',
       'Sounds-like hints :: - "Her plan changed" → "Their plan changed" (confirmed 1×, last 2026-07-01)',
     ],
+  })
+})
+
+const entry = (wrong: string, right: string | null, count: number, lastSeen: string) => ({
+  wrong,
+  ...(right === null ? {} : { right }),
+  action: (right === null ? 'keep' : 'correct') as 'keep' | 'correct',
+  count,
+  firstSeen: '2026-07-01',
+  lastSeen,
+})
+
+test('touchLastSeen()', () => {
+  const glossary: Glossary = {
+    version: 1,
+    entries: [
+      entry('Novack', 'Novak', 1, '2026-07-01'), // wrong side appears (case aside)
+      entry('at less', 'Atlas', 1, '2026-07-01'), // right side appears
+      entry('Quorvex', 'Qorvex', 1, '2026-07-01'), // absent from the transcript
+      entry('Sonatrix', null, 1, '2026-08-01'), // already touched today
+    ],
+  }
+  const touched = touchLastSeen(glossary, 'We met  NOVACK at the Atlas review with Sonatrix.', '2026-08-01')
+  assert({
+    given: 'a transcript mentioning some glossary terms',
+    should: 'bump lastSeen for matches on either side, skipping same-day entries',
+    actual: { touched, lastSeen: glossary.entries.map((e) => e.lastSeen) },
+    expected: { touched: 2, lastSeen: ['2026-08-01', '2026-08-01', '2026-07-01', '2026-08-01'] },
+  })
+})
+
+test('capForPrompt()', () => {
+  const glossary: Glossary = {
+    version: 1,
+    entries: [
+      entry('Alfa', 'Alpha', 1, '2026-07-01'),
+      entry('Bravvo', 'Bravo', 3, '2026-07-01'),
+      entry('Charly', 'Charlie', 2, '2026-07-01'),
+      entry('at less', 'Atlas', 1, '2026-07-01'),
+      entry('sky oss', 'Sky OSS', 1, '2026-07-20'),
+      entry('Delta', null, 1, '2026-07-01'),
+    ],
+  }
+
+  assert({
+    given: 'a glossary under the caps',
+    should: 'pass every entry through',
+    actual: capForPrompt(glossary),
+    expected: { capped: glossary, total: 6, rendered: 6 },
+  })
+
+  assert({
+    given: 'caps smaller than the tiers',
+    should: 'keep top entries by count then lastSeen, all keeps, and the original order',
+    actual: capForPrompt(glossary, { confirmed: 2, hints: 1 }).capped.entries.map((e) => e.wrong),
+    expected: ['Bravvo', 'Charly', 'sky oss', 'Delta'],
+  })
+
+  assert({
+    given: 'the same capped call',
+    should: 'report rendered vs total so callers can log the truncation',
+    actual: (({ total, rendered }) => ({ total, rendered }))(capForPrompt(glossary, { confirmed: 2, hints: 1 })),
+    expected: { total: 6, rendered: 4 },
   })
 })
