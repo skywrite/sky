@@ -25,8 +25,10 @@ export default class MessageDocument extends Document {
     'updated',
     'follow',
     'previous',
+    'link',
     'rel',
     'tags',
+    'attachments',
   ]
   /**
    * Create a new message:  new MessageDocument({ from, to, when, medium, summary })
