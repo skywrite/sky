@@ -64,7 +64,7 @@
     "ollama-ai-provider-v2": "4.0.1",
     "open": "9.1.0",
     "open-editor": "6.0.0",
-    "openai": "5.12.2",
+    "openai": "7.4.0",
     "openai-agents": "1.1.0",
     "picocolors": "1.1.1",
     "picomatch": "4.0.5",

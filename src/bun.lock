@@ -39,7 +39,7 @@
         "ollama-ai-provider-v2": "4.0.1",
         "open": "9.1.0",
         "open-editor": "6.0.0",
-        "openai": "5.12.2",
+        "openai": "7.4.0",
         "openai-agents": "1.1.0",
         "picocolors": "1.1.1",
         "picomatch": "4.0.5",
@@ -763,7 +763,7 @@
 
     "open-editor": ["open-editor@6.0.0", "", { "dependencies": { "env-editor": "^1.3.0", "execa": "^9.6.0", "line-column-path": "^4.0.0", "open": "^11.0.0" } }, "sha512-LGd2Xn6NvFlbx/lg/HK69w6Dbg+21MzJzcPDPQRgDRqc+qiR+2/SN99rzZSo7Qa1ck1hcGYig0CAo53cmXCE0w=="],
 
-    "openai": ["openai@5.12.2", "", { "peerDependencies": { "ws": "^8.18.0", "zod": "^3.23.8" }, "optionalPeers": ["ws", "zod"], "bin": { "openai": "bin/cli" } }, "sha512-xqzHHQch5Tws5PcKR2xsZGX9xtch+JQFz5zb14dGqlshmmDAFBFEWmeIpf7wVqWV+w7Emj7jRgkNJakyKE0tYQ=="],
+    "openai": ["openai@7.4.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "ws": "^8.18.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "ws", "zod"] }, "sha512-+C9Muit5x8j9R8ej8ZzVgKcrVDtqFqTy9gxFdov0EItLgU68zrJtF9ZeT0cyqJQW9S3PCJkdFgADtRGquRBtew=="],
 
     "openai-agents": ["openai-agents@1.1.0", "", { "dependencies": { "openai": "^4.71.1" } }, "sha512-tdlXgNZQF51nEm3ablcx85KMPsv33mIEx9xbYanbUVKfFshWYYvZrn4Mj5yrFLPg7jSa2jDd/mfz2ULLS4uA8Q=="],
 
