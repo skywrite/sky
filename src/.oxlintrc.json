@@ -22,5 +22,9 @@
     "triple-slash-reference": "off",
     "no-new-array": "off"
   },
+  // `extensions/` is listed because oxlint follows the extension's `shared` and
+  // `lib` symlinks back into src/, which would lint that tree a second time.
+  // The extension's own source IS linted — by `dev:lint:ext`, which names its
+  // real directories explicitly (ignorePatterns do not apply to explicit paths).
   "ignorePatterns": ["node_modules", "_build", "dist", "deps/", "extensions/", "**/*.md", "**/*.min.js", "vendor"]
 }
