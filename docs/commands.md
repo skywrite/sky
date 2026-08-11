@@ -172,7 +172,6 @@ sky audio:transcript:create      # transcribe an audio file
 sky audio:transcript:clean       # fix transcription errors with AI-assisted Q&A
 sky audio:transcript:summary     # structured summary of a transcript
 sky summary:doc                  # summarize a PDF, image, Office or Apple document
-sky ai:openai:image:gen          # generate an image
 ```
 
 ## System and maintenance
