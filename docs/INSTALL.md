@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Installing Sky
@@ -30,6 +30,11 @@ Budget about five minutes.
 Linux is not tested. The CLI is plain bash + Bun and will likely work; the background
 service is launchd-based and macOS-only, as are a few commands (device location, Editor
 integration).
+
+Individual features need extra tools — ffmpeg for audio conversion, `agent-slack` for
+Slack, `device-location` for location, and a handful of others. None are needed to
+install or to start journaling. [Dependencies](dependencies.md) lists what each one
+unlocks and what happens without it.
 
 ---
 

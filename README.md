@@ -73,6 +73,7 @@ will be a mystery.
 | | |
 |---|---|
 | [Install](docs/INSTALL.md) | Setup, API keys, background service, troubleshooting |
+| [Dependencies](docs/dependencies.md) | What Sky needs installed, required vs optional |
 | [Overview](docs/overview.md) | How the notebook is laid out, and why |
 | [Notebook time & NBFS](docs/nbfs.md) | The file layout and time model in depth |
 | [Commands](docs/commands.md) | Tour of the 150+ commands |
