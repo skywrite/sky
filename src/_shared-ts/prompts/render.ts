@@ -1,11 +1,10 @@
-import * as path from 'node:path'
 import Handlebars from 'handlebars'
 
 // Disable HTML escaping - we're generating AI prompts, not HTML
 // Preserve original behavior: return empty string for null/undefined
 Handlebars.Utils.escapeExpression = (str: string) => (str == null ? '' : str)
 
-import { DIR_BASE } from '#shared/config.ts'
+import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { parsePromptFile } from './parse.ts'
@@ -24,14 +23,12 @@ import { getReservedFieldDefinition, isReservedNamespace } from './variables.ts'
 // Context Building
 // =============================================================================
 
-const ABOUT_ME_PATH = path.join(DIR_BASE as string, 'journal', 'about-me.md')
-
 /**
  * Build default me context from journal/about-me.md
  */
 function buildMeDefaults(): AboutMeDocument | undefined {
   try {
-    return AboutMeDocument.fromMarkdown(readTextFileSync(ABOUT_ME_PATH))
+    return AboutMeDocument.fromMarkdown(readTextFileSync(FILE_ABOUT_ME))
   } catch {
     return undefined
   }

@@ -93,5 +93,7 @@ export const FILE_SCHEDULE_PERSONAL = path.join(DIR_TIME, 'schedule-personal.md'
 
 export const FILE_REMINDERS = path.join(DIR_TIME, 'reminders.md')
 
+export const FILE_ABOUT_ME = path.join(DIR_BASE, 'journal', 'about-me.md')
+
 export const FILE_GOALS_PERSONAL = path.join(DIR_GOALS, 'personal.md')
 export const FILE_GOALS_PROFESSIONAL = path.join(DIR_GOALS, 'professional.md')

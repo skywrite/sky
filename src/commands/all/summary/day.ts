@@ -6,10 +6,12 @@ import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { isParticipant } from '#shared/models/Message/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -154,6 +156,15 @@ export default class SummaryDayTask extends Command {
     const healthData = await gatherHealthData(day, timeDir)
     const priceData = await gatherDayPriceData(day, <string>config.DIR_TRACKING)
 
+    // Archival captures: message files the owner appears nowhere in — threads
+    // saved for reference, not activity. Identity comes from about-me.md, the
+    // same source as the prompt's {{me.*}} variables; without it, nothing is
+    // marked and the summary reads as before.
+    const ownerNames = await this.loadOwnerNames(<string>config.FILE_ABOUT_ME)
+    const archivalPaths = new Set(
+      docs.filter((d) => d.path.includes('/actions/messages/') && !isParticipant(d.doc, ownerNames)).map((d) => d.path),
+    )
+
     // Location metadata from the already-gathered day.md
     const dayEntry = docs.find((d) => d.kind === 'day')
     const location = dayEntry?.doc.yaml['location'] as string | undefined
@@ -176,16 +187,18 @@ export default class SummaryDayTask extends Command {
         relativeTo: timeDir,
         delimited: true,
         sorted: false,
+        label: (p) => (archivalPaths.has(p) ? 'ARCHIVAL' : undefined),
       }),
     ]
     const collatedMarkdown = sections.filter((s) => s.length > 0).join('\n\n')
     const contextTokens = estimateTokens(collatedMarkdown)
 
-    // 5. Extract rel for output file metadata
+    // 5. Extract rel for output file metadata — alphabetical within each type group
+    const byName = (a: string, b: string) => a.localeCompare(b)
     const rel: string[] = [
-      ...collection.orgs.map((o) => o.name),
-      ...collection.people.map((p) => p.name),
-      ...collection.projects.map((p) => `projects/${p.name}`),
+      ...collection.orgs.map((o) => o.name).sort(byName),
+      ...collection.people.map((p) => p.name).sort(byName),
+      ...collection.projects.map((p) => `projects/${p.name}`).sort(byName),
     ]
 
     // 6. Load prompt template
@@ -197,6 +210,9 @@ export default class SummaryDayTask extends Command {
     const kinds = { journal: 0, action: 0, day: 0 }
     for (const d of docs) kinds[d.kind]++
     output.log(`Day documents: ${docs.length} (${kinds.journal} journal, ${kinds.action} actions, ${kinds.day} day)`)
+    if (archivalPaths.size > 0) {
+      output.log(`Archival captures (owner not a participant): ${archivalPaths.size}`)
+    }
     output.log(`Collection: ${collection.size} documents`)
     output.log(`  - Orgs: ${collection.orgs.length}`)
     output.log(`  - People: ${collection.people.length}`)
@@ -303,6 +319,15 @@ export default class SummaryDayTask extends Command {
     }
 
     return CommandResult.success({ path: summaryPath })
+  }
+
+  private async loadOwnerNames(aboutMePath: string): Promise<string[]> {
+    try {
+      const me = AboutMeDocument.fromMarkdown(await readTextFile(aboutMePath))
+      return [me.fullName, me.firstName]
+    } catch {
+      return []
+    }
   }
 
   private async loadPromptTemplate(): Promise<string> {
