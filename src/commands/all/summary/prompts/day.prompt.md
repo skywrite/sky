@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-08-07
+updated: 2026-08-11
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -35,6 +35,8 @@ The day's evidence stream, in time order:
 - `messages/` - Slack, iMessage, email; the HH-MM filename prefix is the send time
 - `ai-chats/` - AI working sessions (reading rules below)
 - `notes/`, `docs/`, `videos/` - notes taken, documents drafted, recordings made
+
+Some `messages/` files carry an `ARCHIVAL` marker in their path comment (`<!-- ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
 Filename time prefixes can exceed 24:00 - `25-30` is late night still belonging to this day. Treat them as-is.
 
@@ -145,6 +147,22 @@ Transcripts of {{me.firstName}} working with an AI tool. `## JP` headings are {{
 
 ---
 
+## Learned
+
+[The day's realizations: things {{me.firstName}} came to understand, positions he shifted, questions he opened - from any source in the day (AI sessions, journal entries, meetings). Sparse like Signals: most days 0-3 bullets, compressed from his own words. Omit the section if the day produced none.]
+
+- [Insight, phrased to name what it's about]
+
+---
+
+## Archival
+
+[One line per ARCHIVAL-marked capture: what was filed and why it's worth having. These are threads {{me.firstName}} saved without participating - filed material, not his activity. Order bullets alphabetically by channel/topic label. Omit the section entirely when no files are marked.]
+
+- **[Channel/Topic]**: [One-line gist of what was captured]
+
+---
+
 ## Asset Prices
 
 [Include whenever price data is in the header; omit otherwise.]
@@ -189,12 +207,20 @@ Do NOT include:
 
 A Waiting On row is an explicit ask he made of someone, or an explicit promise someone made to him, that the day's later evidence doesn't show fulfilled. Check before adding: if the reply or deliverable arrived later the same day, the loop is closed - leave it out. Never infer that he's "probably waiting" on something; only stated asks and stated promises qualify.
 
+### Archival captures are filed, not lived
+
+An ARCHIVAL-marked message is something {{me.firstName}} filed, not something he did:
+
+- Never Done - watching a thread is not "messages handled", and the filing itself is not an accomplishment
+- Promises inside them are between third parties: not Commitments Made, not Waiting On
+- List each under `## Archival` as one line; use their content freely as background, and let a genuinely noteworthy development in one surface as a Signal - attributed as observed, never as his doing
+
 ### What counts as Done
 
 - Complete sections and any `~~strikethrough~~` items in day.md
 - Meetings that happened (a meeting is an accomplishment)
 - Decisions made - lead these bullets with **Decided:** so downstream tools can extract the day's decisions reliably
-- Messages handled
+- Messages handled (never ARCHIVAL-marked ones)
 - AI-session outcomes {{me.firstName}} used
 
 **Strategic** decisions, key meetings, high-leverage work; **Operational** messages, routine tasks, admin; **Health** exercise, wellness, medical; **Personal** family, hobbies, non-work.
@@ -208,6 +234,16 @@ Only flag something genuinely noteworthy:
 - An opportunity that surfaced
 
 Most days have 0-2 signals. Don't manufacture them.
+
+### Learned - the day's realizations
+
+A Learned bullet is something {{me.firstName}} came to understand, decided about himself, or started questioning - not something he produced. Any source in the day qualifies: an AI reflection session, a journal entry, a remark in a meeting.
+
+- His only when he voiced or adopted it. An assistant's advice he didn't take up is not a learning; his own words are the evidence.
+- It belongs to the day he had it. A journal entry reflecting on yesterday yields a Learned bullet today - the recounted events stay yesterday's and are never re-reported as today's activity.
+- When a session's only yield is the insight, the Learned bullet is its record - Done doesn't need a second line for the session having happened.
+- Phrase each bullet to name what it's about, compressed from his own words.
+- Sparse like Signals: most days 0-3. Never manufacture insight to fill the section.
 
 ### Length
 
@@ -284,6 +320,19 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 
 - **Chen Wei**: Flagged potential delay on payment integration - may affect March 15 launch
 - **Sarah Mitchell**: Proactive on cost optimization - delivered analysis before asked
+
+---
+
+## Learned
+
+- Yesterday's redesign debate was sunk-cost defense of Concept A, not conviction - caught it in the morning journal
+- The reserved-instance math generalizes: every recurring vendor is worth checking for commitment discounts
+
+---
+
+## Archival
+
+- **#vendor-updates**: Data-processor pricing change lands in March - saved ahead of the contract renewal
 
 ---
 
