@@ -265,6 +265,30 @@ export function capForPrompt(
   }
 }
 
+/**
+ * The transcription keyword list: the settled vocabulary a speech model
+ * should know before hearing the audio — rights of corrections plus kept
+ * wrongs, entity-shaped only, since feeding it one-off phrase repairs
+ * would bias recognition toward false positives. Deduped case-insensitively
+ * with the newest lastSeen winning, so a future cap would keep living terms.
+ */
+export function glossaryKeywords(glossary: Glossary): string[] {
+  const candidates = glossary.entries
+    .toSorted((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+    .map((e) => (e.action === 'correct' ? e.right : e.wrong))
+    .filter((term): term is string => term !== undefined && isEntityShaped(term))
+  const seen = new Set<string>()
+  const keywords: string[] = []
+  for (const term of candidates) {
+    const key = normalizeTerm(term)
+    if (!seen.has(key)) {
+      seen.add(key)
+      keywords.push(term)
+    }
+  }
+  return keywords
+}
+
 /** Prompt block for the analysis phase. */
 export function renderGlossary(glossary: Glossary): string {
   if (glossary.entries.length === 0) return '(none yet)'

@@ -4,6 +4,7 @@ import {
   buildRulings,
   capForPrompt,
   emptyGlossary,
+  glossaryKeywords,
   parseGlossary,
   renderGlossary,
   touchLastSeen,
@@ -354,5 +355,32 @@ test('capForPrompt()', () => {
     should: 'report rendered vs total so callers can log the truncation',
     actual: (({ total, rendered }) => ({ total, rendered }))(capForPrompt(glossary, { confirmed: 2, hints: 1 })),
     expected: { total: 6, rendered: 4 },
+  })
+})
+
+test('glossaryKeywords()', () => {
+  const glossary: Glossary = {
+    version: 1,
+    entries: [
+      entry('Novack', 'Novak', 1, '2026-07-01'), // correct → its right side
+      entry('at less', 'Atlas', 1, '2026-07-10'), // lowercase wrong still contributes its entity right
+      entry('atlas', 'ATLAS', 1, '2026-07-20'), // newer casing of the same term wins the dedupe
+      entry('morally', 'mainly', 1, '2026-07-05'), // no entity on either side → excluded
+      entry('Bravvo', null, 1, '2026-07-15'), // keep → its confirmed wrong
+      entry('with the team', null, 1, '2026-07-15'), // lowercase keep → excluded
+    ],
+  }
+  assert({
+    given: 'corrections and keeps across shapes and duplicate terms',
+    should: 'list entity-shaped vocabulary newest-first, deduped case-insensitively',
+    actual: glossaryKeywords(glossary),
+    expected: ['ATLAS', 'Bravvo', 'Novak'],
+  })
+
+  assert({
+    given: 'an empty glossary',
+    should: 'produce no keywords',
+    actual: glossaryKeywords(emptyGlossary()),
+    expected: [],
   })
 })

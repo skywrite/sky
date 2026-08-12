@@ -8,6 +8,7 @@ import { runCommand } from '#lib/sys/mod.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
+import { glossaryKeywords, loadGlossary } from './lib/glossary.ts'
 
 // -----------------------------------------------------------------------------
 // Provider Types
@@ -58,6 +59,11 @@ const params = {
   diarize: Flag.bool('Enable speaker diarization (mistral only)', {
     default: false,
   }),
+  // mri parses --no-glossary as {glossary: false}, so the flag must be
+  // positive-named for the --no- spelling to work from the CLI.
+  glossary: Flag.bool('Guide transcription with settled glossary vocabulary (openai only)', {
+    default: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -95,7 +101,8 @@ export default class AudioTranscriptCreateTask extends Command {
       'Takes an audio file path, or if not provided, finds the newest audio file on the Desktop.',
       '',
       'Providers:',
-      '  - openai (default): Uses gpt-transcribe model',
+      '  - openai (default): Uses gpt-transcribe, guided by settled transcript-glossary',
+      '    vocabulary (skip with --no-glossary)',
       '  - mistral: Uses voxtral-mini-latest model with optional speaker diarization',
       '',
       'By default, outputs to stdout for piping. Use --save to write a .md file next to the',
@@ -114,7 +121,16 @@ export default class AudioTranscriptCreateTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, title, output: outputPath, save, delete: deleteSource, provider, diarize } = args
+    const {
+      file,
+      title,
+      output: outputPath,
+      save,
+      delete: deleteSource,
+      provider,
+      diarize,
+      glossary: useGlossary,
+    } = args
 
     // Validate provider
     const validProviders: TranscriptionProvider[] = ['openai', 'mistral']
@@ -190,7 +206,15 @@ export default class AudioTranscriptCreateTask extends Command {
         durationSeconds = result.durationSeconds
         language = result.language
       } else {
-        const result = await this.transcribeWithOpenAI(audioData, path.basename(transcribeFile))
+        // Glossary vocabulary guides recognition of names and jargon the
+        // model would otherwise mishear. Malformed glossary → no keywords.
+        let keywords: string[] = []
+        if (useGlossary) {
+          const glossary = await loadGlossary()
+          if (glossary) keywords = glossaryKeywords(glossary)
+          if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
+        }
+        const result = await this.transcribeWithOpenAI(audioData, path.basename(transcribeFile), keywords)
         transcriptText = result.text
         durationSeconds = result.durationSeconds
         language = result.language
@@ -271,6 +295,7 @@ ${transcriptText}
   private async transcribeWithOpenAI(
     audioData: Uint8Array,
     fileName: string,
+    keywords: string[],
   ): Promise<{ text: string; durationSeconds?: number; language?: string }> {
     const client = new OpenAI()
     const audioFile = await toFile(audioData, fileName)
@@ -279,6 +304,7 @@ ${transcriptText}
       file: audioFile,
       model: 'gpt-transcribe',
       response_format: 'json',
+      ...(keywords.length > 0 && { keywords }),
     })
 
     return {
