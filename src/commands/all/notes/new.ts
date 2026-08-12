@@ -9,6 +9,7 @@ import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { notesFromImage } from './lib/fromImage.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary / Header of Notes', { short: 's', optional: true }),
@@ -16,6 +17,11 @@ const params = {
     short: 'a',
     optional: true,
   }),
+  fromImage: Flag.string('Path(s) to image(s), comma-separated, or omit path to search Desktop', {
+    short: 'i',
+    optional: true,
+  }),
+  aiContext: Flag.string('Additional context for AI image extraction', { optional: true }),
   when: whenNBTime(),
   category: categoryComplete(),
 }
@@ -30,14 +36,21 @@ export default class NotesNewTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
-    let { summary, when, category, fromAudio } = args
+    let { summary, when, category, fromAudio, fromImage, aiContext } = args
     let body = ''
     let rel: string[] | undefined
-    let attachmentFile: string | undefined
+    let attachmentFiles: string[] = []
 
     const useAudioPipeline = fromAudio !== undefined
+    const useImagePipeline = fromImage !== undefined
+
+    // Both would run, and the images would then overwrite the summary, time and
+    // body the recording had just produced.
+    if (useAudioPipeline && useImagePipeline) {
+      return CommandResult.fail('Use --from-audio or --from-image, not both.')
+    }
 
     if (useAudioPipeline) {
       const summaryResult = await tasks.run('audio:transcript:summary', {
@@ -78,13 +91,38 @@ export default class NotesNewTask extends Command {
           await copyFile(audioPath, destPath)
         })
 
-        attachmentFile = newFileName
+        attachmentFiles.push(newFileName)
         output.log(colors.gray(`Moved audio file to ${attachDir}\n`))
       }
     }
 
+    if (useImagePipeline) {
+      const imageResult = await notesFromImage({
+        fromImage,
+        summary,
+        when,
+        // rawArgs is the parse before defaults are applied, so a `when` key
+        // there means the user typed --when and meant it.
+        whenExplicit: rawArgs.when !== undefined,
+        aiContext,
+        context,
+      })
+      // Unprefixed: unlike the audio task, these messages are written here and
+      // already say what went wrong ("Cancelled", "File not found: ...").
+      if (!imageResult.ok || !imageResult.data) {
+        return CommandResult.fail(imageResult.message ?? 'Could not read the images')
+      }
+
+      const note = imageResult.data
+      summary = note.summary
+      when = note.when
+      if (note.rel.length > 0) rel = note.rel
+      body = note.body
+      attachmentFiles = note.attachmentFiles
+    }
+
     if (!summary) {
-      return CommandResult.fail('Missing required argument: summary (or use --from-audio)')
+      return CommandResult.fail('Missing required argument: summary (or use --from-audio / --from-image)')
     }
 
     const whenDate = when.plainDate
@@ -106,9 +144,9 @@ export default class NotesNewTask extends Command {
 
     yamlLines.push('tags:')
 
-    if (attachmentFile) {
+    if (attachmentFiles.length > 0) {
       yamlLines.push('attachments:')
-      yamlLines.push(`  - file: ${attachmentFile}`)
+      for (const file of attachmentFiles) yamlLines.push(`  - file: ${file}`)
     }
 
     yamlLines.push('---', '', `# ${summary}`, '')
