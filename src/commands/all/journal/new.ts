@@ -20,6 +20,7 @@ import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { gatherContext, type JournalContext } from './_lib/gatherContext.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
+import { journalFromVideo } from './lib/fromVideo.ts'
 
 const typesDescription = `Journal types: ${JournalTypes.join(', ')} (or any custom type with --from-audio)`
 
@@ -40,6 +41,10 @@ const params = {
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop. Requires --types.', {
     optional: true,
   }),
+  fromVideo: Flag.string(
+    'Path to a recorded video journal, or omit path to search Desktop. Files under the Video type.',
+    { optional: true },
+  ),
   types: Flag.string(typesDescription, {
     parse: (val) => val.split(',').map((s) => s.trim()) as unknown as string,
     default: () => ['Mood'] as unknown as string,
@@ -66,8 +71,19 @@ export default class JournalNewTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
     const { config, output } = context
-    const { when, all, ai, inspectInitialContext, dryRun, fromAudio } = args
+    const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo } = args
     const types = args.types as unknown as JournalType[]
+
+    // A recorded video takes its own route: extract audio, transcribe, then
+    // section and summarize. Unlike --from-audio it needs no --types, because
+    // the type is always Video.
+    if (fromVideo !== undefined) {
+      // A bare `--from-video` arrives as the string 'true', meaning "find it on
+      // the Desktop" rather than naming a file. Same convention --from-audio
+      // and --from-srt use.
+      const videoPath = typeof fromVideo === 'string' && fromVideo !== 'true' ? fromVideo : undefined
+      return await journalFromVideo({ videoPath, when, context, tasks })
+    }
 
     // Handle --from-audio pipeline: transcribe → clean (no summarize)
     const useAudioPipeline = fromAudio !== undefined
