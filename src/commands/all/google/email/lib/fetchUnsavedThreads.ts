@@ -27,11 +27,13 @@ export type FetchedThread = {
   from: string
   subject: string
   messages: { date: string; path: string }[]
+  /** Newest downloaded message's real time (notebook tz, "YYYY-MM-DD HH:mm") — the follow's lastActivity anchor. */
+  lastMessageAt?: string
   /** A message's AI conversion threw — leave the thread in the inbox so the next sync retries it. */
   failed?: boolean
 }
 
-export type FetchUnsavedResult = { fetched: number; threads: FetchedThread[] }
+export type FetchUnsavedResult = { fetched: number; threads: FetchedThread[]; labelId: string }
 
 export type FetchUnsavedOptions = {
   label: string
@@ -41,8 +43,6 @@ export type FetchUnsavedOptions = {
   when?: PlainDateTime
   /** Fetch a specific thread by its decimal id */
   threadId?: string
-  /** Collapse first-time (unfollowed) threads into one file dated today */
-  collapseNewThreads?: boolean
   /** Thread listing already scanned on this client — skips the label rescan */
   inbox?: InboxThreadsResult
 }
@@ -63,11 +63,11 @@ export async function fetchUnsavedThreads(
   opts: FetchUnsavedOptions,
   deps: { tasks: CommandService; output: Output },
 ): Promise<FetchUnsavedResult> {
-  const { label, limit, when: whenOverride, threadId: filterThreadId, collapseNewThreads = false } = opts
+  const { label, limit, when: whenOverride, threadId: filterThreadId } = opts
   const { tasks, output } = deps
 
   // ── Phase 1: Get threads (same as inbox:view) ──────────────────
-  const { threads } = opts.inbox ?? (await getInboxThreads(client, label, { limit }))
+  const { threads, labelId } = opts.inbox ?? (await getInboxThreads(client, label, { limit }))
 
   // Filter to target threads
   let unsaved = threads.filter((t) => !t.saved)
@@ -77,7 +77,7 @@ export async function fetchUnsavedThreads(
 
   if (unsaved.length === 0) {
     output.log('  All threads are saved. Nothing to fetch.\n')
-    return { fetched: 0, threads: [] }
+    return { fetched: 0, threads: [], labelId }
   }
 
   const totalNew = unsaved.reduce((n, t) => n + t.messages.filter((m) => !m.saved).length, 0)
@@ -138,18 +138,11 @@ export async function fetchUnsavedThreads(
   }
 
   // Build previous-path map from follow's saved messages (per thread).
-  // A thread with no saved messages has no follow yet → it's a first-time capture.
   const previousByThread = new Map<string, string>()
-  const newThreadIds = new Set<string>()
   for (const thread of threads) {
     const lastSaved = thread.savedMessages.at(-1)
     if (lastSaved) previousByThread.set(thread.threadId, lastSaved.path)
-    else newThreadIds.add(thread.threadId)
   }
-
-  // First-time threads collapse into one file dated today (when the caller enables it,
-  // e.g. follow:sync). Already-followed threads stream each new message onto its own date.
-  const today = (await fetchNow()).plainDateTime
 
   const createdEntries = new Map<string, { date: string; path: string }>()
   const resultThreads: FetchedThread[] = []
@@ -159,8 +152,6 @@ export async function fetchUnsavedThreads(
     const threadEntries: { date: string; path: string }[] = []
     const priorMarkdown: string[] = []
     const previousPath = previousByThread.get(threadId)
-    // --when (manual) wins; else collapse a first-time thread to today; else use real dates.
-    const effectiveWhen = whenOverride ?? (collapseNewThreads && newThreadIds.has(threadId) ? today : undefined)
 
     // Inherit tags/rel from previous message file (propagate across syncs)
     let inheritedTags: string | undefined
@@ -187,7 +178,7 @@ export async function fetchUnsavedThreads(
           previousPath,
           inheritedTags,
           inheritedRel,
-          effectiveWhen,
+          whenOverride,
           tasks,
           output,
         )
@@ -205,17 +196,27 @@ export async function fetchUnsavedThreads(
       savedCount++
     }
 
+    // The newest message's real time: follows anchor lastActivity here, so a
+    // thread discovered late must not look freshly active (--when collapses
+    // file dates, never this).
+    const newestDate = threadMessages.reduce<Date | undefined>(
+      (newest, m) => (m.date instanceof Date && (!newest || m.date > newest) ? m.date : newest),
+      undefined,
+    )
+    const lastMessageAt = newestDate ? await convertToNotebookTimezone(newestDate) : undefined
+
     resultThreads.push({
       threadId,
       from: normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown'),
       subject: threadMessages[0].subject || '(no subject)',
       messages: threadEntries,
+      ...(lastMessageAt ? { lastMessageAt: `${lastMessageAt.date} ${lastMessageAt.time}` } : {}),
       ...(failed ? { failed: true } : {}),
     })
   }
 
   output.log(`\n  Fetched ${savedCount} message(s) across ${resultThreads.length} thread(s).\n`)
-  return { fetched: savedCount, threads: resultThreads }
+  return { fetched: savedCount, threads: resultThreads, labelId }
 }
 
 async function saveMessage(

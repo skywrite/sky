@@ -14,10 +14,6 @@ const params = {
   limit: Flag.number('Max threads to fetch', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   threadId: Flag.string('Fetch a specific thread by its decimal ID', { hidden: true }),
-  collapseNewThreads: Flag.bool('Collapse first-time (unfollowed) threads into one file dated today', {
-    default: false,
-    hidden: true,
-  }),
 }
 
 type Params = InferParams<typeof params>
@@ -47,7 +43,7 @@ export default class GoogleEmailInboxFetchTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<FetchResult>> {
     const { output, secrets } = context
-    const { account, label, limit, when, threadId, collapseNewThreads } = args
+    const { account, label, limit, when, threadId } = args
 
     let client
     try {
@@ -59,11 +55,7 @@ export default class GoogleEmailInboxFetchTask extends Command {
 
     try {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
-      const result = await fetchUnsavedThreads(
-        client,
-        { label, limit, when, threadId, collapseNewThreads },
-        { tasks, output },
-      )
+      const result = await fetchUnsavedThreads(client, { label, limit, when, threadId }, { tasks, output })
       return CommandResult.success(result)
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')

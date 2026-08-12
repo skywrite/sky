@@ -2,18 +2,17 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE, DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import { DIR_BASE } from '#config'
 import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import slugify from '#lib/string/slugify.ts'
-import { outputFile, writeTextFile } from '#shared/fs/mod.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
-import Follow from '#shared/models/Follow/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
+import { persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
 import { getInboxThreads } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
@@ -28,7 +27,7 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
-type SyncResult = { newFollows: number; updatedFollows: number; fetchedMessages: number }
+type SyncResult = { newFollows: number; updatedFollows: number; bornExpired: number; fetchedMessages: number }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -36,7 +35,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, fetchedMessages: 0 }
+const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpired: 0, fetchedMessages: 0 }
 
 export default class GoogleEmailInboxFollowSyncTask extends Command {
   static override description: CommandDescription = {
@@ -46,7 +45,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       'Gmail-API twin of email:inbox:follow:sync, using the OAuth grant from',
       'google:auth (requires the Gmail scope).',
       'Runs the google:email:inbox:fetch core to download unsaved messages, then:',
-      '  - First-time threads: captures the whole thread as ONE entry dated today, creates follow file',
+      '  - First-time threads: each message lands on its own date, creates follow file;',
+      '    threads already quiet past the expiry window are captured and closed instead',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
       '  - Archives processed threads from inbox',
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
@@ -89,14 +89,11 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
 
       // ── Phase 2: Fetch unsaved messages (google:email:inbox:fetch core) ───
       // The pick's thread listing is passed through so the label scan isn't redone.
-      // collapseNewThreads: a first-time follow captures the whole backlog as one entry dated
-      // today; once followed, later replies stream onto their own dates.
       const fetchResult = await fetchUnsavedThreads(
         client,
         {
           label,
           limit,
-          collapseNewThreads: true,
           ...(pickedThreadId ? { threadId: pickedThreadId } : {}),
           ...(inbox ? { inbox } : {}),
         },
@@ -112,10 +109,12 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       const now = fetchNowSync()
       let newFollows = 0
       let updatedFollows = 0
+      let bornExpired = 0
 
       for (const thread of fetchResult.threads) {
         if (thread.messages.length === 0) continue
 
+        const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
         const existingFollow = registry.findByThreadId(thread.threadId)
 
         if (existingFollow) {
@@ -125,36 +124,24 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
             if (existingPaths.has(msg.path)) continue
             follow = follow.addMessage(msg.date, msg.path)
           }
-          follow = follow.updateLastActivity(now.plainDateTime).updateLastChecked(now.plainDateTime)
+          // lastActivity is the newest message's real time, not the sync time —
+          // a reply discovered late must not look like fresh activity
+          if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
+          follow = follow.updateLastChecked(now.plainDateTime)
 
           await writeTextFile(existingFollow.path, follow.toYaml())
           output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
           updatedFollows++
         } else {
-          let follow = Follow.create({
-            source: 'Email',
-            ref: { account: client.email, threadId: thread.threadId, label },
-            summary: thread.subject,
-            followSince: now.plainDateTime,
-            lastActivity: now.plainDateTime,
-            messages: [],
-            status: 'active',
+          const planned = planThreadFollow({
+            accountEmail: client.email,
+            label,
+            thread,
+            now: now.plainDateTime,
           })
-
-          for (const msg of thread.messages) {
-            follow = follow.addMessage(msg.date, msg.path)
-          }
-          follow = follow.updateLastActivity(now.plainDateTime)
-
-          const fromSlug = slugify(thread.from, { preserveCase: true, suggestedLength: 30 })
-          const summarySlug = slugify(thread.subject, { preserveCase: true, suggestedLength: 40 })
-          const datePrefix = now.plainDateTime.plainDate.toString()
-          const fileName = `${datePrefix}_email_${fromSlug}_${summarySlug}`
-          const filePath = path.join(DIR_STATE_FOLLOW_EMAIL_ACTIVE, `${fileName}.yaml`)
-
-          await outputFile(filePath, follow.toYaml())
-          output.log(`  Created follow: ${fileName}`)
-          newFollows++
+          const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+          if (persisted.followed) newFollows++
+          else bornExpired++
         }
       }
 
@@ -173,8 +160,11 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       }
 
       const fetched = fetchResult.fetched
-      output.log(`\n  Sync complete: ${newFollows} new, ${updatedFollows} updated, ${fetched} message(s).\n`)
-      return CommandResult.success({ newFollows, updatedFollows, fetchedMessages: fetched })
+      const closedNote = bornExpired > 0 ? `, ${bornExpired} captured and closed` : ''
+      output.log(
+        `\n  Sync complete: ${newFollows} new, ${updatedFollows} updated${closedNote}, ${fetched} message(s).\n`,
+      )
+      return CommandResult.success({ newFollows, updatedFollows, bornExpired, fetchedMessages: fetched })
     } catch (err) {
       return CommandResult.error(err as Error, 'google:email:inbox:follow:sync failed')
     }
