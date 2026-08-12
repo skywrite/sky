@@ -1,15 +1,12 @@
-import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
 import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
-import slugify from '#lib/string/slugify.ts'
-import { outputFile } from '#shared/fs/mod.ts'
-import Follow from '#shared/models/Follow/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
+import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
+import { persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
 import { getInboxThreads } from '../../lib/getInboxThreads.ts'
 import type { InboxThread } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
@@ -19,10 +16,11 @@ const params = {
   label: Flag.string('Gmail label', { default: () => 'Sky/Follow' }),
   limit: Flag.number('Max threads to follow', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
+  force: Flag.bool('Follow even when the thread is already inactive past the expiry window', { default: false }),
 }
 
 type Params = InferParams<typeof params>
-type Result = { created: number; follows: string[] }
+type Result = { created: number; bornExpired: number; follows: string[] }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -40,6 +38,8 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       'Without --when: fetches ALL unsaved threads and creates follows (batch mode).',
       'With --when: shows a chooser for a single thread, collapses all messages',
       'into one file at the specified date (like slack:follow:new).',
+      'Threads already quiet past the expiry window are captured and closed',
+      'instead of followed (--force to follow anyway).',
     ],
     usage: ['sky google:email:inbox:follow:new', 'sky google:email:inbox:follow:new --when 17:00'],
     params,
@@ -71,10 +71,10 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
 
     if (fetchResult.data.fetched === 0) {
       output.log('  No unsaved threads to follow.\n')
-      return CommandResult.success({ created: 0, follows: [] })
+      return CommandResult.success({ created: 0, bornExpired: 0, follows: [] })
     }
 
-    const result = await this.createFollows(client, fetchResult.data.threads, label, output)
+    const result = await this.createFollows(client, fetchResult.data, label, args.force, output)
 
     // Archive from inbox; the Sky/Follow label stays so inbox:view shows the
     // thread as saved.
@@ -103,7 +103,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
 
     if (unsaved.length === 0) {
       output.log('  No unsaved threads to follow.\n')
-      return CommandResult.success({ created: 0, follows: [] })
+      return CommandResult.success({ created: 0, bornExpired: 0, follows: [] })
     }
 
     // Choose thread
@@ -153,7 +153,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       return CommandResult.fail('google:email:inbox:fetch failed')
     }
 
-    const result = await this.createFollows(client, fetchResult.data.threads, label, output)
+    const result = await this.createFollows(client, fetchResult.data, label, args.force, output)
 
     // Archive from inbox; the Sky/Follow label stays
     await this.archiveThreads(client, [selectedThread.threadId], output)
@@ -183,42 +183,32 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
 
   private async createFollows(
     client: GoogleClient,
-    threads: { threadId: string; from: string; subject: string; messages: { date: string; path: string }[] }[],
+    fetched: { threads: FetchedThread[]; labelId: string },
     label: string,
+    force: boolean,
     output: { log: (msg: string) => void },
   ): Promise<CommandResult<Result>> {
     const now = fetchNowSync()
     const created: string[] = []
+    let bornExpired = 0
 
-    for (const thread of threads) {
+    for (const thread of fetched.threads) {
       if (thread.messages.length === 0) continue
 
-      let follow = Follow.create({
-        source: 'Email',
-        ref: { account: client.email, threadId: thread.threadId, label },
-        summary: thread.subject,
-        followSince: now.plainDateTime,
-        lastActivity: now.plainDateTime,
-        messages: [],
-        status: 'active',
+      const planned = planThreadFollow({
+        accountEmail: client.email,
+        label,
+        thread,
+        now: now.plainDateTime,
+        force,
       })
-
-      for (const msg of thread.messages) {
-        follow = follow.addMessage(msg.date, msg.path).updateLastActivity(now.plainDateTime)
-      }
-
-      const fromSlug = slugify(thread.from, { preserveCase: true, suggestedLength: 30 })
-      const summarySlug = slugify(thread.subject, { preserveCase: true, suggestedLength: 40 })
-      const datePrefix = now.plainDateTime.plainDate.toString()
-      const fileName = `${datePrefix}_email_${fromSlug}_${summarySlug}`
-      const filePath = path.join(DIR_STATE_FOLLOW_EMAIL_ACTIVE, `${fileName}.yaml`)
-
-      await outputFile(filePath, follow.toYaml())
-      created.push(fileName)
-      output.log(`  Created follow: ${fileName}`)
+      const persisted = await persistNewFollow({ client, labelId: fetched.labelId, planned, output })
+      if (persisted.followed) created.push(persisted.fileName)
+      else bornExpired++
     }
 
-    output.log(`\n  ${created.length} follow(s) created.\n`)
-    return CommandResult.success({ created: created.length, follows: created })
+    const closedNote = bornExpired > 0 ? `, ${bornExpired} captured and closed` : ''
+    output.log(`\n  ${created.length} follow(s) created${closedNote}.\n`)
+    return CommandResult.success({ created: created.length, bornExpired, follows: created })
   }
 }

@@ -34,6 +34,18 @@ export type InboxThreadsResult = {
 }
 
 /**
+ * Whether a message counts as saved given its follow's lastActivity cutoff.
+ * lastActivity is minute-granular (follow YAML carries no seconds) while Gmail
+ * dates do — the newest saved message sorts after its own truncated cutoff, so
+ * the whole cutoff minute counts as saved. A second message landing later
+ * within that same minute is never fetched: the minute-granularity blind spot
+ * slack:follow:check also accepts.
+ */
+export function savedByCutoff(msgDate: Date, lastActivity: Date): boolean {
+  return msgDate.getTime() < lastActivity.getTime() + 60_000
+}
+
+/**
  * Get all threads carrying a Gmail label, grouped and marked as saved/unsaved
  * against the follow registry. Shared between google:email:inbox:view
  * (display) and google:email:inbox:fetch (download). `limit` counts threads
@@ -104,7 +116,7 @@ export async function getInboxThreads(
     const cutoff = followLastActivity.get(entry.threadId)
     if (!cutoff) continue
     for (const msg of entry.messages) {
-      msg.saved = !!msg.date && msg.date <= cutoff
+      msg.saved = !!msg.date && savedByCutoff(msg.date, cutoff)
     }
   }
 
