@@ -97,33 +97,47 @@ export default class OrgNewTask extends Command {
     } else {
       // Fetch from multiple sources and categorize using AI
       try {
-        let webFetchResult
+        // Site and Wikipedia enrichment are independent (normalizedSite is already
+        // derived from the arg), so run them concurrently. Either source failing
+        // degrades to categorizing without it — only categorization itself is fatal.
+        const [webFetchResult, wikipediaFetched] = await Promise.all([
+          (async () => {
+            if (!site) return undefined
+            output.log(`Fetching site: ${site}`)
+            try {
+              return await webFetch(site)
+            } catch (error) {
+              output.log(`Site fetch failed (${(error as Error).message}), continuing without it`)
+              return undefined
+            }
+          })(),
+          (async () => {
+            if (!wikipediaQuery) {
+              output.log('Skipping Wikipedia enrichment (--no-wikipedia flag set)')
+              return undefined
+            }
+            output.log(`Fetching Wikipedia: ${wikipediaQuery}`)
+            try {
+              return await getWikipediaArticleAI(wikipediaQuery, {
+                orgName: name,
+                website: normalizedSite,
+                fullContent: true, // Get full article content for better categorization and ticker extraction
+              })
+            } catch {
+              output.log(`Wikipedia not found for "${wikipediaQuery}", continuing without it`)
+              return undefined
+            }
+          })(),
+        ])
+        wikipediaResult = wikipediaFetched
 
-        // Fetch site if provided
-        if (site) {
-          output.log(`Fetching site: ${site}`)
-          webFetchResult = await webFetch(site)
-          normalizedSite = webFetchResult.website
+        if (webFetchResult) {
           output.log(`Site summary: ${webFetchResult.summary}`)
         }
-
-        // Fetch Wikipedia (skip if --no-wikipedia flag is set)
-        if (wikipediaQuery) {
-          output.log(`Fetching Wikipedia: ${wikipediaQuery}`)
-          try {
-            wikipediaResult = await getWikipediaArticleAI(wikipediaQuery, {
-              orgName: name,
-              website: normalizedSite,
-              fullContent: true, // Get full article content for better categorization and ticker extraction
-            })
-            output.log(`Wikipedia article: ${wikipediaResult.article.title}`)
-            output.log(`Wikipedia confidence: ${wikipediaResult.confidence}`)
-            output.log(`Selection reasoning: ${wikipediaResult.reasoning}`)
-          } catch (wikiError) {
-            output.log(`Wikipedia not found for "${wikipediaQuery}", continuing without it`)
-          }
-        } else {
-          output.log('Skipping Wikipedia enrichment (--no-wikipedia flag set)')
+        if (wikipediaResult) {
+          output.log(`Wikipedia article: ${wikipediaResult.article.title}`)
+          output.log(`Wikipedia confidence: ${wikipediaResult.confidence}`)
+          output.log(`Selection reasoning: ${wikipediaResult.reasoning}`)
         }
 
         // Load taxonomy
