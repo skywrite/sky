@@ -14,6 +14,8 @@ const prefixFixtures = [
   { tags: 'tags:\n  - Acme/M&A\n  - Finance', prefix: 'Acme/', expected: true, description: 'has matching prefix' },
   { tags: 'tags:\n  - Finance\n  - Legal', prefix: 'Acme/', expected: false, description: 'no matching prefix' },
   { tags: 'tags: []', prefix: 'Acme/', expected: false, description: 'empty tags' },
+  { tags: 'tags:\n  - Acme/M&A', prefix: 'acme/', expected: true, description: 'prefix cased differently' },
+  { tags: 'tags:\n  - acme/m&a', prefix: 'Acme/', expected: true, description: 'tag cased differently' },
 ]
 
 for (const { tags, prefix, expected, description } of prefixFixtures) {
@@ -35,6 +37,8 @@ for (const { tags, prefix, expected, description } of prefixFixtures) {
 const containsFixtures = [
   { tags: 'tags:\n  - Finance\n  - Legal', tag: 'Finance', expected: true, description: 'has tag' },
   { tags: 'tags:\n  - Finance\n  - Legal', tag: 'HR', expected: false, description: 'missing tag' },
+  { tags: 'tags:\n  - Finance', tag: 'finance', expected: true, description: 'query cased differently' },
+  { tags: 'tags:\n  - FINANCE', tag: 'Finance', expected: true, description: 'stored tag cased differently' },
 ]
 
 for (const { tags, tag, expected, description } of containsFixtures) {
@@ -64,6 +68,12 @@ const containsAnyFixtures = [
   { tags: 'tags:\n  - Finance\n  - Legal', search: ['HR', 'Sales'], expected: false, description: 'no tags match' },
   { tags: 'tags: []', search: ['Finance'], expected: false, description: 'empty tags' },
   { tags: 'tags:\n  - Finance', search: [], expected: false, description: 'empty search list' },
+  {
+    tags: 'tags:\n  - Finance\n  - Legal',
+    search: ['FINANCE', 'HR'],
+    expected: true,
+    description: 'matching tag cased differently',
+  },
 ]
 
 for (const { tags, search, expected, description } of containsAnyFixtures) {
@@ -93,6 +103,12 @@ const containsAllFixtures = [
   { tags: 'tags:\n  - Finance\n  - Legal', search: ['Finance', 'HR'], expected: false, description: 'one tag missing' },
   { tags: 'tags: []', search: ['Finance'], expected: false, description: 'empty tags' },
   { tags: 'tags:\n  - Finance', search: [], expected: true, description: 'empty search list (vacuous truth)' },
+  {
+    tags: 'tags:\n  - Finance\n  - Legal',
+    search: ['finance', 'LEGAL'],
+    expected: true,
+    description: 'all tags present, cased differently',
+  },
 ]
 
 for (const { tags, search, expected, description } of containsAllFixtures) {
