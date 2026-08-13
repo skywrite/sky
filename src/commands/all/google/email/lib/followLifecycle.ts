@@ -1,6 +1,7 @@
+import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_STATE_FOLLOW_EMAIL_ACTIVE, DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
-import { modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
+import { modifyThread, resolveLabelId, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { outputFile } from '#shared/fs/mod.ts'
@@ -101,4 +102,80 @@ export async function persistNewFollow(opts: {
     output.log(`  Created follow: ${fileName}`)
   }
   return { fileName, followed: !bornExpired }
+}
+
+export type FollowEntry = { follow: Follow; path: string; fileName: string }
+
+/**
+ * Active follows of this account that have gone quiet past their window.
+ * Follows of other accounts are left alone — their Gmail-side retire has to
+ * run under their own client.
+ */
+export function selectExpiredFollows(entries: FollowEntry[], accountEmail: string, now: PlainDateTime): FollowEntry[] {
+  const account = accountEmail.toLowerCase()
+  return entries.filter(
+    (e) =>
+      e.follow.status === 'active' &&
+      (e.follow.ref['account'] ?? '').toLowerCase() === account &&
+      e.follow.isExpired(now),
+  )
+}
+
+export type ExpireSweepResult = { expired: string[]; skipped: string[] }
+
+/**
+ * Close every quiet follow the way inbox:close does: retire the thread in
+ * Gmail first (bucket label + INBOX), then move the YAML to archive/. On a
+ * Gmail failure the follow stays active for the next sync to retry — a YAML
+ * may only leave active/ once the label is confirmed gone, or the
+ * still-labeled thread would re-capture as brand new.
+ */
+export async function expireQuietFollows(opts: {
+  client: GoogleClient
+  entries: FollowEntry[]
+  fallbackLabel: string
+  now: PlainDateTime
+  output: { log: (msg: string) => void }
+}): Promise<ExpireSweepResult> {
+  const { client, entries, fallbackLabel, now, output } = opts
+  const expired: string[] = []
+  const skipped: string[] = []
+  const labelIds = new Map<string, string | undefined>()
+
+  for (const entry of selectExpiredFollows(entries, client.email, now)) {
+    const { follow, fileName } = entry
+
+    const threadId = follow.ref['threadId']
+    if (threadId) {
+      const label = follow.ref['label'] || fallbackLabel
+      if (!labelIds.has(label)) labelIds.set(label, await resolveLabelId(client, label))
+      const labelId = labelIds.get(label)
+      try {
+        // A label that no longer exists cannot be applied to the thread, so
+        // dropping INBOX alone is safe then.
+        await modifyThread(client, threadIdFromDecimal(threadId), {
+          removeLabelIds: labelId ? [labelId, 'INBOX'] : ['INBOX'],
+        })
+      } catch (err) {
+        output.log(`  Warning: could not retire ${fileName} in Gmail (${(err as Error).message}) — will retry`)
+        skipped.push(fileName)
+        continue
+      }
+    }
+
+    const inactiveMs = follow.inactivityMs(now)
+    const reason = follow.expires
+      ? `expires ${follow.expires.date} ${follow.expires.time} passed`
+      : inactiveMs === Infinity
+        ? 'no activity recorded'
+        : `inactive ${Math.floor(inactiveMs / 86_400_000)}d >= ${Follow.DEFAULT_MAX_INACTIVE}`
+
+    const closed = follow.updateStatus('closed')
+    await outputFile(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${fileName}.yaml`), closed.toYaml())
+    await unlink(entry.path)
+    output.log(`  Expired ${fileName}: ${reason}`)
+    expired.push(fileName)
+  }
+
+  return { expired, skipped }
 }
