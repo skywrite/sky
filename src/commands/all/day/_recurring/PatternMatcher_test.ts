@@ -507,6 +507,75 @@ test('PatternMatcher - QUARTERLY-MONTH-BEFORE only matches in pre-quarter months
   })
 })
 
+test('PatternMatcher - EVERY-2-WEEKS alternation survives year boundaries', () => {
+  // Regression: the anchor used to reset to the first occurrence of the
+  // weekday in each calendar year. 2026 holds 53 Thursdays, so the reset made
+  // 2026-12-31 and 2027-01-07 — consecutive Thursdays — both Week A.
+  const fixtures = [
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2026, 12, 31), expected: true }, // week 52
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2027, 1, 7), expected: false }, // week 53
+    { pattern: 'EVERY-2-WEEKS-B-THU', date: new PlainDate(2027, 1, 7), expected: true },
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2027, 1, 14), expected: true }, // week 54
+    // ALTERNATE-* aliases share the helper, so they inherit the fix
+    { pattern: 'ALTERNATE-THU', date: new PlainDate(2026, 12, 31), expected: true },
+    { pattern: 'ALTERNATE-THU', date: new PlainDate(2027, 1, 7), expected: false },
+  ]
+
+  fixtures.forEach((fixture) => {
+    assert({
+      given: `${fixture.pattern} on ${fixture.date.toString()}`,
+      should: fixture.expected ? 'match' : 'not match',
+      actual: matchesPattern(fixture.date, fixture.pattern),
+      expected: fixture.expected,
+    })
+  })
+})
+
+test('PatternMatcher - EVERY-2-WEEKS never repeats a phase on consecutive weeks', () => {
+  // Walk every Thursday for four years across three year boundaries: phase has
+  // to alternate on every single step, with no seam at New Year.
+  let date = new PlainDate(2026, 1, 1) // a Thursday
+  let previous = matchesPattern(date, 'EVERY-2-WEEKS-A-THU')
+  let alternates = true
+
+  for (let week = 0; week < 208; week++) {
+    date = date.addDays(7)
+    const current = matchesPattern(date, 'EVERY-2-WEEKS-A-THU')
+    if (current === previous) alternates = false
+    previous = current
+  }
+
+  assert({
+    given: '208 consecutive Thursdays from 2026-01-01',
+    should: 'flip Week A on/off every week without a year-boundary seam',
+    actual: alternates,
+    expected: true,
+  })
+})
+
+test('PatternMatcher - EVERY-2-WEEKS keeps the phase existing items were calibrated to', () => {
+  // The epoch was chosen to preserve the year-relative behavior for 2026, so
+  // these are the assignments in use before the anchor was fixed.
+  const fixtures = [
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2026, 1, 1), expected: true }, // first Thu of 2026
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2026, 1, 8), expected: false },
+    { pattern: 'EVERY-2-WEEKS-A-THU', date: new PlainDate(2026, 1, 15), expected: true },
+    { pattern: 'EVERY-2-WEEKS-A-WED', date: new PlainDate(2026, 1, 7), expected: true }, // first Wed of 2026
+    { pattern: 'EVERY-2-WEEKS-A-WED', date: new PlainDate(2026, 1, 14), expected: false },
+    { pattern: 'EVERY-2-WEEKS-A-MON', date: new PlainDate(2026, 1, 5), expected: true }, // first Mon of 2026
+    { pattern: 'EVERY-2-WEEKS-A-SUN', date: new PlainDate(2026, 1, 4), expected: true }, // first Sun of 2026
+  ]
+
+  fixtures.forEach((fixture) => {
+    assert({
+      given: `${fixture.pattern} on ${fixture.date.toString()}`,
+      should: fixture.expected ? 'match' : 'not match',
+      actual: matchesPattern(fixture.date, fixture.pattern),
+      expected: fixture.expected,
+    })
+  })
+})
+
 test('PatternMatcher - parity patterns are stable across DST transitions', () => {
   // Regression: daysBetween used to floor local-midnight ms diffs, which run
   // an hour short after spring-forward and flipped A/B parity all summer.
