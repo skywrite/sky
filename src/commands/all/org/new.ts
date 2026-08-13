@@ -100,7 +100,7 @@ export default class OrgNewTask extends Command {
 
         // Categorize with all available sources
         output.log('Categorizing with AI...')
-        const categorization = await categorizeOrganization(taxonomyInfo, {
+        const categorization = await categorizeOrganization(taxonomyInfo, name, {
           webFetch: webFetchResult,
           wikipedia: wikipediaResult,
         })
