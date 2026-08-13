@@ -150,27 +150,30 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
     return dc
   }
 
-  // DomainCollection query delegation (DC resolvers take (args); createSchema
-  // passes (parent, args)). `satisfies` keeps this map exhaustive over
-  // createDomainResolvers: a query added there without a delegate here is a
-  // compile error. A missing delegate resolves null, violates the non-null
-  // schema types ([Chat!]! etc.), and kills every query touching the field.
+  // DomainCollection query delegation (DC resolvers take (args, gqlCtx, info);
+  // createSchema passes (parent, args, ctx, info) — ctx/info forwarded so the
+  // resolvers can report capped results into the request context, which the
+  // truncation plugin then surfaces as response extensions. `satisfies` keeps
+  // this map exhaustive over createDomainResolvers: a query added there
+  // without a delegate here is a compile error. A missing delegate resolves
+  // null, violates the non-null schema types ([Chat!]! etc.), and kills every
+  // query touching the field.
   const dcDelegates = {
-    meetings: (_: unknown, args: any) => liveDc()?.meetings(args) ?? [],
-    messages: (_: unknown, args: any) => liveDc()?.messages(args) ?? [],
-    videos: (_: unknown, args: any) => liveDc()?.videos(args) ?? [],
-    people: (_: unknown, args: any) => liveDc()?.people(args) ?? [],
-    orgs: (_: unknown, args: any) => liveDc()?.orgs(args) ?? [],
-    projects: (_: unknown, args: any) => liveDc()?.projects(args) ?? [],
-    decisions: (_: unknown, args: any) => liveDc()?.decisions(args) ?? [],
-    goals: (_: unknown, args: any) => liveDc()?.goals(args) ?? [],
-    streaks: (_: unknown, args: any) => liveDc()?.streaks(args) ?? [],
-    places: (_: unknown, args: any) => liveDc()?.places(args) ?? [],
-    ideas: (_: unknown, args: any) => liveDc()?.ideas(args) ?? [],
-    days: (_: unknown, args: any) => liveDc()?.days(args) ?? [],
-    journals: (_: unknown, args: any) => liveDc()?.journals(args) ?? [],
-    chats: (_: unknown, args: any) => liveDc()?.chats(args) ?? [],
-    documents: (_: unknown, args: any) => liveDc()?.documents(args) ?? [],
+    meetings: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.meetings(args, ctx, info) ?? [],
+    messages: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.messages(args, ctx, info) ?? [],
+    videos: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.videos(args, ctx, info) ?? [],
+    people: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.people(args, ctx, info) ?? [],
+    orgs: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.orgs(args, ctx, info) ?? [],
+    projects: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.projects(args, ctx, info) ?? [],
+    decisions: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.decisions(args, ctx, info) ?? [],
+    goals: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.goals(args, ctx, info) ?? [],
+    streaks: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.streaks(args, ctx, info) ?? [],
+    places: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.places(args, ctx, info) ?? [],
+    ideas: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.ideas(args, ctx, info) ?? [],
+    days: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.days(args, ctx, info) ?? [],
+    journals: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.journals(args, ctx, info) ?? [],
+    chats: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.chats(args, ctx, info) ?? [],
+    documents: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.documents(args, ctx, info) ?? [],
   } satisfies Record<keyof ReturnType<typeof createDomainResolvers>, unknown>
 
   return {
@@ -290,6 +293,30 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
 }
 
 /**
+ * Surface resolver-reported truncations as GraphQL response `extensions`.
+ *
+ * The resolvers push QueryTruncation records into the per-request context
+ * (seeded here); a capped result is otherwise indistinguishable from a
+ * complete one on the wire. `extensions` is the spec's side-channel for
+ * exactly this — no schema change, invisible to consumers that ignore it.
+ */
+const truncationExtensionsPlugin = {
+  onExecute({ args }: { args: { contextValue: Record<string, unknown> } }) {
+    const truncations: unknown[] = []
+    args.contextValue.truncations = truncations
+    return {
+      onExecuteDone({ result, setResult }: { result: unknown; setResult: (r: unknown) => void }) {
+        if (truncations.length === 0) return
+        // Incremental/stream results (subscriptions) have no single extensions object
+        if (result && typeof result === 'object' && Symbol.asyncIterator in result) return
+        const single = result as { extensions?: Record<string, unknown> }
+        setResult({ ...single, extensions: { ...(single.extensions ?? {}), truncations } })
+      },
+    }
+  },
+}
+
+/**
  * Create a GraphQL Yoga instance bound to specific stores.
  */
 export function createYogaInstance(
@@ -302,6 +329,7 @@ export function createYogaInstance(
       typeDefs,
       resolvers: createResolvers(store, markdownStore),
     }),
+    plugins: [truncationExtensionsPlugin],
     // Localhost single-user service: expose real resolver errors to clients.
     // Yoga's default masking rewrites them to "Unexpected error.", which made
     // ai:chat context failures undiagnosable from the CLI side.

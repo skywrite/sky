@@ -9,6 +9,7 @@ import { buildSchema, graphql, type GraphQLSchema } from 'graphql'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { createDomainResolvers } from './resolvers/mod.ts'
+import type { QueryTruncation } from './resolvers/shared.ts'
 
 // Cache the schema string and built schema
 let schemaString: string | null = null
@@ -49,6 +50,8 @@ export async function buildDomainSchema(_store: MarkdownStore): Promise<GraphQLS
 export interface ExecuteResult<T = unknown> {
   data: T | null
   errors?: Array<{ message: string; path?: string[] }>
+  /** Root fields whose result hit a cap — present only when something was cut. */
+  truncations?: QueryTruncation[]
 }
 
 /**
@@ -83,10 +86,13 @@ export async function executeQuery<T = unknown>(query: string, store: MarkdownSt
     cachedResolversVersion = store.version
   }
 
+  // Resolvers report capped root fields here; see QueryTruncation.
+  const truncations: QueryTruncation[] = []
   const result = await graphql({
     schema,
     source: query,
     rootValue: cachedResolvers,
+    contextValue: { truncations },
   })
 
   return {
@@ -95,6 +101,7 @@ export async function executeQuery<T = unknown>(query: string, store: MarkdownSt
       message: e.message,
       path: e.path?.map(String),
     })),
+    ...(truncations.length > 0 ? { truncations } : {}),
   }
 }
 

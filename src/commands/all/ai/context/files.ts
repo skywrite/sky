@@ -12,6 +12,7 @@
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 
 // -----------------------------------------------------------------------------
 // Params
@@ -39,6 +40,8 @@ interface FilesResult {
   query: string
   paths: string[]
   count: number
+  /** Root fields whose result hit a cap during execution. */
+  truncations?: QueryTruncation[]
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -132,6 +135,13 @@ export default class AIContextFilesTask extends Command {
     }
 
     const { paths, count } = execResult.data ?? { paths: [], count: 0 }
+    const truncations = execResult.data?.truncations ?? []
+    // Composed under ai:chat, markdown:sel prints nothing — surface capped
+    // results here so a truncated gather is never mistaken for a complete one.
+    for (const t of truncations) {
+      const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
+      output.log(colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`))
+    }
 
     // Step 4: Format output
     if (json) {
@@ -160,6 +170,7 @@ export default class AIContextFilesTask extends Command {
       query,
       paths,
       count,
+      ...(truncations.length > 0 ? { truncations } : {}),
     })
   }
 }

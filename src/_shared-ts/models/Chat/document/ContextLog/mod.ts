@@ -31,6 +31,8 @@
  * would orphan resume for every transcript already on disk.
  */
 
+import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
+
 export const CONTEXT_LOG_VERSION = 2
 
 /** How deliberately queries retrieved a doc, from result-set selectivity. */
@@ -78,6 +80,12 @@ export interface TurnStats {
   floor?: number
   /** Docs cut by the floor this turn (their records carry cut: 'floor') */
   floored?: number
+  /**
+   * Query root fields whose results hit a cap this turn — the documents the
+   * pipeline never saw. Without this, a capped gather reads as a complete one
+   * when the log is inspected or a session resumes from it.
+   */
+  truncated?: QueryTruncation[]
 }
 
 export interface ContextTurnLog {

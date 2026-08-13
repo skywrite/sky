@@ -499,7 +499,11 @@ const CASES: SmokeCase[] = [
 async function runQuery(
   yoga: ReturnType<typeof createYogaInstance>,
   query: string,
-): Promise<{ data?: Record<string, Array<{ path: string }>>; errors?: Array<{ message: string }> }> {
+): Promise<{
+  data?: Record<string, Array<{ path: string }>>
+  errors?: Array<{ message: string }>
+  extensions?: { truncations?: Array<Record<string, unknown>> }
+}> {
   const response = await yoga.fetch(
     new Request('http://yoga/graphql', {
       method: 'POST',
@@ -510,6 +514,7 @@ async function runQuery(
   return (await response.json()) as {
     data?: Record<string, Array<{ path: string }>>
     errors?: Array<{ message: string }>
+    extensions?: { truncations?: Array<Record<string, unknown>> }
   }
 }
 
@@ -554,6 +559,27 @@ test('service yoga returns project folder files via Project.files', async () => 
     should: 'list the folder file path',
     actual: (result.data?.projects ?? []).flatMap((p) => (p as unknown as { files: string[] }).files),
     expected: [projectFiles[0].path],
+  })
+})
+
+test('service yoga surfaces capped results as response extensions', async () => {
+  const yoga = createYogaInstance({} as Store, createMockMarkdownStore())
+
+  const capped = await runQuery(yoga, '{ journals(limit: 1) { path } }')
+  const complete = await runQuery(yoga, '{ journals { path } }')
+
+  assert({
+    given: 'two fixture journals queried with limit: 1 through yoga',
+    should: 'report the truncation with exact counts in extensions',
+    actual: capped.extensions?.truncations,
+    expected: [{ field: 'journals', matched: 2, returned: 1, limit: 1, defaulted: false }],
+  })
+
+  assert({
+    given: 'the same query uncapped',
+    should: 'carry no extensions at all',
+    actual: complete.extensions === undefined,
+    expected: true,
   })
 })
 

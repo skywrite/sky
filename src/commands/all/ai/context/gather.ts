@@ -104,6 +104,12 @@ export default class AIContextGatherTask extends Command {
     }
 
     const { paths, count, data } = execResult.data ?? { paths: [], count: 0 }
+    // Composed runs print nothing from markdown:sel — surface capped results
+    // here so a truncated gather is never mistaken for a complete one.
+    for (const t of execResult.data?.truncations ?? []) {
+      const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
+      output.log(colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`))
+    }
 
     if (count === 0) {
       output.log(colors.yellow('No documents found matching the query'))

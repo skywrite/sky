@@ -21,6 +21,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import ContextAssembler, { type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -60,7 +61,9 @@ export type ProducerResult<T> = { ok: true; value: T } | { ok: false; message: s
 
 export interface ContextProducers {
   /** Turn 1: question → GraphQL query + matching paths. CLI: ai:context:files. */
-  produceInitialQuery(userMessage: string): Promise<ProducerResult<{ paths: string[]; query?: string }>>
+  produceInitialQuery(
+    userMessage: string,
+  ): Promise<ProducerResult<{ paths: string[]; query?: string; truncations?: QueryTruncation[] }>>
   /** Turns 2+: should the query set change, and to what. CLI: ai:context:evolve. */
   evolveQueries(
     userMessage: string,
@@ -68,7 +71,7 @@ export interface ContextProducers {
     recentConversation: ConversationMessage[],
   ): Promise<ProducerResult<{ queries: string[]; changed: boolean }>>
   /** Execute one GraphQL query → matching paths. CLI: markdown:sel. */
-  executeQuery(query: string): Promise<ProducerResult<{ paths: string[] }>>
+  executeQuery(query: string): Promise<ProducerResult<{ paths: string[]; truncations?: QueryTruncation[] }>>
 }
 
 // -----------------------------------------------------------------------------
@@ -113,7 +116,13 @@ export interface RestoreReport {
 }
 
 /** Mid-turn signals a host may surface while a turn's context work runs. */
-export type ContextProgressEvent = { type: 'queries-changed' } | { type: 'no-new-queries' }
+export type ContextProgressEvent =
+  | { type: 'queries-changed' }
+  | { type: 'no-new-queries' }
+  // Evolve-turn queries run through markdown:sel composed (which prints
+  // nothing), so capped results surface through this event. Turn 1 needs no
+  // event: ai:context:files prints its own warning into the host's output.
+  | { type: 'truncated'; items: QueryTruncation[] }
 
 // -----------------------------------------------------------------------------
 // Options
@@ -205,6 +214,8 @@ export default class ChatContext {
   // entry by rebuild, and returned for the host to surface — the chat used
   // to swallow these and answer from silently thinner context.
   private turnErrors: string[] = []
+  /** Capped query results this turn, recorded into the turn's stats. */
+  private turnTruncations: QueryTruncation[] = []
 
   constructor(opts: ChatContextOptions) {
     this.today = opts.today
@@ -371,10 +382,15 @@ export default class ChatContext {
   async firstTurn(userMessage: string): Promise<TurnContextReport> {
     this.turnNumber = 1
     this.turnErrors = []
+    this.turnTruncations = []
 
     let newPaths: string[] | undefined
     try {
       const produced = await this.producers.produceInitialQuery(userMessage)
+      if (produced.ok && produced.value.truncations?.length) {
+        // ai:context:files already printed the warning; record for the log.
+        this.turnTruncations.push(...produced.value.truncations)
+      }
       if (produced.ok && produced.value.paths.length > 0) {
         if (produced.value.query) this.queries.push(produced.value.query)
         const fetched = this.excludeOwnChat(produced.value.paths)
@@ -416,6 +432,7 @@ export default class ChatContext {
   async evolveTurn(userMessage: string, recentConversation: ConversationMessage[]): Promise<TurnContextReport> {
     this.turnNumber++
     this.turnErrors = []
+    this.turnTruncations = []
 
     let rebuilt: RebuildReport | undefined
     try {
@@ -435,6 +452,11 @@ export default class ChatContext {
         for (const query of newQueries) {
           try {
             const executed = await this.producers.executeQuery(query)
+            if (executed.ok && executed.value.truncations?.length) {
+              // Composed markdown:sel printed nothing — the host surfaces this.
+              this.turnTruncations.push(...executed.value.truncations)
+              this.onProgress?.({ type: 'truncated', items: executed.value.truncations })
+            }
             if (executed.ok && executed.value.paths.length > 0) {
               const fetched = this.excludeOwnChat(executed.value.paths)
               this.recordRetrieval(fetched, executed.value.paths.length)
@@ -643,6 +665,9 @@ export default class ChatContext {
       if (assembler.floorValue !== null) {
         turnStats.floor = Math.round(assembler.floorValue * 100) / 100
         turnStats.floored = assembler.floored.length
+      }
+      if (this.turnTruncations.length > 0) {
+        turnStats.truncated = [...this.turnTruncations]
       }
     }
 
