@@ -44,7 +44,7 @@
  * - EVERY-OTHER-DAY-B: Every other day (Day B, opposite of A)
  *
  * EVERY 2 WEEKS (bi-weekly):
- * - EVERY-2-WEEKS-A-MON: Every other Monday (Week A, from first Monday of year)
+ * - EVERY-2-WEEKS-A-MON: Every other Monday (Week A, epoch: Jan 1, 2026)
  * - EVERY-2-WEEKS-B-MON: Every other Monday (Week B, opposite of A)
  * - EVERY-2-WEEKS-A-TUE, EVERY-2-WEEKS-B-TUE, etc.
  *
@@ -57,6 +57,21 @@
 import { differenceInCalendarDays } from '#shared/universal/dates/dateFns/mod.ts'
 import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
 import { isValidPattern } from '#shared/universal/dates/recurring/patterns.ts'
+
+/**
+ * Fixed anchor for bi-weekly (and deprecated ALTERNATE) parity.
+ *
+ * Anchoring to the first occurrence within each calendar year reset the phase
+ * every January, so a year holding 53 of a given weekday fired the same phase
+ * on consecutive weeks: with Thursdays, both 2026-12-31 and 2027-01-07 came
+ * out as Week A. A fixed epoch alternates without interruption.
+ *
+ * 2026-01-01 is the epoch because every weekday's first 2026 occurrence lands
+ * in the same week the old year-relative anchor picked, so existing items keep
+ * the phase they were calibrated to. Moving this date flips A and B for every
+ * bi-weekly item in the notebook.
+ */
+const BIWEEKLY_EPOCH = new PlainDate(2026, 1, 1)
 
 export class PatternMatcher {
   private readonly pattern: string
@@ -335,16 +350,11 @@ export class PatternMatcher {
   }
 
   private getWeeksSinceFirstOccurrence(date: PlainDate, targetDayOfWeek: number): number {
-    // Find the first occurrence of this day in the current year
-    let firstOccurrence = new PlainDate(date.year, 1, 1)
-
-    // Find the first occurrence of the target day
-    while (firstOccurrence.dayOfWeek !== targetDayOfWeek) {
-      firstOccurrence = firstOccurrence.addDays(1)
-    }
-
-    // Calculate weeks since first occurrence
-    return Math.floor(this.daysBetween(firstOccurrence, date) / 7)
+    // The first occurrence of this weekday on or after the epoch. Dates before
+    // the epoch count backwards, so floor keeps the alternation consistent in
+    // both directions.
+    const anchor = BIWEEKLY_EPOCH.addDays((targetDayOfWeek - BIWEEKLY_EPOCH.dayOfWeek + 7) % 7)
+    return Math.floor(this.daysBetween(anchor, date) / 7)
   }
 
   private isLastWeekendOfMonth(date: PlainDate): boolean {
