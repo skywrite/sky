@@ -9,7 +9,7 @@ import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
 // Setting this to 50k leaves ample room for the rest of the prompt structure.
 const MAX_CONTENT_TOKENS = 50000
 
-/** Hard ceiling on the site-analysis call — see _categorize.ts for why generateObject needs one. */
+/** Hard ceiling on the site-analysis call — see categorize.ts for why generateObject needs one. */
 const AI_TIMEOUT_MS = 2 * 60 * 1000
 
 /**

@@ -1,6 +1,6 @@
 import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { webFetch } from './_webFetch.ts'
+import { webFetch } from './lib/webFetch.ts'
 
 const params = {
   url: Arg.string('Organization website URL', { required: true }),

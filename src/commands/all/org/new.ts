@@ -10,9 +10,9 @@ import { walk } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
-import { categorizeOrganization } from './_categorize.ts'
-import { webFetch } from './_webFetch.ts'
-import { getWikipediaArticleAI, type WikipediaSelectionResult } from './_wikipedia.ts'
+import { categorizeOrganization } from './lib/categorize.ts'
+import { webFetch } from './lib/webFetch.ts'
+import { getWikipediaArticleAI, type WikipediaSelectionResult } from './lib/wikipedia.ts'
 
 const params = {
   name: Arg.string('Organization name to use (not auto-detected)', { required: true }),
@@ -130,7 +130,7 @@ export default class OrgNewTask extends Command {
         }
 
         // Load the taxonomy guide and the categories that actually exist on disk
-        const taxonomyPath = new URL('./_taxonomy.md', import.meta.url).pathname
+        const taxonomyPath = new URL('./lib/taxonomy.md', import.meta.url).pathname
         const taxonomyInfo = await readFile(taxonomyPath, 'utf-8')
         const categoriesInUse = await listCategoriesInUse()
 
