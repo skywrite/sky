@@ -41,6 +41,10 @@ export default class EmailFollowRegistry {
     }))
   }
 
+  getActive(): EmailFollowEntry[] {
+    return this.getAll().filter((e) => e.follow.status === 'active')
+  }
+
   findByFileName(name: string): FollowFileEntry | undefined {
     return this.byFile.get(name)
   }

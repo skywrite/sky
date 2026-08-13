@@ -22,6 +22,17 @@ ref:
   thread_ts: "1.2"
 status: active`
 
+const CLOSED_YAML = `\
+source: Email
+ref:
+  account: jp@example.com
+  threadId: thread-closed99
+  label: Sky/Follow
+summary: Renewal wrap-up
+followSince: 2026-02-01 09:00
+lastActivity: 2026-02-10 10:30
+status: closed`
+
 async function makeTempDir(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'email-follow-registry-test-'))
 }
@@ -94,6 +105,29 @@ test('findByFileName() returns matching follow', async () => {
     should: 'find by name without extension',
     expected: 'Email',
     actual: result?.follow.source,
+  })
+
+  await rm(dir, { recursive: true })
+})
+
+test('getActive() filters out non-active follows', async () => {
+  const dir = await makeTempDir()
+  await writeYaml(dir, 'email_one.yaml', EMAIL_YAML)
+  await writeYaml(dir, 'email_closed.yaml', CLOSED_YAML)
+
+  const registry = await EmailFollowRegistry.build(dir)
+
+  assert({
+    given: 'one active and one closed follow',
+    should: 'keep the active one',
+    expected: 1,
+    actual: registry.getActive().length,
+  })
+  assert({
+    given: 'the active listing',
+    should: 'name the active follow',
+    expected: 'email_one',
+    actual: registry.getActive()[0]?.fileName,
   })
 
   await rm(dir, { recursive: true })

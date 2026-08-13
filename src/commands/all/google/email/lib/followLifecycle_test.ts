@@ -1,7 +1,9 @@
+import Follow from '#shared/models/Follow/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
-import { planThreadFollow } from './followLifecycle.ts'
+import { planThreadFollow, selectExpiredFollows } from './followLifecycle.ts'
+import type { FollowEntry } from './followLifecycle.ts'
 
 const NOW = PlainDateTime.fromString('2026-08-12 10:00')
 
@@ -88,5 +90,46 @@ test('planThreadFollow falls back to now when no message time is known', () => {
     should: 'anchor lastActivity on now',
     expected: '2026-08-12 10:00',
     actual: follow.lastActivity ? `${follow.lastActivity.date} ${follow.lastActivity.time}` : '(none)',
+  })
+})
+
+function followEntry(opts: {
+  fileName: string
+  status?: 'active' | 'paused' | 'closed'
+  account?: string
+  lastActivity?: string
+  expires?: string
+}): FollowEntry {
+  const follow = Follow.create({
+    source: 'Email',
+    ref: { account: opts.account ?? 'user@example.com', threadId: '42', label: 'Sky/Follow' },
+    summary: 'Atlas kickoff',
+    followSince: PlainDateTime.fromString('2026-07-01 08:00'),
+    ...(opts.expires ? { expires: PlainDateTime.fromString(opts.expires) } : {}),
+    ...(opts.lastActivity ? { lastActivity: PlainDateTime.fromString(opts.lastActivity) } : {}),
+    messages: [],
+    status: opts.status ?? 'active',
+  })
+  return { follow, path: `state/follow/email/active/${opts.fileName}.yaml`, fileName: opts.fileName }
+}
+
+test('selectExpiredFollows picks only this account’s quiet active follows', () => {
+  const quiet = followEntry({ fileName: 'quiet', lastActivity: '2026-07-20 09:00' })
+  const fresh = followEntry({ fileName: 'fresh', lastActivity: '2026-08-10 09:00' })
+  const closed = followEntry({ fileName: 'closed', status: 'closed', lastActivity: '2026-07-20 09:00' })
+  const foreign = followEntry({ fileName: 'foreign', account: 'other@example.com', lastActivity: '2026-07-20 09:00' })
+  const pinned = followEntry({ fileName: 'pinned', lastActivity: '2026-07-20 09:00', expires: '2026-12-31 23:59' })
+  const cased = followEntry({ fileName: 'cased', account: 'User@Example.com', lastActivity: '2026-07-20 09:00' })
+
+  const picked = selectExpiredFollows([quiet, fresh, closed, foreign, pinned, cased], 'user@example.com', NOW)
+
+  assert({
+    given: 'quiet, fresh, closed, foreign-account, future-expires, and case-varied follows',
+    should: 'select the quiet active ones owned by the account',
+    expected: 'cased, quiet',
+    actual: picked
+      .map((e) => e.fileName)
+      .sort()
+      .join(', '),
   })
 })

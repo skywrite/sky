@@ -8,11 +8,12 @@ import type { GoogleClient } from '#lib/google/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import Follow from '#shared/models/Follow/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
-import { persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
+import { expireQuietFollows, persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
 import { getInboxThreads } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
@@ -27,7 +28,13 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
-type SyncResult = { newFollows: number; updatedFollows: number; bornExpired: number; fetchedMessages: number }
+type SyncResult = {
+  newFollows: number
+  updatedFollows: number
+  bornExpired: number
+  expired: string[]
+  fetchedMessages: number
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -35,7 +42,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpired: 0, fetchedMessages: 0 }
+const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpired: 0, expired: [], fetchedMessages: 0 }
 
 export default class GoogleEmailInboxFollowSyncTask extends Command {
   static override description: CommandDescription = {
@@ -49,6 +56,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       '    threads already quiet past the expiry window are captured and closed instead',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
       '  - Archives processed threads from inbox',
+      `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Gmail label removed, follow YAML archived`,
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
     ],
     usage: ['sky google:email:inbox:follow:sync', 'sky google:email:inbox:follow:sync --pick   # choose one thread'],
@@ -100,71 +108,88 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         { tasks, output },
       )
 
-      if (fetchResult.fetched === 0) {
-        output.log('  All threads synced. Nothing to do.\n')
-        return CommandResult.success(NOTHING_SYNCED)
-      }
-
-      // ── Phase 3: Create/update follow files ──────────────────────────────
       const now = fetchNowSync()
       let newFollows = 0
       let updatedFollows = 0
       let bornExpired = 0
 
-      for (const thread of fetchResult.threads) {
-        if (thread.messages.length === 0) continue
+      if (fetchResult.fetched === 0) {
+        output.log('  All threads synced.')
+      } else {
+        // ── Phase 3: Create/update follow files ────────────────────────────
+        for (const thread of fetchResult.threads) {
+          if (thread.messages.length === 0) continue
 
-        const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
-        const existingFollow = registry.findByThreadId(thread.threadId)
+          const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
+          const existingFollow = registry.findByThreadId(thread.threadId)
 
-        if (existingFollow) {
-          let follow = existingFollow.follow
-          const existingPaths = new Set(follow.messages.map((m) => m.path))
-          for (const msg of thread.messages) {
-            if (existingPaths.has(msg.path)) continue
-            follow = follow.addMessage(msg.date, msg.path)
+          if (existingFollow) {
+            let follow = existingFollow.follow
+            const existingPaths = new Set(follow.messages.map((m) => m.path))
+            for (const msg of thread.messages) {
+              if (existingPaths.has(msg.path)) continue
+              follow = follow.addMessage(msg.date, msg.path)
+            }
+            // lastActivity is the newest message's real time, not the sync time —
+            // a reply discovered late must not look like fresh activity
+            if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
+            follow = follow.updateLastChecked(now.plainDateTime)
+
+            await writeTextFile(existingFollow.path, follow.toYaml())
+            output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
+            updatedFollows++
+          } else {
+            const planned = planThreadFollow({
+              accountEmail: client.email,
+              label,
+              thread,
+              now: now.plainDateTime,
+            })
+            const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+            if (persisted.followed) newFollows++
+            else bornExpired++
           }
-          // lastActivity is the newest message's real time, not the sync time —
-          // a reply discovered late must not look like fresh activity
-          if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
-          follow = follow.updateLastChecked(now.plainDateTime)
+        }
 
-          await writeTextFile(existingFollow.path, follow.toYaml())
-          output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
-          updatedFollows++
-        } else {
-          const planned = planThreadFollow({
-            accountEmail: client.email,
-            label,
-            thread,
-            now: now.plainDateTime,
-          })
-          const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
-          if (persisted.followed) newFollows++
-          else bornExpired++
+        // ── Phase 4: Archive processed threads from inbox ──────────────────
+        // Failed threads stay in the inbox so the next sync retries them.
+        await this.archiveFromInbox(client, fetchResult.threads, output)
+
+        // --pick is interactive triage: open the picked thread's most recent entry
+        if (pickedThreadId) {
+          const picked = fetchResult.threads.find((t) => t.threadId === pickedThreadId)
+          const latest = picked?.messages.at(-1)
+          if (latest) {
+            output.log(`  Opening ${latest.path}`)
+            await openEditor([{ file: path.join(DIR_BASE, latest.path) }])
+          }
         }
       }
 
-      // ── Phase 4: Archive processed threads from inbox ────────────────────
-      // Failed threads stay in the inbox so the next sync retries them.
-      await this.archiveFromInbox(client, fetchResult.threads, output)
-
-      // --pick is interactive triage: open the picked thread's most recent entry
-      if (pickedThreadId) {
-        const picked = fetchResult.threads.find((t) => t.threadId === pickedThreadId)
-        const latest = picked?.messages.at(-1)
-        if (latest) {
-          output.log(`  Opening ${latest.path}`)
-          await openEditor([{ file: path.join(DIR_BASE, latest.path) }])
-        }
+      // ── Phase 5: Expire quiet follows (parity with slack:follow:check) ───
+      // After capture, so a thread's final unsaved messages land before its
+      // follow closes. Rebuilt registry: phase 3 wrote follows the boot-time
+      // one doesn't know. --pick skips it — triage must not close follows.
+      let expired: string[] = []
+      if (!pick) {
+        const sweepRegistry = await EmailFollowRegistry.build()
+        const sweep = await expireQuietFollows({
+          client,
+          entries: sweepRegistry.getActive(),
+          fallbackLabel: label,
+          now: now.plainDateTime,
+          output,
+        })
+        expired = sweep.expired
       }
 
       const fetched = fetchResult.fetched
       const closedNote = bornExpired > 0 ? `, ${bornExpired} captured and closed` : ''
+      const expiredNote = expired.length > 0 ? `, ${expired.length} expired` : ''
       output.log(
-        `\n  Sync complete: ${newFollows} new, ${updatedFollows} updated${closedNote}, ${fetched} message(s).\n`,
+        `\n  Sync complete: ${newFollows} new, ${updatedFollows} updated${closedNote}${expiredNote}, ${fetched} message(s).\n`,
       )
-      return CommandResult.success({ newFollows, updatedFollows, bornExpired, fetchedMessages: fetched })
+      return CommandResult.success({ newFollows, updatedFollows, bornExpired, expired, fetchedMessages: fetched })
     } catch (err) {
       return CommandResult.error(err as Error, 'google:email:inbox:follow:sync failed')
     }
