@@ -623,6 +623,59 @@ test('PatternMatcher - parity patterns are stable across DST transitions', () =>
   }
 })
 
+test('PatternMatcher - in-family typos are rejected up front', () => {
+  // Each date is one the correctly-spelled pattern would match, so a pass
+  // here proves rejection happens by validation, not by accident.
+  const fixtures = [
+    { pattern: 'EVERY-MONDAY', date: new PlainDate(2026, 1, 5), expected: false }, // a Monday
+    { pattern: 'MONTHLY-FIRST-MONDAY', date: new PlainDate(2026, 1, 5), expected: false }, // first Monday
+    { pattern: 'EVERY-WEEKDAYS', date: new PlainDate(2026, 1, 5), expected: false },
+    { pattern: 'MONTHLY-45', date: new PlainDate(2026, 1, 15), expected: false },
+    // A valid pattern the static list used to omit flows through the gate
+    { pattern: 'QUARTERLY-FIRST-SUN', date: new PlainDate(2026, 1, 4), expected: true }, // first Sunday of Q1
+  ]
+
+  fixtures.forEach((fixture) => {
+    assert({
+      given: `${fixture.pattern} on ${fixture.date.toString()}`,
+      should: fixture.expected ? 'match' : 'not match',
+      actual: matchesPattern(fixture.date, fixture.pattern),
+      expected: fixture.expected,
+    })
+  })
+})
+
+test('PatternMatcher - invalid patterns warn once per pattern, not per date', () => {
+  const warnings: string[] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.join(' '))
+  }
+
+  try {
+    // Unique tokens: the once-per-process dedupe means reusing a pattern from
+    // another test would swallow the warning this test is counting.
+    let date = new PlainDate(2026, 1, 1)
+    for (let d = 0; d < 60; d++) {
+      matchesPattern(date, 'EVERY-BOGUS-X')
+      matchesPattern(date, 'MONTHLY-BOGUS-Y')
+      date = date.addDays(1)
+    }
+
+    assert({
+      given: '60 checks each of two invalid patterns',
+      should: 'warn exactly once per distinct pattern',
+      actual: [
+        warnings.filter((w) => w.includes('EVERY-BOGUS-X')).length,
+        warnings.filter((w) => w.includes('MONTHLY-BOGUS-Y')).length,
+      ],
+      expected: [1, 1],
+    })
+  } finally {
+    console.warn = originalWarn
+  }
+})
+
 test('PatternMatcher - Invalid patterns', () => {
   const invalidPatterns = [
     'INVALID',
