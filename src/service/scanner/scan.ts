@@ -184,10 +184,11 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
   function trackOrgInteractionsFromProject(contents: string): void {
     const md = MarkdownDoc.fromMarkdown(contents)
 
-    // Use project created date, or fall back to today
+    // Use project created date, or fall back to the reference date (today in
+    // production) so scans under a fixed reference stay deterministic
     const created = md.yaml.created
     const dateStr =
-      typeof created === 'string' && REGEX_YMD_EXACT.test(created) ? created : new Date().toISOString().slice(0, 10)
+      typeof created === 'string' && REGEX_YMD_EXACT.test(created) ? created : (referenceDate ?? PlainDate.today()).ymd
 
     // Extract orgs from 'rel' field
     const relValue = md.yaml.rel
