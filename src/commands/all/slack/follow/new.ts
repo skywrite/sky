@@ -2,14 +2,14 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import ms from 'ms'
 import openEditor from 'open-editor'
-import { autoRelSlackMessage } from '#commands/all/slack/lib/autoRel.ts'
-import { autoTagSlackMessage } from '#commands/all/slack/lib/autoTag.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
@@ -238,10 +238,10 @@ export default class SlackFollowNewTask extends Command {
         fullBodyParts.push(`## ${msg.timeLabel} - **${msg.userName}**`, '')
         fullBodyParts.push(msg.text, '', '')
       }
-      const enrichInput = { channel: to, from, summary, body: fullBodyParts.join('\n') }
+      const enrichInput = { to, from, summary, body: fullBodyParts.join('\n') }
       const [threadTags, threadRel] = await Promise.all([
-        autoTagSlackMessage(enrichInput),
-        autoRelSlackMessage(enrichInput),
+        autoTagMessage(enrichInput, { mediums: ['slack'] }),
+        autoRelMessage(enrichInput, { mediums: ['slack'] }),
       ])
       if (threadTags) output.log(`  Auto-tags: ${threadTags}`)
       if (threadRel) output.log(`  Auto-rel: ${threadRel.join('; ')}`)
