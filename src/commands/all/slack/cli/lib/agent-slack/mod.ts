@@ -9,4 +9,5 @@ export type { AgentSlackFile, AgentSlackMessage, AgentSlackUser } from './types.
 export type { AgentSlackAuthStatus, AgentSlackWhoami } from './auth.ts'
 export { parseAuthTest, parseWhoami } from './auth.ts'
 export { default as parseUser } from './parseUser.ts'
+export { default as collectChannelIds } from './collectChannelIds.ts'
 export { default as collectUserIds } from './collectUserIds.ts'
