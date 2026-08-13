@@ -16,6 +16,11 @@ const prefixFixtures = [
   { tags: 'tags: []', prefix: 'Acme/', expected: false, description: 'empty tags' },
   { tags: 'tags:\n  - Acme/M&A', prefix: 'acme/', expected: true, description: 'prefix cased differently' },
   { tags: 'tags:\n  - acme/m&a', prefix: 'Acme/', expected: true, description: 'tag cased differently' },
+  { tags: 'tags:\n  - Acme', prefix: 'Acme/', expected: true, description: 'namespace root is in its namespace' },
+  { tags: 'tags:\n  - Acme', prefix: 'Acme', expected: true, description: 'namespace root, slashless prefix' },
+  { tags: 'tags:\n  - Acmes', prefix: 'Acme/', expected: false, description: 'tag sharing a leading substring' },
+  { tags: 'tags:\n  - Acme/M&A', prefix: 'Acme/M&A/', expected: true, description: 'nested namespace root' },
+  { tags: 'tags:\n  - Acme/M&A', prefix: 'Acme/M&A/EU/', expected: false, description: 'prefix deeper than the tag' },
 ]
 
 for (const { tags, prefix, expected, description } of prefixFixtures) {

@@ -18,14 +18,21 @@ function lowerTags(doc: Document): Set<string> {
 }
 
 /**
- * Check if any tag starts with the given prefix, ignoring case.
+ * Check if any tag is in the given namespace, ignoring case.
  *
- * @example matchesTagPrefix(doc, "Acme/") // matches "Acme/M&A", "acme/legal"
+ * A namespace root belongs to its own namespace: the bare tag `Acme` answers
+ * a query for `Acme/`. That falls out of comparing against `tag + '/'` — the
+ * appended separator can only add a match where the prefix is exactly the tag
+ * plus one `/`, so `Acme/M&A` still matches and `Acmes` still does not.
+ * Without it, a doc marked only with the root is invisible to every query for
+ * its own namespace.
+ *
+ * @example matchesTagPrefix(doc, "Acme/") // matches "Acme/M&A", "acme/legal", "Acme"
  */
 export function matchesTagPrefix(doc: Document, prefix: string): boolean {
   const prefixLower = prefix.toLowerCase()
   for (const tag of doc.tags) {
-    if (tag.toLowerCase().startsWith(prefixLower)) return true
+    if (`${tag.toLowerCase()}/`.startsWith(prefixLower)) return true
   }
   return false
 }
