@@ -1342,6 +1342,47 @@ test('resolvers - a date-bounded query is exempt from the default cap', () => {
   })
 })
 
+// A capped result is indistinguishable from a complete one — resolvers report
+// exact truncation (pre-slice count) into the GraphQL context so no consumer
+// has to guess from `rows == limit`.
+test('resolvers - a capped query reports its truncation into the context', () => {
+  const many = Array.from({ length: 5 }, (_, i) => ({
+    doc: Document.fromMarkdown(`---\ndate: "2025-03-1${i}"\n---\nNote ${i}.`),
+    path: `/test/time/2025/03/10-16/03-1${i}/actions/notes/note-${i}.md`,
+  }))
+  const resolvers = createDomainResolvers(createTimeStore(many))
+  const info = { fieldName: 'documents' }
+
+  const sink = { truncations: [] as Array<Record<string, unknown>> }
+  const rows = resolvers.documents({ limit: 2 }, sink, info)
+  assert({
+    given: '5 documents and limit: 2',
+    should: 'report field, exact matched count, returned count, and the cap',
+    actual: JSON.stringify({ rows: rows.length, t: sink.truncations }),
+    expected: JSON.stringify({
+      rows: 2,
+      t: [{ field: 'documents', matched: 5, returned: 2, limit: 2, defaulted: false }],
+    }),
+  })
+
+  const quiet = { truncations: [] as unknown[] }
+  resolvers.documents({ limit: 10 }, quiet, info)
+  resolvers.documents({ where: { dateGte: '2025-03-01', dateLte: '2025-03-31' } }, quiet, info)
+  assert({
+    given: 'a limit above the match count, and an uncapped date-bounded query',
+    should: 'report nothing',
+    actual: quiet.truncations.length,
+    expected: 0,
+  })
+
+  assert({
+    given: 'no truncation sink in the GraphQL context',
+    should: 'still resolve normally',
+    actual: resolvers.documents({ limit: 2 }).length,
+    expected: 2,
+  })
+})
+
 // Journal is a genre, not a medium: membership is the Journal tag, wherever
 // the file lives. A video journal is both a video and a journal; a file in a
 // journal/ directory without the tag is not a journal at all.

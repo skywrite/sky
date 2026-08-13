@@ -15,6 +15,7 @@ import { PORT_SERVER } from '#shared/config.ts'
 import { type ExecuteResult, executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import { dropInvalidSelections, normalizeGraphQLQuery } from '#shared/models/DomainCollection/query/normalize.ts'
 import { parseSelector } from '#shared/models/DomainCollection/query/parser.ts'
+import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { selectorToGraphQL } from '#shared/models/DomainCollection/query/transpiler.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 
@@ -37,6 +38,14 @@ interface QueryResult {
   paths: string[]
   count: number
   data?: unknown
+  /** Root fields whose result hit a cap — a capped result looks complete otherwise. */
+  truncations?: QueryTruncation[]
+}
+
+/** Render one truncation as the standard warning line. */
+function truncationWarning(t: QueryTruncation): string {
+  const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
+  return colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`)
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -225,7 +234,11 @@ export default class MarkdownSelectorTask extends Command {
       return CommandResult.fail(`Server error: ${response.status}`)
     }
 
-    let result = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> }
+    let result = (await response.json()) as {
+      data?: unknown
+      errors?: Array<{ message: string }>
+      extensions?: { truncations?: QueryTruncation[] }
+    }
 
     if (result.errors?.length) {
       // One invalid selection fails the whole document at validation, so
@@ -255,6 +268,7 @@ export default class MarkdownSelectorTask extends Command {
     if (limit) {
       paths = paths.slice(0, limit)
     }
+    const truncations = result.extensions?.truncations ?? []
 
     if (context.compositionDepth === 0) {
       if (json) {
@@ -266,6 +280,7 @@ export default class MarkdownSelectorTask extends Command {
       } else {
         const countText = paths.length === 1 ? 'match' : 'matches'
         output.log(colors.green(`✓ ${paths.length} ${countText}\n`))
+        for (const t of truncations) output.log(truncationWarning(t))
 
         for (let i = 0; i < paths.length; i++) {
           output.log(`${colors.gray(`${String(i + 1).padStart(3, ' ')}.`)} ${shortenPath(paths[i], baseDir)}`)
@@ -273,7 +288,12 @@ export default class MarkdownSelectorTask extends Command {
       }
     }
 
-    return CommandResult.success({ paths, count: paths.length, data: result.data })
+    return CommandResult.success({
+      paths,
+      count: paths.length,
+      data: result.data,
+      ...(truncations.length > 0 ? { truncations } : {}),
+    })
   }
 
   private async executeGraphQL(
@@ -313,6 +333,7 @@ export default class MarkdownSelectorTask extends Command {
     if (limit) {
       paths = paths.slice(0, limit)
     }
+    const truncations = result.truncations ?? []
 
     // Only print results when run directly from CLI
     if (context.compositionDepth === 0) {
@@ -325,6 +346,7 @@ export default class MarkdownSelectorTask extends Command {
       } else {
         const countText = paths.length === 1 ? 'match' : 'matches'
         output.log(colors.green(`✓ ${paths.length} ${countText}\n`))
+        for (const t of truncations) output.log(truncationWarning(t))
 
         for (let i = 0; i < paths.length; i++) {
           output.log(`${colors.gray(`${String(i + 1).padStart(3, ' ')}.`)} ${shortenPath(paths[i], baseDir)}`)
@@ -332,7 +354,12 @@ export default class MarkdownSelectorTask extends Command {
       }
     }
 
-    return CommandResult.success({ paths, count: paths.length, data: result.data })
+    return CommandResult.success({
+      paths,
+      count: paths.length,
+      data: result.data,
+      ...(truncations.length > 0 ? { truncations } : {}),
+    })
   }
 
   private async executeSelector(

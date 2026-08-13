@@ -449,3 +449,31 @@ test('executeQuery - resolver cache follows store mutations via version bumps', 
     expected: [],
   })
 })
+
+test('executeQuery - a capped root field surfaces its truncation', async () => {
+  const store = await MarkdownStore.build({
+    peopleDirs: ['/nb/people'],
+    orgDirs: ['/nb/orgs'],
+    timeDirs: ['/nb/time'],
+  })
+  for (let i = 0; i < 4; i++) {
+    store.set(`/nb/time/2025/03/10-16/03-1${i}/actions/notes/note-${i}.md`, `# Note ${i}\n`)
+  }
+
+  const capped = await executeQuery('{ documents(limit: 2) { path } }', store)
+  const uncapped = await executeQuery('{ documents(limit: 10) { path } }', store)
+
+  assert({
+    given: '4 documents queried with limit: 2',
+    should: 'return the truncation with exact counts',
+    actual: capped.truncations,
+    expected: [{ field: 'documents', matched: 4, returned: 2, limit: 2, defaulted: false }],
+  })
+
+  assert({
+    given: 'a limit above the match count',
+    should: 'carry no truncations key at all',
+    actual: 'truncations' in uncapped,
+    expected: false,
+  })
+})

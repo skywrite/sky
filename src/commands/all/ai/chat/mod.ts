@@ -523,12 +523,15 @@ export default class AiChatTask extends Command {
       ownChatPath: resumeSession?.filePath ?? null,
       producers: {
         produceInitialQuery: async (userMessage) => {
-          const r = await tasks.run<{ paths: string[]; query: string }>('ai:context:files', {
+          const r = await tasks.run('ai:context:files', {
             _: ['ai:context:files', userMessage],
             server: true,
           })
           return r.status === 'success'
-            ? { ok: true, value: { paths: r.data?.paths ?? [], query: r.data?.query } }
+            ? {
+                ok: true,
+                value: { paths: r.data?.paths ?? [], query: r.data?.query, truncations: r.data?.truncations },
+              }
             : { ok: false, message: r.message ?? 'ai:context:files failed' }
         },
         evolveQueries: async (userMessage, queries, recentConversation) => {
@@ -544,13 +547,21 @@ export default class AiChatTask extends Command {
         executeQuery: async (query) => {
           const r = await tasks.run('markdown:sel', { graphql: query, raw: true, server: 'true' })
           return r.status === 'success'
-            ? { ok: true, value: { paths: r.data?.paths ?? [] } }
+            ? { ok: true, value: { paths: r.data?.paths ?? [], truncations: r.data?.truncations } }
             : { ok: false, message: r.message ?? 'Context query failed' }
         },
       },
       onProgress: (event) => {
         if (event.type === 'queries-changed') output.log(colors.dim('Context shifting...'))
         else if (event.type === 'no-new-queries') output.log(colors.dim('Queries unchanged, skipping re-execution.'))
+        else if (event.type === 'truncated') {
+          for (const t of event.items) {
+            const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
+            output.log(
+              colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`),
+            )
+          }
+        }
       },
     })
 

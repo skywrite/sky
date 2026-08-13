@@ -334,6 +334,31 @@ function hasDateBounds(where: unknown): boolean {
 }
 
 /**
+ * One root field whose result hit its cap. Recorded so truncation is never
+ * silent: a capped result is indistinguishable from a complete one, and a
+ * two-year window of journals once shipped as its newest month without a
+ * word. The resolver is the only place the pre-slice count exists, so the
+ * report carries exact numbers, not a heuristic.
+ */
+export interface QueryTruncation {
+  /** Root field (or alias) as queried, e.g. `journals` */
+  field: string
+  /** How many documents matched before the cap */
+  matched: number
+  /** How many were returned */
+  returned: number
+  /** The cap that cut them */
+  limit: number
+  /** True when the cap was DEFAULT_QUERY_LIMIT rather than a written `limit` */
+  defaulted: boolean
+}
+
+/** GraphQL contextValue shape the resolvers report truncations into. */
+interface TruncationSink {
+  truncations?: QueryTruncation[]
+}
+
+/**
  * Build the root resolver for one entity: filter, sort, limit, map — the body
  * each of the fifteen root fields used to spell out by hand.
  *
@@ -343,7 +368,7 @@ function hasDateBounds(where: unknown): boolean {
 export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext) {
   const map = spec.mapper(ctx)
 
-  return (args: { where?: F; limit?: number }): R[] => {
+  return (args: { where?: F; limit?: number }, gqlCtx?: unknown, info?: unknown): R[] => {
     let results = ctx.domain.entriesByType(spec.type)
     const selects = spec.selects
     if (selects) results = results.filter(({ doc, path }) => selects(doc, path))
@@ -352,8 +377,21 @@ export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext)
       results = results.filter(({ doc, path }) => spec.matches(doc, where, path, ctx))
     }
     if (spec.sortByDate) results = sortByDateDesc(results)
-    const defaultCap = hasDateBounds(args.where) ? Infinity : DEFAULT_QUERY_LIMIT
-    results = results.slice(0, args.limit ?? defaultCap)
+    const cap = args.limit ?? (hasDateBounds(args.where) ? Infinity : DEFAULT_QUERY_LIMIT)
+    if (results.length > cap) {
+      const sink = gqlCtx as TruncationSink | undefined
+      if (sink?.truncations) {
+        const i = info as { path?: { key?: string | number }; fieldName?: string } | undefined
+        sink.truncations.push({
+          field: String(i?.path?.key ?? i?.fieldName ?? spec.type),
+          matched: results.length,
+          returned: cap,
+          limit: cap,
+          defaulted: args.limit == null,
+        })
+      }
+      results = results.slice(0, cap)
+    }
     return map(results)
   }
 }
