@@ -9,9 +9,10 @@ import { DIR_ORGS } from '#config'
 import { walk } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
+import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
 import { categorizeOrganization } from './_categorize.ts'
 import { webFetch } from './_webFetch.ts'
-import { getWikipediaArticleAI } from './_wikipedia.ts'
+import { getWikipediaArticleAI, type WikipediaSelectionResult } from './_wikipedia.ts'
 
 const params = {
   name: Arg.string('Organization name to use (not auto-detected)', { required: true }),
@@ -46,20 +47,9 @@ export default class OrgNewTask extends Command {
     output.log(`Creating organization: ${name}`)
 
     // Generate slug and filename from name
-    const slug = name
-      .toLowerCase()
-      .replace(/&/g, 'and')
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-
-    const filename =
-      name
-        .replace(/&/g, 'and')
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-') + '.md'
+    const stem = nameToFileStem(name)
+    const slug = stem.toLowerCase().replace(/^-|-$/g, '')
+    const filename = stem + '.md'
 
     // A same-named file anywhere under orgs/ is the same org: proceeding would
     // either clobber it in place (losing hand-written notes) or duplicate it
@@ -81,11 +71,10 @@ export default class OrgNewTask extends Command {
     let description: string | undefined
     let ticker: string | undefined
     let kind: 'company' | 'government' | 'nonprofit' | 'unknown' = 'unknown'
-    let wikipediaResult: Awaited<ReturnType<typeof import('./_wikipedia.ts').getWikipediaArticleAI>> | undefined
+    let wikipediaResult: WikipediaSelectionResult | undefined
 
     // Normalize site URL if provided (always, regardless of forced categorization)
     if (site) {
-      const { normalizeUrl } = await import('#shared/universal/urls/normalize.ts')
       normalizedSite = normalizeUrl(site)
     }
 
@@ -164,7 +153,6 @@ export default class OrgNewTask extends Command {
 
         // Use website from categorizer if not already set
         if (!normalizedSite && categorization.website) {
-          const { normalizeUrl } = await import('#shared/universal/urls/normalize.ts')
           normalizedSite = normalizeUrl(categorization.website)
           output.log(`${colors.bold('Website:')} ${normalizedSite}`)
         }
@@ -193,14 +181,23 @@ export default class OrgNewTask extends Command {
       }
     }
 
-    // Create organization (include description temporarily for template generation)
+    // Sector and subcategory become directory names — refuse anything path-hostile
+    for (const [label, value] of [
+      ['sector', sector],
+      ['subcategory', subcategory],
+    ] as const) {
+      if (!/^[\w-]+$/.test(value)) {
+        output.error(`Invalid ${label} "${value}" — expected letters, digits, and hyphens`)
+        return CommandResult.error(new Error(`invalid ${label}: ${value}`))
+      }
+    }
+
     const yamlData: Record<string, unknown> = {
       name,
       slug,
       site: normalizedSite,
       sector,
       subcategory,
-      description, // Used for markdown template, will be removed from YAML
     }
 
     // Add ticker if available
@@ -208,20 +205,14 @@ export default class OrgNewTask extends Command {
       yamlData.ticker = ticker
     }
 
-    // Create organization and set kind
-    let org = OrganizationDocument.create(yamlData)
+    // Create organization (the description goes into the markdown body, not YAML)
+    let org = OrganizationDocument.create(yamlData, description)
     org = org.setKind(kind)
 
     // Add Wikipedia article URL to rel if available
     if (wikipediaResult) {
       org = org.addRel(wikipediaResult.article.url)
     }
-
-    // Remove description from YAML (keep it only in markdown)
-    // We need to reconstruct the org with the filtered yaml
-    const finalYaml = { ...org.yaml }
-    delete finalYaml.description
-    org = new OrganizationDocument(finalYaml, org.markdown)
 
     const filePath = join(DIR_ORGS, sector, subcategory, filename)
 
@@ -245,6 +236,15 @@ export default class OrgNewTask extends Command {
 
     return CommandResult.success({ filePath })
   }
+}
+
+/** Filesystem-safe stem derived from the org name; the slug is its lowercased form. */
+function nameToFileStem(name: string): string {
+  return name
+    .replace(/&/g, 'and')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
 }
 
 /** Find an org file with the given basename anywhere under orgs/, case-insensitively. */

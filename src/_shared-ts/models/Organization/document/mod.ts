@@ -72,16 +72,13 @@ export default class OrganizationDocument extends Document {
   /**
    * Generate a default markdown template for a new organization
    */
-  static createTemplate(yaml: Record<string, unknown>): string {
-    const name = yaml.name as string
-    const description = yaml.description as string | undefined
-
+  static createTemplate(input: { name: string; description?: string }): string {
     const markdown = `
-# ${name}
+# ${input.name}
 
 ## Overview
 
-${description || ''}
+${input.description || ''}
 
 
 ## Misc
@@ -91,10 +88,11 @@ ${description || ''}
   }
 
   /**
-   * Create a new OrganizationDocument from YAML data
+   * Create a new OrganizationDocument from YAML data. The description goes into
+   * the markdown body (Overview section), not the YAML header.
    */
-  static create(yaml: Record<string, unknown>): OrganizationDocument {
-    const markdown = OrganizationDocument.createTemplate(yaml)
+  static create(yaml: Record<string, unknown>, description?: string): OrganizationDocument {
+    const markdown = OrganizationDocument.createTemplate({ name: yaml['name'] as string, description })
     let org = new OrganizationDocument(yaml, markdown)
 
     // Only ensure dates if neither created nor updated are provided
