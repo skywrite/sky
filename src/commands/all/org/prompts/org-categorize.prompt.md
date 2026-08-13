@@ -31,6 +31,12 @@ You are an expert at categorizing organizations. Analyze the following organizat
 
 {{taxonomy.content}}
 
+## Categories Currently In Use
+
+Every sector/subcategory pair that exists in the notebook right now. Prefer one of these when it genuinely fits; a pair outside this list is a new category.
+
+{{taxonomy.inUse}}
+
 ## Your Task
 
 Determine the most accurate sector and subcategory for this organization, plus the metadata fields described below. The taxonomy above is a reference, not a constraint: use an existing category when it genuinely fits, and propose a new sector or subcategory when forcing the organization into an existing one would be misleading — a hotel chain belongs in hospitality/hotels even if no hospitality sector exists yet, not in merchants/retail; a streaming service belongs in media/streaming-tv, not merchants/marketplaces.
@@ -40,7 +46,7 @@ Determine the most accurate sector and subcategory for this organization, plus t
 - Weigh ALL available sources (website and/or Wikipedia); if the Wikipedia selection confidence is "high", give its content more weight
 - If no website or Wikipedia source is available, categorize from your own knowledge of the named organization — and if you don't recognize it, say so via low confidence rather than guessing details
 - primary_sector / primary_subcategory: lowercase with hyphens (e.g., "hospitality", "hotels", "streaming-tv")
-- is_new_category: true when the sector/subcategory combination is not in the taxonomy
+- is_new_category: true when the sector/subcategory pair is not in the Categories Currently In Use list
 - category_reasoning: why this category — and, if new, why the existing ones don't fit
 - confidence: "high" when the categorization is clear from the sources, "medium" for reasonable inference, "low" for uncertain cases
 - kind: "company" for for-profit businesses, "government" for government entities, "nonprofit" for non-profits, "unknown" if unclear
