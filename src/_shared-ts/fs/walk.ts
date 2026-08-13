@@ -46,6 +46,10 @@ export default async function* walk(root: string, options: WalkOptions = {}): As
       return // Directory doesn't exist or can't be read
     }
 
+    // readdir order is filesystem-dependent (APFS, ext4, and even two GitHub
+    // runner images disagree) — sort so every environment walks identically
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+
     for (const entry of entries) {
       const entryPath = path.join(dir, entry.name)
       const isDirectory = entry.isDirectory()

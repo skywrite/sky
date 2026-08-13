@@ -479,6 +479,38 @@ test('fixtures - Acme Corp has highest org score', async () => {
   })
 })
 
+test('fixtures - org scores do not depend on directory scan order', async () => {
+  // Regression: org-vs-person classification consults store.organizations
+  // while the same scan is still filling it. With the orgs dir listed last,
+  // every org referenced from time and project files used to be misfiled as
+  // a person (Nvidia outranked Acme on CI when a runner image changed
+  // enumeration order).
+  const server = createServer({
+    port: 0,
+    markdownDirs: [FIXTURE_PATHS.time, FIXTURE_PATHS.projects, FIXTURE_PATHS.people, FIXTURE_PATHS.orgs],
+    paths: FIXTURE_PATHS,
+    enableFileWatcher: false,
+    referenceDate: FIXTURE_REFERENCE_DATE,
+  })
+
+  await server.scan()
+
+  const topOrg = server.store.getOrganizationsWithScores()[0]
+  assert({
+    given: 'a scan where the orgs dir is listed last',
+    should: 'still rank Acme Corp first',
+    actual: topOrg.name,
+    expected: 'Acme Corp',
+  })
+
+  assert({
+    given: 'a scan where the orgs dir is listed last',
+    should: 'file no org as a person',
+    actual: EXPECTED_ORGS.filter((org) => server.store.personScores.has(org)),
+    expected: [],
+  })
+})
+
 test('fixtures - people with today interactions score higher than last week', async () => {
   const server = createFixtureServer()
 

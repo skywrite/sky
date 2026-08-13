@@ -49,33 +49,45 @@ export async function scanFiles(options: ScanOptions): Promise<void> {
     trackOrgInteractionsFromProject,
   } = scanners
 
+  // Collect every markdown file, then process org files first: time and
+  // project files classify a name as org-vs-person by membership in
+  // store.organizations, so the org set must be complete before they are
+  // read. Filesystem enumeration order must not decide how an interaction
+  // is filed — it briefly did, going red on CI when a runner image changed
+  // readdir order.
+  const orgFiles: string[] = []
+  const otherFiles: string[] = []
   for (const dir of dirs) {
     for await (const entry of walk(dir)) {
       if (path.extname(entry.path) !== '.md') continue
+      if (isOrganization(entry.path)) orgFiles.push(entry.path)
+      else otherFiles.push(entry.path)
+    }
+  }
 
-      try {
-        const contents = await readTextFile(entry.path)
-        readFileAndUpdateTags(contents, entry.path)
+  for (const file of [...orgFiles, ...otherFiles]) {
+    try {
+      const contents = await readTextFile(file)
+      readFileAndUpdateTags(contents, file)
 
-        if (isPerson(entry.path)) {
-          readFileAndUpdatePeople(contents, entry.path)
-        }
-
-        if (isOrganization(entry.path)) {
-          readFileAndUpdateOrganizations(contents, entry.path)
-        }
-
-        if (isTimeFile(entry.path)) {
-          trackPersonInteractions(contents, entry.path)
-        }
-
-        if (isProject(entry.path)) {
-          trackOrgInteractionsFromProject(contents)
-        }
-      } catch (err) {
-        console.error(`FILE: ${entry.path}`)
-        console.error(err)
+      if (isPerson(file)) {
+        readFileAndUpdatePeople(contents, file)
       }
+
+      if (isOrganization(file)) {
+        readFileAndUpdateOrganizations(contents, file)
+      }
+
+      if (isTimeFile(file)) {
+        trackPersonInteractions(contents, file)
+      }
+
+      if (isProject(file)) {
+        trackOrgInteractionsFromProject(contents)
+      }
+    } catch (err) {
+      console.error(`FILE: ${file}`)
+      console.error(err)
     }
   }
 }
