@@ -2,12 +2,14 @@
 schema: 0.2.0
 description: Categorize an organization using taxonomy and enrichment sources
 created: 2026-01-26
-updated: 2026-01-26
+updated: 2026-08-13
 ---
 
 You are an expert at categorizing organizations. Analyze the following organization and determine the most appropriate sector and subcategory.
 
 ## Organization Information
+
+- Name: {{org.name}}
 
 {{#if source.webFetch}}
 ### Website Source
@@ -59,6 +61,7 @@ Return a JSON object with the following structure:
   - Netflix → "media/streaming-tv" (if this doesn't exist, create it)
 - Use existing taxonomy categories when they're genuinely appropriate
 - Analyze ALL available sources (website and/or Wikipedia) to make the best determination
+- If no website or Wikipedia source is available, categorize from your own knowledge of the named organization — and if you don't recognize it, say so via low confidence rather than guessing details
 - If Wikipedia confidence is "high", give more weight to Wikipedia information
 - Set "is_new_category" to true if suggesting a sector/subcategory combination not in the taxonomy
 - In "category_reasoning", explain why you chose this category. If it's new, explain why existing categories don't fit.

@@ -51,6 +51,7 @@ export interface CategorizationSources {
  */
 export async function categorizeOrganization(
   taxonomyInfo: string,
+  orgName: string,
   sources: CategorizationSources,
 ): Promise<OrgCategorizationResult> {
   // Load and render the prompt template
@@ -59,6 +60,9 @@ export async function categorizeOrganization(
   const input: RenderInput = {
     taxonomy: {
       content: taxonomyInfo,
+    },
+    org: {
+      name: orgName,
     },
     source: {
       webFetch: sources.webFetch
