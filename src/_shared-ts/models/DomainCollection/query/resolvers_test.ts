@@ -1304,6 +1304,53 @@ test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () =>
   })
 })
 
+// Journal is a genre, not a medium: membership is the Journal tag, wherever
+// the file lives. A video journal is both a video and a journal; a file in a
+// journal/ directory without the tag is not a journal at all.
+test('resolvers - journals selects by tag across media, not by path', () => {
+  const entries = [
+    {
+      doc: Document.fromMarkdown(`---\ntags: Journal/Gratitude\n---\nProse entry.`),
+      path: '/test/time/2026/02/02-08/02-03/journal/morning.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---\ntags: Journal\n---\nOld-layout entry.`),
+      path: '/test/time/2021/01/04-10/01-05/_journal.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---\ntags: Video; Journal/Video\n---\nRecorded entry.`),
+      path: '/test/time/2026/02/02-08/02-04/actions/videos/Video_Jane_Entry.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---\ntags: Atlas\n---\nNot a journal.`),
+      path: '/test/time/2026/02/02-08/02-05/journal/stray-note.md',
+    },
+  ]
+  const resolvers = createDomainResolvers(createTimeStore(entries))
+  const paths = resolvers.journals({}).map((j: { path: string }) => j.path)
+
+  assert({
+    given: 'tagged entries in journal/, old _journal.md layout, and videos/',
+    should: 'return every tagged entry regardless of directory',
+    actual: [0, 1, 2].every((i) => paths.includes(entries[i].path)),
+    expected: true,
+  })
+
+  assert({
+    given: 'an untagged file inside a journal/ directory',
+    should: 'not treat location as membership',
+    actual: paths.includes(entries[3].path),
+    expected: false,
+  })
+
+  assert({
+    given: 'a video journal',
+    should: 'also remain a video (genre does not evict medium)',
+    actual: resolvers.videos({}).some((v: { path: string }) => v.path === entries[2].path),
+    expected: true,
+  })
+})
+
 // The when: mapping had no coverage at all: getWhenField swallows a value it
 // cannot read and returns null, so a broken mapping would have looked like a
 // passing suite rather than a failure.

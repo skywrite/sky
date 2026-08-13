@@ -296,6 +296,14 @@ export interface EntitySpec<F, R> {
   type: CollectionEntityType | '*'
   /** Sort newest-first before limiting, so `limit` keeps the most recent. Set on day-partitioned entities and `documents`. */
   sortByDate?: boolean
+  /**
+   * Membership test, applied whether or not a `where` was given — unlike
+   * `matches`, which only runs to satisfy a filter. Entities selected by
+   * location leave this unset, since `type` already narrows them. Set it when
+   * membership is a property of the document rather than of its path, so a
+   * bare root-field query stays restricted to the class.
+   */
+  selects?: (doc: Document, path: string) => boolean
   matches(doc: Document, filter: F, path: string, ctx: ResolverContext): boolean
   mapper(ctx: ResolverContext): (entries: Entries) => R[]
 }
@@ -324,6 +332,8 @@ export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext)
 
   return (args: { where?: F; limit?: number }): R[] => {
     let results = ctx.domain.entriesByType(spec.type)
+    const selects = spec.selects
+    if (selects) results = results.filter(({ doc, path }) => selects(doc, path))
     if (args.where) {
       const where = args.where
       results = results.filter(({ doc, path }) => spec.matches(doc, where, path, ctx))

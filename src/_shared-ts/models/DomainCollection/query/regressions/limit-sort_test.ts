@@ -66,11 +66,11 @@ function createMockStore(): MarkdownStore {
 
   const journalsData = [
     {
-      doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\ntime: "21:00"\n---\nOld journal.`),
+      doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\ntime: "21:00"\ntags: Journal\n---\nOld journal.`),
       path: '/test/time/2025/03/10-16/03-10/actions/journal/reflection.md',
     },
     {
-      doc: Document.fromMarkdown(`---\ndate: "2026-02-06"\ntime: "22:00"\n---\nLatest journal.`),
+      doc: Document.fromMarkdown(`---\ndate: "2026-02-06"\ntime: "22:00"\ntags: Journal\n---\nLatest journal.`),
       path: '/test/time/2026/02/02-08/02-06/actions/journal/reflection.md',
     },
   ]
