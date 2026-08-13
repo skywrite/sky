@@ -73,6 +73,18 @@ import { isValidPattern } from '#shared/universal/dates/recurring/patterns.ts'
  */
 const BIWEEKLY_EPOCH = new PlainDate(2026, 1, 1)
 
+// Warn once per distinct pattern per process. A matcher is constructed per
+// check, so warning from matches() unconditionally would repeat the same line
+// for every date scanned — a 400-day sweep used to print 400 warnings.
+const warnedPatterns = new Set<string>()
+
+function warnOnce(pattern: string, reason: string): void {
+  const key = pattern.toUpperCase()
+  if (warnedPatterns.has(key)) return
+  warnedPatterns.add(key)
+  console.warn(`${reason}: ${pattern}`)
+}
+
 export class PatternMatcher {
   private readonly pattern: string
   private readonly normalizedPattern: string
@@ -86,6 +98,14 @@ export class PatternMatcher {
    * Check if a given date matches this pattern
    */
   matches(date: PlainDate): boolean {
+    // Reject invalid patterns before any prefix routing. The family branches
+    // swallow in-family typos silently — EVERY-MONDAY enters the EVERY-
+    // branch and dies in its switch default without ever reaching a warning.
+    if (!isValidPattern(this.normalizedPattern)) {
+      warnOnce(this.pattern, 'Unknown pattern')
+      return false
+    }
+
     // Every other day patterns (must check before EVERY- since it also starts with EVERY-)
     if (this.normalizedPattern.startsWith('EVERY-OTHER-DAY-')) {
       return this.matchesEveryOtherDayPattern(date)
@@ -121,10 +141,9 @@ export class PatternMatcher {
       return this.matchesAlternatePattern(date)
     }
 
-    // Validate against shared pattern definitions
-    if (!isValidPattern(this.normalizedPattern)) {
-      console.warn(`Unknown pattern: ${this.pattern}`)
-    }
+    // Reaching here means the pattern validates but no branch above handled
+    // it — grammar/matcher drift, not a user typo.
+    warnOnce(this.pattern, 'Pattern validates but no matcher branch handles it')
     return false
   }
 
