@@ -6,6 +6,7 @@ import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_ORGS } from '#config'
+import { walk } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import { categorizeOrganization } from './_categorize.ts'
@@ -19,6 +20,7 @@ const params = {
   noWikipedia: Flag.bool('Skip Wikipedia enrichment'),
   sector: Flag.string('Force specific sector', { short: 's' }),
   subcategory: Flag.string('Force specific subcategory', { short: 'c' }),
+  force: Flag.bool('Create even if an org file with the same name already exists'),
 }
 
 type Params = InferParams<typeof params>
@@ -42,6 +44,36 @@ export default class OrgNewTask extends Command {
     const wikipediaQuery = noWikipedia ? undefined : (wikipediaQueryArg ?? name)
 
     output.log(`Creating organization: ${name}`)
+
+    // Generate slug and filename from name
+    const slug = name
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    const filename =
+      name
+        .replace(/&/g, 'and')
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-') + '.md'
+
+    // A same-named file anywhere under orgs/ is the same org: proceeding would
+    // either clobber it in place (losing hand-written notes) or duplicate it
+    // under a different category. Check before spending on enrichment calls.
+    const existing = await findExistingOrgFile(filename)
+    if (existing) {
+      if (args.force) {
+        output.log(`Ignoring existing org file (--force): ${existing}`)
+      } else {
+        output.error(`Org file already exists: ${existing}`)
+        output.error('Use --force to create anyway')
+        return CommandResult.error(new Error(`org file already exists: ${existing}`))
+      }
+    }
 
     let sector: string
     let subcategory: string
@@ -142,22 +174,6 @@ export default class OrgNewTask extends Command {
       }
     }
 
-    // Generate slug and filename from name
-    const slug = name
-      .toLowerCase()
-      .replace(/&/g, 'and')
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-
-    const filename =
-      name
-        .replace(/&/g, 'and')
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-') + '.md'
-
     // Create organization (include description temporarily for template generation)
     const yamlData: Record<string, unknown> = {
       name,
@@ -210,4 +226,13 @@ export default class OrgNewTask extends Command {
 
     return CommandResult.success({ filePath })
   }
+}
+
+/** Find an org file with the given basename anywhere under orgs/, case-insensitively. */
+async function findExistingOrgFile(filename: string): Promise<string | undefined> {
+  const target = filename.toLowerCase()
+  for await (const entry of walk(DIR_ORGS, { includeDirs: false, exts: ['.md'] })) {
+    if (entry.name.toLowerCase() === target) return entry.path
+  }
+  return undefined
 }
