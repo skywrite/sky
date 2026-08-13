@@ -11,6 +11,9 @@ export interface RecurringPattern {
 export interface DynamicPattern {
   regex: string
   description: string
+  /** Inclusive bounds for the captured number; outside them no date can ever match */
+  min: number
+  max: number
 }
 
 export interface DeprecatedPattern {
@@ -97,11 +100,15 @@ export const patterns: RecurringPattern[] = [
   { pattern: 'QUARTERLY-FIRST-WED', description: 'First Wednesday of each quarter' },
   { pattern: 'QUARTERLY-FIRST-THU', description: 'First Thursday of each quarter' },
   { pattern: 'QUARTERLY-FIRST-FRI', description: 'First Friday of each quarter' },
+  { pattern: 'QUARTERLY-FIRST-SAT', description: 'First Saturday of each quarter' },
+  { pattern: 'QUARTERLY-FIRST-SUN', description: 'First Sunday of each quarter' },
   { pattern: 'QUARTERLY-LAST-MON', description: 'Last Monday of each quarter' },
   { pattern: 'QUARTERLY-LAST-TUE', description: 'Last Tuesday of each quarter' },
   { pattern: 'QUARTERLY-LAST-WED', description: 'Last Wednesday of each quarter' },
   { pattern: 'QUARTERLY-LAST-THU', description: 'Last Thursday of each quarter' },
   { pattern: 'QUARTERLY-LAST-FRI', description: 'Last Friday of each quarter' },
+  { pattern: 'QUARTERLY-LAST-SAT', description: 'Last Saturday of each quarter' },
+  { pattern: 'QUARTERLY-LAST-SUN', description: 'Last Sunday of each quarter' },
   { pattern: 'QUARTERLY-1', description: 'First day of each quarter' },
   { pattern: 'QUARTERLY-15', description: '15th day of each quarter' },
   { pattern: 'QUARTERLY-LAST', description: 'Last day of each quarter' },
@@ -149,13 +156,18 @@ export const patterns: RecurringPattern[] = [
   { pattern: 'QUARTERLY-MONTH-BEFORE-LAST', description: 'Last day of the month before each quarter' },
 ]
 
-/** Dynamic patterns that accept numeric values */
+/** Dynamic patterns that accept numeric values, bounded to days that can occur */
 export const dynamicPatterns: DynamicPattern[] = [
-  { regex: '^MONTHLY-\\d{1,2}$', description: 'Nth day of each month (1-31)' },
-  { regex: '^MONTHLY-LAST-\\d+$', description: 'N days before month end' },
-  { regex: '^QUARTERLY-\\d{1,2}$', description: 'Nth day of each quarter' },
-  { regex: '^QUARTERLY-LAST-\\d+$', description: 'N days before quarter end' },
-  { regex: '^QUARTERLY-MONTH-BEFORE-\\d{1,2}$', description: 'Nth day of the month before each quarter' },
+  { regex: '^MONTHLY-(\\d{1,2})$', description: 'Nth day of each month (1-31)', min: 1, max: 31 },
+  { regex: '^MONTHLY-LAST-(\\d+)$', description: 'N days before month end (0-30)', min: 0, max: 30 },
+  { regex: '^QUARTERLY-(\\d{1,2})$', description: 'Nth day of each quarter (1-92)', min: 1, max: 92 },
+  { regex: '^QUARTERLY-LAST-(\\d+)$', description: 'N days before quarter end (0-91)', min: 0, max: 91 },
+  {
+    regex: '^QUARTERLY-MONTH-BEFORE-(\\d{1,2})$',
+    description: 'Nth day of the month before each quarter (1-31)',
+    min: 1,
+    max: 31,
+  },
 ]
 
 /** Deprecated patterns with their replacements */
@@ -175,8 +187,8 @@ const staticPatternSet = new Set(patterns.map((p) => p.pattern))
 /** Set of deprecated pattern names (uppercased for case-insensitive matching) */
 const deprecatedPatternSet = new Set(deprecated.map((p) => p.pattern.toUpperCase()))
 
-/** Compiled regex patterns for dynamic matching */
-const dynamicRegexes = dynamicPatterns.map((p) => new RegExp(p.regex))
+/** Compiled dynamic matchers with their numeric bounds */
+const dynamicMatchers = dynamicPatterns.map((p) => ({ regex: new RegExp(p.regex), min: p.min, max: p.max }))
 
 /**
  * Check if a pattern string is valid (static, dynamic, or deprecated)
@@ -190,8 +202,13 @@ export function isValidPattern(pattern: string): boolean {
   // Check deprecated patterns
   if (deprecatedPatternSet.has(normalized)) return true
 
-  // Check dynamic patterns
-  return dynamicRegexes.some((regex) => regex.test(normalized))
+  // Check dynamic patterns, rejecting numbers no date can satisfy
+  return dynamicMatchers.some(({ regex, min, max }) => {
+    const match = regex.exec(normalized)
+    if (!match) return false
+    const value = parseInt(match[1], 10)
+    return value >= min && value <= max
+  })
 }
 
 /**
