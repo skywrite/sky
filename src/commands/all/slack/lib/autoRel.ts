@@ -1,10 +1,10 @@
-import { extractSubjects } from '#commands/all/slack/rel/lib/extract.ts'
-import { buildEntityIndex, normalizeEntityName, resolveSubjects } from '#commands/all/slack/rel/lib/resolve.ts'
-import { fetchEntityScores } from '#commands/all/slack/rel/lib/scores.ts'
-import { selectRel } from '#commands/all/slack/rel/lib/select.ts'
-import type { RelCandidate } from '#commands/all/slack/rel/lib/select.ts'
-import { channelRelHistory, loadMessageCorpus } from '#commands/all/slack/tags/lib/corpus.ts'
 import { DIR_TIME } from '#config'
+import { channelRelHistory, loadMessageCorpus } from '#lib/notebook/enrich/corpus.ts'
+import { extractSubjects } from '#lib/notebook/enrich/extract.ts'
+import { buildEntityIndex, normalizeEntityName, resolveSubjects } from '#lib/notebook/enrich/resolve.ts'
+import { fetchEntityScores } from '#lib/notebook/enrich/scores.ts'
+import { selectRel } from '#lib/notebook/enrich/select.ts'
+import type { RelCandidate } from '#lib/notebook/enrich/select.ts'
 
 // Same taxonomy floor as auto-tagging: the pre-2025 notebook is another era.
 const REL_SINCE = '2025-01-01'

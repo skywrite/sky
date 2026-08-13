@@ -1,6 +1,6 @@
-import { chooseTags } from '#commands/all/slack/tags/lib/classify.ts'
-import { buildTagMenu, channelHistory, loadMessageCorpus } from '#commands/all/slack/tags/lib/corpus.ts'
 import { DIR_TIME } from '#config'
+import { chooseTags } from '#lib/notebook/enrich/classify.ts'
+import { buildTagMenu, channelHistory, loadMessageCorpus } from '#lib/notebook/enrich/corpus.ts'
 
 // Taxonomy floor: pre-2025 tags are the abandoned old style and never enter the
 // menus. Backtested via slack:tags:eval — the floor lifted any-overlap 47%→59%

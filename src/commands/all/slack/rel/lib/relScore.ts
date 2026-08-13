@@ -1,4 +1,4 @@
-import { normalizeEntityName } from './resolve.ts'
+import { normalizeEntityName } from '#lib/notebook/enrich/resolve.ts'
 
 export type RelScore = {
   /** Predicted set equals the actual set (normalized comparison) */

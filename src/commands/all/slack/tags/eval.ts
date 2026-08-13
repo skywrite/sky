@@ -2,12 +2,18 @@ import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
+import { chooseTags } from '#lib/notebook/enrich/classify.ts'
+import type { ClassifyRequest } from '#lib/notebook/enrich/classify.ts'
+import {
+  buildTagMenu,
+  channelHistory,
+  channelMajoritySet,
+  loadMessageCorpus,
+  sliceBefore,
+} from '#lib/notebook/enrich/corpus.ts'
+import type { MessageRecord, TagCount } from '#lib/notebook/enrich/corpus.ts'
 import type { Role } from '#shared/ai/models.ts'
 import { outputFile } from '#shared/fs/mod.ts'
-import { chooseTags } from './lib/classify.ts'
-import type { ClassifyRequest } from './lib/classify.ts'
-import { buildTagMenu, channelHistory, channelMajoritySet, loadMessageCorpus, sliceBefore } from './lib/corpus.ts'
-import type { MessageRecord, TagCount } from './lib/corpus.ts'
 import mapLimit from './lib/mapLimit.ts'
 import { mulberry32, stratifiedSample } from './lib/sample.ts'
 import { aggregate, pct, scorePrediction } from './lib/score.ts'
