@@ -507,6 +507,53 @@ test('PatternMatcher - QUARTERLY-MONTH-BEFORE only matches in pre-quarter months
   })
 })
 
+test('PatternMatcher - parity patterns are stable across DST transitions', () => {
+  // Regression: daysBetween used to floor local-midnight ms diffs, which run
+  // an hour short after spring-forward and flipped A/B parity all summer.
+  // Force a DST timezone so this stays meaningful on hosts running UTC.
+  const originalTz = process.env.TZ
+  process.env.TZ = 'America/New_York' // spring-forward 2025-03-09, fall-back 2025-11-02
+
+  try {
+    const fixtures = [
+      // EVERY-OTHER-DAY: epoch Jan 1 2024, so 2025-03-08 is day 432 (even = A).
+      // Midnight on a transition day is still the old offset; the shift bites
+      // from the following day, which is where the old floor lost a day.
+      { pattern: 'EVERY-OTHER-DAY-A', date: new PlainDate(2025, 3, 8), expected: true },
+      { pattern: 'EVERY-OTHER-DAY-B', date: new PlainDate(2025, 3, 9), expected: true }, // transition day, 433
+      { pattern: 'EVERY-OTHER-DAY-A', date: new PlainDate(2025, 3, 10), expected: true }, // 434, first DST day
+      { pattern: 'EVERY-OTHER-DAY-B', date: new PlainDate(2025, 3, 10), expected: false },
+      { pattern: 'EVERY-OTHER-DAY-B', date: new PlainDate(2025, 3, 11), expected: true }, // 435
+      // ...and across fall-back
+      { pattern: 'EVERY-OTHER-DAY-B', date: new PlainDate(2025, 11, 2), expected: true }, // 671
+      { pattern: 'EVERY-OTHER-DAY-A', date: new PlainDate(2025, 11, 3), expected: true }, // 672
+
+      // EVERY-2-WEEKS: 2025 anchor is Mon Jan 6 (week 0 = A); Mar 3 = week 8 (A),
+      // Mar 10 = week 9 (B) — the first Monday after the clock change
+      { pattern: 'EVERY-2-WEEKS-A-MON', date: new PlainDate(2025, 3, 3), expected: true },
+      { pattern: 'EVERY-2-WEEKS-B-MON', date: new PlainDate(2025, 3, 10), expected: true },
+      { pattern: 'EVERY-2-WEEKS-A-MON', date: new PlainDate(2025, 3, 10), expected: false },
+      { pattern: 'EVERY-2-WEEKS-A-MON', date: new PlainDate(2025, 3, 17), expected: true }, // week 10
+
+      // QUARTERLY-N counts days across the shift: Mar 31 2025 is Q1 day 90
+      { pattern: 'QUARTERLY-90', date: new PlainDate(2025, 3, 31), expected: true },
+      { pattern: 'QUARTERLY-90', date: new PlainDate(2025, 3, 30), expected: false },
+    ]
+
+    fixtures.forEach((fixture) => {
+      assert({
+        given: `${fixture.pattern} on ${fixture.date.toString()} in a DST timezone`,
+        should: fixture.expected ? 'match' : 'not match',
+        actual: matchesPattern(fixture.date, fixture.pattern),
+        expected: fixture.expected,
+      })
+    })
+  } finally {
+    if (originalTz === undefined) delete process.env.TZ
+    else process.env.TZ = originalTz
+  }
+})
+
 test('PatternMatcher - Invalid patterns', () => {
   const invalidPatterns = [
     'INVALID',

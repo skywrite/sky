@@ -54,6 +54,7 @@
  * - etc.
  */
 
+import { differenceInCalendarDays } from '#shared/universal/dates/dateFns/mod.ts'
 import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
 import { isValidPattern } from '#shared/universal/dates/recurring/patterns.ts'
 
@@ -425,9 +426,10 @@ export class PatternMatcher {
   }
 
   private daysBetween(from: PlainDate, to: PlainDate): number {
-    const fromMs = from.toDate().getTime()
-    const toMs = to.toDate().getTime()
-    return Math.floor((toMs - fromMs) / (1000 * 60 * 60 * 24))
+    // Must be DST-proof: flooring raw local-midnight ms diffs runs an hour
+    // short after spring-forward, flipping the parity-based patterns
+    // (EVERY-OTHER-DAY, EVERY-2-WEEKS) for the whole summer.
+    return differenceInCalendarDays(to.toDate(), from.toDate())
   }
 }
 
