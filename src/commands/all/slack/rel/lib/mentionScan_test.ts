@@ -1,6 +1,6 @@
+import { candidatesFromPaths } from '#lib/notebook/enrich/resolve.ts'
 import { assert, test } from '#test'
 import { scanMentions } from './mentionScan.ts'
-import { candidatesFromPaths } from './resolve.ts'
 
 const CANDIDATES = candidatesFromPaths([
   'people/2024/ja/Jane-Doe.md',

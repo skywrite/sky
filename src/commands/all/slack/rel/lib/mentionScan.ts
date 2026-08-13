@@ -1,5 +1,5 @@
-import type { EntityCandidate } from './resolve.ts'
-import { normalizeEntityName } from './resolve.ts'
+import type { EntityCandidate } from '#lib/notebook/enrich/resolve.ts'
+import { normalizeEntityName } from '#lib/notebook/enrich/resolve.ts'
 
 const MIN_NORM_LENGTH = 3
 const MAX_HITS = 8
