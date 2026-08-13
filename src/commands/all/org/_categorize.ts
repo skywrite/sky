@@ -17,6 +17,19 @@ const CATEGORIZE_PROMPT_FILE = new URL('./prompts/org-categorize.prompt.md', imp
  */
 const AI_TIMEOUT_MS = 2 * 60 * 1000
 
+/**
+ * Wikipedia articles are fetched as full content (the disambiguation flow needs the
+ * whole entry list), but large-org articles run 15-30k+ chars while categorization
+ * only needs the lead and early history — what the org does, founding, ticker. Cap
+ * what enters the prompt, not what gets fetched.
+ */
+const MAX_WIKIPEDIA_EXTRACT_CHARS = 8_000
+
+function capExtract(extract: string): string {
+  if (extract.length <= MAX_WIKIPEDIA_EXTRACT_CHARS) return extract
+  return extract.slice(0, MAX_WIKIPEDIA_EXTRACT_CHARS) + '\n\n[Extract truncated...]'
+}
+
 const CategorizationSchema = z.object({
   primary_sector: z.string(),
   primary_subcategory: z.string(),
@@ -76,7 +89,7 @@ export async function categorizeOrganization(
         ? {
             title: sources.wikipedia.article.title,
             url: sources.wikipedia.article.url,
-            extract: sources.wikipedia.article.extract,
+            extract: capExtract(sources.wikipedia.article.extract),
             confidence: sources.wikipedia.confidence,
             reasoning: sources.wikipedia.reasoning,
           }
