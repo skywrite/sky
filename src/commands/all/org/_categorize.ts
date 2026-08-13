@@ -59,11 +59,18 @@ export interface CategorizationSources {
   wikipedia?: WikipediaSelectionResult
 }
 
+export interface TaxonomyContext {
+  /** The checked-in descriptive taxonomy guide (sectors, triggers, examples). */
+  guide: string
+  /** Sector/subcategory pairs that exist in the notebook right now — ground truth. */
+  inUse: string
+}
+
 /**
  * Categorize an organization using AI based on multiple enrichment sources and taxonomy
  */
 export async function categorizeOrganization(
-  taxonomyInfo: string,
+  taxonomy: TaxonomyContext,
   orgName: string,
   sources: CategorizationSources,
 ): Promise<OrgCategorizationResult> {
@@ -72,7 +79,8 @@ export async function categorizeOrganization(
 
   const input: RenderInput = {
     taxonomy: {
-      content: taxonomyInfo,
+      content: taxonomy.guide,
+      inUse: taxonomy.inUse,
     },
     org: {
       name: orgName,

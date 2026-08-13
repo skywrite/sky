@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
@@ -140,16 +140,21 @@ export default class OrgNewTask extends Command {
           output.log(`Selection reasoning: ${wikipediaResult.reasoning}`)
         }
 
-        // Load taxonomy
+        // Load the taxonomy guide and the categories that actually exist on disk
         const taxonomyPath = new URL('./_taxonomy.md', import.meta.url).pathname
         const taxonomyInfo = await readFile(taxonomyPath, 'utf-8')
+        const categoriesInUse = await listCategoriesInUse()
 
         // Categorize with all available sources
         output.log('Categorizing with AI...')
-        const categorization = await categorizeOrganization(taxonomyInfo, name, {
-          webFetch: webFetchResult,
-          wikipedia: wikipediaResult,
-        })
+        const categorization = await categorizeOrganization(
+          { guide: taxonomyInfo, inUse: categoriesInUse || '(none yet)' },
+          name,
+          {
+            webFetch: webFetchResult,
+            wikipedia: wikipediaResult,
+          },
+        )
 
         sector = forcedSector || categorization.sector
         subcategory = forcedSubcategory || categorization.subcategory
@@ -249,4 +254,28 @@ async function findExistingOrgFile(filename: string): Promise<string | undefined
     if (entry.name.toLowerCase() === target) return entry.path
   }
   return undefined
+}
+
+/**
+ * Render the sector/subcategory pairs that exist on disk, one sector per line
+ * ("crypto: exchanges, wallets"). Derived from org files rather than bare
+ * directories, so an empty dir doesn't count as in use.
+ */
+async function listCategoriesInUse(): Promise<string> {
+  const sectors = new Map<string, Set<string>>()
+  for await (const entry of walk(DIR_ORGS, { includeDirs: false, exts: ['.md'] })) {
+    const segments = relative(DIR_ORGS, entry.path).split(sep)
+    if (segments.length < 3) continue // orgs live at sector/subcategory/file.md
+    const [sector, subcategory] = segments
+    let subcategories = sectors.get(sector)
+    if (!subcategories) {
+      subcategories = new Set()
+      sectors.set(sector, subcategories)
+    }
+    subcategories.add(subcategory)
+  }
+  return [...sectors.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([sector, subcategories]) => `${sector}: ${[...subcategories].sort().join(', ')}`)
+    .join('\n')
 }
