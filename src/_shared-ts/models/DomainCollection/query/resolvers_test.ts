@@ -1304,6 +1304,44 @@ test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () =>
   })
 })
 
+// A named range is its own limit: the asker means the whole window, and the
+// default cap turned "2022 through 2023" into the newest 500 — silently.
+test('resolvers - a date-bounded query is exempt from the default cap', () => {
+  const many = Array.from({ length: DEFAULT_QUERY_LIMIT + 10 }, (_, i) => ({
+    doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\n---\nNote ${i}.`),
+    path: `/test/time/2025/03/10-16/03-10/actions/notes/note-${i}.md`,
+  }))
+  const resolvers = createDomainResolvers(createTimeStore(many))
+
+  assert({
+    given: 'a dateGte..dateLte range matching more than the default cap, no limit',
+    should: 'return the whole window',
+    actual: resolvers.documents({ where: { dateGte: '2025-03-01', dateLte: '2025-03-31' } }).length,
+    expected: DEFAULT_QUERY_LIMIT + 10,
+  })
+
+  assert({
+    given: 'the same range with an explicit limit',
+    should: 'still honor the explicit limit',
+    actual: resolvers.documents({ where: { dateGte: '2025-03-01', dateLte: '2025-03-31' }, limit: 7 }).length,
+    expected: 7,
+  })
+
+  assert({
+    given: 'an exact `date` filter, no limit',
+    should: 'return the whole day uncapped',
+    actual: resolvers.documents({ where: { date: '2025-03-10' } }).length,
+    expected: DEFAULT_QUERY_LIMIT + 10,
+  })
+
+  assert({
+    given: 'a one-ended range (dateGte only), no limit',
+    should: 'stay capped — an open range is not a bounded window',
+    actual: resolvers.documents({ where: { dateGte: '2025-03-01' } }).length,
+    expected: DEFAULT_QUERY_LIMIT,
+  })
+})
+
 // Journal is a genre, not a medium: membership is the Journal tag, wherever
 // the file lives. A video journal is both a video and a journal; a file in a
 // journal/ directory without the tag is not a journal at all.

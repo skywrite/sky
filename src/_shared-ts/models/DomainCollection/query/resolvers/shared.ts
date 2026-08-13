@@ -317,8 +317,21 @@ export function perRow<R>(map: (doc: Document, path: string) => R): (entries: En
  * Cap applied when a query specifies no `limit` — a runaway guard so a bare
  * root-field query cannot return the whole notebook. Generous enough that
  * deliberate broad sweeps still work; sorted types keep the newest N.
+ *
+ * Date-bounded queries are exempt: a named range is its own limit, and the
+ * asker means the whole window. Capping one silently truncates it to the
+ * newest N — a two-year window of journals came back as one month — and the
+ * context assembler downstream already budgets whatever a range returns.
  */
 export const DEFAULT_QUERY_LIMIT = 500
+
+/** A filter with date bounds only caps at an explicit `limit`, never by default. */
+function hasDateBounds(where: unknown): boolean {
+  if (typeof where !== 'object' || where === null) return false
+  const w = where as DatedFilter
+  // Mirrors matchesDatedFilter: `date` alone bounds; a range needs both ends.
+  return Boolean(w.date || (w.dateGte && w.dateLte))
+}
 
 /**
  * Build the root resolver for one entity: filter, sort, limit, map — the body
@@ -339,7 +352,8 @@ export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext)
       results = results.filter(({ doc, path }) => spec.matches(doc, where, path, ctx))
     }
     if (spec.sortByDate) results = sortByDateDesc(results)
-    results = results.slice(0, args.limit ?? DEFAULT_QUERY_LIMIT)
+    const defaultCap = hasDateBounds(args.where) ? Infinity : DEFAULT_QUERY_LIMIT
+    results = results.slice(0, args.limit ?? defaultCap)
     return map(results)
   }
 }

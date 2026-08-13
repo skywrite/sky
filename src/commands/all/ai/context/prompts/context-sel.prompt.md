@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-08-03
+updated: 2026-08-13
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -80,6 +80,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - **Omit `recent` by default.** Results are newest-first and capped by `limit`, so a query without `recent` returns the same documents for active topics — and reaches older history when matches are sparse. Full-history search is cheap; never add `recent` "just in case".
 - Add `recent` ONLY when the question itself is time-scoped: "last week" → "7d", "last month" → "30d", "this quarter" → "90d", "recently" → "30d".
 - Time-scoped means scoped to the past. A future horizon — "next 3 months", "upcoming quarter", "by year-end" — sets what the question plans toward, not how far back to search: omit `recent` so full history informs the answer.
+- **A named period is a date range, not `recent` — and it needs no `limit`.** "Jan 2022 through Dec 2023" → `journals(where: { dateGte: "2022-01-01", dateLte: "2023-12-31" }) { date markdown path }`. Works on the dated types: meetings, messages, videos, journals, chats, days, documents. Results are newest-first, so a `limit` on a window keeps only its tail and silently drops the rest — a two-year window can hold 1000+ journals. The range is the bound: omit `limit` (date-bounded queries are uncapped) and let downstream budgeting prune any excess.
 
 {{#if entities.block}}
 {{{entities.block}}}
