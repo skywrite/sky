@@ -2,6 +2,7 @@ import {
   type AgentSlackFile,
   type AgentSlackMessage,
   type AgentSlackUser,
+  collectChannelIds,
   collectUserIds,
   parseUser,
 } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
@@ -159,6 +160,15 @@ export default class SlackCliExportTask extends Command {
       if (info.detectedType) conversationType = info.detectedType
     }
 
+    // Resolve channels mentioned in message text (<#C…>) to names
+    const channelNames = new Map<string, string>()
+    if (workspaceUrl) {
+      for (const id of collectChannelIds(allAgentMessages)) {
+        const info = await resolveChannelInfo(id, userNames, workspaceUrl)
+        if (info.name) channelNames.set(id, info.name)
+      }
+    }
+
     // An unanswered DM has the current user's name nowhere in its messages —
     // resolveRecipient needs it, so fetch it exactly when a DM's author is its
     // partner (heartbeat polls of ordinary DMs pay nothing)
@@ -175,7 +185,7 @@ export default class SlackCliExportTask extends Command {
     const message: FetchedMessage = {
       ts: data.message.ts,
       timeLabel: formatSlackTimestamp(data.message.ts, timezone),
-      text: resolveContent(data.message.content || '', userNames),
+      text: resolveContent(data.message.content || '', userNames, channelNames),
       userId: data.message.author?.user_id,
       userName: data.message.author?.user_id ? userNames.get(data.message.author.user_id) : undefined,
       threadTs: data.message.thread_ts,
@@ -192,7 +202,7 @@ export default class SlackCliExportTask extends Command {
           (m): ThreadReply => ({
             ts: m.ts,
             timeLabel: formatSlackTimestamp(m.ts, timezone),
-            text: resolveContent(m.content || '', userNames),
+            text: resolveContent(m.content || '', userNames, channelNames),
             userId: m.author?.user_id,
             userName: m.author?.user_id ? userNames.get(m.author.user_id) : undefined,
             files: m.files,
