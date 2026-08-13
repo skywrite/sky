@@ -1,10 +1,10 @@
 import { DIR_TIME } from '#config'
-import { channelRelHistory, loadMessageCorpus } from '#lib/notebook/enrich/corpus.ts'
-import { extractSubjects } from '#lib/notebook/enrich/extract.ts'
-import { buildEntityIndex, normalizeEntityName, resolveSubjects } from '#lib/notebook/enrich/resolve.ts'
-import { fetchEntityScores } from '#lib/notebook/enrich/scores.ts'
-import { selectRel } from '#lib/notebook/enrich/select.ts'
-import type { RelCandidate } from '#lib/notebook/enrich/select.ts'
+import { channelRelHistory, loadMessageCorpus } from './corpus.ts'
+import { extractSubjects } from './extract.ts'
+import { buildEntityIndex, normalizeEntityName, resolveSubjects } from './resolve.ts'
+import { fetchEntityScores } from './scores.ts'
+import { selectRel } from './select.ts'
+import type { RelCandidate } from './select.ts'
 
 // Same taxonomy floor as auto-tagging: the pre-2025 notebook is another era.
 const REL_SINCE = '2025-01-01'
@@ -12,39 +12,46 @@ const MAX_PRIOR_ONLY_CANDIDATES = 4
 const MAX_EXEMPLARS = 3
 
 export type AutoRelInput = {
-  channel?: string
+  /**
+   * Who or where the conversation is with, as the document's `to:` frontmatter
+   * spells it — Slack channel or DM partner, email counterparty, meeting
+   * attendees. Keys the history prior. Omit for media with no conversation
+   * identity (journals).
+   */
+  to?: string
   from?: string
   summary?: string
   body: string
 }
 
 /**
- * Propose rel entries for a new Slack capture: extract the subjects the
- * conversation is about (never its parties), resolve them against the entity
- * graph (open projects only — new conversations are about live work), then a
- * selection pass picks the 0-2 refs worth a cross-reference, guided by the
- * channel's own past choices.
+ * Propose rel entries for a new capture: extract the subjects the conversation
+ * is about (never its parties), resolve them against the entity graph (open
+ * projects only — new conversations are about live work), then a selection
+ * pass picks the 0-2 refs worth a cross-reference, guided by the
+ * conversation's own past choices in the given mediums' archives.
  *
- * Backtested at ~60% per-entry precision / ~75% file overlap — below the
- * auto-tag bar, wired by explicit choice. Every ref is corpus-validated:
- * nothing unresolvable can be written. Never throws; undefined = abstain.
+ * Backtested on Slack archives at ~60% per-entry precision / ~75% file
+ * overlap — below the auto-tag bar, wired by explicit choice. Every ref is
+ * corpus-validated: nothing unresolvable can be written. Never throws;
+ * undefined = abstain.
  */
-export async function autoRelSlackMessage(input: AutoRelInput): Promise<string[] | undefined> {
+export async function autoRelMessage(input: AutoRelInput, opts: { mediums: string[] }): Promise<string[] | undefined> {
   try {
     const [index, scores, corpus] = await Promise.all([
       buildEntityIndex(),
       fetchEntityScores(),
-      loadMessageCorpus(DIR_TIME, ['slack']),
+      loadMessageCorpus(DIR_TIME, opts.mediums),
     ])
     const records = corpus.records.filter((r) => r.date >= REL_SINCE)
-    const relHistory = channelRelHistory(records, input.channel)
+    const relHistory = channelRelHistory(records, input.to)
     const exemplars = records
-      .filter((r) => r.channel === input.channel && r.rel.length > 0)
+      .filter((r) => r.channel === input.to && r.rel.length > 0)
       .slice(-MAX_EXEMPLARS)
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
     const { subjects } = await extractSubjects(
-      { body: input.body, summary: input.summary, channel: input.channel, from: input.from },
+      { body: input.body, summary: input.summary, channel: input.to, from: input.from },
       'fast',
     )
     const resolved = resolveSubjects(subjects, index, scores, { projectStatuses: ['open'] })
@@ -83,7 +90,7 @@ export async function autoRelSlackMessage(input: AutoRelInput): Promise<string[]
       {
         body: input.body,
         summary: input.summary,
-        channel: input.channel,
+        channel: input.to,
         from: input.from,
         candidates,
         exemplars,

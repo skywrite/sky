@@ -7,6 +7,8 @@ import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
 import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import { MCPTool } from '#mcp/decorators.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -16,8 +18,6 @@ import dayFile from '#shared/nbfs/dayFile.ts'
 import { fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
-import { autoRelSlackMessage } from './lib/autoRel.ts'
-import { autoTagSlackMessage } from './lib/autoTag.ts'
 import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
 import resolveRecipient from './lib/resolveRecipient.ts'
 import { summarizeSlackMessage } from './lib/summarize.ts'
@@ -145,12 +145,12 @@ export default class SlackNewTask extends Command {
 
     // Auto-enrich only fields with no value in play — caller-supplied values
     // (follow inheritance, --tags/--rel) and preserved hand edits always win.
-    const enrichInput = { channel: to ?? from, from, summary, body: markdown ?? '' }
+    const enrichInput = { to: to ?? from, from, summary, body: markdown ?? '' }
     const wantAutoTag = !tags && !preservedYaml['tags'] && !noAutoTag
     const wantAutoRel = !rel && !preservedYaml['rel'] && !noAutoRel
     const [autoTags, autoRel] = await Promise.all([
-      wantAutoTag ? autoTagSlackMessage(enrichInput) : Promise.resolve(undefined),
-      wantAutoRel ? autoRelSlackMessage(enrichInput) : Promise.resolve(undefined),
+      wantAutoTag ? autoTagMessage(enrichInput, { mediums: ['slack'] }) : Promise.resolve(undefined),
+      wantAutoRel ? autoRelMessage(enrichInput, { mediums: ['slack'] }) : Promise.resolve(undefined),
     ])
     const resolvedTags = tags ?? autoTags
     if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
