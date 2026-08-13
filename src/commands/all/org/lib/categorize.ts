@@ -3,10 +3,10 @@ import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import type { WebFetchResult } from './_webFetch.ts'
-import type { WikipediaSelectionResult } from './_wikipedia.ts'
+import type { WebFetchResult } from './webFetch.ts'
+import type { WikipediaSelectionResult } from './wikipedia.ts'
 
-const CATEGORIZE_PROMPT_FILE = new URL('./prompts/org-categorize.prompt.md', import.meta.url).pathname
+const CATEGORIZE_PROMPT_FILE = new URL('../prompts/org-categorize.prompt.md', import.meta.url).pathname
 
 /**
  * Hard ceiling on the categorization call. Nothing else bounds it: the Anthropic provider
