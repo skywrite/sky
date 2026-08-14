@@ -47,6 +47,10 @@ const params = {
   ),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
+  split: Flag.stringOrBool(
+    'Split a --from-video recording into one entry per subject: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
+    { bareValue: 'auto' },
+  ),
   types: Flag.string(typesDescription, {
     parse: (val) => val.split(',').map((s) => s.trim()) as unknown as string,
     default: () => ['Mood'] as unknown as string,
@@ -91,6 +95,7 @@ export default class JournalNewTask extends Command {
         tasks,
         noAutoTag: args.noAutoTag,
         noAutoRel: args.noAutoRel,
+        split: args.split,
       })
     }
 
