@@ -19,6 +19,7 @@ import { fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
+import { SLACK_ENRICH } from './lib/enrich.ts'
 import resolveRecipient from './lib/resolveRecipient.ts'
 import { summarizeSlackMessage } from './lib/summarize.ts'
 
@@ -149,8 +150,8 @@ export default class SlackNewTask extends Command {
     const wantAutoTag = !tags && !preservedYaml['tags'] && !noAutoTag
     const wantAutoRel = !rel && !preservedYaml['rel'] && !noAutoRel
     const [autoTags, autoRel] = await Promise.all([
-      wantAutoTag ? autoTagMessage(enrichInput, { mediums: ['slack'] }) : Promise.resolve(undefined),
-      wantAutoRel ? autoRelMessage(enrichInput, { mediums: ['slack'] }) : Promise.resolve(undefined),
+      wantAutoTag ? autoTagMessage(enrichInput, SLACK_ENRICH) : Promise.resolve(undefined),
+      wantAutoRel ? autoRelMessage(enrichInput, SLACK_ENRICH) : Promise.resolve(undefined),
     ])
     const resolvedTags = tags ?? autoTags
     if (autoTags) output.log(`  Auto-tags: ${autoTags}`)

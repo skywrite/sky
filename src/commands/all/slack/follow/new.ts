@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import ms from 'ms'
 import openEditor from 'open-editor'
+import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -240,8 +241,8 @@ export default class SlackFollowNewTask extends Command {
       }
       const enrichInput = { to, from, summary, body: fullBodyParts.join('\n') }
       const [threadTags, threadRel] = await Promise.all([
-        autoTagMessage(enrichInput, { mediums: ['slack'] }),
-        autoRelMessage(enrichInput, { mediums: ['slack'] }),
+        autoTagMessage(enrichInput, SLACK_ENRICH),
+        autoRelMessage(enrichInput, SLACK_ENRICH),
       ])
       if (threadTags) output.log(`  Auto-tags: ${threadTags}`)
       if (threadRel) output.log(`  Auto-rel: ${threadRel.join('; ')}`)

@@ -5,6 +5,8 @@ import openEditor from 'open-editor'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import { MCPTool } from '#mcp/decorators.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -26,6 +28,8 @@ const params = {
   category: categoryComplete(),
   medium: Flag.string('Meeting medium e.g. Zoom, Phone, etc', { short: 'm', default: () => 'Zoom' }),
   summary: Flag.string('Meeting summary', { short: 's', default: () => '' }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-meeting tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -50,6 +54,7 @@ export default class MeetingNewTask extends Command {
     let { when, medium, who, summary, category, fromAudio, fromTranscript } = args
     let body: string | undefined
     let rel: string[] | undefined
+    let tags: string | undefined
     let transcriptSourcePath: string | null = null
 
     if (fromAudio !== undefined && fromTranscript !== undefined) {
@@ -99,6 +104,26 @@ export default class MeetingNewTask extends Command {
       if (rel && rel.length > 0) {
         output.log(`  Related: ${rel.join(', ')}`)
       }
+
+      // Enrich from the archived-meeting corpus. Auto-rel runs alongside the
+      // transcript's own extraction rather than instead of it: the pipeline
+      // reads corrections and the glossary, so it catches names the entity
+      // graph cannot, while this pass adds graph-validated refs it missed.
+      // Attendees key the history prior — a recurring meeting tends to be
+      // filed the way it was filed last time.
+      const enrichInput = { to: who, summary, body: body ?? '' }
+      const [autoTags, autoRel] = await Promise.all([
+        args.noAutoTag ? undefined : autoTagMessage(enrichInput, { mediums: ['meeting'], kind: 'meeting' }),
+        args.noAutoRel ? undefined : autoRelMessage(enrichInput, { mediums: ['meeting'], kind: 'meeting' }),
+      ])
+      tags = autoTags
+      if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
+      const merged = mergeRel(rel, autoRel)
+      if (autoRel && merged && merged.length > (rel?.length ?? 0)) {
+        output.log(`  Auto-rel: ${merged.slice(rel?.length ?? 0).join(', ')}`)
+      }
+      rel = merged
+
       output.log('')
     }
 
@@ -144,7 +169,7 @@ export default class MeetingNewTask extends Command {
     }
 
     const ddfw = new DayDirFileWriter(whenDate)
-    const meeting = new MeetingDocument({ who, when, medium, summary, body, rel, attachments })
+    const meeting = new MeetingDocument({ who, when, medium, summary, body, rel, tags, attachments })
 
     const data = meeting.toMarkdown()
 

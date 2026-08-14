@@ -30,7 +30,10 @@ export type AutoTagInput = {
  * already exist on archived messages (verbatim-validated). Never throws;
  * undefined means abstain and the capture is written untagged.
  */
-export async function autoTagMessage(input: AutoTagInput, opts: { mediums: string[] }): Promise<string | undefined> {
+export async function autoTagMessage(
+  input: AutoTagInput,
+  opts: { mediums: string[]; kind?: string },
+): Promise<string | undefined> {
   try {
     const corpus = await loadMessageCorpus(opts.mediums)
     const records = corpus.records.filter((r) => r.date >= TAXONOMY_SINCE)
@@ -40,6 +43,7 @@ export async function autoTagMessage(input: AutoTagInput, opts: { mediums: strin
     const outcome = await chooseTags(
       {
         body: input.body,
+        kind: opts.kind,
         to: input.to,
         from: input.from,
         summary: input.summary,

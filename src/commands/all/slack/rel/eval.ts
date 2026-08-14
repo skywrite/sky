@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
@@ -111,7 +112,7 @@ export default class SlackRelEvalTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
 
-    const corpus = await loadMessageCorpus(['slack'], { withBody: true })
+    const corpus = await loadMessageCorpus(SLACK_ENRICH.mediums, { withBody: true })
     const records = corpus.records.filter((r) => r.date >= args.since)
     const priorCount = new Map<string, number>()
     for (const [index, record] of records.entries()) {
@@ -159,7 +160,16 @@ export default class SlackRelEvalTask extends Command {
     })
 
     const outcomes = await mapLimit(cases, args.concurrency, (c) =>
-      extractSubjects({ body: c.record.body, summary: c.record.summary, to: c.record.to, from: c.record.from }, 'fast'),
+      extractSubjects(
+        {
+          body: c.record.body,
+          summary: c.record.summary,
+          kind: SLACK_ENRICH.kind,
+          to: c.record.to,
+          from: c.record.from,
+        },
+        'fast',
+      ),
     )
 
     let extractionsDropped = 0
@@ -187,6 +197,7 @@ export default class SlackRelEvalTask extends Command {
           {
             body: c.record.body,
             summary: c.record.summary,
+            kind: SLACK_ENRICH.kind,
             to: c.record.to,
             from: c.record.from,
             candidates: c.candidates,

@@ -35,7 +35,10 @@ export type AutoRelInput = {
  * corpus-validated: nothing unresolvable can be written. Never throws;
  * undefined = abstain.
  */
-export async function autoRelMessage(input: AutoRelInput, opts: { mediums: string[] }): Promise<string[] | undefined> {
+export async function autoRelMessage(
+  input: AutoRelInput,
+  opts: { mediums: string[]; kind?: string },
+): Promise<string[] | undefined> {
   try {
     const [index, scores, corpus] = await Promise.all([
       buildEntityIndex(),
@@ -50,7 +53,7 @@ export async function autoRelMessage(input: AutoRelInput, opts: { mediums: strin
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
     const { subjects } = await extractSubjects(
-      { body: input.body, summary: input.summary, to: input.to, from: input.from },
+      { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from },
       'fast',
     )
     const resolved = resolveSubjects(subjects, index, scores, { projectStatuses: ['open'] })
@@ -89,6 +92,7 @@ export async function autoRelMessage(input: AutoRelInput, opts: { mediums: strin
       {
         body: input.body,
         summary: input.summary,
+        kind: opts.kind,
         to: input.to,
         from: input.from,
         candidates,
@@ -100,4 +104,24 @@ export async function autoRelMessage(input: AutoRelInput, opts: { mediums: strin
   } catch {
     return undefined
   }
+}
+
+/**
+ * Merge auto-rel proposals into refs a medium already produced for itself.
+ *
+ * The existing refs win: a transcript pipeline reads its own corrections and
+ * glossary, so it knows names the entity graph may not carry, and its entries
+ * stay verbatim and in order. Proposals only ever append what isn't already
+ * there, compared the way rel lookups compare.
+ */
+export function mergeRel(existing: string[] | undefined, proposed: string[] | undefined): string[] | undefined {
+  const merged = [...(existing ?? [])]
+  const seen = new Set(merged.map(normalizeEntityName))
+  for (const ref of proposed ?? []) {
+    const norm = normalizeEntityName(ref)
+    if (seen.has(norm)) continue
+    seen.add(norm)
+    merged.push(ref)
+  }
+  return merged.length > 0 ? merged : undefined
 }
