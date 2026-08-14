@@ -41,11 +41,12 @@ export type SelectOutcome = {
   error?: string
 }
 
+// Asked for, not schema-enforced — an over-long reply must not become no reply
+// at all. validateSelection caps it. See the note in classify.ts.
 const schema = z.object({
   rel: z
     .array(z.string())
-    .max(MAX_SELECTED)
-    .describe('0-2 candidate refs copied verbatim. Empty when nothing deserves a cross-reference.'),
+    .describe(`0-${MAX_SELECTED} candidate refs copied verbatim. Empty when nothing deserves a cross-reference.`),
 })
 
 function candidateLine(c: RelCandidate): string {
