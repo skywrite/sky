@@ -1,8 +1,8 @@
 import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_TIME, PORT_SERVER } from '#config'
-import { channelMajorityRel, channelRelHistory, loadMessageCorpus, sliceBefore } from '#lib/notebook/enrich/corpus.ts'
+import { DIR_TIME } from '#config'
+import { loadMessageCorpus, majorityRelFor, relHistoryFor, sliceBefore } from '#lib/notebook/enrich/corpus.ts'
 import type { MessageRecord } from '#lib/notebook/enrich/corpus.ts'
 import { extractSubjects } from '#lib/notebook/enrich/extract.ts'
 import type { ExtractedSubjects } from '#lib/notebook/enrich/extract.ts'
@@ -43,7 +43,7 @@ type Row = {
 } & RelAggregate
 
 type Result = {
-  corpus: { slackFiles: number; relFiles: number; eligible: number; sampled: number; parseSkipped: number }
+  corpus: { slackFiles: number; relFiles: number; eligible: number; sampled: number }
   entityIndex: { candidates: number }
   scoresAvailable: boolean
   raw: Row[]
@@ -111,7 +111,7 @@ export default class SlackRelEvalTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
 
-    const corpus = await loadMessageCorpus(DIR_TIME, ['slack'])
+    const corpus = await loadMessageCorpus(['slack'], { withBody: true })
     const records = corpus.records.filter((r) => r.date >= args.since)
     const priorCount = new Map<string, number>()
     for (const [index, record] of records.entries()) {
@@ -126,9 +126,7 @@ export default class SlackRelEvalTask extends Command {
     const index = await buildEntityIndex()
     const scores = await fetchEntityScores()
 
-    output.log(
-      `Corpus: ${records.length} slack archives since ${args.since} (${relFiles.length} with rel, ${corpus.skipped} unparseable)`,
-    )
+    output.log(`Corpus: ${records.length} slack archives since ${args.since} (${relFiles.length} with rel)`)
     output.log(`Eligible: ${eligible.length}; sampled: ${sampled.length}`)
     output.log(
       `Entity index: ${index.candidates.length} candidates; interaction scores: ${scores ? 'on' : 'unavailable'}`,
@@ -136,13 +134,13 @@ export default class SlackRelEvalTask extends Command {
 
     const cases: EvalCase[] = sampled.map((record) => {
       const slice = sliceBefore(records, record.date)
-      const channelRecords = slice.filter((r) => r.channel === record.channel && r.rel.length > 0)
+      const conversationRecords = slice.filter((r) => r.to === record.to && r.rel.length > 0)
       return {
         record,
         parties: partiesOf(record),
-        majority: channelMajorityRel(slice, record.channel),
-        relHistory: channelRelHistory(slice, record.channel),
-        exemplars: channelRecords.slice(-MAX_EXEMPLARS).map((r) => ({
+        majority: majorityRelFor(slice, record.to),
+        relHistory: relHistoryFor(slice, record.to),
+        exemplars: conversationRecords.slice(-MAX_EXEMPLARS).map((r) => ({
           summary: r.summary ?? '(no summary)',
           rel: r.rel,
         })),
@@ -161,10 +159,7 @@ export default class SlackRelEvalTask extends Command {
     })
 
     const outcomes = await mapLimit(cases, args.concurrency, (c) =>
-      extractSubjects(
-        { body: c.record.body, summary: c.record.summary, channel: c.record.channel, from: c.record.from },
-        'fast',
-      ),
+      extractSubjects({ body: c.record.body, summary: c.record.summary, to: c.record.to, from: c.record.from }, 'fast'),
     )
 
     let extractionsDropped = 0
@@ -192,7 +187,7 @@ export default class SlackRelEvalTask extends Command {
           {
             body: c.record.body,
             summary: c.record.summary,
-            channel: c.record.channel,
+            to: c.record.to,
             from: c.record.from,
             candidates: c.candidates,
             exemplars: c.exemplars,
@@ -259,7 +254,7 @@ export default class SlackRelEvalTask extends Command {
           JSON.stringify({
             path: path.relative(DIR_TIME, c.record.path),
             date: c.record.date,
-            channel: c.record.channel,
+            to: c.record.to,
             actual: c.record.rel,
             extracted: c.subjects,
             candidates: c.candidates,
@@ -291,7 +286,6 @@ export default class SlackRelEvalTask extends Command {
         relFiles: relFiles.length,
         eligible: eligible.length,
         sampled: sampled.length,
-        parseSkipped: corpus.skipped,
       },
       entityIndex: { candidates: index.candidates.length },
       scoresAvailable: !!scores,
@@ -309,7 +303,7 @@ export default class SlackRelEvalTask extends Command {
 
 function partiesOf(record: MessageRecord): string[] {
   const parties: string[] = []
-  for (const value of [record.from, record.channel]) {
+  for (const value of [record.from, record.to]) {
     if (!value || value.startsWith('#')) continue
     parties.push(
       ...value

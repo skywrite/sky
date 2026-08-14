@@ -1,78 +1,170 @@
-import { readTextFile, walkToArray } from '#shared/fs/mod.ts'
-import MessageDocument from '#shared/models/Message/mod.ts'
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { PORT_SERVER } from '#config'
+
+// Corpus records come from the service's GraphQL query layer: the domain
+// model decides what is a message, meeting, or journal. Basename parsing used
+// to decide mediums here and silently dropped every meeting and journal —
+// those file names carry Zoom/In-Person/... tokens, never "meeting". Service
+// unreachable → empty corpus and callers abstain (degrade to empty, never a
+// parallel filesystem path).
 
 export type MessageRecord = {
   path: string
-  /** YYYY-MM-DD from the day-dir path — corpus slicing compares these strings */
+  /** YYYY-MM-DD — corpus slicing compares these strings */
   date: string
+  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal */
   medium: string
-  /** Conversation identity: `to` when present, else `from` (DMs captured from-only) */
-  channel?: string
+  /** Conversation identity: `to:` (meetings: `who:`), else `from` (DMs captured from-only) */
+  to?: string
   from?: string
   summary?: string
   tags: string[]
   rel: string[]
+  /** Full document markdown — loaded only withBody (evals re-classify records); empty otherwise */
   body: string
 }
 
 export type TagCount = { tag: string; count: number }
 
-export type CorpusLoad = { records: MessageRecord[]; skipped: number }
+export type CorpusLoad = { records: MessageRecord[] }
 
-// Both filename generations: `slack_*.md` (pre time-prefix) and `HH-MM_slack_*.md`.
-// The hour can exceed 23 — late-night files use extended hours (e.g. 25-30).
-const MESSAGE_FILE_RE = /^(?:\d\d-\d\d_)?(slack|email|message|meeting)_.+\.md$/
+// GraphQL row shapes, matching the fields the loader selects.
+export type MessageRow = {
+  medium: string
+  from?: string | null
+  to?: string | null
+  date: string
+  summary?: string | null
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
+export type MeetingRow = {
+  who?: string | null
+  date: string
+  summary?: string | null
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
+export type JournalRow = {
+  date: string
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
+export type CorpusRows = { messages?: MessageRow[]; meetings?: MeetingRow[]; journals?: JournalRow[] }
 
-export function mediumOfBasename(name: string): string | undefined {
-  return MESSAGE_FILE_RE.exec(name)?.[1]
+/** Message-domain platforms fold into three corpus mediums: slack, email, and message (all others). */
+export function corpusMediumOf(messageMedium: string): string {
+  const lower = messageMedium.toLowerCase()
+  return lower === 'slack' || lower === 'email' ? lower : 'message'
 }
 
-export function recordFromMarkdown(filePath: string, contents: string, medium: string): MessageRecord {
-  const doc = MessageDocument.fromMarkdown(contents)
-  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
-  return {
-    path: filePath,
-    date: parseDateFromDayPath(filePath).toString(),
-    medium,
-    channel: str(doc.yaml['to']) ?? str(doc.yaml['from']),
-    from: str(doc.yaml['from']),
-    summary: str(doc.yaml['summary']),
-    tags: Array.from(doc.tags),
-    rel: relStrings(doc.yaml['rel']),
-    body: doc.markdown,
+/** Map GraphQL rows into corpus records, keeping only the requested mediums, sorted by day then path. */
+export function recordsFromRows(rows: CorpusRows, mediums: string[]): MessageRecord[] {
+  const wanted = new Set(mediums)
+  const str = (v: string | null | undefined): string | undefined =>
+    typeof v === 'string' && v.trim() ? v.trim() : undefined
+  const records: MessageRecord[] = []
+
+  for (const row of rows.messages ?? []) {
+    const medium = corpusMediumOf(row.medium)
+    if (!wanted.has(medium)) continue
+    records.push({
+      path: row.path,
+      date: row.date,
+      medium,
+      to: str(row.to) ?? str(row.from),
+      from: str(row.from),
+      summary: str(row.summary),
+      tags: row.tags,
+      rel: row.rel,
+      body: row.markdown ?? '',
+    })
   }
+  if (wanted.has('meeting')) {
+    for (const row of rows.meetings ?? []) {
+      records.push({
+        path: row.path,
+        date: row.date,
+        medium: 'meeting',
+        to: str(row.who),
+        summary: str(row.summary),
+        tags: row.tags,
+        rel: row.rel,
+        body: row.markdown ?? '',
+      })
+    }
+  }
+  if (wanted.has('journal')) {
+    for (const row of rows.journals ?? []) {
+      records.push({
+        path: row.path,
+        date: row.date,
+        medium: 'journal',
+        tags: row.tags,
+        rel: row.rel,
+        body: row.markdown ?? '',
+      })
+    }
+  }
+
+  records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.path < b.path ? -1 : 1))
+  return records
 }
 
-/** rel: is a string or a YAML array in the wild — normalize to trimmed strings. */
-function relStrings(value: unknown): string[] {
-  if (typeof value === 'string') return value.trim() ? [value.trim()] : []
-  if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim())
-  }
-  return []
+// The resolvers cap queries without an explicit limit at 500 — far below the
+// corpus. An explicit limit above the cap is honored.
+const QUERY_LIMIT = 100_000
+const QUERY_TIMEOUT_MS = 15_000
+
+export type LoadCorpusOptions = {
+  /** Fetch full document markdown into `body`. Evals re-classify records; runtime menus never need it. */
+  withBody?: boolean
 }
 
 /**
- * Load message-medium records under a time dir, sorted by day then path.
- * Unparseable files (no day path, broken frontmatter) are counted, not fatal.
+ * Load corpus records of the given mediums from the service:
+ * slack | email | message (any other message platform) | meeting | journal.
+ * Derived fresh on every call — the store follows the notebook files, so
+ * landing in a file IS joining the corpus, with no separate state to maintain.
  */
-export async function loadMessageCorpus(timeDir: string, mediums: string[]): Promise<CorpusLoad> {
+export async function loadMessageCorpus(mediums: string[], opts: LoadCorpusOptions = {}): Promise<CorpusLoad> {
   const wanted = new Set(mediums)
-  const entries = await walkToArray(timeDir, { exts: ['.md'] })
-  const records: MessageRecord[] = []
-  let skipped = 0
-  for (const entry of entries) {
-    const medium = mediumOfBasename(entry.name)
-    if (!medium || !wanted.has(medium)) continue
-    try {
-      records.push(recordFromMarkdown(entry.path, await readTextFile(entry.path), medium))
-    } catch {
-      skipped++
-    }
+  const body = opts.withBody ? ' markdown' : ''
+  const parts: string[] = []
+  if (wanted.has('slack') || wanted.has('email') || wanted.has('message')) {
+    parts.push(`messages(limit: ${QUERY_LIMIT}) { medium from to date summary tags rel path${body} }`)
   }
-  records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.path < b.path ? -1 : 1))
-  return { records, skipped }
+  if (wanted.has('meeting')) {
+    parts.push(`meetings(limit: ${QUERY_LIMIT}) { who date summary tags rel path${body} }`)
+  }
+  if (wanted.has('journal')) {
+    parts.push(`journals(limit: ${QUERY_LIMIT}) { date tags rel path${body} }`)
+  }
+  if (parts.length === 0) return { records: [] }
+
+  const data = await queryService(`{ ${parts.join(' ')} }`)
+  if (!data) return { records: [] }
+  return { records: recordsFromRows(data as CorpusRows, mediums) }
+}
+
+async function queryService(query: string): Promise<unknown> {
+  try {
+    const response = await fetch(`http://localhost:${PORT_SERVER}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(QUERY_TIMEOUT_MS),
+    })
+    const json = (await response.json()) as { data?: unknown }
+    return json.data
+  } catch {
+    return undefined
+  }
 }
 
 /** Records from strictly earlier days — same-day neighbors are excluded so intra-day order never matters. */
@@ -91,17 +183,18 @@ export function buildTagMenu(records: MessageRecord[]): TagCount[] {
   )
 }
 
-export function channelHistory(records: MessageRecord[], channel: string | undefined): TagCount[] {
-  if (!channel) return []
-  return buildTagMenu(records.filter((r) => r.channel === channel))
+/** Tags previously used in the conversation `to` identifies, most-used first. */
+export function tagHistoryFor(records: MessageRecord[], to: string | undefined): TagCount[] {
+  if (!to) return []
+  return buildTagMenu(records.filter((r) => r.to === to))
 }
 
-/** Rel values previously used in the channel, most-used first. */
-export function channelRelHistory(records: MessageRecord[], channel: string | undefined): TagCount[] {
-  if (!channel) return []
+/** Rel values previously used in the conversation, most-used first. */
+export function relHistoryFor(records: MessageRecord[], to: string | undefined): TagCount[] {
+  if (!to) return []
   const counts = new Map<string, number>()
   for (const r of records) {
-    if (r.channel !== channel) continue
+    if (r.to !== to) continue
     for (const value of r.rel) counts.set(value, (counts.get(value) ?? 0) + 1)
   }
   return Array.from(counts, ([tag, count]) => ({ tag, count })).sort(
@@ -109,26 +202,26 @@ export function channelRelHistory(records: MessageRecord[], channel: string | un
   )
 }
 
-/** Most frequent exact tag-set previously used in the channel — the rubber-stamp baseline. */
-export function channelMajoritySet(records: MessageRecord[], channel: string | undefined): string[] {
-  return channelMajorityBy(records, channel, (r) => r.tags)
+/** Most frequent exact tag-set previously used in the conversation — the rubber-stamp baseline. */
+export function majorityTagsFor(records: MessageRecord[], to: string | undefined): string[] {
+  return majorityBy(records, to, (r) => r.tags)
 }
 
-/** Most frequent exact rel-set previously used in the channel. */
-export function channelMajorityRel(records: MessageRecord[], channel: string | undefined): string[] {
-  return channelMajorityBy(records, channel, (r) => r.rel)
+/** Most frequent exact rel-set previously used in the conversation. */
+export function majorityRelFor(records: MessageRecord[], to: string | undefined): string[] {
+  return majorityBy(records, to, (r) => r.rel)
 }
 
-function channelMajorityBy(
+function majorityBy(
   records: MessageRecord[],
-  channel: string | undefined,
+  to: string | undefined,
   valuesOf: (record: MessageRecord) => string[],
 ): string[] {
-  if (!channel) return []
+  if (!to) return []
   const counts = new Map<string, { values: string[]; count: number }>()
   for (const r of records) {
     const values = valuesOf(r)
-    if (r.channel !== channel || values.length === 0) continue
+    if (r.to !== to || values.length === 0) continue
     const key = [...values].sort().join('; ')
     const existing = counts.get(key)
     if (existing) existing.count++

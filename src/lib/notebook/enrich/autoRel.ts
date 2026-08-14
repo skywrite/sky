@@ -1,5 +1,4 @@
-import { DIR_TIME } from '#config'
-import { channelRelHistory, loadMessageCorpus } from './corpus.ts'
+import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
 import { extractSubjects } from './extract.ts'
 import { buildEntityIndex, normalizeEntityName, resolveSubjects } from './resolve.ts'
 import { fetchEntityScores } from './scores.ts'
@@ -41,17 +40,17 @@ export async function autoRelMessage(input: AutoRelInput, opts: { mediums: strin
     const [index, scores, corpus] = await Promise.all([
       buildEntityIndex(),
       fetchEntityScores(),
-      loadMessageCorpus(DIR_TIME, opts.mediums),
+      loadMessageCorpus(opts.mediums),
     ])
     const records = corpus.records.filter((r) => r.date >= REL_SINCE)
-    const relHistory = channelRelHistory(records, input.to)
+    const relHistory = relHistoryFor(records, input.to)
     const exemplars = records
-      .filter((r) => r.channel === input.to && r.rel.length > 0)
+      .filter((r) => r.to === input.to && r.rel.length > 0)
       .slice(-MAX_EXEMPLARS)
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
     const { subjects } = await extractSubjects(
-      { body: input.body, summary: input.summary, channel: input.to, from: input.from },
+      { body: input.body, summary: input.summary, to: input.to, from: input.from },
       'fast',
     )
     const resolved = resolveSubjects(subjects, index, scores, { projectStatuses: ['open'] })
@@ -90,7 +89,7 @@ export async function autoRelMessage(input: AutoRelInput, opts: { mediums: strin
       {
         body: input.body,
         summary: input.summary,
-        channel: input.to,
+        to: input.to,
         from: input.from,
         candidates,
         exemplars,

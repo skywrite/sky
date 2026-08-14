@@ -29,30 +29,30 @@ test('validateTags dedupes and trims', () => {
   assert({ given: 'trimmed matches', should: 'not count as invented', actual: result.invented, expected: 0 })
 })
 
-test('buildInstructions omits the channel block when history is empty', () => {
-  const withHistory = buildInstructions({ body: 'x', channelHistory: [MENU[0]], menu: MENU })
-  const withoutHistory = buildInstructions({ body: 'x', channelHistory: [], menu: MENU })
+test('buildInstructions omits the history block when history is empty', () => {
+  const withHistory = buildInstructions({ body: 'x', tagHistory: [MENU[0]], menu: MENU })
+  const withoutHistory = buildInstructions({ body: 'x', tagHistory: [], menu: MENU })
   assert({
     given: 'history present',
     should: 'mention the block',
-    actual: withHistory.includes('Previously in this channel'),
+    actual: withHistory.includes('Previously in this conversation'),
     expected: true,
   })
   assert({
     given: 'history empty',
     should: 'omit the block',
-    actual: withoutHistory.includes('Previously in this channel'),
+    actual: withoutHistory.includes('Previously in this conversation'),
     expected: false,
   })
 })
 
 test('buildPrompt wraps the conversation as data', () => {
-  const prompt = buildPrompt({ body: 'Jane: shipping update', channel: '#atlas', channelHistory: [], menu: MENU })
+  const prompt = buildPrompt({ body: 'Jane: shipping update', to: '#atlas', tagHistory: [], menu: MENU })
   assert({
     given: 'a conversation body',
     should: 'wrap it in conversation tags',
     actual: prompt.includes('<conversation>') && prompt.includes('</conversation>'),
     expected: true,
   })
-  assert({ given: 'a channel', should: 'include it', actual: prompt.includes('Channel: #atlas'), expected: true })
+  assert({ given: 'a to', should: 'include it', actual: prompt.includes('To: #atlas'), expected: true })
 })

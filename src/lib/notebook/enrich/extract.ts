@@ -10,7 +10,8 @@ const AI_TIMEOUT_MS = 60_000
 export type ExtractRequest = {
   body: string
   summary?: string
-  channel?: string
+  /** Who or where the conversation is with (`to:` frontmatter) */
+  to?: string
   from?: string
 }
 
@@ -35,7 +36,7 @@ const schema = z.object({
 })
 
 export function buildExtractInstructions(req: ExtractRequest): string {
-  const parties = [req.from, req.channel].filter((p): p is string => !!p && !p.startsWith('#'))
+  const parties = [req.from, req.to].filter((p): p is string => !!p && !p.startsWith('#'))
   const partyNames = parties.flatMap((p) => p.split(',').map((n) => n.trim())).filter(Boolean)
   const parts = [
     'You list the subjects an archived Slack conversation is about, for notebook cross-references.',
@@ -58,7 +59,7 @@ export function buildExtractInstructions(req: ExtractRequest): string {
 export function buildExtractPrompt(req: ExtractRequest): string {
   return [
     '<conversation>',
-    `Channel: ${req.channel ?? '-'}`,
+    `To: ${req.to ?? '-'}`,
     `From: ${req.from ?? '-'}`,
     `Summary: ${req.summary ?? '-'}`,
     '',
