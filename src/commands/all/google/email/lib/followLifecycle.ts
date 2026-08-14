@@ -125,7 +125,15 @@ export function selectExpiredFollows(entries: FollowEntry[], accountEmail: strin
   )
 }
 
-export type ExpireSweepResult = { expired: string[]; skipped: string[] }
+export type ExpiredFollow = {
+  fileName: string
+  /** The follow's own label — its topic summary — for the closing report. */
+  summary: string
+  /** Why it closed, in words: "inactive 43d >= 14d". */
+  reason: string
+}
+
+export type ExpireSweepResult = { expired: ExpiredFollow[]; skipped: string[] }
 
 /**
  * Close every quiet follow the way inbox:close does: retire the thread in
@@ -142,7 +150,7 @@ export async function expireQuietFollows(opts: {
   output: { log: (msg: string) => void }
 }): Promise<ExpireSweepResult> {
   const { client, entries, fallbackLabel, now, output } = opts
-  const expired: string[] = []
+  const expired: ExpiredFollow[] = []
   const skipped: string[] = []
   const labelIds = new Map<string, string | undefined>()
 
@@ -178,7 +186,7 @@ export async function expireQuietFollows(opts: {
     await outputFile(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${fileName}.yaml`), closed.toYaml())
     await unlink(entry.path)
     output.log(`  Expired ${fileName}: ${reason}`)
-    expired.push(fileName)
+    expired.push({ fileName, summary: follow.summary, reason })
   }
 
   return { expired, skipped }

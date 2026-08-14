@@ -17,6 +17,8 @@ import { expireQuietFollows, persistNewFollow, planThreadFollow } from '../../li
 import { getInboxThreads } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
+import { formatSyncReport } from '../../lib/syncReport.ts'
+import type { ClosedThread, SyncedThread } from '../../lib/syncReport.ts'
 
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
@@ -116,6 +118,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       let newFollows = 0
       let updatedFollows = 0
       let bornExpired = 0
+      const synced: SyncedThread[] = []
+      const closed: ClosedThread[] = []
 
       if (fetchResult.fetched === 0) {
         output.log('  All threads synced.')
@@ -142,6 +146,14 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
             await writeTextFile(existingFollow.path, follow.toYaml())
             output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
             updatedFollows++
+            // A continuation is not summarized again, so the follow's own label
+            // is what names it — the same one its earlier captures carry.
+            synced.push({
+              from: thread.from,
+              label: follow.summary || thread.subject,
+              messages: thread.captured,
+              state: 'updated',
+            })
           } else {
             const planned = planThreadFollow({
               accountEmail: client.email,
@@ -150,8 +162,24 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
               now: now.plainDateTime,
             })
             const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+            const topic = thread.summary || thread.subject
+            synced.push({
+              from: thread.from,
+              label: topic,
+              messages: thread.captured,
+              state: 'new',
+              ...(persisted.followed ? {} : { closed: true }),
+            })
             if (persisted.followed) newFollows++
-            else bornExpired++
+            else {
+              bornExpired++
+              // Captured and retired in one run: it belongs in both lists.
+              closed.push({
+                label: topic,
+                reason: `already quiet past ${Follow.DEFAULT_MAX_INACTIVE} when first seen`,
+                captured: thread.captured,
+              })
+            }
           }
         }
 
@@ -184,12 +212,16 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
           now: now.plainDateTime,
           output,
         })
-        expired = sweep.expired
+        expired = sweep.expired.map((e) => e.fileName)
+        // Follows the sweep retired carry no capture this run — their threads
+        // went quiet, which is why they closed.
+        for (const e of sweep.expired) closed.push({ label: e.summary, reason: e.reason })
       }
 
       const fetched = fetchResult.fetched
       const closedNote = bornExpired > 0 ? `, ${bornExpired} captured and closed` : ''
       const expiredNote = expired.length > 0 ? `, ${expired.length} expired` : ''
+      for (const line of formatSyncReport(synced, closed)) output.log(line)
       output.log(
         `\n  Sync complete: ${newFollows} new, ${updatedFollows} updated${closedNote}${expiredNote}, ${fetched} message(s).\n`,
       )
