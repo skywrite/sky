@@ -74,7 +74,14 @@ export default class Document {
     }
 
     if (Array.isArray(relValue)) {
-      return ImmutableSet._fromArray(ImmutableSet<string>, relValue)
+      // A hand-edited list can carry an empty `- ` item, which YAML parses as
+      // null — and the declared type promises strings, so consumers crash on
+      // it far from the file that caused it. Dropping a null is not
+      // sanitizing: there is no ref there to preserve. Entries that ARE
+      // strings pass through untouched — deliberately no trim — so damage
+      // like a stray `;` or leading space stays visible and breaks loudly.
+      const items = relValue.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+      return ImmutableSet._fromArray(ImmutableSet<string>, items)
     }
 
     if (typeof relValue === 'string') {

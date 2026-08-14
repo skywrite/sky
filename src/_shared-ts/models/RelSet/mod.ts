@@ -13,8 +13,14 @@ export default class RelSet {
     this.refs = refs
   }
 
+  /**
+   * A ref with no raw text came from a malformed list item, not from something
+   * the notebook tried and failed to resolve. Keeping it would make `size`
+   * count a member that isn't there and strand `hasUnresolved` true forever,
+   * since an empty string can never resolve.
+   */
   static from(refs: Iterable<ResolvedRef>): RelSet {
-    return new RelSet(Array.from(refs))
+    return new RelSet(Array.from(refs).filter((ref) => typeof ref.raw === 'string' && ref.raw.trim() !== ''))
   }
 
   get size(): number {
