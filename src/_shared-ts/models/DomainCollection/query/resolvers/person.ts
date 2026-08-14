@@ -62,7 +62,10 @@ export function docToPerson(doc: Document, path: string) {
 
   return {
     name: getStringField(doc, 'name'),
-    names: Array.isArray(names) ? names : [],
+    // Read straight from YAML rather than through a set type, so a malformed
+    // list item would reach the schema's [String!]! as a null and null the
+    // whole response.
+    names: Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string' && n.trim() !== '') : [],
     org: getOptionalStringField(doc, 'org'),
     orgs,
     title: getOptionalStringField(doc, 'title'),

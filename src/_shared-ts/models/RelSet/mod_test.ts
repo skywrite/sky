@@ -222,3 +222,34 @@ test('RelSet - empty set', () => {
     expected: true,
   })
 })
+
+// Regression: an empty `- ` item in a rel list resolves to a ref with no raw
+// text. Counting it made size report a member that isn't there and stranded
+// hasUnresolved true, since an empty string can never resolve.
+test('RelSet.from drops refs with no raw text', () => {
+  const set = RelSet.from([
+    { type: 'person', value: { name: 'Alice' } as any, path: '/people/alice.md', raw: 'Alice' },
+    { type: 'unresolved', value: null, raw: '' },
+    { type: 'unresolved', value: null, raw: '   ' },
+  ])
+
+  assert({ given: 'one real ref and two empty ones', should: 'count only the real ref', actual: set.size, expected: 1 })
+  assert({
+    given: 'empty refs dropped',
+    should: 'leave nothing unresolved',
+    actual: set.unresolved,
+    expected: [],
+  })
+  assert({ given: 'empty refs dropped', should: 'report fully resolved', actual: set.allResolved, expected: true })
+})
+
+test('RelSet.from keeps genuinely unresolved refs', () => {
+  const set = RelSet.from([{ type: 'unresolved', value: null, raw: 'Unknown Person' }])
+
+  assert({
+    given: 'a ref that failed to resolve',
+    should: 'keep it',
+    actual: set.unresolved,
+    expected: ['Unknown Person'],
+  })
+})
