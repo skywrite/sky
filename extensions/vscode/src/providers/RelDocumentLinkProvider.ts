@@ -1,8 +1,9 @@
 /**
  * DocumentLinkProvider for ref-like field values in YAML frontmatter.
  *
- * Makes values in `rel:`, `previous:`, `ib:`, and similar fields Cmd+Clickable
- * by resolving them to file paths via the resolveRefs GraphQL query.
+ * Makes values in `rel:`, `previous:`, `ib:`, `org:`, `orgs:`, and similar
+ * fields Cmd+Clickable by resolving them to file paths via the resolveRefs
+ * GraphQL query.
  */
 
 import * as vscode from 'vscode'
@@ -14,7 +15,13 @@ const GRAPHQL_URL = 'http://localhost:9999/graphql'
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/
 
 /** Frontmatter fields whose values are resolved as refs */
-const REF_FIELDS = new Set(['rel', 'previous', 'ib'])
+const REF_FIELDS = new Set(['rel', 'previous', 'ib', 'org', 'orgs'])
+
+/**
+ * Ref fields that nest their values one level deeper, under sub-keys —
+ * Person documents write org history as `orgs:` / `current:` / `past:`.
+ */
+const NESTED_REF_FIELDS = new Set(['org', 'orgs'])
 
 interface ResolvedRef {
   ref: string
@@ -73,11 +80,16 @@ export default class RelDocumentLinkProvider implements vscode.DocumentLinkProvi
    * Extract values from ref-like frontmatter fields (rel, previous, etc.)
    * with their document ranges.
    *
-   * Handles both inline scalar and YAML array formats:
+   * Handles inline scalar, YAML array, and sub-keyed formats:
    *   previous: ./slack_channel_summary.md
+   *   org: Acme
    *   rel:
    *     - Alice Smith
    *     - projects/Alpha
+   *   orgs:
+   *     current:
+   *       - Acme
+   *     past: Initech
    */
   private extractRelEntries(
     document: vscode.TextDocument,
@@ -86,14 +98,14 @@ export default class RelDocumentLinkProvider implements vscode.DocumentLinkProvi
     const entries: Array<{ value: string; range: vscode.Range }> = []
     const lines = frontmatter.split('\n')
 
-    let inBlock = false
+    let blockField: string | null = null
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
 
       // Start of a ref field block
       const fieldMatch = line.match(/^(\w+)\s*:/)
       if (fieldMatch && REF_FIELDS.has(fieldMatch[1])) {
-        inBlock = true
+        blockField = fieldMatch[1]
 
         // Check for inline scalar: `field: Something`
         const inlineMatch = line.match(/^\w+\s*:\s+(.+)$/)
@@ -104,13 +116,13 @@ export default class RelDocumentLinkProvider implements vscode.DocumentLinkProvi
             const range = new vscode.Range(i, valueStart, i, valueStart + value.length)
             entries.push({ value, range })
           }
-          inBlock = false
+          blockField = null
         }
         continue
       }
 
       // Inside array block
-      if (inBlock) {
+      if (blockField) {
         const arrayMatch = line.match(/^(\s+)-\s+(.+)$/)
         if (arrayMatch) {
           const value = arrayMatch[2].trim()
@@ -119,9 +131,26 @@ export default class RelDocumentLinkProvider implements vscode.DocumentLinkProvi
             const range = new vscode.Range(i, valueStart, i, valueStart + value.length)
             entries.push({ value, range })
           }
-        } else if (/^\S/.test(line)) {
+          continue
+        }
+
+        // Sub-keyed block (`orgs:` → `current:`): a sub-key carrying an inline
+        // value is itself a ref. Only org fields nest this way — a sub-key
+        // under `rel:` is unrelated frontmatter, not a ref.
+        const nestedMatch = NESTED_REF_FIELDS.has(blockField) && line.match(/^(\s+\w+\s*:\s+)(.+)$/)
+        if (nestedMatch) {
+          const value = nestedMatch[2].trim()
+          if (value && !value.startsWith('-')) {
+            const valueStart = nestedMatch[1].length
+            const range = new vscode.Range(i, valueStart, i, valueStart + value.length)
+            entries.push({ value, range })
+          }
+          continue
+        }
+
+        if (/^\S/.test(line)) {
           // New top-level key — we've left the block
-          inBlock = false
+          blockField = null
         }
       }
     }
