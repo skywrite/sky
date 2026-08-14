@@ -5,7 +5,7 @@ import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import { extractAudio, probeMedia } from '#lib/media/ffmpeg/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
-import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
+import { autoRelMessage, mergeRel, scopeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -18,6 +18,9 @@ import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { desktopFilesByExt } from '../../audio/transcript/lib/desktopFiles.ts'
+import { groupByType, groupIntoBuckets, journalTypeMenu } from './groupSections.ts'
+import { buildEntryMarkdown, parseSectionedBody, validateGroups } from './splitSections.ts'
+import type { BodySection, EntryGroup } from './splitSections.ts'
 
 const PROMPT_FILE = new URL('../prompts/video-sections.prompt.md', import.meta.url).pathname
 
@@ -49,6 +52,8 @@ export interface FromVideoOptions {
   tasks: CommandArgs['tasks']
   noAutoTag?: boolean
   noAutoRel?: boolean
+  /** 'auto' groups by subject; "Health, Faith" extracts those entries plus a remainder. */
+  split?: string
 }
 
 /**
@@ -119,49 +124,167 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
   const { markdown: body, renamed } = disarmTranscriptHeadings(titleless)
   if (renamed > 0) output.log(`Renamed ${renamed} heading(s) that would have been ignored downstream`)
 
-  // 6. Enrich against the archived journals. The type tag says what kind of
-  //    entry this is; the corpus says what it is about, which until now was
-  //    left for the writer to add by hand afterwards. Auto-rel adds to the
-  //    transcript's own extraction rather than replacing it — the clean pass
-  //    reads corrections and the glossary, so it catches names, especially
-  //    family ones, that the entity graph never carried.
-  const enrichInput = { summary: title, body }
-  const [autoTags, autoRel] = await Promise.all([
-    options.noAutoTag ? undefined : autoTagMessage(enrichInput, JOURNAL_ENRICH),
-    options.noAutoRel ? undefined : autoRelMessage(enrichInput, JOURNAL_ENRICH),
-  ])
+  // 6. Split, when asked: group the sections by subject and plan one entry per
+  //    subject. The plan is structural — indexes and titles — and the cutting
+  //    is code, so the speaker's words never pass through the grouping model.
+  //    Any defect in the plan keeps the single entry: a bad split may never
+  //    lose or duplicate the recording.
+  const split = options.split ? await planSplit(options.split, body, output) : undefined
 
-  // 7. Assemble the document. `summary:` carries the title the same way
-  //    journal:rename stamps it, which also stops rename touching this file.
-  const heading = `# **${VIDEO_JOURNAL_TYPE}: ${when.date} - ${dayWord(when.toDayDateValue(), 'short')} - ${when.time}**`
-  const doc = JournalDocument.fromMarkdown([heading, '', body].join('\n'))
-  const pipelineRel = [...clean.who, ...clean.rel].filter(Boolean)
-  const rel = mergeRel(pipelineRel, autoRel) ?? []
-  if (title) doc.yaml['summary'] = title
-  doc.yaml['rel'] = rel.length > 0 ? rel : null
-  // The type tag leads; TagSet dedupes should the classifier propose it too.
-  const typeTag = `Journal/${VIDEO_JOURNAL_TYPE}`
-  doc.yaml['tags'] = String(TagSet.fromString([typeTag, autoTags].filter(Boolean).join('; ')))
-  if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
-  if (rel.length > pipelineRel.length) output.log(`  Auto-rel: ${rel.slice(pipelineRel.length).join(', ')}`)
-
-  // 8. Park the recording with the day's other attachments, named after the
-  //    entry rather than whatever the camera called it. A failure there must not
-  //    lose the entry we just paid to produce, so it only warns.
+  // 7. Park the recording once, with the day's other attachments, named after
+  //    the recording rather than whatever the camera called it; every entry
+  //    references it. A failure must not lose the entry we just paid to
+  //    produce, so it only warns.
   const typeSlug = slugify(VIDEO_JOURNAL_TYPE)
   const titleSlug = title ? slugify(title, { suggestedLength: 40, preserveCase: true }) : ''
   const nameParts = [typeSlug, titleSlug].filter(Boolean).join('_')
-
   const attachment = await stashRecording(videoPath, when, nameParts, config.DIR_ATTACHMENTS, output)
-  if (attachment) doc.yaml['attachments'] = [{ file: attachment }]
 
+  const h1 = `# **${VIDEO_JOURNAL_TYPE}: ${when.date} - ${dayWord(when.toDayDateValue(), 'short')} - ${when.time}**`
   const ddfw = new DayDirFileWriter(when.plainDate)
-  const prefix = await nextJournalPrefix(ddfw.fullDir)
-  const relPath = await ddfw.write(`journal/${prefix}_${nameParts}.md`, doc.toMarkdown())
+  const pipelineRel = [...clean.who, ...clean.rel].filter(Boolean)
 
-  output.log(`\n  Successfully created ${relPath}.\n`)
-  openEditor([{ file: path.join(ddfw.fullDir, relPath), line: 1, column: 0 }])
+  // 8. Write each entry: enrich against the archived journals, then assemble.
+  //    Enrichment is per entry — tags from its own text, and the recording's
+  //    pipeline names scoped down to the ones its text concerns, so a person
+  //    from one part of the recording is not stamped on every part. Scoping
+  //    judges references, not spellings: "the little ones" keeps the children
+  //    even when no name appears. Auto-rel then adds to the scoped names
+  //    rather than replacing them — the clean pass reads corrections and the
+  //    glossary, so it catches names, especially family ones, that the entity
+  //    graph never carried. `summary:` carries the title the same way
+  //    journal:rename stamps it, which also stops rename touching these files.
+  const writeEntry = async (entry: {
+    title: string
+    markdown: string
+    journalType?: string
+    /** Headings of the recording's sections NOT in this entry — context for rel scoping. */
+    elsewhere?: string[]
+  }): Promise<string> => {
+    const enrichInput = { summary: entry.title, body: entry.markdown.split('\n').slice(1).join('\n') }
+    const scoping = split && !options.noAutoRel && pipelineRel.length > 0
+    const [autoTags, autoRel, scoped] = await Promise.all([
+      options.noAutoTag ? undefined : autoTagMessage(enrichInput, JOURNAL_ENRICH),
+      options.noAutoRel ? undefined : autoRelMessage(enrichInput, JOURNAL_ENRICH),
+      scoping
+        ? scopeRel(pipelineRel, enrichInput, { kind: JOURNAL_ENRICH.kind, elsewhere: entry.elsewhere })
+        : undefined,
+    ])
+    // A failed scoping keeps the full list: over-attribution degrades
+    // gracefully, silently losing a person does not.
+    const entryRel = scoping ? (scoped ?? pipelineRel) : pipelineRel
+
+    const doc = JournalDocument.fromMarkdown(entry.markdown)
+    const rel = mergeRel(entryRel, autoRel) ?? []
+    if (entry.title) doc.yaml['summary'] = entry.title
+    doc.yaml['rel'] = rel.length > 0 ? rel : null
+    // The provenance tag leads, then the journal type the split filed this
+    // under, then the topical proposals; TagSet dedupes any repeats.
+    const tags = [`Journal/${VIDEO_JOURNAL_TYPE}`, entry.journalType && `Journal/${entry.journalType}`, autoTags]
+    doc.yaml['tags'] = String(TagSet.fromString(tags.filter(Boolean).join('; ')))
+    if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
+    if (rel.length > 0) output.log(`  Rel: ${rel.join(', ')}`)
+    if (attachment) doc.yaml['attachments'] = [{ file: attachment }]
+
+    const entrySlug = entry.title ? slugify(entry.title, { suggestedLength: 40, preserveCase: true }) : ''
+    const fileSlug = [typeSlug, entrySlug].filter(Boolean).join('_')
+    const prefix = await nextJournalPrefix(ddfw.fullDir)
+    return await ddfw.write(`journal/${prefix}_${fileSlug}.md`, doc.toMarkdown())
+  }
+
+  const written: string[] = []
+  if (split) {
+    // Prefixes follow spoken order: the entry that opened the recording files first.
+    const inSpokenOrder = [...split.groups].sort((a, b) => Math.min(...a.sections) - Math.min(...b.sections))
+    for (const group of inSpokenOrder) {
+      output.log(`\nEntry: ${group.title}${group.journalType ? `  [Journal/${group.journalType}]` : ''}`)
+      const inGroup = new Set(group.sections)
+      written.push(
+        await writeEntry({
+          title: group.title,
+          markdown: buildEntryMarkdown(h1, group, split.sections),
+          journalType: group.journalType,
+          elsewhere: split.sections.filter((_, i) => !inGroup.has(i)).map((s) => s.heading),
+        }),
+      )
+    }
+  } else {
+    written.push(await writeEntry({ title, markdown: [h1, '', body].join('\n') }))
+  }
+
+  output.log('')
+  for (const relPath of written) output.log(`  Created ${relPath}`)
+  output.log('')
+  openEditor(written.map((file) => ({ file: path.join(ddfw.fullDir, file), line: 1, column: 0 })))
   return CommandResult.success()
+}
+
+/**
+ * Turn a sectioned body into a split plan, or undefined for every path that
+ * should keep today's single entry: one section, a grouping failure, a plan
+ * that is not a perfect partition, or a recording that stays one subject.
+ */
+async function planSplit(
+  splitArg: string,
+  body: string,
+  output: { log: (msg: string) => void },
+): Promise<{ groups: EntryGroup[]; sections: BodySection[] } | undefined> {
+  const parsed = parseSectionedBody(body)
+  if (parsed.sections.length < 2) {
+    output.log('Split: only one section — keeping a single entry')
+    return undefined
+  }
+  const totalWords = parsed.sections.reduce((n, s) => n + s.words, 0)
+  const buckets =
+    splitArg === 'auto'
+      ? []
+      : splitArg
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+
+  output.log(
+    buckets.length > 0 ? `Splitting into ${buckets.join(', ')} + remainder...` : 'Splitting by journal type...',
+  )
+  const outcome =
+    buckets.length > 0
+      ? await groupIntoBuckets(parsed.sections, buckets, totalWords)
+      : await groupByType(parsed.sections, await journalTypeMenu(), totalWords)
+
+  if (outcome.error) {
+    output.log(`Split failed (${outcome.error}) — keeping a single entry`)
+    return undefined
+  }
+  const invalid = validateGroups(outcome.groups, parsed.sections.length)
+  if (invalid) {
+    output.log(`Split plan rejected (${invalid}) — keeping a single entry`)
+    return undefined
+  }
+  if (outcome.groups.length === 1) {
+    output.log('Split: the recording stays on one subject — keeping a single entry')
+    return undefined
+  }
+
+  // Owner-named buckets file under a journal type when they name one.
+  if (buckets.length > 0) {
+    const menu = await journalTypeMenu()
+    const byLower = new Map(menu.map((m) => [m.name.toLowerCase(), m.name]))
+    for (const group of outcome.groups) {
+      const match = byLower.get(group.title.toLowerCase())
+      if (match) group.journalType = match
+    }
+  }
+
+  output.log(`Split into ${outcome.groups.length} entries:`)
+  const preview = [...outcome.groups].sort((a, b) => Math.min(...a.sections) - Math.min(...b.sections))
+  for (const group of preview) {
+    const secs = [...group.sections]
+      .sort((x, y) => x - y)
+      .map((i) => i + 1)
+      .join(', ')
+    output.log(`  - ${group.title}${group.journalType ? `  [Journal/${group.journalType}]` : ''}  (sections ${secs})`)
+  }
+  return { groups: outcome.groups, sections: parsed.sections }
 }
 
 /**

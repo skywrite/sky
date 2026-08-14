@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { mergeRel } from './autoRel.ts'
+import { mergeRel, subsetOf } from './autoRel.ts'
 
 test('mergeRel keeps existing refs first and verbatim', () => {
   assert({
@@ -44,4 +44,16 @@ test('mergeRel handles either side being absent', () => {
     actual: mergeRel(undefined, undefined),
     expected: undefined,
   })
+})
+
+test('subsetOf keeps candidates in candidate order, matched loosely, deduped', () => {
+  const candidates = ['Jane Doe', 'Acme Corp', 'projects/Atlas-Rollout']
+
+  assert({
+    given: 'a reply in a different order and casing, with an invention',
+    should: 'keep only real candidates, in candidate order',
+    actual: subsetOf(['acme corp', 'JANE DOE', 'Nonsense Inc', 'jane doe'], candidates),
+    expected: ['Jane Doe', 'Acme Corp'],
+  })
+  assert({ given: 'an empty reply', should: 'keep nothing', actual: subsetOf([], candidates), expected: [] })
 })
