@@ -13,6 +13,7 @@ function thread(overrides: Partial<FetchedThread> = {}): FetchedThread {
     from: 'Jane Doe',
     subject: 'Atlas kickoff',
     messages: [{ date: '2026-08-10', path: 'time/2026/08/10_mon/09-30_email_Jane-Doe_Atlas-kickoff.md' }],
+    captured: 1,
     lastMessageAt: '2026-08-10 09:30',
     ...overrides,
   }

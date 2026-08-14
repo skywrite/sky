@@ -12,7 +12,7 @@ import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNow } from '#shared/nbfs/mod.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { copyEmailFilesToAttachments } from '../../../email/lib/copyToAttachments.ts'
 import type { DownloadedAttachment } from '../../../email/lib/copyToAttachments.ts'
 import { emailToMarkdown } from '../../../email/lib/emailToMarkdown.ts'
@@ -32,7 +32,10 @@ export type FetchedThread = {
   subject: string
   /** Topic label written to the captures, and to the follow that tracks them. Absent on a continuation. */
   summary?: string
+  /** Day-file entries created; a thread's same-day messages share one, so this is not a message count. */
   messages: { date: string; path: string }[]
+  /** Messages actually captured this run — what the closing report counts. */
+  captured: number
   /** Newest downloaded message's real time (notebook tz, "YYYY-MM-DD HH:mm") — the follow's lastActivity anchor. */
   lastMessageAt?: string
   /** A message's AI conversion threw — leave the thread in the inbox so the next sync retries it. */
@@ -207,16 +210,25 @@ export async function fetchUnsavedThreads(
     const rel = inheritedRel ?? enriched.rel
 
     for (const message of converted) {
-      const result = await writeMessage(message, {
-        threadId,
-        createdEntries,
-        previousPath,
-        summary,
-        tags,
-        rel,
-        tasks,
-        output,
-      })
+      let result: { date: string; path: string } | null
+      try {
+        result = await writeMessage(message, {
+          threadId,
+          createdEntries,
+          previousPath,
+          summary,
+          tags,
+          rel,
+          tasks,
+          output,
+        })
+      } catch (err) {
+        // Same fail-and-retry rule as conversion: one thread's bad write must
+        // not cost every other thread of the run, and the inbox still holds it.
+        output.log(`  Warning: save failed (${(err as Error).message}) — thread left in inbox for retry`)
+        failed = true
+        break
+      }
       if (result) {
         threadEntries.push(result)
         createdEntries.set(`${threadId}_${result.date}`, result)
@@ -239,6 +251,7 @@ export async function fetchUnsavedThreads(
       subject,
       ...(enriched.summary ? { summary: enriched.summary } : {}),
       messages: threadEntries,
+      captured: converted.length,
       ...(lastMessageAt ? { lastMessageAt: `${lastMessageAt.date} ${lastMessageAt.time}` } : {}),
       ...(failed ? { failed: true } : {}),
     })
@@ -364,7 +377,7 @@ async function writeMessage(
 
   // New day: create file + day entry via email:new
   const markdown = `## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${message.markdown || '(empty)'}\n`
-  const previous = previousPath ? computePreviousRef(previousPath, when.plainDate) : undefined
+  const previous = previousRefOrNone(previousPath, when.plainDate, output)
 
   const result = await tasks.run('email:new', {
     from,
@@ -413,6 +426,29 @@ async function writeMessage(
   output.log(`  Created ${entryPath}`)
 
   return { date: dateStr, path: entryPath }
+}
+
+/**
+ * A back-reference to the thread's previous capture — or none when the
+ * recorded path cannot be read as a day path.
+ *
+ * Follow files carry message paths written by older versions of this pipeline,
+ * some in a day-dir layout the notebook no longer uses and the parser rejects.
+ * A back-reference that cannot be computed is a missing `previous:` line: a
+ * dead link between two captures, never a reason to drop the capture itself.
+ */
+export function previousRefOrNone(
+  previousPath: string | undefined,
+  curDate: PlainDate,
+  output: Output,
+): string | undefined {
+  if (!previousPath) return undefined
+  try {
+    return computePreviousRef(previousPath, curDate)
+  } catch {
+    output.log(`  Warning: unreadable previous path — writing without a previous ref (${previousPath})`)
+    return undefined
+  }
 }
 
 type ThreadEnrichment = { summary?: string; tags?: string; rel?: string[] }
