@@ -9,13 +9,15 @@ test('Organization.create - creates Anthropic organization', () => {
     site: 'https://anthropic.com',
     sector: 'tech',
     subcategory: 'ai',
-    description: 'AI safety company focused on building reliable, interpretable, and steerable AI systems.',
     rel: 'prospect',
     created: '2025-10-11',
     updated: '2025-10-11',
   }
 
-  const org = Organization.create(yaml)
+  const org = Organization.create(
+    yaml,
+    'AI safety company focused on building reliable, interpretable, and steerable AI systems.',
+  )
 
   assert({
     given: 'Anthropic organization YAML',
@@ -53,10 +55,10 @@ test('Organization.create - creates Anthropic organization', () => {
   })
 
   assert({
-    given: 'Anthropic organization YAML',
-    should: 'create Organization with correct description',
+    given: 'a description passed to create',
+    should: 'keep it out of the YAML header',
     actual: org.description,
-    expected: 'AI safety company focused on building reliable, interpretable, and steerable AI systems.',
+    expected: undefined,
   })
 
   assert({

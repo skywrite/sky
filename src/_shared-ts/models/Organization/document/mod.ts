@@ -3,6 +3,36 @@ import TagSet from '#shared/models/TagSet/mod.ts'
 
 export type OrgKind = 'company' | 'government' | 'nonprofit' | 'unknown'
 
+const KIND_TAG_ROOT = 'Organization'
+const KINDS = ['company', 'government', 'nonprofit'] as const
+
+/** `Organization/Company` -> "Organization/Company"; the tag written for a kind. */
+function kindTag(kind: Exclude<OrgKind, 'unknown'>): string {
+  return `${KIND_TAG_ROOT}/${kind.charAt(0).toUpperCase()}${kind.slice(1)}`
+}
+
+/**
+ * The kind a tag encodes, if any. Kind tags are hierarchical: the corpus carries
+ * both bare `Organization/Company` and sector-qualified `Organization/Company/Crypto`
+ * or `Organization/Company/Finance/Investment-Banks`. Only the segment after
+ * `Organization/` names the kind — the rest is classification we must not read as one.
+ */
+export function kindOfTag(tag: string): OrgKind {
+  const [root, second] = tag.split('/')
+  if (root?.toLowerCase() !== KIND_TAG_ROOT.toLowerCase()) return 'unknown'
+  const kind = second?.toLowerCase()
+  return KINDS.find((k) => k === kind) ?? 'unknown'
+}
+
+/** Derive an organization's kind from its tags; the first kind tag wins. */
+export function kindFromTags(tags: Iterable<string>): OrgKind {
+  for (const tag of tags) {
+    const kind = kindOfTag(tag)
+    if (kind !== 'unknown') return kind
+  }
+  return 'unknown'
+}
+
 export default class OrganizationDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     // Normalize tags to string format if they're an array or other format
@@ -41,31 +71,38 @@ export default class OrganizationDocument extends Document {
   }
 
   get kind(): OrgKind {
-    const tags = this.tags
-
-    if (tags.has('Organization/Company')) return 'company'
-    if (tags.has('Organization/Government')) return 'government'
-    if (tags.has('Organization/Nonprofit')) return 'nonprofit'
-
-    return 'unknown'
+    return kindFromTags(this.tags)
   }
 
+  /**
+   * Set the organization's kind, preserving any sector classification already
+   * hanging off a matching kind tag: setKind('company') on
+   * `Organization/Company/Crypto` keeps that tag rather than flattening it.
+   * Kind tags naming a different kind are dropped — their classification was
+   * filed under the wrong kind anyway.
+   */
   setKind(kind: OrgKind): OrganizationDocument {
     const clone = this.clone() as OrganizationDocument
 
-    // Remove all existing Organization kind tags
-    let tags = this.tags
-      .delete('Organization/Company')
-      .delete('Organization/Government')
-      .delete('Organization/Nonprofit')
-
-    // Add the new kind tag (unless it's unknown)
-    if (kind !== 'unknown') {
-      const kindTag = `Organization/${kind.charAt(0).toUpperCase() + kind.slice(1)}`
-      tags = tags.add(kindTag)
+    const kept: string[] = []
+    let alreadyTagged = false
+    for (const tag of this.tags) {
+      const tagKind = kindOfTag(tag)
+      if (tagKind === 'unknown') {
+        kept.push(tag) // not a kind tag, untouched
+        continue
+      }
+      if (tagKind === kind) {
+        kept.push(tag)
+        alreadyTagged = true
+      }
     }
 
-    clone.yaml['tags'] = String(tags)
+    if (kind !== 'unknown' && !alreadyTagged) {
+      kept.push(kindTag(kind))
+    }
+
+    clone.yaml['tags'] = String(TagSet.fromArray(kept))
     return clone
   }
 
