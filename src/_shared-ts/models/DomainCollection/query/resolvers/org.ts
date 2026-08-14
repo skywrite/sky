@@ -1,5 +1,6 @@
 import type { Document } from '#shared/models/Markdown/mod.ts'
-import { matchesContains, matchesExact, matchesTagContains } from '../filters/mod.ts'
+import { kindFromTags } from '#shared/models/Organization/document/mod.ts'
+import { matchesContains, matchesExact } from '../filters/mod.ts'
 import {
   type ActivityFilter,
   type EntitySpec,
@@ -14,8 +15,6 @@ import {
   perRow,
 } from './shared.ts'
 
-const KIND_TAG_PREFIX = 'Organization/'
-
 export interface OrgFilter extends TagFilter, TextFilter, ActivityFilter {
   name?: string
   nameContains?: string
@@ -27,11 +26,8 @@ export function matchesOrgFilter(doc: Document, filter: OrgFilter): boolean {
   if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
   if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.sector && !matchesExact(doc, 'sector', filter.sector)) return false
-  // kind is derived from tags, check tag
-  if (filter.kind) {
-    const kindTag = `${KIND_TAG_PREFIX}${filter.kind.charAt(0).toUpperCase()}${filter.kind.slice(1)}`
-    if (!matchesTagContains(doc, kindTag)) return false
-  }
+  // kind is derived from tags, which may be sector-qualified (Organization/Company/Crypto)
+  if (filter.kind && kindFromTags(doc.tags) !== filter.kind.toLowerCase()) return false
   if (!matchesTagFilter(doc, filter)) return false
   if (!matchesTextFilter(doc, filter)) return false
   if (!matchesActivityFilter(doc, filter)) return false
@@ -39,14 +35,7 @@ export function matchesOrgFilter(doc: Document, filter: OrgFilter): boolean {
 }
 
 export function docToOrg(doc: Document, path: string) {
-  // Derive kind from tags (Organization/Company, etc.)
-  let kind = 'unknown'
-  for (const tag of doc.tags) {
-    if (tag.startsWith(KIND_TAG_PREFIX)) {
-      kind = tag.slice(KIND_TAG_PREFIX.length).toLowerCase()
-      break
-    }
-  }
+  const kind = kindFromTags(doc.tags)
 
   return {
     name: getStringField(doc, 'name'),

@@ -67,6 +67,50 @@ const fixtures = [
     },
     expected: 'company',
   },
+  {
+    description: 'sector-qualified kind tag',
+    yaml: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'crypto',
+      subcategory: 'wallets',
+      tags: 'Organization/Company/Crypto',
+    },
+    expected: 'company',
+  },
+  {
+    description: 'deeply qualified kind tag',
+    yaml: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'finance',
+      subcategory: 'investment-banks',
+      tags: 'Organization/Company/Finance/Investment-Banks',
+    },
+    expected: 'company',
+  },
+  {
+    description: 'qualified nonprofit kind tag alongside unrelated tags',
+    yaml: {
+      name: 'Acme Foundation',
+      slug: 'acme-foundation',
+      sector: 'advocacy-political',
+      subcategory: 'nonprofits',
+      tags: 'Organization/Nonprofit/Advocacy-Political; Politics/United-States',
+    },
+    expected: 'nonprofit',
+  },
+  {
+    description: 'Organization tag that names no kind',
+    yaml: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'tech',
+      subcategory: 'ai',
+      tags: 'Organization/Subsidiary',
+    },
+    expected: 'unknown',
+  },
 ]
 
 fixtures.forEach((fixture) => {
@@ -159,6 +203,49 @@ const setKindFixtures = [
     expectedKind: 'company',
     expectedHasTag: 'Organization/Company',
     expectedOtherTags: ['crypto', 'wallet', 'self-custody'],
+  },
+  {
+    description: 'set same kind keeps the sector-qualified tag, adding no duplicate',
+    initial: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'crypto',
+      subcategory: 'wallets',
+      tags: 'Organization/Company/Crypto',
+    },
+    kind: 'company' as const,
+    expectedKind: 'company',
+    expectedHasTag: 'Organization/Company/Crypto',
+    expectedNotHasTag: 'Organization/Company',
+  },
+  {
+    description: 'change kind drops the qualified tag of the old kind',
+    initial: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'crypto',
+      subcategory: 'wallets',
+      tags: 'Organization/Company/Crypto; crypto',
+    },
+    kind: 'nonprofit' as const,
+    expectedKind: 'nonprofit',
+    expectedHasTag: 'Organization/Nonprofit',
+    expectedNotHasTag: 'Organization/Company/Crypto',
+    expectedOtherTags: ['crypto'],
+  },
+  {
+    description: 'set unknown removes the qualified kind tag',
+    initial: {
+      name: 'Acme',
+      slug: 'acme',
+      sector: 'finance',
+      subcategory: 'investment-banks',
+      tags: 'Organization/Company/Finance/Investment-Banks; finance',
+    },
+    kind: 'unknown' as const,
+    expectedKind: 'unknown',
+    expectedNotHasTag: 'Organization/Company/Finance/Investment-Banks',
+    expectedOtherTags: ['finance'],
   },
 ]
 
