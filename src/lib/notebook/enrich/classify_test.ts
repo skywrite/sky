@@ -50,9 +50,33 @@ test('buildPrompt wraps the conversation as data', () => {
   const prompt = buildPrompt({ body: 'Jane: shipping update', to: '#atlas', tagHistory: [], menu: MENU })
   assert({
     given: 'a conversation body',
-    should: 'wrap it in conversation tags',
-    actual: prompt.includes('<conversation>') && prompt.includes('</conversation>'),
+    should: 'wrap it in document tags',
+    actual: prompt.includes('<document>') && prompt.includes('</document>'),
     expected: true,
   })
   assert({ given: 'a to', should: 'include it', actual: prompt.includes('To: #atlas'), expected: true })
+})
+
+test('buildInstructions names what is being labeled', () => {
+  const meeting = buildInstructions({ body: 'x', kind: 'meeting', tagHistory: [], menu: MENU })
+  const fallback = buildInstructions({ body: 'x', tagHistory: [], menu: MENU })
+
+  assert({
+    given: 'a kind',
+    should: 'call the document that',
+    actual: meeting.includes('You label an archived meeting'),
+    expected: true,
+  })
+  assert({
+    given: 'a kind',
+    should: 'never call it something else',
+    actual: meeting.includes('Slack'),
+    expected: false,
+  })
+  assert({
+    given: 'no kind',
+    should: 'fall back to a neutral noun',
+    actual: fallback.includes('You label an archived conversation'),
+    expected: true,
+  })
 })

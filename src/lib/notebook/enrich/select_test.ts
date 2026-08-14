@@ -45,7 +45,7 @@ test('buildSelectInstructions annotates evidence and exemplars', () => {
   assert({
     given: 'a text+prior candidate',
     should: 'show both evidence kinds',
-    actual: text.includes('named in the conversation; conversation precedent, 12 prior uses'),
+    actual: text.includes('named in the text; prior precedent, 12 prior uses'),
     expected: true,
   })
   assert({

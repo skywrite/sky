@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
@@ -127,7 +128,7 @@ export default class SlackTagsEvalTask extends Command {
 
     // One query collects slack + family mediums (bodies included — records get
     // re-classified); slices below stay leakage-free per case
-    const corpus = await loadMessageCorpus(['slack', ...FAMILY_MEDIUMS], { withBody: true })
+    const corpus = await loadMessageCorpus([...SLACK_ENRICH.mediums, ...FAMILY_MEDIUMS], { withBody: true })
     const records = corpus.records.filter((r) => r.date >= args.since)
     const slackRecords = records.filter((r) => r.medium === 'slack')
     const familyRecords = records.filter((r) => r.medium !== 'slack')
@@ -240,6 +241,7 @@ export default class SlackTagsEvalTask extends Command {
 function requestFor(evalCase: EvalCase, history: boolean, family: boolean): ClassifyRequest {
   return {
     body: evalCase.record.body,
+    kind: SLACK_ENRICH.kind,
     to: evalCase.record.to,
     from: evalCase.record.from,
     summary: evalCase.record.summary,
