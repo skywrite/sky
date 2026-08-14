@@ -45,6 +45,8 @@ const params = {
     'Path to a recorded video journal, or omit path to search Desktop. Files under the Video type.',
     { optional: true },
   ),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   types: Flag.string(typesDescription, {
     parse: (val) => val.split(',').map((s) => s.trim()) as unknown as string,
     default: () => ['Mood'] as unknown as string,
@@ -82,7 +84,14 @@ export default class JournalNewTask extends Command {
       // the Desktop" rather than naming a file. Same convention --from-audio
       // and --from-srt use.
       const videoPath = typeof fromVideo === 'string' && fromVideo !== 'true' ? fromVideo : undefined
-      return await journalFromVideo({ videoPath, when, context, tasks })
+      return await journalFromVideo({
+        videoPath,
+        when,
+        context,
+        tasks,
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+      })
     }
 
     // Handle --from-audio pipeline: transcribe → clean (no summarize)

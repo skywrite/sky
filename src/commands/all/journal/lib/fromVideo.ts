@@ -5,11 +5,14 @@ import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import { extractAudio, probeMedia } from '#lib/media/ffmpeg/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { exists, readTextFile, rename } from '#shared/fs/mod.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { dayWord } from '#universal/dates/mod.ts'
@@ -24,12 +27,28 @@ export const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.mkv'] as con
 /** The journal type a video entry files under; the tag follows from it. */
 export const VIDEO_JOURNAL_TYPE = 'Video'
 
+/**
+ * Corpus and framing for enriching a journal entry. No `to` accompanies it: a
+ * journal has no counterparty, so there is no conversation history to key a
+ * prior on — the menu and the entry's own words carry the classification.
+ *
+ * Journals are tagged deeper than chat: a fifth of the archive since 2025
+ * carries more than three tags, where slack is at 3%. Five covers 97% of them.
+ */
+const JOURNAL_ENRICH: { mediums: string[]; kind: string; maxTags: number } = {
+  mediums: ['journal'],
+  kind: 'journal entry',
+  maxTags: 5,
+}
+
 export interface FromVideoOptions {
   /** Explicit path, or undefined to take the newest video off the Desktop. */
   videoPath?: string
   when: PlainDateTime
   context: CommandArgs['context']
   tasks: CommandArgs['tasks']
+  noAutoTag?: boolean
+  noAutoRel?: boolean
 }
 
 /**
@@ -100,16 +119,33 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
   const { markdown: body, renamed } = disarmTranscriptHeadings(titleless)
   if (renamed > 0) output.log(`Renamed ${renamed} heading(s) that would have been ignored downstream`)
 
-  // 6. Assemble the document. `summary:` carries the title the same way
+  // 6. Enrich against the archived journals. The type tag says what kind of
+  //    entry this is; the corpus says what it is about, which until now was
+  //    left for the writer to add by hand afterwards. Auto-rel adds to the
+  //    transcript's own extraction rather than replacing it — the clean pass
+  //    reads corrections and the glossary, so it catches names, especially
+  //    family ones, that the entity graph never carried.
+  const enrichInput = { summary: title, body }
+  const [autoTags, autoRel] = await Promise.all([
+    options.noAutoTag ? undefined : autoTagMessage(enrichInput, JOURNAL_ENRICH),
+    options.noAutoRel ? undefined : autoRelMessage(enrichInput, JOURNAL_ENRICH),
+  ])
+
+  // 7. Assemble the document. `summary:` carries the title the same way
   //    journal:rename stamps it, which also stops rename touching this file.
   const heading = `# **${VIDEO_JOURNAL_TYPE}: ${when.date} - ${dayWord(when.toDayDateValue(), 'short')} - ${when.time}**`
   const doc = JournalDocument.fromMarkdown([heading, '', body].join('\n'))
-  const rel = [...clean.who, ...clean.rel].filter(Boolean)
+  const pipelineRel = [...clean.who, ...clean.rel].filter(Boolean)
+  const rel = mergeRel(pipelineRel, autoRel) ?? []
   if (title) doc.yaml['summary'] = title
   doc.yaml['rel'] = rel.length > 0 ? rel : null
-  doc.yaml['tags'] = `Journal/${VIDEO_JOURNAL_TYPE}`
+  // The type tag leads; TagSet dedupes should the classifier propose it too.
+  const typeTag = `Journal/${VIDEO_JOURNAL_TYPE}`
+  doc.yaml['tags'] = String(TagSet.fromString([typeTag, autoTags].filter(Boolean).join('; ')))
+  if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
+  if (rel.length > pipelineRel.length) output.log(`  Auto-rel: ${rel.slice(pipelineRel.length).join(', ')}`)
 
-  // 7. Park the recording with the day's other attachments, named after the
+  // 8. Park the recording with the day's other attachments, named after the
   //    entry rather than whatever the camera called it. A failure there must not
   //    lose the entry we just paid to produce, so it only warns.
   const typeSlug = slugify(VIDEO_JOURNAL_TYPE)

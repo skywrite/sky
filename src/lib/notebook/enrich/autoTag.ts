@@ -32,7 +32,7 @@ export type AutoTagInput = {
  */
 export async function autoTagMessage(
   input: AutoTagInput,
-  opts: { mediums: string[]; kind?: string },
+  opts: { mediums: string[]; kind?: string; maxTags?: number },
 ): Promise<string | undefined> {
   try {
     const corpus = await loadMessageCorpus(opts.mediums)
@@ -44,6 +44,7 @@ export async function autoTagMessage(
       {
         body: input.body,
         kind: opts.kind,
+        maxTags: opts.maxTags,
         to: input.to,
         from: input.from,
         summary: input.summary,

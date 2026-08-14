@@ -28,13 +28,12 @@ export type ExtractOutcome = {
   error?: string
 }
 
+// Lengths are asked for, not schema-enforced — an over-long reply must not
+// become no reply at all; `clean` truncates. See the note in classify.ts.
 const schema = z.object({
-  people: z
-    .array(z.string())
-    .max(MAX_PER_KIND)
-    .describe('People the conversation is substantively about. Never the conversation participants themselves.'),
-  orgs: z.array(z.string()).max(MAX_PER_KIND).describe('Companies or organizations substantively discussed.'),
-  projects: z.array(z.string()).max(MAX_PER_KIND).describe('Projects or initiatives substantively discussed.'),
+  people: z.array(z.string()).describe('People the text is substantively about. Never the participants themselves.'),
+  orgs: z.array(z.string()).describe('Companies or organizations substantively discussed.'),
+  projects: z.array(z.string()).describe('Projects or initiatives substantively discussed.'),
 })
 
 export function buildExtractInstructions(req: ExtractRequest): string {
@@ -83,7 +82,7 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
       instructions: buildExtractInstructions(req),
       prompt: buildExtractPrompt(req),
     })
-    const clean = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))]
+    const clean = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))].slice(0, MAX_PER_KIND)
     return { subjects: { people: clean(object.people), orgs: clean(object.orgs), projects: clean(object.projects) } }
   } catch (err) {
     return {
