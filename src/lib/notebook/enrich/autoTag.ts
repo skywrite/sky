@@ -1,6 +1,5 @@
-import { DIR_TIME } from '#config'
 import { chooseTags } from './classify.ts'
-import { buildTagMenu, channelHistory, loadMessageCorpus } from './corpus.ts'
+import { buildTagMenu, loadMessageCorpus, tagHistoryFor } from './corpus.ts'
 
 // Taxonomy floor: pre-2025 tags are the abandoned old style and never enter the
 // menus. Backtested via slack:tags:eval — the floor lifted any-overlap 47%→59%
@@ -22,9 +21,10 @@ export type AutoTagInput = {
 
 /**
  * Pick tags for a new capture from the corpus of already-archived messages of
- * the given mediums. The corpus is derived fresh from the files on every call —
- * landing in a file IS joining the corpus, so hand-added tags are offerable on
- * the next capture with no separate state to maintain.
+ * the given mediums. The corpus is queried fresh from the service on every
+ * call and the store follows the notebook files — landing in a file IS
+ * joining the corpus, so hand-added tags are offerable on the next capture
+ * with no separate state to maintain.
  *
  * Closed-menu by construction: the classifier can only return tags that
  * already exist on archived messages (verbatim-validated). Never throws;
@@ -32,7 +32,7 @@ export type AutoTagInput = {
  */
 export async function autoTagMessage(input: AutoTagInput, opts: { mediums: string[] }): Promise<string | undefined> {
   try {
-    const corpus = await loadMessageCorpus(DIR_TIME, opts.mediums)
+    const corpus = await loadMessageCorpus(opts.mediums)
     const records = corpus.records.filter((r) => r.date >= TAXONOMY_SINCE)
     const menu = buildTagMenu(records)
     if (menu.length === 0) return undefined
@@ -40,10 +40,10 @@ export async function autoTagMessage(input: AutoTagInput, opts: { mediums: strin
     const outcome = await chooseTags(
       {
         body: input.body,
-        channel: input.to,
+        to: input.to,
         from: input.from,
         summary: input.summary,
-        channelHistory: channelHistory(records, input.to),
+        tagHistory: tagHistoryFor(records, input.to),
         menu,
       },
       'fast',

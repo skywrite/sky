@@ -6,10 +6,10 @@ import { chooseTags } from '#lib/notebook/enrich/classify.ts'
 import type { ClassifyRequest } from '#lib/notebook/enrich/classify.ts'
 import {
   buildTagMenu,
-  channelHistory,
-  channelMajoritySet,
   loadMessageCorpus,
+  majorityTagsFor,
   sliceBefore,
+  tagHistoryFor,
 } from '#lib/notebook/enrich/corpus.ts'
 import type { MessageRecord, TagCount } from '#lib/notebook/enrich/corpus.ts'
 import type { Role } from '#shared/ai/models.ts'
@@ -69,7 +69,6 @@ type Result = {
     slackFiles: number
     taggedFiles: number
     familyFiles: number
-    parseSkipped: number
     eligible: number
     sampled: number
   }
@@ -126,8 +125,9 @@ export default class SlackTagsEvalTask extends Command {
       return CommandResult.fail(`Unknown variant: ${args.variant} (use ${VARIANTS.map((v) => v.key).join(', ')})`)
     }
 
-    // One walk collects slack + family mediums; slices below stay leakage-free per case
-    const corpus = await loadMessageCorpus(DIR_TIME, ['slack', ...FAMILY_MEDIUMS])
+    // One query collects slack + family mediums (bodies included — records get
+    // re-classified); slices below stay leakage-free per case
+    const corpus = await loadMessageCorpus(['slack', ...FAMILY_MEDIUMS], { withBody: true })
     const records = corpus.records.filter((r) => r.date >= args.since)
     const slackRecords = records.filter((r) => r.medium === 'slack')
     const familyRecords = records.filter((r) => r.medium !== 'slack')
@@ -144,9 +144,7 @@ export default class SlackTagsEvalTask extends Command {
     const rand = mulberry32(args.seed)
     const sampled = stratifiedSample(eligible, (r) => r.date.slice(0, 7), args.sample, rand)
 
-    output.log(
-      `Corpus: ${slackRecords.length} slack archives since ${args.since} (${tagged.length} tagged, ${corpus.skipped} unparseable)`,
-    )
+    output.log(`Corpus: ${slackRecords.length} slack archives since ${args.since} (${tagged.length} tagged)`)
     output.log(
       `Eligible after cold-start guard (>=${args.minPrior} prior): ${eligible.length}; sampled: ${sampled.length}`,
     )
@@ -157,9 +155,9 @@ export default class SlackTagsEvalTask extends Command {
       return {
         record,
         menu: buildTagMenu(slice),
-        history: channelHistory(slice, record.channel),
+        history: tagHistoryFor(slice, record.to),
         familyMenu: needFamily ? buildTagMenu(sliceBefore(familyRecords, record.date)) : [],
-        baseline: channelMajoritySet(slice, record.channel),
+        baseline: majorityTagsFor(slice, record.to),
       }
     })
 
@@ -199,7 +197,7 @@ export default class SlackTagsEvalTask extends Command {
           JSON.stringify({
             path: path.relative(DIR_TIME, c.record.path),
             date: c.record.date,
-            channel: c.record.channel,
+            to: c.record.to,
             actual: c.record.tags,
             predicted: outcome.tags,
             baseline: c.baseline,
@@ -230,7 +228,6 @@ export default class SlackTagsEvalTask extends Command {
         slackFiles: slackRecords.length,
         taggedFiles: tagged.length,
         familyFiles: familyRecords.length,
-        parseSkipped: corpus.skipped,
         eligible: eligible.length,
         sampled: sampled.length,
       },
@@ -243,10 +240,10 @@ export default class SlackTagsEvalTask extends Command {
 function requestFor(evalCase: EvalCase, history: boolean, family: boolean): ClassifyRequest {
   return {
     body: evalCase.record.body,
-    channel: evalCase.record.channel,
+    to: evalCase.record.to,
     from: evalCase.record.from,
     summary: evalCase.record.summary,
-    channelHistory: history ? evalCase.history : [],
+    tagHistory: history ? evalCase.history : [],
     menu: evalCase.menu,
     familyMenu: family ? evalCase.familyMenu : undefined,
   }
