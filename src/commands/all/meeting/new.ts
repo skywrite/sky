@@ -12,7 +12,7 @@ import { MCPTool } from '#mcp/decorators.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   who: Arg.string('Person or group (optional with --from-audio/--from-transcript)', { optional: true }),
@@ -25,6 +25,7 @@ const params = {
     optional: true,
   }),
   when: whenNBTime(),
+  duration: Flag.string('Meeting length e.g. 45m, 2h', { short: 'd', optional: true }),
   category: categoryComplete(),
   medium: Flag.string('Meeting medium e.g. Zoom, Phone, etc', { short: 'm', default: () => 'Zoom' }),
   summary: Flag.string('Meeting summary', { short: 's', default: () => '' }),
@@ -51,7 +52,7 @@ export default class MeetingNewTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
-    let { when, medium, who, summary, category, fromAudio, fromTranscript } = args
+    let { when, medium, who, summary, category, fromAudio, fromTranscript, duration } = args
     let body: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
@@ -59,6 +60,16 @@ export default class MeetingNewTask extends Command {
 
     if (fromAudio !== undefined && fromTranscript !== undefined) {
       return CommandResult.fail('Use either --from-audio or --from-transcript, not both')
+    }
+
+    // Check the length here rather than at write time: the transcript pipeline
+    // below can run for minutes, and a typo shouldn't surface only after it.
+    if (duration !== undefined) {
+      try {
+        When.from(when, duration)
+      } catch {
+        return CommandResult.fail(`Invalid --duration "${duration}" — use a single-unit length like 45m, 2h or 90s`)
+      }
     }
 
     // Handle --from-audio / --from-transcript pipeline via audio:transcript:summary
@@ -88,6 +99,13 @@ export default class MeetingNewTask extends Command {
         when = new PlainDateTime(data.time)
       }
 
+      // A transcript knows a length, not an end time, so that's the spelling
+      // `when:` keeps. Anything under a minute rounds to zero, which carries no
+      // length at all rather than a false one. An explicit --duration wins.
+      if (duration === undefined && data.durationMinutes !== null && data.durationMinutes >= 1) {
+        duration = `${Math.round(data.durationMinutes)}m`
+      }
+
       // Use extracted medium if available
       if (data.medium) {
         medium = data.medium
@@ -100,7 +118,9 @@ export default class MeetingNewTask extends Command {
         transcriptSourcePath = data.transcriptFilePath
       }
 
-      output.log(`\nExtracted: who="${who}", summary="${summary}", when="${when}", medium="${medium}"`)
+      output.log(
+        `\nExtracted: who="${who}", summary="${summary}", when="${When.from(when, duration)}", medium="${medium}"`,
+      )
       if (rel && rel.length > 0) {
         output.log(`  Related: ${rel.join(', ')}`)
       }
@@ -169,7 +189,16 @@ export default class MeetingNewTask extends Command {
     }
 
     const ddfw = new DayDirFileWriter(whenDate)
-    const meeting = new MeetingDocument({ who, when, medium, summary, body, rel, tags, attachments })
+    const meeting = new MeetingDocument({
+      who,
+      when: When.from(when, duration),
+      medium,
+      summary,
+      body,
+      rel,
+      tags,
+      attachments,
+    })
 
     const data = meeting.toMarkdown()
 
