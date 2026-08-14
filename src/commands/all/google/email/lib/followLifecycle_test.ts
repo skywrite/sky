@@ -93,6 +93,40 @@ test('planThreadFollow falls back to now when no message time is known', () => {
   })
 })
 
+test('planThreadFollow labels the follow with the thread summary when it has one', () => {
+  const { follow, fileName } = plan(thread({ summary: 'Kickoff scheduling and open questions' }))
+
+  assert({
+    given: 'a summarized thread',
+    should: 'label the follow with the summary, not the subject',
+    expected: 'Kickoff scheduling and open questions',
+    actual: follow.summary,
+  })
+  assert({
+    given: 'a summarized thread',
+    should: 'slug the file name from the summary',
+    expected: '2026-08-12_email_Jane-Doe_Kickoff-scheduling-and-open-questions',
+    actual: fileName,
+  })
+})
+
+test('planThreadFollow falls back to the subject when the thread was not summarized', () => {
+  const { follow, fileName } = plan(thread())
+
+  assert({
+    given: 'no summary',
+    should: 'label the follow with the subject',
+    expected: 'Atlas kickoff',
+    actual: follow.summary,
+  })
+  assert({
+    given: 'no summary',
+    should: 'slug the file name from the subject',
+    expected: '2026-08-12_email_Jane-Doe_Atlas-kickoff',
+    actual: fileName,
+  })
+})
+
 function followEntry(opts: {
   fileName: string
   status?: 'active' | 'paused' | 'closed'

@@ -6,6 +6,9 @@ import type { GoogleClient } from '#lib/google/mod.ts'
 import { getAttachment, getMessage, threadIdToDecimal } from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
+import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNow } from '#shared/nbfs/mod.ts'
@@ -13,6 +16,7 @@ import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { copyEmailFilesToAttachments } from '../../../email/lib/copyToAttachments.ts'
 import type { DownloadedAttachment } from '../../../email/lib/copyToAttachments.ts'
 import { emailToMarkdown } from '../../../email/lib/emailToMarkdown.ts'
+import { buildEmailTranscript, EMAIL_ENRICH } from './enrich.ts'
 import { getInboxThreads } from './getInboxThreads.ts'
 import type { InboxThreadsResult } from './getInboxThreads.ts'
 
@@ -26,6 +30,8 @@ export type FetchedThread = {
   threadId: string
   from: string
   subject: string
+  /** Topic label written to the captures, and to the follow that tracks them. Absent on a continuation. */
+  summary?: string
   messages: { date: string; path: string }[]
   /** Newest downloaded message's real time (notebook tz, "YYYY-MM-DD HH:mm") — the follow's lastActivity anchor. */
   lastMessageAt?: string
@@ -45,6 +51,10 @@ export type FetchUnsavedOptions = {
   threadId?: string
   /** Thread listing already scanned on this client — skips the label rescan */
   inbox?: InboxThreadsResult
+  /** Skip the tag proposal on first capture (the summary is not a tag and still runs) */
+  noAutoTag?: boolean
+  /** Skip the rel proposal on first capture */
+  noAutoRel?: boolean
 }
 
 type Output = { log: (msg: string) => void }
@@ -152,13 +162,17 @@ export async function fetchUnsavedThreads(
     const threadEntries: { date: string; path: string }[] = []
     const priorMarkdown: string[] = []
     const previousPath = previousByThread.get(threadId)
+    const subject = threadMessages[0].subject || '(no subject)'
 
-    // Inherit tags/rel from previous message file (propagate across syncs)
+    // Inherit summary/tags/rel from previous message file (propagate across
+    // syncs): a thread reads as one conversation however many days it spans.
+    let inheritedSummary: string | undefined
     let inheritedTags: string | undefined
     let inheritedRel: unknown
     if (previousPath) {
       try {
         const prevDoc = EmailDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, previousPath)))
+        inheritedSummary = nonEmpty(prevDoc.yaml['summary'])
         inheritedTags = prevDoc.yaml['tags'] as string | undefined
         inheritedRel = prevDoc.yaml['rel']
       } catch {
@@ -166,29 +180,43 @@ export async function fetchUnsavedThreads(
       }
     }
 
+    // Convert first, write second: the thread's summary, tags and rel are
+    // decided over its whole transcript, and that has to exist before the
+    // first file is written. A conversion that throws keeps the messages
+    // converted so far and leaves the thread in the inbox to retry the rest.
+    const converted: ConvertedMessage[] = []
     let failed = false
     for (const msg of threadMessages) {
-      let result: { date: string; path: string } | null
       try {
-        result = await saveMessage(
-          msg,
-          threadId,
-          createdEntries,
-          priorMarkdown,
-          previousPath,
-          inheritedTags,
-          inheritedRel,
-          whenOverride,
-          tasks,
-          output,
-        )
+        converted.push(await convertMessage(msg, priorMarkdown, whenOverride, output))
       } catch (err) {
-        // Fail-and-retry: skip the rest of the thread and keep it in the inbox
-        // so the next sync re-attempts the unconverted messages.
         output.log(`  Warning: conversion failed (${(err as Error).message}) — thread left in inbox for retry`)
         failed = true
         break
       }
+    }
+
+    // Enrichment runs on a thread's first capture only — later messages
+    // inherit, so one thread never carries two sets of tags.
+    const enriched = previousPath
+      ? {}
+      : await enrichThread({ subject, converted, noAutoTag: !!opts.noAutoTag, noAutoRel: !!opts.noAutoRel, output })
+
+    const summary = inheritedSummary ?? enriched.summary
+    const tags = inheritedTags ?? enriched.tags
+    const rel = inheritedRel ?? enriched.rel
+
+    for (const message of converted) {
+      const result = await writeMessage(message, {
+        threadId,
+        createdEntries,
+        previousPath,
+        summary,
+        tags,
+        rel,
+        tasks,
+        output,
+      })
       if (result) {
         threadEntries.push(result)
         createdEntries.set(`${threadId}_${result.date}`, result)
@@ -208,7 +236,8 @@ export async function fetchUnsavedThreads(
     resultThreads.push({
       threadId,
       from: normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown'),
-      subject: threadMessages[0].subject || '(no subject)',
+      subject,
+      ...(enriched.summary ? { summary: enriched.summary } : {}),
       messages: threadEntries,
       ...(lastMessageAt ? { lastMessageAt: `${lastMessageAt.date} ${lastMessageAt.time}` } : {}),
       ...(failed ? { failed: true } : {}),
@@ -219,18 +248,31 @@ export async function fetchUnsavedThreads(
   return { fetched: savedCount, threads: resultThreads, labelId }
 }
 
-async function saveMessage(
+/** One message turned into notebook markdown, not yet written anywhere. */
+type ConvertedMessage = {
+  msg: DownloadedMessage
+  from: string
+  to: string
+  cc: string
+  /** Converted body, empty when the source had none — the `(empty)` placeholder is a write-time concern. */
+  markdown: string
+  /** The message's own timestamp, in the timezone of the notebook day it arrived on — always the `## ` header. */
+  msgWhen: PlainDateTime
+  /** The day the capture files under: --when when given, else the message's own. */
+  when: PlainDateTime
+}
+
+/**
+ * Turn one downloaded message into markdown. Sequential within a thread:
+ * `priorMarkdown` accumulates the thread so far, which the conversion reads to
+ * drop quoted replies.
+ */
+async function convertMessage(
   msg: DownloadedMessage,
-  threadId: string,
-  createdEntries: Map<string, { date: string; path: string }>,
   priorMarkdown: string[],
-  previousPath: string | undefined,
-  inheritedTags: string | undefined,
-  inheritedRel: unknown,
   whenOverride: PlainDateTime | undefined,
-  tasks: CommandService,
   output: Output,
-): Promise<{ date: string; path: string } | null> {
+): Promise<ConvertedMessage> {
   const from = normalizeFromName(msg.from?.name || msg.from?.address || '(unknown)')
   const to =
     msg.to
@@ -259,13 +301,32 @@ async function saveMessage(
     priorMarkdown.push(converted.markdown)
   }
 
-  // Determine the message's original timestamp (for the ## header),
-  // in the timezone of the notebook day it arrived on
   const msgWhen = msg.date ? await convertToNotebookTimezone(msg.date) : (await fetchNow()).plainDateTime
 
   // When --when is passed, all messages go into one file at that date
   // Otherwise, use the message's own date
-  const when = whenOverride ?? msgWhen
+  return { msg, from, to, cc, markdown: converted.markdown || '', msgWhen, when: whenOverride ?? msgWhen }
+}
+
+type WriteContext = {
+  threadId: string
+  createdEntries: Map<string, { date: string; path: string }>
+  previousPath: string | undefined
+  /** Thread-level topic label — inherited from the thread's earlier captures, or freshly summarized. */
+  summary: string | undefined
+  tags: string | undefined
+  /** String (an email:new param) or array (patched onto the written file). */
+  rel: unknown
+  tasks: CommandService
+  output: Output
+}
+
+async function writeMessage(
+  message: ConvertedMessage,
+  ctx: WriteContext,
+): Promise<{ date: string; path: string } | null> {
+  const { threadId, createdEntries, previousPath, summary, tags, rel, tasks, output } = ctx
+  const { msg, from, to, cc, msgWhen, when } = message
   const dateStr = when.plainDate.toString()
 
   // Save attachments
@@ -285,7 +346,7 @@ async function saveMessage(
       const oldDoc = EmailDocument.fromMarkdown(await readTextFile(fullPath))
       const existingAttachments = oldDoc.attachments
       const mergedAttachments = [...existingAttachments, ...attachments]
-      const appendPart = `\n\n## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${converted.markdown || '(empty)'}\n`
+      const appendPart = `\n\n## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${message.markdown || '(empty)'}\n`
       const updatedDoc = new EmailDocument(
         {
           ...oldDoc.yaml,
@@ -302,7 +363,7 @@ async function saveMessage(
   }
 
   // New day: create file + day entry via email:new
-  const markdown = `## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${converted.markdown || '(empty)'}\n`
+  const markdown = `## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${message.markdown || '(empty)'}\n`
   const previous = previousPath ? computePreviousRef(previousPath, when.plainDate) : undefined
 
   const result = await tasks.run('email:new', {
@@ -311,10 +372,11 @@ async function saveMessage(
     ...(cc ? { cc } : {}),
     when,
     subject: msg.subject || '(no subject)',
-    summary: msg.subject || '',
+    // The subject is the fallback label, and stays in `subject:` either way.
+    summary: summary ?? msg.subject ?? '',
     ...(previous ? { previous } : {}),
-    ...(inheritedTags ? { tags: inheritedTags } : {}),
-    ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
+    ...(tags ? { tags } : {}),
+    ...(typeof rel === 'string' ? { rel } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
     markdown,
     noEditor: true,
@@ -330,7 +392,7 @@ async function saveMessage(
 
   // Patch YAML fields that can't be fully passed as command params
   const needsAttachmentPatch = attachments.length > 0
-  const needsArrayRelPatch = Array.isArray(inheritedRel)
+  const needsArrayRelPatch = Array.isArray(rel)
   if ((needsAttachmentPatch || needsArrayRelPatch) && result.data.filePath) {
     const fullPath = path.join(ddfw.fullDir, result.data.filePath)
     try {
@@ -340,7 +402,7 @@ async function saveMessage(
         doc = EmailDocument.fromMarkdown(doc.setAttachments(attachments).toMarkdown())
       }
       if (needsArrayRelPatch) {
-        doc = new EmailDocument({ ...doc.yaml, rel: inheritedRel }, doc.markdown)
+        doc = new EmailDocument({ ...doc.yaml, rel }, doc.markdown)
       }
       await writeTextFile(fullPath, doc.toMarkdown())
     } catch {
@@ -351,6 +413,55 @@ async function saveMessage(
   output.log(`  Created ${entryPath}`)
 
   return { date: dateStr, path: entryPath }
+}
+
+type ThreadEnrichment = { summary?: string; tags?: string; rel?: string[] }
+
+/**
+ * Summarize a newly captured thread and propose its tags and rel, over the
+ * whole transcript rather than any one message — a reply reading "sounds good"
+ * is not what the thread is about. Each part degrades on its own: an
+ * unusable summary leaves the subject as the label, and tag or rel abstention
+ * leaves the field absent.
+ */
+async function enrichThread(opts: {
+  subject: string
+  converted: ConvertedMessage[]
+  noAutoTag: boolean
+  noAutoRel: boolean
+  output: Output
+}): Promise<ThreadEnrichment> {
+  const { subject, converted, output } = opts
+  if (converted.length === 0) return {}
+  const transcript = buildEmailTranscript(
+    subject,
+    converted.map((c) => ({ from: c.from, markdown: c.markdown })),
+  )
+  if (!transcript) return {}
+
+  const summary = await summarizeTranscript(transcript, { kind: EMAIL_ENRICH.kind })
+  if (summary) output.log(`  Summary: ${summary}`)
+
+  const first = converted[0]
+  const enrichInput = {
+    ...(first.to ? { to: first.to } : {}),
+    from: first.from,
+    summary: summary ?? subject,
+    body: transcript,
+  }
+  const [tags, rel] = await Promise.all([
+    opts.noAutoTag ? undefined : autoTagMessage(enrichInput, EMAIL_ENRICH),
+    opts.noAutoRel ? undefined : autoRelMessage(enrichInput, EMAIL_ENRICH),
+  ])
+  if (tags) output.log(`  Auto-tags: ${tags}`)
+  if (rel) output.log(`  Auto-rel: ${rel.join('; ')}`)
+
+  return { ...(summary ? { summary } : {}), ...(tags ? { tags } : {}), ...(rel ? { rel } : {}) }
+}
+
+/** A YAML field worth inheriting: present, a string, and not blank. */
+function nonEmpty(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
 }
 
 /** Convert "Lastname, Firstname" → "Firstname Lastname" */

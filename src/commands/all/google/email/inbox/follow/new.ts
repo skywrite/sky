@@ -17,6 +17,8 @@ const params = {
   limit: Flag.number('Max threads to follow', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   force: Flag.bool('Follow even when the thread is already inactive past the expiry window', { default: false }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -63,7 +65,13 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
     }
 
     // ── Batch mode: fetch + follow ALL unsaved threads ─────────────
-    const fetchResult = await tasks.run('google:email:inbox:fetch', { account, label, limit })
+    const fetchResult = await tasks.run('google:email:inbox:fetch', {
+      account,
+      label,
+      limit,
+      noAutoTag: args.noAutoTag,
+      noAutoRel: args.noAutoRel,
+    })
 
     if (!fetchResult.ok || !fetchResult.data) {
       return CommandResult.fail('google:email:inbox:fetch failed')
@@ -147,6 +155,8 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       label,
       when,
       threadId: selectedThread.threadId,
+      noAutoTag: args.noAutoTag,
+      noAutoRel: args.noAutoRel,
     })
 
     if (!fetchResult.ok || !fetchResult.data || fetchResult.data.fetched === 0) {

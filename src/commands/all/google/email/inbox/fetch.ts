@@ -14,6 +14,8 @@ const params = {
   limit: Flag.number('Max threads to fetch', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   threadId: Flag.string('Fetch a specific thread by its decimal ID', { hidden: true }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -35,7 +37,9 @@ export default class GoogleEmailInboxFetchTask extends Command {
       '(requires the Gmail scope). Uses google:email:inbox:view logic to find all',
       'threads, identifies unsaved ones, downloads body content + attachments,',
       'and saves to day files. Same-day messages for a thread are appended to a',
-      'single file.',
+      'single file. A thread captured for the first time is summarized, tagged,',
+      'and related from the archived-email corpus; its later messages inherit',
+      'those, so one thread reads as one conversation.',
     ],
     usage: ['sky google:email:inbox:fetch', 'sky google:email:inbox:fetch --limit 5'],
     params,
@@ -43,7 +47,7 @@ export default class GoogleEmailInboxFetchTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<FetchResult>> {
     const { output, secrets } = context
-    const { account, label, limit, when, threadId } = args
+    const { account, label, limit, when, threadId, noAutoTag, noAutoRel } = args
 
     let client
     try {
@@ -55,7 +59,11 @@ export default class GoogleEmailInboxFetchTask extends Command {
 
     try {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
-      const result = await fetchUnsavedThreads(client, { label, limit, when, threadId }, { tasks, output })
+      const result = await fetchUnsavedThreads(
+        client,
+        { label, limit, when, threadId, noAutoTag, noAutoRel },
+        { tasks, output },
+      )
       return CommandResult.success(result)
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')

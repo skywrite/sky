@@ -25,6 +25,8 @@ const params = {
   pick: Flag.bool('Interactively pick a single tagged thread to sync (for testing/triage)', {
     default: false,
   }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -65,7 +67,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<SyncResult>> {
     const { output, secrets } = context
-    const { account, label, limit, pick } = args
+    const { account, label, limit, pick, noAutoTag, noAutoRel } = args
 
     // ── Phase 1: Load follow registry ────────────────────────────────────
     const registry = await EmailFollowRegistry.build()
@@ -102,6 +104,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         {
           label,
           limit,
+          noAutoTag,
+          noAutoRel,
           ...(pickedThreadId ? { threadId: pickedThreadId } : {}),
           ...(inbox ? { inbox } : {}),
         },

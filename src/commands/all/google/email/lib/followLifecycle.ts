@@ -37,13 +37,17 @@ export function planThreadFollow(opts: {
   // on a quiet thread must not look freshly active, or expiry anchors on a fiction.
   const lastActivity = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : now
 
+  // The follow is labeled the way its captures are: the thread's topic summary
+  // when one was produced, the subject line when it was not.
+  const summary = thread.summary || thread.subject
+
   // The expiry probe runs on an empty-messages candidate: captured entries can
   // carry a collapsed --when date, and inactivityMs would anchor on that
   // instead of the thread's real activity.
   const candidate = Follow.create({
     source: 'Email',
     ref: { account: accountEmail, threadId: thread.threadId, label },
-    summary: thread.subject,
+    summary,
     followSince: now,
     lastChecked: now,
     lastActivity,
@@ -58,7 +62,7 @@ export function planThreadFollow(opts: {
   }
 
   const fromSlug = slugify(thread.from, { preserveCase: true, suggestedLength: 30 })
-  const summarySlug = slugify(thread.subject, { preserveCase: true, suggestedLength: 40 })
+  const summarySlug = slugify(summary, { preserveCase: true, suggestedLength: 40 })
   const fileName = `${now.plainDate.toString()}_email_${fromSlug}_${summarySlug}`
 
   return { follow, threadId: thread.threadId, fileName, bornExpired }
