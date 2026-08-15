@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-08-11
+updated: 2026-08-15
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -35,6 +35,7 @@ The day's evidence stream, in time order:
 - `messages/` - Slack, iMessage, email; the HH-MM filename prefix is the send time
 - `ai-chats/` - AI working sessions (reading rules below)
 - `notes/`, `docs/`, `videos/` - notes taken, documents drafted, recordings made
+- `events/` - calendar-sourced records (earnings calls, conferences, personal events): `what:`/`who:`/`when:` frontmatter. A session can appear both here and in `meetings/` - treat title/time twins as ONE session, preferring the meeting's actual `when:` range over the event's scheduled one
 
 Some `messages/` files carry an `ARCHIVAL` marker in their path comment (`<!-- ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
@@ -125,6 +126,18 @@ Transcripts of {{me.firstName}} working with an AI tool. `## JP` headings are {{
 
 ---
 
+## Time
+
+[Three short figures built only from stated times - rules below. Omit any figure the day lacks evidence for; a sparse day gets a sparse section, or none.]
+
+**Meetings:** [X.X h across N, summed from `when:` ranges and lengths across meetings/ and events/. Name any session without an end time: "1 not counted: the 11:00 release meeting". Omit that note when all are ranged.]
+
+**Rhythm:** [Recorded day HH:MM → HH:MM from {{me.firstName}}'s own artifacts. The day's shape in one or two sentences: clusters, the contiguous blocks and what anchored them, late-night (24:00+) work when present.]
+
+**Allocation:** [Where attention went: the top 2-3 themes by evidence weight, meeting hours as the anchor, placement language for the rest. When day.md names a Most Important item, say when it was first touched. End with "(N archival captures excluded.)"]
+
+---
+
 ## Health
 
 [Rows with recorded data only - the header's Health Data block first, journal statements second. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
@@ -206,6 +219,16 @@ Do NOT include:
 ### Track what {{me.firstName}} is owed
 
 A Waiting On row is an explicit ask he made of someone, or an explicit promise someone made to him, that the day's later evidence doesn't show fulfilled. Check before adding: if the reply or deliverable arrived later the same day, the loop is closed - leave it out. Never infer that he's "probably waiting" on something; only stated asks and stated promises qualify.
+
+### Time - only stated numbers
+
+The Time figures are timestamps arranged, never estimates:
+
+- **Meetings**: sum `when:` ranges (`10:15 - 11:25`) and length forms (`09:00 40m`) across `meetings/` and `events/`; a title/time twin in both counts once, the meeting's actual range winning over the event's scheduled one. Never guess a missing end time - name the session as not counted. A day.md timeline item carrying a duration (`09:30(1.25h)`) is {{me.firstName}}'s own record: use it.
+- **Rhythm** reads only his artifacts - journals, AI sessions, docs, notes, meetings he attended, messages he SENT. Inbound and ARCHIVAL message times are other people's clocks. Extended-hour prefixes (24:00+) are late-night work belonging to this day, so a span like 06:22 → 25:30 is the honest shape.
+- This is the shape of the *recorded* day: calls, whiteboards, and reading leave no artifacts. Describe clustering and gaps ("a 2.5h artifact gap ending in the one-pager") - never claimed work-states, and never what a gap contained.
+- **Allocation** is a ranking, not accounting: the only numbers allowed are meeting-derived or day.md-annotated; everything else is placement and dominance ("owned the evening"), capped at the top 2-3 themes. ARCHIVAL captures are excluded from allocation.
+- **No total-hours-worked figure.** It is not derivable from artifacts and is never invented.
 
 ### Archival captures are filed, not lived
 
@@ -302,6 +325,16 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 |------------|----------|----------|
 | Payment integration timeline | Chen Wei | Thursday |
 | Redesign cost estimate | Maria | - |
+
+---
+
+## Time
+
+**Meetings:** 2.4 h across 3 - the 10:00 roadmap hour (Chen), redesign review 13:30–14:15 (Maria), investor sync 16:00–16:40 (Marcus).
+
+**Rhythm:** Recorded day 06:50 → 22:10. A morning writing block anchored by the roadmap memo (09:42), the afternoon fragmented around the two reviews, then a quiet stretch after 17:00 and one late session at 21:30 closing the case-study drafts.
+
+**Allocation:** The Q1 roadmap owned the morning and both Chen sessions; the redesign took the early afternoon; investor prep surfaced only in the 16:00 sync. (4 archival captures excluded.)
 
 ---
 
