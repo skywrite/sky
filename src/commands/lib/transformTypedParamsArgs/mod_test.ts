@@ -309,3 +309,51 @@ test('transformTypedParamsArgs does NOT warn about unknown flags at compositionD
     expected: false,
   })
 })
+
+test('transformTypedParamsArgs reads mri-negated spelling for no-prefixed bool flags', async () => {
+  const params = {
+    noAutoTag: Flag.bool('Skip automatic tagging', { default: false }),
+  }
+
+  // mri parses `--no-auto-tag` into {autoTag: false} before the naming scheme
+  // ever sees it — the flag's documented spelling must still set it.
+  const result = await transformTypedParamsArgs(params, { _: ['task'], autoTag: false })
+
+  assert({
+    given: 'the CLI spelling --no-auto-tag, as mri delivers it',
+    should: 'set the noAutoTag flag',
+    actual: result.noAutoTag,
+    expected: true,
+  })
+})
+
+test('transformTypedParamsArgs leaves mri negation to a real positive flag', async () => {
+  const params = {
+    editor: Flag.bool('Open the editor', { default: true }),
+    noEditor: Flag.bool('Contrived twin', { default: false }),
+  }
+
+  const result = await transformTypedParamsArgs(params, { _: ['task'], editor: false })
+
+  assert({
+    given: 'a command that has BOTH editor and noEditor flags',
+    should: 'give --no-editor to the real editor flag, not the no-twin',
+    actual: `${result.editor} ${result.noEditor}`,
+    expected: 'false false',
+  })
+})
+
+test('transformTypedParamsArgs still accepts the direct composition spelling', async () => {
+  const params = {
+    noAutoRel: Flag.bool('Skip rel suggestion', { default: false }),
+  }
+
+  const result = await transformTypedParamsArgs(params, { _: ['task'], noAutoRel: true })
+
+  assert({
+    given: 'a parent task passing noAutoRel: true directly',
+    should: 'set the flag as before',
+    actual: result.noAutoRel,
+    expected: true,
+  })
+})

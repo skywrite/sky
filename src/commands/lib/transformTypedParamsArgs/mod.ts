@@ -110,6 +110,7 @@ export default async function transformTypedParamsArgs(
 
   // Track defined flag names for warning about unknown flags
   const definedFlagNames = new Set<string>()
+  const flagNames = new Set(flagParams.map(([name]) => name))
 
   for (const [name, param] of flagParams) {
     definedFlagNames.add(name)
@@ -126,6 +127,19 @@ export default async function transformTypedParamsArgs(
     // Also check kebab-case version
     if (rawValue === undefined) {
       rawValue = flagValues[camelToKebab(name)]
+    }
+
+    // mri negation: `--no-editor` reaches us as `{editor: false}`, never as a
+    // key containing "no", so a bool flag NAMED noEditor could not be set from
+    // the CLI at all — its documented spelling was parsed as negating a flag
+    // that doesn't exist. Read the negated spelling back: --no-x sets noX,
+    // unless the command really has a flag named x (then false belongs to it).
+    const positive = /^no[A-Z]/.test(name) ? name[2].toLowerCase() + name.slice(3) : undefined
+    if (positive && param.type === 'bool' && !flagNames.has(positive)) {
+      definedFlagNames.add(positive)
+      if (rawValue === undefined && flagValues[positive] === false) {
+        rawValue = true
+      }
     }
 
     // Reject duplicate flags (mri turns repeated --flag into an array)
