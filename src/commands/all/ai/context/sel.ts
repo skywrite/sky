@@ -105,7 +105,7 @@ export default class AIContextSelectorTask extends Command {
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-sel.prompt.md', renderInput)
 
     const sinceHint = since
-      ? `\n\nIMPORTANT: For time-based queries (meetings, messages, journals), include \`recent: "${since}"\` to limit results to the last ${since}.`
+      ? `\n\nIMPORTANT: The user scoped this question to the last ${since}. Put \`recent: "${since}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents) and omit \`limit\` on those roots — the period is the bound (date-bounded queries are uncapped) and downstream budgeting prunes any excess. A \`limit\` beside the bound would silently keep only the newest slice of the window.`
       : ''
 
     const userPrompt = `Question: ${question}${sinceHint}
