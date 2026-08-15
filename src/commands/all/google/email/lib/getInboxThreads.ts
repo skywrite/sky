@@ -23,6 +23,8 @@ export type InboxThread = {
   saved: boolean
   /** Recorded message entries from the follow (dates already on disk). */
   savedMessages: { date: string; path: string }[]
+  /** File name (extension-free) of the follow already tracking this thread. */
+  followFile?: string
 }
 
 export type InboxThreadsResult = {
@@ -32,6 +34,16 @@ export type InboxThreadsResult = {
   /** Resolved API id of the label, for later modify calls without a second lookup. */
   labelId: string
 }
+
+/**
+ * How deep a capture run lists the bucket. The listing is newest-first with
+ * saved and unsaved threads interleaved — captured threads keep the label, so
+ * the top of the listing fills with saved threads over time. A capture bound
+ * applied at LISTING depth therefore starves: once the N newest threads are
+ * all saved, older unsaved ones are never seen again no matter how many runs
+ * happen. Capture runs list this deep and bound the unsaved set instead.
+ */
+export const LISTING_DEPTH = 1000
 
 /**
  * Whether a message counts as saved given its follow's lastActivity cutoff.
@@ -101,11 +113,13 @@ export async function getInboxThreads(
   // Load follow registry to determine saved status
   const followMessages = new Map<string, { date: string; path: string }[]>()
   const followLastActivity = new Map<string, Date>()
+  const followFiles = new Map<string, string>()
   const registry = await EmailFollowRegistry.build()
   for (const entry of registry.getAll()) {
     const tid = entry.follow.ref.threadId
     if (!tid) continue
     followMessages.set(tid, entry.follow.messages)
+    followFiles.set(tid, entry.fileName)
     if (entry.follow.lastActivity) {
       followLastActivity.set(tid, new Date(entry.follow.lastActivity.toString().replace(' ', 'T')))
     }
@@ -142,6 +156,7 @@ export async function getInboxThreads(
       messages: entry.messages,
       saved,
       savedMessages: followMessages.get(entry.threadId) ?? [],
+      ...(followFiles.has(entry.threadId) ? { followFile: followFiles.get(entry.threadId) } : {}),
     })
   }
 

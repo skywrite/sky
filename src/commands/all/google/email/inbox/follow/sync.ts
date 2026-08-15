@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
@@ -9,12 +9,12 @@ import openEditor from '#lib/shell/openEditor.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import { fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
 import { expireQuietFollows, persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
-import { getInboxThreads } from '../../lib/getInboxThreads.ts'
+import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
 import { formatSyncReport } from '../../lib/syncReport.ts'
@@ -23,12 +23,13 @@ import type { ClosedThread, SyncedThread } from '../../lib/syncReport.ts'
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
   label: Flag.string('Gmail label to sync', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to fetch', { default: () => 250 }),
+  limit: Flag.number('Max unsaved threads to capture per run', { default: () => 250 }),
   pick: Flag.bool('Interactively pick a single tagged thread to sync (for testing/triage)', {
     default: false,
   }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
+  noEditor: Flag.bool('Skip opening captured entries in the editor', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -47,6 +48,9 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 }
 
 const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpired: 0, expired: [], fetchedMessages: 0 }
+
+/** Most entries a console run opens for review — past this, the closing report is the review surface. */
+const MAX_EDITOR_OPENS = 10
 
 export default class GoogleEmailInboxFollowSyncTask extends Command {
   static override description: CommandDescription = {
@@ -69,7 +73,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<SyncResult>> {
     const { output, secrets } = context
-    const { account, label, limit, pick, noAutoTag, noAutoRel } = args
+    const { account, label, limit, pick, noAutoTag, noAutoRel, noEditor } = args
 
     // ── Phase 1: Load follow registry ────────────────────────────────────
     const registry = await EmailFollowRegistry.build()
@@ -88,7 +92,9 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       let inbox: InboxThreadsResult | undefined
       if (pick) {
         try {
-          inbox = await getInboxThreads(client, label, { limit })
+          // Deep listing: the picker must offer every unsaved thread, not the
+          // N newest bucket entries (which go stale-saved over time).
+          inbox = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
         } catch (err) {
           output.log(`  Warning: could not list threads: ${(err as Error).message}`)
           return CommandResult.success(NOTHING_SYNCED)
@@ -106,6 +112,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         {
           label,
           limit,
+          follow: true,
           noAutoTag,
           noAutoRel,
           ...(pickedThreadId ? { threadId: pickedThreadId } : {}),
@@ -133,10 +140,21 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
 
           if (existingFollow) {
             let follow = existingFollow.follow
-            const existingPaths = new Set(follow.messages.map((m) => m.path))
+            // New entries are stored as time refs; old follows may hold paths
+            // in any layout (or damaged ones). Dedupe on the canonical form,
+            // falling back to the raw string where canonicalizing fails —
+            // a duplicate follow entry is cheaper than a lost sync.
+            const canon = (p: string): string => {
+              try {
+                return toTimeRef(p)
+              } catch {
+                return p
+              }
+            }
+            const existingPaths = new Set(follow.messages.map((m) => canon(m.path)))
             for (const msg of thread.messages) {
-              if (existingPaths.has(msg.path)) continue
-              follow = follow.addMessage(msg.date, msg.path)
+              if (existingPaths.has(canon(msg.path))) continue
+              follow = follow.addMessage(msg.date, toTimeRef(msg.path))
             }
             // lastActivity is the newest message's real time, not the sync time —
             // a reply discovered late must not look like fresh activity
@@ -187,14 +205,18 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         // Failed threads stay in the inbox so the next sync retries them.
         await this.archiveFromInbox(client, fetchResult.threads, output)
 
-        // --pick is interactive triage: open the picked thread's most recent entry
-        if (pickedThreadId) {
-          const picked = fetchResult.threads.find((t) => t.threadId === pickedThreadId)
-          const latest = picked?.messages.at(-1)
-          if (latest) {
-            output.log(`  Opening ${latest.path}`)
-            await openEditor([{ file: path.join(DIR_BASE, latest.path) }])
-          }
+        // A console run is a person catching up: open what was captured for
+        // review. On the heartbeat (Server platform) no one is at the editor,
+        // so nothing opens. Capped — a backlog drain creates dozens of files,
+        // and a wall of tabs reviews worse than the report below.
+        const created = fetchResult.threads.flatMap((t) => t.messages)
+        if (!noEditor && context.platform === CommandPlatform.Console && created.length > 0) {
+          const toOpen = created.slice(0, MAX_EDITOR_OPENS)
+          const rest = created.length - toOpen.length
+          output.log(
+            `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
+          )
+          await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
         }
       }
 

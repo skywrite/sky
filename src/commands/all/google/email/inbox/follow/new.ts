@@ -7,14 +7,14 @@ import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
 import { persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
-import { getInboxThreads } from '../../lib/getInboxThreads.ts'
+import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
 
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
   label: Flag.string('Gmail label', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to follow', { default: () => 250 }),
+  limit: Flag.number('Max unsaved threads to capture per run', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   force: Flag.bool('Follow even when the thread is already inactive past the expiry window', { default: false }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
@@ -69,6 +69,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       account,
       label,
       limit,
+      follow: true,
       noAutoTag: args.noAutoTag,
       noAutoRel: args.noAutoRel,
     })
@@ -103,7 +104,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
     let unsaved: InboxThread[]
     try {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
-      const { threads } = await getInboxThreads(client, label)
+      const { threads } = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
       unsaved = threads.filter((t) => !t.saved)
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')
@@ -155,6 +156,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       label,
       when,
       threadId: selectedThread.threadId,
+      follow: true,
       noAutoTag: args.noAutoTag,
       noAutoRel: args.noAutoRel,
     })

@@ -20,23 +20,47 @@ test('previousRefOrNone computes a ref from a well-formed day path', () => {
   })
 })
 
-test('previousRefOrNone drops a ref the day-path parser cannot read', () => {
+test('previousRefOrNone recovers a legacy day path', () => {
   const { output, lines } = collector()
-  // A day-dir of DD alone: the layout older follow files recorded, which no
-  // longer exists on disk and which parseDateFromDayPath rejects.
+  // A day-dir of DD alone: the layout older follow files recorded, pointing
+  // at a directory that no longer exists — the date survives via toTimeRef.
   const legacy = 'time/2026/05/25-31/31/actions/messages/email_Jane-Doe_Atlas-kickoff.md'
 
   assert({
-    given: 'a follow carrying a day path in a layout the parser rejects',
+    given: 'a follow carrying a path in the retired DD layout',
+    should: 'still link the captures — the ref outlives the layout',
+    expected: '05-31/actions/messages/email_Jane-Doe_Atlas-kickoff',
+    actual: previousRefOrNone(legacy, CUR, output),
+  })
+  assert({ given: 'a recovered ref', should: 'warn about nothing', expected: 0, actual: lines.length })
+})
+
+test('previousRefOrNone accepts the time refs follows store now', () => {
+  const { output } = collector()
+
+  assert({
+    given: 'a follow entry stored as a time ref',
+    should: 'compute the relative previous ref from it',
+    expected: '10/actions/messages/email_Jane-Doe_Atlas-kickoff',
+    actual: previousRefOrNone('2026-08-10/actions/messages/email_Jane-Doe_Atlas-kickoff.md', CUR, output),
+  })
+})
+
+test('previousRefOrNone drops a location it cannot read at all', () => {
+  const { output, lines } = collector()
+  const damaged = 'actions/messages/email_Jane-Doe_Atlas-kickoff.md'
+
+  assert({
+    given: 'a stored location that is neither a ref nor a day path',
     should: 'write without a previous ref rather than throw',
     expected: undefined,
-    actual: previousRefOrNone(legacy, CUR, output),
+    actual: previousRefOrNone(damaged, CUR, output),
   })
   assert({
     given: 'a dropped ref',
-    should: 'say so, naming the path',
+    should: 'say so, naming the value',
     expected: true,
-    actual: lines.some((l) => l.includes('unreadable previous path') && l.includes(legacy)),
+    actual: lines.some((l) => l.includes('unreadable previous path') && l.includes(damaged)),
   })
 })
 
