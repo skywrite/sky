@@ -14,6 +14,7 @@ import {
   exportFile,
   getFile,
   importFileAsDoc,
+  renameFile,
   replaceFileWithMarkdown,
   searchFiles,
   shareFile,
@@ -193,6 +194,7 @@ test('every files and permissions request opts into shared drives', async () => 
   await searchFiles(client, { text: 'atlas' })
   await getFile(client, 'f1')
   await copyFile(client, 'f1', 'Atlas Copy')
+  await renameFile(client, 'f1', 'Atlas Copy v2')
   await deleteFile(client, 'f1')
   await shareFile(client, 'f1', { role: 'reader', emailAddress: 'jane@example.com' })
   await uploadFile(client, { name: 'logo.png', mimeType: 'image/png', data: new Uint8Array([1]) })
@@ -204,7 +206,7 @@ test('every files and permissions request opts into shared drives', async () => 
   assert({
     given: 'every Drive files/permissions call plus a files.export',
     should: 'carry supportsAllDrives everywhere except export, which has no such switch',
-    expected: ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', null],
+    expected: ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', 'true', null],
     actual: urls.map((u) => new URL(u).searchParams.get('supportsAllDrives')),
   })
 
