@@ -124,6 +124,31 @@ export function matchesDate(doc: Document, date: PlainDate | string, path?: stri
 }
 
 /**
+ * Check if document date is on or after the given date. One-ended on purpose:
+ * `dateGte: X` is a closed window [X, now], the absolute-date spelling of
+ * `recent`.
+ */
+export function matchesDateGte(doc: Document, start: PlainDate | string, path?: string): boolean {
+  const docDate = getDocumentDate(doc, path)
+  if (!docDate) return false
+
+  const startDate = typeof start === 'string' ? PlainDate.from(start) : start
+  return PlainDate.compare(docDate, startDate) >= 0
+}
+
+/**
+ * Check if document date is on or before the given date. One-ended on purpose:
+ * everything from the corpus start up to X.
+ */
+export function matchesDateLte(doc: Document, end: PlainDate | string, path?: string): boolean {
+  const docDate = getDocumentDate(doc, path)
+  if (!docDate) return false
+
+  const endDate = typeof end === 'string' ? PlainDate.from(end) : end
+  return PlainDate.compare(docDate, endDate) <= 0
+}
+
+/**
  * Check if document date is within a range (inclusive).
  */
 export function matchesDateRange(

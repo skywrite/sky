@@ -17,7 +17,8 @@ import {
   matchesBodyContains,
   matchesCreatedRecently,
   matchesDate,
-  matchesDateRange,
+  matchesDateGte,
+  matchesDateLte,
   matchesInvolves,
   matchesInvolvesAll,
   matchesInvolvesAny,
@@ -108,7 +109,10 @@ export function matchesInvolvesFilter(doc: Document, filter: InvolvesFilter, res
 
 export function matchesDatedFilter(doc: Document, filter: DatedFilter, path?: string): boolean {
   if (filter.date && !matchesDate(doc, filter.date, path)) return false
-  if (filter.dateGte && filter.dateLte && !matchesDateRange(doc, filter.dateGte, filter.dateLte, path)) return false
+  // Each bound applies on its own — a lone dateGte/dateLte used to validate
+  // against the schema yet filter nothing, and query models write lone bounds.
+  if (filter.dateGte && !matchesDateGte(doc, filter.dateGte, path)) return false
+  if (filter.dateLte && !matchesDateLte(doc, filter.dateLte, path)) return false
   if (filter.recent && !matchesRecent(doc, filter.recent, undefined, path)) return false
   return true
 }
@@ -329,11 +333,12 @@ export const DEFAULT_QUERY_LIMIT = 500
 function hasDateBounds(where: unknown): boolean {
   if (typeof where !== 'object' || where === null) return false
   const w = where as DatedFilter
-  // Mirrors matchesDatedFilter: `date` alone bounds; a range needs both ends;
-  // `recent` bounds despite its one-sided spelling — the window closes at now
-  // (unlike a lone dateGte, which is open-ended and stays capped). Both
+  // Mirrors matchesDatedFilter: `date` alone bounds; `recent` and `dateGte`
+  // both bound despite their one-sided spelling — each is a window closing at
+  // now, so the asker means the whole window. A lone dateLte is the genuinely
+  // open end (everything back to the corpus start) and stays capped. Both
   // filter families spell their window `recent`, so the cast covers both.
-  return Boolean(w.date || w.recent || (w.dateGte && w.dateLte))
+  return Boolean(w.date || w.recent || w.dateGte)
 }
 
 /**

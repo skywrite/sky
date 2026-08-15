@@ -1,5 +1,5 @@
 import type { Document } from '#shared/models/Markdown/mod.ts'
-import { matchesContains, matchesDateRange, matchesDecided, matchesPending } from '../filters/mod.ts'
+import { matchesContains, matchesDateGte, matchesDateLte, matchesDecided, matchesPending } from '../filters/mod.ts'
 import {
   type ActivityFilter,
   type EntitySpec,
@@ -30,9 +30,9 @@ export function matchesDecisionFilter(doc: Document, filter: DecisionFilter, res
   if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.pending === true && !matchesPending(doc)) return false
   if (filter.decided === true && !matchesDecided(doc)) return false
-  if (filter.identifiedGte && filter.identifiedLte) {
-    if (!matchesDateRange(doc, filter.identifiedGte, filter.identifiedLte)) return false
-  }
+  // Each bound applies on its own — same one-ended contract as dateGte/dateLte.
+  if (filter.identifiedGte && !matchesDateGte(doc, filter.identifiedGte)) return false
+  if (filter.identifiedLte && !matchesDateLte(doc, filter.identifiedLte)) return false
   if (!matchesTagFilter(doc, filter)) return false
   if (!matchesInvolvesFilter(doc, filter, resolveNames)) return false
   if (!matchesTextFilter(doc, filter)) return false

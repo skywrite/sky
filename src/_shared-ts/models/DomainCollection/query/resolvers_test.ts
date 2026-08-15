@@ -1346,9 +1346,48 @@ test('resolvers - a date-bounded query is exempt from the default cap', () => {
 
   assert({
     given: 'a one-ended range (dateGte only), no limit',
-    should: 'stay capped — an open range is not a bounded window',
+    should: 'return the whole window — dateGte closes at now, like recent',
     actual: resolvers.documents({ where: { dateGte: '2025-03-01' } }).length,
+    expected: DEFAULT_QUERY_LIMIT + 10,
+  })
+
+  assert({
+    given: 'a one-ended range (dateLte only), no limit',
+    should: 'stay capped — open toward the corpus start, not a bounded window',
+    actual: resolvers.documents({ where: { dateLte: '2025-03-31' } }).length,
     expected: DEFAULT_QUERY_LIMIT,
+  })
+})
+
+// A lone bound used to validate against the schema yet filter nothing: the
+// query executed and silently returned the unfiltered set (live-hit by an
+// ai:chat evolve query writing dateGte without dateLte).
+test('resolvers - one-ended date bounds filter on their own', () => {
+  const docs = ['2025-03-05', '2025-03-10', '2025-03-15'].map((date, i) => ({
+    doc: Document.fromMarkdown(`---\ndate: "${date}"\n---\nNote ${i}.`),
+    path: `/test/time/2025/03/03-09/${date.slice(5)}/actions/notes/note-${i}.md`,
+  }))
+  const resolvers = createDomainResolvers(createTimeStore(docs))
+
+  assert({
+    given: 'a lone dateGte',
+    should: 'keep only docs on or after it',
+    actual: resolvers.documents({ where: { dateGte: '2025-03-10' } }).length,
+    expected: 2,
+  })
+
+  assert({
+    given: 'a lone dateLte',
+    should: 'keep only docs on or before it',
+    actual: resolvers.documents({ where: { dateLte: '2025-03-10' } }).length,
+    expected: 2,
+  })
+
+  assert({
+    given: 'both bounds',
+    should: 'keep the inclusive range, as before',
+    actual: resolvers.documents({ where: { dateGte: '2025-03-06', dateLte: '2025-03-14' } }).length,
+    expected: 1,
   })
 })
 
