@@ -30,6 +30,7 @@ function createFullMockStore(config: {
   ideas?: Array<{ doc: Document; path: string }>
   places?: Array<{ doc: PlaceDocument; path: string }>
   time?: Array<{ doc: Document; path: string }>
+  library?: Array<{ doc: Document; path: string }>
 }): MarkdownStore {
   return {
     people: {
@@ -59,6 +60,9 @@ function createFullMockStore(config: {
     },
     time: {
       getAll: () => Collection.from(config.time ?? [], 'document'),
+    },
+    library: {
+      getAll: () => Collection.from(config.library ?? [], 'document'),
     },
     resolve: () => ({ type: 'unresolved', value: null, raw: '' }),
     resolveAll: () => [],

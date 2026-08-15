@@ -369,6 +369,7 @@ function createMockMarkdownStore(): MarkdownStore {
     ideas: createMockCollection(ideas),
     places: createMockCollection(places),
     time: createMockCollection([...meetings, ...messages, ...videos, ...journals, ...chats, ...days]),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
@@ -603,6 +604,7 @@ test('service yoga tracks MarkdownStore mutations via version bumps', async () =
     ideas: createMockCollection(ideas),
     places: createMockCollection(places),
     time: { getAll: () => ({ toArray: () => liveJournals }) },
+    library: createMockCollection([]),
     get version() {
       return version
     },

@@ -113,7 +113,7 @@ export default class MarkdownFilterTask extends Command {
       'sky markdown:filter --rel "bob"                    # rel field contains "bob"',
       'sky markdown:filter --yaml "who:Alice"            # YAML field match',
       'sky markdown:filter --yaml "who:Alice|medium:Phone"  # AND across fields',
-      'sky markdown:filter --glob "notes/**"              # path pattern',
+      'sky markdown:filter --glob "library/**"            # path pattern',
       'sky markdown:filter --raw                          # output paths only',
     ],
     params,

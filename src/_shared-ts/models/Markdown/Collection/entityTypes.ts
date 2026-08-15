@@ -67,6 +67,10 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
  * Checked in order - first match wins.
  */
 const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type: CollectionEntityType }> = [
+  // library/ is topic-organized reference material; its subject dirs may
+  // shadow entity dir names (library/ideas/, library/things/), so it must
+  // claim its paths before any entity pattern can.
+  { pattern: (p) => p.includes('/library/'), type: 'document' },
   { pattern: (p) => p.includes('/orgs/') || p.includes('/organizations/'), type: 'org' },
   { pattern: (p) => p.includes('/people/') || p.includes('/people-'), type: 'person' },
   // Only the canonical _project/overview.md is the project itself — the

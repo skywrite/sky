@@ -144,7 +144,7 @@ timezones, and the date types — is [its own document](nbfs.md).
   goals/                           # personal and professional goals
   ideas/                           # idea capture
   journal/                         # about-me profile and question banks
-  notes/                           # standalone notes
+  library/                         # evergreen reference notes, filed by topic
   orgs/                            # organizations
   people/                          # personal CRM
   places/                          # location hierarchy

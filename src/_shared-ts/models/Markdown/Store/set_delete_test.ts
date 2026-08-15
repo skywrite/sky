@@ -9,6 +9,7 @@ const DIRS = {
   goalsDir: '/nb/goals',
   ideasDir: '/nb/ideas',
   placesDir: '/nb/places',
+  libraryDir: '/nb/library',
   timeDirs: ['/nb/time'],
 }
 
@@ -117,6 +118,40 @@ test('MarkdownStore.set: routes time doc to DocumentStore', async () => {
     should: 'find in time store',
     actual: store.time.findByPath('/nb/time/2026/W10/03-04/notes.md')?.yaml['title'],
     expected: 'Notes',
+  })
+})
+
+test('MarkdownStore.set: routes library doc to library DocumentStore', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/library/books/Atlas-Field-Guide.md', '---\nsummary: Atlas Field Guide\n---\n\n# Atlas Field Guide')
+
+  assert({
+    given: 'set library doc',
+    should: 'find in library store',
+    actual: store.library.findByPath('/nb/library/books/Atlas-Field-Guide.md')?.yaml['summary'],
+    expected: 'Atlas Field Guide',
+  })
+
+  assert({
+    given: 'set library doc',
+    should: 'not land in the time store',
+    actual: store.time.size,
+    expected: 0,
+  })
+})
+
+test('MarkdownStore.delete: routes library doc to library DocumentStore', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/library/books/Atlas-Field-Guide.md', '---\nsummary: Atlas Field Guide\n---\n\n# Atlas Field Guide')
+  store.delete('/nb/library/books/Atlas-Field-Guide.md')
+
+  assert({
+    given: 'delete library doc',
+    should: 'not find in library store',
+    actual: store.library.findByPath('/nb/library/books/Atlas-Field-Guide.md'),
+    expected: undefined,
   })
 })
 

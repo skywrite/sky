@@ -16,7 +16,7 @@ import DayCompletionProvider from './completions/DayCompletionProvider.ts'
 import DayItemCompletionProvider from './completions/DayItemCompletionProvider.ts'
 import DecisionsCompletionProvider from './completions/DecisionsCompletionItemProvider.ts'
 import IdeasCompletionProvider from './completions/IdeasCompletionItemProvider.ts'
-import NotesCompletionProvider from './completions/NotesCompletionItemProvider.ts'
+import LibraryCompletionProvider from './completions/NotesCompletionItemProvider.ts'
 import OrganizationsCompletionItemProvider from './completions/OrganizationsCompletionItemProvider.ts'
 import PeopleCompletionItemProvider from './completions/PeopleCompletionItemProvider.ts'
 import PlacesCompletionProvider from './completions/PlacesCompletionItemProvider.ts'
@@ -113,7 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.languages.registerCompletionItemProvider('markdown', new NotesCompletionProvider(), '/'),
+    vscode.languages.registerCompletionItemProvider('markdown', new LibraryCompletionProvider(), '/'),
   )
 
   context.subscriptions.push(

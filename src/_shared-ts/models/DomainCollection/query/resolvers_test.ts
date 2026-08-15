@@ -265,6 +265,7 @@ GTM launch checklist.`),
     ideas: createMockCollection(ideasData),
     places: createMockCollection(placesData),
     time: createMockCollection([...meetingsData, ...messagesData, ...chatsData]),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
@@ -1115,6 +1116,7 @@ Talk notes.`),
     ideas: createMockCollection([]),
     places: createMockCollection([]),
     time: createMockCollection(videosData),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
@@ -1230,6 +1232,7 @@ function createTimeStore(items: Array<{ doc: Document; path: string }>): Markdow
     ideas: createMockCollection([]),
     places: createMockCollection([]),
     time: createMockCollection(items),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
