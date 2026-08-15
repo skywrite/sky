@@ -76,3 +76,21 @@ test('detectTypeFromPath - unmatched paths fall back to document', () => {
     expected: 'document',
   })
 })
+
+test('detectTypeFromPath - library paths are documents', () => {
+  assert({
+    given: 'a library reference file',
+    should: 'detect type document',
+    actual: detectTypeFromPath('/nb/library/books/2022/Atlas-Field-Guide.md'),
+    expected: 'document',
+  })
+})
+
+test('detectTypeFromPath - library subject dirs shadowing entity names stay documents', () => {
+  assert({
+    given: 'a library file under a subject dir named like an entity dir (ideas/)',
+    should: 'detect type document, not idea',
+    actual: detectTypeFromPath('/nb/library/ideas/widget-brainstorm.md'),
+    expected: 'document',
+  })
+})

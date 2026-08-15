@@ -78,6 +78,7 @@ Cocktail bar.`),
     ideas: createMockCollection([]),
     places: createMockCollection(placesData),
     time: createMockCollection([]),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 

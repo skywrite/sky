@@ -123,6 +123,7 @@ Weekly finance video.`),
     ideas: createMockCollection([]),
     places: createMockCollection([]),
     time: createMockCollection(chatsData),
+    library: createMockCollection([]),
   } as unknown as MarkdownStore
 
   return store

@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 // import marked from 'marked'
 import * as marked from 'marked'
-// import { DIR_NOTES, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME } from '#config'
+// import { DIR_LIBRARY, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME } from '#config'
 import { DIRS_MARKDOWN } from '#config'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -13,7 +13,7 @@ import renderMarkdown from './renderMarkdown.ts'
 // does not include DIR_PROJECTS as there is the markdown for IA Presenter
 // does not get parsed properly by Marked
 // I've learned that Marked loses some fidelity when parsing
-// const DIRS_TEST = [DIR_NOTES, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME]
+// const DIRS_TEST = [DIR_LIBRARY, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME]
 // const DIRS_TEST = [DIR_TIME + '/2024/07/01-07/01/']
 const DIRS_TEST = DIRS_MARKDOWN
 

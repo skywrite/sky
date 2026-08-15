@@ -52,7 +52,7 @@ export const DIR_TRACKING_WEATHER = path.join(DIR_TRACKING, 'weather')
 export const DIR_DECISIONS = path.join(DIR_BASE, 'decisions')
 export const DIR_GOALS = path.join(DIR_BASE, 'goals')
 export const DIR_IDEAS = path.join(DIR_BASE, 'ideas')
-export const DIR_NOTES = path.join(DIR_BASE, 'notes')
+export const DIR_LIBRARY = path.join(DIR_BASE, 'library')
 export const DIR_PEOPLE = path.join(DIR_BASE, 'people')
 export const DIR_PEOPLE_OLD = path.join(DIR_BASE, 'people-old')
 export const DIR_PLACES = path.join(DIR_BASE, 'places')
@@ -68,7 +68,7 @@ export const DIRS_MARKDOWN = [
   DIR_DECISIONS,
   DIR_GOALS,
   DIR_IDEAS,
-  DIR_NOTES,
+  DIR_LIBRARY,
   DIR_ORGS,
   DIR_PEOPLE,
   DIR_PEOPLE_OLD,

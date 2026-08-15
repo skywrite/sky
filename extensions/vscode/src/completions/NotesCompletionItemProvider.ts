@@ -2,15 +2,15 @@ import { Dirent } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
-import { DIR_NOTES } from '#config'
+import { DIR_LIBRARY } from '#config'
 
-const rootPath = DIR_NOTES
+const rootPath = DIR_LIBRARY
 
-export default class PlacesCompletionProvider implements vscode.CompletionItemProvider {
+export default class LibraryCompletionProvider implements vscode.CompletionItemProvider {
   async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
     const linePrefix = document.lineAt(position).text.substr(0, position.character)
 
-    const searchStr = 'notes/'
+    const searchStr = 'library/'
 
     if (!linePrefix.includes(searchStr)) return
 

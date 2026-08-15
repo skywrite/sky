@@ -278,3 +278,51 @@ test('MarkdownStore.resolveAll - handles array with null values', async () => {
     expected: 'unresolved',
   })
 })
+
+test('MarkdownStore.resolve - resolves library/ refs to documents', async () => {
+  const store = await MarkdownStore.build({
+    peopleDirs: [],
+    orgDirs: [],
+    libraryDir: '/nb/library',
+  })
+
+  store.set('/nb/library/books/Atlas-Field-Guide.md', '---\nsummary: Atlas Field Guide\n---\n\n# Atlas Field Guide')
+
+  const ref = store.resolve('library/books/Atlas-Field-Guide')
+  assert({
+    given: 'a library ref without extension',
+    should: 'resolve as document type',
+    actual: ref.type,
+    expected: 'document',
+  })
+
+  assert({
+    given: 'a library ref without extension',
+    should: 'resolve to the file path',
+    actual: ref.type === 'document' ? ref.path : undefined,
+    expected: '/nb/library/books/Atlas-Field-Guide.md',
+  })
+
+  const refWithExt = store.resolve('library/books/Atlas-Field-Guide.md')
+  assert({
+    given: 'a library ref with extension',
+    should: 'resolve as document type',
+    actual: refWithExt.type,
+    expected: 'document',
+  })
+})
+
+test('MarkdownStore.resolve - unknown library/ refs stay unresolved', async () => {
+  const store = await MarkdownStore.build({
+    peopleDirs: [],
+    orgDirs: [],
+    libraryDir: '/nb/library',
+  })
+
+  assert({
+    given: 'a library ref with no matching file',
+    should: 'resolve as unresolved',
+    actual: store.resolve('library/books/Missing-Title').type,
+    expected: 'unresolved',
+  })
+})

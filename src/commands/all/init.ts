@@ -17,7 +17,7 @@ const CONTENT_DIRS = [
   'decisions',
   'goals',
   'ideas',
-  'notes',
+  'library',
   'people',
   'places',
   'places/locations',

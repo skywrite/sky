@@ -64,6 +64,7 @@ export interface MarkdownStoreConfig {
   streaksDir?: string
   ideasDir?: string
   placesDir?: string
+  libraryDir?: string
   timeDirs?: string[]
 }
 
@@ -78,6 +79,7 @@ export default class MarkdownStore {
   readonly ideas: IdeaStore
   readonly places: PlaceStore
   readonly time: DocumentStore
+  readonly library: DocumentStore
 
   /** Stored config for routing set/delete to correct sub-store */
   private dirs: MarkdownStoreConfig
@@ -92,6 +94,7 @@ export default class MarkdownStore {
     ideas: IdeaStore,
     places: PlaceStore,
     time: DocumentStore,
+    library: DocumentStore,
     dirs: MarkdownStoreConfig,
   ) {
     this.people = people
@@ -103,11 +106,12 @@ export default class MarkdownStore {
     this.ideas = ideas
     this.places = places
     this.time = time
+    this.library = library
     this.dirs = dirs
   }
 
   static async build(cfg: MarkdownStoreConfig): Promise<MarkdownStore> {
-    const [people, orgs, projects, decisions, goals, streaks, ideas, places, time] = await Promise.all([
+    const [people, orgs, projects, decisions, goals, streaks, ideas, places, time, library] = await Promise.all([
       PeopleStore.build(cfg.peopleDirs),
       OrgStore.build(cfg.orgDirs),
       cfg.projectsDir ? ProjectStore.build(cfg.projectsDir) : Promise.resolve(ProjectStore.empty()),
@@ -117,17 +121,16 @@ export default class MarkdownStore {
       cfg.ideasDir ? IdeaStore.build(cfg.ideasDir) : Promise.resolve(IdeaStore.empty()),
       cfg.placesDir ? PlaceStore.build(cfg.placesDir) : Promise.resolve(PlaceStore.empty()),
       DocumentStore.build(cfg.timeDirs ?? []),
+      DocumentStore.build(cfg.libraryDir ? [cfg.libraryDir] : []),
     ])
 
-    return new MarkdownStore(people, orgs, projects, decisions, goals, streaks, ideas, places, time, cfg)
+    return new MarkdownStore(people, orgs, projects, decisions, goals, streaks, ideas, places, time, library, cfg)
   }
 
   /**
    * Build a MarkdownStore with all entity directories from config.
-   * Loads people, orgs, projects, decisions, goals, ideas, places, and time.
-   *
-   * TODO: Include global notes from config.DIR_NOTES (Notebook/notes/) for
-   * relationship resolution and AI context.
+   * Loads people, orgs, projects, decisions, goals, ideas, places, time,
+   * and the library.
    */
   static buildFromAll(): Promise<MarkdownStore> {
     return MarkdownStore.build({
@@ -139,6 +142,7 @@ export default class MarkdownStore {
       streaksDir: config.DIR_STREAKS,
       ideasDir: config.DIR_IDEAS,
       placesDir: config.DIR_PLACES,
+      libraryDir: config.DIR_LIBRARY,
       timeDirs: [config.DIR_TIME],
     })
   }
@@ -183,6 +187,7 @@ export default class MarkdownStore {
     if (this.dirs.streaksDir && filePath.startsWith(this.dirs.streaksDir)) return this.streaks
     if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
     if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
+    if (this.dirs.libraryDir && filePath.startsWith(this.dirs.libraryDir)) return this.library
     for (const dir of this.dirs.timeDirs ?? []) {
       if (filePath.startsWith(dir)) return this.time
     }
@@ -212,7 +217,7 @@ export default class MarkdownStore {
   }
 
   /**
-   * Resolution order: URL, projects/, decisions/, goals/, streaks/, ideas/, places/, person, org, time doc, unresolved
+   * Resolution order: URL, projects/, decisions/, goals/, streaks/, ideas/, places/, library/, person, org, time doc, unresolved
    */
   resolve(raw: string, context?: ResolveContext): ResolvedRef {
     // Guard against null/undefined/non-string values
@@ -292,6 +297,19 @@ export default class MarkdownStore {
       }
     }
 
+    if (raw.startsWith('library/') && this.dirs.libraryDir) {
+      const subpath = raw.slice('library/'.length)
+      for (const candidate of [
+        path.join(this.dirs.libraryDir, `${subpath}.md`),
+        path.join(this.dirs.libraryDir, subpath),
+      ]) {
+        const doc = this.library.findByPath(candidate)
+        if (doc) {
+          return { type: 'document', value: doc, path: candidate, raw }
+        }
+      }
+    }
+
     const person = this.people.find(raw)
     if (person) {
       return { type: 'person', value: person.value, path: person.path, raw }
@@ -345,6 +363,9 @@ export default class MarkdownStore {
 
     const timeDoc = this.time.findByPath(filePath)
     if (timeDoc) return { doc: timeDoc, type: 'document' }
+
+    const libraryDoc = this.library.findByPath(filePath)
+    if (libraryDoc) return { doc: libraryDoc, type: 'document' }
 
     return undefined
   }
