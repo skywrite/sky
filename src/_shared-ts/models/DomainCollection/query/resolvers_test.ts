@@ -1338,6 +1338,13 @@ test('resolvers - a date-bounded query is exempt from the default cap', () => {
   })
 
   assert({
+    given: 'a `recent` window matching more than the default cap, no limit',
+    should: 'return the whole window — recent closes at now, so it is bounded',
+    actual: resolvers.documents({ where: { recent: '100y' } }).length,
+    expected: DEFAULT_QUERY_LIMIT + 10,
+  })
+
+  assert({
     given: 'a one-ended range (dateGte only), no limit',
     should: 'stay capped — an open range is not a bounded window',
     actual: resolvers.documents({ where: { dateGte: '2025-03-01' } }).length,
