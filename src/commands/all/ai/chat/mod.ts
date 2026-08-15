@@ -53,7 +53,7 @@ const params = {
   }),
   summaryBaseline: Flag.bool(
     'Seed days before yesterday from summary.md (else day.md alone) instead of every raw file',
-    { default: false },
+    { default: true },
   ),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', {
     default: false,
@@ -391,7 +391,7 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
-      'sky ai:chat --summary-baseline           # Seed old days from summaries, not raw files',
+      'sky ai:chat --no-summary-baseline        # Every raw file for all days (old flood)',
       'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
     ],
