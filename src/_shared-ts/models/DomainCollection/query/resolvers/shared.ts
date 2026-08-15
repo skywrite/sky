@@ -329,8 +329,11 @@ export const DEFAULT_QUERY_LIMIT = 500
 function hasDateBounds(where: unknown): boolean {
   if (typeof where !== 'object' || where === null) return false
   const w = where as DatedFilter
-  // Mirrors matchesDatedFilter: `date` alone bounds; a range needs both ends.
-  return Boolean(w.date || (w.dateGte && w.dateLte))
+  // Mirrors matchesDatedFilter: `date` alone bounds; a range needs both ends;
+  // `recent` bounds despite its one-sided spelling — the window closes at now
+  // (unlike a lone dateGte, which is open-ended and stays capped). Both
+  // filter families spell their window `recent`, so the cast covers both.
+  return Boolean(w.date || w.recent || (w.dateGte && w.dateLte))
 }
 
 /**
