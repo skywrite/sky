@@ -12,12 +12,14 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import {
   dropInvalidSelections,
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
 
 // -----------------------------------------------------------------------------
@@ -39,6 +41,9 @@ const params = {
   question: Arg.string('Question to gather context for'),
   since: Flag.string('Limit time-based queries to this period (e.g., 1y, 6mo)', {
     short: 's',
+    optional: true,
+  }),
+  until: Flag.string('Close the window at this date (YYYY-MM-DD); with --since forms a closed range', {
     optional: true,
   }),
 }
@@ -77,7 +82,7 @@ export default class AIContextSelectorTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { config, output } = context
-    const { question, since } = args
+    const { question, since, until } = args
 
     // Load prompt, schema, and entity context in parallel
     const [promptContent, schema, entityCtx] = await Promise.all([
@@ -104,9 +109,18 @@ export default class AIContextSelectorTask extends Command {
 
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-sel.prompt.md', renderInput)
 
-    const sinceHint = since
-      ? `\n\nIMPORTANT: The user scoped this question to the last ${since}. Put \`recent: "${since}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents) and omit \`limit\` on those roots — the period is the bound (date-bounded queries are uncapped) and downstream budgeting prunes any excess. A \`limit\` beside the bound would silently keep only the newest slice of the window.`
-      : ''
+    // A stated end switches the hint from a trailing `recent:` window to an
+    // absolute dateGte/dateLte pair — `recent:` always closes at now and
+    // would silently re-include everything after the stated end.
+    let sinceHint = ''
+    if (since && until) {
+      const start = PlainDate.from(context.notebookNow.date).addDays(-parseDuration(since)).toString()
+      sinceHint = `\n\nIMPORTANT: The user scoped this question to ${start} through ${until}. Put \`dateGte: "${start}"\` and \`dateLte: "${until}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents) and omit \`limit\` on those roots — the pair is the bound (date-bounded queries are uncapped) and downstream budgeting prunes any excess. A \`limit\` beside the bound would silently keep only the newest slice of the window. Never use \`recent\` here — it would re-open the window to now.`
+    } else if (until) {
+      sinceHint = `\n\nIMPORTANT: The user scoped this question to everything up to ${until}. Put \`dateLte: "${until}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents). Never use \`recent\` here — it would re-open the window to now.`
+    } else if (since) {
+      sinceHint = `\n\nIMPORTANT: The user scoped this question to the last ${since}. Put \`recent: "${since}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents) and omit \`limit\` on those roots — the period is the bound (date-bounded queries are uncapped) and downstream budgeting prunes any excess. A \`limit\` beside the bound would silently keep only the newest slice of the window.`
+    }
 
     const userPrompt = `Question: ${question}${sinceHint}
 

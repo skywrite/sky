@@ -8,11 +8,13 @@ updated: 2026-08-15
 Each stage is its own command, composable from the CLI:
 
 1. **`ai:context:date`** (`date.ts`, fast model) — extracts a lookback
-   duration (`since`) and any explicit `dates` from the message, then
-   enforces the coverage invariant below in code.
+   duration (`since`), a stated end (`until`), and any explicit `dates`
+   from the message, then enforces the coverage invariant below in code.
 2. **`ai:context:sel`** (`sel.ts`, balanced model) — writes GraphQL against
    the DomainCollection schema. A stated `since` becomes `recent:` on every
-   dated root with `limit` omitted (the period is the bound).
+   dated root with `limit` omitted (the period is the bound); a stated end
+   switches to a `dateGte`/`dateLte` pair instead — `recent:` always closes
+   at now and would silently re-open a closed range.
 3. **`ai:context:files`** (`files.ts`) — orchestrates 1→2, executes via
    `markdown:sel`, returns paths. `ai:chat`'s first turn rides this
    (`ChatContext.firstTurn`); `ai:context:gather` composes the same stages
@@ -28,16 +30,20 @@ have a corpus of real failure shapes to draw from.
 
 ## The timeframe contract
 
-- **`since` is a floor derived from language, enforced by code.** The
+- **The window is a floor derived from language, enforced by code.** The
   extraction model reliably pulls dates out of a message but routinely
   botches the calendar arithmetic that turns "since March 1 of 2025" into a
   duration — it rounds to a familiar bucket that lands short. `date.ts`
-  therefore re-derives coverage deterministically: the window is widened
-  until it contains every stated past date (`lib/widenSince.ts`). See
-  [2026-08-15](2026-08-15-window-must-cover-stated-dates.md).
+  therefore re-derives coverage deterministically: the window
+  [today − since, until ‖ today] is widened at the start and extended at
+  the end until it contains every stated past date (`lib/widenSince.ts`).
+  See [start coverage](2026-08-15-window-must-cover-stated-dates.md) and
+  [stated ends](2026-08-15-stated-range-ends.md).
 - **Stated dates are a floor, never a ceiling.** "My conversation with Jane
   on Friday" mentions Friday but does not mean "look back one day" — the
-  guard only ever widens a window, never narrows one to fit the dates.
+  guard only ever widens a window, never narrows one to fit the dates. The
+  end bound exists only when the user *states* one; two point-dates are not
+  a range.
 - **No stated timeframe ⇒ all history.** Results are newest-first and
   capped, so an unbounded search is cheap and reaches sparse old topics
   (`files.ts`). An unparseable duration also drops to all-history rather
