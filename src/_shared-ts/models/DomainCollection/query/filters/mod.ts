@@ -14,6 +14,8 @@ export {
   getDocumentDate,
   matchesCreatedRecently,
   matchesDate,
+  matchesDateGte,
+  matchesDateLte,
   matchesDateRange,
   matchesRecent,
   matchesRecentActivity,

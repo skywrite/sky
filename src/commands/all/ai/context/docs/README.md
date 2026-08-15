@@ -50,10 +50,14 @@ have a corpus of real failure shapes to draw from.
   (`widened: 1y → 533d (covers stated 2025-03-01)`), and an explicit
   `--since` on `ai:context:files` bypasses extraction and guard entirely.
 
-## Known landmine (open)
+## Absolute date bounds
 
-A lone `dateGte` validates against the schema but filters **nothing** —
-`resolvers/shared.ts` applies `dateGte`/`dateLte` only as a pair — and
-absolute date bounds don't earn the cap exemption that `recent:` gets.
-Until that's fixed, nothing in the sel prompt should steer the model toward
-absolute date bounds; the since-hint speaks `recent:` durations only.
+One-ended bounds work on their own: a lone `dateGte` filters from that date
+to now and is exempt from the default cap — it closes at now, exactly like
+`recent:` — while a lone `dateLte` filters everything up to its date but
+stays capped, being genuinely open toward the corpus start. Until
+2026-08-15 a lone bound validated against the schema yet filtered
+*nothing* (the resolvers applied the pair only), and evolve-turn queries
+write lone `dateGte` naturally, so the defect fired in live chats. The
+since-hint still speaks `recent:` durations; absolute bounds are simply no
+longer a trap when the model reaches for them.
