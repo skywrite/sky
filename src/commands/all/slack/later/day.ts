@@ -19,6 +19,7 @@ const params = {
   }),
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
   capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
+  captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
   limit: Flag.number('Max saved items to fetch from Slack', { default: 600 }),
 }
 
@@ -41,6 +42,8 @@ type Result = {
   matched: number
   captured: string[]
   completed: number
+  /** Items still in progress for the day once this run is done */
+  remaining: number
   failures: string[]
 }
 
@@ -65,10 +68,15 @@ export default class SlackLaterDayTask extends Command {
       'and auto-rel apply either way, the item is then marked complete in',
       'Slack — the Later list stays the ledger of what remains — and captured',
       'files open in the editor when done.',
+      '',
+      '--capture-batch N takes only the first N matched items and reports what',
+      'is left. Completed items drop off the list, so the same command run again',
+      'takes the next N — capture a batch, check its tags, run it again.',
     ],
     usage: [
       'sky slack:later:day',
       'sky slack:later:day --capture all',
+      'sky slack:later:day 2026-06-03 --capture-batch 10',
       'sky slack:later:day 2026-06-03 --capture 1,3',
       'sky slack:later:day 2026-06-03 --saved-on',
     ],
@@ -85,6 +93,16 @@ export default class SlackLaterDayTask extends Command {
       return CommandResult.fail(`Invalid date: ${args.date} (use YYYY-MM-DD)`)
     }
     const dayStr = day.toString()
+
+    // Both name what to capture — pick one rather than guess a precedence
+    if (args.capture !== undefined && args.captureBatch !== undefined) {
+      return CommandResult.fail('Use --capture or --capture-batch, not both')
+    }
+    if (args.captureBatch !== undefined && (!Number.isInteger(args.captureBatch) || args.captureBatch < 1)) {
+      return CommandResult.fail(
+        `Invalid --capture-batch: ${args.captureBatch} (use a whole number of items, 1 or more)`,
+      )
+    }
 
     if (!SLACK_WORKSPACE) {
       return CommandResult.fail(
@@ -148,10 +166,10 @@ export default class SlackLaterDayTask extends Command {
       output.log(`     ${d.link}`)
     }
 
-    if (matched.length === 0 || !args.capture) {
+    if (matched.length === 0 || (!args.capture && args.captureBatch === undefined)) {
       if (matched.length > 0) {
         output.log('')
-        output.log(`Re-run with: sky slack:later:day ${dayStr} --capture all   (or --capture 1,3)`)
+        output.log(`Re-run with: sky slack:later:day ${dayStr} --capture-batch 10   (or --capture all, --capture 1,3)`)
       }
       return CommandResult.success({
         day: dayStr,
@@ -160,15 +178,25 @@ export default class SlackLaterDayTask extends Command {
         matched: matched.length,
         captured: [],
         completed: 0,
+        remaining: matched.length,
         failures: [],
       })
     }
 
-    const selection = parseSelection(args.capture, matched.length)
-    if (!selection) {
-      return CommandResult.fail(`Invalid --capture: ${args.capture} (use "all" or indexes 1-${matched.length})`)
+    let picked: DayItem[]
+    if (args.capture) {
+      const selection = parseSelection(args.capture, matched.length)
+      if (!selection) {
+        return CommandResult.fail(`Invalid --capture: ${args.capture} (use "all" or indexes 1-${matched.length})`)
+      }
+      picked = selection === 'all' ? matched : selection.map((i) => matched[i])
+    } else {
+      picked = matched.slice(0, args.captureBatch)
+      if (picked.length < matched.length) {
+        output.log('')
+        output.log(`Capturing the first ${picked.length} of ${matched.length} matched`)
+      }
     }
-    const picked = selection === 'all' ? matched : selection.map((i) => matched[i])
 
     const captured: string[] = []
     const openTargets: string[] = []
@@ -212,9 +240,18 @@ export default class SlackLaterDayTask extends Command {
       }
     }
 
+    // Completed items leave the in-progress list, so what's left is what the
+    // next run of this same command will pick up
+    const remaining = matched.length - completed
+
     output.log('')
     output.log(`Captured ${captured.length}/${picked.length}; completed in Slack: ${completed}`)
     for (const failure of failures) output.log(`  ! ${failure}`)
+    if (remaining > 0) {
+      const next =
+        args.captureBatch === undefined ? '' : ` — re-run for the next ${Math.min(args.captureBatch, remaining)}`
+      output.log(`${remaining} left for ${dayStr}${next}`)
+    }
 
     if (openTargets.length > 0) {
       openEditor(openTargets.map((file) => ({ file })))
@@ -228,6 +265,7 @@ export default class SlackLaterDayTask extends Command {
       matched: matched.length,
       captured,
       completed,
+      remaining,
       failures,
     })
   }
