@@ -156,6 +156,26 @@ test('verifyResumeCandidate - accepts a faithful continuation', async () => {
   })
 })
 
+test('verifyResumeCandidate - accepts stamped new turns after an unstamped original', async () => {
+  const original = reconstructResumeState(
+    ChatDocument.fromMarkdown(await readTextFile(path.join(FIXTURES_DIR, 'two-turns-with-context-log-v2.md'))),
+  )
+  const candidate = buildCandidate(
+    [
+      ...original.conversation,
+      { role: 'user', content: 'One more question.', when: '2026-08-15 14:32' },
+      { role: 'assistant', content: 'One more answer.', when: '2026-08-15 14:33' },
+    ],
+    [...original.contextLog, { turn: 3, queries: [] }],
+  )
+  assert({
+    given: 'a pre-stamp original continued with stamped headings',
+    should: 'pass the gate — old headings stay bare, stamps live on new turns only',
+    actual: verifyResumeCandidate(candidate, original),
+    expected: { ok: true },
+  })
+})
+
 test('verifyResumeCandidate - rejects a mutated original message', async () => {
   const original = reconstructResumeState(
     ChatDocument.fromMarkdown(await readTextFile(path.join(FIXTURES_DIR, 'two-turns-with-context-log-v2.md'))),

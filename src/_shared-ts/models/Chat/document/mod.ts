@@ -20,6 +20,18 @@ const SPEAKER_ROLES: Record<string, 'user' | 'assistant'> = {
   'AI Assistant': 'assistant',
 }
 
+// A speaker heading with an optional turn stamp: `## JP (2026-08-15 14:32)`.
+// The stamp is notebook time — extended hours (25:30 and beyond) keep
+// multi-digit hour values, never clamped. Anything else in parentheses is
+// not a speaker heading and folds back like any assistant-emitted H2.
+const SPEAKER_PATTERN = /^(JP|AI Assistant)(?: \((\d{4}-\d{2}-\d{2} \d{1,3}:\d{2})\))?$/
+
+function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: string } | null {
+  const match = heading.match(SPEAKER_PATTERN)
+  if (!match) return null
+  return { role: SPEAKER_ROLES[match[1]], when: match[2] }
+}
+
 /**
  * ChatDocument - parses AI chat transcript files.
  *
@@ -35,12 +47,15 @@ const SPEAKER_ROLES: Record<string, 'user' | 'assistant'> = {
  *
  * # Topic Summary
  *
- * ## JP
+ * ## JP (2026-08-15 14:32)
  * User message.
  *
- * ## AI Assistant
+ * ## AI Assistant (2026-08-15 14:33)
  * AI response.
  * ```
+ *
+ * The heading stamp is optional — transcripts from before turn stamps
+ * have bare `## JP` / `## AI Assistant` headings.
  */
 export default class ChatDocument extends SectionDocument {
   static override yamlKeyOrder = ['created', 'updated', 'summary', 'provider', 'model', 'turns', 'rel', 'tags']
@@ -89,10 +104,10 @@ export default class ChatDocument extends SectionDocument {
     const messages: ConversationMessage[] = []
 
     for (const turn of turns) {
-      const role = SPEAKER_ROLES[turn.speaker]
+      const speaker = parseSpeaker(turn.speaker)
       const last = messages.at(-1)
 
-      if (!role) {
+      if (!speaker) {
         const heading = `## ${turn.speaker}`
         const restored = turn.content ? `${heading}\n\n${turn.content}` : heading
         if (last) {
@@ -103,10 +118,13 @@ export default class ChatDocument extends SectionDocument {
         continue
       }
 
-      if (last && last.role === role) {
+      if (last && last.role === speaker.role) {
+        // Merged turns keep the first stamp — the merge means one exchange.
         last.content += `\n\n${turn.content}`
       } else {
-        messages.push({ role, content: turn.content })
+        const message: ConversationMessage = { role: speaker.role, content: turn.content }
+        if (speaker.when) message.when = speaker.when
+        messages.push(message)
       }
     }
     return messages
@@ -150,13 +168,14 @@ export default class ChatDocument extends SectionDocument {
 
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
+      const stamp = msg.when ? ` (${msg.when})` : ''
       if (msg.role === 'user') {
-        lines.push('## JP')
+        lines.push(`## JP${stamp}`)
         lines.push('')
         lines.push(msg.content)
         lines.push('')
       } else {
-        lines.push('## AI Assistant')
+        lines.push(`## AI Assistant${stamp}`)
         lines.push('')
         lines.push(stripSummaryComment(msg.content))
         lines.push('')
