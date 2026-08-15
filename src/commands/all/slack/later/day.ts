@@ -1,16 +1,14 @@
-import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import parseLaterList from '#commands/all/slack/cli/lib/agent-slack/parseLaterList.ts'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
-import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
-import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE, SLACK_WORKSPACE } from '#config'
+import { SLACK_WORKSPACE } from '#config'
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { captureLaterItems } from './lib/capture.ts'
+import { fetchInProgressLater, laterChannelLabel, laterItemLink } from './lib/list.ts'
 import { oneLine, parseSelection } from './lib/pick.ts'
 
 const params = {
@@ -111,25 +109,9 @@ export default class SlackLaterDayTask extends Command {
     }
     const workspace = SLACK_WORKSPACE.replace(/\/$/, '')
 
-    const listResult = await runAgentSlack([
-      'later',
-      'list',
-      '--state',
-      'in_progress',
-      '--limit',
-      String(args.limit),
-      '--max-body-chars',
-      '300',
-    ])
-    if (!listResult.success) {
-      const detail = listResult.stderr.trim() || listResult.stdout.trim()
-      const hint = detail.includes('invalid_auth') ? ' — credentials expired, run `sky slack:auth`' : ''
-      return CommandResult.fail(`agent-slack later list failed: ${detail}${hint}`)
-    }
-    const list = parseLaterList(listResult.stdout)
-    if (!list) {
-      return CommandResult.fail(`Failed to parse agent-slack later list output: ${oneLine(listResult.stdout, 200)}`)
-    }
+    const fetched = await fetchInProgressLater(args.limit)
+    if ('error' in fetched) return CommandResult.fail(fetched.error)
+    const { list } = fetched
 
     // Notebook-day per item, via the same conversion slack:new uses to file
     // captures — so the listed day and the captured day can never disagree
@@ -142,7 +124,7 @@ export default class SlackLaterDayTask extends Command {
         const savedLabel = formatSlackTimestamp(String(item.date_saved), systemNow.timezone)
         savedDay = (await convertToNotebookTimezone(savedLabel)).plainDate.toString()
       }
-      const link = `${workspace}/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
+      const link = laterItemLink(workspace, item)
       dayItems.push({ item, messageDay, savedDay, timeLabel, link })
     }
 
@@ -156,12 +138,7 @@ export default class SlackLaterDayTask extends Command {
         (list.counts.in_progress !== undefined ? ` (${list.counts.in_progress} in progress total)` : ''),
     )
     for (const [index, d] of matched.entries()) {
-      // D-prefixed conversation ids are DMs (person, no #); mpdm slugs list their members
-      const isDm = d.item.channel_id.startsWith('D')
-      const name = d.item.channel_name?.replace(/^#/, '')
-      const groupHandles = mpdmMemberHandles(name)
-      const channel =
-        groupHandles.length > 0 ? groupHandles.join(', ') : name ? (isDm ? name : `#${name}`) : d.item.channel_id
+      const channel = laterChannelLabel(d.item)
       output.log(`  ${index + 1}. ${d.timeLabel.slice(11)}  ${channel}  ${oneLine(d.item.message?.content ?? '', 90)}`)
       output.log(`     ${d.link}`)
     }
@@ -198,63 +175,26 @@ export default class SlackLaterDayTask extends Command {
       }
     }
 
-    const captured: string[] = []
-    const openTargets: string[] = []
-    const failures: string[] = []
-    let completed = 0
-
-    for (const d of picked) {
-      output.log('')
-      output.log(`Capturing ${d.link}`)
-      const result = await tasks.run('slack:follow:new', { link: d.link, noEditor: true })
-
-      if (!result.ok) {
-        // An already-followed thread is already flowing into the notebook via
-        // follow:check — completing the Later item is still the right move
-        if (result.message?.includes('Duplicate follow')) {
-          output.log('  Already followed — skipping capture')
-          const done = await runAgentSlack(['later', 'complete', d.link])
-          if (done.success) completed++
-          else
-            failures.push(`${d.link}: already followed; complete failed — ${oneLine(done.stderr || done.stdout, 120)}`)
-          continue
-        }
-        failures.push(`${d.link}: ${result.message}`)
-        continue
-      }
-
-      const files = result.data?.slackFiles ?? []
-      if (files.length === 0) {
-        failures.push(`${d.link}: no files written`)
-        continue
-      }
-      if (result.data?.followed) output.log('  Live thread — following for new replies')
-      captured.push(...files)
-      openTargets.push(...files.map((p) => path.join(DIR_BASE, p)))
-
-      const done = await runAgentSlack(['later', 'complete', d.link])
-      if (done.success) {
-        completed++
-      } else {
-        failures.push(`${d.link}: captured but not completed in Slack — ${oneLine(done.stderr || done.stdout, 120)}`)
-      }
-    }
+    const outcome = await captureLaterItems(
+      picked.map((d) => d.link),
+      { tasks, output },
+    )
 
     // Completed items leave the in-progress list, so what's left is what the
     // next run of this same command will pick up
-    const remaining = matched.length - completed
+    const remaining = matched.length - outcome.completed
 
     output.log('')
-    output.log(`Captured ${captured.length}/${picked.length}; completed in Slack: ${completed}`)
-    for (const failure of failures) output.log(`  ! ${failure}`)
+    output.log(`Captured ${outcome.captured.length}/${picked.length}; completed in Slack: ${outcome.completed}`)
+    for (const failure of outcome.failures) output.log(`  ! ${failure}`)
     if (remaining > 0) {
       const next =
         args.captureBatch === undefined ? '' : ` — re-run for the next ${Math.min(args.captureBatch, remaining)}`
       output.log(`${remaining} left for ${dayStr}${next}`)
     }
 
-    if (openTargets.length > 0) {
-      openEditor(openTargets.map((file) => ({ file })))
+    if (outcome.openTargets.length > 0) {
+      openEditor(outcome.openTargets.map((file) => ({ file })))
       await delay(500)
     }
 
@@ -263,10 +203,10 @@ export default class SlackLaterDayTask extends Command {
       fetched: list.items.length,
       inProgressTotal: list.counts.in_progress,
       matched: matched.length,
-      captured,
-      completed,
+      captured: outcome.captured,
+      completed: outcome.completed,
       remaining,
-      failures,
+      failures: outcome.failures,
     })
   }
 }
