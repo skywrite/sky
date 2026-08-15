@@ -496,3 +496,137 @@ test('withBudget — a looser budget recovers pruned docs but never floored ones
     },
   })
 })
+
+// ---------------------------------------------------------------------------
+// Coverage reserve
+// ---------------------------------------------------------------------------
+
+/** Slice by /time/YYYY/MM/ path segment; null off the time tree. */
+const MONTH_SLICE = (item: { path: string }) => {
+  const m = item.path.match(/^\/time\/(\d{4})\/(\d{2})\//)
+  return m ? `${m[1]}-${m[2]}` : null
+}
+
+/** Score by month: the newest month dominates, like the recency prior. */
+const RECENCY_SCORER: Scorer = (item) => {
+  const month = MONTH_SLICE(item)
+  if (month === '2026-03') return scored(10)
+  if (month === '2026-02') return scored(5)
+  return scored(2)
+}
+
+/** ~50-token docs: two per month, March newest. */
+function sweepDomain(): DomainCollection {
+  const body = 'x'.repeat(200)
+  return makeDomain([
+    { doc: makeDoc(body), path: '/time/2026/01/05-11/01-06/actions/notes/jan-a.md' },
+    { doc: makeDoc(body), path: '/time/2026/01/05-11/01-07/actions/notes/jan-b.md' },
+    { doc: makeDoc(body), path: '/time/2026/02/02-08/02-03/actions/notes/feb-a.md' },
+    { doc: makeDoc(body), path: '/time/2026/02/02-08/02-04/actions/notes/feb-b.md' },
+    { doc: makeDoc(body), path: '/time/2026/03/02-08/03-03/actions/notes/mar-a.md' },
+    { doc: makeDoc(body), path: '/time/2026/03/02-08/03-04/actions/notes/mar-b.md' },
+  ])
+}
+
+test('reserve — every slice is represented where rank admission starves the old end', () => {
+  const opts = { scorer: RECENCY_SCORER, maxTokens: 160 } // fits ~3 of 6 docs
+  const rank = ContextAssembler.from(sweepDomain(), opts)
+  const stratified = ContextAssembler.from(sweepDomain(), {
+    ...opts,
+    reserve: { sliceOf: MONTH_SLICE, maxDocs: 1, maxTokens: 100 },
+  })
+
+  const months = (items: readonly { item: { path: string } }[]) => [...new Set(items.map((s) => MONTH_SLICE(s.item)))]
+
+  assert({
+    given: 'a recency-dominated universe over three months and a budget for half of it',
+    should: 'keep only the newest months under rank, all three under the reserve',
+    actual: {
+      rankMonths: months(rank.kept).sort(),
+      stratifiedMonths: months(stratified.kept).sort(),
+      reservedCount: stratified.reserved.length,
+      rankReserved: rank.reserved.length,
+    },
+    expected: {
+      rankMonths: ['2026-02', '2026-03'],
+      stratifiedMonths: ['2026-01', '2026-02', '2026-03'],
+      reservedCount: 3,
+      rankReserved: 0,
+    },
+  })
+})
+
+test('reserve — draws from floored docs: an asked-for era bypasses the relevance floor', () => {
+  // Floor at 0.35 × 10 = 3.5 floors the January docs (score 2); the reserve
+  // must admit January anyway — inside the window, weak docs are the era's
+  // only witnesses.
+  const stratified = ContextAssembler.from(sweepDomain(), {
+    scorer: RECENCY_SCORER,
+    maxTokens: 10000,
+    floorFraction: 0.35,
+    reserve: { sliceOf: MONTH_SLICE, maxDocs: 1, maxTokens: 100 },
+  })
+
+  assert({
+    given: 'a floor that cuts the oldest month and a reserve over the same window',
+    should: 'admit the era via the reserve and drop it from floored',
+    actual: {
+      janKept: stratified.kept.some((s) => s.item.path.includes('/01/')),
+      janReserved: stratified.reserved.some((s) => s.item.path.includes('/01/')),
+      flooredJan: stratified.floored.filter((s) => s.item.path.includes('/01/')).length,
+    },
+    expected: { janKept: true, janReserved: true, flooredJan: 1 }, // the second jan doc stays floored
+  })
+})
+
+test('reserve — per-slice caps hold, but a slice always gets its best doc', () => {
+  const big = 'x'.repeat(1200) // ~300 tokens, over the 100-token slice cap
+  const domain = makeDomain([
+    { doc: makeDoc(big), path: '/time/2026/01/05-11/01-06/actions/notes/jan-big.md' },
+    { doc: makeDoc('x'.repeat(200)), path: '/time/2026/02/02-08/02-03/actions/notes/feb-a.md' },
+    { doc: makeDoc('x'.repeat(200)), path: '/time/2026/02/02-08/02-04/actions/notes/feb-b.md' },
+    { doc: makeDoc('x'.repeat(200)), path: '/time/2026/02/02-08/02-05/actions/notes/feb-c.md' },
+  ])
+  const asm = ContextAssembler.from(domain, {
+    scorer: FLAT_SCORER,
+    maxTokens: 10000,
+    // Slice cap 150 fits two ~52-token docs; maxDocs 2 is what blocks the third.
+    reserve: { sliceOf: MONTH_SLICE, maxDocs: 2, maxTokens: 150 },
+  })
+
+  const reservedPaths = asm.reserved.map((s) => s.item.path)
+  assert({
+    given: 'an oversized best doc in one slice and three small docs in another (maxDocs 2)',
+    should: 'admit the oversized doc alone and exactly two of the small ones',
+    actual: {
+      janReserved: reservedPaths.filter((p) => p.includes('jan')).length,
+      febReserved: reservedPaths.filter((p) => p.includes('feb')).length,
+    },
+    expected: { janReserved: 1, febReserved: 2 },
+  })
+})
+
+test('reserve — docs outside the slicer compete normally and reserves count against the budget', () => {
+  const domain = makeDomain([
+    { doc: makeDoc('x'.repeat(200)), path: '/time/2026/01/05-11/01-06/actions/notes/jan-a.md' },
+    { doc: makeDoc('x'.repeat(200)), path: '/people/Jane-Doe.md' },
+  ])
+  const asm = ContextAssembler.from(domain, {
+    scorer: FLAT_SCORER,
+    maxTokens: 10000,
+    reserve: { sliceOf: MONTH_SLICE, maxDocs: 5, maxTokens: 1000 },
+  })
+
+  assert({
+    given: 'a time doc and an evergreen doc under a reserve slicing the time tree',
+    should: 'reserve only the sliced doc; the evergreen one rank-walks in',
+    actual: {
+      reserved: asm.reserved.map((s) => s.item.path),
+      kept: asm.kept.map((s) => s.item.path).sort(),
+    },
+    expected: {
+      reserved: ['/time/2026/01/05-11/01-06/actions/notes/jan-a.md'],
+      kept: ['/people/Jane-Doe.md', '/time/2026/01/05-11/01-06/actions/notes/jan-a.md'],
+    },
+  })
+})

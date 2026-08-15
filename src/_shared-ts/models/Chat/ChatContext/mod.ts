@@ -18,13 +18,14 @@
 import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import ContextAssembler, { type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
+import ContextAssembler, { type ReserveOptions, type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   type ContextDocRecord,
   type ContextTurnLog,
@@ -60,10 +61,16 @@ import {
 export type ProducerResult<T> = { ok: true; value: T } | { ok: false; message: string }
 
 export interface ContextProducers {
-  /** Turn 1: question → GraphQL query + matching paths. CLI: ai:context:files. */
+  /**
+   * Turn 1: question → GraphQL query + matching paths. CLI: ai:context:files.
+   * `since`/`until` carry the user-stated window when the question named one
+   * — the signal that switches admission to the sweep-stratified policy.
+   */
   produceInitialQuery(
     userMessage: string,
-  ): Promise<ProducerResult<{ paths: string[]; query?: string; truncations?: QueryTruncation[] }>>
+  ): Promise<
+    ProducerResult<{ paths: string[]; query?: string; truncations?: QueryTruncation[]; since?: string; until?: string }>
+  >
   /** Turns 2+: should the query set change, and to what. CLI: ai:context:evolve. */
   evolveQueries(
     userMessage: string,
@@ -215,6 +222,13 @@ export default class ChatContext {
   private provenance = new Map<string, DocProvenance>()
   private topicTerms: string[] = []
   private pinnedPaths: ReadonlySet<string> = new Set()
+  /**
+   * The user-stated window from turn 1, when the question named one. While
+   * set, every rebuild admits with the sweep-stratified policy — evolve
+   * turns inherit it, because the stated window governs the conversation,
+   * not just the turn that stated it.
+   */
+  private sweep: { since: string; until?: string } | null = null
   private contextLog: ContextTurnLog[] = []
   private turnNumber = 0
   // Context failures for the current turn. Reset when a turn starts (both
@@ -361,6 +375,17 @@ export default class ChatContext {
     this.queries = [...state.queries]
     this.turnNumber = state.lastTurn
 
+    // Re-arm the sweep policy the recorded session was running — the stated
+    // window governs the conversation, resumed or not.
+    for (let i = state.contextLog.length - 1; i >= 0; i--) {
+      const sweep = state.contextLog[i].stats?.sweep
+      if (sweep) {
+        const [since, until] = sweep.split('..')
+        this.sweep = { since, ...(until ? { until } : {}) }
+        break
+      }
+    }
+
     const resolution = await resolveUniverse(state.universePaths, this.baseDir)
     this.collection = await mergePathsIntoCollection(
       this.excludeOwnChat(resolution.resolved.map((r) => path.join(this.baseDir, r))),
@@ -409,6 +434,11 @@ export default class ChatContext {
       if (produced.ok && produced.value.truncations?.length) {
         // ai:context:files already printed the warning; record for the log.
         this.turnTruncations.push(...produced.value.truncations)
+      }
+      // A stated window arms the sweep policy even when the query itself
+      // returned nothing — the baseline universe still admits stratified.
+      if (produced.ok && produced.value.since) {
+        this.sweep = { since: produced.value.since, ...(produced.value.until ? { until: produced.value.until } : {}) }
       }
       if (produced.ok && produced.value.paths.length > 0) {
         if (produced.value.query) this.queries.push(produced.value.query)
@@ -567,6 +597,40 @@ export default class ChatContext {
   }
 
   /**
+   * Reserve options for the sweep-stratified admission policy, when a
+   * user-stated window is armed: month slices over [today − since,
+   * until ‖ today], sliced by the day-path date; docs off the time tree
+   * (or outside the window) compete normally. Returns undefined — plain
+   * rank admission — without a sweep or when the window fails to resolve.
+   */
+  private sweepReserve(): ReserveOptions | undefined {
+    if (!this.sweep) return undefined
+    let start: PlainDate
+    let end: PlainDate
+    try {
+      start = this.today.addDays(-parseDuration(this.sweep.since))
+      end = this.sweep.until ? PlainDate.from(this.sweep.until) : this.today
+    } catch {
+      return undefined
+    }
+    return {
+      sliceOf: (item) => {
+        let date: PlainDate | undefined
+        try {
+          date = parseDateFromDayPath(item.path)
+        } catch {
+          return null
+        }
+        if (!date) return null
+        if (PlainDate.compare(date, start) < 0 || PlainDate.compare(date, end) > 0) return null
+        return date.toString().slice(0, 7)
+      },
+      maxDocs: CHAT_SCORE.sweepReserveDocs,
+      maxTokens: CHAT_SCORE.sweepReserveTokens,
+    }
+  }
+
+  /**
    * Record retrieval evidence for query-returned paths. Evidence
    * accumulates over what queries actually returned — never the whole
    * universe, which would hand every document the same boost and let the
@@ -644,15 +708,17 @@ export default class ChatContext {
         scorer: withPinnedPaths(scorer, this.pinnedPaths),
         maxTokens: this.maxTokens,
         floorFraction: CHAT_SCORE.floorFraction,
+        reserve: this.sweepReserve(),
       })
       activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
+      const reservedPaths = new Set(assembler.reserved.map((s) => s.item.path))
       for (const s of assembler.kept) {
-        docRecords.set(
-          s.item.path,
+        const rec: ContextDocRecord =
           s.verdict.keep === 'always'
             ? { path: this.relPath(s.item.path), tokens: s.tokens, pinned: true }
-            : this.scoredRecord(s, lexicalByPath),
-        )
+            : this.scoredRecord(s, lexicalByPath)
+        if (reservedPaths.has(s.item.path)) rec.via = 'reserve'
+        docRecords.set(s.item.path, rec)
       }
       for (const s of assembler.pruned) {
         const rec: ContextDocRecord = { ...this.scoredRecord(s, lexicalByPath), cut: 'budget' }
@@ -680,6 +746,10 @@ export default class ChatContext {
         docTokens: assembler.totalTokens,
         budget: this.maxTokens,
         scoring: SCORING,
+      }
+      if (this.sweep) {
+        turnStats.policy = 'sweep-stratified'
+        turnStats.sweep = this.sweep.until ? `${this.sweep.since}..${this.sweep.until}` : this.sweep.since
       }
       if (this.summaryBaseline) turnStats.baseline = 'summary'
       if (assembler.floorValue !== null) {

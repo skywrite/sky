@@ -686,3 +686,74 @@ test('ChatContext.clear', async () => {
     expected: [],
   })
 })
+
+// ---------------------------------------------------------------------------
+// sweep-stratified admission
+// ---------------------------------------------------------------------------
+
+test('ChatContext.firstTurn - a stated window switches admission to sweep-stratified', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({
+      today: [FIX.day],
+      prev: [FIX.journal, FIX.oldDay, FIX.prevDay],
+      goals: [FIX.goal],
+    }),
+    producers: {
+      produceInitialQuery: () =>
+        Promise.resolve(ok({ paths: [FIX.person], query: '{ people { path } }', since: '14d', until: '2026-01-25' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('everything from mid-January through the 25th')
+
+  const entry = context.log[0]
+  const viaOf = (rel: string) => entry.universe?.find((r) => r.path === rel)?.via
+  assert({
+    given: 'a first turn whose producer reports a stated window (14d, until 2026-01-25)',
+    should: 'record the policy and window, and reserve only docs dated inside it',
+    actual: {
+      policy: entry.stats?.policy,
+      sweep: entry.stats?.sweep,
+      // 01-20 and 01-22 lie inside [today−14d, 01-25] — their month slice
+      // reserves them; 01-26/27 are past the stated end and compete by rank.
+      inWindowReserved: [
+        viaOf('time/2026/01/19-25/01-20/journal/10_Morning_Reflection.md'),
+        viaOf('time/2026/01/19-25/01-22/day.md'),
+      ],
+      outsideWindow: [viaOf('time/2026/01/26-01/01-26/day.md'), viaOf('time/2026/01/26-01/01-27/day.md')],
+    },
+    expected: {
+      policy: 'sweep-stratified',
+      sweep: '14d..2026-01-25',
+      inWindowReserved: ['reserve', 'reserve'],
+      outsideWindow: [undefined, undefined],
+    },
+  })
+})
+
+test('ChatContext.firstTurn - no stated window keeps plain rank admission', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: '{ people { path } }' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+
+  const entry = context.log[0]
+  assert({
+    given: 'a first turn with no stated window',
+    should: 'record no policy and mark nothing as reserved',
+    actual: {
+      policy: entry.stats?.policy,
+      sweep: entry.stats?.sweep,
+      reserved: entry.universe?.filter((r) => r.via === 'reserve').length,
+    },
+    expected: { policy: undefined, sweep: undefined, reserved: 0 },
+  })
+})

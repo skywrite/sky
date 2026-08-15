@@ -550,7 +550,13 @@ export default class AiChatTask extends Command {
           return r.status === 'success'
             ? {
                 ok: true,
-                value: { paths: r.data?.paths ?? [], query: r.data?.query, truncations: r.data?.truncations },
+                value: {
+                  paths: r.data?.paths ?? [],
+                  query: r.data?.query,
+                  truncations: r.data?.truncations,
+                  since: r.data?.since,
+                  until: r.data?.until,
+                },
               }
             : { ok: false, message: r.message ?? 'ai:context:files failed' }
         },

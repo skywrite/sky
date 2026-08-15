@@ -74,6 +74,23 @@ function normalizeVerdict(v: ScoreVerdict): ScoreVerdict {
  */
 export type Scorer = (item: CollectionItem<Document>) => ScoreVerdict
 
+/**
+ * Coverage reserve: guarantee every slice of a partition key minimum
+ * representation before the global score-rank walk. Exists because rank
+ * admission optimizes the sum of individual scores, and for set-level asks
+ * ("everything from X through Y") the kept set must also SPAN the window —
+ * a property no per-doc score can express. Slices admit oldest-first so the
+ * starved end of a sweep is funded before the budget can run out.
+ */
+export interface ReserveOptions {
+  /** Slice key for an item (e.g. its month), or null to leave it out of the reserve. */
+  sliceOf: (item: CollectionItem<Document>) => string | null
+  /** Max documents reserved per slice. */
+  maxDocs: number
+  /** Max reserved tokens per slice — but a slice's best doc is admitted even oversized. */
+  maxTokens: number
+}
+
 /** A document annotated with its verdict, projected score, and token cost. */
 export interface ScoredItem {
   item: CollectionItem<Document>
@@ -162,6 +179,7 @@ export default class ContextAssembler {
   private readonly _pruned: readonly ScoredItem[]
   private readonly _floored: readonly ScoredItem[]
   private readonly _excluded: readonly ScoredItem[]
+  private readonly _reserved: readonly ScoredItem[]
   private readonly _floorValue: number | null
   private readonly _totalTokens: number
 
@@ -169,6 +187,7 @@ export default class ContextAssembler {
   private readonly _scorer: Scorer
   private readonly _maxTokens: number
   private readonly _floorFraction: number | undefined
+  private readonly _reserve: ReserveOptions | undefined
   private readonly _collection: DomainCollection
 
   private constructor(
@@ -176,17 +195,20 @@ export default class ContextAssembler {
     scorer: Scorer,
     maxTokens: number,
     floorFraction: number | undefined,
+    reserve: ReserveOptions | undefined,
     collection: DomainCollection,
   ) {
     this._kept = parts.kept
     this._pruned = parts.pruned
     this._floored = parts.floored
     this._excluded = parts.excluded
+    this._reserved = parts.reserved
     this._floorValue = parts.floorValue
     this._totalTokens = parts.kept.reduce((sum, s) => sum + s.tokens, 0)
     this._scorer = scorer
     this._maxTokens = maxTokens
     this._floorFraction = floorFraction
+    this._reserve = reserve
     this._collection = collection
   }
 
@@ -206,15 +228,16 @@ export default class ContextAssembler {
    */
   static from(
     collection: DomainCollection,
-    opts: { scorer: Scorer; maxTokens?: number; floorFraction?: number },
+    opts: { scorer: Scorer; maxTokens?: number; floorFraction?: number; reserve?: ReserveOptions },
   ): ContextAssembler {
-    const { scorer, maxTokens = Infinity, floorFraction } = opts
+    const { scorer, maxTokens = Infinity, floorFraction, reserve } = opts
     const items = scoreItems(collection, scorer)
     return new ContextAssembler(
-      partition(items, maxTokens, floorFraction),
+      partition(items, maxTokens, floorFraction, reserve),
       scorer,
       maxTokens,
       floorFraction,
+      reserve,
       collection,
     )
   }
@@ -252,6 +275,15 @@ export default class ContextAssembler {
     return this._excluded
   }
 
+  /**
+   * Kept documents that owe their place to the coverage reserve — they were
+   * admitted per-slice before the rank walk (and would not all have survived
+   * it). Subset of `kept`; empty without a reserve.
+   */
+  get reserved(): readonly ScoredItem[] {
+    return this._reserved
+  }
+
   /** Sum of estimated tokens across all kept documents. */
   get totalTokens(): number {
     return this._totalTokens
@@ -286,10 +318,11 @@ export default class ContextAssembler {
   withBudget(maxTokens: number): ContextAssembler {
     const all = [...this._kept, ...this._pruned, ...this._floored, ...this._excluded]
     return new ContextAssembler(
-      partition(all, maxTokens, this._floorFraction),
+      partition(all, maxTokens, this._floorFraction, this._reserve),
       this._scorer,
       maxTokens,
       this._floorFraction,
+      this._reserve,
       this._collection,
     )
   }
@@ -303,6 +336,7 @@ export default class ContextAssembler {
       scorer: this._scorer,
       maxTokens: this._maxTokens,
       floorFraction: this._floorFraction,
+      reserve: this._reserve,
     })
   }
 
@@ -315,6 +349,7 @@ export default class ContextAssembler {
       scorer,
       maxTokens: this._maxTokens,
       floorFraction: this._floorFraction,
+      reserve: this._reserve,
     })
   }
 
@@ -344,6 +379,7 @@ interface Partitioned {
   pruned: readonly ScoredItem[]
   floored: readonly ScoredItem[]
   excluded: readonly ScoredItem[]
+  reserved: readonly ScoredItem[]
   floorValue: number | null
 }
 
@@ -392,7 +428,12 @@ function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
  * cannot violate that: the top item always clears its own floor, and an
  * ambient universe (top score ≤ 0) gets no floor at all.
  */
-function partition(items: ScoredItem[], maxTokens: number, floorFraction?: number): Partitioned {
+function partition(
+  items: ScoredItem[],
+  maxTokens: number,
+  floorFraction?: number,
+  reserve?: ReserveOptions,
+): Partitioned {
   const always: ScoredItem[] = []
   let eligible: ScoredItem[] = []
   const excluded: ScoredItem[] = []
@@ -424,7 +465,44 @@ function partition(items: ScoredItem[], maxTokens: number, floorFraction?: numbe
     eligible = eligible.filter((s) => s.score >= floor)
   }
 
-  const kept: ScoredItem[] = [...always]
+  // Coverage reserve: per-slice admission before the rank walk. Draws from
+  // eligible AND floored — inside an asked-for window, a weak old doc is the
+  // era's only witness, not padding — and admits oldest slice first so the
+  // budget cannot run out before the starved end is funded. Each slice gets
+  // its best doc even oversized (mirrors the at-least-one law below).
+  const reserved: ScoredItem[] = []
+  if (reserve) {
+    const bySlice = new Map<string, ScoredItem[]>()
+    for (const s of [...eligible, ...floored]) {
+      const key = reserve.sliceOf(s.item)
+      if (key === null) continue
+      const slice = bySlice.get(key) ?? []
+      slice.push(s)
+      bySlice.set(key, slice)
+    }
+    const alwaysTokens = always.reduce((sum, s) => sum + s.tokens, 0)
+    let reservedTokens = 0
+    for (const key of [...bySlice.keys()].sort()) {
+      const slice = bySlice.get(key)!.sort(byScoreDescThenSizeAsc)
+      let docs = 0
+      let tokens = 0
+      for (const s of slice) {
+        if (docs > 0 && (docs >= reserve.maxDocs || tokens + s.tokens > reserve.maxTokens)) break
+        if (alwaysTokens + reservedTokens + s.tokens > maxTokens) break
+        reserved.push(s)
+        docs++
+        tokens += s.tokens
+        reservedTokens += s.tokens
+      }
+    }
+    if (reserved.length > 0) {
+      const inReserve = new Set(reserved)
+      eligible = eligible.filter((s) => !inReserve.has(s))
+      floored = floored.filter((s) => !inReserve.has(s))
+    }
+  }
+
+  const kept: ScoredItem[] = [...always, ...reserved]
   const pruned: ScoredItem[] = []
   let usedTokens = kept.reduce((sum, s) => sum + s.tokens, 0)
 
@@ -442,6 +520,7 @@ function partition(items: ScoredItem[], maxTokens: number, floorFraction?: numbe
     pruned: Object.freeze(pruned),
     floored: Object.freeze(floored),
     excluded: Object.freeze(excluded),
+    reserved: Object.freeze(reserved),
     floorValue,
   }
 }

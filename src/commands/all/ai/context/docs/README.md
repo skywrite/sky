@@ -21,8 +21,10 @@ Each stage is its own command, composable from the CLI:
    into loaded context.
 
 Query *execution* mechanics — filter predicates, duration parsing, default
-caps — live in `#shared/models/DomainCollection/query/`. This doc owns the
-composition: how language turns into query bounds.
+caps — live in `#shared/models/DomainCollection/query/`. What ai:chat
+*keeps* of a gathered universe (admission policy, pruning, the sweep
+reserve) lives in `#shared/models/Chat/ChatContext/docs/`. This doc owns
+the composition: how language turns into query bounds.
 
 Query-behavior changes are recorded here as dated entries — symptom,
 rejected designs, rationale — so extraction-prompt tuning and future evals
