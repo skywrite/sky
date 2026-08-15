@@ -27,6 +27,7 @@ export async function summarizeTranscript(
   try {
     const { text } = await generateText({
       ...aiModel('fast'),
+      abortSignal: AbortSignal.timeout(60_000),
       prompt: [
         `You are labeling a ${kind} for a filename. Summarize its topic in 5-7 words.`,
         '',

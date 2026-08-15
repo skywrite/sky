@@ -127,6 +127,9 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       let bornExpired = 0
       const synced: SyncedThread[] = []
       const closed: ClosedThread[] = []
+      // Threads whose follow was created this run — the captures a person
+      // wants in front of them to check the fresh tagging.
+      const firstCaptures = new Set<string>()
 
       if (fetchResult.fetched === 0) {
         output.log('  All threads synced.')
@@ -180,6 +183,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
               now: now.plainDateTime,
             })
             const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+            firstCaptures.add(thread.threadId)
             const topic = thread.summary || thread.subject
             synced.push({
               from: thread.from,
@@ -205,18 +209,31 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         // Failed threads stay in the inbox so the next sync retries them.
         await this.archiveFromInbox(client, fetchResult.threads, output)
 
-        // A console run is a person catching up: open what was captured for
-        // review. On the heartbeat (Server platform) no one is at the editor,
-        // so nothing opens. Capped — a backlog drain creates dozens of files,
-        // and a wall of tabs reviews worse than the report below.
+        // A console run is a person catching up: open everything captured.
+        // On the heartbeat (Server platform) open only FIRST captures — a new
+        // follow means fresh AI tagging worth a human glance, while
+        // continuations inherit already-reviewed fields. Capped — a backlog
+        // drain creates dozens of files, and a wall of tabs reviews worse
+        // than the report below.
         const created = fetchResult.threads.flatMap((t) => t.messages)
-        if (!noEditor && context.platform === CommandPlatform.Console && created.length > 0) {
-          const toOpen = created.slice(0, MAX_EDITOR_OPENS)
-          const rest = created.length - toOpen.length
+        const reviewable =
+          context.platform === CommandPlatform.Console
+            ? created
+            : context.platform === CommandPlatform.Server
+              ? fetchResult.threads.filter((t) => firstCaptures.has(t.threadId)).flatMap((t) => t.messages)
+              : []
+        if (!noEditor && reviewable.length > 0) {
+          const toOpen = reviewable.slice(0, MAX_EDITOR_OPENS)
+          const rest = reviewable.length - toOpen.length
           output.log(
             `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
           )
-          await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
+          try {
+            await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
+          } catch (err) {
+            // A heartbeat must never fail over an editor that couldn't spawn.
+            output.log(`  Warning: could not open editor (${(err as Error).message})`)
+          }
         }
       }
 
