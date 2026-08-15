@@ -13,6 +13,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { widenSinceToCoverDates } from './lib/widenSince.ts'
 
 const PROMPT_FILE = new URL('./prompts/context-date.prompt.md', import.meta.url).pathname
 
@@ -90,15 +92,26 @@ export default class AIContextDateTask extends Command {
       prompt: message,
     })
 
+    // Enforce window ⊇ stated dates — the model's calendar arithmetic is
+    // untrusted (see lib/widenSince.ts). Dates are a floor, never a ceiling.
+    const resolution = widenSinceToCoverDates(object.since, object.dates, PlainDate.from(context.notebookNow.date))
+    const since = resolution.since
+
     if (json) {
-      output.log(JSON.stringify({ since: object.since, dates: object.dates }))
+      output.log(JSON.stringify({ since, dates: object.dates }))
     } else {
-      output.log(`since: ${object.since || '(none)'}`)
+      output.log(`since: ${since || '(none)'}`)
       if (object.dates.length > 0) {
         output.log(`dates: ${object.dates.join(', ')}`)
       }
+      if (resolution.widenedToCover) {
+        output.log(`widened: ${object.since} → ${since} (covers stated ${resolution.widenedToCover})`)
+      }
+      if (resolution.droppedInvalid) {
+        output.log(`dropped unparseable duration "${resolution.droppedInvalid}" — searching all history`)
+      }
     }
 
-    return CommandResult.success({ since: object.since, dates: object.dates })
+    return CommandResult.success({ since, dates: object.dates })
   }
 }
