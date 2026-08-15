@@ -20,6 +20,11 @@ const FIX = {
   journal: abs('time/2026/01/19-25/01-20/journal/10_Morning_Reflection.md'),
   summary: abs('time/2026/01/19-25/01-20/summary.md'),
   meeting: abs('time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'),
+  prevDay: abs('time/2026/01/26-01/01-26/day.md'),
+  prevSummary: abs('time/2026/01/26-01/01-26/summary.md'),
+  prevMeeting: abs('time/2026/01/26-01/01-26/actions/meetings/14-00_Atlas_Review.md'),
+  oldDay: abs('time/2026/01/19-25/01-22/day.md'),
+  oldMessage: abs('time/2026/01/19-25/01-22/actions/messages/slack_Ops-to-atlas-general_Standup-Notes.md'),
   goal: abs('goals/2026.md'),
   decision: abs('decisions/2026-01_Atlas-Tooling.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
@@ -114,6 +119,53 @@ test('ChatContext.seedBaseline - dedupe', async () => {
     should: 'enter the universe once',
     actual: report.size,
     expected: 3,
+  })
+})
+
+test('ChatContext.seedBaseline - summary baseline', async () => {
+  const { context } = makeContext({
+    summaryBaseline: true,
+    fetchContext: fetchFake({
+      today: [FIX.day],
+      prev: [
+        // Yesterday (01-26) is exempt: raw survives even its own summary
+        FIX.prevDay,
+        FIX.prevMeeting,
+        FIX.prevSummary,
+        // 01-20 has a summary: it replaces raw, the journal rides along
+        FIX.summary,
+        FIX.journal,
+        FIX.meeting,
+        // 01-22 has no summary: the day.md ledger stands in alone
+        FIX.oldDay,
+        FIX.oldMessage,
+      ],
+      goals: [FIX.goal],
+    }),
+  })
+  await context.seedBaseline()
+  await context.firstTurn('what happened with Atlas this week?')
+
+  assert({
+    given: 'the opt-in summary baseline over an exempt yesterday, a summarized day, and an unsummarized day',
+    should: 'keep yesterday whole, collapse the other days to summary/ledger, and tag the turn stats',
+    actual: {
+      paths: [...context.paths].sort(),
+      baseline: context.log[0].stats?.baseline,
+    },
+    expected: {
+      paths: [
+        FIX.day,
+        FIX.prevDay,
+        FIX.prevMeeting,
+        FIX.prevSummary,
+        FIX.summary,
+        FIX.journal,
+        FIX.oldDay,
+        FIX.goal,
+      ].sort(),
+      baseline: 'summary',
+    },
   })
 })
 

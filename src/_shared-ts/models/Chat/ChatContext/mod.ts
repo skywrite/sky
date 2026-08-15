@@ -148,6 +148,13 @@ export interface ChatContextOptions {
    * has). Fresh sessions only write at exit and cannot self-match.
    */
   ownChatPath?: string | null
+  /**
+   * Opt-in lean baseline: previous days before yesterday seed from their
+   * summary.md — or the day.md ledger alone when no summary exists —
+   * instead of every raw file. Today and yesterday always seed whole.
+   * Default off: a no-summary day sweeps in all its raw files.
+   */
+  summaryBaseline?: boolean
   onProgress?: (event: ContextProgressEvent) => void
   /** Test seams — production uses the real service fetch and error log. */
   fetchContext?: typeof fetchContextFromServer
@@ -195,6 +202,7 @@ export default class ChatContext {
   private readonly baseDir: string
   private readonly maxTokens: number
   private readonly ownChatPath: string | null
+  private readonly summaryBaseline: boolean
   private readonly producers: ContextProducers
   private readonly onProgress?: (event: ContextProgressEvent) => void
   private readonly fetchContext: typeof fetchContextFromServer
@@ -223,6 +231,7 @@ export default class ChatContext {
     this.baseDir = opts.baseDir
     this.maxTokens = opts.maxTokens ?? 300_000
     this.ownChatPath = opts.ownChatPath ?? null
+    this.summaryBaseline = opts.summaryBaseline ?? false
     this.producers = opts.producers
     this.onProgress = opts.onProgress
     this.fetchContext = opts.fetchContext ?? fetchContextFromServer
@@ -281,9 +290,14 @@ export default class ChatContext {
     }
 
     const prevDocs: Array<{ doc: Document; path: string }> = []
-    for (const [, files] of byDate) {
+    const yesterdayKey = yesterday.toString()
+    for (const [date, files] of byDate) {
+      // The opt-in summary baseline exempts yesterday: like today it seeds
+      // whole — recent enough that conversations usually need the raw
+      // record, summarized or not.
+      const exempt = this.summaryBaseline && date === yesterdayKey
       const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
-      if (hasSummary) {
+      if (hasSummary && !exempt) {
         // Summary replaces raw activity, but journals and AI chats carry
         // context the summary doesn't (mirrors journal:new's gatherContext)
         prevDocs.push(
@@ -291,6 +305,11 @@ export default class ChatContext {
             (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
           ),
         )
+      } else if (this.summaryBaseline && !exempt) {
+        // No summary under the lean baseline: the day.md ledger stands in —
+        // it links every artifact of the day, so query evolution can still
+        // reach anything dropped here.
+        prevDocs.push(...files.filter((f) => f.path.endsWith('/day.md')))
       } else {
         prevDocs.push(...files)
       }
@@ -662,6 +681,7 @@ export default class ChatContext {
         budget: this.maxTokens,
         scoring: SCORING,
       }
+      if (this.summaryBaseline) turnStats.baseline = 'summary'
       if (assembler.floorValue !== null) {
         turnStats.floor = Math.round(assembler.floorValue * 100) / 100
         turnStats.floored = assembler.floored.length
