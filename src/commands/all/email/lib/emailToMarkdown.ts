@@ -65,6 +65,14 @@ const MAX_PRIOR_CHARS = 100_000
 const MAX_OUTPUT_TOKENS = 64_000
 /** Loop brake, not a budget — one window finishes in 1-2 rounds. */
 const MAX_ROUNDS = 4
+/**
+ * Per-call abort: a 64k-token window legitimately generates for minutes, but a
+ * wedged connection would otherwise hang a sync forever — and on the
+ * heartbeat, wedge the tick guard with it, killing all heartbeat activity
+ * until the 12-hour process recycle. AI failures propagate to the caller's
+ * fail-and-retry, so a timeout costs one thread one run, never the capture.
+ */
+const CALL_TIMEOUT_MS = 10 * 60_000
 /** Windows per email (~768k chars). Past this the capture is marked, not silently short. */
 const MAX_WINDOWS = 6
 /** How much of the text so far seeds the next window, so the seam reads as one voice. */
@@ -182,6 +190,7 @@ export async function emailToMarkdown(
       const result = await generateText({
         ...aiModel('balanced'),
         maxOutputTokens: MAX_OUTPUT_TOKENS,
+        abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         messages: [
           { role: 'user' as const, content: prompt },
           ...(part

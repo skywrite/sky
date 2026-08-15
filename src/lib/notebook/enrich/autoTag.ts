@@ -37,7 +37,10 @@ export async function autoTagMessage(
   try {
     const corpus = await loadMessageCorpus(opts.mediums)
     const records = corpus.records.filter((r) => r.date >= TAXONOMY_SINCE)
-    const menu = buildTagMenu(records)
+    // projects/* is rel vocabulary, never tag vocabulary (JP's rule): project
+    // membership is a reference, not a topic. Historical captures carry it as
+    // tags, so it must leave the menu here or the classifier re-learns it.
+    const menu = buildTagMenu(records).filter((t) => !t.tag.startsWith('projects/'))
     if (menu.length === 0) return undefined
 
     const outcome = await chooseTags(

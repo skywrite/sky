@@ -1,4 +1,5 @@
 import process from 'node:process'
+import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { getDarwinIdleMs, readSystemTimezone } from '#lib/sys/mod.ts'
@@ -114,7 +115,11 @@ export default async function run() {
   // Heartbeat: periodic cadence runner (follow checks, inbox scans, etc.)
   // See docs/ideas/heartbeat-system.md for design
   const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
-  const EMAIL_SYNC_TICKS = 3 // every 3 minutes
+  // 15 minutes: a steady-state email sync with nothing new is ~45 Gmail
+  // metadata calls and no AI calls, so cadence is purely capture freshness —
+  // and the tick counter resets with every service restart, so a shorter fuse
+  // actually fires on edit-heavy days.
+  const EMAIL_SYNC_TICKS = 15
   const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
   let heartbeatRunning = false
   let heartbeatTick = 0
@@ -228,29 +233,52 @@ export default async function run() {
         logHeartbeat.error('follow check failed: {message}', { message: result.message })
       }
 
-      // Email follow sync (every 3 minutes) — disabled until IMAP zlib stability is resolved
-      // if (heartbeatTick % EMAIL_SYNC_TICKS === 0) {
-      //   const emailAccounts = await ctx.secrets.list('email')
-      //   for (const entry of emailAccounts) {
-      //     try {
-      //       const emailResult = await commandService.run('follow:email:sync', { account: entry.name })
-      //       if (emailResult.status === 'success') {
-      //         const data = emailResult.data as
-      //           | { newFollows: number; updatedFollows: number; totalMessages: number }
-      //           | undefined
-      //         if (data && data.totalMessages > 0) {
-      //           console.log(
-      //             `[heartbeat] Email sync ${entry.name}: ${data.newFollows} new, ${data.updatedFollows} updated, ${data.totalMessages} msgs`,
-      //           )
-      //         }
-      //       } else {
-      //         console.error(`[heartbeat] Email sync ${entry.name} failed: ${emailResult.message}`)
-      //       }
-      //     } catch (err) {
-      //       console.error(`[heartbeat] Email sync ${entry.name} error:`, err)
-      //     }
-      //   }
-      // }
+      // Email follow sync: capture new mail in the Sky/Follow bucket across
+      // every Gmail-scoped account and retire quiet follows. Bounded per run
+      // (25 unsaved threads/account) so a backlog drains across ticks instead
+      // of holding this one — the slack check above shares the
+      // heartbeatRunning guard.
+      if (heartbeatTick % EMAIL_SYNC_TICKS === 0) {
+        const sweep = await syncGmailFollowAccounts({ secrets: ctx.secrets, tasks: commandService })
+        const totals = sweepTotals(sweep)
+        tick.set({
+          emailAccounts: sweep.ran.length,
+          emailNew: totals.newFollows,
+          emailUpdated: totals.updatedFollows,
+          emailBornExpired: totals.bornExpired,
+          emailExpired: totals.expired,
+          emailMessages: totals.fetchedMessages,
+        })
+        if (sweep.unavailable) {
+          tick.set({ emailSync: sweep.unavailable })
+        } else if (totals.fetchedMessages > 0 || totals.newFollows > 0 || totals.expired > 0) {
+          logHeartbeat.info(
+            'Email sync: {emailNew} new, {emailUpdated} updated, {emailBornExpired} captured+closed, {emailMessages} message(s), {emailExpired} expired',
+            {
+              event: 'email-synced',
+              emailNew: totals.newFollows,
+              emailUpdated: totals.updatedFollows,
+              emailBornExpired: totals.bornExpired,
+              emailMessages: totals.fetchedMessages,
+              emailExpired: totals.expired,
+              accounts: sweep.ran.map((a) => a.account),
+            },
+          )
+        }
+        for (const skipped of sweep.skipped) {
+          logHeartbeat.info('Email sync skipped {account}: {reason}', {
+            event: 'email-sync-skipped',
+            account: skipped.account,
+            reason: skipped.reason,
+          })
+        }
+        for (const failed of sweep.ran.filter((a) => a.error)) {
+          logHeartbeat.error('Email sync failed for {account}: {message}', {
+            account: failed.account,
+            message: failed.error,
+          })
+        }
+      }
     } catch (err) {
       tick.fail(err)
       return
