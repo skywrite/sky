@@ -32,7 +32,14 @@ function truncateIfExceedsTokenLimit(content: string): string {
 }
 
 const WebFetchSchema = z.object({
-  name: z.string().describe('Organization name'),
+  name: z
+    .string()
+    .describe(
+      "The organization's colloquial name — what people call it in conversation. " +
+        'Never the domain or site wordmark ("Treasury.gov", "acme.com"), and not the full legal/official name ' +
+        'when a shorter everyday one exists: "The Treasury Department", not "United States Department of the Treasury"; ' +
+        '"IBM", not "International Business Machines Corporation".',
+    ),
   summary: z.string().describe('Brief 1-2 sentence description of what the organization does'),
 })
 

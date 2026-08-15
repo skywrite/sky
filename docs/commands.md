@@ -94,6 +94,7 @@ index without you maintaining one.
 sky person:new "Jane Doe"        # add someone to your CRM
 sky person:list:last             # who you added recently
 sky org:new "Acme Corp"          # add an org — enriches from Wikipedia and its website
+sky org:new --site=acme.com      # same, but the name is detected from the site
 sky org:webfetch                 # re-fetch and analyze an org's website
 sky places:search                # search for a place and add it
 sky places:new                   # add a place from a Maps link or coordinates

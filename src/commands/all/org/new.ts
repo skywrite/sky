@@ -11,12 +11,12 @@ import outputFile from '#shared/fs/outputFile.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
 import { categorizeOrganization } from './lib/categorize.ts'
-import { webFetch } from './lib/webFetch.ts'
+import { webFetch, type WebFetchResult } from './lib/webFetch.ts'
 import { getWikipediaArticleAI, type WikipediaSelectionResult } from './lib/wikipedia.ts'
 
 const params = {
-  name: Arg.string('Organization name to use (not auto-detected)', { required: true }),
-  site: Flag.string('Organization website for enrichment'),
+  name: Arg.string('Organization name (optional with --site: detected from the website)', { optional: true }),
+  site: Flag.string('Organization website for enrichment; the name source when no name is given'),
   wikipedia: Flag.string('Wikipedia search query or exact article title', { short: 'p' }),
   noWikipedia: Flag.bool('Skip Wikipedia enrichment'),
   sector: Flag.string('Force specific sector', { short: 's' }),
@@ -36,10 +36,32 @@ export default class OrgNewTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { name, site, noWikipedia } = args
+    const { site, noWikipedia } = args
     const wikipediaQueryArg = args.wikipedia
     const forcedSector = args.sector
     const forcedSubcategory = args.subcategory
+
+    // Fetched up front when the site must yield the name; reused for
+    // categorization below so the site is never fetched twice.
+    let prefetchedSite: WebFetchResult | undefined
+
+    let name = args.name
+    if (!name) {
+      if (!site) {
+        output.error('Provide an organization name, or --site to detect the name from the website')
+        return CommandResult.error(new Error('missing name: pass a name argument or --site'))
+      }
+      output.log(`Detecting organization name from site: ${site}`)
+      try {
+        prefetchedSite = await webFetch(site)
+      } catch (error) {
+        // Unlike the enrichment fetch below, there is no name to fall back on
+        output.error(`Site fetch failed: ${(error as Error).message}`)
+        return CommandResult.error(error as Error)
+      }
+      name = prefetchedSite.name
+      output.log(`${colors.bold('Detected name:')} ${name}`)
+    }
 
     // Use Wikipedia flag if provided, otherwise default to org name (unless --no-wikipedia is set)
     const wikipediaQuery = noWikipedia ? undefined : (wikipediaQueryArg ?? name)
@@ -53,7 +75,8 @@ export default class OrgNewTask extends Command {
 
     // A same-named file anywhere under orgs/ is the same org: proceeding would
     // either clobber it in place (losing hand-written notes) or duplicate it
-    // under a different category. Check before spending on enrichment calls.
+    // under a different category. Check as soon as the name is known, before
+    // spending on further enrichment calls.
     const existing = await findExistingOrgFile(filename)
     if (existing) {
       if (args.force) {
@@ -91,6 +114,7 @@ export default class OrgNewTask extends Command {
         // degrades to categorizing without it — only categorization itself is fatal.
         const [webFetchResult, wikipediaFetched] = await Promise.all([
           (async () => {
+            if (prefetchedSite) return prefetchedSite // fetched during name detection
             if (!site) return undefined
             output.log(`Fetching site: ${site}`)
             try {
