@@ -129,18 +129,9 @@ export default class Document {
 
     const referenceLabels = Document.extractReferenceLabels(subsetMarkdown)
 
-    // validate links set has all links in subset
-    // if not, this is totally a bug
     referenceLabels.forEach((label) => {
-      if (!this.links.has(label)) {
-        console.warn(`Markdown document does not have a corresponding link for ${label}.`)
-      }
-    })
-
-    referenceLabels.forEach((label) => {
-      if (!this.links.has(label)) return
-
-      links.set(label, this.links.get(label) as Link)
+      const link = this._links.get(label)
+      if (link) links.set(label, link)
     })
 
     return links
