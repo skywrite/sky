@@ -17,6 +17,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 
@@ -107,6 +108,18 @@ export interface ChatEngineOptions {
 // Helpers
 // -----------------------------------------------------------------------------
 
+/**
+ * The model-facing time prefix for a user message. `when` is a notebook
+ * datetime (`YYYY-MM-DD HH:MM`); during extended hours (24:00 and beyond)
+ * the wall-clock equivalent is appended so the model never has to
+ * de-extend late-night dates itself.
+ */
+export function timeStampLine(when: string): string {
+  const hours = Number(when.split(' ')[1]?.split(':')[0])
+  if (!(hours >= 24)) return `[Time: ${when}]`
+  return `[Time: ${when} notebook - wall clock ${new PlainDateTime(when).normalize().toString()}]`
+}
+
 /** Short human digest of a tool input for the turn log — never the payload. */
 function toolInputDigest(input: unknown): string | undefined {
   if (input == null) return undefined
@@ -141,21 +154,34 @@ export default class ChatEngine {
     this.invokeModel = opts.invokeModel
   }
 
-  /** Reseed the history from a saved transcript (resume). */
+  /**
+   * Reseed the history from a saved transcript (resume). Stamped user
+   * messages regain their model-facing time prefix so the model can read
+   * how old the prior exchanges are. Assistant stamps stay file-only —
+   * prefixing the model's own past replies would teach it to emit stamps.
+   */
   seedConversation(conversation: ConversationMessage[]): void {
-    this.messages.push(...conversation.map((m) => ({ role: m.role, content: m.content })))
+    this.messages.push(
+      ...conversation.map((m) => ({
+        role: m.role,
+        content: m.role === 'user' && m.when ? `${timeStampLine(m.when)}\n${m.content}` : m.content,
+      })),
+    )
   }
 
   /**
-   * Add the user's message to the history. A resumed transcript can end
-   * mid-exchange on a user message; merge into it so roles keep alternating.
+   * Add the user's message to the history, prefixed with its time stamp
+   * when one is given. A resumed transcript can end mid-exchange on a user
+   * message; merge into it so roles keep alternating — each merged chunk
+   * keeps its own stamp.
    */
-  appendUserMessage(userMessage: string): void {
+  appendUserMessage(userMessage: string, when?: string): void {
+    const content = when ? `${timeStampLine(when)}\n${userMessage}` : userMessage
     const priorMsg = this.messages.at(-1)
     if (priorMsg?.role === 'user' && typeof priorMsg.content === 'string') {
-      priorMsg.content += '\n\n' + userMessage
+      priorMsg.content += '\n\n' + content
     } else {
-      this.messages.push({ role: 'user', content: userMessage })
+      this.messages.push({ role: 'user', content })
     }
   }
 

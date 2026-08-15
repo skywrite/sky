@@ -1,6 +1,6 @@
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { assert, test } from '#test'
-import ChatEngine, { type ApprovalDecision, type ModelInvocation, type ModelInvoker } from './mod.ts'
+import ChatEngine, { type ApprovalDecision, type ModelInvocation, type ModelInvoker, timeStampLine } from './mod.ts'
 
 // ---------------------------------------------------------------------------
 // Scripted fakes
@@ -138,6 +138,66 @@ test('ChatEngine.seedConversation', async () => {
     should: 'replay the history ahead of the new message',
     actual: calls[0].messages.map((m) => (m as { role: string }).role),
     expected: ['user', 'assistant', 'user'],
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Turn stamps
+// ---------------------------------------------------------------------------
+
+test('timeStampLine', () => {
+  assert({
+    given: 'a normal-hours notebook datetime',
+    should: 'render a plain stamp',
+    actual: timeStampLine('2026-08-15 14:32'),
+    expected: '[Time: 2026-08-15 14:32]',
+  })
+  assert({
+    given: 'an extended-hours datetime crossing a month boundary',
+    should: 'append the de-extended wall-clock equivalent',
+    actual: timeStampLine('2026-08-31 25:30'),
+    expected: '[Time: 2026-08-31 25:30 notebook - wall clock 2026-09-01 01:30]',
+  })
+})
+
+test('ChatEngine.appendUserMessage - stamps prefix the model-facing message, per merged chunk', async () => {
+  const { engine, calls } = makeEngine([textResult('ok')])
+  engine.appendUserMessage('first part', '2026-08-15 14:32')
+  engine.appendUserMessage('second part', '2026-08-15 14:40')
+  await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'two stamped user messages merged into one turn',
+    should: 'keep each chunk behind its own time stamp',
+    actual: calls[0].messages,
+    expected: [
+      {
+        role: 'user',
+        content: '[Time: 2026-08-15 14:32]\nfirst part\n\n[Time: 2026-08-15 14:40]\nsecond part',
+      },
+    ],
+  })
+})
+
+test('ChatEngine.seedConversation - restamps user messages only', async () => {
+  const { engine, calls } = makeEngine([textResult('ok')])
+  engine.seedConversation([
+    { role: 'user', content: 'earlier question', when: '2026-08-14 09:05' },
+    { role: 'assistant', content: 'earlier answer', when: '2026-08-14 09:06' },
+    { role: 'user', content: 'pre-stamp question' },
+  ])
+  engine.appendUserMessage('follow-up', '2026-08-15 14:32')
+  await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a resumed conversation with stamped and pre-stamp messages',
+    should: 'prefix stamped user messages, never assistant ones',
+    actual: calls[0].messages,
+    expected: [
+      { role: 'user', content: '[Time: 2026-08-14 09:05]\nearlier question' },
+      { role: 'assistant', content: 'earlier answer' },
+      { role: 'user', content: 'pre-stamp question\n\n[Time: 2026-08-15 14:32]\nfollow-up' },
+    ],
   })
 })
 

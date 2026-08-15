@@ -183,6 +183,19 @@ function formatDate(dt: PlainDateTime): string {
   return dt.plainDate.ymd
 }
 
+/**
+ * Notebook datetime for a turn stamp (`YYYY-MM-DD HH:MM`, extended hours
+ * kept). Undefined when now can't be computed — the turn proceeds
+ * unstamped rather than failing.
+ */
+async function fetchWhen(): Promise<string | undefined> {
+  try {
+    return (await fetchNow()).plainDateTime.toString()
+  } catch {
+    return undefined
+  }
+}
+
 function slugify(text: string, maxWords = 7): string {
   // Take first N words, preserve case, replace non-alphanumeric with dashes
   const words = text.trim().split(/\s+/).slice(0, maxWords).join(' ')
@@ -895,6 +908,11 @@ export default class AiChatTask extends Command {
         continue
       }
 
+      // Stamp the turn at submit time — the context gather below can take a
+      // while, and the stamp should say when the message was sent, not when
+      // the model was finally invoked.
+      const turnWhen = await fetchWhen()
+
       // On first turn, gather targeted context via ai:context:files and merge;
       // subsequent turns evolve the queries if the conversation direction shifted
       let turnContext: TurnContextReport
@@ -928,9 +946,11 @@ export default class AiChatTask extends Command {
       if (priorTurn?.role === 'user') {
         priorTurn.content += '\n\n' + userMessage
       } else {
-        turns.push({ role: 'user', content: userMessage })
+        const turn: ConversationMessage = { role: 'user', content: userMessage }
+        if (turnWhen) turn.when = turnWhen
+        turns.push(turn)
       }
-      chatEngine.appendUserMessage(userMessage)
+      chatEngine.appendUserMessage(userMessage, turnWhen)
 
       // Get AI response
       output.log(colors.dim('Thinking...'))
@@ -999,7 +1019,10 @@ export default class AiChatTask extends Command {
           assistantContent += '\n\nSources:\n' + uniqueUrls.map((u) => `- ${u}`).join('\n')
         }
 
-        turns.push({ role: 'assistant', content: assistantContent })
+        const assistantTurn: ConversationMessage = { role: 'assistant', content: assistantContent }
+        const assistantWhen = await fetchWhen()
+        if (assistantWhen) assistantTurn.when = assistantWhen
+        turns.push(assistantTurn)
 
         output.log('')
         output.log(result.text)

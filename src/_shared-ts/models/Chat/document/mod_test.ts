@@ -474,6 +474,117 @@ test('ChatDocument.conversation - merges consecutive same-role turns', () => {
   })
 })
 
+// --- turn stamps ---
+
+test('ChatDocument - turn stamps round-trip through headings', () => {
+  const doc = ChatDocument.create({
+    summary: 'Stamped Chat',
+    messages: [
+      { role: 'user', content: 'Morning question.', when: '2026-08-15 09:12' },
+      { role: 'assistant', content: 'Morning answer.', when: '2026-08-15 09:13' },
+      { role: 'user', content: 'Late-night follow-up.', when: '2026-08-15 25:30' },
+      { role: 'assistant', content: 'Late-night answer.', when: '2026-08-15 25:31' },
+    ],
+    created: '2026-08-15',
+    updated: '2026-08-15',
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+  })
+
+  const markdown = doc.toMarkdown()
+  assert({
+    given: 'stamped messages',
+    should: 'write the stamp into each speaker heading',
+    actual: [
+      markdown.includes('## JP (2026-08-15 09:12)'),
+      markdown.includes('## AI Assistant (2026-08-15 09:13)'),
+      markdown.includes('## JP (2026-08-15 25:30)'),
+    ],
+    expected: [true, true, true],
+  })
+
+  assert({
+    given: 'the re-parsed markdown',
+    should: 'restore stamps (extended hours intact) with clean content',
+    actual: ChatDocument.fromMarkdown(markdown).conversation,
+    expected: [
+      { role: 'user', content: 'Morning question.', when: '2026-08-15 09:12' },
+      { role: 'assistant', content: 'Morning answer.', when: '2026-08-15 09:13' },
+      { role: 'user', content: 'Late-night follow-up.', when: '2026-08-15 25:30' },
+      { role: 'assistant', content: 'Late-night answer.', when: '2026-08-15 25:31' },
+    ],
+  })
+})
+
+test('ChatDocument - unstamped headings parse with no when key, stamped and bare headings mix', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Resumed Chat',
+      '',
+      '## JP',
+      '',
+      'Old question.',
+      '',
+      '## AI Assistant',
+      '',
+      'Old answer.',
+      '',
+      '## JP (2026-08-15 14:32)',
+      '',
+      'New question.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'a pre-stamp transcript continued with stamped turns',
+    should: 'leave old messages unstamped and stamp the new one',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'Old question.' },
+      { role: 'assistant', content: 'Old answer.' },
+      { role: 'user', content: 'New question.', when: '2026-08-15 14:32' },
+    ],
+  })
+  assert({
+    given: 'a bare `## JP` heading',
+    should: 'not set the when key at all',
+    actual: 'when' in doc.conversation[0],
+    expected: false,
+  })
+})
+
+test('ChatDocument - a stamp-shaped heading on a non-speaker still folds back', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Fold Test',
+      '',
+      '## JP (2026-08-15 14:32)',
+      '',
+      'Compare the options.',
+      '',
+      '## AI Assistant (2026-08-15 14:33)',
+      '',
+      'Two options stand out.',
+      '',
+      '## Recommendation (2026-08-15 14:33)',
+      '',
+      'Go with the first option.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'an assistant reply containing an H2 with a stamp-looking suffix',
+    should: 'fold the phantom section back, keeping real speaker stamps',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'Compare the options.', when: '2026-08-15 14:32' },
+      {
+        role: 'assistant',
+        content: 'Two options stand out.\n\n## Recommendation (2026-08-15 14:33)\n\nGo with the first option.',
+        when: '2026-08-15 14:33',
+      },
+    ],
+  })
+})
+
 // --- extractConversationSummary ---
 
 test('extractConversationSummary - latest SUMMARY comment wins, fallback covers resumes', () => {
