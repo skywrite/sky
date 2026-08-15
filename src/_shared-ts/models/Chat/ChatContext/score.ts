@@ -66,6 +66,14 @@ export const CHAT_SCORE = {
    * no-evidence turn (top ~8) floors low and keeps the baseline.
    */
   floorFraction: 0.35,
+  /**
+   * Sweep-stratified admission (a user-stated window): every month of the
+   * window is guaranteed its best docs up to these per-slice caps before
+   * the rank walk. Small on purpose — the observed starved eras cost ~1%
+   * of budget; the guarantee is representation, not equal share.
+   */
+  sweepReserveDocs: 5,
+  sweepReserveTokens: 5_000,
 } as const
 
 /**

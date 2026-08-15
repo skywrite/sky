@@ -42,6 +42,10 @@ interface FilesResult {
   count: number
   /** Root fields whose result hit a cap during execution. */
   truncations?: QueryTruncation[]
+  /** The user-stated lookback in effect (extracted or --since), absent when none/all. */
+  since?: string
+  /** The user-stated end of the window, absent when it runs to now. */
+  until?: string
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -148,9 +152,17 @@ export default class AIContextFilesTask extends Command {
       output.log(colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`))
     }
 
+    // The stated window rides along for consumers whose behavior keys off
+    // it (ai:chat switches admission policy on it).
+    const statedSince = resolvedSince && resolvedSince !== 'all' ? resolvedSince : undefined
+    const window = {
+      ...(statedSince ? { since: statedSince } : {}),
+      ...(statedSince && resolvedUntil ? { until: resolvedUntil } : {}),
+    }
+
     // Step 4: Format output
     if (json) {
-      output.log(JSON.stringify({ question, query, paths, count }, null, 2))
+      output.log(JSON.stringify({ question, query, paths, count, ...window }, null, 2))
     } else if (raw) {
       for (const p of paths) {
         output.log(shortenPath(p, baseDir))
@@ -176,6 +188,7 @@ export default class AIContextFilesTask extends Command {
       paths,
       count,
       ...(truncations.length > 0 ? { truncations } : {}),
+      ...window,
     })
   }
 }
