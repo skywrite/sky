@@ -14,12 +14,13 @@ import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { widenSinceToCoverDates } from './lib/widenSince.ts'
+import { resolveWindow } from './lib/widenSince.ts'
 
 const PROMPT_FILE = new URL('./prompts/context-date.prompt.md', import.meta.url).pathname
 
 interface DateResult {
   since: string
+  until: string
   dates: string[]
 }
 
@@ -41,6 +42,13 @@ const schema = z.object({
       'Lookback duration for context search. Use shorthand: "7d", "30d", "6mo", "1y", "5y", etc. ' +
         'Only past-referring ranges count — future horizons ("next 3 months", "by year-end") are not lookbacks. ' +
         'Empty string "" if no past time range is mentioned or implied.',
+    ),
+  until: z
+    .string()
+    .describe(
+      'End of the stated range in YYYY-MM-DD, when the message closes the window at a past date ' +
+        '("through May 1", "between Feb and April", "in March 2026"). ' +
+        'Empty string "" when the range runs to now ("since March", "last 6 months") or no range is stated.',
     ),
   dates: z
     .array(z.string())
@@ -94,24 +102,30 @@ export default class AIContextDateTask extends Command {
 
     // Enforce window ⊇ stated dates — the model's calendar arithmetic is
     // untrusted (see lib/widenSince.ts). Dates are a floor, never a ceiling.
-    const resolution = widenSinceToCoverDates(object.since, object.dates, PlainDate.from(context.notebookNow.date))
-    const since = resolution.since
+    const resolution = resolveWindow(object.since, object.until, object.dates, PlainDate.from(context.notebookNow.date))
+    const { since, until } = resolution
 
     if (json) {
-      output.log(JSON.stringify({ since, dates: object.dates }))
+      output.log(JSON.stringify({ since, until, dates: object.dates }))
     } else {
       output.log(`since: ${since || '(none)'}`)
+      if (until) {
+        output.log(`until: ${until}`)
+      }
       if (object.dates.length > 0) {
         output.log(`dates: ${object.dates.join(', ')}`)
       }
       if (resolution.widenedToCover) {
         output.log(`widened: ${object.since} → ${since} (covers stated ${resolution.widenedToCover})`)
       }
+      if (resolution.extendedToCover) {
+        output.log(`extended: until ${object.until} → ${until} (covers stated ${resolution.extendedToCover})`)
+      }
       if (resolution.droppedInvalid) {
         output.log(`dropped unparseable duration "${resolution.droppedInvalid}" — searching all history`)
       }
     }
 
-    return CommandResult.success({ since, dates: object.dates })
+    return CommandResult.success({ since, until, dates: object.dates })
   }
 }

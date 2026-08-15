@@ -88,19 +88,23 @@ export default class AIContextFilesTask extends Command {
     // filter at all — results are newest-first and capped by limit, so
     // searching all history costs nothing and reaches sparse older topics.
     let resolvedSince: string | undefined = since
+    let resolvedUntil: string | undefined
     if (since === 'auto') {
       resolvedSince = undefined
       try {
-        const dateResult = await tasks.run<{ since: string; dates: string[] }>('ai:context:date', {
+        const dateResult = await tasks.run<{ since: string; until: string; dates: string[] }>('ai:context:date', {
           _: ['ai:context:date', question],
         })
         if (dateResult.status === 'success') {
           resolvedSince = dateResult.data?.since || undefined
+          resolvedUntil = dateResult.data?.until || undefined
         }
       } catch {
         resolvedSince = undefined
+        resolvedUntil = undefined
       }
-      output.log(colors.dim(`Timeframe: ${resolvedSince ?? 'all history (default)'}`))
+      const window = resolvedSince ?? 'all history (default)'
+      output.log(colors.dim(`Timeframe: ${window}${resolvedUntil ? ` (until ${resolvedUntil})` : ''}`))
     }
 
     // Step 2: Generate GraphQL query using AI
@@ -109,6 +113,7 @@ export default class AIContextFilesTask extends Command {
     const selResult = await tasks.run<{ query: string }>('ai:context:sel', {
       _: ['ai:context:sel', question],
       since: resolvedSince === 'all' ? undefined : resolvedSince,
+      until: resolvedUntil,
     })
 
     if (selResult.status !== 'success' || !selResult.data?.query) {
