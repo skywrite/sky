@@ -115,6 +115,18 @@ export async function copyFile(client: GoogleClient, fileId: string, title: stri
   return await client.postJson<DriveFile>(url.toString(), { name: title })
 }
 
+/** Rename a file in place — e.g. replace a default "Copy of …" title. Nothing else changes. */
+export async function renameFile(client: GoogleClient, fileId: string, name: string): Promise<DriveFile> {
+  const url = driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`)
+  url.searchParams.set('fields', FILE_FIELDS)
+  const res = await client.request(url.toString(), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return (await res.json()) as DriveFile
+}
+
 export type ShareRole = 'reader' | 'commenter' | 'writer'
 
 /**

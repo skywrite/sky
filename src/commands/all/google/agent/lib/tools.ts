@@ -35,6 +35,7 @@ import {
   getSpreadsheetOutline,
   getValues,
   presentationUrl,
+  renameFile,
   replaceFileWithMarkdown,
   searchFiles,
   setValues,
@@ -655,6 +656,29 @@ export function createAgentTools(deps: {
           track(state, 'created', copy)
           log(`Copied to "${copy.name ?? title}" — ${copy.webViewLink ?? copy.id}`)
           return { id: copy.id, name: copy.name, url: copy.webViewLink }
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
+    rename_file: {
+      description:
+        'Rename an existing file in Drive — e.g. replace a default "Copy of …" title. Only the name changes; content, sharing, and URL stay put.',
+      inputSchema: jsonSchema<{ fileId: string; name: string }>({
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          name: { type: 'string', description: 'The new file name' },
+        },
+        required: ['fileId', 'name'],
+      }),
+      execute: async ({ fileId, name }: { fileId: string; name: string }) => {
+        try {
+          const file = await renameFile(client, fileId, name)
+          track(state, 'updated', file)
+          log(`Renamed to "${file.name ?? name}" — ${file.webViewLink ?? file.id}`)
+          return { id: file.id, name: file.name, url: file.webViewLink }
         } catch (err) {
           return toolError(err)
         }
