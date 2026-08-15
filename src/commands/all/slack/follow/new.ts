@@ -16,7 +16,7 @@ import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, convertToNotebookTimezone, fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -347,7 +347,8 @@ export default class SlackFollowNewTask extends Command {
       expires,
       lastChecked: now,
       lastActivity,
-      messages: initialMessages,
+      // Stored as time refs — initialMessages keeps real paths for the editor.
+      messages: initialMessages.map((m) => ({ date: m.date, path: toTimeRef(m.path) })),
       status: 'active',
     })
 

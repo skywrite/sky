@@ -4,8 +4,9 @@ import { DIR_STATE_FOLLOW_EMAIL_ACTIVE, DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#
 import { modifyThread, resolveLabelId, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { outputFile } from '#shared/fs/mod.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
+import { toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
 
@@ -20,6 +21,46 @@ export type PlannedFollow = {
   fileName: string
   /** Thread was already inactive past the expiry window at capture time. */
   bornExpired: boolean
+}
+
+/**
+ * The follow's file name (extension-free — the shape `follow:` frontmatter
+ * carries). One function names it for both the YAML on disk and the stamp in
+ * every capture, so the two can never drift.
+ */
+export function followFileName(day: PlainDateTime, from: string, summary: string): string {
+  const fromSlug = slugify(from, { preserveCase: true, suggestedLength: 30 })
+  const summarySlug = slugify(summary, { preserveCase: true, suggestedLength: 40 })
+  return `${day.plainDate.toString()}_email_${fromSlug}_${summarySlug}`
+}
+
+/**
+ * A follow file name no other follow holds. Same sender, same day, same
+ * summary slug is a real case (three same-subject forwards in one sync), and
+ * persistNewFollow overwrites — without this, the second follow silently
+ * replaces the first and the first thread re-captures forever. Checks names
+ * already minted this run, then active/ and archive/ on disk; suffixes -2,
+ * -3... like day files do. Must run where the capture stamp is computed, so
+ * stamp and YAML stay locked.
+ */
+export async function uniqueFollowFileName(
+  base: string,
+  taken: Set<string>,
+  isOnDisk: (fileName: string) => Promise<boolean> = followFileExists,
+): Promise<string> {
+  let candidate = base
+  for (let n = 2; taken.has(candidate) || (await isOnDisk(candidate)); n++) {
+    candidate = `${base}-${n}`
+  }
+  taken.add(candidate)
+  return candidate
+}
+
+async function followFileExists(fileName: string): Promise<boolean> {
+  return (
+    (await exists(path.join(DIR_STATE_FOLLOW_EMAIL_ACTIVE, `${fileName}.yaml`))) ||
+    (await exists(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${fileName}.yaml`)))
+  )
 }
 
 /** Build the follow for a first-time captured thread, anchored on the thread's real activity. */
@@ -58,12 +99,13 @@ export function planThreadFollow(opts: {
 
   let follow = bornExpired ? candidate.updateStatus('closed') : candidate
   for (const msg of thread.messages) {
-    follow = follow.addMessage(msg.date, msg.path)
+    // Stored as a time ref: the follow outlives any layout the path encodes.
+    follow = follow.addMessage(msg.date, toTimeRef(msg.path))
   }
 
-  const fromSlug = slugify(thread.from, { preserveCase: true, suggestedLength: 30 })
-  const summarySlug = slugify(summary, { preserveCase: true, suggestedLength: 40 })
-  const fileName = `${now.plainDate.toString()}_email_${fromSlug}_${summarySlug}`
+  // When the fetch already stamped captures with a follow name, that name IS
+  // the follow's — recomputing could drift (e.g. across midnight).
+  const fileName = thread.followFile ?? followFileName(now, thread.from, summary)
 
   return { follow, threadId: thread.threadId, fileName, bornExpired }
 }

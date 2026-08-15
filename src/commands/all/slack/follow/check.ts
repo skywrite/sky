@@ -10,7 +10,14 @@ import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNow, fetchNowSync } from '#shared/nbfs/mod.ts'
+import {
+  computePreviousRef,
+  convertToNotebookTimezone,
+  fetchNow,
+  fetchNowSync,
+  resolveTimeRef,
+  toTimeRef,
+} from '#shared/nbfs/mod.ts'
 
 const params = {
   file: Flag.string('Check a specific follow by filename (skip due filtering)', { short: 'f' }),
@@ -145,16 +152,20 @@ export default class SlackFollowCheckTask extends Command {
             replyParts.push(reply.text || '(empty)', '', '')
           }
 
-          // Compute previous as a time ref (DD/subpath, MM-DD/subpath, or YYYY-MM-DD/subpath)
+          // Compute previous as a relative ref (DD/subpath, MM-DD/subpath, or
+          // YYYY-MM-DD/subpath). Follow entries are time refs (older follows:
+          // paths in any layout); resolveTimeRef reads them all.
           const lastMsg = follow.messages.length > 0 ? follow.messages[follow.messages.length - 1] : undefined
-          const previous = lastMsg ? computePreviousRef(lastMsg.path, nowDt.plainDate) : undefined
+          const previous = lastMsg ? computePreviousRef(resolveTimeRef(lastMsg.path), nowDt.plainDate) : undefined
 
           // Inherit tags and rel from previous message file
           let inheritedTags: string | undefined
           let inheritedRel: unknown // rel can be string or array in YAML
           if (lastMsg) {
             try {
-              const prevDoc = MessageDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, lastMsg.path)))
+              const prevDoc = MessageDocument.fromMarkdown(
+                await readTextFile(path.join(DIR_BASE, resolveTimeRef(lastMsg.path))),
+              )
               inheritedTags = prevDoc.yaml['tags'] as string | undefined
               inheritedRel = prevDoc.yaml['rel']
             } catch {
@@ -168,7 +179,7 @@ export default class SlackFollowCheckTask extends Command {
 
           if (todayMessage) {
             // Same-day update: append new replies to existing file, don't touch day entry
-            const fullPath = path.join(DIR_BASE, todayMessage.path)
+            const fullPath = path.join(DIR_BASE, resolveTimeRef(todayMessage.path))
             const oldDoc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
             // Copy any new file attachments and merge with existing
             const newAttachments =
@@ -206,7 +217,8 @@ export default class SlackFollowCheckTask extends Command {
             const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
             if (relPath) {
               const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
-              follow = follow.addMessage(todayStr, fullTimePath)
+              // Stored as a time ref: the follow outlives the layout.
+              follow = follow.addMessage(todayStr, toTimeRef(fullTimePath))
 
               // Patch array rel into the created file (slack:new only accepts string params)
               if (Array.isArray(inheritedRel)) {

@@ -11,13 +11,14 @@ import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNow } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, convertToNotebookTimezone, fetchNow, resolveTimeRef } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { copyEmailFilesToAttachments } from '../../../email/lib/copyToAttachments.ts'
 import type { DownloadedAttachment } from '../../../email/lib/copyToAttachments.ts'
 import { emailToMarkdown } from '../../../email/lib/emailToMarkdown.ts'
 import { buildEmailTranscript, EMAIL_ENRICH } from './enrich.ts'
-import { getInboxThreads } from './getInboxThreads.ts'
+import { followFileName, uniqueFollowFileName } from './followLifecycle.ts'
+import { getInboxThreads, LISTING_DEPTH } from './getInboxThreads.ts'
 import type { InboxThreadsResult } from './getInboxThreads.ts'
 
 // Gmail-API twin of email/lib/fetchUnsavedThreads.ts. Phase 2 (downloading
@@ -32,6 +33,8 @@ export type FetchedThread = {
   subject: string
   /** Topic label written to the captures, and to the follow that tracks them. Absent on a continuation. */
   summary?: string
+  /** Follow file name (extension-free) stamped into this thread's captures — set only when following. */
+  followFile?: string
   /** Day-file entries created; a thread's same-day messages share one, so this is not a message count. */
   messages: { date: string; path: string }[]
   /** Messages actually captured this run — what the closing report counts. */
@@ -46,7 +49,7 @@ export type FetchUnsavedResult = { fetched: number; threads: FetchedThread[]; la
 
 export type FetchUnsavedOptions = {
   label: string
-  /** Max threads to list (the IMAP original counted messages). */
+  /** Max UNSAVED threads to capture this run — the backlog drains newest-first across runs. */
   limit: number
   /** Collapse all messages to this date */
   when?: PlainDateTime
@@ -54,6 +57,8 @@ export type FetchUnsavedOptions = {
   threadId?: string
   /** Thread listing already scanned on this client — skips the label rescan */
   inbox?: InboxThreadsResult
+  /** The caller will follow captured threads: stamp captures with their follow's file name */
+  follow?: boolean
   /** Skip the tag proposal on first capture (the summary is not a tag and still runs) */
   noAutoTag?: boolean
   /** Skip the rel proposal on first capture */
@@ -80,12 +85,19 @@ export async function fetchUnsavedThreads(
   const { tasks, output } = deps
 
   // ── Phase 1: Get threads (same as inbox:view) ──────────────────
-  const { threads, labelId } = opts.inbox ?? (await getInboxThreads(client, label, { limit }))
+  // The listing goes deep and `limit` bounds the UNSAVED set below. Bounding
+  // the listing itself starved: captured threads keep the label, so the
+  // newest-first listing tops out with saved threads and an unsaved thread
+  // deeper than the limit was unreachable on every run.
+  const { threads, labelId } = opts.inbox ?? (await getInboxThreads(client, label, { limit: LISTING_DEPTH }))
 
   // Filter to target threads
   let unsaved = threads.filter((t) => !t.saved)
   if (filterThreadId) {
     unsaved = threads.filter((t) => t.threadId === filterThreadId)
+  } else if (unsaved.length > limit) {
+    output.log(`  Capturing ${limit} of ${unsaved.length} unsaved thread(s) — rerun to continue the backlog.`)
+    unsaved = unsaved.slice(0, limit)
   }
 
   if (unsaved.length === 0) {
@@ -152,13 +164,17 @@ export async function fetchUnsavedThreads(
 
   // Build previous-path map from follow's saved messages (per thread).
   const previousByThread = new Map<string, string>()
+  const followFileByThread = new Map<string, string>()
   for (const thread of threads) {
     const lastSaved = thread.savedMessages.at(-1)
     if (lastSaved) previousByThread.set(thread.threadId, lastSaved.path)
+    if (thread.followFile) followFileByThread.set(thread.threadId, thread.followFile)
   }
 
   const createdEntries = new Map<string, { date: string; path: string }>()
   const resultThreads: FetchedThread[] = []
+  // Follow names minted this run — two new threads must never share one.
+  const mintedFollowNames = new Set<string>()
   let savedCount = 0
 
   for (const [threadId, threadMessages] of byThread) {
@@ -174,7 +190,11 @@ export async function fetchUnsavedThreads(
     let inheritedRel: unknown
     if (previousPath) {
       try {
-        const prevDoc = EmailDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, previousPath)))
+        // Follows store time refs (or, older ones, paths in any layout);
+        // resolveTimeRef turns either into the file's real place today.
+        const prevDoc = EmailDocument.fromMarkdown(
+          await readTextFile(path.join(DIR_BASE, resolveTimeRef(previousPath))),
+        )
         inheritedSummary = nonEmpty(prevDoc.yaml['summary'])
         inheritedTags = prevDoc.yaml['tags'] as string | undefined
         inheritedRel = prevDoc.yaml['rel']
@@ -208,6 +228,19 @@ export async function fetchUnsavedThreads(
     const summary = inheritedSummary ?? enriched.summary
     const tags = inheritedTags ?? enriched.tags
     const rel = inheritedRel ?? enriched.rel
+    const from = normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown')
+
+    // The follow's name flows forward into every capture — the existing
+    // follow's own name, or the one the new follow will take (planThreadFollow
+    // reuses it, so stamp and YAML can never drift). A plain fetch creates no
+    // follow, so there is nothing to reference and nothing is stamped.
+    const followFile = opts.follow
+      ? (followFileByThread.get(threadId) ??
+        (await uniqueFollowFileName(
+          followFileName((await fetchNow()).plainDateTime, from, summary ?? subject),
+          mintedFollowNames,
+        )))
+      : undefined
 
     for (const message of converted) {
       let result: { date: string; path: string } | null
@@ -217,6 +250,7 @@ export async function fetchUnsavedThreads(
           createdEntries,
           previousPath,
           summary,
+          followFile,
           tags,
           rel,
           tasks,
@@ -247,9 +281,10 @@ export async function fetchUnsavedThreads(
 
     resultThreads.push({
       threadId,
-      from: normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown'),
+      from,
       subject,
       ...(enriched.summary ? { summary: enriched.summary } : {}),
+      ...(followFile ? { followFile } : {}),
       messages: threadEntries,
       captured: converted.length,
       ...(lastMessageAt ? { lastMessageAt: `${lastMessageAt.date} ${lastMessageAt.time}` } : {}),
@@ -307,7 +342,9 @@ async function convertMessage(
   )
 
   if (converted.truncated) {
-    output.log('  Warning: capture truncated — source email exceeded the conversion budget')
+    output.log(
+      `  Warning: source is ~${Math.round(converted.sourceChars / 1000)}k chars — too large even converted in windows; the tail stays in Gmail`,
+    )
   }
 
   if (converted.markdown) {
@@ -327,6 +364,8 @@ type WriteContext = {
   previousPath: string | undefined
   /** Thread-level topic label — inherited from the thread's earlier captures, or freshly summarized. */
   summary: string | undefined
+  /** Follow file name to stamp into the capture's frontmatter — absent on unfollowed fetches. */
+  followFile: string | undefined
   tags: string | undefined
   /** String (an email:new param) or array (patched onto the written file). */
   rel: unknown
@@ -338,7 +377,7 @@ async function writeMessage(
   message: ConvertedMessage,
   ctx: WriteContext,
 ): Promise<{ date: string; path: string } | null> {
-  const { threadId, createdEntries, previousPath, summary, tags, rel, tasks, output } = ctx
+  const { threadId, createdEntries, previousPath, summary, followFile, tags, rel, tasks, output } = ctx
   const { msg, from, to, cc, msgWhen, when } = message
   const dateStr = when.plainDate.toString()
 
@@ -387,6 +426,7 @@ async function writeMessage(
     subject: msg.subject || '(no subject)',
     // The subject is the fallback label, and stays in `subject:` either way.
     summary: summary ?? msg.subject ?? '',
+    ...(followFile ? { follow: followFile } : {}),
     ...(previous ? { previous } : {}),
     ...(tags ? { tags } : {}),
     ...(typeof rel === 'string' ? { rel } : {}),
@@ -429,13 +469,13 @@ async function writeMessage(
 }
 
 /**
- * A back-reference to the thread's previous capture — or none when the
- * recorded path cannot be read as a day path.
+ * A back-reference to the thread's previous capture — or none when the stored
+ * location cannot be read at all.
  *
- * Follow files carry message paths written by older versions of this pipeline,
- * some in a day-dir layout the notebook no longer uses and the parser rejects.
- * A back-reference that cannot be computed is a missing `previous:` line: a
- * dead link between two captures, never a reason to drop the capture itself.
+ * Follows store time refs; older ones store paths, in every layout the
+ * notebook has ever written. resolveTimeRef reads all of those, so only true
+ * damage lands in the catch — and a back-reference that cannot be computed is
+ * a missing `previous:` line, never a reason to drop the capture itself.
  */
 export function previousRefOrNone(
   previousPath: string | undefined,
@@ -444,7 +484,7 @@ export function previousRefOrNone(
 ): string | undefined {
   if (!previousPath) return undefined
   try {
-    return computePreviousRef(previousPath, curDate)
+    return computePreviousRef(resolveTimeRef(previousPath), curDate)
   } catch {
     output.log(`  Warning: unreadable previous path — writing without a previous ref (${previousPath})`)
     return undefined

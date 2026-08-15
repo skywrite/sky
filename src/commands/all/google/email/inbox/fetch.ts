@@ -11,9 +11,10 @@ export type { FetchedThread } from '../lib/fetchUnsavedThreads.ts'
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
   label: Flag.string('Gmail label to fetch from', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to fetch', { default: () => 250 }),
+  limit: Flag.number('Max unsaved threads to capture per run', { default: () => 250 }),
   when: Flag.plainDateTime('Collapse all messages to this date', { parse: PDT.fromString }),
   threadId: Flag.string('Fetch a specific thread by its decimal ID', { hidden: true }),
+  follow: Flag.bool('Stamp captures with their follow file name (set by follow:new)', { hidden: true, default: false }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
@@ -47,7 +48,7 @@ export default class GoogleEmailInboxFetchTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<FetchResult>> {
     const { output, secrets } = context
-    const { account, label, limit, when, threadId, noAutoTag, noAutoRel } = args
+    const { account, label, limit, when, threadId, follow, noAutoTag, noAutoRel } = args
 
     let client
     try {
@@ -61,7 +62,7 @@ export default class GoogleEmailInboxFetchTask extends Command {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
       const result = await fetchUnsavedThreads(
         client,
-        { label, limit, when, threadId, noAutoTag, noAutoRel },
+        { label, limit, when, threadId, follow, noAutoTag, noAutoRel },
         { tasks, output },
       )
       return CommandResult.success(result)

@@ -2,7 +2,7 @@ import Follow from '#shared/models/Follow/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
-import { planThreadFollow, selectExpiredFollows } from './followLifecycle.ts'
+import { planThreadFollow, selectExpiredFollows, uniqueFollowFileName } from './followLifecycle.ts'
 import type { FollowEntry } from './followLifecycle.ts'
 
 const NOW = PlainDateTime.fromString('2026-08-12 10:00')
@@ -12,7 +12,9 @@ function thread(overrides: Partial<FetchedThread> = {}): FetchedThread {
     threadId: '1234567890',
     from: 'Jane Doe',
     subject: 'Atlas kickoff',
-    messages: [{ date: '2026-08-10', path: 'time/2026/08/10_mon/09-30_email_Jane-Doe_Atlas-kickoff.md' }],
+    messages: [
+      { date: '2026-08-10', path: 'time/2026/08/10-16/08-10/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md' },
+    ],
     captured: 1,
     lastMessageAt: '2026-08-10 09:30',
     ...overrides,
@@ -36,6 +38,12 @@ test('planThreadFollow keeps a recently active thread live', () => {
   })
   assert({ given: 'one captured entry', should: 'record it', expected: 1, actual: follow.messages.length })
   assert({
+    given: 'a capture path in the current layout',
+    should: 'store it as a time ref — follows must outlive the layout',
+    expected: '2026-08-10/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md',
+    actual: follow.messages[0].path,
+  })
+  assert({
     given: 'the capture date',
     should: 'prefix the file name',
     expected: true,
@@ -45,7 +53,9 @@ test('planThreadFollow keeps a recently active thread live', () => {
 
 test('planThreadFollow declines a thread quiet past the expiry window', () => {
   const t = thread({
-    messages: [{ date: '2026-07-20', path: 'time/2026/07/20_mon/09-00_email_Jane-Doe_Atlas-kickoff.md' }],
+    messages: [
+      { date: '2026-07-20', path: 'time/2026/07/20-26/07-20/actions/messages/09-00_email_Jane-Doe_Atlas-kickoff.md' },
+    ],
     lastMessageAt: '2026-07-20 09:00',
   })
   const { follow, bornExpired } = plan(t)
@@ -57,7 +67,9 @@ test('planThreadFollow declines a thread quiet past the expiry window', () => {
 
 test('planThreadFollow judges expiry on real activity even when the capture is collapsed to today', () => {
   const t = thread({
-    messages: [{ date: '2026-08-12', path: 'time/2026/08/12_wed/10-00_email_Jane-Doe_Atlas-kickoff.md' }],
+    messages: [
+      { date: '2026-08-12', path: 'time/2026/08/10-16/08-12/actions/messages/10-00_email_Jane-Doe_Atlas-kickoff.md' },
+    ],
     lastMessageAt: '2026-07-20 09:00',
   })
   const { bornExpired } = plan(t)
@@ -72,7 +84,9 @@ test('planThreadFollow judges expiry on real activity even when the capture is c
 
 test('planThreadFollow --force follows a quiet thread anyway', () => {
   const t = thread({
-    messages: [{ date: '2026-07-20', path: 'time/2026/07/20_mon/09-00_email_Jane-Doe_Atlas-kickoff.md' }],
+    messages: [
+      { date: '2026-07-20', path: 'time/2026/07/20-26/07-20/actions/messages/09-00_email_Jane-Doe_Atlas-kickoff.md' },
+    ],
     lastMessageAt: '2026-07-20 09:00',
   })
   const { follow, bornExpired } = plan(t, true)
@@ -107,6 +121,22 @@ test('planThreadFollow labels the follow with the thread summary when it has one
     given: 'a summarized thread',
     should: 'slug the file name from the summary',
     expected: '2026-08-12_email_Jane-Doe_Kickoff-scheduling-and-open-questions',
+    actual: fileName,
+  })
+})
+
+test('planThreadFollow takes the file name the fetch already stamped into captures', () => {
+  const { fileName } = plan(
+    thread({
+      summary: 'Kickoff scheduling and open questions',
+      followFile: '2026-08-11_email_Jane-Doe_Kickoff-scheduling-and-open-questions',
+    }),
+  )
+
+  assert({
+    given: 'captures already stamped with a follow name (dated a day earlier)',
+    should: 'name the follow YAML identically — stamp and YAML must never drift',
+    expected: '2026-08-11_email_Jane-Doe_Kickoff-scheduling-and-open-questions',
     actual: fileName,
   })
 })
@@ -166,5 +196,42 @@ test('selectExpiredFollows picks only this account’s quiet active follows', ()
       .map((e) => e.fileName)
       .sort()
       .join(', '),
+  })
+})
+
+test('uniqueFollowFileName keeps a free name as-is', async () => {
+  const taken = new Set<string>()
+
+  assert({
+    given: 'a name no follow holds',
+    should: 'return it unchanged and mark it minted',
+    expected: '2026-08-14_email_Jane-Doe_Atlas-kickoff | minted: true',
+    actual: `${await uniqueFollowFileName('2026-08-14_email_Jane-Doe_Atlas-kickoff', taken, async () => false)} | minted: ${taken.has('2026-08-14_email_Jane-Doe_Atlas-kickoff')}`,
+  })
+})
+
+test('uniqueFollowFileName suffixes past names minted this run', async () => {
+  const taken = new Set<string>()
+  const mint = () => uniqueFollowFileName('2026-08-14_email_Jane-Doe_Atlas-kickoff', taken, async () => false)
+
+  assert({
+    given: 'three same-subject threads in one sync (the summarizer abstained on all)',
+    should: 'give each its own follow — the second must never overwrite the first',
+    expected:
+      '2026-08-14_email_Jane-Doe_Atlas-kickoff, 2026-08-14_email_Jane-Doe_Atlas-kickoff-2, 2026-08-14_email_Jane-Doe_Atlas-kickoff-3',
+    actual: [await mint(), await mint(), await mint()].join(', '),
+  })
+})
+
+test('uniqueFollowFileName suffixes past follows already on disk', async () => {
+  const onDisk = new Set(['2026-08-14_email_Jane-Doe_Atlas-kickoff', '2026-08-14_email_Jane-Doe_Atlas-kickoff-2'])
+
+  assert({
+    given: 'a name held by an existing follow (active or archived) and its -2',
+    should: 'take the next free suffix',
+    expected: '2026-08-14_email_Jane-Doe_Atlas-kickoff-3',
+    actual: await uniqueFollowFileName('2026-08-14_email_Jane-Doe_Atlas-kickoff', new Set(), async (name) =>
+      onDisk.has(name),
+    ),
   })
 })
