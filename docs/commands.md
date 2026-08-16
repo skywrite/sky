@@ -132,7 +132,9 @@ sky ai:chat:tools                # what tools chat can call
 `ai:chat` is the reason the file conventions are worth following. It generates GraphQL
 queries against your notebook, gathers what's relevant, and answers from your actual
 history rather than from a summary of it. Conversations are saved to
-`actions/ai-chats/` in the day directory, so a chat is itself a notebook document.
+`actions/ai-chats/` in the day directory, so a chat is itself a notebook document —
+including `tags:` and `rel:` frontmatter, chosen automatically on save from how past
+chats were filed (hand-written values always win).
 
 ## Search and querying
 

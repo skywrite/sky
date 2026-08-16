@@ -8,6 +8,8 @@ import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { PORT_SERVER } from '#shared/config.ts'
@@ -16,7 +18,7 @@ import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchCont
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
-import ChatDocument, { extractConversationSummary } from '#shared/models/Chat/document/mod.ts'
+import ChatDocument, { extractConversationSummary, userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -25,6 +27,7 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
+import { buildChatTranscript, CHAT_ENRICH } from './lib/enrich.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 
 // -----------------------------------------------------------------------------
@@ -70,6 +73,8 @@ const params = {
     default: true,
   }),
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-chat tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   resume: Flag.bool('Resume a saved chat from the current day: conversation and context restored, same file updated', {
     default: false,
   }),
@@ -390,6 +395,9 @@ export default class AiChatTask extends Command {
       'Chats are ephemeral by default — toggle saving with Ctrl+S (or /save, /log)',
       'to write the conversation to the {day}/actions/ai-chats/ folder.',
       'Saved chats are searchable in later sessions via the chats GraphQL query.',
+      'On save, missing tags: and rel: are chosen automatically from how past chats',
+      'were filed (--no-auto-tag / --no-auto-rel to skip); hand-written and resumed',
+      'values always win.',
       '',
       'Resume: --resume lists the saved chats for the day (--when shifts the day,',
       'and Older… reaches previous days). The picked chat continues as if the',
@@ -423,6 +431,8 @@ export default class AiChatTask extends Command {
       category,
       when,
       noEditor,
+      noAutoTag,
+      noAutoRel,
       resume,
     } = args
     let { log, ephemeral } = args
@@ -1072,6 +1082,29 @@ export default class AiChatTask extends Command {
         savePath = path.join(aiDir, formatFilename(startTime, summary))
       }
 
+      // Hand-written values always win: auto-enrichment fills tags/rel only
+      // when the chat (or the file a resume carries forward) has none.
+      const priorTags = resumeSession && resumeSession.tags.length > 0 ? resumeSession.tags : undefined
+      const priorRel = resumeSession && resumeSession.rel.length > 0 ? resumeSession.rel : undefined
+      const wantAutoTag = !priorTags && !noAutoTag
+      const wantAutoRel = !priorRel && !noAutoRel
+      let autoTags: string | undefined
+      let autoRel: string[] | undefined
+      if (wantAutoTag || wantAutoRel) {
+        const choosing = [wantAutoTag ? 'tags' : '', wantAutoRel ? 'rel' : ''].filter(Boolean).join(' and ')
+        output.log('')
+        output.log(colors.dim(`Choosing ${choosing} from the archived-chat corpus…`))
+        const enrichInput = { from: userSpeakerLabel(), summary, body: buildChatTranscript(turns) }
+        const [chosenTags, chosenRel] = await Promise.all([
+          wantAutoTag ? autoTagMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
+          wantAutoRel ? autoRelMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
+        ])
+        autoTags = chosenTags
+        autoRel = chosenRel
+        if (autoTags) output.log(colors.dim(`Auto-tags: ${autoTags}`))
+        if (autoRel) output.log(colors.dim(`Auto-rel: ${autoRel.join('; ')}`))
+      }
+
       const chatDoc = ChatDocument.create({
         summary,
         messages: turns,
@@ -1079,8 +1112,8 @@ export default class AiChatTask extends Command {
         updated: updatedDate,
         provider: reasoningProfile.provider,
         model: reasoningProfile.model,
-        rel: resumeSession?.rel,
-        tags: resumeSession?.tags,
+        rel: priorRel ?? autoRel,
+        tags: priorTags ?? autoTags?.split('; '),
       })
       let markdown = chatDoc.toMarkdown()
 

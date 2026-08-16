@@ -46,6 +46,15 @@ const ROWS: CorpusRows = {
     },
   ],
   journals: [{ date: '2026-01-08', tags: ['Journal/Video'], rel: ['Jane Doe'], path: '/nb/time/2026/01/08/j.md' }],
+  chats: [
+    {
+      date: '2026-01-09',
+      summary: 'Atlas rollout brainstorm',
+      tags: ['Work/Eng'],
+      rel: ['projects/Atlas-Rollout'],
+      path: '/nb/time/2026/01/09/actions/ai-chats/c.md',
+    },
+  ],
 }
 
 test('corpusMediumOf folds message platforms into slack, email, and message', () => {
@@ -87,6 +96,24 @@ test('recordsFromRows maps meetings and journals', () => {
   })
   assert({ given: 'a journal row', should: 'have no conversation identity', actual: journal?.to, expected: undefined })
   assert({ given: 'a journal row', should: 'keep tags', actual: journal?.tags, expected: ['Journal/Video'] })
+})
+
+test('recordsFromRows maps chats without a conversation identity', () => {
+  const records = recordsFromRows(ROWS, ['chat'])
+  assert({
+    given: 'chat requested from mixed rows',
+    should: 'keep only the chat record',
+    actual: records.map((r) => r.medium),
+    expected: ['chat'],
+  })
+  assert({ given: 'a chat row', should: 'have no conversation identity', actual: records[0]?.to, expected: undefined })
+  assert({
+    given: 'a chat row',
+    should: 'keep its summary',
+    actual: records[0]?.summary,
+    expected: 'Atlas rollout brainstorm',
+  })
+  assert({ given: 'a chat row', should: 'keep tags', actual: records[0]?.tags, expected: ['Work/Eng'] })
 })
 
 test('recordsFromRows falls back to from when to is absent', () => {

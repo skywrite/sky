@@ -11,7 +11,7 @@ export type AutoTagInput = {
    * Who or where the conversation is with, as the document's `to:` frontmatter
    * spells it — Slack channel or DM partner, email counterparty, meeting
    * attendees. Keys the history prior. Omit for media with no conversation
-   * identity (journals).
+   * identity (journals, chats).
    */
   to?: string
   from?: string
