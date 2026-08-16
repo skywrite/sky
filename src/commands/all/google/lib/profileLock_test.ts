@@ -77,6 +77,21 @@ test('acquireProfileLock', { timeout: 15_000 }, async () => {
     await release()
   })
 
+  await withLockPath('notify.lock', async (lockPath) => {
+    const notices: number[] = []
+    const release = await acquireProfileLock(lockPath, { onWait: (pid) => notices.push(pid) })
+    await acquireProfileLock(lockPath, { deadlineMs: 60, pollMs: 20, onWait: (pid) => notices.push(pid) }).catch(
+      () => undefined,
+    )
+    await release()
+    assert({
+      given: 'an uncontended acquire then a wait on a live holder',
+      should: 'fire onWait once, only for the waiter, with the holder pid',
+      expected: String(process.pid),
+      actual: notices.join(','),
+    })
+  })
+
   await withLockPath('foreign.lock', async (lockPath) => {
     const release = await acquireProfileLock(lockPath)
     await writeFile(lockPath, String(DEAD_PID))
