@@ -1,9 +1,8 @@
 /**
  * Convert task param definitions to JSON Schema.
  *
- * This is the shared schema layer used by both the MCP adapter and
- * the AI Chat tool generator - anything that needs to expose task
- * params as a JSON Schema object.
+ * This is the shared schema layer used by the AI Chat tool generator -
+ * anything that needs to expose task params as a JSON Schema object.
  */
 
 import { z } from 'zod'

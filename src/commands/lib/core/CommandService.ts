@@ -282,7 +282,7 @@ export default class CommandService {
 
     // Step 2: Merge transformed args with overrides
     // Overrides are passed through unchanged - parent tasks already have parsed values.
-    // Server/MCP handlers should pre-parse values before calling CommandService.
+    // Server handlers should pre-parse values before calling CommandService.
     // Priority: task defaults < parent args < overrides
     const finalArgs = { ...transformedArgs, ...argsOverride }
 

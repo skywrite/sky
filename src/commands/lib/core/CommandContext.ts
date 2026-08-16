@@ -20,8 +20,6 @@ export enum CommandPlatform {
   Server = 'server',
   /** Test environment */
   Test = 'test',
-  /** Model Context Protocol (LLM integration) */
-  MCP = 'mcp',
 }
 
 /**
@@ -265,5 +263,4 @@ export default class CommandContext {
 
   // Future factory methods:
   // - static vscode(config, vscodeApi) - VSCode extension context (CommandPlatform.VSCode)
-  // - static mcp(config, env) - Model Context Protocol context (CommandPlatform.MCP)
 }

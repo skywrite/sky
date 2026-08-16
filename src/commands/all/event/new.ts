@@ -5,7 +5,6 @@ import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from 
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import EventDocument from '#shared/models/Event/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -22,7 +21,6 @@ const params = {
 type Params = InferParams<typeof params>
 type Result = { file: string }
 
-@MCPTool()
 export default class EventNewTask extends Command {
   static override description: CommandDescription = {
     name: 'event:new',

@@ -10,7 +10,6 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { isTerminal } from '#shared/sys/mod.ts'
@@ -33,7 +32,6 @@ type Result = { filePath: string }
 
 const VIDEO_MEDIUMS = ['Loom', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
 
-@MCPTool()
 export default class VideoNewTask extends Command {
   static override description: CommandDescription = {
     name: 'video:new',

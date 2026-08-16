@@ -6,7 +6,6 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
@@ -31,7 +30,6 @@ const params = {
 type Params = InferParams<typeof params>
 type Result = { filePath: string }
 
-@MCPTool()
 export default class EmailNewTask extends Command {
   static override description: CommandDescription = {
     name: 'email:new',

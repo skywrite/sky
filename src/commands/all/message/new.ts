@@ -8,7 +8,6 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import { exists } from '#shared/fs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
@@ -64,7 +63,6 @@ const params = {
 type Params = InferParams<typeof params>
 type Result = { filePath: string }
 
-@MCPTool()
 export default class MessageNewTask extends Command {
   static override description: CommandDescription = {
     name: 'message:new',
