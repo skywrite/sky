@@ -57,6 +57,15 @@ async function removeSingletonFiles(): Promise<void> {
   }
 }
 
+/** Full command line of a pid, or null when it cannot be read (usually: it just died). */
+function commandLineOf(pid: number): string | null {
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+}
+
 /**
  * SIGKILL a wedged headless automation browser. Proof before force: the
  * pid's command line must name our profile dir (so it is our automation
@@ -65,13 +74,10 @@ async function removeSingletonFiles(): Promise<void> {
  * window). Returns false when nothing can be safely killed.
  */
 function killWedgedProfileBrowser(pid: number): boolean {
-  let command = ''
-  try {
-    command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
-  } catch {
+  const command = commandLineOf(pid)
+  if (command === null || !command.includes(GOOGLE_BROWSER_PROFILE_DIR) || !command.includes('--headless')) {
     return false
   }
-  if (!command.includes(GOOGLE_BROWSER_PROFILE_DIR) || !command.includes('--headless')) return false
   try {
     process.kill(pid, 'SIGKILL')
     return true
@@ -82,25 +88,31 @@ function killWedgedProfileBrowser(pid: number): boolean {
 
 /**
  * Chromium refuses to start on a profile whose SingletonLock names another
- * process. A crashed or Ctrl-C'd run leaves the lock (and sometimes a whole
- * orphaned browser) behind — self-heal the stale case, name the live one.
- * With takeover, a live-but-wedged HEADLESS holder is killed too: agent
- * flows hold the cross-process profile lock, so any headless Chromium still
- * squatting on the profile is a leftover that would wedge the launch. The
- * visible sign-in window never qualifies (no --headless) and keeps the
- * polite error.
+ * process. Classify the named pid by its command line before acting: dead —
+ * or alive but not on our profile dir (pid reuse after a crash) — means the
+ * lock is stale, so self-heal it. A live holder on our profile dir is real
+ * contention. With takeover, a HEADLESS one is killed as a wedged leftover:
+ * cooperating flows serialize on the cross-process profile lock, so nothing
+ * legitimate can still be squatting here. The visible `sky google:browser`
+ * sign-in window (headed) is never killed — it closes itself once sign-in
+ * verifies, so the error points there instead of at kill.
  */
 async function clearProfileLockOrThrow(options: { takeover?: boolean } = {}): Promise<void> {
   const pid = await profileLockPid()
   if (pid !== null && isProcessAlive(pid)) {
-    const killed = options.takeover === true && killWedgedProfileBrowser(pid)
-    if (!killed) {
-      throw new GoogleBrowserError(
-        `The automation profile is already in use by a running browser (pid ${pid}) — close that window, or: kill ${pid}`,
-      )
+    const command = commandLineOf(pid) ?? ''
+    if (command.includes(GOOGLE_BROWSER_PROFILE_DIR)) {
+      const killed = options.takeover === true && killWedgedProfileBrowser(pid)
+      if (!killed) {
+        throw new GoogleBrowserError(
+          command.includes('--headless')
+            ? `The automation profile is in use by a headless automation browser (pid ${pid}) — kill ${pid}, then retry`
+            : `A sky google:browser sign-in window is open on the automation profile (pid ${pid}) — finish signing in there (the window closes itself once verified), or close it, then retry`,
+        )
+      }
+      // Give the killed process a beat to die before clearing its files.
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
-    // Give the killed process a beat to die before clearing its files.
-    await new Promise((resolve) => setTimeout(resolve, 500))
   }
   await removeSingletonFiles()
 }

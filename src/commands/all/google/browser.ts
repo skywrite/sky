@@ -1,11 +1,33 @@
-import * as p from '@clack/prompts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
-import { GoogleBrowserError, isSignedOutUrl, launchGoogleBrowser } from './lib/browserSession.ts'
+import { GOOGLE_BROWSER_PROFILE_LOCK, GoogleBrowserError, launchGoogleBrowser } from './lib/browserSession.ts'
+import { ProfileLockBusyError, acquireProfileLock } from './lib/profileLock.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
     'google:browser': { params: Record<never, never>; result: Record<never, never> }
+  }
+}
+
+// Straight to the sign-in form (bare drive.google.com bounces signed-out
+// visitors to a marketing page); the continue lands on Drive when done.
+const SIGNIN_URL = 'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fdrive.google.com'
+
+/** How often to look for a tab that landed on Drive. */
+const POLL_MS = 3000
+
+/** Drive bounces signed-out visitors within a beat — a tab still on Drive after this settle is signed in. */
+const SETTLE_MS = 2500
+
+/** Sign-in with 2FA takes minutes; a window forgotten open would hold the profile forever — bound it. */
+const SIGNIN_DEADLINE_MS = 10 * 60_000
+
+/** Hostname equality, not substring: the sign-in URL itself carries drive.google.com inside its continue param. */
+function isDriveUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).hostname === 'drive.google.com'
+  } catch {
+    return false
   }
 }
 
@@ -15,9 +37,10 @@ export default class GoogleBrowserTask extends Command {
     description: 'Sign in to the Google automation browser (one time) — enables anchored comments.',
     descriptionLong: [
       'Opens the dedicated automation browser profile. Sign in to Google in',
-      'the window, then close it; the session persists in the profile and',
-      'the workspace agent uses it for what the API cannot do (comments',
-      'anchored to a slide or cell). Re-run whenever the session expires.',
+      'the window; sky detects the completed sign-in, saves the session, and',
+      'closes the window by itself. The workspace agent uses the session for',
+      'what the API cannot do (comments anchored to a slide or cell). Re-run',
+      'whenever the session expires.',
     ],
     usage: ['sky google:browser'],
     params: {},
@@ -26,53 +49,74 @@ export default class GoogleBrowserTask extends Command {
   async run({ context }: CommandArgs<Record<never, never>>): Promise<CommandResult<Record<never, never>>> {
     const { output } = context
 
-    let browserContext
+    // Turn-taking with agent flows: launching without the cross-process lock
+    // would smash into Chromium's SingletonLock mid-mission instead of
+    // waiting out a warm agent browser, whose idle close frees the profile
+    // well inside the wait deadline.
+    let releaseLock: () => Promise<void>
     try {
-      browserContext = await launchGoogleBrowser({ headless: false })
+      releaseLock = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK, {
+        onWait: () => output.log('The automation browser is busy in another sky process — waiting for it to finish…'),
+      })
     } catch (err) {
-      if (err instanceof GoogleBrowserError) return CommandResult.fail(err.message)
+      if (err instanceof ProfileLockBusyError) return CommandResult.fail(err.message)
       throw err
     }
 
-    let browserClosed = false
-    browserContext.on('close', () => {
-      browserClosed = true
-    })
+    try {
+      let browserContext
+      try {
+        browserContext = await launchGoogleBrowser({ headless: false, takeover: true })
+      } catch (err) {
+        if (err instanceof GoogleBrowserError) return CommandResult.fail(err.message)
+        throw err
+      }
 
-    // Straight to the sign-in form (bare drive.google.com bounces signed-out
-    // visitors to a marketing page); continue lands on Drive when done.
-    const page = browserContext.pages()[0] ?? (await browserContext.newPage())
-    await page
-      .goto('https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fdrive.google.com', {
-        waitUntil: 'domcontentloaded',
-        timeout: 60_000,
+      let browserClosed = false
+      browserContext.once('close', () => {
+        browserClosed = true
       })
-      .catch(() => undefined)
 
-    output.log('A browser window opened. Sign in to Google there, then come back to this terminal.')
+      const page = browserContext.pages()[0] ?? (await browserContext.newPage())
+      await page.goto(SIGNIN_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined)
 
-    for (;;) {
-      const done = await p.confirm({ message: 'Signed in? sky will verify and save the session.' })
-      if (p.isCancel(done) || !done) {
-        await browserContext.close().catch(() => undefined)
-        return CommandResult.fail('Cancelled — run sky google:browser again anytime.')
+      output.log(
+        'A browser window opened. Sign in to Google there — sky detects it, saves the session, and closes the window (Ctrl-C cancels).',
+      )
+
+      // The context can close mid-poll; a dead context has no Drive tab.
+      const onDrive = () => {
+        try {
+          return browserContext.pages().some((tab) => isDriveUrl(tab.url()))
+        } catch {
+          return false
+        }
       }
-      if (browserClosed) {
-        return CommandResult.fail(
-          'The browser window closed before the session could be verified (a Brave self-update restart does this). Run sky google:browser again.',
-        )
+
+      for (let waitedMs = 0; waitedMs < SIGNIN_DEADLINE_MS; waitedMs += POLL_MS) {
+        if (browserClosed) {
+          return CommandResult.fail(
+            'The browser window closed before the sign-in could be verified. Run sky google:browser again — a completed sign-in verifies instantly.',
+          )
+        }
+        if (onDrive()) {
+          await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+          if (!browserClosed && onDrive()) {
+            await browserContext.close().catch(() => undefined)
+            output.log('Signed in — session verified and saved.')
+            return CommandResult.success({})
+          }
+          continue // bounced back off Drive (or the window closed) — the next tick decides
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS))
       }
-      const verifyPage = browserContext.pages()[0] ?? (await browserContext.newPage())
-      await verifyPage
-        .goto('https://drive.google.com', { waitUntil: 'domcontentloaded', timeout: 30_000 })
-        .catch(() => undefined)
-      await verifyPage.waitForTimeout(2500)
-      if (!isSignedOutUrl(verifyPage.url())) {
-        await browserContext.close()
-        output.log('Signed in — session verified and saved.')
-        return CommandResult.success({})
-      }
-      output.log('Still signed out (Google bounced to the sign-in page) — finish signing in, then confirm again.')
+
+      await browserContext.close().catch(() => undefined)
+      return CommandResult.fail(
+        `No completed sign-in after ${SIGNIN_DEADLINE_MS / 60_000} minutes — closed the browser. Run sky google:browser again.`,
+      )
+    } finally {
+      await releaseLock()
     }
   }
 }

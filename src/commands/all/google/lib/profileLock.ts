@@ -40,6 +40,8 @@ export interface ProfileLockOptions {
   deadlineMs?: number
   /** Poll interval while waiting (default 1s). */
   pollMs?: number
+  /** Fires once, with the holder's pid, when the acquire first starts waiting on a live holder. */
+  onWait?: (holderPid: number) => void
 }
 
 /**
@@ -54,6 +56,7 @@ export async function acquireProfileLock(
   const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS
   let waitedMs = 0
+  let notified = false
   for (;;) {
     try {
       await writeFile(lockPath, String(process.pid), { flag: 'wx' })
@@ -74,6 +77,10 @@ export async function acquireProfileLock(
       continue
     }
     if (waitedMs >= deadlineMs) throw new ProfileLockBusyError(holderPid, waitedMs)
+    if (!notified) {
+      notified = true
+      options.onWait?.(holderPid)
+    }
     await new Promise((resolve) => setTimeout(resolve, pollMs))
     waitedMs += pollMs
   }
