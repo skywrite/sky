@@ -2,7 +2,7 @@
 name: suggest-mi
 schema: 0.2.0
 created: 2026-01-26
-updated: 2026-01-26
+updated: 2026-08-16
 description: Suggest 3 specific, actionable Most Important items based on day context
 ---
 
@@ -29,7 +29,7 @@ A good Most Important item is:
 ✅ "Send Jane reoffer email with clear 90-day expectations"
 
 ❌ "Think about Atlas deal" (not actionable)
-✅ "Draft Atlas term sheet counter-proposal for David's review"
+✅ "Draft Atlas term sheet counter-proposal for Devon's review"
 
 ❌ "Complete 8-mile walk" (routine maintenance, not MI-worthy)
 ✅ "Schedule overdue colonoscopy before insurance deadline Friday"

@@ -1,6 +1,6 @@
 ---
 from: Jennifer Walsh
-to: JP
+to: Sam
 when: 14:30
 medium: Email
 summary: Azure Enterprise Proposal

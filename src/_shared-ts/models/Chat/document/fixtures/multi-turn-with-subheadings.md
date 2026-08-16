@@ -11,7 +11,7 @@ tags:
 
 # MCP vs x402 Analysis
 
-## JP
+## Jane
 
 Help me compare MCP and x402 for agent payments.
 
@@ -30,7 +30,7 @@ MCP is session-based while x402 is stateless. This matters because:
 
 MCP is the better fit for AI agent payments.
 
-## JP
+## Jane
 
 Can you write a summary for the team?
 

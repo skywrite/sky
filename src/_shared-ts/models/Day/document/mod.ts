@@ -30,7 +30,7 @@ export interface DocumentRef {
 
 /** A reference to a Complete item with its parsed components */
 export interface CompleteItemRef {
-  key: string // "17:08 > Kevin to #mna-atlas-closing-integration Slack"
+  key: string // "17:08 > Sam to #mna-atlas-closing-integration Slack"
   link: string // "[summary](actions/messages/slack_Kevin....md)"
   path: string // "actions/messages/slack_Kevin....md"
   title: string // "summary text"
@@ -406,7 +406,7 @@ export default class DayDocument extends ListDocument {
    * Get an existing Complete item by key prefix.
    * Returns structured object with parsed path, or undefined if not found.
    *
-   * @param keyPrefix - The key to match (everything before " -> "), e.g., "17:08 > Kevin Slack"
+   * @param keyPrefix - The key to match (everything before " -> "), e.g., "17:08 > Sam Slack"
    * @param category - Optional category to limit search (e.g., "Professional"). If not provided, searches all Complete lists.
    */
   public getCompleteItem(keyPrefix: string, category?: string): CompleteItemRef | undefined {
@@ -445,7 +445,7 @@ export default class DayDocument extends ListDocument {
    * Set a Complete item by key prefix.
    * Replaces if exists, adds if not.
    *
-   * @param keyPrefix - The key to match (everything before " -> "), e.g., "17:08 > Kevin Slack"
+   * @param keyPrefix - The key to match (everything before " -> "), e.g., "17:08 > Sam Slack"
    * @param value - The value part (after " -> "), e.g., "[summary](path)"
    * @param opts - Options including time and category
    */
@@ -479,7 +479,7 @@ export default class DayDocument extends ListDocument {
 
     // No existing item, add new one
     // Extract the item content (without the key prefix part that includes time)
-    // keyPrefix is like "17:08 > Kevin Slack", we need "Kevin Slack -> [summary](path)"
+    // keyPrefix is like "17:08 > Sam Slack", we need "Sam Slack -> [summary](path)"
     const itemContent = `${keyPrefix.substring(opts.time.length + 3)} -> ${value}`
     return this.addCompleteItem(itemContent, opts)
   }

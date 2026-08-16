@@ -9,7 +9,7 @@ turns: 2
 
 # Atlas Launch Planning
 
-## JP
+## Jane
 
 What should I focus on for the Atlas launch this week?
 
@@ -18,7 +18,7 @@ What should I focus on for the Atlas launch this week?
 Focus on the demo script and the pricing page copy.
 
 
-## JP
+## Jane
 
 Draft the announcement outline.
 

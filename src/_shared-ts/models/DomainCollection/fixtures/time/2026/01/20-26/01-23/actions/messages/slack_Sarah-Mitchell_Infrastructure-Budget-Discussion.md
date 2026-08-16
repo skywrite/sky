@@ -1,6 +1,6 @@
 ---
 from: Sarah Mitchell
-to: JP
+to: Sam
 when: 2026-01-23 10:30
 medium: Slack
 context: #team-engineering

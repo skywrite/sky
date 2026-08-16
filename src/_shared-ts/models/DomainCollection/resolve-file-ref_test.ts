@@ -28,7 +28,7 @@ function createMockStore(): MarkdownStore {
 
 test('DomainCollection.fromDocument - skips file refs in rel field', () => {
   const store = createMockStore()
-  const doc = Document.fromMarkdown(md('title: Slack msg\nrel:\n  - ./email_Nick-to-JP', '# Content'))
+  const doc = Document.fromMarkdown(md('title: Slack msg\nrel:\n  - ./email_Nick-to-Sam', '# Content'))
   const collection = DomainCollection.fromDocument(doc, '/messages/slack.md', store)
 
   assert({

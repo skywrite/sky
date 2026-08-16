@@ -20,7 +20,7 @@ const fixtures = [
   { name: 'Madonna', year: 2025, expected: '2025/ma', description: 'single name (Madonna)' },
   { name: 'Cher', year: 2025, expected: '2025/ch', description: 'single name (Cher)' },
   { name: 'Prince', year: 2025, expected: '2025/pr', description: 'single name (Prince)' },
-  { name: 'JP', year: 2025, expected: '2025/jp', description: 'single two-letter name' },
+  { name: 'Bo', year: 2025, expected: '2025/bo', description: 'single two-letter name' },
 
   // Special characters and internationalization
   { name: 'François Müller', year: 2025, expected: '2025/fr', description: 'French name with diacritics' },

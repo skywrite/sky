@@ -16,7 +16,7 @@ tags: Legal
 ## Personal Complete
 - 08:40 > Watched YouTube -> [Zeihan on Geopolitics - Iran Grapples With Protests...Again](https://www.youtube.com/watch?v=ooROZDeds8o)
 - 08:43 > Inbox zero
-- 11:30 > Bridget In Person -> [Lunch Catch-up At Hiro 88](meeting_bridget.md)
+- 11:30 > Dana In Person -> [Lunch Catch-up At Hiro 88](meeting_bridget.md)
 - 17:00 > Inbox zero
 
 ## Professional Commitments

@@ -69,7 +69,7 @@ tags: Work
 
 # Planning the Widget Launch
 
-## JP
+## Sam
 
 How should we plan the widget launch?
 

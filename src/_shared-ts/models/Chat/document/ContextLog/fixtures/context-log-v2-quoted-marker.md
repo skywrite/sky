@@ -9,7 +9,7 @@ turns: 1
 
 # Explaining The Context Log
 
-## JP
+## Jane
 
 How does the saved log format work?
 

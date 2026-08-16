@@ -43,14 +43,14 @@ const fixtures = [
     yaml: {
       title: 'Test',
       attachments: [
-        { file: 'photo.jpeg', rel: 'Scarlett, JP, Jolie' },
+        { file: 'photo.jpeg', rel: 'Sasha, Angelina, Jules' },
         { file: 'video.mp4' },
         { file: 'document.pdf' },
       ],
     },
     expectedLength: 3,
     expected: [
-      { file: 'photo.jpeg', rel: ['Scarlett', 'JP', 'Jolie'] },
+      { file: 'photo.jpeg', rel: ['Sasha', 'Angelina', 'Jules'] },
       { file: 'video.mp4' },
       { file: 'document.pdf' },
     ],

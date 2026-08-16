@@ -16,5 +16,5 @@ tags: Organization/Company/Tech/Mag7
 Tesla designs and manufactures electric vehicles, battery energy storage, and solar panels. Pioneer in autonomous driving technology.
 
 ## Key Contacts
-- Chris Anderson (Fleet Partnerships)
+- Casey Arden (Fleet Partnerships)
 - Laura Martinez (Energy Solutions)

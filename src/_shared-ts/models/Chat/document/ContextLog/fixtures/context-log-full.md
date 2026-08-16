@@ -9,7 +9,7 @@ turns: 3
 
 # Atlas Beta Feedback Review
 
-## JP
+## Jane
 
 What did beta testers say about Atlas onboarding?
 
@@ -18,7 +18,7 @@ What did beta testers say about Atlas onboarding?
 Testers liked the checklist but stalled on the import step.
 
 
-## JP
+## Jane
 
 Which decision is still pending?
 
@@ -27,7 +27,7 @@ Which decision is still pending?
 The pricing-tier decision is still open.
 
 
-## JP
+## Jane
 
 Summarize next actions.
 

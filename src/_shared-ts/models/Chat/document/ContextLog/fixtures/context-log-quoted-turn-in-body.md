@@ -9,7 +9,7 @@ turns: 1
 
 # How Chat Logging Works
 
-## JP
+## Jane
 
 How does the saved transcript record context?
 

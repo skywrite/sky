@@ -10,8 +10,8 @@ const MESSAGES_DIR = join(TMP, 'time', '2026', '02', '09-15', '10', 'actions', '
 
 function setup() {
   mkdirSync(MESSAGES_DIR, { recursive: true })
-  writeFileSync(join(MESSAGES_DIR, 'email_Nick-to-JP.md'), '---\ntitle: Email\n---\n')
-  writeFileSync(join(MESSAGES_DIR, 'slack_Tim-to-JP.md'), '---\ntitle: Slack\n---\n')
+  writeFileSync(join(MESSAGES_DIR, 'email_Nick-to-Sam.md'), '---\ntitle: Email\n---\n')
+  writeFileSync(join(MESSAGES_DIR, 'slack_Tim-to-Sam.md'), '---\ntitle: Slack\n---\n')
 }
 
 function teardown() {
@@ -22,22 +22,22 @@ test('resolve - ./ref resolves to sibling .md file', async () => {
   setup()
   try {
     const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })
-    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-JP.md')
+    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-Sam.md')
 
-    const ref = store.resolve('./email_Nick-to-JP', { sourceFilePath: sourceFile })
+    const ref = store.resolve('./email_Nick-to-Sam', { sourceFilePath: sourceFile })
 
     assert({
-      given: './email_Nick-to-JP from sibling file',
+      given: './email_Nick-to-Sam from sibling file',
       should: 'resolve as file type',
       actual: ref.type,
       expected: 'file',
     })
 
     assert({
-      given: './email_Nick-to-JP from sibling file',
+      given: './email_Nick-to-Sam from sibling file',
       should: 'resolve to absolute path with .md',
       actual: 'path' in ref && ref.path,
-      expected: join(MESSAGES_DIR, 'email_Nick-to-JP.md'),
+      expected: join(MESSAGES_DIR, 'email_Nick-to-Sam.md'),
     })
   } finally {
     teardown()
@@ -48,9 +48,9 @@ test('resolve - ./ref with .md extension resolves exact path', async () => {
   setup()
   try {
     const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })
-    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-JP.md')
+    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-Sam.md')
 
-    const ref = store.resolve('./email_Nick-to-JP.md', { sourceFilePath: sourceFile })
+    const ref = store.resolve('./email_Nick-to-Sam.md', { sourceFilePath: sourceFile })
 
     assert({
       given: './ref with explicit .md extension',
@@ -63,7 +63,7 @@ test('resolve - ./ref with .md extension resolves exact path', async () => {
       given: './ref with explicit .md extension',
       should: 'resolve to exact path',
       actual: 'path' in ref && ref.path,
-      expected: join(MESSAGES_DIR, 'email_Nick-to-JP.md'),
+      expected: join(MESSAGES_DIR, 'email_Nick-to-Sam.md'),
     })
   } finally {
     teardown()
@@ -74,7 +74,7 @@ test('resolve - ./ref returns unresolved when file does not exist', async () => 
   setup()
   try {
     const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })
-    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-JP.md')
+    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-Sam.md')
 
     const ref = store.resolve('./nonexistent-file', { sourceFilePath: sourceFile })
 
@@ -94,7 +94,7 @@ test('resolve - ./ref without sourceFilePath falls through to unresolved', async
   try {
     const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })
 
-    const ref = store.resolve('./email_Nick-to-JP')
+    const ref = store.resolve('./email_Nick-to-Sam')
 
     assert({
       given: './ref without sourceFilePath context',
@@ -111,15 +111,15 @@ test('resolve - ./ref preserves raw string', async () => {
   setup()
   try {
     const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })
-    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-JP.md')
+    const sourceFile = join(MESSAGES_DIR, 'slack_Tim-to-Sam.md')
 
-    const ref = store.resolve('./email_Nick-to-JP', { sourceFilePath: sourceFile })
+    const ref = store.resolve('./email_Nick-to-Sam', { sourceFilePath: sourceFile })
 
     assert({
       given: './ref that resolves',
       should: 'preserve original raw string',
       actual: ref.raw,
-      expected: './email_Nick-to-JP',
+      expected: './email_Nick-to-Sam',
     })
   } finally {
     teardown()

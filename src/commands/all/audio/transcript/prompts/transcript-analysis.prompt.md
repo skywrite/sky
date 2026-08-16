@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-13
-updated: 2026-07-29
+updated: 2026-08-16
 description: Analyze transcript for transcription errors and clean-up opportunities
 ---
 

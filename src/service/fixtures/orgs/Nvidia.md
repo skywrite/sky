@@ -16,5 +16,5 @@ tags: Organization/Company/Tech/Mag7
 Nvidia designs graphics processing units (GPUs) and system-on-chip units. Leader in AI computing hardware and data center accelerators.
 
 ## Key Contacts
-- Kevin Huang (AI Solutions)
+- Kai Hansen (AI Solutions)
 - Maria Garcia (Data Center Sales)

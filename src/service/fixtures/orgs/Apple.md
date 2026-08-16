@@ -16,5 +16,5 @@ tags: Organization/Company/Tech/Mag7
 Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories. Known for iPhone, Mac, iPad, and Apple Watch.
 
 ## Key Contacts
-- David Park (Developer Relations)
+- Devon Price (Developer Relations)
 - Emma Wilson (Enterprise Sales)

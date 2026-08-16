@@ -73,12 +73,12 @@ export default class PersonFieldDocumentLinkProvider implements vscode.DocumentL
    * Extract person names from frontmatter fields with their document ranges.
    *
    * Handles both inline and YAML list formats:
-   *   who: Alice, JP, Jane Doe
+   *   who: Alice, Sam, Jane Doe
    *   from: Bob Smith
-   *   to: "#exec-policy-and-gov-relations"
+   *   to: "#project-atlas"
    *   who:
    *     - Alice
-   *     - JP, Jane Doe
+   *     - Sam, Jane Doe
    */
   private extractPersonEntries(frontmatter: string): Array<{ value: string; range: vscode.Range }> {
     const entries: Array<{ value: string; range: vscode.Range }> = []

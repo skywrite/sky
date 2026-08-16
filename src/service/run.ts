@@ -41,7 +41,7 @@ setInterval(() => exit(0), 12 * 60 * 60 * 1000)
 // engine's timezone cache, so Date and Intl re-resolve immediately. That is
 // runtime-specific behavior, not POSIX — a plain setenv would change
 // nothing. This replaces the old exit(0)-and-respawn, which unbound the
-// port for 50-70s at exactly the moments JP travels. Pinning TZ at boot
+// port for 50-70s at exactly the moments the user travels. Pinning TZ at boot
 // also immunizes the process (and every child it spawns) against the
 // post-wake wobble where Intl transiently reports UTC: an explicit TZ
 // outranks the host default.

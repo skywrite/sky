@@ -63,8 +63,8 @@ Phone call notes.`),
 const messages = [
   {
     doc: doc(`---
-from: Kevin
-to: JP
+from: Kai
+to: Sam
 when: "09:00"
 medium: Slack
 summary: Status update
@@ -76,7 +76,7 @@ Recent message.`),
   {
     doc: doc(`---
 from: Tanisha
-to: JP
+to: Sam
 when: "18:18"
 medium: Slack
 summary: Candidate intro
@@ -391,7 +391,7 @@ const CASES: SmokeCase[] = [
   },
   {
     field: 'messages',
-    query: '{ messages(where: { from: "Kevin" }) { path } }',
+    query: '{ messages(where: { from: "Kai" }) { path } }',
     expectPaths: [messages[0].path],
   },
   {

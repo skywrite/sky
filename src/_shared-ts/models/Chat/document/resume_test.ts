@@ -3,8 +3,10 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog } from './ContextLog/mod.ts'
-import ChatDocument from './mod.ts'
+import ChatDocument, { setUserSpeakerLabel } from './mod.ts'
 import { reconstructResumeState, verifyResumeCandidate } from './resume.ts'
+
+setUserSpeakerLabel('Jane')
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 const LOG_FIXTURES_DIR = path.join(import.meta.dirname!, 'ContextLog', 'fixtures')
@@ -95,7 +97,7 @@ test('reconstructResumeState - a transcript without a log degrades cleanly', asy
 
 test('reconstructResumeState - duplicate paths in a hand-edited log are deduped', () => {
   // Not writer-canonical (diff records only additions) — defensive only.
-  const body = '# Dedupe Test\n\n## JP\n\nQuestion.\n\n## AI Assistant\n\nAnswer.\n'
+  const body = '# Dedupe Test\n\n## Jane\n\nQuestion.\n\n## AI Assistant\n\nAnswer.\n'
   const doc = ChatDocument.fromMarkdown(
     body +
       serializeContextLog([
@@ -204,7 +206,7 @@ test('verifyResumeCandidate - rejects a shrunken context log', async () => {
 })
 
 test('verifyResumeCandidate - allows the trailing-user merge of an interrupted chat', () => {
-  const original = reconstructResumeState(ChatDocument.fromMarkdown('# Interrupted\n\n## JP\n\nOnly question.'))
+  const original = reconstructResumeState(ChatDocument.fromMarkdown('# Interrupted\n\n## Jane\n\nOnly question.'))
   const merged = buildCandidate(
     [
       { role: 'user', content: 'Only question.\n\nFollow-up thought.' },

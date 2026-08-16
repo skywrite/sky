@@ -16,7 +16,7 @@ tags: Organization/Company/Tech/SaaS
 Acme Corp is a B2B SaaS company providing workflow automation tools for mid-market enterprises. Founded in 2022, the company has grown to 85 employees and serves over 200 customers. Series A funded with $15M raised from Northwind Ventures.
 
 ## Key People
-- CEO: JP (me)
+- CEO: Sam (me)
 - CFO: Marcus Johnson
 - VP Engineering: Chen Wei
 - Head of Design: Maria Santos
