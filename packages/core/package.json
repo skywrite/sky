@@ -13,7 +13,9 @@
     "./sys": "./src/sys.ts",
     "./prompts": "./src/prompts.ts",
     "./config": "./src/config.ts",
-    "./secrets": "./src/secrets.ts"
+    "./secrets": "./src/secrets.ts",
+    "./nbfs": "./src/nbfs.ts",
+    "./shell": "./src/shell.ts"
   },
   "scripts": {
     "build": "echo 'TODO: bundle for publishing'"
