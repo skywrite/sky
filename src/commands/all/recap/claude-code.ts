@@ -9,9 +9,14 @@ import scanClaudeSessions, { renderClaudeCodeRecap } from './lib/claudeCode.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
 import { digestSessions } from './lib/sessionDigest.ts'
-import writeRecapFile from './lib/writeRecapFile.ts'
+import findWakeCutoff, { findWakeStart } from './lib/wakeGap.ts'
+import writeRecapFile, { readRecapCuration } from './lib/writeRecapFile.ts'
 
 const APP = 'claude-code'
+
+// How far before the day:start ceremony to look for the day's true beginning
+// (work done after waking but before running day:start).
+const WAKE_LOOKBACK_MS = 12 * 3_600_000
 
 // Digests are extraction, not prose-writing — the fast tier is enough.
 const DEFAULT_DIGEST_PROFILE = 'default-haiku-4.5'
@@ -76,7 +81,28 @@ export default class RecapClaudeCodeTask extends Command {
     }
 
     const window = await dayWindow(day)
-    const sessions = await scanClaudeSessions(projectsDir, window)
+
+    // The ceremony window (day:start to day:start) misfiles work around
+    // sleep: the day really runs wake to wake. Scan wide, find both wake
+    // boundaries in the activity signal (typed prompts plus session activity
+    // edges — a session reopened the next morning has an edge there but no
+    // overnight events), then scan again on the true window.
+    const wideSessions = await scanClaudeSessions(projectsDir, {
+      start: new Date(window.start.getTime() - WAKE_LOOKBACK_MS),
+      end: window.end,
+    })
+    const activitySignal = wideSessions
+      .flatMap((session) => [session.start, session.end, ...session.promptLog.map((prompt) => prompt.instant)])
+      .sort((a, b) => a.getTime() - b.getTime())
+    const start = findWakeStart(activitySignal, day, window.timezone, window.start) ?? window.start
+    const cutoff = findWakeCutoff(
+      activitySignal.filter((instant) => instant >= start),
+      day,
+      window.timezone,
+    )
+    const end = cutoff ? new Date(cutoff.getTime() + 60_000) : window.end
+
+    const sessions = await scanClaudeSessions(projectsDir, { start, end })
 
     if (sessions.length === 0) {
       output.log(`No Claude Code activity found for ${day.ymd}.`)
@@ -101,11 +127,15 @@ export default class RecapClaudeCodeTask extends Command {
       .map((entry) => entry.trim())
       .filter(Boolean)
 
+    // Re-runs keep the human-curated slots from the existing file.
+    const curation = await readRecapCuration(day, APP)
+
     const doc = RecapDocument.create({
       app: APP,
       what: 'Coding - Claude Code',
       when,
-      rel: relList?.length ? relList : undefined,
+      rel: relList?.length ? relList : curation.rel,
+      tags: curation.tags,
       body: rendered.body,
     })
     const contents = doc.toMarkdown()
