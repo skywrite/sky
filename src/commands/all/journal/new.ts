@@ -18,9 +18,9 @@ import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
 import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { gatherContext, type JournalContext } from './_lib/gatherContext.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
 import { journalFromVideo } from './lib/fromVideo.ts'
+import { CONTEXT_TOKENS_TRIPWIRE, gatherContext, type JournalContext } from './lib/gatherContext.ts'
 
 const typesDescription = `Journal types: ${JournalTypes.join(', ')} (or any custom type with --from-audio)`
 
@@ -231,9 +231,12 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
       output.log('Gathering context for AI questions...')
       journalContext = await gatherContext(when.plainDate, when.time)
 
-      output.log(
-        `Context: ${journalContext.documentCount} kept, ${journalContext.prunedCount} pruned, ~${journalContext.totalTokens} tokens`,
-      )
+      output.log(`Context: ${journalContext.documentCount} documents, ~${journalContext.totalTokens} tokens`)
+      if (journalContext.totalTokens > CONTEXT_TOKENS_TRIPWIRE) {
+        output.log(
+          `WARN: context is unusually large (>${CONTEXT_TOKENS_TRIPWIRE} estimated tokens) — check the day window for oversized files`,
+        )
+      }
 
       if (inspectInitialContext) {
         const baseDir = <string>config.DIR_BASE
