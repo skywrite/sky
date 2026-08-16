@@ -13,6 +13,7 @@ import type OrganizationDocument from '#shared/models/Organization/mod.ts'
 import type PersonDocument from '#shared/models/Person/mod.ts'
 import type PlaceDocument from '#shared/models/Place/mod.ts'
 import type ProjectDocument from '#shared/models/Project/mod.ts'
+import RecapDocument from '#shared/models/Recap/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 import StreakDocument from '#shared/models/Streak/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
@@ -241,6 +242,19 @@ export default class DomainCollection {
       .filter((_, path) => detectTypeFromPath(path) === 'video')
       .getAll()
       .map((doc) => new VideoDocument(doc.yaml, doc.markdown, doc.yamlError))
+  }
+
+  /**
+   * All recap documents (daily digests of activity in connected apps).
+   *
+   * Constructed rather than cast, for the same reason as videos: the
+   * scanner parses every time-based file into a plain Document.
+   */
+  get recaps(): RecapDocument[] {
+    return this.collection
+      .filter((_, path) => detectTypeFromPath(path) === 'recap')
+      .getAll()
+      .map((doc) => new RecapDocument(doc.yaml, doc.markdown, doc.yamlError))
   }
 
   /** All other documents (not org, person, project, goal, or place) */

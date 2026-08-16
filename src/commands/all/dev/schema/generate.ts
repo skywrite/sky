@@ -83,6 +83,20 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
       path: { type: 'String!', description: 'File path' },
     },
   },
+  Recap: {
+    description: 'Daily recap of activity in a connected app (GitHub, Claude Code, ...)',
+    fields: {
+      app: { type: 'String!', description: 'Connected app the recap digests: github, claude-code, etc.' },
+      what: { type: 'String!', description: 'Human label, e.g. "Code - GitHub"' },
+      when: { type: 'When', description: 'First-to-last activity span (never a length)', nullable: true },
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this recap belongs to', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
   Message: {
     description: 'Messages from Slack, email, text, etc.',
     fields: {
@@ -333,6 +347,23 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       involves: 'String',
       involvesAny: '[String!]',
       involvesAll: '[String!]',
+      relContains: 'String',
+    },
+  },
+  RecapFilter: {
+    fields: {
+      date: 'String',
+      dateGte: 'String',
+      dateLte: 'String',
+      recent: 'String',
+      app: 'String',
+      appNot: 'String',
+      whatContains: 'String',
+      tagsContains: 'String',
+      tagsContainsAny: '[String!]',
+      tagsContainsAll: '[String!]',
+      tagsStartsWith: 'String',
+      bodyContains: 'String',
       relContains: 'String',
     },
   },
@@ -717,7 +748,7 @@ export default class DevGenerateSchemaTask extends Command {
       'Output: _shared-ts/models/DomainCollection/query/schema.graphql',
       '',
       'The schema is derived from the typed accessors in each document class:',
-      '- Meeting, Video, Message, Person, Org, Project, Decision, Goal, Day, Journal, Chat',
+      '- Meeting, Video, Recap, Message, Person, Org, Project, Decision, Goal, Day, Journal, Chat',
     ],
     usage: ['sky dev:schema:generate'],
   }

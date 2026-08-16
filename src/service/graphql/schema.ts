@@ -162,6 +162,7 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
     meetings: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.meetings(args, ctx, info) ?? [],
     messages: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.messages(args, ctx, info) ?? [],
     videos: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.videos(args, ctx, info) ?? [],
+    recaps: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.recaps(args, ctx, info) ?? [],
     people: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.people(args, ctx, info) ?? [],
     orgs: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.orgs(args, ctx, info) ?? [],
     projects: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.projects(args, ctx, info) ?? [],

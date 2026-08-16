@@ -20,6 +20,7 @@ export type CollectionEntityType =
   | 'message'
   | 'meeting'
   | 'video'
+  | 'recap'
   | 'journal'
   | 'chat'
   | 'day'
@@ -56,10 +57,11 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
   message: 8,
   meeting: 9,
   video: 10,
-  journal: 11,
-  chat: 12,
-  document: 13,
-  day: 14,
+  recap: 11,
+  journal: 12,
+  chat: 13,
+  document: 14,
+  day: 15,
 }
 
 /**
@@ -88,6 +90,7 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/messages/') || p.includes('/slack/') || p.includes('/email/'), type: 'message' },
   { pattern: (p) => p.includes('/meeting/') || p.includes('/meetings/'), type: 'meeting' },
   { pattern: (p) => p.includes('/videos/'), type: 'video' },
+  { pattern: (p) => p.includes('/recaps/'), type: 'recap' },
   { pattern: (p) => p.includes('/journal/'), type: 'journal' },
   { pattern: (p) => p.includes('/ai-chats/'), type: 'chat' },
   { pattern: (p) => p.endsWith('/day.md') || p.endsWith('/_day.md'), type: 'day' },
