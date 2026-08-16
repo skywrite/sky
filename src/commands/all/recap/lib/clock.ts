@@ -15,17 +15,21 @@ function daysBetween(fromYmd: string, toYmd: string): number {
  * the next calendar date → "25:44") — never normalized to the next day,
  * matching how the notebook files late-night work.
  */
-export function dayClock(instant: Date, day: PlainDate, timezone: string): string {
-  // Shift the instant by the zone's offset and read UTC fields — explicit
-  // offset math instead of the process timezone, which is known to wobble.
+/** Local wall-clock parts of an instant in a zone — explicit offset math
+ * instead of the process timezone, which is known to wobble. */
+export function wallClockParts(instant: Date, timezone: string): { ymd: string; hour: number; minute: number } {
   const offsetHours = timezoneToUTCOffsetInHours(timezone, instant)
   const wall = new Date(instant.getTime() + offsetHours * 3_600_000)
   const y = wall.getUTCFullYear()
   const m = String(wall.getUTCMonth() + 1).padStart(2, '0')
   const d = String(wall.getUTCDate()).padStart(2, '0')
-  const offsetDays = daysBetween(day.ymd, `${y}-${m}-${d}`)
-  const hours = wall.getUTCHours() + offsetDays * 24
-  return `${String(hours).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`
+  return { ymd: `${y}-${m}-${d}`, hour: wall.getUTCHours(), minute: wall.getUTCMinutes() }
+}
+
+export function dayClock(instant: Date, day: PlainDate, timezone: string): string {
+  const wall = wallClockParts(instant, timezone)
+  const hours = wall.hour + daysBetween(day.ymd, wall.ymd) * 24
+  return `${String(hours).padStart(2, '0')}:${String(wall.minute).padStart(2, '0')}`
 }
 
 /** Filename time prefix for a clock label: "09:12" → "09-12". */

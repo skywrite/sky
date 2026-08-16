@@ -1,6 +1,12 @@
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { type GithubEvent, type GithubRepoActivity, collectFromEvents, renderGithubRecap } from './github.ts'
+import {
+  type GithubEvent,
+  type GithubRepoActivity,
+  clampActivity,
+  collectFromEvents,
+  renderGithubRecap,
+} from './github.ts'
 
 const WINDOW = { start: new Date('2026-02-08T06:00:00Z'), end: new Date('2026-02-09T04:00:00Z') }
 
@@ -125,5 +131,38 @@ test('renderGithubRecap renders repo sections with links and extended hours', ()
     should: 'run first commit to last commit',
     expected: '2026-02-08T09:15:00.000Z -> 2026-02-09T01:44:00.000Z',
     actual: `${rendered.first.toISOString()} -> ${rendered.last.toISOString()}`,
+  })
+})
+
+test('clampActivity drops out-of-window work and empty repos', () => {
+  const repos: GithubRepoActivity[] = [
+    {
+      repo: 'acme/atlas',
+      commits: [
+        { sha: 'aaaa111', subject: 'feat: before', instant: new Date('2026-02-09T01:00:00Z') },
+        { sha: 'bbbb222', subject: 'feat: after wake', instant: new Date('2026-02-09T05:00:00Z') },
+      ],
+      prs: [],
+      reviews: [],
+      issueEvents: 0,
+      issueEventTimes: [],
+    },
+    {
+      repo: 'acme/wallet',
+      commits: [{ sha: 'cccc333', subject: 'fix: morning only', instant: new Date('2026-02-09T05:30:00Z') }],
+      prs: [],
+      reviews: [],
+      issueEvents: 0,
+      issueEventTimes: [],
+    },
+  ]
+
+  const clamped = clampActivity(repos, new Date('2026-02-08T06:00:00Z'), new Date('2026-02-09T01:20:00Z'))
+
+  assert({
+    given: 'a wake-to-wake window ending at 01:20',
+    should: 'keep only in-window commits and drop the morning-only repo',
+    expected: 'acme/atlas:aaaa111',
+    actual: clamped.map((r) => `${r.repo}:${r.commits.map((c) => c.sha).join(',')}`).join(' '),
   })
 })

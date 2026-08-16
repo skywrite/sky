@@ -38,9 +38,10 @@ export interface ClaudeSession {
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 const GIST_LENGTH = 100
-// Caps keep the digest model's input bounded on heavy sessions.
+// Caps keep memory and the digest model's input bounded on heavy sessions.
+// The prompts COUNT is never capped — only how many are retained verbatim.
 const PROMPT_TEXT_CAP = 1_500
-const PROMPT_LOG_MAX = 80
+const PROMPT_LOG_MAX = 400
 const FINAL_ASSISTANT_CAP = 5_000
 const COMMAND_LOG_MAX = 40
 
@@ -93,6 +94,7 @@ async function scanFile(filePath: string, window: ScanWindow): Promise<ClaudeSes
 
   let start: Date | null = null
   let end: Date | null = null
+  let prompts = 0
   let gist = ''
   let cwd = ''
   let sessionId = ''
@@ -126,6 +128,7 @@ async function scanFile(filePath: string, window: ScanWindow): Promise<ClaudeSes
 
     const prompt = typedPrompt(line)
     if (prompt) {
+      prompts += 1
       if (promptLog.length < PROMPT_LOG_MAX) promptLog.push({ instant, text: prompt.slice(0, PROMPT_TEXT_CAP) })
       if (!gist) gist = prompt.replace(/\s+/g, ' ').slice(0, GIST_LENGTH)
     }
@@ -150,7 +153,7 @@ async function scanFile(filePath: string, window: ScanWindow): Promise<ClaudeSes
   // No in-window events, or nothing but harness noise (no typed prompts and
   // no edits) — not a session worth recapping.
   if (!start || !end) return null
-  if (promptLog.length === 0 && files.size === 0) return null
+  if (prompts === 0 && files.size === 0) return null
 
   return {
     sessionId: sessionId || path.basename(filePath, '.jsonl'),
@@ -158,7 +161,7 @@ async function scanFile(filePath: string, window: ScanWindow): Promise<ClaudeSes
     repo: cwd ? path.basename(cwd) : path.basename(path.dirname(filePath)),
     start,
     end,
-    prompts: promptLog.length,
+    prompts,
     filesTouched: files.size,
     gist,
     promptLog,

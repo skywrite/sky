@@ -5,10 +5,14 @@ import { isCommandAvailable } from '#lib/sys/command.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
-import { fetchGithubActivity, renderGithubRecap } from './lib/github.ts'
-import writeRecapFile from './lib/writeRecapFile.ts'
+import { activityInstants, clampActivity, fetchGithubActivity, renderGithubRecap } from './lib/github.ts'
+import findWakeCutoff, { findWakeStart } from './lib/wakeGap.ts'
+import writeRecapFile, { readRecapCuration } from './lib/writeRecapFile.ts'
 
 const APP = 'github'
+
+// How far before the day:start ceremony to look for the day's true beginning.
+const WAKE_LOOKBACK_MS = 12 * 3_600_000
 
 const params = {
   day: dayNoFutureArg(),
@@ -55,12 +59,26 @@ export default class RecapGithubTask extends Command {
 
     const window = await dayWindow(day)
 
+    // Fetch wide, then clamp to the wake-to-wake window: the day really runs
+    // wake to wake, not day:start to day:start.
     let repos
     try {
-      repos = await fetchGithubActivity(window)
+      repos = await fetchGithubActivity({
+        start: new Date(window.start.getTime() - WAKE_LOOKBACK_MS),
+        end: window.end,
+      })
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to fetch GitHub activity')
     }
+
+    const instants = activityInstants(repos)
+    const start = findWakeStart(instants, day, window.timezone, window.start) ?? window.start
+    const cutoff = findWakeCutoff(
+      instants.filter((instant) => instant >= start),
+      day,
+      window.timezone,
+    )
+    repos = clampActivity(repos, start, cutoff ?? window.end)
 
     if (repos.length === 0) {
       output.log(`No GitHub activity found for ${day.ymd}.`)
@@ -77,11 +95,15 @@ export default class RecapGithubTask extends Command {
       .map((entry) => entry.trim())
       .filter(Boolean)
 
+    // Re-runs keep the human-curated slots from the existing file.
+    const curation = await readRecapCuration(day, APP)
+
     const doc = RecapDocument.create({
       app: APP,
       what: 'Code - GitHub',
       when,
-      rel: relList?.length ? relList : undefined,
+      rel: relList?.length ? relList : curation.rel,
+      tags: curation.tags,
       body: rendered.body,
     })
     const contents = doc.toMarkdown()

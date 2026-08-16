@@ -22,12 +22,16 @@ export interface SessionDigest {
 const PROMPT_FILE = new URL('../prompts/claude-code-session.prompt.md', import.meta.url).pathname
 
 const FILES_MAX = 60
+const PROMPTS_MAX = 120
 
 /** Assemble the per-session material the digest model reads. */
 function materials(session: ClaudeSession, day: PlainDate, timezone: string): string {
   const parts: string[] = [`Repo: ${session.repo}`, '', '## Typed prompts (timestamped)']
-  for (const prompt of session.promptLog) {
+  for (const prompt of session.promptLog.slice(0, PROMPTS_MAX)) {
     parts.push(`[${dayClock(prompt.instant, day, timezone)}] ${prompt.text}`)
+  }
+  if (session.promptLog.length > PROMPTS_MAX) {
+    parts.push(`… and ${session.promptLog.length - PROMPTS_MAX} more prompts`)
   }
 
   if (session.commits.length) {

@@ -199,6 +199,36 @@ export async function fetchGithubActivity(window: ScanWindow): Promise<GithubRep
   return active
 }
 
+/** Every authored instant in the day's activity, sorted — the presence signal. */
+export function activityInstants(repos: GithubRepoActivity[]): Date[] {
+  return repos
+    .flatMap((r) => [
+      ...r.commits.map((c) => c.instant),
+      ...r.prs.map((p) => p.instant),
+      ...r.reviews.map((v) => v.instant),
+      ...r.issueEventTimes,
+    ])
+    .sort((a, b) => a.getTime() - b.getTime())
+}
+
+/** Keep only activity inside the wake-to-wake window; empty repos drop entirely. */
+export function clampActivity(repos: GithubRepoActivity[], start: Date, end: Date): GithubRepoActivity[] {
+  const keep = (instant: Date) => instant >= start && instant <= end
+  return repos
+    .map((r) => {
+      const issueEventTimes = r.issueEventTimes.filter(keep)
+      return {
+        ...r,
+        commits: r.commits.filter((c) => keep(c.instant)),
+        prs: r.prs.filter((p) => keep(p.instant)),
+        reviews: r.reviews.filter((v) => keep(v.instant)),
+        issueEventTimes,
+        issueEvents: issueEventTimes.length,
+      }
+    })
+    .filter((r) => r.commits.length > 0 || r.prs.length > 0 || r.reviews.length > 0 || r.issueEvents > 0)
+}
+
 function firstInstant(activity: GithubRepoActivity): number {
   const instants = [
     ...activity.commits.map((c) => c.instant.getTime()),
