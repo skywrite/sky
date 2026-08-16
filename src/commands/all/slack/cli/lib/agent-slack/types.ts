@@ -35,7 +35,7 @@ export type AgentSlackLaterItem = {
   state?: string
   /** Epoch seconds of the save action (agent-slack maps the API's date_created) */
   date_saved?: number
-  message?: { content?: string }
+  message?: { content?: string; reply_count?: number }
 }
 
 export type AgentSlackLaterList = {

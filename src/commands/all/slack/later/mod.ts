@@ -1,12 +1,18 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
+import colors from 'picocolors'
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { SLACK_WORKSPACE } from '#config'
 import { captureLaterItems } from './lib/capture.ts'
-import { fetchInProgressLater, laterChannelLabel, laterItemLink } from './lib/list.ts'
-import { oneLine } from './lib/pick.ts'
+import {
+  fetchInProgressLater,
+  laterCapturable,
+  laterItemLink,
+  renderLaterRow,
+  resolveStaleChannels,
+} from './lib/list.ts'
 
 /** The listing is a peek, not a dump — the header line carries the full count */
 const MAX_LISTED = 20
@@ -89,22 +95,21 @@ export default class SlackLaterTask extends Command {
       }))
 
     output.log(
-      `Saved-later queue: ${queue.length} fetched` +
-        (list.counts.in_progress !== undefined ? ` (${list.counts.in_progress} in progress total)` : ''),
+      `Saved-later queue: ${colors.bold(String(queue.length))} fetched` +
+        (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
     // Show enough to cover what a capture run is about to take
+    const stale = resolveStaleChannels(list.items)
     const shown = queue.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0))
     for (const [index, d] of shown.entries()) {
-      const channel = laterChannelLabel(d.item)
-      output.log(`  ${index + 1}. ${d.timeLabel}  ${channel}  ${oneLine(d.item.message?.content ?? '', 90)}`)
-      output.log(`     ${d.link}`)
+      for (const line of renderLaterRow(d, index, { stale })) output.log(line)
     }
-    if (shown.length < queue.length) output.log(`  …and ${queue.length - shown.length} more`)
+    if (shown.length < queue.length) output.log(colors.dim(`  …and ${queue.length - shown.length} more`))
 
     if (queue.length === 0 || args.captureBatch === undefined) {
       if (queue.length > 0) {
         output.log('')
-        output.log('Re-run with: sky slack:later --capture-batch 5   (captures the 5 oldest)')
+        output.log(colors.dim('Re-run with: sky slack:later --capture-batch 5   (captures the 5 oldest)'))
       }
       return CommandResult.success({
         fetched: list.items.length,
@@ -116,10 +121,20 @@ export default class SlackLaterTask extends Command {
       })
     }
 
-    const picked = queue.slice(0, args.captureBatch)
-    if (picked.length < queue.length) {
+    // Dead-id items would only fail the fetch — leave them listed, not picked
+    const capturable = queue.filter((d) => laterCapturable(d.item))
+    const picked = capturable.slice(0, args.captureBatch)
+    if (capturable.length < queue.length) {
       output.log('')
-      output.log(`Capturing the ${picked.length} oldest of ${queue.length} fetched`)
+      output.log(
+        colors.dim(
+          `Skipping ${queue.length - capturable.length} unreachable (stale channel id) — complete those in Slack directly`,
+        ),
+      )
+    }
+    if (picked.length < capturable.length) {
+      output.log('')
+      output.log(`Capturing the ${picked.length} oldest of ${capturable.length} capturable`)
     }
 
     const outcome = await captureLaterItems(
@@ -133,9 +148,11 @@ export default class SlackLaterTask extends Command {
 
     output.log('')
     output.log(`Captured ${outcome.captured.length}/${picked.length}; completed in Slack: ${outcome.completed}`)
-    for (const failure of outcome.failures) output.log(`  ! ${failure}`)
+    for (const failure of outcome.failures) output.log(colors.red(`  ! ${failure}`))
     if (remaining > 0) {
-      output.log(`${remaining} left in the queue — re-run for the next ${Math.min(args.captureBatch, remaining)}`)
+      output.log(
+        colors.dim(`${remaining} left in the queue — re-run for the next ${Math.min(args.captureBatch, remaining)}`),
+      )
     }
 
     if (outcome.openTargets.length > 0) {
