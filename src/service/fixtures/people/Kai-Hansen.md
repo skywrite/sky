@@ -1,5 +1,5 @@
 ---
-name: Kevin Huang
+name: Kai Hansen
 email:
   business: kevin.huang@nvidia.com
 title: AI Solutions Engineer
@@ -11,7 +11,7 @@ updated: 2026-01-15
 created: 2026-01-10
 ---
 
-# Kevin Huang
+# Kai Hansen
 
 ## Overview
 AI Solutions Engineer at Nvidia. Helps enterprises deploy GPU-accelerated AI workloads.

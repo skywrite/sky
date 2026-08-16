@@ -1,5 +1,5 @@
 ---
-who: Kevin Huang
+who: Kai Hansen
 when: 14:00 - 15:00
 medium: Zoom
 summary: AI Infrastructure Requirements
@@ -17,7 +17,7 @@ Explored GPU compute options for AI workloads with Nvidia.
 ## Key Points
 - H100 availability improving
 - Discussed pricing tiers
-- Kevin demoed inference optimization
+- Kai demoed inference optimization
 
 ## Action Items
 - [ ] Get pricing proposal

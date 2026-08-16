@@ -1,5 +1,5 @@
 ---
-name: David Park
+name: Devon Price
 email:
   business: david.park@apple.com
 title: Developer Relations Lead
@@ -11,7 +11,7 @@ updated: 2026-01-15
 created: 2025-06-10
 ---
 
-# David Park
+# Devon Price
 
 ## Overview
 Developer Relations Lead at Apple. Manages third-party developer ecosystem for iOS.
