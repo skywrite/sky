@@ -3,8 +3,10 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog, splitContextLog } from './ContextLog/mod.ts'
-import ChatDocument, { extractConversationSummary } from './mod.ts'
+import ChatDocument, { extractConversationSummary, setUserSpeakerLabel } from './mod.ts'
 import type { ChatTurn } from './mod.ts'
+
+setUserSpeakerLabel('Jane')
 
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 
@@ -86,7 +88,7 @@ const turnFixtures: TurnFixture[] = [
     description: 'simple two turns',
     expected: [
       {
-        speaker: 'JP',
+        speaker: 'Jane',
         content: 'What do you think about the future of payments?',
       },
       {
@@ -101,7 +103,7 @@ const turnFixtures: TurnFixture[] = [
     description: 'multi-turn with AI subheadings',
     expected: [
       {
-        speaker: 'JP',
+        speaker: 'Jane',
         content: 'Help me compare MCP and x402 for agent payments.',
       },
       {
@@ -122,7 +124,7 @@ const turnFixtures: TurnFixture[] = [
         ].join('\n'),
       },
       {
-        speaker: 'JP',
+        speaker: 'Jane',
         content: 'Can you write a summary for the team?',
       },
       {
@@ -203,9 +205,9 @@ test('ChatDocument.create - produces valid document', () => {
 
   assert({
     given: 'created ChatDocument',
-    should: 'have JP as first speaker',
+    should: 'have Jane as first speaker',
     actual: doc.turns[0].speaker,
-    expected: 'JP',
+    expected: 'Jane',
   })
 
   assert({
@@ -311,7 +313,7 @@ tags: Acme/Marketing/Ideas; Acme/Company
 
 # Tagged Chat
 
-## JP
+## Jane
 
 A question.
 
@@ -416,7 +418,7 @@ test('ChatDocument.conversation - folds assistant-emitted H2 headings back into 
     [
       '# Fold Test',
       '',
-      '## JP',
+      '## Jane',
       '',
       'Compare the options.',
       '',
@@ -428,7 +430,7 @@ test('ChatDocument.conversation - folds assistant-emitted H2 headings back into 
       '',
       'Go with the first option.',
       '',
-      '## JP',
+      '## Jane',
       '',
       'Thanks.',
     ].join('\n'),
@@ -450,11 +452,11 @@ test('ChatDocument.conversation - merges consecutive same-role turns', () => {
     [
       '# Merge Test',
       '',
-      '## JP',
+      '## Jane',
       '',
       'First thought.',
       '',
-      '## JP',
+      '## Jane',
       '',
       'Second thought.',
       '',
@@ -464,7 +466,7 @@ test('ChatDocument.conversation - merges consecutive same-role turns', () => {
     ].join('\n'),
   )
   assert({
-    given: 'two consecutive JP turns',
+    given: 'two consecutive user turns',
     should: 'merge them into one user message so roles alternate',
     actual: doc.conversation,
     expected: [
@@ -496,9 +498,9 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
     given: 'stamped messages',
     should: 'write message-file headings — leading stamp, bold speaker',
     actual: [
-      markdown.includes('## 2026-02-08 09:12 - **JP**'),
+      markdown.includes('## 2026-02-08 09:12 - **Jane**'),
       markdown.includes('## 2026-02-08 09:13 - **AI Assistant**'),
-      markdown.includes('## 2026-02-08 25:30 - **JP**'),
+      markdown.includes('## 2026-02-08 25:30 - **Jane**'),
     ],
     expected: [true, true, true],
   })
@@ -521,7 +523,7 @@ test('ChatDocument - unstamped headings parse with no when key, stamped and bare
     [
       '# Resumed Chat',
       '',
-      '## JP',
+      '## Jane',
       '',
       'Old question.',
       '',
@@ -529,7 +531,7 @@ test('ChatDocument - unstamped headings parse with no when key, stamped and bare
       '',
       'Old answer.',
       '',
-      '## 2026-02-08 14:32 - **JP**',
+      '## 2026-02-08 14:32 - **Jane**',
       '',
       'New question.',
     ].join('\n'),
@@ -545,7 +547,7 @@ test('ChatDocument - unstamped headings parse with no when key, stamped and bare
     ],
   })
   assert({
-    given: 'a bare `## JP` heading',
+    given: 'a bare `## Jane` heading',
     should: 'not set the when key at all',
     actual: 'when' in doc.conversation[0],
     expected: false,
@@ -557,7 +559,7 @@ test('ChatDocument - a stamp-shaped heading on a non-speaker still folds back', 
     [
       '# Fold Test',
       '',
-      '## 2026-02-08 14:32 - **JP**',
+      '## 2026-02-08 14:32 - **Jane**',
       '',
       'Compare the options.',
       '',
@@ -590,7 +592,7 @@ test('ChatDocument - legacy trailing-paren stamps still parse', () => {
     [
       '# Legacy Stamps',
       '',
-      '## JP (2026-02-08 14:32)',
+      '## Jane (2026-02-08 14:32)',
       '',
       'Old-format question.',
       '',

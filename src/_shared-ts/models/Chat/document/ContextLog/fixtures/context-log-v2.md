@@ -9,7 +9,7 @@ turns: 2
 
 # Atlas Launch Checklist
 
-## JP
+## Jane
 
 What is left before the Atlas beta launch?
 
@@ -18,7 +18,7 @@ What is left before the Atlas beta launch?
 The import fix and the pricing decision are still open.
 
 
-## JP
+## Jane
 
 Who owns the import fix?
 

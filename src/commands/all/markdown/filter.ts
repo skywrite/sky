@@ -100,7 +100,7 @@ export default class MarkdownFilterTask extends Command {
       'Scans Notebook/ for markdown files matching tags, rel, YAML fields, glob patterns, or day.',
       'Returns file paths for use standalone or via task composition with markdown:concat.',
       '',
-      'YAML filter syntax: --yaml "field:value" for single field, "who:Alice;Drew" for OR',
+      'YAML filter syntax: --yaml "field:value" for single field, "who:Alice;Bob" for OR',
       'within field (semicolon), "who:Alice|medium:Phone" for AND across fields (pipe).',
       '',
       'Matching logic: String values use case-insensitive substring match. Array values match',

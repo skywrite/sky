@@ -1,6 +1,6 @@
 # Who is Jane Doe
 
-## JP
+## Jane
 
 who is Jane Doe, and where does the Atlas roadmap stand?
 

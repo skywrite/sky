@@ -9,14 +9,14 @@ const dayWithSlackItems = `
 # **2026-01-28 - Tue**
 
 ## Professional Complete
-- 09:00 > Kevin to #general Slack -> [discussed roadmap](actions/messages/slack_Kevin_discussed-roadmap.md)
+- 09:00 > Kai to #general Slack -> [discussed roadmap](actions/messages/slack_Kevin_discussed-roadmap.md)
 - 10:30 > Alice Slack -> [quick update](actions/messages/slack_Alice_quick-update.md)
 - 14:00 > Meeting with team -> [standup](actions/meetings/standup.md)
 `
 
 test('DayDocument.getCompleteItem() finds item by exact key', () => {
   const day = DayDocument.fromMarkdown(dayWithSlackItems)
-  const result = day.getCompleteItem('09:00 > Kevin to #general Slack')
+  const result = day.getCompleteItem('09:00 > Kai to #general Slack')
 
   assert({
     given: 'a day with Slack items and exact key match',
@@ -28,7 +28,7 @@ test('DayDocument.getCompleteItem() finds item by exact key', () => {
 
 test('DayDocument.getCompleteItem() returns full CompleteItemRef structure', () => {
   const day = DayDocument.fromMarkdown(dayWithSlackItems)
-  const result = day.getCompleteItem('09:00 > Kevin to #general Slack')
+  const result = day.getCompleteItem('09:00 > Kai to #general Slack')
 
   assert({
     given: 'a matching item',
@@ -41,7 +41,7 @@ test('DayDocument.getCompleteItem() returns full CompleteItemRef structure', () 
       hasRaw: !!result?.raw,
     },
     expected: {
-      key: '09:00 > Kevin to #general Slack',
+      key: '09:00 > Kai to #general Slack',
       link: '[discussed roadmap](actions/messages/slack_Kevin_discussed-roadmap.md)',
       path: 'actions/messages/slack_Kevin_discussed-roadmap.md',
       title: 'discussed roadmap',
@@ -67,15 +67,15 @@ test('DayDocument.getCompleteItem() respects category filter', () => {
 # **2026-01-28 - Tue**
 
 ## Professional Complete
-- 09:00 > Kevin Slack -> [work stuff](actions/messages/slack_Kevin.md)
+- 09:00 > Kai Slack -> [work stuff](actions/messages/slack_Kevin.md)
 
 ## Personal Complete
-- 09:00 > Kevin Slack -> [personal stuff](actions/messages/slack_Kevin_personal.md)
+- 09:00 > Kai Slack -> [personal stuff](actions/messages/slack_Kevin_personal.md)
 `
   const day = DayDocument.fromMarkdown(dayWithCategories)
 
-  const professionalResult = day.getCompleteItem('09:00 > Kevin Slack', 'Professional')
-  const personalResult = day.getCompleteItem('09:00 > Kevin Slack', 'Personal')
+  const professionalResult = day.getCompleteItem('09:00 > Kai Slack', 'Professional')
+  const personalResult = day.getCompleteItem('09:00 > Kai Slack', 'Personal')
 
   assert({
     given: 'same key in different categories',
@@ -92,7 +92,7 @@ test('DayDocument.getCompleteItem() respects category filter', () => {
 test('DayDocument.setCompleteItem() replaces existing item', () => {
   const day = DayDocument.fromMarkdown(dayWithSlackItems)
   const result = day.setCompleteItem(
-    '09:00 > Kevin to #general Slack',
+    '09:00 > Kai to #general Slack',
     '[updated summary](actions/messages/slack_Kevin_updated.md)',
     { time: '09:00', category: 'Professional' },
   )
@@ -133,7 +133,7 @@ test('DayDocument.setCompleteItem() maintains item count when replacing', () => 
   const countBefore = completeListBefore?.items.length ?? 0
 
   const result = day.setCompleteItem(
-    '09:00 > Kevin to #general Slack',
+    '09:00 > Kai to #general Slack',
     '[updated](actions/messages/slack_Kevin_updated.md)',
     { time: '09:00', category: 'Professional' },
   )

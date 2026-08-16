@@ -11,7 +11,7 @@ tags: Tech/AI
 
 # Exploring the Future of Payments
 
-## JP
+## Jane
 
 What do you think about the future of payments?
 

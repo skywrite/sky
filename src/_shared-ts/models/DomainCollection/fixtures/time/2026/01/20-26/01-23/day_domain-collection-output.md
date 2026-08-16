@@ -18,7 +18,7 @@ tags: Organization/Company/Tech/SaaS
 Acme Corp is a B2B SaaS company providing workflow automation tools for mid-market enterprises. Founded in 2022, the company has grown to 85 employees and serves over 200 customers. Series A funded with $15M raised from Northwind Ventures.
 
 ## Key People
-- CEO: JP (me)
+- CEO: Sam (me)
 - CFO: Marcus Johnson
 - VP Engineering: Chen Wei
 - Head of Design: Maria Santos
@@ -50,7 +50,7 @@ tags: Organization/VC; Organization/Investor
 Northwind Ventures is a Series A/B focused venture capital firm based in New York. They specialize in B2B SaaS and enterprise software investments. Led our Series A round in 2023.
 
 ## Key People
-- Managing Partner: David Park
+- Managing Partner: Devon Park
 - Partner (our board member): Rachel Kim
 
 ## Investment
@@ -222,7 +222,7 @@ name: Fitness Goals
 slug: fitness-goals
 status: active
 priority: medium
-owner: JP
+owner: Sam
 rel:
 tags: Project/Personal; Project/Health
 updated: 2026-01-23
@@ -375,7 +375,7 @@ Modernize cloud infrastructure to improve reliability and reduce costs. Includes
 <!-- time/2026/01/20-26/01-23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md -->
 ---
 from: Sarah Mitchell
-to: JP
+to: Sam
 when: 2026-01-23 10:30
 medium: Slack
 context:

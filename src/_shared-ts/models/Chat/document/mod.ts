@@ -1,3 +1,6 @@
+import { FILE_ABOUT_ME } from '#shared/config.ts'
+import { readTextFileSync } from '#shared/fs/mod.ts'
+import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
 import expand from '#shared/strings/expand.ts'
 import type { ConversationMessage } from '../type.d.ts'
@@ -7,7 +10,7 @@ import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
  * A turn extracted from a chat document.
  */
 export interface ChatTurn {
-  /** Speaker name from H2 heading (e.g. "JP" or "AI Assistant") */
+  /** Speaker name from H2 heading (e.g. "Jane" or "AI Assistant") */
   speaker: string
   /** Full content of the turn, including any child sections rendered as markdown */
   content: string
@@ -15,26 +18,63 @@ export interface ChatTurn {
 
 const SUMMARY_PATTERN = /<!--\s*SUMMARY:\s*(.+?)\s*-->/
 
-const SPEAKER_ROLES: Record<string, 'user' | 'assistant'> = {
-  JP: 'user',
-  'AI Assistant': 'assistant',
+const ASSISTANT_LABEL = 'AI Assistant'
+
+let cachedUserLabel: string | undefined
+let cachedPattern: RegExp | undefined
+
+/**
+ * The user's speaker label: their first name from journal/about-me.md.
+ * Transcript headings carry this label on every user turn, so the name
+ * lives in the notebook, never in this code. Falls back to 'User' when no
+ * profile exists. The label is expected to be stable — turns written under
+ * a different label stop parsing as speaker headings and fold back into
+ * the surrounding message.
+ */
+export function userSpeakerLabel(): string {
+  if (cachedUserLabel === undefined) {
+    try {
+      cachedUserLabel = AboutMeDocument.fromMarkdown(readTextFileSync(FILE_ABOUT_ME)).firstName || 'User'
+    } catch {
+      cachedUserLabel = 'User'
+    }
+  }
+  return cachedUserLabel
 }
 
+/** Test-only override — production code always derives the label from the profile. */
+export function setUserSpeakerLabel(label: string): void {
+  cachedUserLabel = label
+  cachedPattern = undefined
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const STAMP = String.raw`\d{4}-\d{2}-\d{2} \d{1,3}:\d{2}`
+
 // A speaker heading in the notebook's message-file shape:
-// `## 2026-02-08 14:32 - **JP**` — leading stamp for scan symmetry, bold
+// `## 2026-02-08 14:32 - **Jane**` — leading stamp for scan symmetry, bold
 // on the speaker (same convention slack/email captures use). The stamp is
 // notebook time — extended hours (25:30 and beyond) keep multi-digit hour
 // values, never clamped. Legacy transcripts stamped after a plain name
-// (`## JP (2026-02-08 14:32)`) or not at all (`## JP`) — all three forms
-// parse; writes emit only the message-file form. Anything else is not a
-// speaker heading and folds back like any assistant-emitted H2.
-const SPEAKER_PATTERN =
-  /^(?:(\d{4}-\d{2}-\d{2} \d{1,3}:\d{2}) - \*\*(JP|AI Assistant)\*\*|(JP|AI Assistant)(?: \((\d{4}-\d{2}-\d{2} \d{1,3}:\d{2})\))?)$/
+// (`## Jane (2026-02-08 14:32)`) or not at all (`## Jane`) — all three
+// forms parse; writes emit only the message-file form. Anything else is
+// not a speaker heading and folds back like any assistant-emitted H2.
+function speakerPattern(): RegExp {
+  if (!cachedPattern) {
+    const names = `${escapeRegExp(userSpeakerLabel())}|${ASSISTANT_LABEL}`
+    cachedPattern = new RegExp(`^(?:(${STAMP}) - \\*\\*(${names})\\*\\*|(${names})(?: \\((${STAMP})\\))?)$`)
+  }
+  return cachedPattern
+}
 
 function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: string } | null {
-  const match = heading.match(SPEAKER_PATTERN)
+  const match = heading.match(speakerPattern())
   if (!match) return null
-  return { role: SPEAKER_ROLES[match[2] ?? match[3]], when: match[1] ?? match[4] }
+  const name = match[2] ?? match[3]
+  return { role: name === ASSISTANT_LABEL ? 'assistant' : 'user', when: match[1] ?? match[4] }
 }
 
 /**
@@ -52,16 +92,17 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  *
  * # Topic Summary
  *
- * ## 2026-02-08 14:32 - **JP**
+ * ## 2026-02-08 14:32 - **Jane**
  * User message.
  *
  * ## 2026-02-08 14:33 - **AI Assistant**
  * AI response.
  * ```
  *
- * The heading stamp is optional — transcripts from before turn stamps
- * have bare `## JP` / `## AI Assistant` headings, and early stamped ones
- * carry a trailing `(2026-02-08 14:32)` on a plain name instead.
+ * The user's heading label comes from their profile (see userSpeakerLabel).
+ * The stamp is optional — transcripts from before turn stamps have bare
+ * `## Jane` / `## AI Assistant` headings, and early stamped ones carry a
+ * trailing `(2026-02-08 14:32)` on a plain name instead.
  */
 export default class ChatDocument extends SectionDocument {
   static override yamlKeyOrder = ['created', 'updated', 'summary', 'provider', 'model', 'turns', 'rel', 'tags']
@@ -175,12 +216,13 @@ export default class ChatDocument extends SectionDocument {
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
       if (msg.role === 'user') {
-        lines.push(msg.when ? `## ${msg.when} - **JP**` : '## JP')
+        const user = userSpeakerLabel()
+        lines.push(msg.when ? `## ${msg.when} - **${user}**` : `## ${user}`)
         lines.push('')
         lines.push(msg.content)
         lines.push('')
       } else {
-        lines.push(msg.when ? `## ${msg.when} - **AI Assistant**` : '## AI Assistant')
+        lines.push(msg.when ? `## ${msg.when} - **${ASSISTANT_LABEL}**` : `## ${ASSISTANT_LABEL}`)
         lines.push('')
         lines.push(stripSummaryComment(msg.content))
         lines.push('')

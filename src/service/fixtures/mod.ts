@@ -45,11 +45,11 @@ export const FIXTURE_REFERENCE_DATE = new PlainDate(2026, 1, 27)
  */
 export const EXPECTED_PEOPLE = [
   'Alex Rivera',
+  'Casey Arden',
   'Chen Wei',
-  'Chris Anderson',
-  'David Park',
+  'Devon Price',
   'Jennifer Walsh',
-  'Kevin Huang',
+  'Kai Hansen',
   'Lisa Chen',
   'Marcus Johnson',
   'Maria Santos',
@@ -80,9 +80,9 @@ export const EXPECTED_ORGS = [
  *
  * Chen Wei: 3 interactions (meeting 1/20, slack 1/27, met date 2023)
  * Lisa Chen: 1 meeting on 1/27
- * Kevin Huang: 1 meeting on 1/27
+ * Kai Hansen: 1 meeting on 1/27
  */
-export const HIGH_SCORE_PEOPLE = ['Chen Wei', 'Lisa Chen', 'Kevin Huang']
+export const HIGH_SCORE_PEOPLE = ['Chen Wei', 'Lisa Chen', 'Kai Hansen']
 
 /**
  * Organizations with expected high interaction scores.
@@ -90,6 +90,6 @@ export const HIGH_SCORE_PEOPLE = ['Chen Wei', 'Lisa Chen', 'Kevin Huang']
  *
  * Acme Corp: Multiple interactions (Chen Wei, Maria Santos, Sarah Mitchell)
  * Google: Lisa Chen meeting today
- * Nvidia: Kevin Huang meeting today
+ * Nvidia: Kai Hansen meeting today
  */
 export const HIGH_SCORE_ORGS = ['Acme Corp', 'Google', 'Nvidia']

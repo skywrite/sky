@@ -54,7 +54,7 @@ Phone call notes.`),
     {
       doc: Document.fromMarkdown(`---
 from: Tanisha
-to: JP
+to: Sam
 when: 2026-01-28 18:18
 medium: Slack
 summary: M&A candidate
@@ -65,8 +65,8 @@ Old message saved later.`),
     },
     {
       doc: Document.fromMarkdown(`---
-from: Kevin
-to: JP
+from: Kai
+to: Sam
 when: 2026-01-28 09:00
 medium: Slack
 summary: Status update
@@ -175,7 +175,7 @@ tags: Work
 
 # Planning the Widget Launch
 
-## JP
+## Sam
 
 How should we plan the widget launch?
 
@@ -196,7 +196,7 @@ tags: Acme/Marketing/Ideas; Acme/Company
 
 # Brainstorm Marketing Ideas
 
-## JP
+## Sam
 
 Give me marketing ideas.
 
@@ -604,7 +604,7 @@ test('resolvers - messages date filter uses path date, not created', () => {
     given: 'date range 2026-02-16 to 2026-02-18',
     should: 'return the Feb 17 message, not the Feb 5 message with created: Feb 18',
     actual: result[0]?.from,
-    expected: 'Kevin',
+    expected: 'Kai',
   })
 })
 

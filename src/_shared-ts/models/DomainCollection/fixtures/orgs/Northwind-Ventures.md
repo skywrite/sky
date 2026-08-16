@@ -16,7 +16,7 @@ tags: Organization/VC; Organization/Investor
 Northwind Ventures is a Series A/B focused venture capital firm based in New York. They specialize in B2B SaaS and enterprise software investments. Led our Series A round in 2023.
 
 ## Key People
-- Managing Partner: David Park
+- Managing Partner: Devon Park
 - Partner (our board member): Rachel Kim
 
 ## Investment

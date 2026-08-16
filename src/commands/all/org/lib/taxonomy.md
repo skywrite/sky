@@ -910,7 +910,7 @@ Consumer health and wellness brands, supplements, and direct-to-consumer health 
 **Triggers:** supplements, wellness, vitamins, health-products, consumer-wellness, nutritional-supplements
 
 **Examples:**
-- IM8 - Health and wellness brand (co-founded with David Beckham)
+- IM8 - Health and wellness brand (co-founded with Devon Beckham)
 - Ritual - Vitamin subscriptions
 - Hims & Hers - Telehealth and wellness
 

@@ -1,6 +1,6 @@
 ---
 from: Chen Wei
-to: JP
+to: Sam
 when: 2026-02-02 10:00
 medium: Slack
 context: "#eng"

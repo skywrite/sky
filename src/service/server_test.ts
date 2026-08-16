@@ -516,16 +516,16 @@ test('fixtures - people with today interactions score higher than last week', as
 
   await server.scan()
 
-  // Lisa Chen and Kevin Huang have meetings today (1/27)
+  // Lisa Chen and Kai Hansen have meetings today (1/27)
   // Michael Thompson and Jennifer Walsh had meetings on 1/22
   const lisaScore = server.store.personScores.get('Lisa Chen')
-  const kevinScore = server.store.personScores.get('Kevin Huang')
+  const kevinScore = server.store.personScores.get('Kai Hansen')
   const michaelScore = server.store.personScores.get('Michael Thompson')
   const jenniferScore = server.store.personScores.get('Jennifer Walsh')
 
   // Today's meeting (weight 10) with full recency (1.0) = 10 points
   // 5 days ago meeting (weight 10) with week recency (1.0) = 10 points
-  // But Lisa/Kevin met more recently (today vs 5 days ago)
+  // But Lisa/Kai met more recently (today vs 5 days ago)
   assert({
     given: 'Lisa Chen with today meeting',
     should: 'have a score recorded',
@@ -534,7 +534,7 @@ test('fixtures - people with today interactions score higher than last week', as
   })
 
   assert({
-    given: 'Kevin Huang with today meeting',
+    given: 'Kai Hansen with today meeting',
     should: 'have a score recorded',
     actual: (kevinScore?.score ?? 0) > 0,
     expected: true,
@@ -624,15 +624,15 @@ test('fixtures - people without interactions have zero score', async () => {
 
   await server.scan()
 
-  // David Park (Apple) has no meeting files - only person file with met date
+  // Devon Price (Apple) has no meeting files - only person file with met date
   // He should have a score from the met date
-  const davidScore = server.store.personScores.get('David Park')
+  const davidScore = server.store.personScores.get('Devon Price')
 
   // Priya Sharma has a recent met date but no interactions
   const priyaScore = server.store.personScores.get('Priya Sharma')
 
   assert({
-    given: 'David Park with met date but no meetings',
+    given: 'Devon Price with met date but no meetings',
     should: 'have score from met date',
     actual: (davidScore?.interactionCount ?? 0) >= 1,
     expected: true,

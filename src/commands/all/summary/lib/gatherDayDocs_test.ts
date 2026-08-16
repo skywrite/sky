@@ -53,7 +53,7 @@ const CHAT = [
   '',
   '# Atlas Planning',
   '',
-  '## JP',
+  '## Sam',
   '',
   'How should we sequence the Atlas rollout?',
   '',
@@ -77,7 +77,7 @@ const CHAT = [
 
 const MESSAGE_LATE = [
   '---',
-  'from: JP',
+  'from: Sam',
   'summary: Late night follow-up',
   '---',
   '',
@@ -129,11 +129,11 @@ async function makeDayDir(): Promise<string> {
   await outputFile(path.join(dir, 'day.md'), DAY)
   await outputFile(path.join(dir, 'summary.md'), SUMMARY)
   await outputFile(path.join(dir, 'journal/health.md'), JOURNAL)
-  await outputFile(path.join(dir, 'actions/messages/06-45_slack_Jane-to-JP_Atlas-kickoff.md'), MESSAGE_EARLY)
+  await outputFile(path.join(dir, 'actions/messages/06-45_slack_Jane-to-Sam_Atlas-kickoff.md'), MESSAGE_EARLY)
   await outputFile(path.join(dir, 'actions/meetings/Zoom_Jane-Doe_Atlas-Sync.md'), MEETING)
   await outputFile(path.join(dir, 'actions/ai-chats/09-12_Atlas-Planning.md'), CHAT)
-  await outputFile(path.join(dir, 'actions/messages/25-30_slack_JP-to-Jane_Late-night.md'), MESSAGE_LATE)
-  await outputFile(path.join(dir, 'actions/messages/slack_Jane-to-JP_Untimed.md'), MESSAGE_UNTIMED)
+  await outputFile(path.join(dir, 'actions/messages/25-30_slack_Sam-to-Jane_Late-night.md'), MESSAGE_LATE)
+  await outputFile(path.join(dir, 'actions/messages/slack_Jane-to-Sam_Untimed.md'), MESSAGE_UNTIMED)
   await outputFile(path.join(dir, 'actions/notes/stub.md'), 'tiny')
   await outputFile(path.join(dir, 'actions/notes/broken.md'), BROKEN_YAML)
   return dir
@@ -150,11 +150,11 @@ test('gatherDayDocs orders journals, then actions chronologically, day.md last',
       actual: docs.map((d) => path.relative(dir, d.path)).join(' | '),
       expected: [
         'journal/health.md',
-        'actions/messages/06-45_slack_Jane-to-JP_Atlas-kickoff.md',
+        'actions/messages/06-45_slack_Jane-to-Sam_Atlas-kickoff.md',
         'actions/meetings/Zoom_Jane-Doe_Atlas-Sync.md',
         'actions/ai-chats/09-12_Atlas-Planning.md',
-        'actions/messages/25-30_slack_JP-to-Jane_Late-night.md',
-        'actions/messages/slack_Jane-to-JP_Untimed.md',
+        'actions/messages/25-30_slack_Sam-to-Jane_Late-night.md',
+        'actions/messages/slack_Jane-to-Sam_Untimed.md',
         'day.md',
       ].join(' | '),
     })
@@ -172,7 +172,7 @@ test('gatherDayDocs never clamps extended-hours prefixes', async () => {
     assert({
       given: 'a 25-30 extended-hours file (late night of the same notebook day)',
       should: 'sort it after the daytime actions, not wrap it to 01-30',
-      actual: names.indexOf('25-30_slack_JP-to-Jane_Late-night.md') > names.indexOf('09-12_Atlas-Planning.md'),
+      actual: names.indexOf('25-30_slack_Sam-to-Jane_Late-night.md') > names.indexOf('09-12_Atlas-Planning.md'),
       expected: true,
     })
   } finally {

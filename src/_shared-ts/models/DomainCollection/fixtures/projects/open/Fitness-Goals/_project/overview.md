@@ -3,7 +3,7 @@ name: Fitness Goals
 slug: fitness-goals
 status: active
 priority: medium
-owner: JP
+owner: Sam
 rel:
 tags: Project/Personal; Project/Health
 updated: 2026-01-23

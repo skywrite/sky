@@ -30,10 +30,10 @@ tz: America/Chicago
 - 09:42 > Alice to Bob Email -> [re: Partnership Proposal](actions/messages/email_Alice-to-Bob_Partnership-Proposal.md)
 - 09:52 > projects/Alpha-Project -> Created new feature for user authentication
 - 10:05 > decisions/Office-Relocation -> Decided | Moving to new office in March
-- 10:09 > Carol to JP Video -> [Budget Review Q1](actions/videos/Video_Carol_Budget-Review-Q1.md)
-- 11:05 > David Chen Zoom -> [Product Launch Discussion](actions/meetings/Zoom_David-Chen_Product-Launch-Discussion.md)
+- 10:09 > Carol to Sam Video -> [Budget Review Q1](actions/videos/Video_Carol_Budget-Review-Q1.md)
+- 11:05 > Devon Chen Zoom -> [Product Launch Discussion](actions/meetings/Zoom_David-Chen_Product-Launch-Discussion.md)
 - 11:30 > Eve Franklin In Person -> [Strategy Session](actions/meetings/In-Person_Eve-Franklin_Strategy-Session.md)
-- 13:05 > Frank Garcia FT Audio -> [Technical Architecture Review](actions/meetings/FT-Audio_Frank-Garcia_Technical-Architecture-Review.md)
+- 13:05 > Bob Garcia FT Audio -> [Technical Architecture Review](actions/meetings/FT-Audio_Frank-Garcia_Technical-Architecture-Review.md)
 - 13:59 > Notes -> [Interview Prep Notes](actions/notes/Interview-Prep-Notes.md)
 - 14:30 > Notes -> [Meeting Follow-up Summary](actions/notes/Meeting-Follow-up-Summary.md)
 - 15:05 > Grace Lee Zoom -> [Media Interview](actions/meetings/Zoom_Grace-Lee_Media-Interview.md)
