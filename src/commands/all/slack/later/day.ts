@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
+import colors from 'picocolors'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -8,8 +9,14 @@ import { SLACK_WORKSPACE } from '#config'
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems } from './lib/capture.ts'
-import { fetchInProgressLater, laterChannelLabel, laterItemLink } from './lib/list.ts'
-import { oneLine, parseSelection } from './lib/pick.ts'
+import {
+  fetchInProgressLater,
+  laterCapturable,
+  laterItemLink,
+  renderLaterRow,
+  resolveStaleChannels,
+} from './lib/list.ts'
+import { parseSelection } from './lib/pick.ts'
 
 const params = {
   date: Arg.string("Day to fetch (YYYY-MM-DD) — the origin message's notebook day. Defaults to today.", {
@@ -134,19 +141,22 @@ export default class SlackLaterDayTask extends Command {
 
     output.log(
       `Saved-later items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}): ` +
-        `${matched.length} matched of ${list.items.length} fetched` +
-        (list.counts.in_progress !== undefined ? ` (${list.counts.in_progress} in progress total)` : ''),
+        `${colors.bold(String(matched.length))} matched of ${list.items.length} fetched` +
+        (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
+    const stale = resolveStaleChannels(list.items)
     for (const [index, d] of matched.entries()) {
-      const channel = laterChannelLabel(d.item)
-      output.log(`  ${index + 1}. ${d.timeLabel.slice(11)}  ${channel}  ${oneLine(d.item.message?.content ?? '', 90)}`)
-      output.log(`     ${d.link}`)
+      for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale })) output.log(line)
     }
 
     if (matched.length === 0 || (!args.capture && args.captureBatch === undefined)) {
       if (matched.length > 0) {
         output.log('')
-        output.log(`Re-run with: sky slack:later:day ${dayStr} --capture-batch 10   (or --capture all, --capture 1,3)`)
+        output.log(
+          colors.dim(
+            `Re-run with: sky slack:later:day ${dayStr} --capture-batch 10   (or --capture all, --capture 1,3)`,
+          ),
+        )
       }
       return CommandResult.success({
         day: dayStr,
@@ -168,10 +178,21 @@ export default class SlackLaterDayTask extends Command {
       }
       picked = selection === 'all' ? matched : selection.map((i) => matched[i])
     } else {
-      picked = matched.slice(0, args.captureBatch)
-      if (picked.length < matched.length) {
+      // Dead-id items would only fail the fetch — batches skip them (explicit
+      // --capture indexes stay verbatim: the listing marks those rows stale)
+      const capturable = matched.filter((d) => laterCapturable(d.item))
+      picked = capturable.slice(0, args.captureBatch)
+      if (capturable.length < matched.length) {
         output.log('')
-        output.log(`Capturing the first ${picked.length} of ${matched.length} matched`)
+        output.log(
+          colors.dim(
+            `Skipping ${matched.length - capturable.length} unreachable (stale channel id) — complete those in Slack directly`,
+          ),
+        )
+      }
+      if (picked.length < capturable.length) {
+        output.log('')
+        output.log(`Capturing the first ${picked.length} of ${capturable.length} capturable`)
       }
     }
 
@@ -186,11 +207,11 @@ export default class SlackLaterDayTask extends Command {
 
     output.log('')
     output.log(`Captured ${outcome.captured.length}/${picked.length}; completed in Slack: ${outcome.completed}`)
-    for (const failure of outcome.failures) output.log(`  ! ${failure}`)
+    for (const failure of outcome.failures) output.log(colors.red(`  ! ${failure}`))
     if (remaining > 0) {
       const next =
         args.captureBatch === undefined ? '' : ` — re-run for the next ${Math.min(args.captureBatch, remaining)}`
-      output.log(`${remaining} left for ${dayStr}${next}`)
+      output.log(colors.dim(`${remaining} left for ${dayStr}${next}`))
     }
 
     if (outcome.openTargets.length > 0) {
