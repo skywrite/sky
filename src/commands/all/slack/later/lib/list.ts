@@ -61,9 +61,8 @@ const KIND_COLOR: Record<LaterConversationKind, (label: string) => string> = {
   unknown: colors.red,
 }
 
-/** OSC-8 terminal hyperlink. Plain text when colors are off — piped output prints the raw url line instead. */
+/** OSC-8 terminal hyperlink. */
 function linkify(text: string, url: string): string {
-  if (!colors.isColorSupported) return text
   return `\u001B]8;;${url}\u0007${text}\u001B]8;;\u0007`
 }
 
@@ -110,6 +109,13 @@ export type LaterRowContext = {
   /** Dead-id resolutions from resolveStaleChannels; without one, unnamed rows fall back to the raw id */
   stale?: Map<string, StaleChannelInfo>
   maxSnippet?: number
+  /**
+   * Render the time as an OSC-8 hyperlink (true) or print the raw url as a
+   * third line (false). Defaults to color support so terminals get links and
+   * pipes get urls — but the default is environment-sniffed (CI counts as
+   * color-capable), so tests must pin it.
+   */
+  hyperlinks?: boolean
 }
 
 /**
@@ -126,6 +132,7 @@ export function renderLaterRow(
   context: LaterRowContext = {},
 ): string[] {
   const { item, timeLabel, link } = row
+  const hyperlinks = context.hyperlinks ?? colors.isColorSupported
   const kind = laterConversationKind(item)
   const staleInfo = kind === 'unknown' ? context.stale?.get(item.channel_id) : undefined
   const duplicate = staleInfo?.duplicateTs.has(item.ts) ?? false
@@ -152,9 +159,9 @@ export function renderLaterRow(
   const snippet = body === '' ? colors.dim(placeholder) : body
 
   const lines = [
-    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(linkify(timeLabel, link))}  ${label}${replyBadge}`,
+    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? linkify(timeLabel, link) : timeLabel)}  ${label}${replyBadge}`,
     `      ${snippet}`,
   ]
-  if (!colors.isColorSupported) lines.push(`      ${link}`)
+  if (!hyperlinks) lines.push(`      ${link}`)
   return lines
 }
