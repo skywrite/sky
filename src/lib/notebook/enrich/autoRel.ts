@@ -18,7 +18,7 @@ export type AutoRelInput = {
    * Who or where the conversation is with, as the document's `to:` frontmatter
    * spells it — Slack channel or DM partner, email counterparty, meeting
    * attendees. Keys the history prior. Omit for media with no conversation
-   * identity (journals).
+   * identity (journals, chats).
    */
   to?: string
   from?: string
@@ -50,6 +50,10 @@ export async function autoRelMessage(
     ])
     const records = corpus.records.filter((r) => r.date >= REL_SINCE)
     const relHistory = relHistoryFor(records, input.to)
+    // Identity-less media (journals, chats) have `to` unset on records and
+    // input alike, so the whole medium is one conversation: its most recent
+    // rel'd files serve as the exemplars, and the per-conversation prior
+    // stays empty.
     const exemplars = records
       .filter((r) => r.to === input.to && r.rel.length > 0)
       .slice(-MAX_EXEMPLARS)
