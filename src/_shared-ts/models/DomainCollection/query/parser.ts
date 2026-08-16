@@ -18,6 +18,7 @@ export type DocumentType =
   | 'meeting'
   | 'message'
   | 'video'
+  | 'recap'
   | 'person'
   | 'org'
   | 'project'
@@ -217,6 +218,7 @@ function mapType(type: string): DocumentType | '*' {
     case 'meeting':
     case 'message':
     case 'video':
+    case 'recap':
     case 'person':
     case 'org':
     case 'project':

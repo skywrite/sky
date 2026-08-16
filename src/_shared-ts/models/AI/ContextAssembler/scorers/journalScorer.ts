@@ -23,6 +23,7 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
   message: 5,
   video: 5,
   chat: 5,
+  recap: 1, // regenerable work-log digests; journal questions look forward, so keep the retrospective pull weak
   document: 5,
   project: 3,
   person: 3,

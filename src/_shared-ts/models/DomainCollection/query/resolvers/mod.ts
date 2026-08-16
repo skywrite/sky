@@ -28,6 +28,7 @@ import org from './org.ts'
 import person from './person.ts'
 import place from './place.ts'
 import project from './project.ts'
+import recap from './recap.ts'
 import { type ResolverContext, createDayLookup, getDateForDocument, listResolver } from './shared.ts'
 import streak from './streak.ts'
 import video from './video.ts'
@@ -47,6 +48,7 @@ export type { OrgFilter } from './org.ts'
 export type { PersonFilter } from './person.ts'
 export type { PlaceFilter } from './place.ts'
 export type { ProjectFilter } from './project.ts'
+export type { RecapFilter } from './recap.ts'
 export type { StreakFilter } from './streak.ts'
 export type { VideoFilter } from './video.ts'
 
@@ -87,6 +89,7 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
     meetings: listResolver(meeting, ctx),
     messages: listResolver(message, ctx),
     videos: listResolver(video, ctx),
+    recaps: listResolver(recap, ctx),
     people: listResolver(person, ctx),
     orgs: listResolver(org, ctx),
     projects: listResolver(project, ctx),

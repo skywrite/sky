@@ -7,13 +7,14 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-08-06T01:17:04.711Z
+# Generated at: 2026-08-16T12:28:25.516Z
 # =============================================================================
 
 type Query {
   # Document queries
   meetings(where: MeetingFilter, limit: Int): [Meeting!]!
   videos(where: VideoFilter, limit: Int): [Video!]!
+  recaps(where: RecapFilter, limit: Int): [Recap!]!
   messages(where: MessageFilter, limit: Int): [Message!]!
   people(where: PersonFilter, limit: Int): [Person!]!
   orgs(where: OrgFilter, limit: Int): [Org!]!
@@ -75,6 +76,21 @@ type Video {
   url: String # Video URL
   date: String! # Date (YYYY-MM-DD)
   day: Day # The day this video was recorded on
+  tags: [String!]! # Tags
+  rel: [String!]! # Related entities
+  markdown: String! # Full document content
+  path: String! # File path
+}
+
+"""
+Daily recap of activity in a connected app (GitHub, Claude Code, ...)
+"""
+type Recap {
+  app: String! # Connected app the recap digests: github, claude-code, etc.
+  what: String! # Human label, e.g. "Code - GitHub"
+  when: When # First-to-last activity span (never a length)
+  date: String! # Date (YYYY-MM-DD)
+  day: Day # The day this recap belongs to
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
   markdown: String! # Full document content
@@ -343,6 +359,22 @@ input VideoFilter {
   involves: String
   involvesAny: [String!]
   involvesAll: [String!]
+  relContains: String
+}
+
+input RecapFilter {
+  date: String
+  dateGte: String
+  dateLte: String
+  recent: String
+  app: String
+  appNot: String
+  whatContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
   relContains: String
 }
 

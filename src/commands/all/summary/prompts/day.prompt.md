@@ -36,6 +36,7 @@ The day's evidence stream, in time order:
 - `ai-chats/` - AI working sessions (reading rules below)
 - `notes/`, `docs/`, `videos/` - notes taken, documents drafted, recordings made
 - `events/` - calendar-sourced records (earnings calls, conferences, personal events): `what:`/`who:`/`when:` frontmatter. A session can appear both here and in `meetings/` - treat title/time twins as ONE session, preferring the meeting's actual `when:` range over the event's scheduled one
+- `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code): itemized commits, PRs, reviews, coding sessions. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below)
 
 Some `messages/` files carry an `ARCHIVAL` marker in their path comment (`<!-- ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
@@ -225,7 +226,7 @@ A Waiting On row is an explicit ask he made of someone, or an explicit promise s
 The Time figures are timestamps arranged, never estimates:
 
 - **Meetings**: sum `when:` ranges (`10:15 - 11:25`) and length forms (`09:00 40m`) across `meetings/` and `events/`; a title/time twin in both counts once, the meeting's actual range winning over the event's scheduled one. Never guess a missing end time - name the session as not counted. A day.md timeline item carrying a duration (`09:30(1.25h)`) is {{me.firstName}}'s own record: use it.
-- **Rhythm** reads only his artifacts - journals, AI sessions, docs, notes, meetings he attended, messages he SENT. Inbound and ARCHIVAL message times are other people's clocks. Extended-hour prefixes (24:00+) are late-night work belonging to this day, so a span like 06:22 → 25:30 is the honest shape.
+- **Rhythm** reads only his artifacts - journals, AI sessions, docs, notes, meetings he attended, messages he SENT, and recap events (commits, coding-session spans). Inbound and ARCHIVAL message times are other people's clocks. Extended-hour prefixes (24:00+) are late-night work belonging to this day, so a span like 06:22 → 25:30 is the honest shape.
 - This is the shape of the *recorded* day: calls, whiteboards, and reading leave no artifacts. Describe clustering and gaps ("a 2.5h artifact gap ending in the one-pager") - never claimed work-states, and never what a gap contained.
 - **Allocation** is a ranking, not accounting: the only numbers allowed are meeting-derived or day.md-annotated; everything else is placement and dominance ("owned the evening"), capped at the top 2-3 themes. ARCHIVAL captures are excluded from allocation.
 - **No total-hours-worked figure.** It is not derivable from artifacts and is never invented.
@@ -238,6 +239,18 @@ An ARCHIVAL-marked message is something {{me.firstName}} filed, not something he
 - Promises inside them are between third parties: not Commitments Made, not Waiting On
 - List each under `## Archival` as one line; use their content freely as background, and let a genuinely noteworthy development in one surface as a Signal - attributed as observed, never as his doing
 
+### Recaps - work witnessed in connected apps
+
+A recap (`actions/recaps/`) is generated evidence of {{me.firstName}}'s activity in an external app - commits, PRs, reviews, coding sessions. The app holds the substance; the recap is its daily digest.
+
+- Shipped work counts as Done at the feature level ("shipped the widget redesign - 7 commits"), never as a commit inventory - hashes and links stay in the recap.
+- The same commit appearing in two recaps (a coding session and GitHub) is ONE piece of work: process detail from the session, outcome identity from GitHub.
+- Claude Code session blocks carry his session record: an about line plus Decided/Built/Open/Learned bullets. Their Decided items are decisions he made; Built items are Done evidence; Open items are state, not Not Done (unless day.md planned them).
+- Session spans and event times are {{me.firstName}}'s own artifacts for Rhythm, extended hours included.
+- A span is engagement evidence, never a work-hours figure: "a 09:02-11:28 session (18 prompts)" is honest; "coded 2.4 h" is invented. The no-total-hours rule applies unchanged.
+- A recap's `rel:` names its Allocation theme.
+- A coding session that shipped nothing still counts - its outcome is whatever it produced: a decision, a spec, a Learned insight.
+
 ### What counts as Done
 
 - Complete sections and any `~~strikethrough~~` items in day.md
@@ -245,6 +258,7 @@ An ARCHIVAL-marked message is something {{me.firstName}} filed, not something he
 - Decisions made - lead these bullets with **Decided:** so downstream tools can extract the day's decisions reliably
 - Messages handled (never ARCHIVAL-marked ones)
 - AI-session outcomes {{me.firstName}} used
+- Work shipped in recaps (merged PRs, pushed commits) - synthesized to the feature level
 
 **Strategic** decisions, key meetings, high-leverage work; **Operational** messages, routine tasks, admin; **Health** exercise, wellness, medical; **Personal** family, hobbies, non-work.
 

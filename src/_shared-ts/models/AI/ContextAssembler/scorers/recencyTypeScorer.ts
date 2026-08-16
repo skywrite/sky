@@ -18,6 +18,7 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
   video: 2,
   chat: 2,
   place: 1,
+  recap: 1, // regenerable digests; the day's summary already folds their content in
   document: 0,
 }
 

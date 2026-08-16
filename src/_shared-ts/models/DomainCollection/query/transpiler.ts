@@ -254,6 +254,8 @@ function pluralize(type: string): string {
       return 'messages'
     case 'video':
       return 'videos'
+    case 'recap':
+      return 'recaps'
     case 'person':
       return 'people'
     case 'org':
