@@ -89,12 +89,22 @@ test('renderLaterRow lays out head, snippet, and link lines', () => {
   assert({
     given: 'a channel item with message content',
     should: 'render three aligned lines with a collapsed snippet',
-    actual: stripAnsi(renderLaterRow(row, 0)),
+    actual: stripAnsi(renderLaterRow(row, 0, { hyperlinks: false })),
     expected: [
       '   1. 2026-01-05 09:30  #general',
       '      hello world second line',
       '      https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100',
     ],
+  })
+
+  const linked = stripAnsi(renderLaterRow(row, 0, { hyperlinks: true }))
+  assert({
+    given: 'the same row with hyperlinks on',
+    should: 'wrap the time in an OSC-8 link and drop the url line',
+    expected: '2 lines, head linked: true',
+    actual: `${linked.length} lines, head linked: ${linked[0].includes(
+      ']8;;https://atlas.slack.com/archives/C0123ABCDEF/p17500000000001002026-01-05 09:30]8;;',
+    )}`,
   })
 })
 
@@ -103,7 +113,9 @@ test('renderLaterRow labels missing bodies and unresolved channels', () => {
   assert({
     given: 'an item the export returned without a message',
     should: 'show a no-preview placeholder',
-    actual: stripAnsi(renderLaterRow({ item: item({ channel_name: 'general' }), timeLabel: '09:30', link }, 1))[1],
+    actual: stripAnsi(
+      renderLaterRow({ item: item({ channel_name: 'general' }), timeLabel: '09:30', link }, 1, { hyperlinks: false }),
+    )[1],
     expected: '      (no preview — message not fetched)',
   })
   assert({
@@ -113,6 +125,7 @@ test('renderLaterRow labels missing bodies and unresolved channels', () => {
       renderLaterRow(
         { item: item({ channel_name: 'general', message: { content: '' } }), timeLabel: '09:30', link },
         1,
+        { hyperlinks: false },
       ),
     )[1],
     expected: '      (no text)',
@@ -120,7 +133,7 @@ test('renderLaterRow labels missing bodies and unresolved channels', () => {
   assert({
     given: 'an item whose channel no longer resolves',
     should: 'mark the conversation unavailable instead of printing a bare id',
-    actual: stripAnsi(renderLaterRow({ item: item({}), timeLabel: '09:30', link }, 9))[0],
+    actual: stripAnsi(renderLaterRow({ item: item({}), timeLabel: '09:30', link }, 9, { hyperlinks: false }))[0],
     expected: '  10. 09:30  ⚠ unavailable channel C0123ABCDEF',
   })
 })
@@ -172,7 +185,7 @@ test('renderLaterRow labels stale rows with the twin-inferred channel', () => {
       renderLaterRow(
         { item: item({ channel_id: 'C0DEAD00001', ts: '1750000001.000100' }), timeLabel: '09:30', link },
         0,
-        { stale },
+        { stale, hyperlinks: false },
       ),
     ).slice(0, 2),
     expected: [
@@ -187,7 +200,7 @@ test('renderLaterRow labels stale rows with the twin-inferred channel', () => {
       renderLaterRow(
         { item: item({ channel_id: 'C0DEAD00001', ts: '1750000002.000100' }), timeLabel: '09:30', link },
         1,
-        { stale },
+        { stale, hyperlinks: false },
       ),
     ).slice(0, 2),
     expected: ['   2. 09:30  #atlas-updates (stale channel id)', '      (no preview — message not fetched)'],
@@ -203,7 +216,7 @@ test('renderLaterRow shows a reply badge for threads', () => {
   assert({
     given: 'a message with replies',
     should: 'append a dim reply count to the head line',
-    actual: stripAnsi(renderLaterRow(row, 0))[0],
+    actual: stripAnsi(renderLaterRow(row, 0, { hyperlinks: false }))[0],
     expected: '   1. 09:30  #general  ↩ 3',
   })
 })
