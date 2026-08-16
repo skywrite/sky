@@ -22,7 +22,6 @@
   "imports": {
     "#config": "./_shared-ts/config.ts",
     "#lib/*": "./lib/*",
-    "#mcp/*": "./mcp/*",
     "#service/*": "./service/*",
     "#shared/*": "./_shared-ts/*",
     "#universal/*": "./_shared-ts/universal/*",
@@ -72,7 +71,6 @@
     "qrcode": "1.5.3",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "reflect-metadata": "0.2.2",
     "string-similarity": "4.0.2",
     "strip-ansi": "7.0.1",
     "twitter-api-v2": "1.14.2",

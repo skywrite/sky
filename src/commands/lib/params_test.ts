@@ -100,7 +100,7 @@ test('Flag.plainDateTime creates a plainDateTime flag param', () => {
 
   assert({
     given: 'Flag.plainDateTime',
-    should: 'have jsonType=string for MCP',
+    should: 'have jsonType=string for tool schemas',
     actual: param.jsonType,
     expected: 'string',
   })
@@ -118,7 +118,7 @@ test('Flag.zonedDateTime creates a zonedDateTime flag param', () => {
 
   assert({
     given: 'Flag.zonedDateTime',
-    should: 'have jsonType=string for MCP',
+    should: 'have jsonType=string for tool schemas',
     actual: param.jsonType,
     expected: 'string',
   })

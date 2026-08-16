@@ -27,7 +27,7 @@ export type ParamKind = 'arg' | 'flag' | 'arg-or-flag'
 /** Supported parameter types */
 export type ParamType = 'string' | 'number' | 'bool' | 'stringOrBool' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
 
-/** JSON type for MCP schema generation */
+/** JSON type for tool-schema generation */
 export type ParamJsonType = 'string' | 'number' | 'boolean'
 
 /** Options for defining a parameter */

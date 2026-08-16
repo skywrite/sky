@@ -10,7 +10,6 @@ import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
@@ -51,7 +50,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-@MCPTool()
 export default class SlackNewTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:new',

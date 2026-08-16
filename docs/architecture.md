@@ -34,7 +34,6 @@ sky/
       lib/                 # the command runner itself
     lib/                   # application libraries (streaks, nbfs writers, services, tui)
     service/               # GraphQL server + file watcher + document stores
-    mcp/                   # MCP server
     test/                  # test infrastructure
     tmpl/                  # document templates
 ```

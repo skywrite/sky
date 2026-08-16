@@ -22,7 +22,6 @@ import { env } from '#shared/sys/mod.ts'
  *
  *   service.2026-07-31.jsonl   the launchd daemon
  *   cli.2026-07-31.jsonl       sky commands (short-lived, sometimes concurrent)
- *   mcp.2026-07-31.jsonl       MCP servers (stdout is protocol — never log there)
  *
  * Files live under `/tmp/sky/logs` — logs are diagnostic exhaust, ephemeral
  * by design: they survive service restarts, accumulate across weeks of
@@ -44,7 +43,7 @@ import { env } from '#shared/sys/mod.ts'
  */
 
 /** Process families, each the sole writer of its own daily files. */
-export type LogStream = 'service' | 'cli' | 'mcp'
+export type LogStream = 'service' | 'cli'
 
 // Literal /tmp, not os.tmpdir(): on macOS tmpdir() is the per-user
 // /var/folders confetti dir, which the OS actually does age-clean.
@@ -281,9 +280,9 @@ export interface LoggingOptions {
   dir?: string
   /**
    * Mirror records to the console as well as the file. Off by default —
-   * stdout belongs to the terminal UI in CLI processes and to the protocol in
-   * stdio MCP servers. The service passes `process.stdout.isTTY` so
-   * interactive `bun run` development still shows output.
+   * stdout belongs to the terminal UI in CLI processes. The service passes
+   * `process.stdout.isTTY` so interactive `bun run` development still shows
+   * output.
    */
   console?: boolean
 }

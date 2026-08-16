@@ -429,13 +429,6 @@ test('CommandPlatform enum has expected values', () => {
     actual: CommandPlatform.Test,
     expected: 'test',
   })
-
-  assert({
-    given: 'CommandPlatform enum',
-    should: 'have MCP value',
-    actual: CommandPlatform.MCP,
-    expected: 'mcp',
-  })
 })
 
 // Composition Depth Tests

@@ -244,16 +244,6 @@ Then **fully restart** VS Code — a window reload is not enough, because the ex
 scanner only reads the folder at startup. Details and troubleshooting in
 [`extensions/vscode/README.md`](../extensions/vscode/README.md).
 
-## Optional: MCP server
-
-Exposes notebook operations as tools to MCP-aware clients:
-
-```bash
-sky mcp:start
-```
-
-See [`src/mcp/README.md`](../src/mcp/README.md).
-
 ---
 
 ## Troubleshooting

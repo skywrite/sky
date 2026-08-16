@@ -181,7 +181,6 @@ sky summary:doc                  # summarize a PDF, image, Office or Apple docum
 sky init                         # initialize a notebook
 sky services                     # list, start, stop background services
 sky service:start                # run the GraphQL server + file watcher in the foreground
-sky mcp:start                    # start the MCP server
 sky cli:commands --rebuild       # rebuild the command manifest after adding commands
 sky secrets:set / :get / :list   # secrets in the OS keychain
 sky nbfs:migrate                 # migrate an older notebook layout (dry-run by default)

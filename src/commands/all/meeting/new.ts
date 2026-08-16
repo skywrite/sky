@@ -8,7 +8,6 @@ import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
-import { MCPTool } from '#mcp/decorators.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
@@ -42,7 +41,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-@MCPTool()
 export default class MeetingNewTask extends Command {
   static override description: CommandDescription = {
     name: 'meeting:new',
