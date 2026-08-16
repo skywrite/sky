@@ -15,6 +15,7 @@ import type { ApprovalSessionKeyFn, FormatApprovalFn } from '#commands/lib/AICha
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
+import truncate from '#shared/strings/truncate.ts'
 
 // -----------------------------------------------------------------------------
 // Discovery
@@ -151,6 +152,66 @@ export async function discoverAIChatTools(): Promise<DiscoveredTool[]> {
 }
 
 /**
+ * Error strings crossing the tool boundary are clamped: the failure class
+ * guarded against below is precisely "an error carrying megabytes".
+ */
+const MAX_TOOL_ERROR_CHARS = 2000
+
+/**
+ * Run one tool call: execute the command and shape its CommandResult into
+ * the model-facing tool output. The output is embedded raw into the next
+ * SDK step's message array and zod-validated as JSON there, so everything
+ * returned here must be plain JSON — see the boundary comments inside.
+ * Exported as the unit under test; createNotebookTools wires it per tool.
+ */
+export async function runToolCommand(
+  tasks: CommandService,
+  entry: Pick<DiscoveredTool, 'toolName' | 'commandName'>,
+  input: Record<string, unknown>,
+  options: CreateNotebookToolsOptions = {},
+): Promise<Record<string, unknown>> {
+  const result = await tasks.run(entry.commandName, input)
+  if (result.status !== 'success') {
+    // Failures cross this boundary as message strings only — never the
+    // Error instance. A class instance fails the next step's validation
+    // and kills the whole turn (an APICallError even drags the full
+    // rejected request body along in requestBodyValues). The command's own
+    // message can be a generic label, so the cause's message rides with it.
+    const detail = [result.message, result.error?.message]
+      .filter((m): m is string => Boolean(m))
+      .filter((m, i, all) => all.indexOf(m) === i)
+      .join(': ')
+    return {
+      success: false,
+      // Business-rule 'fail' vs unexpected 'error' — the model reads this.
+      status: result.status,
+      error: truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS),
+    }
+  }
+
+  const payload: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
+
+  // Tools returning openQuestions get the native breakout: the user
+  // settles them here, between execution and the model seeing the
+  // result — no chat turns spent on Q&A
+  const questions = extractOpenQuestions(payload)
+  if (questions && options.onOpenQuestions) {
+    const answers = await options.onOpenQuestions(entry.toolName, questions)
+    if (answers) {
+      payload.answers = answers
+      payload.openQuestions = []
+    }
+  }
+
+  // The success payload crosses the same boundary: anything that is not
+  // plain JSON (a class instance, a Date, an undefined array element)
+  // fails the SDK's next-step validation just like the Error above. The
+  // roundtrip flattens it to plain JSON and drops undefined-valued keys
+  // instead of shipping them.
+  return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>
+}
+
+/**
  * Discover @AIChatTool decorated tasks and create Vercel AI SDK tools.
  *
  * Filters the on-disk command manifest by `aiChatTool`, then imports each
@@ -173,28 +234,7 @@ export async function createNotebookTools(
     tools[entry.toolName] = tool({
       description: entry.description,
       inputSchema: jsonSchema<Record<string, unknown>>(schema),
-      execute: async (input: Record<string, unknown>) => {
-        const result = await tasks.run(entry.commandName, input)
-        if (result.status !== 'success') {
-          return { success: false, error: result.error ?? result.message ?? `Failed: ${entry.commandName}` }
-        }
-
-        const payload: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
-
-        // Tools returning openQuestions get the native breakout: the user
-        // settles them here, between execution and the model seeing the
-        // result — no chat turns spent on Q&A
-        const questions = extractOpenQuestions(payload)
-        if (questions && options.onOpenQuestions) {
-          const answers = await options.onOpenQuestions(entry.toolName, questions)
-          if (answers) {
-            payload.answers = answers
-            payload.openQuestions = []
-          }
-        }
-
-        return payload
-      },
+      execute: (input: Record<string, unknown>) => runToolCommand(tasks, entry, input, options),
     })
   }
 
