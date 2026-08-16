@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-08-15
+updated: 2026-08-16
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -52,7 +52,7 @@ Reconciliation: evidence with no day.md line still counts as Done - unplanned wo
 
 ### Reading AI sessions (actions/ai-chats/)
 
-Transcripts of {{me.firstName}} working with an AI tool. `## JP` headings are {{me.firstName}} speaking; `## AI Assistant` headings are the tool responding.
+Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may carry a leading turn stamp, same shape as message files (e.g. `## 2026-02-08 14:32 - **JP**`): headings naming `JP` are {{me.firstName}} speaking; headings naming `AI Assistant` are the tool responding.
 
 - {{me.firstName}}'s turns are real actions: decisions made, positions taken, work directed. Quotable as his.
 - Assistant turns are material he received. Never attribute the assistant's statements, recommendations, or drafts to him.

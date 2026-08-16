@@ -480,13 +480,13 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
   const doc = ChatDocument.create({
     summary: 'Stamped Chat',
     messages: [
-      { role: 'user', content: 'Morning question.', when: '2026-08-15 09:12' },
-      { role: 'assistant', content: 'Morning answer.', when: '2026-08-15 09:13' },
-      { role: 'user', content: 'Late-night follow-up.', when: '2026-08-15 25:30' },
-      { role: 'assistant', content: 'Late-night answer.', when: '2026-08-15 25:31' },
+      { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },
+      { role: 'assistant', content: 'Morning answer.', when: '2026-02-08 09:13' },
+      { role: 'user', content: 'Late-night follow-up.', when: '2026-02-08 25:30' },
+      { role: 'assistant', content: 'Late-night answer.', when: '2026-02-08 25:31' },
     ],
-    created: '2026-08-15',
-    updated: '2026-08-15',
+    created: '2026-02-08',
+    updated: '2026-02-08',
     provider: 'claude',
     model: 'claude-opus-4-6',
   })
@@ -494,11 +494,11 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
   const markdown = doc.toMarkdown()
   assert({
     given: 'stamped messages',
-    should: 'write the stamp into each speaker heading',
+    should: 'write message-file headings — leading stamp, bold speaker',
     actual: [
-      markdown.includes('## JP (2026-08-15 09:12)'),
-      markdown.includes('## AI Assistant (2026-08-15 09:13)'),
-      markdown.includes('## JP (2026-08-15 25:30)'),
+      markdown.includes('## 2026-02-08 09:12 - **JP**'),
+      markdown.includes('## 2026-02-08 09:13 - **AI Assistant**'),
+      markdown.includes('## 2026-02-08 25:30 - **JP**'),
     ],
     expected: [true, true, true],
   })
@@ -508,10 +508,10 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
     should: 'restore stamps (extended hours intact) with clean content',
     actual: ChatDocument.fromMarkdown(markdown).conversation,
     expected: [
-      { role: 'user', content: 'Morning question.', when: '2026-08-15 09:12' },
-      { role: 'assistant', content: 'Morning answer.', when: '2026-08-15 09:13' },
-      { role: 'user', content: 'Late-night follow-up.', when: '2026-08-15 25:30' },
-      { role: 'assistant', content: 'Late-night answer.', when: '2026-08-15 25:31' },
+      { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },
+      { role: 'assistant', content: 'Morning answer.', when: '2026-02-08 09:13' },
+      { role: 'user', content: 'Late-night follow-up.', when: '2026-02-08 25:30' },
+      { role: 'assistant', content: 'Late-night answer.', when: '2026-02-08 25:31' },
     ],
   })
 })
@@ -529,7 +529,7 @@ test('ChatDocument - unstamped headings parse with no when key, stamped and bare
       '',
       'Old answer.',
       '',
-      '## JP (2026-08-15 14:32)',
+      '## 2026-02-08 14:32 - **JP**',
       '',
       'New question.',
     ].join('\n'),
@@ -541,7 +541,7 @@ test('ChatDocument - unstamped headings parse with no when key, stamped and bare
     expected: [
       { role: 'user', content: 'Old question.' },
       { role: 'assistant', content: 'Old answer.' },
-      { role: 'user', content: 'New question.', when: '2026-08-15 14:32' },
+      { role: 'user', content: 'New question.', when: '2026-02-08 14:32' },
     ],
   })
   assert({
@@ -557,30 +557,55 @@ test('ChatDocument - a stamp-shaped heading on a non-speaker still folds back', 
     [
       '# Fold Test',
       '',
-      '## JP (2026-08-15 14:32)',
+      '## 2026-02-08 14:32 - **JP**',
       '',
       'Compare the options.',
       '',
-      '## AI Assistant (2026-08-15 14:33)',
+      '## 2026-02-08 14:33 - **AI Assistant**',
       '',
       'Two options stand out.',
       '',
-      '## Recommendation (2026-08-15 14:33)',
+      '## 2026-02-08 14:33 - **Recommendation**',
       '',
       'Go with the first option.',
     ].join('\n'),
   )
   assert({
-    given: 'an assistant reply containing an H2 with a stamp-looking suffix',
+    given: 'an assistant reply containing an H2 with a stamp-looking prefix',
     should: 'fold the phantom section back, keeping real speaker stamps',
     actual: doc.conversation,
     expected: [
-      { role: 'user', content: 'Compare the options.', when: '2026-08-15 14:32' },
+      { role: 'user', content: 'Compare the options.', when: '2026-02-08 14:32' },
       {
         role: 'assistant',
-        content: 'Two options stand out.\n\n## Recommendation (2026-08-15 14:33)\n\nGo with the first option.',
-        when: '2026-08-15 14:33',
+        content: 'Two options stand out.\n\n## 2026-02-08 14:33 - **Recommendation**\n\nGo with the first option.',
+        when: '2026-02-08 14:33',
       },
+    ],
+  })
+})
+
+test('ChatDocument - legacy trailing-paren stamps still parse', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Legacy Stamps',
+      '',
+      '## JP (2026-02-08 14:32)',
+      '',
+      'Old-format question.',
+      '',
+      '## AI Assistant (2026-02-08 14:33)',
+      '',
+      'Old-format answer.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'a transcript from the trailing-paren stamp era',
+    should: 'restore the stamps as when keys',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'Old-format question.', when: '2026-02-08 14:32' },
+      { role: 'assistant', content: 'Old-format answer.', when: '2026-02-08 14:33' },
     ],
   })
 })

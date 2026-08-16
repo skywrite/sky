@@ -20,16 +20,21 @@ const SPEAKER_ROLES: Record<string, 'user' | 'assistant'> = {
   'AI Assistant': 'assistant',
 }
 
-// A speaker heading with an optional turn stamp: `## JP (2026-08-15 14:32)`.
-// The stamp is notebook time — extended hours (25:30 and beyond) keep
-// multi-digit hour values, never clamped. Anything else in parentheses is
-// not a speaker heading and folds back like any assistant-emitted H2.
-const SPEAKER_PATTERN = /^(JP|AI Assistant)(?: \((\d{4}-\d{2}-\d{2} \d{1,3}:\d{2})\))?$/
+// A speaker heading in the notebook's message-file shape:
+// `## 2026-02-08 14:32 - **JP**` — leading stamp for scan symmetry, bold
+// on the speaker (same convention slack/email captures use). The stamp is
+// notebook time — extended hours (25:30 and beyond) keep multi-digit hour
+// values, never clamped. Legacy transcripts stamped after a plain name
+// (`## JP (2026-02-08 14:32)`) or not at all (`## JP`) — all three forms
+// parse; writes emit only the message-file form. Anything else is not a
+// speaker heading and folds back like any assistant-emitted H2.
+const SPEAKER_PATTERN =
+  /^(?:(\d{4}-\d{2}-\d{2} \d{1,3}:\d{2}) - \*\*(JP|AI Assistant)\*\*|(JP|AI Assistant)(?: \((\d{4}-\d{2}-\d{2} \d{1,3}:\d{2})\))?)$/
 
 function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: string } | null {
   const match = heading.match(SPEAKER_PATTERN)
   if (!match) return null
-  return { role: SPEAKER_ROLES[match[1]], when: match[2] }
+  return { role: SPEAKER_ROLES[match[2] ?? match[3]], when: match[1] ?? match[4] }
 }
 
 /**
@@ -47,15 +52,16 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  *
  * # Topic Summary
  *
- * ## JP (2026-08-15 14:32)
+ * ## 2026-02-08 14:32 - **JP**
  * User message.
  *
- * ## AI Assistant (2026-08-15 14:33)
+ * ## 2026-02-08 14:33 - **AI Assistant**
  * AI response.
  * ```
  *
  * The heading stamp is optional — transcripts from before turn stamps
- * have bare `## JP` / `## AI Assistant` headings.
+ * have bare `## JP` / `## AI Assistant` headings, and early stamped ones
+ * carry a trailing `(2026-02-08 14:32)` on a plain name instead.
  */
 export default class ChatDocument extends SectionDocument {
   static override yamlKeyOrder = ['created', 'updated', 'summary', 'provider', 'model', 'turns', 'rel', 'tags']
@@ -168,14 +174,13 @@ export default class ChatDocument extends SectionDocument {
 
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
-      const stamp = msg.when ? ` (${msg.when})` : ''
       if (msg.role === 'user') {
-        lines.push(`## JP${stamp}`)
+        lines.push(msg.when ? `## ${msg.when} - **JP**` : '## JP')
         lines.push('')
         lines.push(msg.content)
         lines.push('')
       } else {
-        lines.push(`## AI Assistant${stamp}`)
+        lines.push(msg.when ? `## ${msg.when} - **AI Assistant**` : '## AI Assistant')
         lines.push('')
         lines.push(stripSummaryComment(msg.content))
         lines.push('')
