@@ -5,6 +5,7 @@ import colors from 'picocolors'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
@@ -334,6 +335,10 @@ export default class AudioTranscriptSummaryTask extends Command {
     // Shown in the confirmation box below; user corrections override them.
     let finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
     let finalRel = pipelineRel.length > 0 ? pipelineRel : extractedRel
+    // rel: lists people discussed, never the parties — who/from/to already
+    // record them. The analysis and extract prompts ask for that split; models
+    // leak, so this enforces it. Hand edits to the written file stay sovereign.
+    finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
 
     const finalTitle = title !== 'Transcript Summary' ? title : extractedTitle
 
@@ -438,6 +443,10 @@ Example output: {"time": "2026-03-31 25:30"}`,
             if (Array.isArray(parsed.who)) finalWho = parsed.who
           }
           if (Array.isArray(parsed.rel)) finalRel = parsed.rel
+
+          // Corrections can move a person into who (or re-add a party to rel);
+          // the party rule holds over whatever the lists now say.
+          finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
 
           output.log(colors.green('Applied corrections.'))
         } catch (err) {

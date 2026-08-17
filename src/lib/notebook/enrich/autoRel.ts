@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
 import { extractSubjects } from './extract.ts'
+import { excludeParties, partyExclusionSet } from './parties.ts'
 import { buildEntityIndex, normalizeEntityName, resolveSubjects } from './resolve.ts'
 import { fetchEntityScores } from './scores.ts'
 import { selectRel } from './select.ts'
@@ -32,6 +33,11 @@ export type AutoRelInput = {
  * projects only — new conversations are about live work), then a selection
  * pass picks the 0-2 refs worth a cross-reference, guided by the
  * conversation's own past choices in the given mediums' archives.
+ *
+ * Parties are excluded deterministically, not just by prompt: anyone `to:` or
+ * `from:` names never becomes a candidate, however the extraction or the
+ * conversation's past rel spells them — who/from/to already record the
+ * parties, so rel repeating them is noise.
  *
  * Backtested on Slack archives at ~60% per-entry precision / ~75% file
  * overlap — below the auto-tag bar, wired by explicit choice. Every ref is
@@ -64,9 +70,11 @@ export async function autoRelMessage(
       'fast',
     )
     const resolved = resolveSubjects(subjects, index, scores, { projectStatuses: ['open'] })
+    const parties = partyExclusionSet([input.from, input.to], { index, scores })
+    const subjectRefs = excludeParties(resolved.refs, parties)
 
     const usesOf = new Map(relHistory.map((h) => [normalizeEntityName(h.tag), h.count]))
-    const candidates: RelCandidate[] = resolved.refs.map((ref) => {
+    const candidates: RelCandidate[] = subjectRefs.map((ref) => {
       const norm = normalizeEntityName(ref)
       return {
         ref,
@@ -76,12 +84,14 @@ export async function autoRelMessage(
         ...(scores?.has(norm) ? { score: scores.get(norm) } : {}),
       }
     })
-    const inText = new Set(resolved.refs.map(normalizeEntityName))
+    const inText = new Set(subjectRefs.map(normalizeEntityName))
     let added = 0
     for (const h of relHistory) {
       if (added >= MAX_PRIOR_ONLY_CANDIDATES) break
       const norm = normalizeEntityName(h.tag)
       if (inText.has(norm)) continue
+      // History predates the party rule, so it can carry the parties themselves
+      if (parties.has(norm)) continue
       // Prior-only candidates must still resolve — history can carry renamed refs
       if (!index.canResolve(h.tag)) continue
       candidates.push({
