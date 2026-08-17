@@ -44,8 +44,9 @@ minutes.
 **Fastest path — hand it to a coding agent.** Paste this into Claude Code, Codex, or
 anything else with shell access:
 
-> Install Sky for me by following the instructions at
-> `https://raw.githubusercontent.com/skywrite/sky/main/docs/INSTALL.md`
+```text
+Install Sky for me by following the instructions at https://raw.githubusercontent.com/skywrite/sky/main/docs/INSTALL.md
+```
 
 The install guide is written to be executed step-by-step, with a verification after each
 one.
