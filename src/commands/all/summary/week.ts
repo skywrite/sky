@@ -1,57 +1,44 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
-import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
+import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
+import { dayDir, fetchNow, weekDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { gatherWeekHealthData, type WeekHealthData } from './_health.ts'
-import { gatherWeekPriceData, type WeekPriceData } from './_prices.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
+import { gatherWeekHealthData, type WeekHealthCsv } from './_health.ts'
+import { gatherWeekPriceData, type WeekPriceCsv } from './_prices.ts'
+import { parseSummaryContext, serializeSummaryContext } from './lib/contextRecord.ts'
+import gatherWeekSummaries, { type WeekSummaryEntry } from './lib/gatherWeekSummaries.ts'
 
-// Path to prompt template (relative to this file)
 const PROMPT_FILE = new URL('./prompts/week.prompt.md', import.meta.url).pathname
 
+// Hard ceiling matching summary:day. Seven dailies plus tracking CSVs land
+// far below it in practice; the shared gate is uniformity, not an expected
+// limit — and like the day, an over-budget week refuses instead of trimming.
+const CONTEXT_BUDGET_TOKENS = 300_000
+
+// The weekly is the week's canonical record and the primary input to weekly
+// planning — same top-tier model as the dailies it is built from.
+const DEFAULT_PROFILE = 'default-fable-5'
+
 const params = {
-  start: Flag.plainDate('Start day (e.g., 19, 1-19, 2026-01-19)', {
-    short: 's',
-    required: true,
-    parse: (input) => parsePartialDate(input, { rejectFuture: true }),
+  week: Arg.string('Week to summarize (e.g., 33, W33, 2026-W02) — defaults to the last completed week', {
+    optional: true,
   }),
-  end: Flag.plainDate('End day (e.g., 25, 1-25, 2026-01-25)', {
-    short: 'e',
-    required: true,
-    parse: (input) => parsePartialDate(input, { rejectFuture: true }),
-  }),
-  model: Flag.string('Model profile to use', {
-    short: 'm',
-    default: () => ROLES.reasoning,
-  }),
-  force: Flag.bool('Overwrite existing summary file', {
-    short: 'f',
-    default: false,
-  }),
-  allowMissing: Flag.bool('Continue even if some days are missing summaries', {
-    default: false,
-  }),
-  dryRun: Flag.bool('Show prompt without calling AI', {
-    default: false,
-  }),
-  stdout: Flag.bool('Output summary to stdout instead of file', {
-    default: false,
-  }),
-  open: Flag.bool('Open summary in editor after creation', {
-    short: 'o',
-    default: false,
-  }),
-  export: Flag.bool('Export summary as PDF to ~/Desktop', {
-    default: false,
-  }),
+  model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
+  force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
+  allowMissing: Flag.bool('Continue even if some days are missing summaries', { default: false }),
+  dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
+  stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),
+  open: Flag.bool('Open summary in editor after creation', { short: 'o', default: true }),
+  export: Flag.bool('Export summary as PDF to ~/Desktop', { short: 'e', default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -66,44 +53,51 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class SummaryWeekTask extends Command {
   static override description: CommandDescription = {
     name: 'summary:week',
-    description: 'Generate AI-powered weekly summary - momentum and opportunities',
+    description: 'Generate AI-powered weekly summary - the week at altitude, from its daily summaries',
     descriptionLong: [
-      'Creates a summary.md file in the week directory by synthesizing daily summaries.',
-      'Strategic view: What moved forward, big opportunities, action taken, health trends.',
-      'Feeds into weekly planning.',
+      'Creates a summary.md in the week directory by synthesizing the Daily Summaries.',
+      'The arc of the week: What Moved Forward, Decisions, Open Loops, Time, Health Trends, Signals, Learned.',
+      "Reads as the week's canonical record and feeds weekly planning.",
       '',
-      'By default, errors if any day in the range is missing a summary.md.',
-      'Use --allow-missing to continue with partial data.',
+      'By default, errors if any day of the week is missing its summary.md.',
+      'Use --allow-missing to generate from partial coverage — gaps are named, never papered over.',
     ],
     usage: [
-      'sky summary:week -s 19 -e 25              # Summarize Jan 19-25 (current month)',
-      'sky summary:week --start 1-19 --end 1-25  # Summarize Jan 19-25',
-      'sky summary:week -s 2026-01-19 -e 2026-01-25  # Summarize specific date range',
-      'sky summary:week -s 19 -e 25 --dry-run    # Preview prompt without calling AI',
-      'sky summary:week -s 19 -e 25 --allow-missing  # Continue even if some days missing',
-      'sky summary:week -s 19 -e 25 --force      # Overwrite existing summary',
-      'sky summary:week -s 19 -e 25 --export     # Export existing summary as PDF',
+      'sky summary:week                # Summarize the last completed week',
+      'sky summary:week 33             # Summarize W33 of the current year',
+      'sky summary:week 2026-W02      # Summarize a specific week',
+      'sky summary:week --dry-run      # Preview prompt without calling AI',
+      'sky summary:week 33 --force     # Overwrite existing summary',
+      'sky summary:week 33 --export    # Export existing summary as PDF',
     ],
     params,
   }
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { config, output } = context
-    const { start, end, model, force, allowMissing, dryRun, stdout, open } = args
+    const { model, force, allowMissing, dryRun, stdout, open } = args
     const exportPdf = args.export
 
-    // Validate date range
-    if (end.toString() < start.toString()) {
-      return CommandResult.fail(`End date (${end.ymd}) must be after start date (${start.ymd})`)
+    const now = await fetchNow()
+    const today = now.plainDateTime.plainDate
+
+    let week: Week
+    try {
+      week = args.week ? Week.parse(args.week, Week.of(now).year) : Week.of(now).previous()
+    } catch (err) {
+      return CommandResult.fail((err as Error).message)
+    }
+
+    // A week is summarized whole — refuse until its Sunday has passed.
+    if (PlainDate.compare(week.end, today) >= 0) {
+      return CommandResult.fail(
+        `${week.toString()} (${week.start.ymd} – ${week.end.ymd}) isn't complete yet. ` +
+          'The weekly summary is generated after the week ends.',
+      )
     }
 
     const timeDir = <string>config.DIR_TIME
-
-    // Output goes to the start day's week directory
-    const weekDirPath = path
-      .join(timeDir, dayDir(start))
-      .replace(/\/\d+$/, '')
-      .replace(/\/x\d+$/, '')
+    const weekDirPath = path.join(timeDir, weekDir(week.startInYear))
     const summaryPath = path.join(weekDirPath, 'summary.md')
 
     // --export: export existing summary as PDF (no AI generation)
@@ -111,12 +105,12 @@ export default class SummaryWeekTask extends Command {
       if (!(await exists(summaryPath))) {
         return CommandResult.fail('No summary.md found. Run summary:week first to generate one.')
       }
-      const pdfPath = this.pdfPath(start, end)
+      const pdfPath = this.pdfPath(week)
       output.log(`Exporting existing summary to PDF...`)
       const result = await tasks.run<{ pdfPath: string }>('markdown:pdf', {
         file: summaryPath,
         output: pdfPath,
-        title: `Weekly Summary – ${start.ymd} to ${end.ymd}`,
+        title: `Weekly Summary – ${week.toString()}`,
       })
       if (result.status !== 'success') {
         return CommandResult.fail(result.message || 'PDF export failed')
@@ -124,79 +118,88 @@ export default class SummaryWeekTask extends Command {
       return CommandResult.success({ path: summaryPath, pdfPath })
     }
 
-    // Check if summary already exists (skip if outputting to stdout)
-    if (!stdout && !force && (await exists(summaryPath))) {
+    // Check if summary already exists (skip if outputting to stdout or dry-run)
+    if (!stdout && !dryRun && !force && (await exists(summaryPath))) {
       return CommandResult.fail('Week summary already exists. Use --force to overwrite.')
     }
 
-    output.log(`Generating Weekly Summary for ${start.ymd} - ${end.ymd}...`)
-
-    // 1. Generate all dates in range
-    const dates = this.getDatesInRange(start, end)
-    output.log(`Date range: ${dates.length} days`)
-
-    // 2. Read summary.md from each day
-    const dailyBriefs: Array<{ date: PlainDate; content: string }> = []
-    const missingDays: PlainDate[] = []
-
-    for (const date of dates) {
-      const dayDirPath = path.join(timeDir, dayDir(date))
-      const summaryFile = path.join(dayDirPath, 'summary.md')
-
-      if (await exists(summaryFile)) {
-        try {
-          const content = await readTextFile(summaryFile)
-          if (content.length > 100) {
-            dailyBriefs.push({ date, content })
-            output.log(`  - ${date.ymd}: summary.md found`)
-          } else {
-            missingDays.push(date)
-            output.log(`  - ${date.ymd}: summary.md empty or too short`)
-          }
-        } catch {
-          missingDays.push(date)
-          output.log(`  - ${date.ymd}: summary.md unreadable`)
-        }
-      } else {
-        missingDays.push(date)
-        output.log(`  - ${date.ymd}: no summary.md`)
-      }
+    // Resolve the profile up front — a bad -m should fail before any work,
+    // and the resolved model id gets stamped into the output frontmatter.
+    let modelId: string
+    try {
+      modelId = getProfile(model).model
+    } catch (err) {
+      return CommandResult.fail((err as Error).message)
     }
 
-    // 3. Check for missing days
-    if (missingDays.length > 0 && !allowMissing) {
-      const missingList = missingDays.map((d) => d.ymd).join(', ')
+    output.log(`Generating Weekly Summary for ${week.toString()} (${week.start.ymd} – ${week.end.ymd})...`)
+
+    // 1. Gather the dailies — the weekly is a record built from records, so
+    // only summary.md counts as a day's input, never day.md or raw files.
+    const { days: dailies, skipped } = await gatherWeekSummaries(week.days, timeDir)
+    for (const d of dailies) {
+      output.log(`  - ${d.date.ymd} (${d.date.dayShort}): summary.md`)
+    }
+    const gapReasons: Array<[PlainDate[], string]> = [
+      [skipped.missing, 'no summary.md'],
+      [skipped.tiny, 'summary.md is a stub'],
+      [skipped.yamlError, 'summary.md has bad YAML'],
+      [skipped.unreadable, 'summary.md unreadable'],
+    ]
+    for (const [dates, reason] of gapReasons) {
+      for (const d of dates) output.log(`  ! ${d.ymd} (${d.dayShort}): ${reason}`)
+    }
+
+    if (dailies.length === 0) {
+      return CommandResult.fail('No daily summaries found for this week. Run summary:day for each day first.')
+    }
+
+    const gapCount = week.days.length - dailies.length
+    if (gapCount > 0 && !allowMissing && !dryRun) {
       return CommandResult.fail(
-        `Missing daily summaries for: ${missingList}\n` +
-          'Run summary:day for each day first, or use --allow-missing to continue with partial data.',
+        `Missing daily summaries for ${gapCount} day(s) — see the list above.\n` +
+          'Run summary:day for each first, or use --allow-missing to continue with partial coverage.',
       )
     }
 
-    if (dailyBriefs.length === 0) {
-      return CommandResult.fail('No daily summaries found. Run summary:day for each day first.')
+    // 2. Previous week's summary as background — arc continuity, so ongoing
+    // threads read as deltas instead of being re-narrated from zero.
+    const prevWeek = week.previous()
+    const prevPath = path.join(timeDir, weekDir(prevWeek.startInYear), 'summary.md')
+    let previous: { week: Week; path: string; body: string } | undefined
+    if (await exists(prevPath)) {
+      previous = { week: prevWeek, path: prevPath, body: parseSummaryContext(await readTextFile(prevPath)).body }
+      output.log(`Previous week (${prevWeek.toString()}): summary.md included as background`)
+    } else {
+      output.log(`Previous week (${prevWeek.toString()}): no summary`)
     }
 
-    output.log(`Loaded ${dailyBriefs.length} of ${dates.length} daily briefs`)
+    // 3. Week-native tracking data: day-keyed health CSVs from the week dir,
+    // asset prices filtered to the week.
+    const healthCsvs = await gatherWeekHealthData(week.start, timeDir)
+    if (healthCsvs.length > 0) output.log(`Health CSVs: ${healthCsvs.length}`)
+    const priceCsvs = await gatherWeekPriceData(week.start, week.end, <string>config.DIR_TRACKING)
+    if (priceCsvs.length > 0) output.log(`Price CSVs: ${priceCsvs.length}`)
 
-    // 4. Load health data for the week
-    const healthData = await gatherWeekHealthData(start, timeDir)
-    const healthFiles = Object.keys(healthData).length
-    if (healthFiles > 0) {
-      output.log(`Loaded ${healthFiles} health CSV files`)
-    }
+    // 4. rel: union of the dailies' rel lists. A daily's flat rel list can't
+    // tell orgs from people, so bare names sort as one alphabetical run with
+    // projects/ entries after — same discoverability, coarser grouping.
+    const relSet = new Set(dailies.flatMap((d) => d.rel))
+    const byName = (a: string, b: string) => a.localeCompare(b)
+    const rel = [
+      ...[...relSet].filter((r) => !r.startsWith('projects/')).sort(byName),
+      ...[...relSet].filter((r) => r.startsWith('projects/')).sort(byName),
+    ]
 
-    // 5. Load price data for the week
-    const priceData = await gatherWeekPriceData(start, end, <string>config.DIR_TRACKING)
-    const priceFiles = Object.keys(priceData).length
-    if (priceFiles > 0) {
-      output.log(`Loaded ${priceFiles} price CSV files`)
-    }
-
-    // 6. Load prompt template
+    // 5. Prompt
     const promptTemplate = await this.loadPromptTemplate()
+    const userPrompt = this.buildUserPrompt(week, dailies, skipped.missing, previous, healthCsvs, priceCsvs)
+    const contextTokens = estimateTokens(userPrompt)
 
-    // 7. Build user prompt (prices + health data + week context + collated daily briefs)
-    const userPrompt = this.buildUserPrompt(start, end, dailyBriefs, healthData, priceData)
+    output.log(
+      `Context: ${dailies.length} dailies${previous ? ' + previous week' : ''}, ` +
+        `~${Math.round(contextTokens / 1000)}k tokens (budget ${CONTEXT_BUDGET_TOKENS / 1000}k)`,
+    )
 
     if (dryRun) {
       output.log('\n=== SYSTEM PROMPT ===')
@@ -206,9 +209,18 @@ export default class SummaryWeekTask extends Command {
       return CommandResult.success({ dryRun: true })
     }
 
+    // 6. Hard fail over budget — never generate from a trimmed week
+    if (contextTokens > CONTEXT_BUDGET_TOKENS) {
+      return CommandResult.fail(
+        `Week context is ~${Math.round(contextTokens / 1000)}k tokens, over the ${CONTEXT_BUDGET_TOKENS / 1000}k budget. ` +
+          'Refusing to generate from a partial week — inspect with --dry-run to find the outlier.',
+      )
+    }
+
     // 7. Call Claude
     output.log('Calling Claude...')
     let response: string
+    let usage = ''
     try {
       const result = await generateText({
         ...aiModelByProfile(model),
@@ -216,21 +228,68 @@ export default class SummaryWeekTask extends Command {
         prompt: userPrompt,
       })
       response = result.text
+      const { inputTokens, outputTokens } = result.usage
+      if (inputTokens !== undefined && outputTokens !== undefined) {
+        usage = `${inputTokens} in, ${outputTokens} out`
+      }
     } catch (err) {
+      await logAIError({
+        source: 'summary:week',
+        stage: 'generate',
+        message: err instanceof Error ? err.message : String(err),
+      })
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
 
     // 8. Build output file
     const yamlHeader: Record<string, unknown> = {
       title: 'Weekly Summary',
-      week: `${start.ymd} - ${end.ymd}`,
-      days: dailyBriefs.length,
+      week: week.toString(),
+      start: week.start.ymd,
+      end: week.end.ymd,
+      days: dailies.length,
       generated: new Date().toISOString(),
-      model,
+      model: modelId,
+      ...(usage ? { usage } : {}),
       tags: 'Summary/Weekly',
     }
+    if (rel.length > 0) {
+      yamlHeader.rel = rel
+    }
 
-    const outputContent = ['---', stringify(yamlHeader).trim(), '---', '', response].join('\n')
+    let outputContent = ['---', stringify(yamlHeader).trim(), '---', '', response].join('\n')
+
+    // Append the SUMMARY-CONTEXT record: what the model read (with token
+    // estimates, in shipped order) and which days were skipped and why.
+    const baseDir = <string>config.DIR_BASE
+    const relPath = (p: string) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p)
+    outputContent += serializeSummaryContext({
+      scope: 'week',
+      budget: CONTEXT_BUDGET_TOKENS,
+      kept: [
+        ...priceCsvs.map((p) => ({ path: relPath(p.path), tokens: estimateTokens(p.csv), kind: 'tracking' })),
+        ...healthCsvs.map((h) => ({ path: relPath(h.path), tokens: estimateTokens(h.csv), kind: 'tracking' })),
+        ...(previous
+          ? [{ path: relPath(previous.path), tokens: estimateTokens(previous.body), kind: 'background' }]
+          : []),
+        ...dailies.map((d) => ({ path: relPath(d.path), tokens: estimateTokens(d.body), kind: 'daily-summary' })),
+      ],
+      skipped: [
+        ...skipped.missing.map((d) => ({
+          path: relPath(path.join(timeDir, dayDir(d), 'summary.md')),
+          reason: 'missing',
+        })),
+        ...skipped.tiny.map((d) => ({ path: relPath(path.join(timeDir, dayDir(d), 'summary.md')), reason: 'tiny' })),
+        ...skipped.yamlError.map((d) => ({
+          path: relPath(path.join(timeDir, dayDir(d), 'summary.md')),
+          reason: 'yamlError',
+        })),
+        ...skipped.unreadable.map((d) => ({
+          path: relPath(path.join(timeDir, dayDir(d), 'summary.md')),
+          reason: 'unreadable',
+        })),
+      ],
+    })
 
     // 9. Output
     if (stdout) {
@@ -256,136 +315,73 @@ export default class SummaryWeekTask extends Command {
     return output
   }
 
-  private getDatesInRange(start: PlainDate, end: PlainDate): PlainDate[] {
-    const dates: PlainDate[] = []
-    let current = start
-
-    while (current.toString() <= end.toString()) {
-      dates.push(current)
-      current = current.addDays(1)
-    }
-
-    return dates
-  }
-
   private buildUserPrompt(
-    start: PlainDate,
-    end: PlainDate,
-    dailyBriefs: Array<{ date: PlainDate; content: string }>,
-    healthData: WeekHealthData,
-    priceData: WeekPriceData,
+    week: Week,
+    dailies: WeekSummaryEntry[],
+    missing: PlainDate[],
+    previous: { week: Week; body: string } | undefined,
+    healthCsvs: WeekHealthCsv[],
+    priceCsvs: WeekPriceCsv[],
   ): string {
     const parts: string[] = []
 
-    // Price data at the top (raw CSV content)
-    const hasPriceData = priceData.btc || priceData.spy || priceData.exod
-    if (hasPriceData) {
-      parts.push('# Price Data (Raw CSV)')
-      parts.push('')
-
-      if (priceData.btc) {
-        parts.push('## BTC_USD.csv')
-        parts.push('```csv')
-        parts.push(priceData.btc)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (priceData.spy) {
-        parts.push('## SPY_USD.csv')
-        parts.push('```csv')
-        parts.push(priceData.spy)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (priceData.exod) {
-        parts.push('## EXOD_USD.csv')
-        parts.push('```csv')
-        parts.push(priceData.exod)
-        parts.push('```')
-        parts.push('')
-      }
-
-      parts.push('---')
-      parts.push('')
-    }
-
-    // Health data (raw CSV content)
-    const hasHealthData =
-      healthData.strength || healthData.distance || healthData.sleep || healthData.weight || healthData.work
-    if (hasHealthData) {
-      parts.push('# Health Data (Raw CSV)')
-      parts.push('')
-
-      if (healthData.strength) {
-        parts.push('## strength.csv')
-        parts.push('```csv')
-        parts.push(healthData.strength)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (healthData.distance) {
-        parts.push('## distance.csv')
-        parts.push('```csv')
-        parts.push(healthData.distance)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (healthData.sleep) {
-        parts.push('## sleep.csv')
-        parts.push('```csv')
-        parts.push(healthData.sleep)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (healthData.weight) {
-        parts.push('## weight.csv')
-        parts.push('```csv')
-        parts.push(healthData.weight)
-        parts.push('```')
-        parts.push('')
-      }
-
-      if (healthData.work) {
-        parts.push('## work.csv')
-        parts.push('```csv')
-        parts.push(healthData.work)
-        parts.push('```')
-        parts.push('')
-      }
-
-      parts.push('---')
-      parts.push('')
-    }
-
     // Header with week context
-    parts.push(`# Weekly Input: ${start.ymd} - ${end.ymd}`)
+    parts.push(`# Weekly Input for ${week.toString()} (${week.start.ymd} – ${week.end.ymd}, Mon–Sun)`)
     parts.push('')
-    parts.push(`Period: ${dailyBriefs.length} days with daily briefs`)
+    parts.push(`Days with summaries: ${dailies.length} of ${week.days.length}`)
+    if (missing.length > 0) {
+      parts.push(`Missing: ${missing.map((d) => `${d.ymd} (${d.dayShort})`).join(', ')}`)
+    }
     parts.push('')
-    parts.push('Below are the Daily Summaries for this period. Generate the Weekly Summary.')
+    parts.push('Below is the collated input for this week. Generate the Weekly Summary.')
     parts.push('')
+
+    if (priceCsvs.length > 0) {
+      parts.push('## Price Data (Raw CSV)')
+      parts.push('')
+      for (const p of priceCsvs) {
+        parts.push(`### ${path.basename(p.path)}`)
+        parts.push('```csv')
+        parts.push(p.csv)
+        parts.push('```')
+        parts.push('')
+      }
+    }
+
+    if (healthCsvs.length > 0) {
+      parts.push('## Health Data (Raw CSV)')
+      parts.push('')
+      for (const h of healthCsvs) {
+        parts.push(`### ${h.name}.csv`)
+        parts.push('```csv')
+        parts.push(h.csv)
+        parts.push('```')
+        parts.push('')
+      }
+    }
+
     parts.push('---')
     parts.push('')
 
-    // Collate daily briefs with clear delimiters
-    for (const brief of dailyBriefs) {
-      parts.push(`<!-- START DAILY BRIEF: ${brief.date.ymd} (${brief.date.dayShort}) -->`)
-      parts.push(brief.content)
-      parts.push(`<!-- END DAILY BRIEF: ${brief.date.ymd} -->`)
+    if (previous) {
+      parts.push(`<!-- START PREVIOUS WEEK: ${previous.week.toString()} (background) -->`)
+      parts.push(previous.body.trim())
+      parts.push(`<!-- END PREVIOUS WEEK: ${previous.week.toString()} -->`)
+      parts.push('')
+    }
+
+    for (const d of dailies) {
+      parts.push(`<!-- START DAILY SUMMARY: ${d.date.ymd} (${d.date.dayShort}) -->`)
+      parts.push(d.body.trim())
+      parts.push(`<!-- END DAILY SUMMARY: ${d.date.ymd} -->`)
       parts.push('')
     }
 
     return parts.join('\n')
   }
 
-  private pdfPath(start: PlainDate, end: PlainDate): string {
+  private pdfPath(week: Week): string {
     const home = env.get('HOME') ?? '/tmp'
-    const endShort = `${String(end.month).padStart(2, '0')}-${String(end.day).padStart(2, '0')}`
-    return path.join(home, 'Desktop', `${start.ymd}_to_${endShort}_weekly_summary.pdf`)
+    return path.join(home, 'Desktop', `${week.toString()}_weekly_summary.pdf`)
   }
 }

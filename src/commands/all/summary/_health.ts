@@ -18,12 +18,12 @@ function getDayAbbrev(date: PlainDate): string {
   return DAYS_OF_WEEK[date.toDate().getDay()]
 }
 
-export interface WeekHealthData {
-  strength?: string
-  distance?: string
-  sleep?: string
-  weight?: string
-  work?: string
+export interface WeekHealthCsv {
+  name: string
+  /** Absolute path of the source CSV, for provenance records */
+  path: string
+  /** Raw CSV content with day abbreviations converted to YMD dates */
+  csv: string
 }
 
 // Map day abbreviations to day offset from Monday (week start)
@@ -77,24 +77,25 @@ function transformDayColumn(csvContent: string, weekStart: PlainDate): string {
  * Returns the full CSV content for each file that exists.
  * Day abbreviations (M, T, W, etc.) are converted to YMD dates.
  */
-export async function gatherWeekHealthData(weekStart: PlainDate, timeDir: string): Promise<WeekHealthData> {
+export async function gatherWeekHealthData(weekStart: PlainDate, timeDir: string): Promise<WeekHealthCsv[]> {
   const weekDirPath = path.join(timeDir, weekDir(weekStart), '_tracking', 'health')
-  const data: WeekHealthData = {}
+  const csvs: WeekHealthCsv[] = []
 
   const files = ['strength', 'distance', 'sleep', 'weight', 'work'] as const
 
-  for (const file of files) {
+  for (const name of files) {
+    const filePath = path.join(weekDirPath, `${name}.csv`)
     try {
-      const content = await readTextFile(path.join(weekDirPath, `${file}.csv`))
+      const content = await readTextFile(filePath)
       if (content.trim()) {
-        data[file] = transformDayColumn(content.trim(), weekStart)
+        csvs.push({ name, path: filePath, csv: transformDayColumn(content.trim(), weekStart) })
       }
     } catch {
       // File doesn't exist
     }
   }
 
-  return data
+  return csvs
 }
 
 export async function gatherHealthData(day: PlainDate, timeDir: string): Promise<HealthData> {
