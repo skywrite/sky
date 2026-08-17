@@ -19,11 +19,12 @@ export interface DayPriceData {
   prices: PriceData[]
 }
 
-export interface WeekPriceData {
-  // Raw CSV content for each asset
-  btc?: string
-  spy?: string
-  exod?: string
+export interface WeekPriceCsv {
+  symbol: string
+  /** Absolute path of the source CSV, for provenance records */
+  path: string
+  /** Raw CSV content filtered to the requested date range */
+  csv: string
 }
 
 /**
@@ -114,36 +115,18 @@ export async function gatherDayPriceData(day: PlainDate, dataDir: string): Promi
 /**
  * Gather price data for a week range (raw CSV filtered to date range).
  */
-export async function gatherWeekPriceData(start: PlainDate, end: PlainDate, dataDir: string): Promise<WeekPriceData> {
-  const data: WeekPriceData = {}
-  const year = start.year
+export async function gatherWeekPriceData(start: PlainDate, end: PlainDate, dataDir: string): Promise<WeekPriceCsv[]> {
+  const csvs: WeekPriceCsv[] = []
 
-  // BTC
-  try {
-    const btcPath = path.join(dataDir, 'assets', 'crypto', String(year), 'BTC_USD.csv')
-    const content = await readTextFile(btcPath)
-    data.btc = filterCsvByDateRange(content, start, end)
-  } catch {
-    // No data
+  for (const [symbol, type] of TRACKED_ASSETS) {
+    const filePath = path.join(dataDir, 'assets', type, String(start.year), `${symbol}_USD.csv`)
+    try {
+      const content = await readTextFile(filePath)
+      csvs.push({ symbol, path: filePath, csv: filterCsvByDateRange(content, start, end) })
+    } catch {
+      // No data
+    }
   }
 
-  // SPY
-  try {
-    const spyPath = path.join(dataDir, 'assets', 'equities', String(year), 'SPY_USD.csv')
-    const content = await readTextFile(spyPath)
-    data.spy = filterCsvByDateRange(content, start, end)
-  } catch {
-    // No data
-  }
-
-  // EXOD
-  try {
-    const exodPath = path.join(dataDir, 'assets', 'equities', String(year), 'EXOD_USD.csv')
-    const content = await readTextFile(exodPath)
-    data.exod = filterCsvByDateRange(content, start, end)
-  } catch {
-    // No data
-  }
-
-  return data
+  return csvs
 }
