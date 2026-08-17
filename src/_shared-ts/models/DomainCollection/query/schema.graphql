@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-08-16T12:28:25.516Z
+# Generated at: 2026-08-17T15:22:13.213Z
 # =============================================================================
 
 type Query {
@@ -27,6 +27,7 @@ type Query {
   days(where: DayFilter, limit: Int): [Day!]!
   journals(where: JournalFilter, limit: Int): [Journal!]!
   chats(where: ChatFilter, limit: Int): [Chat!]!
+  notes(where: NoteFilter, limit: Int): [Note!]!
 
   # Generic query across all document types
   documents(where: DocumentFilter, limit: Int): [Document!]!
@@ -287,6 +288,21 @@ type Chat {
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
   markdown: String! # Full conversation transcript
+  path: String! # File path
+}
+
+"""
+Free-form note capture (text, voice memo, whiteboard photo)
+"""
+type Note {
+  date: String! # Date (YYYY-MM-DD)
+  day: Day # The day this note was taken on
+  when: String # Time (HH:MM)
+  summary: String # Note header/summary
+  context: String # Context or purpose
+  tags: [String!]! # Tags
+  rel: [String!]! # Related entities
+  markdown: String! # Full document content
   path: String! # File path
 }
 
@@ -564,6 +580,23 @@ input JournalFilter {
 }
 
 input ChatFilter {
+  date: String
+  dateGte: String
+  dateLte: String
+  recent: String
+  summaryContains: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  bodyContains: String
+  involves: String
+  involvesAny: [String!]
+  involvesAll: [String!]
+  relContains: String
+}
+
+input NoteFilter {
   date: String
   dateGte: String
   dateLte: String

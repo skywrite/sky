@@ -174,6 +174,7 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
     days: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.days(args, ctx, info) ?? [],
     journals: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.journals(args, ctx, info) ?? [],
     chats: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.chats(args, ctx, info) ?? [],
+    notes: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.notes(args, ctx, info) ?? [],
     documents: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.documents(args, ctx, info) ?? [],
   } satisfies Record<keyof ReturnType<typeof createDomainResolvers>, unknown>
 

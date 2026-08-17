@@ -6,6 +6,8 @@ import colors from 'picocolors'
 import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -24,7 +26,12 @@ const params = {
   aiContext: Flag.string('Additional context for AI image extraction', { optional: true }),
   when: whenNBTime(),
   category: categoryComplete(),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-notes tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
+
+// `kind` is the noun the enrichment prompts use for what they are labeling.
+const NOTES_ENRICH: { mediums: string[]; kind: string } = { mediums: ['note'], kind: 'note' }
 
 type Params = InferParams<typeof params>
 type Result = { filePath: string }
@@ -125,6 +132,27 @@ export default class NotesNewTask extends Command {
       return CommandResult.fail('Missing required argument: summary (or use --from-audio / --from-image)')
     }
 
+    // Enrich from the archived-notes corpus — pipeline paths only: a manual
+    // note is created empty and written in the editor afterwards, so there is
+    // nothing to classify at creation time. Auto-rel runs alongside the
+    // pipeline's own extraction rather than instead of it, appending
+    // graph-validated refs the transcript or image pass missed.
+    let tags: string | undefined
+    if (useAudioPipeline || useImagePipeline) {
+      const enrichInput = { summary, body }
+      const [autoTags, autoRel] = await Promise.all([
+        args.noAutoTag ? undefined : autoTagMessage(enrichInput, NOTES_ENRICH),
+        args.noAutoRel ? undefined : autoRelMessage(enrichInput, NOTES_ENRICH),
+      ])
+      tags = autoTags
+      if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
+      const merged = mergeRel(rel, autoRel)
+      if (autoRel && merged && merged.length > (rel?.length ?? 0)) {
+        output.log(`  Auto-rel: ${merged.slice(rel?.length ?? 0).join(', ')}`)
+      }
+      rel = merged
+    }
+
     const whenDate = when.plainDate
     const summarySlug = slugify(summary, { suggestedLength: 40, preserveCase: true })
 
@@ -142,7 +170,7 @@ export default class NotesNewTask extends Command {
       yamlLines.push('rel:')
     }
 
-    yamlLines.push('tags:')
+    yamlLines.push(tags ? `tags: ${tags}` : 'tags:')
 
     if (attachmentFiles.length > 0) {
       yamlLines.push('attachments:')

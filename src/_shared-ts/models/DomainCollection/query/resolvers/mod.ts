@@ -24,6 +24,7 @@ import idea from './idea.ts'
 import journal from './journal.ts'
 import meeting from './meeting.ts'
 import message from './message.ts'
+import note from './note.ts'
 import org from './org.ts'
 import person from './person.ts'
 import place from './place.ts'
@@ -44,6 +45,7 @@ export type { IdeaFilter } from './idea.ts'
 export type { JournalFilter } from './journal.ts'
 export type { MeetingFilter } from './meeting.ts'
 export type { MessageFilter } from './message.ts'
+export type { NoteFilter } from './note.ts'
 export type { OrgFilter } from './org.ts'
 export type { PersonFilter } from './person.ts'
 export type { PlaceFilter } from './place.ts'
@@ -101,6 +103,7 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
     days: listResolver(day, ctx),
     journals: listResolver(journal, ctx),
     chats: listResolver(chat, ctx),
+    notes: listResolver(note, ctx),
     documents: listResolver(document, ctx),
   }
 }
