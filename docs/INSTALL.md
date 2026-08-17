@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-11
+updated: 2026-08-17
 ---
 
 # Installing Sky
@@ -56,11 +56,15 @@ bun --version
 ## 2. Clone the repo
 
 Any location works — Sky finds its own code directory from the launcher's real path, so
-you are not locked to a particular folder. This guide uses `~/sky`.
+you are not locked to a particular folder. This guide uses `~/sky-app`.
+
+> **Do not clone to `~/sky`.** macOS filesystems are case-insensitive by default, so
+> `~/sky` is the same folder as `~/Sky` — the default notebook directory offered in
+> step 6 — and `sky init` would create your notebook inside the clone.
 
 ```bash
-git clone https://github.com/skywrite/sky.git ~/sky
-cd ~/sky
+git clone https://github.com/skywrite/sky.git ~/sky-app
+cd ~/sky-app
 ```
 
 **Verify:**
@@ -78,8 +82,8 @@ the repo root does **not** install the app; the root is a thin workspace with no
 third-party dependencies.
 
 ```bash
-cd ~/sky/src && bun install --frozen-lockfile
-cd ~/sky     && bun install --frozen-lockfile
+cd ~/sky-app/src && bun install --frozen-lockfile
+cd ~/sky-app     && bun install --frozen-lockfile
 ```
 
 `--frozen-lockfile` installs exactly what `bun.lock` pins and fails rather than rewriting
@@ -89,7 +93,7 @@ sync or a machine move.
 **Verify:**
 
 ```bash
-ls ~/sky/src/node_modules/ai ~/sky/src/node_modules/graphql-yoga
+ls ~/sky-app/src/node_modules/ai ~/sky-app/src/node_modules/graphql-yoga
 ```
 
 **Must print** both paths with no error.
@@ -101,7 +105,7 @@ so a copy elsewhere breaks.
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf ~/sky/bin/sky ~/.local/bin/sky
+ln -sf ~/sky-app/bin/sky ~/.local/bin/sky
 ```
 
 If `~/.local/bin` is not already on your `PATH`, add it (zsh shown):
@@ -125,10 +129,10 @@ step 1. If you get `command not found: sky`, your `PATH` change did not take eff
 Keys live in `src/.env` — never in `~/.sky/config.jsonc`, which is meant to be shareable.
 
 ```bash
-cp ~/sky/src/.env.example ~/sky/src/.env
+cp ~/sky-app/src/.env.example ~/sky-app/src/.env
 ```
 
-Then edit `~/sky/src/.env` and fill in at least one provider:
+Then edit `~/sky-app/src/.env` and fill in at least one provider:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
@@ -236,8 +240,8 @@ for todos, reminders and checkboxes; and AI summarize commands. It runs unbundle
 from TypeScript, so there is no build step.
 
 ```bash
-ln -s ~/sky/extensions/vscode ~/.vscode/extensions/sky-ext
-cd ~/sky/extensions/vscode && npm install
+ln -s ~/sky-app/extensions/vscode ~/.vscode/extensions/sky-ext
+cd ~/sky-app/extensions/vscode && npm install
 ```
 
 Then **fully restart** VS Code — a window reload is not enough, because the extension
@@ -252,7 +256,7 @@ scanner only reads the folder at startup. Details and troubleshooting in
 |---|---|---|
 | `command not found: sky` | `~/.local/bin` not on `PATH` | Re-do step 4, open a new shell |
 | `bun could not be found. Exiting.` | Bun missing or not on `PATH` | Step 1; check `~/.bun/bin` is on `PATH` |
-| `Cannot find module 'ai'` / missing deps at runtime | Only the root install ran | `cd ~/sky/src && bun install --frozen-lockfile` |
+| `Cannot find module 'ai'` / missing deps at runtime | Only the root install ran | `cd ~/sky-app/src && bun install --frozen-lockfile` |
 | A command isn't found but the file exists | Stale command manifest | `sky cli:commands --rebuild` |
 | `sky` runs but writes to the wrong folder | `SKY_DIR` env var overriding config | `echo $SKY_DIR` — unset it, or fix `dir` in the config |
 | Service shows `loaded: false`, no logs | An un-rendered plist got installed | `sky init` again, or re-render; never symlink the template |
@@ -261,7 +265,7 @@ scanner only reads the folder at startup. Details and troubleshooting in
 ## Updating
 
 ```bash
-cd ~/sky && git pull
+cd ~/sky-app && git pull
 cd src && bun install --frozen-lockfile
 sky cli:commands --rebuild
 sky services sky-service --restart   # only if you run the service
@@ -277,7 +281,7 @@ sky services sky-service --stop && sky services sky-service --unload
 rm ~/Library/LaunchAgents/local.sky-service.plist
 rm ~/.local/bin/sky
 rm -rf ~/.sky
-rm -rf ~/sky
+rm -rf ~/sky-app
 ```
 
 Your notebook (`~/Sky`) and data (`~/Sky-Data`) are left alone — they are just markdown
