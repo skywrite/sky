@@ -25,8 +25,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 interface JournalFile {
   fileName: string
-  prefix: string
-  typeSlug: string
+  baseName: string
   content: string
 }
 
@@ -60,14 +59,11 @@ export default class JournalRenameTask extends Command {
       const content = await readTextFile(path.join(journalDir, entry.name))
       const doc = JournalDocument.fromMarkdown(content)
       if (doc.yaml['summary']) continue // already renamed
-      if (doc.questions.length === 0 || doc.questions.every((q) => !q.answer.trim())) continue
-
-      const parts = entry.name.replace('.md', '').split('_')
+      if (!hasBody(doc)) continue // empty or unanswered questionnaire — nothing to summarize
 
       journals.push({
         fileName: entry.name,
-        prefix: parts[0],
-        typeSlug: parts[1],
+        baseName: entry.name.replace('.md', ''),
         content,
       })
     }
@@ -90,7 +86,7 @@ export default class JournalRenameTask extends Command {
       if (!journal) continue
 
       const slug = slugify(summary, { preserveCase: true })
-      const newName = `${journal.prefix}_${journal.typeSlug}_${slug}.md`
+      const newName = `${journal.baseName}_${slug}.md`
 
       if (dryRun) {
         output.log(`  ${fileName} -> ${newName}`)
@@ -107,6 +103,14 @@ export default class JournalRenameTask extends Command {
 
     return CommandResult.success()
   }
+}
+
+/** Any non-heading text counts as content — prose entries and answered questions alike. */
+function hasBody(doc: JournalDocument): boolean {
+  return doc.markdown
+    .split('\n')
+    .filter((line) => !/^#{1,6}\s/.test(line.trim()))
+    .some((line) => line.trim() !== '')
 }
 
 function buildPrompt(journals: JournalFile[]): string {
