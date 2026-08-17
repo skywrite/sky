@@ -55,6 +55,15 @@ const ROWS: CorpusRows = {
       path: '/nb/time/2026/01/09/actions/ai-chats/c.md',
     },
   ],
+  notes: [
+    {
+      date: '2026-01-10',
+      summary: 'Whiteboard sketch of the rollout',
+      tags: ['Work/Eng'],
+      rel: ['projects/Atlas-Rollout'],
+      path: '/nb/time/2026/01/10/actions/notes/n.md',
+    },
+  ],
 }
 
 test('corpusMediumOf folds message platforms into slack, email, and message', () => {
@@ -114,6 +123,24 @@ test('recordsFromRows maps chats without a conversation identity', () => {
     expected: 'Atlas rollout brainstorm',
   })
   assert({ given: 'a chat row', should: 'keep tags', actual: records[0]?.tags, expected: ['Work/Eng'] })
+})
+
+test('recordsFromRows maps notes without a conversation identity', () => {
+  const records = recordsFromRows(ROWS, ['note'])
+  assert({
+    given: 'note requested from mixed rows',
+    should: 'keep only the note record',
+    actual: records.map((r) => r.medium),
+    expected: ['note'],
+  })
+  assert({ given: 'a note row', should: 'have no conversation identity', actual: records[0]?.to, expected: undefined })
+  assert({
+    given: 'a note row',
+    should: 'keep its summary',
+    actual: records[0]?.summary,
+    expected: 'Whiteboard sketch of the rollout',
+  })
+  assert({ given: 'a note row', should: 'keep rel', actual: records[0]?.rel, expected: ['projects/Atlas-Rollout'] })
 })
 
 test('recordsFromRows falls back to from when to is absent', () => {

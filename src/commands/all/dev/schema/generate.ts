@@ -286,6 +286,20 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
       path: { type: 'String!', description: 'File path' },
     },
   },
+  Note: {
+    description: 'Free-form note capture (text, voice memo, whiteboard photo)',
+    fields: {
+      date: { type: 'String!', description: 'Date (YYYY-MM-DD)' },
+      day: { type: 'Day', description: 'The day this note was taken on', nullable: true },
+      when: { type: 'String', description: 'Time (HH:MM)', nullable: true },
+      summary: { type: 'String', description: 'Note header/summary', nullable: true },
+      context: { type: 'String', description: 'Context or purpose', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
 }
 
 // Auxiliary types (nested objects)
@@ -564,6 +578,24 @@ const FILTER_TYPES: Record<string, FilterDef> = {
     },
   },
   ChatFilter: {
+    fields: {
+      date: 'String',
+      dateGte: 'String',
+      dateLte: 'String',
+      recent: 'String',
+      summaryContains: 'String',
+      tagsContains: 'String',
+      tagsContainsAny: '[String!]',
+      tagsContainsAll: '[String!]',
+      tagsStartsWith: 'String',
+      bodyContains: 'String',
+      involves: 'String',
+      involvesAny: '[String!]',
+      involvesAll: '[String!]',
+      relContains: 'String',
+    },
+  },
+  NoteFilter: {
     fields: {
       date: 'String',
       dateGte: 'String',

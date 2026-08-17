@@ -11,9 +11,9 @@ export type MessageRecord = {
   path: string
   /** YYYY-MM-DD — corpus slicing compares these strings */
   date: string
-  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat */
+  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat | note */
   medium: string
-  /** Conversation identity: `to:` (meetings: `who:`), else `from` (DMs captured from-only); unset for journals and chats */
+  /** Conversation identity: `to:` (meetings: `who:`), else `from` (DMs captured from-only); unset for journals, chats and notes */
   to?: string
   from?: string
   summary?: string
@@ -63,11 +63,20 @@ export type ChatRow = {
   path: string
   markdown?: string
 }
+export type NoteRow = {
+  date: string
+  summary?: string | null
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
 export type CorpusRows = {
   messages?: MessageRow[]
   meetings?: MeetingRow[]
   journals?: JournalRow[]
   chats?: ChatRow[]
+  notes?: NoteRow[]
 }
 
 /** Message-domain platforms fold into three corpus mediums: slack, email, and message (all others). */
@@ -137,6 +146,19 @@ export function recordsFromRows(rows: CorpusRows, mediums: string[]): MessageRec
       })
     }
   }
+  if (wanted.has('note')) {
+    for (const row of rows.notes ?? []) {
+      records.push({
+        path: row.path,
+        date: row.date,
+        medium: 'note',
+        summary: str(row.summary),
+        tags: row.tags,
+        rel: row.rel,
+        body: row.markdown ?? '',
+      })
+    }
+  }
 
   records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.path < b.path ? -1 : 1))
   return records
@@ -154,7 +176,7 @@ export type LoadCorpusOptions = {
 
 /**
  * Load corpus records of the given mediums from the service:
- * slack | email | message (any other message platform) | meeting | journal | chat.
+ * slack | email | message (any other message platform) | meeting | journal | chat | note.
  * Derived fresh on every call — the store follows the notebook files, so
  * landing in a file IS joining the corpus, with no separate state to maintain.
  */
@@ -173,6 +195,9 @@ export async function loadMessageCorpus(mediums: string[], opts: LoadCorpusOptio
   }
   if (wanted.has('chat')) {
     parts.push(`chats(limit: ${QUERY_LIMIT}) { date summary tags rel path${body} }`)
+  }
+  if (wanted.has('note')) {
+    parts.push(`notes(limit: ${QUERY_LIMIT}) { date summary tags rel path${body} }`)
   }
   if (parts.length === 0) return { records: [] }
 

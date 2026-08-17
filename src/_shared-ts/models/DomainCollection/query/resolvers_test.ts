@@ -207,6 +207,40 @@ Here are three angles to consider.`),
     },
   ]
 
+  const notesData = [
+    {
+      doc: Document.fromMarkdown(`---
+summary: Payment flow sketch
+when: 14:30
+type: Notes
+context:
+rel:
+  - projects/Beacon-Redesign
+tags: Sample/Captures
+---
+
+# Payment flow sketch
+
+Sketched the checkout flow on the whiteboard.`),
+      path: '/test/time/2026/02/02-08/02-04/actions/notes/payment-flow-sketch.md',
+    },
+    {
+      doc: Document.fromMarkdown(`---
+summary: Onboarding thoughts
+when: 09:00
+type: Notes
+context:
+rel:
+tags:
+---
+
+# Onboarding thoughts
+
+Rough notes on the signup funnel.`),
+      path: '/test/time/2026/01/26-01/01-29/actions/notes/onboarding-thoughts.md',
+    },
+  ]
+
   const placesData = [
     {
       doc: Document.fromMarkdown(`---
@@ -264,7 +298,7 @@ GTM launch checklist.`),
     streaks: createMockCollection([]),
     ideas: createMockCollection(ideasData),
     places: createMockCollection(placesData),
-    time: createMockCollection([...meetingsData, ...messagesData, ...chatsData]),
+    time: createMockCollection([...meetingsData, ...messagesData, ...chatsData, ...notesData]),
     library: createMockCollection([]),
   } as unknown as MarkdownStore
 }
@@ -808,6 +842,61 @@ test('resolvers - chats filters by hierarchical tagsStartsWith', () => {
     should: 'parse both tags',
     actual: result[0]?.tags,
     expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
+  })
+})
+
+test('resolvers - notes returns only type: Notes documents, newest first', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.notes({})
+
+  assert({
+    given: 'a time store mixing notes with meetings, messages and chats',
+    should: 'return the two notes, newest first',
+    actual: result.map((n) => n.summary),
+    expected: ['Payment flow sketch', 'Onboarding thoughts'],
+  })
+
+  assert({
+    given: 'the notes root field',
+    should: 'only include documents declaring type: Notes',
+    actual: result.every((n) => n.path.includes('/notes/')),
+    expected: true,
+  })
+})
+
+test('resolvers - notes maps fields correctly', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.notes({ where: { summaryContains: 'payment' } })
+
+  assert({
+    given: 'a summaryContains filter',
+    should: 'return the matching note',
+    actual: result.length,
+    expected: 1,
+  })
+
+  const note = result[0]
+  assert({ given: 'a note row', should: 'read when as a bare time', actual: note?.when, expected: '14:30' })
+  assert({ given: 'a note row', should: 'derive date from the day path', actual: note?.date, expected: '2026-02-04' })
+  assert({ given: 'a note row', should: 'keep tags', actual: note?.tags, expected: ['Sample/Captures'] })
+  assert({ given: 'a note row', should: 'keep rel', actual: note?.rel, expected: ['projects/Beacon-Redesign'] })
+})
+
+test('resolvers - notes filters by tagsContains', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const result = resolvers.notes({ where: { tagsContains: 'Sample/Captures' } })
+
+  assert({
+    given: 'a tagsContains filter',
+    should: 'return only the tagged note',
+    actual: result.map((n) => n.summary),
+    expected: ['Payment flow sketch'],
   })
 })
 
