@@ -135,6 +135,9 @@ export async function launchGoogleBrowser(
       headless: options.headless ?? false,
       viewport: { width: 1440, height: 900 },
       timeout: LAUNCH_TIMEOUT_MS,
+      // Playwright defaults the Chromium sandbox OFF (--no-sandbox); this
+      // profile renders third-party-shared docs, so keep the sandbox up.
+      chromiumSandbox: true,
     })
   let context: BrowserContext
   try {
