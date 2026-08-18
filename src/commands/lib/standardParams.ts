@@ -47,6 +47,18 @@ export function dayArg() {
   })
 }
 
+/**
+ * Day positional arg that rejects future dates. Defaults to yesterday —
+ * for retrospective commands (recaps) whose subject is a completed day,
+ * so a bare run gives the same answer no matter when it's typed.
+ */
+export function dayYesterdayArg() {
+  return Arg.plainDate('Day (e.g., 27, 8-27, 2025-08-27; default: yesterday)', {
+    parse: (input: string) => parsePartialDate(input, { rejectFuture: true }),
+    default: () => new PlainDate().addDays(-1),
+  })
+}
+
 // -----------------------------------------------------------------------------
 // Day Flags (named)
 // -----------------------------------------------------------------------------

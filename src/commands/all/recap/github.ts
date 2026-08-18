@@ -1,4 +1,4 @@
-import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
+import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { isCommandAvailable } from '#lib/sys/command.ts'
@@ -15,7 +15,7 @@ const APP = 'github'
 const WAKE_LOOKBACK_MS = 12 * 3_600_000
 
 const params = {
-  day: dayNoFutureArg(),
+  day: dayYesterdayArg(),
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
   open: Flag.bool('Open the recap in the editor after writing', { short: 'o', default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
@@ -39,10 +39,11 @@ export default class RecapGithubTask extends Command {
       'commits (authored times), PRs opened/merged, reviews and issue activity,',
       'linking back to the substance on GitHub.',
       '',
-      'Uses the gh CLI for auth and API access. Re-running replaces the recap.',
+      'Uses the gh CLI for auth and API access. The day defaults to yesterday',
+      'so a bare run always covers a completed day. Re-running replaces the recap.',
     ],
     usage: [
-      'sky recap:github              # Recap today',
+      'sky recap:github              # Recap yesterday',
       'sky recap:github 2026-02-08   # Recap a specific day',
       'sky recap:github --dry-run    # Render without writing',
     ],

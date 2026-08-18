@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
+import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_HOME } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -22,7 +22,7 @@ const WAKE_LOOKBACK_MS = 12 * 3_600_000
 const DEFAULT_DIGEST_PROFILE = 'default-haiku-4.5'
 
 const params = {
-  day: dayNoFutureArg(),
+  day: dayYesterdayArg(),
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
   open: Flag.bool('Open the recap in the editor after writing', { short: 'o', default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
@@ -56,10 +56,11 @@ export default class RecapClaudeCodeTask extends Command {
       '(work dirs, commits, commands) when AI is skipped or fails.',
       '',
       'The recap is evidence for summary:day — engagement as counts and spans,',
-      'never an hours-worked figure. Re-running replaces the recap for the day.',
+      'never an hours-worked figure. The day defaults to yesterday so a bare',
+      'run always covers a completed day. Re-running replaces the recap.',
     ],
     usage: [
-      'sky recap:claude-code              # Recap today',
+      'sky recap:claude-code              # Recap yesterday',
       'sky recap:claude-code 2026-02-08   # Recap a specific day',
       'sky recap:claude-code --dry-run    # Render without writing',
       'sky recap:claude-code --no-ai      # Mechanical trail only',

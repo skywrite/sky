@@ -18,6 +18,7 @@ export {
   dayFlag,
   dayNoFutureArg,
   dayNoFutureFlag,
+  dayYesterdayArg,
   dryRun,
   when,
   whenNBTime,
