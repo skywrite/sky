@@ -1,116 +1,106 @@
+/**
+ * Context for mi:new --ai suggestions.
+ *
+ * One rule, no scoring — the MI twin of journal:new's gather:
+ *
+ * PINNED (always included):
+ *   - goals, pending decisions, the current week's week.md (the plan)
+ * PER DAY, last 7 days incl. today:
+ *   - most-important files (what was committed, and whether it completed)
+ *   - journal entries (stated intent, distinct from what happened)
+ *   - summary.md if it has content, else day.md (today always rides as
+ *     day.md — the schedule/reminder/todo ledger the MI must fit around)
+ *
+ * Message, meeting, chat, and library documents never ride raw: a summarized
+ * day narrates them, and day.md's ledger already records captures and
+ * meetings one line each. Health tracking and streaks are deliberately
+ * absent — routine maintenance is not MI material, and anything urgent
+ * surfaces through journals and day files. Deterministic direct-path reads —
+ * no store build, no query, no scorer. Tokens are estimated only to warn on
+ * runaway size.
+ */
 import * as path from 'node:path'
+import {
+  type ContextSection,
+  formatSections,
+  readDayJournals,
+  readDayMostImportant,
+  readDayNarration,
+  readGoals,
+  readPendingDecisions,
+  tryRead,
+} from '#commands/lib/notebookContext.ts'
 import { DIR_BASE, DIR_TIME } from '#config'
-import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
-import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createJournalScorer, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
-import DomainCollection from '#shared/models/DomainCollection/mod.ts'
-import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
-import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
+import { weekDir } from '#shared/nbfs/mod.ts'
+import { type PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
-/** Token budget for MI context assembly. Goals/decisions are pinned and always
- * kept; day files compete for the remaining budget. */
-const MAX_TOKENS = 300_000
+/** Trailing window (incl. today) whose journals, MIs, and narration ride. */
+const LOOKBACK_DAYS = 7
+/** Estimated size above which mi:new warns — the gather itself never caps. */
+export const CONTEXT_TOKENS_TRIPWIRE = 100_000
 
 export interface MIContext {
+  /** Assembled context markdown, one `<<< titled >>>` section per document */
   contextMarkdown: string
   today: {
     date: string
     dayOfWeek: string
+    /** HH:MM time string (may have extended hours like "25:30") */
+    time?: string
+    /** "morning", "afternoon", or "evening" */
+    timeOfDay?: string
   }
   documentCount: number
-  prunedCount: number
+  /** Estimated tokens of the assembled context. */
   totalTokens: number
 }
 
-const EXTRA_QUERY = `{
-  decisions(where: { pending: true }) { path }
-  goals { path }
-}`
+function getTimeOfDay(time: string): string {
+  const hour = parseInt(time.split(':')[0], 10)
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'afternoon'
+  return 'evening'
+}
 
-/**
- * Gather context for AI-powered MI suggestions.
- *
- * Day files: last 5 days (all markdown including journals).
- * Plus pending decisions and all goals via GraphQL (pinned — never pruned).
- * Full store scope for relationship traversal.
- */
-export async function gatherContext(today: PlainDate): Promise<MIContext> {
-  const store = await MarkdownStore.buildFromAll()
+function relToBase(filePath: string): string {
+  return filePath.startsWith(DIR_BASE) ? filePath.slice(DIR_BASE.length + 1) : filePath
+}
 
-  const dayPaths = await gatherDayFiles(today)
-  const extraPaths = await gatherExtraPaths(store)
-
-  const allPaths = new Set([...dayPaths, ...extraPaths])
-  const docs: Array<{ doc: Document; path: string }> = []
-  for (const filePath of allPaths) {
-    try {
-      const content = await readTextFile(filePath)
-      if (content.length < 50) continue
-      const doc = Document.fromMarkdown(content)
-        .stripHtmlComments()
-        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-      docs.push({ doc, path: filePath })
-    } catch {
-      /* skip unreadable files */
-    }
+export async function gatherContext(today: PlainDate, time?: string): Promise<MIContext> {
+  const sections: ContextSection[] = []
+  const add = (title: string, body: string | undefined) => {
+    if (body?.trim()) sections.push({ title, body: body.trim() })
   }
 
-  const collection = DomainCollection.fromDocuments(docs, store, { depth: 1 })
+  // Pinned: the anchors every run sees, independent of recency.
+  for (const goal of await readGoals()) add(relToBase(goal.path), goal.body)
+  for (const decision of await readPendingDecisions()) add(relToBase(decision.path), decision.body)
 
-  // Pin goals + pending decisions so they're never pruned
-  const pinnedPaths = new Set(extraPaths)
-  const scorer = withPinnedPaths(createJournalScorer(today), pinnedPaths)
-  const assembler = ContextAssembler.from(collection, { scorer, maxTokens: MAX_TOKENS })
+  const week = Week.of(today)
+  add(`This week's plan (${week.toString()})`, await tryRead(path.join(DIR_TIME, weekDir(week.startInYear), 'week.md')))
 
-  const contextMarkdown = assembler.toMarkdown({ relativeTo: DIR_BASE, delimited: true })
+  // Days, oldest first, so the freshest material sits nearest the ask.
+  for (let i = LOOKBACK_DAYS - 1; i >= 0; i--) {
+    const day = today.addDays(-i)
+    const label = i === 0 ? `${day.ymd} ${day.dayShort} (today)` : `${day.ymd} ${day.dayShort}`
+
+    for (const file of await readDayJournals(day)) add(`${label} — journal/${file.name}`, file.body)
+    for (const file of await readDayMostImportant(day)) add(`${label} — most important: ${file.name}`, file.body)
+    const narration = await readDayNarration(day)
+    if (narration) add(`${label} — ${narration.kind === 'summary' ? 'summary' : 'day.md (no summary)'}`, narration.body)
+  }
+
+  const contextMarkdown = formatSections(sections)
 
   return {
     contextMarkdown,
     today: {
       date: today.ymd,
       dayOfWeek: today.dayLong,
+      ...(time ? { time, timeOfDay: getTimeOfDay(time) } : {}),
     },
-    documentCount: assembler.size,
-    prunedCount: assembler.pruned.length,
-    totalTokens: assembler.totalTokens,
+    documentCount: sections.length,
+    totalTokens: estimateTokens(contextMarkdown),
   }
-}
-
-/**
- * Last 5 days of day files — all markdown files including journals.
- */
-async function gatherDayFiles(today: PlainDate): Promise<string[]> {
-  const paths: string[] = []
-
-  for (let i = 0; i < 5; i++) {
-    const date = today.addDays(-i)
-    const relDir = dayDir(date)
-    const fullDir = path.join(DIR_TIME, relDir)
-
-    if (!(await exists(fullDir))) continue
-
-    for await (const entry of walk(fullDir, { exts: ['.md'] })) {
-      paths.push(entry.path)
-    }
-  }
-
-  return paths
-}
-
-async function gatherExtraPaths(store: MarkdownStore): Promise<string[]> {
-  const result = await executeQuery<Record<string, Array<{ path: string }>>>(EXTRA_QUERY, store)
-  const paths: string[] = []
-  if (result.data) {
-    for (const entries of Object.values(result.data)) {
-      if (Array.isArray(entries)) {
-        for (const entry of entries) {
-          if (entry.path) paths.push(entry.path)
-        }
-      }
-    }
-  }
-  return paths
 }

@@ -10,7 +10,7 @@ import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { gatherContext } from './gatherContext.ts'
+import { CONTEXT_TOKENS_TRIPWIRE, gatherContext } from './gatherContext.ts'
 
 const PROMPT_FILE = new URL('../prompts/suggest-mi.prompt.md', import.meta.url).pathname
 const PROMPT_CLARIFY = new URL('../prompts/mi-clarifier.prompt.md', import.meta.url).pathname
@@ -26,6 +26,8 @@ export interface SuggestResult {
 interface SuggestOptions {
   context: CommandContext
   today: PlainDate
+  /** HH:MM run time, so suggestions respect the remaining day */
+  time?: string
   dryRun?: boolean
   inspect?: boolean
   depend?: boolean
@@ -312,27 +314,29 @@ function fallbackBody(statement: string, answers: QAAnswers, today: PlainDate): 
 // ---------------------------------------------------------------------------
 
 /**
- * Gather context using DomainCollection and use AI to suggest the most important thing.
+ * Gather notebook context (direct reads — goals, pending decisions, week plan,
+ * last 7 days) and use AI to suggest the most important thing.
  * Three-phase flow: (1) suggest/pick/write, (2) AI clarification, (3) Q&A + synthesis.
  */
 export async function suggestMostImportant(opts: SuggestOptions): Promise<SuggestResult> {
-  const { context, today, dryRun, inspect, depend } = opts
+  const { context, today, time, dryRun, inspect, depend } = opts
   const { output } = context
   const empty: SuggestResult = { summary: '', markdown: '' }
 
-  // 1. Gather context (5-day lookback, full store, pending decisions + goals)
+  // 1. Gather context (goals, pending decisions, week plan, last 7 days)
   output.log('Gathering context...')
-  const miContext = await gatherContext(today)
+  const miContext = await gatherContext(today, time)
 
   if (miContext.documentCount === 0) {
     return { summary: 'No documents found - start your day first', markdown: '' }
   }
 
-  output.log(
-    `Loaded ${miContext.documentCount} documents (~${Math.round(miContext.totalTokens / 1000)}k tokens` +
-      (miContext.prunedCount > 0 ? `, ${miContext.prunedCount} pruned` : '') +
-      ')',
-  )
+  output.log(`Loaded ${miContext.documentCount} documents (~${Math.round(miContext.totalTokens / 1000)}k tokens)`)
+  if (miContext.totalTokens > CONTEXT_TOKENS_TRIPWIRE) {
+    output.log(
+      `WARN: context is unusually large (>${CONTEXT_TOKENS_TRIPWIRE} estimated tokens) — check the day window for oversized files`,
+    )
+  }
 
   // 2. Load and render prompt template
   output.log('Generating suggestions...')
@@ -343,6 +347,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
     },
     user: {
       dayOfWeek: miContext.today.dayOfWeek,
+      ...(miContext.today.time ? { time: miContext.today.time, timeOfDay: miContext.today.timeOfDay } : {}),
       dayContext: miContext.contextMarkdown,
     },
   })

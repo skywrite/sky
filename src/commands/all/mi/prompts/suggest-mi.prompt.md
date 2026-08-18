@@ -2,11 +2,11 @@
 name: suggest-mi
 schema: 0.2.0
 created: 2026-01-26
-updated: 2026-08-16
+updated: 2026-08-17
 description: Suggest 3 specific, actionable Most Important items based on day context
 ---
 
-Today is {{context.notebookDate}} ({{user.dayOfWeek}}).
+Today is {{context.notebookDate}} ({{user.dayOfWeek}}).{{#if user.time}} Current time: {{user.time}} ({{user.timeOfDay}}) — suggest only what can still be completed in the remaining day.{{/if}}
 
 You are advising {{me.fullName}}, {{me.title}} of {{me.company}} ({{me.companyDescription}}).
 
@@ -47,7 +47,9 @@ A good Most Important item is:
 - Health deadlines (insurance, prescription refills)
 - Health issues actively blocking work or life
 
-## Context (Last 5 Days)
+## Context
+
+Goals, pending decisions, this week's plan, and the last 7 days: journal entries, most-important files (with completion state), and a daily summary per day (today appears as its raw day ledger — schedule, reminders, todos).
 
 {{user.dayContext}}
 

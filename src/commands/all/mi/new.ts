@@ -67,6 +67,7 @@ export default class MiNewTask extends Command {
       const aiResult = await suggestMostImportant({
         context,
         today: whenDay,
+        time: when.time,
         dryRun,
         inspect,
         depend,
