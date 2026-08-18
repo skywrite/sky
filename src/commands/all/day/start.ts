@@ -3,7 +3,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { PORT_SERVER, DAY_START_COMMANDS } from '#config'
 import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import dayFileExists from './_dayFileExists.ts'
 
 interface UpdateStartOptions {
   tz?: string
@@ -86,6 +87,14 @@ export default class DayStartTask extends Command {
 
     // Yesterday's meetings, checked before today starts: amending is cheapest now
     await tasks.run('day:meeting:check', { day: (day ?? new PlainDate()).addDays(-1) })
+
+    // A fresh notebook has no week directories yet — create the target week
+    // so the day file exists before anything below reads or updates it
+    const targetDate = day ?? (tz ? new PlainDate(ZonedDateTime.now().inTimeZone(tz).date) : new PlainDate())
+    if (!(await dayFileExists(targetDate))) {
+      const weekResult = await tasks.run('week:new', { when: new PlainDateTime(targetDate) })
+      if (!weekResult.ok) return weekResult
+    }
 
     // Run configurable startup commands in parallel (day.start in config)
     const startResults = await Promise.allSettled(
