@@ -9,7 +9,9 @@
  * And they misplace filter keys in field-argument position
  * (`journals(recent: "7d")`, `documents(where: {...}, involves: "X")`) —
  * parses fine, but validation rejects the whole document ("Unknown
- * argument"). Normalize before execution.
+ * argument"). And they select `when` bare — it was a scalar until the When
+ * value type shipped — which validation rejects ("must have a selection of
+ * subfields"). Normalize before execution.
  */
 
 import type {
@@ -245,6 +247,59 @@ function autoAliasConflictingFields(query: string): string {
   })
 
   return changed ? print(rewritten) : query
+}
+
+/**
+ * Object-typed fields models habitually select bare, and the subselection
+ * that repairs them. `when` was a scalar string until the When value type
+ * shipped; models still write `messages { when }` and one such selection
+ * voids the whole document. A bare `when` always meant the datetime.
+ */
+const DEFAULT_SUBFIELDS: Record<string, readonly string[]> = {
+  When: ['datetime'],
+}
+
+/**
+ * Expand object-typed fields selected with no subselection into their
+ * default subselection (`when` → `when { datetime }`).
+ *
+ * Driven by the validator's own errors rather than field names: only nodes
+ * the schema flags with "must have a selection of subfields", and only when
+ * the field's type has an entry in DEFAULT_SUBFIELDS. Same-named scalar
+ * fields (Chat.when is a plain string) validate clean and are never
+ * touched, and composite types outside the table keep their error for the
+ * model-repair round — this repair fires only where the fix is mechanical.
+ * Unparseable input is returned as-is for graphQLParseError to report.
+ */
+export async function expandMissingSubfields(query: string): Promise<string> {
+  let doc: DocumentNode
+  try {
+    doc = parse(query)
+  } catch {
+    return query
+  }
+
+  const targets = new Map<FieldNode, readonly string[]>()
+  for (const error of validate(await getSchema(), doc)) {
+    const type = /^Field "[^"]+" of type "([^"]+)" must have a selection of subfields/.exec(error.message)?.[1]
+    const subfields = type && DEFAULT_SUBFIELDS[type.replace(/[[\]!]/g, '')]
+    const node = error.nodes?.[0]
+    if (subfields && node?.kind === Kind.FIELD) targets.set(node, subfields)
+  }
+  if (targets.size === 0) return query
+
+  return print(
+    visit(doc, {
+      Field(node) {
+        const subfields = targets.get(node)
+        if (!subfields) return undefined
+        const selections = subfields.map(
+          (name): FieldNode => ({ kind: Kind.FIELD, name: { kind: Kind.NAME, value: name } }),
+        )
+        return { ...node, selectionSet: { kind: Kind.SELECTION_SET, selections } } as FieldNode
+      },
+    }),
+  )
 }
 
 /**

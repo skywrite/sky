@@ -1,6 +1,7 @@
 import { assert, test } from '#test'
 import {
   dropInvalidSelections,
+  expandMissingSubfields,
   graphQLParseError,
   graphQLValidationErrors,
   normalizeGraphQLQuery,
@@ -366,6 +367,80 @@ test('graphQLValidationErrors', async (t) => {
       should: 'return the syntax error as the message list',
       actual: (errors?.[0] ?? '').startsWith('Syntax Error'),
       expected: true,
+    })
+  })
+})
+
+test('expandMissingSubfields', async (t) => {
+  await t.step('expands a bare when into its datetime subselection', async () => {
+    // The recurring live defect: models treat `when` as the scalar it used
+    // to be, and one bare selection voids the whole context query.
+    const query = '{ messages(where: { involvesAll: ["A", "B"] }, limit: 20) { from to when date summary path } }'
+    const expanded = await expandMissingSubfields(query)
+    assert({
+      given: 'a message query selecting when with no subfields',
+      should: 'select when { datetime }',
+      actual: /when\s*\{\s*datetime\s*\}/.test(expanded),
+      expected: true,
+    })
+    assert({
+      given: 'the expanded query',
+      should: 'validate clean',
+      actual: await graphQLValidationErrors(expanded),
+      expected: null,
+    })
+  })
+
+  await t.step('expands every flagged occurrence across selections', async () => {
+    const query = '{ meetings(limit: 5) { when path } messages(limit: 5) { when path } }'
+    assert({
+      given: 'bare when on two selections',
+      should: 'validate clean after expansion',
+      actual: await graphQLValidationErrors(await expandMissingSubfields(query)),
+      expected: null,
+    })
+  })
+
+  await t.step('leaves the scalar Chat.when untouched', async () => {
+    // Chat.when is a plain string — a bare selection is already valid, and
+    // the error-driven rewrite must never reach it.
+    const query = '{ chats(limit: 1) { when path } }'
+    assert({
+      given: 'a query selecting the scalar when on chats',
+      should: 'return it byte-identical',
+      actual: await expandMissingSubfields(query),
+      expected: query,
+    })
+  })
+
+  await t.step('leaves composite types outside the table for the repair round', async () => {
+    // Chat.day is an object type with no default subselection — guessing
+    // one is the model's job, not this repair's.
+    const query = '{ chats(limit: 1) { day } }'
+    assert({
+      given: 'a bare selection of an object type not in the table',
+      should: 'return it unchanged, still invalid',
+      actual: await expandMissingSubfields(query),
+      expected: query,
+    })
+  })
+
+  await t.step('leaves an explicit when subselection untouched', async () => {
+    const query = '{ meetings(limit: 1) { when { datetime end } path } }'
+    assert({
+      given: 'a query already selecting when subfields',
+      should: 'return it byte-identical',
+      actual: await expandMissingSubfields(query),
+      expected: query,
+    })
+  })
+
+  await t.step('returns unparseable input as-is', async () => {
+    assert({
+      given: 'a non-GraphQL string',
+      should: 'return it unchanged for graphQLParseError to report',
+      actual: await expandMissingSubfields('{\nchanged:true}\n}'),
+      expected: '{\nchanged:true}\n}',
     })
   })
 })

@@ -19,6 +19,7 @@ import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import {
   dropInvalidSelections,
+  expandMissingSubfields,
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
@@ -156,8 +157,12 @@ export default class AIContextEvolveTask extends Command {
 
     // The model sometimes returns bare selections (`meetings(...) { ... }`)
     // without the enclosing braces, which fail to parse downstream. Normalize
-    // wraps those; empties are dropped rather than executed as parse errors.
-    const normalized = object.queries.map(normalizeGraphQLQuery).filter((q) => q !== '')
+    // wraps those and expands bare object-typed fields (`when` →
+    // `when { datetime }`); empties are dropped rather than executed as
+    // parse errors.
+    const normalized = (
+      await Promise.all(object.queries.map((q) => expandMissingSubfields(normalizeGraphQLQuery(q))))
+    ).filter((q) => q !== '')
 
     // Normalization only fixes shape and repairable defects — the model
     // occasionally leaks fragments of its own structured-output envelope
@@ -197,7 +202,7 @@ ${validationErrors.map((e) => `- ${e}`).join('\n')}
 Fix the query so it validates against the schema. Return ONLY the corrected GraphQL query.`,
         })
 
-        q = normalizeGraphQLQuery(repair.text)
+        q = await expandMissingSubfields(normalizeGraphQLQuery(repair.text))
         validationErrors = await graphQLValidationErrors(q)
       }
 

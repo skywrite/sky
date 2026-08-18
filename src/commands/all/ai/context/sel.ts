@@ -15,6 +15,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import {
   dropInvalidSelections,
+  expandMissingSubfields,
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
@@ -141,8 +142,9 @@ Write the GraphQL query to gather context for answering this question.`
       prompt: userPrompt,
     })
 
-    // Strip code fences and wrap bare selections so the query always parses
-    let query = normalizeGraphQLQuery(result.text)
+    // Strip code fences and wrap bare selections so the query always parses,
+    // then expand bare object-typed fields (`when` → `when { datetime }`)
+    let query = await expandMissingSubfields(normalizeGraphQLQuery(result.text))
 
     // Normalization repairs shape, not meaning — the model occasionally
     // hallucinates filter fields or argument placement the schema rejects,
@@ -178,7 +180,7 @@ ${validationErrors.map((e) => `- ${e}`).join('\n')}
 Fix the query so it validates against the schema. Return ONLY the corrected GraphQL query.`,
       })
 
-      query = normalizeGraphQLQuery(repair.text)
+      query = await expandMissingSubfields(normalizeGraphQLQuery(repair.text))
       validationErrors = await graphQLValidationErrors(query)
     }
 
