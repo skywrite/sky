@@ -86,7 +86,12 @@ export default class IdeasClarifyTask extends Command {
     const { statement, conversation } = args
 
     const baseDir = config.DIR_BASE as string
-    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, statement)
+    const { notebookContext, relCandidates } = await gatherNotebookContext(
+      tasks,
+      baseDir,
+      statement,
+      context.notebookNow.plainDateTime.plainDate,
+    )
 
     try {
       const draft = await runPromptJson({

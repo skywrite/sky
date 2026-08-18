@@ -98,7 +98,12 @@ export default class StreaksClarifyTask extends Command {
     const { habit, details, schedule, start, conversation } = args
 
     const baseDir = config.DIR_BASE as string
-    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, habit)
+    const { notebookContext, relCandidates } = await gatherNotebookContext(
+      tasks,
+      baseDir,
+      habit,
+      context.notebookNow.plainDateTime.plainDate,
+    )
 
     try {
       const now = await fetchNow()

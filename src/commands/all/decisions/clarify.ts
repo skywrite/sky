@@ -98,7 +98,12 @@ export default class DecisionsClarifyTask extends Command {
     const { statement, outcomes, timeframe, conversation } = args
 
     const baseDir = config.DIR_BASE as string
-    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, statement)
+    const { notebookContext, relCandidates } = await gatherNotebookContext(
+      tasks,
+      baseDir,
+      statement,
+      context.notebookNow.plainDateTime.plainDate,
+    )
 
     try {
       const now = await fetchNow()

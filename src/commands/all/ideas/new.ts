@@ -109,7 +109,12 @@ export default class IdeasNewTask extends Command {
     // Step 2: Gather notebook context
     spinner.start('Gathering context...')
     const baseDir = config.DIR_BASE as string
-    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, initialDescription as string)
+    const { notebookContext, relCandidates } = await gatherNotebookContext(
+      tasks,
+      baseDir,
+      initialDescription as string,
+      context.notebookNow.plainDateTime.plainDate,
+    )
     spinner.stop(notebookContext ? colors.dim('Context loaded') : colors.dim('No additional context found'))
 
     // Step 3: Clarify the idea until it's well-formed

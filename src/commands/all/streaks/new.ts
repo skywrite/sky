@@ -318,7 +318,12 @@ export default class StreaksNewTask extends Command {
     // Step 2: Gather notebook context
     spinner.start('Gathering context...')
     const baseDir = config.DIR_BASE as string
-    const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, initialDescription)
+    const { notebookContext, relCandidates } = await gatherNotebookContext(
+      tasks,
+      baseDir,
+      initialDescription,
+      context.notebookNow.plainDateTime.plainDate,
+    )
     spinner.stop(notebookContext ? colors.dim('Context loaded') : colors.dim('No additional context found'))
 
     // Step 3: Clarify until streak-worthy

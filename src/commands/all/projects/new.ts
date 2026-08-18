@@ -175,7 +175,12 @@ export default class ProjectsNewTask extends Command {
 
       // Step 2: Gather notebook context
       spinner.start('Gathering context...')
-      const { notebookContext, relCandidates } = await gatherNotebookContext(tasks, baseDir, initialDescription)
+      const { notebookContext, relCandidates } = await gatherNotebookContext(
+        tasks,
+        baseDir,
+        initialDescription,
+        context.notebookNow.plainDateTime.plainDate,
+      )
       spinner.stop(notebookContext ? colors.dim('Context loaded') : colors.dim('No additional context found'))
 
       // Step 3: Clarify the project until it's well-formed

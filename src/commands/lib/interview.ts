@@ -17,10 +17,13 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
+import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Notebook context
@@ -82,13 +85,26 @@ export function refForNotebookPath(relPath: string): string | undefined {
 }
 
 /**
- * Gather notebook context for an interview via ai:context:files.
- * Failures degrade to empty context — the interview continues without it.
+ * Budget for the embedded related-document markdown. The query layer
+ * deliberately returns everything a stated window matches (a date bound is
+ * a floor, never a ceiling), so every consumer that embeds results owns its
+ * own budget — without one, a broad statement can gather a
+ * multi-million-token prompt the API rejects outright.
+ */
+const CONTEXT_MAX_TOKENS = 100_000
+
+/**
+ * Gather notebook context for an interview via ai:context:files, budgeted
+ * through ContextAssembler: whole-doc admission by recency/type score until
+ * CONTEXT_MAX_TOKENS. Rel candidates derive from the full pre-budget result
+ * set. Failures degrade to empty context — the interview continues without
+ * it.
  */
 export async function gatherNotebookContext(
   tasks: CommandService,
   baseDir: string,
   description: string,
+  today: PlainDate,
 ): Promise<NotebookContext> {
   try {
     const filesResult = await tasks.run<{ paths: string[] }>('ai:context:files', {
@@ -115,11 +131,13 @@ export async function gatherNotebookContext(
       return { relCandidates: [] }
     }
 
-    const collection = DomainCollection.fromDocuments(docs, store)
+    const collection = DomainCollection.fromDocuments(docs, store, { depth: 1 })
 
     // Candidates are entity references, not file paths, and only refs the
     // store actually resolves are offered — so the AI can never pick a value
-    // that would sit in rel: as a dead link
+    // that would sit in rel: as a dead link. Derived from the full result
+    // set, before budgeting — the budget bounds the embedded markdown, not
+    // the rel vocabulary.
     const relCandidates = [
       ...new Set(
         docs
@@ -128,8 +146,17 @@ export async function gatherNotebookContext(
       ),
     ].slice(0, 12)
 
+    // Score and budget: whole-doc admission under the token budget, best
+    // score first. The query's path list is field-major, not globally
+    // newest-first, so a prefix walk would starve whole root fields — the
+    // scorer decides instead.
+    const assembler = ContextAssembler.from(collection, {
+      scorer: createRecencyTypeScorer(today),
+      maxTokens: CONTEXT_MAX_TOKENS,
+    })
+
     return {
-      notebookContext: collection.toMarkdown({ relativeTo: baseDir, delimited: true }),
+      notebookContext: assembler.toMarkdown({ relativeTo: baseDir, delimited: true }),
       relCandidates,
     }
   } catch {
