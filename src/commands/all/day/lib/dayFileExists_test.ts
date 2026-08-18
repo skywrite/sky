@@ -5,7 +5,7 @@ import { dayFile } from '#shared/nbfs/mod.ts'
 import { dayFile as v2DayFile } from '#shared/nbfs/v2/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import dayFileExists from './_dayFileExists.ts'
+import dayFileExists from './dayFileExists.ts'
 
 test('dayFileExists', async () => {
   const day = new PlainDate(2022, 10, 29)
