@@ -40,7 +40,11 @@ export async function gatherPlanContext(week: Week, today: PlainDate): Promise<P
   }
 
   const prev = week.previous()
-  add(`Last week's plan (${prev.toString()})`, await tryRead(path.join(DIR_TIME, weekDir(prev.startInYear), 'week.md')))
+  const prevDir = path.join(DIR_TIME, weekDir(prev.startInYear))
+  add(`Last week's plan (${prev.toString()})`, await tryRead(path.join(prevDir, 'week.md')))
+  // the weekly summary re-tells the dailies read below at altitude — what
+  // moved, decisions, open loops — worth the overlap when it exists
+  add(`Last week's summary (${prev.toString()})`, await tryRead(path.join(prevDir, 'summary.md')))
 
   for (const goal of await readGoals()) add(`goals/${goal.name}`, goal.body)
   for (const file of (await tryList(DIR_TIME)).filter((f) => PLANNING_FILE.test(f))) {
