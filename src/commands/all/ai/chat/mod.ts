@@ -10,6 +10,7 @@ import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
+import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { PORT_SERVER } from '#shared/config.ts'
@@ -18,7 +19,11 @@ import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchCont
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
-import ChatDocument, { extractConversationSummary, userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
+import ChatDocument, {
+  extractConversationSummary,
+  firstWordsSummary,
+  userSpeakerLabel,
+} from '#shared/models/Chat/document/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -1067,9 +1072,35 @@ export default class AiChatTask extends Command {
       const updatedDate = formatDate(endTime)
       const exchangeCount = Math.floor(turns.length / 2)
 
-      // A resumed chat keeps its original summary unless a new SUMMARY
-      // comment supersedes it — never the first-words guess.
-      const summary = extractConversationSummary(turns, resumeSession?.summary)
+      // A resumed chat keeps its saved summary verbatim (filled only when the
+      // file lacks one); a new chat is titled at save time from the packed
+      // transcript, whose head-biased packing anchors the title to the opening
+      // topic rather than the latest exchange.
+      const priorSummary = resumeSession?.summary || undefined
+      const firstWords = firstWordsSummary(turns)
+
+      // Hand-written values always win: auto-enrichment fills tags/rel only
+      // when the chat (or the file a resume carries forward) has none.
+      const priorTags = resumeSession && resumeSession.tags.length > 0 ? resumeSession.tags : undefined
+      const priorRel = resumeSession && resumeSession.rel.length > 0 ? resumeSession.rel : undefined
+      const wantAutoTag = !priorTags && !noAutoTag
+      const wantAutoRel = !priorRel && !noAutoRel
+      if (wantAutoTag || wantAutoRel) {
+        const choosing = [wantAutoTag ? 'tags' : '', wantAutoRel ? 'rel' : ''].filter(Boolean).join(' and ')
+        output.log('')
+        output.log(colors.dim(`Choosing ${choosing} from the archived-chat corpus…`))
+      }
+      const transcript = buildChatTranscript(turns)
+      const enrichInput = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
+      const [autoSummary, autoTags, autoRel] = await Promise.all([
+        priorSummary ? Promise.resolve(undefined) : summarizeTranscript(transcript, { kind: CHAT_ENRICH.kind }),
+        wantAutoTag ? autoTagMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
+        wantAutoRel ? autoRelMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
+      ])
+      if (autoTags) output.log(colors.dim(`Auto-tags: ${autoTags}`))
+      if (autoRel) output.log(colors.dim(`Auto-rel: ${autoRel.join('; ')}`))
+      const summary = priorSummary ?? autoSummary ?? firstWords
+
       let savePath: string
       if (resumeSession) {
         // Write back to the original file: filename and created stay stable
@@ -1082,29 +1113,6 @@ export default class AiChatTask extends Command {
           await mkdir(aiDir, { recursive: true })
         }
         savePath = path.join(aiDir, formatFilename(startTime, summary))
-      }
-
-      // Hand-written values always win: auto-enrichment fills tags/rel only
-      // when the chat (or the file a resume carries forward) has none.
-      const priorTags = resumeSession && resumeSession.tags.length > 0 ? resumeSession.tags : undefined
-      const priorRel = resumeSession && resumeSession.rel.length > 0 ? resumeSession.rel : undefined
-      const wantAutoTag = !priorTags && !noAutoTag
-      const wantAutoRel = !priorRel && !noAutoRel
-      let autoTags: string | undefined
-      let autoRel: string[] | undefined
-      if (wantAutoTag || wantAutoRel) {
-        const choosing = [wantAutoTag ? 'tags' : '', wantAutoRel ? 'rel' : ''].filter(Boolean).join(' and ')
-        output.log('')
-        output.log(colors.dim(`Choosing ${choosing} from the archived-chat corpus…`))
-        const enrichInput = { from: userSpeakerLabel(), summary, body: buildChatTranscript(turns) }
-        const [chosenTags, chosenRel] = await Promise.all([
-          wantAutoTag ? autoTagMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
-          wantAutoRel ? autoRelMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
-        ])
-        autoTags = chosenTags
-        autoRel = chosenRel
-        if (autoTags) output.log(colors.dim(`Auto-tags: ${autoTags}`))
-        if (autoRel) output.log(colors.dim(`Auto-rel: ${autoRel.join('; ')}`))
       }
 
       const chatDoc = ChatDocument.create({

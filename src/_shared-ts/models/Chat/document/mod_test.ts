@@ -3,7 +3,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog, splitContextLog } from './ContextLog/mod.ts'
-import ChatDocument, { extractConversationSummary, setUserSpeakerLabel } from './mod.ts'
+import ChatDocument, { extractConversationSummary, firstWordsSummary, setUserSpeakerLabel } from './mod.ts'
 import type { ChatTurn } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -649,6 +649,24 @@ test('extractConversationSummary - latest SUMMARY comment wins, fallback covers 
     should: 'ignore it and use first words',
     actual: extractConversationSummary(noComment, ''),
     expected: 'A question with quite a few words in it here.',
+  })
+})
+
+test('firstWordsSummary - first user message, capped at ten words', () => {
+  assert({
+    given: 'a long first user message',
+    should: 'keep only its first ten words',
+    actual: firstWordsSummary([
+      { role: 'user', content: 'one two three four five six seven eight nine ten eleven twelve' },
+      { role: 'assistant', content: 'An answer.' },
+    ]),
+    expected: 'one two three four five six seven eight nine ten',
+  })
+  assert({
+    given: 'a conversation with no user message',
+    should: 'return an empty string',
+    actual: firstWordsSummary([{ role: 'assistant', content: 'Unprompted.' }]),
+    expected: '',
   })
 })
 

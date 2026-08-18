@@ -261,6 +261,11 @@ export function extractConversationSummary(messages: ConversationMessage[], fall
     }
   }
   if (fallback) return fallback
+  return firstWordsSummary(messages)
+}
+
+/** First ten words of the first user message — the last-resort title for a chat nothing else could name. */
+export function firstWordsSummary(messages: ConversationMessage[]): string {
   const first = messages.find((m) => m.role === 'user')?.content ?? ''
   return first.trim().split(/\s+/).slice(0, 10).join(' ')
 }
