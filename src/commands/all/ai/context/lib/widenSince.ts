@@ -21,6 +21,15 @@ export interface WindowResolution {
   since: string
   /** Stated end of the window (YYYY-MM-DD), empty when it runs to now. */
   until: string
+  /**
+   * Exact start of a closed range (YYYY-MM-DD), present only when `until`
+   * is. The user's stated `from` when they named one (widened to the
+   * earliest stated date if one falls before it), else derived as
+   * today − since. Range-mode consumers should prefer this over
+   * re-deriving from the duration — an over-generous duration guess would
+   * bleed the range start earlier than the user said.
+   */
+  start?: string
   /** Earliest stated date the window start was widened to reach, when it was. */
   widenedToCover?: string
   /** Latest stated date the window end was extended to reach, when it was. */
@@ -52,22 +61,42 @@ function gapDays(raw: string, today: PlainDate): number | undefined {
   }
 }
 
+export interface WindowInput {
+  /** Extracted lookback duration ("6mo"), "" when none stated. */
+  since: string
+  /** Extracted start of a stated range (YYYY-MM-DD), "" when none. */
+  from: string
+  /** Extracted end of a stated range (YYYY-MM-DD), "" when it runs to now. */
+  until: string
+  /** Specific dates mentioned (YYYY-MM-DD). */
+  dates: string[]
+  today: PlainDate
+}
+
 /**
- * Enforce window ⊇ stated dates on an extracted `{ since, until, dates }`.
+ * Enforce window ⊇ stated dates on an extracted `{ since, from, until, dates }`.
  *
  * - `since` already covering every past date (or empty = all history): kept.
- * - `since` shorter than the gap to a stated past date: widened to exactly
- *   reach it (+1 day cushioning notebook-day vs system-day skew).
+ * - `since` shorter than the gap to a stated past date (`from` counts as
+ *   one): widened to exactly reach it (+1 day cushioning notebook-day vs
+ *   system-day skew).
  * - `since` unparseable: dropped to all-history — it would otherwise throw
  *   inside the query executor — never re-derived from the dates, which bound
  *   nothing (floor, not ceiling).
  * - `until` in the past closes the window there; a stated past date beyond it
  *   extends it. A future or unparseable `until` is a planning horizon, not a
  *   bound — dropped so the window runs to now.
+ * - With an end in effect, `start` resolves the range's exact first day:
+ *   the stated `from` (widened to the earliest stated date when one falls
+ *   before it), else today − since. A `from` that is future, unparseable,
+ *   or after the end is ignored.
  * - Future stated dates are planning horizons and unparseable dates are
  *   skipped. Neither ever narrows or fails the resolution.
  */
-export function resolveWindow(since: string, until: string, dates: string[], today: PlainDate): WindowResolution {
+export function resolveWindow(input: WindowInput): WindowResolution {
+  const { from, dates, today } = input
+  let since = input.since
+
   // A duration the executor can't parse would throw mid-query downstream —
   // drop to all-history (empty), which covers everything the message named.
   let windowDays: number | undefined
@@ -81,16 +110,22 @@ export function resolveWindow(since: string, until: string, dates: string[], tod
     }
   }
 
-  // An end bound only counts when it names a real past date.
-  let resolvedUntil = until
+  // Bounds only count when they name real past dates.
+  let resolvedUntil = input.until
   if (resolvedUntil !== '') {
     const gap = gapDays(resolvedUntil, today)
     if (gap === undefined || gap < 0) resolvedUntil = ''
   }
+  let statedFrom = from
+  if (statedFrom !== '') {
+    const gap = gapDays(statedFrom, today)
+    if (gap === undefined || gap <= 0) statedFrom = ''
+  }
 
+  // A stated start is a stated date: it participates in the coverage floor.
   let earliest: { date: string; gap: number } | undefined
   let latest: { date: string; gap: number } | undefined
-  for (const raw of dates) {
+  for (const raw of statedFrom ? [statedFrom, ...dates] : dates) {
     const gap = gapDays(raw, today)
     if (gap === undefined || gap <= 0) continue
     if (!earliest || gap > earliest.gap) earliest = { date: raw, gap }
@@ -107,15 +142,34 @@ export function resolveWindow(since: string, until: string, dates: string[], tod
     }
   }
 
-  const base = {
+  // Start coverage: widen since when it misses the earliest stated date.
+  let widenedToCover: string | undefined
+  if (earliest && windowDays !== undefined && windowDays < earliest.gap) {
+    // +1 cushions notebook-day vs system-day skew.
+    since = `${earliest.gap + 1}d`
+    windowDays = earliest.gap + 1
+    widenedToCover = earliest.date
+  }
+
+  // Range mode resolves an exact start: the stated from (already widened to
+  // the earliest date via the floor above — earliest ≤ from by selection),
+  // else derived from the duration.
+  let start: string | undefined
+  if (resolvedUntil !== '') {
+    const untilGap = gapDays(resolvedUntil, today)!
+    if (statedFrom && gapDays(statedFrom, today)! >= untilGap) {
+      start = earliest && earliest.gap > gapDays(statedFrom, today)! ? earliest.date : statedFrom
+    } else if (windowDays !== undefined) {
+      start = today.addDays(-windowDays).toString()
+    }
+  }
+
+  return {
+    since,
     until: resolvedUntil,
+    ...(start ? { start } : {}),
+    ...(widenedToCover ? { widenedToCover } : {}),
     ...(extendedToCover ? { extendedToCover } : {}),
     ...(droppedInvalid ? { droppedInvalid } : {}),
   }
-
-  if (!earliest || windowDays === undefined) return { since, ...base } // all history covers every date
-  if (windowDays >= earliest.gap) return { since, ...base }
-
-  // +1 cushions notebook-day vs system-day skew.
-  return { since: `${earliest.gap + 1}d`, widenedToCover: earliest.date, ...base }
 }

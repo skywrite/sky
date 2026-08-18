@@ -566,6 +566,7 @@ export default class AiChatTask extends Command {
                   truncations: r.data?.truncations,
                   since: r.data?.since,
                   until: r.data?.until,
+                  start: r.data?.start,
                 },
               }
             : { ok: false, message: r.message ?? 'ai:context:files failed' }

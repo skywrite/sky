@@ -73,3 +73,11 @@ Extraction failures worth an eval case:
   guard widened it and the pair hint held the stated end. The range shape
   works end-to-end, but the model's duration arithmetic stays unreliable —
   the guard is load-bearing, not a safety net.
+- 2026-08-15 (live): bare-year membership ("tell me something from
+  <year>") → the model extracted BOTH boundary dates yet left `until`
+  empty, so the window ran to now — "from <period>" pattern-matched the
+  open-start reading. Fixed with the closed-period prompt rule plus an
+  explicit `from` field (the start became statable, not re-derived); no
+  code heuristic closes a window from a boundary-looking date pair — the
+  "compare Jan 1 vs Dec 31 and how things changed since" shape wants it
+  open, and a wrong ceiling loses context where a wrong floor only adds.

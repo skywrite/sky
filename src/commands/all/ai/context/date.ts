@@ -21,6 +21,8 @@ const PROMPT_FILE = new URL('./prompts/context-date.prompt.md', import.meta.url)
 interface DateResult {
   since: string
   until: string
+  /** Exact first day of a closed range, resolved by the coverage guard. */
+  start?: string
   dates: string[]
 }
 
@@ -42,6 +44,13 @@ const schema = z.object({
       'Lookback duration for context search. Use shorthand: "7d", "30d", "6mo", "1y", "5y", etc. ' +
         'Only past-referring ranges count — future horizons ("next 3 months", "by year-end") are not lookbacks. ' +
         'Empty string "" if no past time range is mentioned or implied.',
+    ),
+  from: z
+    .string()
+    .describe(
+      'Explicit start of the stated range in YYYY-MM-DD, when the message names one ' +
+        '("since March 1 of 2025", "between Feb and April" → Feb 1, a bare year/month → its first day). ' +
+        'Empty string "" when no explicit start is named — a bare lookback ("last 6 months") states a horizon, not a start.',
     ),
   until: z
     .string()
@@ -102,15 +111,24 @@ export default class AIContextDateTask extends Command {
 
     // Enforce window ⊇ stated dates — the model's calendar arithmetic is
     // untrusted (see lib/widenSince.ts). Dates are a floor, never a ceiling.
-    const resolution = resolveWindow(object.since, object.until, object.dates, PlainDate.from(context.notebookNow.date))
-    const { since, until } = resolution
+    const resolution = resolveWindow({
+      since: object.since,
+      from: object.from,
+      until: object.until,
+      dates: object.dates,
+      today: PlainDate.from(context.notebookNow.date),
+    })
+    const { since, until, start } = resolution
 
     if (json) {
-      output.log(JSON.stringify({ since, until, dates: object.dates }))
+      output.log(JSON.stringify({ since, until, ...(start ? { start } : {}), dates: object.dates }))
     } else {
       output.log(`since: ${since || '(none)'}`)
       if (until) {
         output.log(`until: ${until}`)
+      }
+      if (start) {
+        output.log(`start: ${start}`)
       }
       if (object.dates.length > 0) {
         output.log(`dates: ${object.dates.join(', ')}`)
@@ -126,6 +144,6 @@ export default class AIContextDateTask extends Command {
       }
     }
 
-    return CommandResult.success({ since, until, dates: object.dates })
+    return CommandResult.success({ since, until, ...(start ? { start } : {}), dates: object.dates })
   }
 }

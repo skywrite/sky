@@ -37,8 +37,12 @@ have a corpus of real failure shapes to draw from.
   botches the calendar arithmetic that turns "since March 1 of 2025" into a
   duration — it rounds to a familiar bucket that lands short. `date.ts`
   therefore re-derives coverage deterministically: the window
-  [today − since, until ‖ today] is widened at the start and extended at
-  the end until it contains every stated past date (`lib/widenSince.ts`).
+  [from ‖ today − since, until ‖ today] is widened at the start and
+  extended at the end until it contains every stated past date
+  (`lib/widenSince.ts`). In range mode the resolution also carries an exact
+  `start` — the stated `from` when the user named one, else derived from
+  the duration — so an over-generous duration guess cannot bleed the range
+  start earlier than the user said.
   See [start coverage](2026-08-15-window-must-cover-stated-dates.md) and
   [stated ends](2026-08-15-stated-range-ends.md).
 - **Stated dates are a floor, never a ceiling.** "My conversation with Jane

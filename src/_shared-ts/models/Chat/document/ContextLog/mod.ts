@@ -86,6 +86,8 @@ export interface TurnStats {
   policy?: string
   /** The user-stated window driving a non-default policy, as `since` or `since..until` */
   sweep?: string
+  /** Exact first day of the stated range, when the window resolved one */
+  sweepFrom?: string
   /** Relevance floor applied this turn (floorFraction × top score) */
   floor?: number
   /** Docs cut by the floor this turn (their records carry cut: 'floor') */

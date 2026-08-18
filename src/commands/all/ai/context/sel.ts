@@ -46,6 +46,9 @@ const params = {
   until: Flag.string('Close the window at this date (YYYY-MM-DD); with --since forms a closed range', {
     optional: true,
   }),
+  from: Flag.string('Exact start of the closed range (YYYY-MM-DD); overrides the since-derived start', {
+    optional: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -82,7 +85,7 @@ export default class AIContextSelectorTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { config, output } = context
-    const { question, since, until } = args
+    const { question, since, until, from } = args
 
     // Load prompt, schema, and entity context in parallel
     const [promptContent, schema, entityCtx] = await Promise.all([
@@ -114,7 +117,10 @@ export default class AIContextSelectorTask extends Command {
     // would silently re-include everything after the stated end.
     let sinceHint = ''
     if (since && until) {
-      const start = PlainDate.from(context.notebookNow.date).addDays(-parseDuration(since)).toString()
+      // The stated start is exact; deriving from the duration is the
+      // fallback — an over-generous duration would bleed the range earlier
+      // than the user said.
+      const start = from ?? PlainDate.from(context.notebookNow.date).addDays(-parseDuration(since)).toString()
       sinceHint = `\n\nIMPORTANT: The user scoped this question to ${start} through ${until}. Put \`dateGte: "${start}"\` and \`dateLte: "${until}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents) and omit \`limit\` on those roots — the pair is the bound (date-bounded queries are uncapped) and downstream budgeting prunes any excess. A \`limit\` beside the bound would silently keep only the newest slice of the window. Never use \`recent\` here — it would re-open the window to now.`
     } else if (until) {
       sinceHint = `\n\nIMPORTANT: The user scoped this question to everything up to ${until}. Put \`dateLte: "${until}"\` in the \`where\` of every dated root (meetings, messages, journals, chats, videos, documents). Never use \`recent\` here — it would re-open the window to now.`

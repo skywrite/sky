@@ -46,6 +46,8 @@ interface FilesResult {
   since?: string
   /** The user-stated end of the window, absent when it runs to now. */
   until?: string
+  /** Exact first day of a closed range, absent outside range mode. */
+  start?: string
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -93,22 +95,29 @@ export default class AIContextFilesTask extends Command {
     // searching all history costs nothing and reaches sparse older topics.
     let resolvedSince: string | undefined = since
     let resolvedUntil: string | undefined
+    let resolvedStart: string | undefined
     if (since === 'auto') {
       resolvedSince = undefined
       try {
-        const dateResult = await tasks.run<{ since: string; until: string; dates: string[] }>('ai:context:date', {
-          _: ['ai:context:date', question],
-        })
+        const dateResult = await tasks.run<{ since: string; until: string; start?: string; dates: string[] }>(
+          'ai:context:date',
+          { _: ['ai:context:date', question] },
+        )
         if (dateResult.status === 'success') {
           resolvedSince = dateResult.data?.since || undefined
           resolvedUntil = dateResult.data?.until || undefined
+          resolvedStart = dateResult.data?.start || undefined
         }
       } catch {
         resolvedSince = undefined
         resolvedUntil = undefined
+        resolvedStart = undefined
       }
-      const window = resolvedSince ?? 'all history (default)'
-      output.log(colors.dim(`Timeframe: ${window}${resolvedUntil ? ` (until ${resolvedUntil})` : ''}`))
+      const window =
+        resolvedStart && resolvedUntil
+          ? `${resolvedStart} → ${resolvedUntil}`
+          : `${resolvedSince ?? 'all history (default)'}${resolvedUntil ? ` (until ${resolvedUntil})` : ''}`
+      output.log(colors.dim(`Timeframe: ${window}`))
     }
 
     // Step 2: Generate GraphQL query using AI
@@ -118,6 +127,7 @@ export default class AIContextFilesTask extends Command {
       _: ['ai:context:sel', question],
       since: resolvedSince === 'all' ? undefined : resolvedSince,
       until: resolvedUntil,
+      from: resolvedStart,
     })
 
     if (selResult.status !== 'success' || !selResult.data?.query) {
@@ -158,6 +168,7 @@ export default class AIContextFilesTask extends Command {
     const window = {
       ...(statedSince ? { since: statedSince } : {}),
       ...(statedSince && resolvedUntil ? { until: resolvedUntil } : {}),
+      ...(statedSince && resolvedUntil && resolvedStart ? { start: resolvedStart } : {}),
     }
 
     // Step 4: Format output

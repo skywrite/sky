@@ -18,8 +18,11 @@ the question's shape:
   `recent:` and uncaps `limit` upstream. Every month of the stated window
   is guaranteed its best docs (up to `CHAT_SCORE.sweepReserveDocs` /
   `sweepReserveTokens`, oldest month funded first, drawing from floored
-  docs too) before the rank walk fills the remainder. Mechanism:
-  `ContextAssembler` `ReserveOptions`; wiring: `sweepReserve()` in mod.ts.
+  docs too) before the rank walk fills the remainder. The window is
+  [start ‖ today − since, until ‖ today], where `start` is the user's
+  stated range start when the extractor resolved one (stats: `sweepFrom`).
+  Mechanism: `ContextAssembler` `ReserveOptions`; wiring: `sweepReserve()`
+  in mod.ts.
 
 The scorer never changes — s3 answers "how much evidence does this one doc
 carry?", which no policy needs re-answered. What changes is the set-level

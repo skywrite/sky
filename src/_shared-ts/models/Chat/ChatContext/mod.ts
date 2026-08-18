@@ -66,10 +66,16 @@ export interface ContextProducers {
    * `since`/`until` carry the user-stated window when the question named one
    * — the signal that switches admission to the sweep-stratified policy.
    */
-  produceInitialQuery(
-    userMessage: string,
-  ): Promise<
-    ProducerResult<{ paths: string[]; query?: string; truncations?: QueryTruncation[]; since?: string; until?: string }>
+  produceInitialQuery(userMessage: string): Promise<
+    ProducerResult<{
+      paths: string[]
+      query?: string
+      truncations?: QueryTruncation[]
+      since?: string
+      until?: string
+      /** Exact first day of a closed range, when the window resolved one. */
+      start?: string
+    }>
   >
   /** Turns 2+: should the query set change, and to what. CLI: ai:context:evolve. */
   evolveQueries(
@@ -228,7 +234,7 @@ export default class ChatContext {
    * turns inherit it, because the stated window governs the conversation,
    * not just the turn that stated it.
    */
-  private sweep: { since: string; until?: string } | null = null
+  private sweep: { since: string; until?: string; start?: string } | null = null
   private contextLog: ContextTurnLog[] = []
   private turnNumber = 0
   // Context failures for the current turn. Reset when a turn starts (both
@@ -378,10 +384,10 @@ export default class ChatContext {
     // Re-arm the sweep policy the recorded session was running — the stated
     // window governs the conversation, resumed or not.
     for (let i = state.contextLog.length - 1; i >= 0; i--) {
-      const sweep = state.contextLog[i].stats?.sweep
-      if (sweep) {
-        const [since, until] = sweep.split('..')
-        this.sweep = { since, ...(until ? { until } : {}) }
+      const stats = state.contextLog[i].stats
+      if (stats?.sweep) {
+        const [since, until] = stats.sweep.split('..')
+        this.sweep = { since, ...(until ? { until } : {}), ...(stats.sweepFrom ? { start: stats.sweepFrom } : {}) }
         break
       }
     }
@@ -438,7 +444,11 @@ export default class ChatContext {
       // A stated window arms the sweep policy even when the query itself
       // returned nothing — the baseline universe still admits stratified.
       if (produced.ok && produced.value.since) {
-        this.sweep = { since: produced.value.since, ...(produced.value.until ? { until: produced.value.until } : {}) }
+        this.sweep = {
+          since: produced.value.since,
+          ...(produced.value.until ? { until: produced.value.until } : {}),
+          ...(produced.value.start ? { start: produced.value.start } : {}),
+        }
       }
       if (produced.ok && produced.value.paths.length > 0) {
         if (produced.value.query) this.queries.push(produced.value.query)
@@ -608,7 +618,10 @@ export default class ChatContext {
     let start: PlainDate
     let end: PlainDate
     try {
-      start = this.today.addDays(-parseDuration(this.sweep.since))
+      // The stated start is exact; the duration-derived start is the
+      // fallback (an over-generous duration would reserve months before
+      // the window the user named).
+      start = this.sweep.start ? PlainDate.from(this.sweep.start) : this.today.addDays(-parseDuration(this.sweep.since))
       end = this.sweep.until ? PlainDate.from(this.sweep.until) : this.today
     } catch {
       return undefined
@@ -750,6 +763,7 @@ export default class ChatContext {
       if (this.sweep) {
         turnStats.policy = 'sweep-stratified'
         turnStats.sweep = this.sweep.until ? `${this.sweep.since}..${this.sweep.until}` : this.sweep.since
+        if (this.sweep.start) turnStats.sweepFrom = this.sweep.start
       }
       if (this.summaryBaseline) turnStats.baseline = 'summary'
       if (assembler.floorValue !== null) {
