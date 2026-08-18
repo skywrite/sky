@@ -30,6 +30,7 @@ const FIX = {
   roadmap: abs('projects/Atlas/Roadmap.md'),
   person: abs('people/Jane-Doe.md'),
   ownChat: abs('time/2026/01/26-01/01-27/actions/ai-chats/09-00_Prior-Session.md'),
+  weekPlan: abs('time/2026/01/26-01/week.md'),
 }
 
 async function fixtureDoc(absPath: string): Promise<{ doc: Document; path: string }> {
@@ -165,6 +166,35 @@ test('ChatContext.seedBaseline - summary baseline', async () => {
         FIX.goal,
       ].sort(),
       baseline: 'summary',
+    },
+  })
+})
+
+test('ChatContext.seedBaseline - week-level docs seed whole and the week plan pins', async () => {
+  const { context } = makeContext({
+    summaryBaseline: true,
+    fetchContext: fetchFake({
+      today: [FIX.day],
+      // 01-20 is summarized, so its raw meeting collapses — the week plan is
+      // week-level and must ride the sweep untouched by the per-day policy.
+      prev: [FIX.weekPlan, FIX.summary, FIX.journal, FIX.meeting],
+      goals: [FIX.goal],
+    }),
+  })
+  await context.seedBaseline()
+  await context.firstTurn('what should this week focus on?')
+
+  const entry = context.log[0]
+  assert({
+    given: 'a baseline sweep returning the week plan alongside a summarized day',
+    should: 'seed the plan whole, exempt from the per-day policy, and pin it',
+    actual: {
+      paths: [...context.paths].sort(),
+      planPinned: entry.universe?.find((r) => r.path === 'time/2026/01/26-01/week.md')?.pinned,
+    },
+    expected: {
+      paths: [FIX.day, FIX.weekPlan, FIX.summary, FIX.journal, FIX.goal].sort(),
+      planPinned: true,
     },
   })
 })

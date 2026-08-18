@@ -1,17 +1,32 @@
 /**
  * Date-related filter predicates.
+ *
+ * Documents are dated by an interval, not a point: a day file (or any doc
+ * with a frontmatter date) covers a single day, while week-, month-, and
+ * year-level time-tree files (a week plan, a week summary) cover every day
+ * of their span. All matchers test against that interval, so a week plan is
+ * "dated" any day of its week — asking for a Wednesday finds the plan that
+ * governs it. Single-day documents behave exactly as point dates did.
  */
 
 import type { Document } from '#shared/models/Markdown/mod.ts'
 import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { parseDuration } from './duration.ts'
 
+/** Inclusive day span a document covers. Single-day docs have start = end. */
+export interface DateRange {
+  start: PlainDate
+  end: PlainDate
+}
+
+const singleDay = (date: PlainDate): DateRange => ({ start: date, end: date })
+
 /**
  * Extract date from a time-based path.
- * Uses parseDateFromDayPath from nbfs which handles:
- * - Standard paths: time/YYYY/MM/DD-DD/DD/...
- * - Month spillover: time/YYYY/MM/DD-DD/xDD/... (x prefix = next month)
+ * Uses parseDateFromDayPath from nbfs, so this is day files only — week- and
+ * month-level files resolve through getDocumentDateRange instead.
  */
 export function getDateFromPath(path: string): PlainDate | undefined {
   try {
@@ -22,50 +37,64 @@ export function getDateFromPath(path: string): PlainDate | undefined {
 }
 
 /**
- * Get the date from a document.
- * Checks common date fields: date, created, identified.
- * Optionally falls back to extracting date from path.
+ * Get the date span of a document.
+ * An explicit `date:` field wins (a single day), then the time-tree path —
+ * a day dir dates a single day, a week/month/year level file dates its whole
+ * span — then the `created`/`identified` fields (single days).
  */
-export function getDocumentDate(doc: Document, path?: string): PlainDate | undefined {
+export function getDocumentDateRange(doc: Document, path?: string): DateRange | undefined {
   const yaml = doc.yaml
 
   // Try 'date' field first (meetings, messages)
   const dateVal = yaml['date']
   if (dateVal instanceof Date) {
-    return PlainDate.from(dateVal.toISOString().slice(0, 10))
+    return singleDay(PlainDate.from(dateVal.toISOString().slice(0, 10)))
   }
   if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
-    return PlainDate.from(dateVal.slice(0, 10))
+    return singleDay(PlainDate.from(dateVal.slice(0, 10)))
   }
 
-  // Try path-based date extraction (event date encoded in directory structure)
+  // Try path-based extraction (the time tree encodes each doc's span)
   if (path) {
-    const pathDate = getDateFromPath(path)
-    if (pathDate) return pathDate
+    const info = parseTimePath(path)
+    if (info) return { start: info.start, end: info.end }
   }
 
   // Try 'created' field (generic documents)
   if (doc.created) {
-    return doc.created
+    return singleDay(doc.created)
   }
 
   // Try 'identified' field (decisions)
   const identified = yaml['identified']
   if (typeof identified === 'string' && /^\d{4}-\d{2}-\d{2}/.test(identified)) {
-    return PlainDate.from(identified.slice(0, 10))
+    return singleDay(PlainDate.from(identified.slice(0, 10)))
   }
 
   return undefined
 }
 
-/** True when the date exists and falls inside the trailing window ending at now. */
-function isWithinWindow(date: PlainDate | undefined, duration: string, now: PlainDate): boolean {
-  if (!date) return false
+/**
+ * Get the date of a document — the start of its span. Prefer
+ * getDocumentDateRange where the whole span matters.
+ */
+export function getDocumentDate(doc: Document, path?: string): PlainDate | undefined {
+  return getDocumentDateRange(doc, path)?.start
+}
+
+/** True when the spans [aStart, aEnd] and [bStart, bEnd] share any day. */
+function overlaps(range: DateRange, start: PlainDate, end: PlainDate): boolean {
+  return PlainDate.compare(range.start, end) <= 0 && PlainDate.compare(range.end, start) >= 0
+}
+
+/** True when the span exists and shares a day with the trailing window ending at now. */
+function isWithinWindow(range: DateRange | undefined, duration: string, now: PlainDate): boolean {
+  if (!range) return false
 
   const days = parseDuration(duration)
   const cutoff = now.addDays(-days)
 
-  return PlainDate.compare(date, cutoff) >= 0 && PlainDate.compare(date, now) <= 0
+  return overlaps(range, cutoff, now)
 }
 
 /**
@@ -80,7 +109,7 @@ export function matchesRecent(
   now: PlainDate = PlainDate.today(),
   path?: string,
 ): boolean {
-  return isWithinWindow(getDocumentDate(doc, path), duration, now)
+  return isWithinWindow(getDocumentDateRange(doc, path), duration, now)
 }
 
 /**
@@ -92,7 +121,8 @@ export function matchesRecent(
  * matchesRecent, where an edited old meeting must not become a recent one.
  */
 export function matchesRecentActivity(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
-  return isWithinWindow(doc.updated ?? getDocumentDate(doc), duration, now)
+  const range = doc.updated ? singleDay(doc.updated) : getDocumentDateRange(doc)
+  return isWithinWindow(range, duration, now)
 }
 
 /**
@@ -101,7 +131,7 @@ export function matchesRecentActivity(doc: Document, duration: string, now: Plai
  * matchesRecentActivity's do-what-I-mean blend.
  */
 export function matchesCreatedRecently(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
-  return isWithinWindow(doc.created, duration, now)
+  return isWithinWindow(doc.created && singleDay(doc.created), duration, now)
 }
 
 /**
@@ -109,47 +139,48 @@ export function matchesCreatedRecently(doc: Document, duration: string, now: Pla
  * documents without one never match.
  */
 export function matchesUpdatedRecently(doc: Document, duration: string, now: PlainDate = PlainDate.today()): boolean {
-  return isWithinWindow(doc.updated, duration, now)
+  return isWithinWindow(doc.updated && singleDay(doc.updated), duration, now)
 }
 
 /**
- * Check if document has a specific date.
+ * Check if document has a specific date — for span documents, whether the
+ * date falls inside the span.
  */
 export function matchesDate(doc: Document, date: PlainDate | string, path?: string): boolean {
-  const docDate = getDocumentDate(doc, path)
-  if (!docDate) return false
+  const range = getDocumentDateRange(doc, path)
+  if (!range) return false
 
   const targetDate = typeof date === 'string' ? PlainDate.from(date) : date
-  return docDate.equals(targetDate)
+  return overlaps(range, targetDate, targetDate)
 }
 
 /**
- * Check if document date is on or after the given date. One-ended on purpose:
- * `dateGte: X` is a closed window [X, now], the absolute-date spelling of
- * `recent`.
+ * Check if any part of the document's span is on or after the given date.
+ * One-ended on purpose: `dateGte: X` is a closed window [X, now], the
+ * absolute-date spelling of `recent`.
  */
 export function matchesDateGte(doc: Document, start: PlainDate | string, path?: string): boolean {
-  const docDate = getDocumentDate(doc, path)
-  if (!docDate) return false
+  const range = getDocumentDateRange(doc, path)
+  if (!range) return false
 
   const startDate = typeof start === 'string' ? PlainDate.from(start) : start
-  return PlainDate.compare(docDate, startDate) >= 0
+  return PlainDate.compare(range.end, startDate) >= 0
 }
 
 /**
- * Check if document date is on or before the given date. One-ended on purpose:
- * everything from the corpus start up to X.
+ * Check if any part of the document's span is on or before the given date.
+ * One-ended on purpose: everything from the corpus start up to X.
  */
 export function matchesDateLte(doc: Document, end: PlainDate | string, path?: string): boolean {
-  const docDate = getDocumentDate(doc, path)
-  if (!docDate) return false
+  const range = getDocumentDateRange(doc, path)
+  if (!range) return false
 
   const endDate = typeof end === 'string' ? PlainDate.from(end) : end
-  return PlainDate.compare(docDate, endDate) <= 0
+  return PlainDate.compare(range.start, endDate) <= 0
 }
 
 /**
- * Check if document date is within a range (inclusive).
+ * Check if document's span intersects a date range (inclusive).
  */
 export function matchesDateRange(
   doc: Document,
@@ -157,11 +188,11 @@ export function matchesDateRange(
   end: PlainDate | string,
   path?: string,
 ): boolean {
-  const docDate = getDocumentDate(doc, path)
-  if (!docDate) return false
+  const range = getDocumentDateRange(doc, path)
+  if (!range) return false
 
   const startDate = typeof start === 'string' ? PlainDate.from(start) : start
   const endDate = typeof end === 'string' ? PlainDate.from(end) : end
 
-  return PlainDate.compare(docDate, startDate) >= 0 && PlainDate.compare(docDate, endDate) <= 0
+  return overlaps(range, startDate, endDate)
 }

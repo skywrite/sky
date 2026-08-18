@@ -11,6 +11,7 @@ export { default as fetchNowSync, type FetchNowOptions } from './fetchNowSync.ts
 export { default as fetchNow } from './fetchNow.ts'
 export { default as normalizeToPlainDate } from './normalizeToPlainDate.ts'
 export { default as parseDateFromDayPath } from './parseDateFromDayPath.ts'
+export { default as parseTimePath, type TimePathInfo } from './parseTimePath.ts'
 export { default as readDay } from './readDay.ts'
 export { isTimeRef, resolveTimeRef, toTimeRef } from './timeRef.ts'
 export { default as readDaySync } from './readDaySync.ts'

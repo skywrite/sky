@@ -146,6 +146,46 @@ test('createDayLabeler — counts whole days across a DST boundary', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Week-level documents — stamped with their span
+// ---------------------------------------------------------------------------
+
+test('createDayLabeler — stamps week-level documents with their span', () => {
+  const label = createDayLabeler(TODAY) // 2026-05-14, in the 11-17 week
+
+  const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
+    {
+      path: `${BASE}/time/2026/05/11-17/week.md`,
+      expected: 'week 2026-05-11 - 2026-05-17 (THIS WEEK)',
+      given: "the current week's plan",
+    },
+    {
+      path: `${BASE}/time/2026/05/04-10/week.md`,
+      expected: 'week 2026-05-04 - 2026-05-10 (last week)',
+      given: "the previous week's plan",
+    },
+    {
+      path: `${BASE}/time/2026/04/20-26/summary.md`,
+      expected: 'week 2026-04-20 - 2026-04-26',
+      given: 'a week summary from weeks back',
+    },
+    {
+      path: `${BASE}/time/2026/05/18-24/week.md`,
+      expected: 'week 2026-05-18 - 2026-05-24 (future)',
+      given: "next week's plan",
+    },
+  ]
+
+  for (const fixture of FIXTURES) {
+    assert({
+      given: fixture.given,
+      should: `label it "${fixture.expected}"`,
+      actual: label(fixture.path),
+      expected: fixture.expected,
+    })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Cross-month week dirs — month comes from the day dir, not the week dir
 // ---------------------------------------------------------------------------
 

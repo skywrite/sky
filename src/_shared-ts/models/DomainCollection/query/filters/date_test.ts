@@ -3,8 +3,11 @@ import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   getDocumentDate,
+  getDocumentDateRange,
   matchesCreatedRecently,
   matchesDate,
+  matchesDateGte,
+  matchesDateLte,
   matchesDateRange,
   matchesRecent,
   matchesRecentActivity,
@@ -265,5 +268,127 @@ test('matchesUpdatedRecently - matches an updated date inside the window', () =>
     should: 'match despite the old created date',
     actual: matchesUpdatedRecently(doc, '30d', activityNow),
     expected: true,
+  })
+})
+
+// =============================================================================
+// Week-level documents — dated by their whole span
+// =============================================================================
+
+// A week plan the way week:plan writes one: created on the Monday, no date
+// field, living directly in the week-range dir.
+const WEEK_PATH = '/Notebook/time/2026/03/02-08/week.md'
+const weekDoc = () => md('created: 2026-03-02')
+
+test('getDocumentDateRange - week-level file spans its week', () => {
+  const range = getDocumentDateRange(weekDoc(), WEEK_PATH)
+
+  assert({
+    given: 'a week.md directly in the week-range dir',
+    should: 'span the whole week, not fall back to created',
+    actual: `${range?.start} ${range?.end}`,
+    expected: '2026-03-02 2026-03-08',
+  })
+})
+
+test('getDocumentDateRange - explicit date field beats the path span', () => {
+  const range = getDocumentDateRange(md('date: 2026-03-04'), WEEK_PATH)
+
+  assert({
+    given: 'a week-level file carrying an explicit date field',
+    should: 'date as that single day',
+    actual: `${range?.start} ${range?.end}`,
+    expected: '2026-03-04 2026-03-04',
+  })
+})
+
+const weekMatchFixtures = [
+  { target: '2026-03-04', expected: true, description: 'a day inside the week matches' },
+  { target: '2026-03-02', expected: true, description: 'the span start matches' },
+  { target: '2026-03-08', expected: true, description: 'the span end matches' },
+  { target: '2026-03-01', expected: false, description: 'the day before the week does not' },
+  { target: '2026-03-09', expected: false, description: 'the day after the week does not' },
+]
+
+for (const { target, expected, description } of weekMatchFixtures) {
+  test(`matchesDate - week span: ${description}`, () => {
+    assert({
+      given: `date: ${target} against the week 2026-03-02..08`,
+      should: expected ? 'match' : 'not match',
+      actual: matchesDate(weekDoc(), target, WEEK_PATH),
+      expected,
+    })
+  })
+}
+
+test('matchesDateGte - a week ending on the bound still matches', () => {
+  assert({
+    given: 'dateGte equal to the span end',
+    should: 'match',
+    actual: matchesDateGte(weekDoc(), '2026-03-08', WEEK_PATH),
+    expected: true,
+  })
+})
+
+test('matchesDateGte - a week wholly before the bound does not match', () => {
+  assert({
+    given: 'dateGte after the span end',
+    should: 'not match',
+    actual: matchesDateGte(weekDoc(), '2026-03-09', WEEK_PATH),
+    expected: false,
+  })
+})
+
+test('matchesDateLte - a week starting on the bound still matches', () => {
+  assert({
+    given: 'dateLte equal to the span start',
+    should: 'match',
+    actual: matchesDateLte(weekDoc(), '2026-03-02', WEEK_PATH),
+    expected: true,
+  })
+})
+
+test('matchesDateLte - a week wholly after the bound does not match', () => {
+  assert({
+    given: 'dateLte before the span start',
+    should: 'not match',
+    actual: matchesDateLte(weekDoc(), '2026-03-01', WEEK_PATH),
+    expected: false,
+  })
+})
+
+test('matchesDateRange - a window overlapping the tail of the week matches', () => {
+  assert({
+    given: 'a range starting inside the span and ending after it',
+    should: 'match on overlap',
+    actual: matchesDateRange(weekDoc(), '2026-03-07', '2026-03-12', WEEK_PATH),
+    expected: true,
+  })
+})
+
+test('matchesDateRange - a window past the week does not match', () => {
+  assert({
+    given: 'a range entirely after the span',
+    should: 'not match',
+    actual: matchesDateRange(weekDoc(), '2026-03-09', '2026-03-15', WEEK_PATH),
+    expected: false,
+  })
+})
+
+test('matchesRecent - a window reaching back into the span matches', () => {
+  assert({
+    given: 'now 2 days after the week ended, with a 7d window',
+    should: 'match on overlap',
+    actual: matchesRecent(weekDoc(), '7d', PlainDate.from('2026-03-10'), WEEK_PATH),
+    expected: true,
+  })
+})
+
+test('matchesRecent - a window past the whole span does not match', () => {
+  assert({
+    given: 'now 12 days after the week ended, with a 7d window',
+    should: 'not match',
+    actual: matchesRecent(weekDoc(), '7d', PlainDate.from('2026-03-20'), WEEK_PATH),
+    expected: false,
   })
 })

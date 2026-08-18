@@ -1,4 +1,4 @@
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { parseTimePath } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -14,6 +14,10 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
  * the model inferring a document's day from its neighbours, which misdates
  * today's lone document when it sits in a run of yesterday's.
  *
+ * Week-level docs (the week plan) are stamped with their span, and the
+ * current week is called out the way today is: it is the frame the model
+ * should read the week's questions through.
+ *
  * Undated documents (people, orgs, goals) get no label - their paths have no
  * day dir to parse, and dating them from `created:` would be a lie.
  */
@@ -21,12 +25,18 @@ export default function createDayLabeler(today: PlainDate): (path: string) => st
   const todayMs = today.toDate().getTime()
 
   return (filePath: string) => {
-    let date: PlainDate
-    try {
-      date = parseDateFromDayPath(filePath)
-    } catch {
-      return undefined
+    const info = parseTimePath(filePath)
+    if (!info) return undefined
+
+    if (info.kind === 'week') {
+      const stamp = `week ${info.start.ymd} - ${info.end.ymd}`
+      if (PlainDate.compare(today, info.start) < 0) return `${stamp} (future)`
+      if (PlainDate.compare(today, info.end) <= 0) return `${stamp} (THIS WEEK)`
+      const daysPast = Math.round((todayMs - info.end.toDate().getTime()) / MS_PER_DAY)
+      return daysPast <= 7 ? `${stamp} (last week)` : stamp
     }
+    if (info.kind !== 'day') return undefined
+    const date = info.date
 
     // Round rather than floor: both sides are local midnight, so a DST shift
     // otherwise stretches a whole-day gap to 25 hours and skews the count.

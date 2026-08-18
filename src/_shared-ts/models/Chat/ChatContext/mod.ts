@@ -24,7 +24,7 @@ import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
-import parseDateFromDayPath from '#shared/nbfs/parseDateFromDayPath.ts'
+import { parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   type ContextDocRecord,
@@ -298,12 +298,21 @@ export default class ChatContext {
     ])
     const fetchMs = performance.now() - t0
 
-    // Group previous docs by date and apply per-day strategy
+    // Group previous day docs by date and apply per-day strategy. Week- and
+    // month-level docs (the week plan, a week summary) are real context but
+    // belong to no single day, so the per-day summary policy never applies
+    // to them — they seed whole alongside whatever the grouping keeps.
     const byDate = new Map<string, Array<{ doc: Document; path: string }>>()
+    const spanDocs: Array<{ doc: Document; path: string }> = []
     for (const d of prevDocsRaw) {
       if (!d.path.includes('/time/')) continue
-      const date = parseDateFromDayPath(d.path)?.toString()
-      if (!date) continue
+      const info = parseTimePath(d.path)
+      if (!info) continue
+      if (info.kind !== 'day') {
+        spanDocs.push(d)
+        continue
+      }
+      const date = info.date.toString()
       const list = byDate.get(date) ?? []
       list.push(d)
       byDate.set(date, list)
@@ -334,6 +343,7 @@ export default class ChatContext {
         prevDocs.push(...files)
       }
     }
+    prevDocs.push(...spanDocs)
 
     // Deduplicate all docs by path
     const seen = new Set<string>()
@@ -348,7 +358,11 @@ export default class ChatContext {
     // Goals and pending decisions are the strategic spine — never prune them.
     // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
     // query-boosted (+10) document when the token budget forces pruning.
-    this.pinnedPaths = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
+    // The current week's plan is pinned with them: it governs the whole
+    // week's conversations. Pinning the path is a no-op when no plan exists.
+    const pinned = new Set([...goalDocs, ...decisionDocs].map((d) => d.path))
+    pinned.add(this.weekPlanPath())
+    this.pinnedPaths = pinned
 
     t0 = performance.now()
     this.collection = allDocs.length > 0 ? DomainCollection.fromDocuments(allDocs, null, { depth: 0 }) : null
@@ -397,12 +411,14 @@ export default class ChatContext {
       this.excludeOwnChat(resolution.resolved.map((r) => path.join(this.baseDir, r))),
       null,
     )
-    // The recorded goals/decisions keep their never-prune pinning on resume.
-    this.pinnedPaths = new Set(
-      resolution.resolved
+    // The recorded goals/decisions keep their never-prune pinning on resume,
+    // as does the current week's plan when the universe carries it.
+    this.pinnedPaths = new Set([
+      ...resolution.resolved
         .filter((r) => r.startsWith('goals/') || r.startsWith('decisions/'))
         .map((r) => path.join(this.baseDir, r)),
-    )
+      this.weekPlanPath(),
+    ])
     // Recorded diffs are the docs queries added in the original session,
     // so they re-seed the retrieval evidence. Result-set sizes weren't
     // recorded; each diff's own length stands in for selectivity —
@@ -606,6 +622,11 @@ export default class ChatContext {
     return this.ownChatPath ? paths.filter((p) => p !== this.ownChatPath) : paths
   }
 
+  /** Absolute path of the current week's plan — pinned whenever the universe has it. */
+  private weekPlanPath(): string {
+    return path.join(this.baseDir, 'time', weekDir(this.today), 'week.md')
+  }
+
   /**
    * Reserve options for the sweep-stratified admission policy, when a
    * user-stated window is armed: month slices over [today − since,
@@ -628,15 +649,10 @@ export default class ChatContext {
     }
     return {
       sliceOf: (item) => {
-        let date: PlainDate | undefined
-        try {
-          date = parseDateFromDayPath(item.path)
-        } catch {
-          return null
-        }
-        if (!date) return null
-        if (PlainDate.compare(date, start) < 0 || PlainDate.compare(date, end) > 0) return null
-        return date.toString().slice(0, 7)
+        const info = parseTimePath(item.path)
+        if (info?.kind !== 'day') return null
+        if (PlainDate.compare(info.date, start) < 0 || PlainDate.compare(info.date, end) > 0) return null
+        return info.date.toString().slice(0, 7)
       },
       maxDocs: CHAT_SCORE.sweepReserveDocs,
       maxTokens: CHAT_SCORE.sweepReserveTokens,

@@ -10,8 +10,10 @@ export { parseDuration } from './duration.ts'
 
 // Date filters
 export {
+  type DateRange,
   getDateFromPath,
   getDocumentDate,
+  getDocumentDateRange,
   matchesCreatedRecently,
   matchesDate,
   matchesDateGte,
