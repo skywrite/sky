@@ -8,12 +8,12 @@
  */
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import { DIR_GOALS, DIR_TIME } from '#config'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
+import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
-/** Most-important files live under a day's n/ directory as MI1.md, MI2.md, … */
+/** Most-important files live under a day's most-important/ directory as MI1.md, MI2.md, … */
 export const MI_FILE = /^MI\d+\.md$/i
 
 /** One titled block of assembled context. */
@@ -65,9 +65,26 @@ export async function readDayJournals(day: PlainDate): Promise<ContextFile[]> {
   return readMatching(path.join(DIR_TIME, dayDir(day), 'journal'), (f) => f.endsWith('.md'))
 }
 
-/** A day's most-important files: time/<day>/n/MI*.md. */
+/** A day's most-important files: time/<day>/most-important/MI*.md. */
 export async function readDayMostImportant(day: PlainDate): Promise<ContextFile[]> {
-  return readMatching(path.join(DIR_TIME, dayDir(day), 'n'), (f) => MI_FILE.test(f))
+  return readMatching(path.join(DIR_TIME, dayDir(day), 'most-important'), (f) => MI_FILE.test(f))
+}
+
+/** Pending decisions: every .md under a decisions/<year>/pending/ directory. */
+export async function readPendingDecisions(): Promise<ContextFile[]> {
+  if (!(await exists(DIR_DECISIONS))) return []
+  const pendingSegment = `${path.sep}pending${path.sep}`
+  const found: string[] = []
+  for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) {
+    if (entry.path.includes(pendingSegment)) found.push(entry.path)
+  }
+  found.sort()
+  const files: ContextFile[] = []
+  for (const filePath of found) {
+    const body = await tryRead(filePath)
+    if (body !== undefined) files.push({ name: path.basename(filePath), path: filePath, body })
+  }
+  return files
 }
 
 /**

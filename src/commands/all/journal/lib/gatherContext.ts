@@ -25,11 +25,11 @@ import {
   readDayMostImportant,
   readDayNarration,
   readGoals,
+  readPendingDecisions,
   tryRead,
 } from '#commands/lib/notebookContext.ts'
-import { DIR_BASE, DIR_DECISIONS, DIR_TIME } from '#config'
+import { DIR_BASE, DIR_TIME } from '#config'
 import { loadStreaks } from '#lib/streaks/mod.ts'
-import { exists, walk } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { weekDir } from '#shared/nbfs/mod.ts'
 import { type PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
@@ -85,9 +85,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
 
   // Pinned: the anchors every run sees, independent of recency.
   for (const goal of await readGoals()) add(relToBase(goal.path), goal)
-  for (const decisionPath of await listPendingDecisions()) {
-    add(relToBase(decisionPath), { path: decisionPath, body: (await tryRead(decisionPath)) ?? '' })
-  }
+  for (const decision of await readPendingDecisions()) add(relToBase(decision.path), decision)
 
   const week = Week.of(today)
   const weekMdPath = path.join(DIR_TIME, weekDir(week.startInYear), 'week.md')
@@ -128,17 +126,6 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
     documentCount: paths.length,
     totalTokens: estimateTokens(contextMarkdown),
   }
-}
-
-/** Open decisions: every .md under a decisions/<year>/pending/ directory. */
-async function listPendingDecisions(): Promise<string[]> {
-  if (!(await exists(DIR_DECISIONS))) return []
-  const pendingSegment = `${path.sep}pending${path.sep}`
-  const found: string[] = []
-  for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) {
-    if (entry.path.includes(pendingSegment)) found.push(entry.path)
-  }
-  return found.sort()
 }
 
 async function gatherHealthLines(today: PlainDate, days: number): Promise<string | null> {
