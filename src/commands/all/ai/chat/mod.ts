@@ -17,7 +17,7 @@ import { PORT_SERVER } from '#shared/config.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
-import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
+import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
 import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import ChatDocument, {
   extractConversationSummary,
@@ -1058,7 +1058,15 @@ export default class AiChatTask extends Command {
         }
         output.log('')
       } catch (err) {
-        const message = (err as Error).message
+        // A failed turn keeps its tool trail — an executed side-effectful
+        // call (a sent post, a created doc) must not vanish from the
+        // transcript because the turn later died.
+        if (err instanceof TurnError && err.toolRecords.length > 0) {
+          chatContext.recordTurnTools(err.toolRecords)
+        }
+        // TurnError arrives pre-clamped; foreign errors get the same cap —
+        // a validation failure embeds the whole message array in .message.
+        const message = truncate((err as Error).message ?? String(err), 2000)
         output.log(colors.red(`Error: ${message}`))
         output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
         await logAIError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })

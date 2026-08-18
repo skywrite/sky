@@ -62,6 +62,29 @@ export interface TurnResult {
 }
 
 /**
+ * Turn-error messages are clamped before they travel: a message-validation
+ * failure embeds the entire offending message array in its message, and
+ * hosts print and log this string.
+ */
+const MAX_TURN_ERROR_CHARS = 2000
+
+/**
+ * A turn that died mid-stream. The engine has already rolled its history
+ * back to the turn's start; toolRecords carries what executed or was denied
+ * before the failure so the host can still record the tool trail — a
+ * side-effectful call (a sent post, a created doc) must not vanish from the
+ * transcript because the turn later died.
+ */
+export class TurnError extends Error {
+  readonly toolRecords: ToolCallRecord[]
+  constructor(message: string, toolRecords: ToolCallRecord[]) {
+    super(message)
+    this.name = 'TurnError'
+    this.toolRecords = toolRecords
+  }
+}
+
+/**
  * One model invocation's result surfaces. Shapes vary by SDK path, so the
  * scanning stays untyped — see collectToolActivity.
  */
@@ -73,6 +96,13 @@ export interface ModelInvocation {
   steps: any[]
   // deno-lint-ignore no-explicit-any
   responseMessages: any[]
+  /**
+   * First error the stream surfaced mid-flight. Once a step has completed,
+   * the SDK resolves every result promise with partials and reports a later
+   * step's failure only through onError — so it rides here, never as a
+   * rejection.
+   */
+  error?: unknown
 }
 
 /** Test seam: one model invocation over the prepared prompt. */
@@ -219,6 +249,13 @@ export default class ChatEngine {
     const invoke: ModelInvoker =
       this.invokeModel ??
       (async ({ instructions, messages }) => {
+        // The SDK's default onError is console.error — for a message-
+        // validation failure that dump embeds the entire message array.
+        // Capture instead: once a step has completed, the result promises
+        // resolve with partials and this callback is the only surface where
+        // a later step's error is observable at all. Tool failures are not
+        // errors here — they flow as tool-error parts and never fire this.
+        let streamError: unknown
         const stream = streamText({
           ...this.model,
           instructions,
@@ -229,16 +266,40 @@ export default class ChatEngine {
           toolApproval: opts.toolApproval,
           stopWhen: isStepCount(5),
           onStepEnd,
+          onError: ({ error }) => {
+            streamError ??= error
+          },
         })
-        return {
-          text: await stream.text,
-          content: await stream.content,
-          steps: await stream.steps,
-          responseMessages: await stream.responseMessages,
+        try {
+          return {
+            text: await stream.text,
+            content: await stream.content,
+            steps: await stream.steps,
+            responseMessages: await stream.responseMessages,
+            error: streamError,
+          }
+        } catch (err) {
+          // When zero steps completed (e.g. every retry of the first request
+          // failed), the SDK rejects all result promises with a generic
+          // NoOutputGeneratedError — the real cause (an overloaded 529, an
+          // exhausted retry) was only ever surfaced through onError. Prefer
+          // the captured error so logs name what actually happened.
+          throw streamError ?? err
         }
       })
-    const runRound = () =>
-      invoke({ instructions: cachedInstructions(opts.instructions), messages: withCacheTail(this.messages) })
+    const runRound = async () => {
+      const result = await invoke({
+        instructions: cachedInstructions(opts.instructions),
+        messages: withCacheTail(this.messages),
+      })
+      if (result.error !== undefined) {
+        // The partial result still names what executed before the stream
+        // died — scan it so the failed turn keeps its tool trail.
+        collectToolActivity(result)
+        throw result.error
+      }
+      return result
+    }
 
     // Record executed tool calls and web-search source URLs from one
     // invocation's result. Approval rounds re-invoke the model, so every
@@ -286,78 +347,94 @@ export default class ChatEngine {
       }
     }
 
-    let result = await runRound()
+    // The rollback point: a failed turn must leave the model-facing history
+    // exactly as it stood after the user's message. The approval loop pushes
+    // mid-turn (assistant tool_use + approval responses); leaving that tail
+    // without the continuation's tool results would fail every later call —
+    // a permanently dead session.
+    const historyMark = this.messages.length
 
-    // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
-    const deniedTools = new Set<string>()
-    let approvalRound = 0
-    let approvalRoundsExhausted = false
-    // deno-lint-ignore no-explicit-any
-    while (result.content?.some((part: any) => part.type === 'tool-approval-request')) {
-      if (++approvalRound > this.maxApprovalRounds) {
-        approvalRoundsExhausted = true
-        break
-      }
+    try {
+      let result = await runRound()
 
+      // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
+      const deniedTools = new Set<string>()
+      let approvalRound = 0
+      let approvalRoundsExhausted = false
       // deno-lint-ignore no-explicit-any
-      this.messages.push(...(result.responseMessages as any))
+      while (result.content?.some((part: any) => part.type === 'tool-approval-request')) {
+        if (++approvalRound > this.maxApprovalRounds) {
+          approvalRoundsExhausted = true
+          break
+        }
 
-      // deno-lint-ignore no-explicit-any
-      const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
-      const approvals: Array<{
-        type: 'tool-approval-response'
-        approvalId: string
-        approved: boolean
-        reason?: string
-      }> = []
-
-      for (const request of approvalRequests) {
         // deno-lint-ignore no-explicit-any
-        const { approvalId, toolCall } = request as any
+        this.messages.push(...(result.responseMessages as any))
 
-        // Auto-deny tools the user already rejected this turn
-        if (deniedTools.has(toolCall.toolName)) {
-          recordDeniedTool(toolCall)
+        // deno-lint-ignore no-explicit-any
+        const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
+        const approvals: Array<{
+          type: 'tool-approval-response'
+          approvalId: string
+          approved: boolean
+          reason?: string
+        }> = []
+
+        for (const request of approvalRequests) {
+          // deno-lint-ignore no-explicit-any
+          const { approvalId, toolCall } = request as any
+
+          // Auto-deny tools the user already rejected this turn
+          if (deniedTools.has(toolCall.toolName)) {
+            recordDeniedTool(toolCall)
+            approvals.push({
+              type: 'tool-approval-response',
+              approvalId,
+              approved: false,
+              reason: `User already denied ${toolCall.toolName}. Do not request it again.`,
+            })
+            continue
+          }
+
+          const decision = await this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input })
+          if (!decision.approved) {
+            deniedTools.add(toolCall.toolName)
+            recordDeniedTool(toolCall)
+          }
           approvals.push({
             type: 'tool-approval-response',
             approvalId,
-            approved: false,
-            reason: `User already denied ${toolCall.toolName}. Do not request it again.`,
+            approved: decision.approved,
+            reason: decision.reason,
           })
-          continue
         }
 
-        const decision = await this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input })
-        if (!decision.approved) {
-          deniedTools.add(toolCall.toolName)
-          recordDeniedTool(toolCall)
-        }
-        approvals.push({
-          type: 'tool-approval-response',
-          approvalId,
-          approved: decision.approved,
-          reason: decision.reason,
-        })
+        // deno-lint-ignore no-explicit-any
+        this.messages.push({ role: 'tool', content: approvals } as any)
+
+        // Scan this round's result before the continuation replaces it —
+        // denials were recorded at the approval prompt; their ids are
+        // skipped so nothing double-counts.
+        collectToolActivity(result)
+
+        result = await runRound()
       }
 
-      // deno-lint-ignore no-explicit-any
-      this.messages.push({ role: 'tool', content: approvals } as any)
-
-      // Scan this round's result before the continuation replaces it —
-      // denials were recorded at the approval prompt; their ids are
-      // skipped so nothing double-counts.
       collectToolActivity(result)
 
-      result = await runRound()
+      // Push all response messages (including tool_use/tool_result pairs) to
+      // preserve valid conversation history
+      // deno-lint-ignore no-explicit-any
+      this.messages.push(...(result.responseMessages as any))
+
+      return { text: result.text, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted }
+    } catch (err) {
+      // Roll back to the turn's start and rethrow clamped — the raw SDK
+      // error can embed the entire message array, and hosts print and log
+      // the message. The tool trail rides along for the host's records.
+      this.messages.length = historyMark
+      const message = err instanceof Error ? err.message : String(err)
+      throw new TurnError(truncate(message, MAX_TURN_ERROR_CHARS), turnTools)
     }
-
-    collectToolActivity(result)
-
-    // Push all response messages (including tool_use/tool_result pairs) to
-    // preserve valid conversation history
-    // deno-lint-ignore no-explicit-any
-    this.messages.push(...(result.responseMessages as any))
-
-    return { text: result.text, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted }
   }
 }

@@ -1,6 +1,12 @@
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { assert, test } from '#test'
-import ChatEngine, { type ApprovalDecision, type ModelInvocation, type ModelInvoker, timeStampLine } from './mod.ts'
+import ChatEngine, {
+  type ApprovalDecision,
+  type ModelInvocation,
+  type ModelInvoker,
+  timeStampLine,
+  TurnError,
+} from './mod.ts'
 
 // ---------------------------------------------------------------------------
 // Scripted fakes
@@ -378,5 +384,144 @@ test('ChatEngine.runTurn - approval rounds capped', async () => {
     should: 'stop after the round cap and report the cutoff',
     actual: { exhausted: result.approvalRoundsExhausted, invocations: calls.length, asked: asked.length },
     expected: { exhausted: true, invocations: 4, asked: 3 },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Failed turns
+// ---------------------------------------------------------------------------
+
+test('ChatEngine.runTurn - stream error throws a clamped TurnError with the tool trail', async () => {
+  const { engine } = makeEngine([
+    {
+      ...textResult(''),
+      steps: [
+        {
+          toolResults: [toolResult('notebook_tool', 'tc1', { query: 'atlas' }, { success: false, error: 'too long' })],
+        },
+      ],
+      error: new Error('x'.repeat(50_000)),
+    },
+  ])
+  engine.appendUserMessage('hi')
+
+  let thrown: unknown
+  try {
+    await engine.runTurn(TURN_OPTS)
+  } catch (err) {
+    thrown = err
+  }
+
+  const turnError = thrown as TurnError
+  assert({
+    given: 'an invocation whose stream surfaced a mid-flight error after a tool ran',
+    should: "throw a clamped TurnError carrying the failing round's tool records",
+    actual: {
+      name: turnError.name,
+      clamped: turnError.message.length <= 2000,
+      records: turnError.toolRecords,
+    },
+    expected: {
+      name: 'TurnError',
+      clamped: true,
+      records: [
+        {
+          tool: 'notebook_tool',
+          input: 'atlas',
+          outcome: 'error',
+          tokens: estimateTokens(JSON.stringify({ success: false, error: 'too long' })),
+        },
+      ],
+    },
+  })
+})
+
+test('ChatEngine.runTurn - a rejected invocation wraps, keeps its message, rolls back', async () => {
+  const calls: Array<{ messages: unknown[] }> = []
+  let invocations = 0
+  const invokeModel: ModelInvoker = (args) => {
+    const snapshot = JSON.parse(JSON.stringify(args.messages)) as Array<Record<string, unknown>>
+    calls.push({ messages: snapshot.map(({ providerOptions: _, ...rest }) => rest) })
+    invocations++
+    if (invocations === 1) return Promise.reject(new Error('overloaded'))
+    return Promise.resolve(textResult('recovered'))
+  }
+  const engine = new ChatEngine({
+    model: {} as ConstructorParameters<typeof ChatEngine>[0]['model'],
+    approvalHandler: () => Promise.resolve(APPROVE),
+    invokeModel,
+  })
+  engine.appendUserMessage('hi')
+
+  let thrown: unknown
+  try {
+    await engine.runTurn(TURN_OPTS)
+  } catch (err) {
+    thrown = err
+  }
+
+  engine.appendUserMessage('retry')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'an invocation that rejects outright (zero steps completed)',
+    should: 'wrap in TurnError preserving the cause message, and start the next turn clean',
+    actual: {
+      failed: thrown instanceof TurnError,
+      message: (thrown as Error).message,
+      recovered: result.text,
+      nextTurnMessages: calls[1].messages,
+    },
+    expected: {
+      failed: true,
+      message: 'overloaded',
+      recovered: 'recovered',
+      nextTurnMessages: [{ role: 'user', content: 'hi\n\nretry' }],
+    },
+  })
+})
+
+test('ChatEngine.runTurn - approval-round failure rolls the history back', async () => {
+  const { engine, calls } = makeEngine(
+    [
+      textResult('', {
+        content: [approvalRequest('ap1', 'tc1', 'poster', { message: 'hello' })],
+        responseMessages: [
+          {
+            role: 'assistant',
+            content: [{ type: 'tool-call', toolCallId: 'tc1', toolName: 'poster', input: { message: 'hello' } }],
+          },
+        ],
+      }),
+      { ...textResult(''), error: new Error('validation failed') },
+      textResult('recovered'),
+    ],
+    [APPROVE],
+  )
+  engine.appendUserMessage('post it')
+
+  let thrown: unknown
+  try {
+    await engine.runTurn(TURN_OPTS)
+  } catch (err) {
+    thrown = err
+  }
+
+  engine.appendUserMessage('retry')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a continuation that dies after the approval round already pushed tool_use + approvals',
+    should: 'roll history back to the user message so the next turn starts clean',
+    actual: {
+      failed: thrown instanceof TurnError,
+      recovered: result.text,
+      nextTurnMessages: calls[2].messages,
+    },
+    expected: {
+      failed: true,
+      recovered: 'recovered',
+      nextTurnMessages: [{ role: 'user', content: 'post it\n\nretry' }],
+    },
   })
 })
