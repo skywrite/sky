@@ -70,7 +70,7 @@ const params = {
   }),
   ephemeral: Flag.bool('Chat without saving conversation to file', {
     short: 'E',
-    default: true,
+    default: false,
   }),
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-chat tag corpus', { default: false }),
@@ -392,8 +392,9 @@ export default class AiChatTask extends Command {
       '- Price data (BTC, SPY, EXOD)',
       '',
       'The conversation continues until you press Ctrl+C or submit empty input.',
-      'Chats are ephemeral by default — toggle saving with Ctrl+S (or /save, /log)',
-      'to write the conversation to the {day}/actions/ai-chats/ folder.',
+      'Chats are saved by default to the {day}/actions/ai-chats/ folder —',
+      'toggle saving off with Ctrl+S (or /nosave), or start ephemeral with -E.',
+      'Day-file logging stays opt-in (Ctrl+L or /log).',
       'Saved chats are searchable in later sessions via the chats GraphQL query.',
       'On save, missing tags: and rel: are chosen automatically from how past chats',
       'were filed (--no-auto-tag / --no-auto-rel to skip); hand-written and resumed',
@@ -402,8 +403,8 @@ export default class AiChatTask extends Command {
       'Resume: --resume lists the saved chats for the day (--when shifts the day,',
       'and Older… reaches previous days). The picked chat continues as if the',
       'session never exited — conversation reseeded, recorded context restored',
-      'from the context log — and exiting updates the same file in place. Saving is',
-      'on by default when resuming; exiting with no new messages touches nothing.',
+      'from the context log — and exiting updates the same file in place. Resuming',
+      'always saves back; exiting with no new messages touches nothing.',
     ],
     usage: [
       'sky ai:chat                              # Claude Opus 4.8 (default), Haiku for fast',
@@ -413,7 +414,7 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --no-summary-baseline        # Every raw file for all days (old flood)',
-      'sky ai:chat --no-ephemeral               # Save conversation without toggling Ctrl+S',
+      'sky ai:chat -E                           # Ephemeral: exit without saving',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
     ],
     params,
@@ -522,7 +523,7 @@ export default class AiChatTask extends Command {
         frontmatterHealthy: typeof doc.yaml['turns'] === 'number',
         state,
       }
-      // Resuming a saved chat: saving back is the default, not ephemeral.
+      // Resuming a saved chat always writes back — overrides an explicit -E.
       ephemeral = false
       if (!resumeSession.frontmatterHealthy) {
         output.log(
