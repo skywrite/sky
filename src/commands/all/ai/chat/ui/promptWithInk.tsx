@@ -9,6 +9,7 @@ const DEFAULT_HINT =
 export async function promptWithInk({
   placeholder,
   hint,
+  topic,
   saveOnExit,
   logToDay,
   splitViewEnabled,
@@ -41,6 +42,7 @@ export async function promptWithInk({
         React.createElement(ChatInputPrompt, {
           placeholder: placeholder ?? 'Type your message...',
           hint: hint ?? DEFAULT_HINT,
+          topic,
           saveOnExit,
           logToDay,
           splitViewEnabled,

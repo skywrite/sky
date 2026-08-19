@@ -33,6 +33,7 @@ import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
 import { buildChatTranscript, CHAT_ENRICH } from './lib/enrich.ts'
+import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 
 // -----------------------------------------------------------------------------
@@ -858,6 +859,18 @@ export default class AiChatTask extends Command {
         .join('\n')
     }
 
+    // The topic label pinned above the input and mirrored to the tab title:
+    // a resumed chat's saved summary, else first words of the opening message
+    // until the one-shot titler lands. Display only — the saved summary is
+    // chosen independently at save time.
+    let topic = resumeSession?.summary || ''
+    let topicTitlerFired = false
+    const updateTopic = (next: string) => {
+      topic = next
+      setTerminalTitle(next)
+    }
+    if (topic) setTerminalTitle(topic)
+
     // Conversation loop
     while (true) {
       // Get user input
@@ -874,6 +887,7 @@ export default class AiChatTask extends Command {
           .sort()
 
         const promptResult = await promptWithInk({
+          topic: topic || undefined,
           saveOnExit: !ephemeral,
           logToDay: log,
           splitViewEnabled,
@@ -930,6 +944,10 @@ export default class AiChatTask extends Command {
         output.log(colors.dim('Context gathering skipped.'))
         continue
       }
+
+      // The first real message names the tab right away; the titler refines
+      // the label once the first exchange exists.
+      if (!topic) updateTopic(firstWordsSummary([{ role: 'user', content: userMessage }]))
 
       // Stamp the turn at submit time — the context gather below can take a
       // while, and the stamp should say when the message was sent, not when
@@ -1047,6 +1065,15 @@ export default class AiChatTask extends Command {
         if (assistantWhen) assistantTurn.when = assistantWhen
         turns.push(assistantTurn)
 
+        // One shot over the first exchange: the pinned line and tab title
+        // update when the label lands (save-time titling is independent).
+        if (!resumeSession && !topicTitlerFired && turns.length >= 2) {
+          topicTitlerFired = true
+          summarizeTranscript(buildChatTranscript(turns.slice(0, 2)), { kind: CHAT_ENRICH.kind }).then((t) => {
+            if (t) updateTopic(t)
+          })
+        }
+
         output.log('')
         output.log(result.text)
         if (uniqueUrls.length > 0) {
@@ -1072,6 +1099,8 @@ export default class AiChatTask extends Command {
         await logAIError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
       }
     }
+
+    clearTerminalTitle()
 
     // Save conversation if there were any turns (unless --ephemeral). A
     // resumed session with no new messages leaves its file untouched.

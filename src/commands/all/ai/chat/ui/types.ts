@@ -11,6 +11,8 @@ export interface ChatPromptResult {
 export interface ChatPromptOptions {
   placeholder?: string
   hint?: string
+  /** Running topic label pinned above the input (display only, never persisted). */
+  topic?: string
   saveOnExit: boolean
   logToDay: boolean
   splitViewEnabled: boolean
@@ -23,6 +25,7 @@ export interface ChatPromptOptions {
 export interface ChatInputPromptProps {
   placeholder: string
   hint: string
+  topic?: string
   saveOnExit: boolean
   logToDay: boolean
   splitViewEnabled: boolean

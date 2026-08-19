@@ -284,6 +284,7 @@ function getAbsoluteLayout(node: DOMElement | null, renderTopRow: number): Eleme
 export function ChatInputPrompt({
   placeholder,
   hint,
+  topic,
   saveOnExit,
   logToDay,
   splitViewEnabled,
@@ -828,6 +829,7 @@ export function ChatInputPrompt({
           ),
         )
       : null,
+    topic ? React.createElement(Text, { color: 'gray', wrap: 'truncate-end' }, `Topic: ${topic}`) : null,
     React.createElement(Text, { color: 'cyan' }, 'You'),
     React.createElement(
       Box,
