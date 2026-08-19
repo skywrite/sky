@@ -1,4 +1,5 @@
-import { generateText } from 'ai'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -23,6 +24,25 @@ const PROMPT_FILE = new URL('../prompts/claude-code-session.prompt.md', import.m
 
 const FILES_MAX = 60
 const PROMPTS_MAX = 120
+
+/**
+ * Schema enforced at the API layer. Free-text JSON replies broke on the
+ * model's own output (unescaped quotes inside a string value); structured
+ * output makes that failure class impossible rather than repairing it.
+ */
+const digestSchema = z.object({
+  title: z.string(),
+  about: z.string(),
+  decided: z.array(z.string()),
+  built: z.array(z.string()),
+  open: z.array(z.string()),
+  learned: z.array(z.string()),
+})
+
+// generateObject has no timeout option; an unbounded call can hang forever
+// (see enrich/classify.ts). Session materials run far longer than a tag
+// pick's transcript, so this allows double the enrich budget.
+const AI_TIMEOUT_MS = 120_000
 
 /** Assemble the per-session material the digest model reads. */
 function materials(session: ClaudeSession, day: PlainDate, timezone: string): string {
@@ -60,34 +80,22 @@ function materials(session: ClaudeSession, day: PlainDate, timezone: string): st
   return parts.join('\n')
 }
 
-function asStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+function nonBlank(items: string[]): string[] {
+  return items.filter((item) => item.trim().length > 0)
 }
 
-/** Parse and validate the model's JSON reply; null on any shape violation. */
-export function parseDigest(text: string): SessionDigest | null {
-  const jsonText = text
-    .trim()
-    .replace(/^```(?:json)?\s*/, '')
-    .replace(/```\s*$/, '')
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(jsonText)
-  } catch {
-    return null
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null
-  const obj = parsed as Record<string, unknown>
-  if (typeof obj.title !== 'string' || !obj.title.trim()) return null
-  if (typeof obj.about !== 'string' || !obj.about.trim()) return null
+/** Trim a schema-shaped digest; null when title or about is blank. */
+export function normalizeDigest(raw: z.infer<typeof digestSchema>): SessionDigest | null {
+  const title = raw.title.trim()
+  const about = raw.about.trim()
+  if (!title || !about) return null
   return {
-    title: obj.title.trim(),
-    about: obj.about.trim(),
-    decided: asStrings(obj.decided),
-    built: asStrings(obj.built),
-    open: asStrings(obj.open),
-    learned: asStrings(obj.learned),
+    title,
+    about,
+    decided: nonBlank(raw.decided),
+    built: nonBlank(raw.built),
+    open: nonBlank(raw.open),
+    learned: nonBlank(raw.learned),
   }
 }
 
@@ -99,17 +107,19 @@ async function digestSession(
   instructions: string,
 ): Promise<SessionDigest | null> {
   try {
-    const result = await generateText({
+    const { object } = await generateObject({
       ...aiModelByProfile(profile),
+      schema: digestSchema,
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions,
       prompt: materials(session, day, timezone),
     })
-    const digest = parseDigest(result.text)
+    const digest = normalizeDigest(object)
     if (!digest) {
       await logAIError({
         source: 'recap:claude-code',
         stage: 'parse-digest',
-        message: `unparseable digest for session ${session.sessionId}: ${result.text.slice(0, 200)}`,
+        message: `blank digest for session ${session.sessionId}: ${JSON.stringify(object).slice(0, 200)}`,
       })
     }
     return digest

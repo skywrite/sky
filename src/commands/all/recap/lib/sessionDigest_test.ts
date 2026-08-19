@@ -1,62 +1,56 @@
 import { assert, test } from '#test'
-import { parseDigest } from './sessionDigest.ts'
+import { normalizeDigest } from './sessionDigest.ts'
 
-test('parseDigest accepts a plain JSON reply', () => {
-  const digest = parseDigest(
-    JSON.stringify({
-      title: 'widget work',
-      about: 'Built the widget.',
-      decided: ['ship it'],
-      built: ['widget'],
-      open: [],
-      learned: [],
-    }),
-  )
+test('normalizeDigest trims title and about', () => {
+  const digest = normalizeDigest({
+    title: '  widget work ',
+    about: ' Built the widget. ',
+    decided: ['ship it'],
+    built: ['widget'],
+    open: [],
+    learned: [],
+  })
 
   assert({
-    given: 'a valid JSON digest',
-    should: 'parse title and arrays',
-    expected: 'widget work / ship it',
-    actual: `${digest?.title} / ${digest?.decided[0]}`,
+    given: 'a digest with padded title and about',
+    should: 'trim both and keep arrays',
+    expected: 'widget work / Built the widget. / ship it',
+    actual: `${digest?.title} / ${digest?.about} / ${digest?.decided[0]}`,
   })
 })
 
-test('parseDigest strips code fences', () => {
-  const digest = parseDigest('```json\n{"title":"widget work","about":"Built the widget."}\n```')
+test('normalizeDigest rejects a blank title or about', () => {
+  const blank = { decided: [], built: [], open: [], learned: [] }
 
   assert({
-    given: 'a fenced JSON reply',
-    should: 'still parse, with missing arrays as empty',
-    expected: 'Built the widget. / 0',
-    actual: `${digest?.about} / ${digest?.decided.length}`,
-  })
-})
-
-test('parseDigest rejects malformed replies', () => {
-  assert({
-    given: 'a reply missing the title',
+    given: 'a digest whose title is whitespace',
     should: 'return null',
     expected: null,
-    actual: parseDigest('{"about":"Built the widget."}'),
+    actual: normalizeDigest({ ...blank, title: '   ', about: 'Built the widget.' }),
   })
 
   assert({
-    given: 'a non-JSON reply',
+    given: 'a digest whose about is empty',
     should: 'return null',
     expected: null,
-    actual: parseDigest('I could not produce a digest.'),
+    actual: normalizeDigest({ ...blank, title: 'widget work', about: '' }),
   })
 })
 
-test('parseDigest coerces non-string array entries away', () => {
-  const digest = parseDigest(
-    JSON.stringify({ title: 't', about: 'a', decided: ['keep', 42, '', null], built: 'not-an-array' }),
-  )
+test('normalizeDigest drops blank array entries', () => {
+  const digest = normalizeDigest({
+    title: 't',
+    about: 'a',
+    decided: ['keep', '', '  '],
+    built: [],
+    open: [],
+    learned: [],
+  })
 
   assert({
-    given: 'arrays with junk entries and a non-array field',
-    should: 'keep only non-empty strings',
-    expected: 'keep / 0',
-    actual: `${digest?.decided.join(',')} / ${digest?.built.length}`,
+    given: 'arrays containing empty and whitespace-only entries',
+    should: 'keep only non-blank strings',
+    expected: 'keep / 1',
+    actual: `${digest?.decided.join(',')} / ${digest?.decided.length}`,
   })
 })
