@@ -45,8 +45,8 @@ const params = {
       optional: true,
     },
   ),
-  fromTranscript: Flag.string(
-    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the newest .vtt/.srt on the Desktop.',
+  fromZoomVtt: Flag.string(
+    'Clean an existing transcript file (skip transcription). Optional path, or omit to use the newest .vtt on the Desktop.',
     {
       optional: true,
     },
@@ -162,7 +162,7 @@ export default class AudioTranscriptCleanTask extends Command {
     usage: [
       'sky audio:transcript:clean                    # Paste transcript via stdin',
       'sky audio:transcript:clean --file input.txt  # Read from file',
-      'sky audio:transcript:clean --from-transcript # Clean newest .vtt/.srt on Desktop',
+      'sky audio:transcript:clean --from-zoom-vtt   # Clean newest .vtt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -170,13 +170,13 @@ export default class AudioTranscriptCleanTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, fromAudio, fromTranscript, title, output: outputArg, save: saveArg } = args
+    const { file, fromAudio, fromZoomVtt, title, output: outputArg, save: saveArg } = args
 
     // Handle --from-audio: transcribe first, then clean
     const useAudioPipeline = fromAudio !== undefined
     const audioFilePath = typeof fromAudio === 'string' && fromAudio !== 'true' ? fromAudio : undefined
-    // Handle --from-transcript: clean an existing transcript file (skip transcription)
-    const useTranscriptFile = fromTranscript !== undefined
+    // Handle --from-zoom-vtt: clean an existing transcript file (skip transcription)
+    const useTranscriptFile = fromZoomVtt !== undefined
 
     // 1. Get transcript input
     let transcript: string
@@ -209,8 +209,8 @@ export default class AudioTranscriptCleanTask extends Command {
       }
     } else if (useTranscriptFile) {
       let transcriptPath: string
-      if (typeof fromTranscript === 'string' && fromTranscript !== 'true') {
-        transcriptPath = fromTranscript
+      if (typeof fromZoomVtt === 'string' && fromZoomVtt !== 'true') {
+        transcriptPath = fromZoomVtt
       } else {
         const found = await desktopFilesByExt(['.vtt', '.srt'])
         if (found.length === 0) {

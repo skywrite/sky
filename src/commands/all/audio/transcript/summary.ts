@@ -34,8 +34,8 @@ const params = {
       optional: true,
     },
   ),
-  fromTranscript: Flag.string(
-    'Run transcript pipeline: clean, then summarize. Optional path to transcript file, or omit to use the newest .vtt/.srt on the Desktop.',
+  fromZoomVtt: Flag.string(
+    'Run transcript pipeline: clean, then summarize. Optional path to transcript file, or omit to use the newest .vtt on the Desktop.',
     {
       optional: true,
     },
@@ -152,7 +152,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     usage: [
       'sky audio:transcript:summary --file input.txt  # Read from file',
       'sky audio:transcript:summary                   # Paste via stdin',
-      'sky audio:transcript:summary --from-transcript # Clean + summarize newest .vtt/.srt on Desktop',
+      'sky audio:transcript:summary --from-zoom-vtt   # Clean + summarize newest .vtt on Desktop',
     ],
     params,
   }
@@ -163,7 +163,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       file,
       text,
       fromAudio,
-      fromTranscript,
+      fromZoomVtt,
       title,
       output: outputArg,
       save: saveArg,
@@ -179,7 +179,7 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     // Handle pipeline: delegate to clean (audio transcribes first), then summarize
     const useAudioPipeline = fromAudio !== undefined
-    const useCleanPipeline = useAudioPipeline || fromTranscript !== undefined
+    const useCleanPipeline = useAudioPipeline || fromZoomVtt !== undefined
 
     let transcript: string
     let pipelineWho: string[] = []
@@ -189,11 +189,8 @@ export default class AudioTranscriptSummaryTask extends Command {
     let transcriptFilePath: string | null = null
 
     if (useCleanPipeline) {
-      // --from-audio: transcribe → clean. --from-transcript: clean an existing transcript.
-      const cleanResult = await tasks.run(
-        'audio:transcript:clean',
-        useAudioPipeline ? { fromAudio } : { fromTranscript },
-      )
+      // --from-audio: transcribe → clean. --from-zoom-vtt: clean an existing transcript.
+      const cleanResult = await tasks.run('audio:transcript:clean', useAudioPipeline ? { fromAudio } : { fromZoomVtt })
       if (!cleanResult.ok || !cleanResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${cleanResult.message}`)
       }

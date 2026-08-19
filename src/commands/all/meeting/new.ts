@@ -14,12 +14,12 @@ import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  who: Arg.string('Person or group (optional with --from-audio/--from-transcript)', { optional: true }),
+  who: Arg.string('Person or group (optional with --from-audio/--from-zoom-vtt)', { optional: true }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
     short: 'a',
     optional: true,
   }),
-  fromTranscript: Flag.string('Path to transcript file, or omit to use the newest .vtt/.srt on the Desktop', {
+  fromZoomVtt: Flag.string('Path to transcript file, or omit to use the newest .vtt on the Desktop', {
     short: 't',
     optional: true,
   }),
@@ -50,14 +50,14 @@ export default class MeetingNewTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
-    let { when, medium, who, summary, category, fromAudio, fromTranscript, duration } = args
+    let { when, medium, who, summary, category, fromAudio, fromZoomVtt, duration } = args
     let body: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
     let transcriptSourcePath: string | null = null
 
-    if (fromAudio !== undefined && fromTranscript !== undefined) {
-      return CommandResult.fail('Use either --from-audio or --from-transcript, not both')
+    if (fromAudio !== undefined && fromZoomVtt !== undefined) {
+      return CommandResult.fail('Use either --from-audio or --from-zoom-vtt, not both')
     }
 
     // Check the length here rather than at write time: the transcript pipeline
@@ -70,15 +70,15 @@ export default class MeetingNewTask extends Command {
       }
     }
 
-    // Handle --from-audio / --from-transcript pipeline via audio:transcript:summary
-    const usePipeline = fromAudio !== undefined || fromTranscript !== undefined
+    // Handle --from-audio / --from-zoom-vtt pipeline via audio:transcript:summary
+    const usePipeline = fromAudio !== undefined || fromZoomVtt !== undefined
 
     if (usePipeline) {
       // Delegate to audio:transcript:summary which handles:
       // (audio: transcribe →) clean → summarize with user corrections
       const summaryResult = await tasks.run(
         'audio:transcript:summary',
-        fromAudio !== undefined ? { fromAudio } : { fromTranscript },
+        fromAudio !== undefined ? { fromAudio } : { fromZoomVtt },
       )
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
@@ -109,10 +109,10 @@ export default class MeetingNewTask extends Command {
         medium = data.medium
       }
 
-      // Only --from-transcript hands us a file worth keeping: on the --from-audio
+      // Only --from-zoom-vtt hands us a file worth keeping: on the --from-audio
       // path the .vtt is a generated artifact, and the recording it came from is
       // the file that matters.
-      if (fromTranscript !== undefined) {
+      if (fromZoomVtt !== undefined) {
         transcriptSourcePath = data.transcriptFilePath
       }
 
@@ -147,7 +147,7 @@ export default class MeetingNewTask extends Command {
 
     // Validate required fields for manual path
     if (!who) {
-      return CommandResult.fail('Missing required argument: who (or use --from-audio/--from-transcript)')
+      return CommandResult.fail('Missing required argument: who (or use --from-audio/--from-zoom-vtt)')
     }
 
     const whenDate = when.plainDate

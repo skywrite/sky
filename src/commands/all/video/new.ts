@@ -63,7 +63,7 @@ export default class VideoNewTask extends Command {
       output.log(colors.cyan(`Using transcript: ${path.basename(srtSourcePath)}`))
 
       const summaryResult = await tasks.run('audio:transcript:summary', {
-        fromTranscript: srtSourcePath,
+        fromZoomVtt: srtSourcePath,
         template: 'audio-message',
       })
       if (!summaryResult.ok || !summaryResult.data) {
