@@ -80,8 +80,6 @@ export const DIRS_MARKDOWN = [
 
 export const FILE_SKY_CODE_ENV = path.join(DIR_CODE_SRC, '.env')
 
-export const FILE_TIMEZONE = path.join(DIR_TRACKING, 'timezone.csv')
-
 export const FILE_NEXT_PROFESSIONAL = path.join(DIR_TIME, 'next-professional.md')
 export const FILE_NEXT_PERSONAL = path.join(DIR_TIME, 'next-personal.md')
 
