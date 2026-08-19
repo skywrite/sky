@@ -1,8 +1,10 @@
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { assert, test } from '#test'
 import {
+  backfillMissingMessages,
   laterChannelLabel,
   laterConversationKind,
+  laterIsThreadReply,
   laterItemLink,
   renderLaterRow,
   resolveStaleChannels,
@@ -217,6 +219,110 @@ test('renderLaterRow shows a reply badge for threads', () => {
     given: 'a message with replies',
     should: 'append a dim reply count to the head line',
     actual: stripAnsi(renderLaterRow(row, 0, { hyperlinks: false }))[0],
+    expected: '   1. 09:30  #general  ↩ 3',
+  })
+})
+
+test('backfillMissingMessages hydrates only bodyless rows on live channels', async () => {
+  const reply = item({ channel_name: 'general', ts: '1750000010.000100' })
+  const hasBody = item({ channel_name: 'general', ts: '1750000020.000100', message: { content: 'kept' } })
+  const deadId = item({ ts: '1750000030.000100' })
+  const wrongTs = item({ channel_name: 'general', ts: '1750000040.000100' })
+  const gone = item({ channel_name: 'general', ts: '1750000050.000100' })
+
+  const fetched: string[] = []
+  await backfillMissingMessages(
+    [
+      { item: reply, link: 'link-reply' },
+      { item: hasBody, link: 'link-body' },
+      { item: deadId, link: 'link-dead' },
+      { item: wrongTs, link: 'link-wrong-ts' },
+      { item: gone, link: 'link-gone' },
+    ],
+    async (link) => {
+      fetched.push(link)
+      if (link === 'link-reply') {
+        return {
+          channel_id: 'C0123ABCDEF',
+          ts: '1750000010.000100',
+          content: 'threaded answer',
+          thread_ts: '1749999999.000100',
+        }
+      }
+      if (link === 'link-wrong-ts') {
+        return { channel_id: 'C0123ABCDEF', ts: '1750000099.000100', content: 'someone else' }
+      }
+      return undefined
+    },
+  )
+
+  assert({
+    given: 'a mix of hydrated, bodyless, and dead-id rows',
+    should: 'fetch only the bodyless rows on live channels',
+    actual: fetched.sort(),
+    expected: ['link-gone', 'link-reply', 'link-wrong-ts'],
+  })
+  assert({
+    given: 'a backfilled thread reply',
+    should: 'carry its content and read as a thread reply',
+    actual: `${reply.message?.content} / ${laterIsThreadReply(reply)}`,
+    expected: 'threaded answer / true',
+  })
+  assert({
+    given: 'a row that already had a body',
+    should: 'stay untouched',
+    actual: hasBody.message?.content,
+    expected: 'kept',
+  })
+  assert({
+    given: 'a fetch that returned a different ts',
+    should: 'be discarded',
+    actual: wrongTs.message,
+    expected: undefined,
+  })
+  assert({
+    given: 'a fetch that found nothing',
+    should: 'keep the row bodyless',
+    actual: gone.message,
+    expected: undefined,
+  })
+})
+
+test('renderLaterRow marks saved thread replies, not thread parents', () => {
+  const link = 'https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100'
+  assert({
+    given: 'a message whose thread_ts differs from its own ts',
+    should: 'flag it as a thread reply',
+    actual: stripAnsi(
+      renderLaterRow(
+        {
+          item: item({ channel_name: 'general', message: { content: 'agreed', thread_ts: '1749990000.000100' } }),
+          timeLabel: '09:30',
+          link,
+        },
+        0,
+        { hyperlinks: false },
+      ),
+    )[0],
+    expected: '   1. 09:30  #general  ↳ thread reply',
+  })
+  assert({
+    given: 'a thread parent (thread_ts equal to its own ts)',
+    should: 'show the reply count and no thread-reply marker',
+    actual: stripAnsi(
+      renderLaterRow(
+        {
+          item: item({
+            channel_name: 'general',
+            message: { content: 'kickoff', thread_ts: '1750000000.000100', reply_count: 3 },
+          }),
+          timeLabel: '09:30',
+          link,
+        },
+        0,
+        { hyperlinks: false },
+      ),
+    )[0],
     expected: '   1. 09:30  #general  ↩ 3',
   })
 })

@@ -10,6 +10,7 @@ import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems } from './lib/capture.ts'
 import {
+  backfillMissingMessages,
   fetchInProgressLater,
   laterCapturable,
   laterItemLink,
@@ -145,6 +146,7 @@ export default class SlackLaterDayTask extends Command {
         (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
     const stale = resolveStaleChannels(list.items)
+    await backfillMissingMessages(matched)
     for (const [index, d] of matched.entries()) {
       for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale })) output.log(line)
     }

@@ -1,6 +1,10 @@
 import colors from 'picocolors'
 import parseLaterList from '#commands/all/slack/cli/lib/agent-slack/parseLaterList.ts'
-import type { AgentSlackLaterItem, AgentSlackLaterList } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
+import type {
+  AgentSlackLaterItem,
+  AgentSlackLaterList,
+  AgentSlackMessage,
+} from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import { oneLine } from './pick.ts'
@@ -105,6 +109,49 @@ export function laterCapturable(item: AgentSlackLaterItem): boolean {
   return Boolean(item.channel_name)
 }
 
+/**
+ * Whether the saved message is a reply inside a thread rather than the thread
+ * parent — Slack stamps thread_ts on every threaded message, and it equals the
+ * message's own ts only on the parent.
+ */
+export function laterIsThreadReply(item: AgentSlackLaterItem): boolean {
+  const threadTs = item.message?.thread_ts
+  return threadTs !== undefined && threadTs !== item.ts
+}
+
+/**
+ * Backfill rows the Later export returned bodyless. Its hydration reads
+ * channel history, which never contains non-broadcast thread replies — the
+ * very rows the thread-reply marker exists for — so fetch each missing
+ * message directly: `message get` resolves thread replies through
+ * conversations.replies. Rows that still fail (deleted messages, dead
+ * conversation ids) keep their placeholder.
+ */
+export async function backfillMissingMessages(
+  rows: Array<{ item: AgentSlackLaterItem; link: string }>,
+  fetchMessage: (link: string) => Promise<AgentSlackMessage | undefined> = fetchLaterMessage,
+): Promise<void> {
+  const missing = rows.filter((row) => !row.item.message && laterCapturable(row.item))
+  await Promise.all(
+    missing.map(async (row) => {
+      const message = await fetchMessage(row.link)
+      if (!message || message.ts !== row.item.ts) return
+      row.item.message = { content: message.content, thread_ts: message.thread_ts }
+    }),
+  )
+}
+
+async function fetchLaterMessage(link: string): Promise<AgentSlackMessage | undefined> {
+  const result = await runAgentSlack(['message', 'get', link, '--max-body-chars', '300'])
+  if (!result.success) return undefined
+  try {
+    const data = JSON.parse(result.stdout) as { message?: AgentSlackMessage }
+    return data.message
+  } catch {
+    return undefined
+  }
+}
+
 export type LaterRowContext = {
   /** Dead-id resolutions from resolveStaleChannels; without one, unnamed rows fall back to the raw id */
   stale?: Map<string, StaleChannelInfo>
@@ -119,12 +166,14 @@ export type LaterRowContext = {
 }
 
 /**
- * One queue row: a numbered head line (time, conversation, reply count) and a
- * snippet line. The time is an OSC-8 hyperlink to the message, so no url is
- * printed on a terminal — piped output gets it as a third line. Rows whose
- * conversation id no longer resolves show the twin-inferred name and a stale
- * or duplicate marker instead of a bare id, and rows the export returned
- * bodyless get a labeled placeholder instead of a blank snippet.
+ * One queue row: a numbered head line (time, conversation, thread-reply
+ * marker, reply count) and a snippet line. The time is an OSC-8 hyperlink to
+ * the message, so no url is printed on a terminal — piped output gets it as a
+ * third line. Saved thread replies carry a yellow marker so they read
+ * distinctly from thread parents. Rows whose conversation id no longer
+ * resolves show the twin-inferred name and a stale or duplicate marker
+ * instead of a bare id, and rows the export returned bodyless get a labeled
+ * placeholder instead of a blank snippet.
  */
 export function renderLaterRow(
   row: { item: AgentSlackLaterItem; timeLabel: string; link: string },
@@ -147,6 +196,7 @@ export function renderLaterRow(
     label = colors.red(`⚠ unavailable channel ${item.channel_id}`)
   }
 
+  const threadBadge = laterIsThreadReply(item) ? colors.yellow('  ↳ thread reply') : ''
   const replies = item.message?.reply_count
   const replyBadge = replies ? colors.dim(`  ↩ ${replies}`) : ''
 
@@ -159,7 +209,7 @@ export function renderLaterRow(
   const snippet = body === '' ? colors.dim(placeholder) : body
 
   const lines = [
-    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? linkify(timeLabel, link) : timeLabel)}  ${label}${replyBadge}`,
+    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? linkify(timeLabel, link) : timeLabel)}  ${label}${threadBadge}${replyBadge}`,
     `      ${snippet}`,
   ]
   if (!hyperlinks) lines.push(`      ${link}`)

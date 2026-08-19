@@ -13,7 +13,8 @@
       "state": "in_progress",
       "date_saved": 1700086400,
       "message": {
-        "content": "Rollout checkpoint two is done.\nSample dataset migrated without issues."
+        "content": "Rollout checkpoint two is done.\nSample dataset migrated without issues.",
+        "thread_ts": "1699990000.000050"
       }
     },
     {

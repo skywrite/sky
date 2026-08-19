@@ -14,6 +14,12 @@ test('parseLaterList reads the fixture shape', () => {
     expected: 'atlas-rollout',
   })
   assert({
+    given: 'a saved thread reply',
+    should: 'keep the message thread_ts',
+    actual: parsed?.items[0].message?.thread_ts,
+    expected: '1699990000.000050',
+  })
+  assert({
     given: 'the counts block',
     should: 'expose in_progress',
     actual: parsed?.counts.in_progress,

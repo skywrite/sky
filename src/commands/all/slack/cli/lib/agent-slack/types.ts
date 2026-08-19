@@ -35,7 +35,8 @@ export type AgentSlackLaterItem = {
   state?: string
   /** Epoch seconds of the save action (agent-slack maps the API's date_created) */
   date_saved?: number
-  message?: { content?: string; reply_count?: number }
+  /** thread_ts is set on every threaded message and equals ts only on the thread parent */
+  message?: { content?: string; thread_ts?: string; reply_count?: number }
 }
 
 export type AgentSlackLaterList = {

@@ -7,6 +7,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { SLACK_WORKSPACE } from '#config'
 import { captureLaterItems } from './lib/capture.ts'
 import {
+  backfillMissingMessages,
   fetchInProgressLater,
   laterCapturable,
   laterItemLink,
@@ -101,6 +102,7 @@ export default class SlackLaterTask extends Command {
     // Show enough to cover what a capture run is about to take
     const stale = resolveStaleChannels(list.items)
     const shown = queue.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0))
+    await backfillMissingMessages(shown)
     for (const [index, d] of shown.entries()) {
       for (const line of renderLaterRow(d, index, { stale })) output.log(line)
     }
