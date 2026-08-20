@@ -58,7 +58,7 @@ export interface MissionFile {
   title: string
   url?: string
   kind?: WorkspaceKind
-  action: 'created' | 'updated'
+  action: 'created' | 'updated' | 'read'
 }
 
 /** What the mission touched — drives the notebook artifact and the command result. */

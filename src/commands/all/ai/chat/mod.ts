@@ -8,7 +8,7 @@ import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
+import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
@@ -32,6 +32,7 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
+import { artifactRelEntries, recordExternalFiles } from './lib/artifactRel.ts'
 import { buildChatTranscript, CHAT_ENRICH } from './lib/enrich.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
@@ -697,6 +698,9 @@ export default class AiChatTask extends Command {
     // "toolName:key" entries the user approved with "don't ask again this
     // session" (e.g. google_agent scoped to one file id). Session-lived only.
     const sessionApprovals = new Set<string>()
+    // External files the session's tools touched (title by URL) — saved as
+    // "[Title](url)" rel entries so the transcript points at its artifacts.
+    const externalFiles = new Map<string, string>()
     const createdDate = resumeSession?.created ?? formatDate(startTime)
     let isFirstTurn = true
     let hasNewMessages = false
@@ -1027,6 +1031,7 @@ export default class AiChatTask extends Command {
 
             return answers
           },
+          onExternalFiles: (_toolName, files) => recordExternalFiles(externalFiles, files),
         })
         const allTools = { ...webTools, ...notebookTools }
         const toolApproval = createToolApprovalConfig()
@@ -1159,7 +1164,10 @@ export default class AiChatTask extends Command {
         updated: updatedDate,
         provider: reasoningProfile.provider,
         model: reasoningProfile.model,
-        rel: priorRel ?? autoRel,
+        // Artifact links ride alongside whichever rel won (hand-written,
+        // resumed, or auto) — a session that touched a Google file always
+        // records it, deduped against entries already carrying the URL.
+        rel: mergeRel(priorRel ?? autoRel, artifactRelEntries(externalFiles, priorRel)),
         tags: priorTags ?? autoTags?.split('; '),
       })
       let markdown = chatDoc.toMarkdown()

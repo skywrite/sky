@@ -65,8 +65,20 @@ export type OnOpenQuestions = (
   questions: ToolOpenQuestion[],
 ) => Promise<ToolQuestionAnswer[] | undefined>
 
+/** An external file a tool touched, named by title and web URL. */
+export interface ExternalFileRef {
+  title: string
+  url: string
+}
+
 export interface CreateNotebookToolsOptions {
   onOpenQuestions?: OnOpenQuestions
+  /**
+   * Fires after a tool succeeds with a `files` array naming external
+   * artifacts (Google Docs/Sheets/Slides today). The host records them —
+   * ai:chat cross-references them in the saved transcript's rel.
+   */
+  onExternalFiles?: (toolName: string, files: ExternalFileRef[]) => void
 }
 
 /**
@@ -90,6 +102,26 @@ function extractOpenQuestions(payload: Record<string, unknown>): ToolOpenQuestio
     })
   }
   return questions
+}
+
+/**
+ * Extract well-formed external-file references from a tool result payload.
+ * Convention: a tool may return `files` entries with a string `title` and
+ * `url` to report the external artifacts it touched; entries without a URL
+ * (or a malformed array) are skipped rather than failing the call.
+ */
+export function extractExternalFiles(payload: Record<string, unknown>): ExternalFileRef[] {
+  const raw = payload.files
+  if (!Array.isArray(raw)) return []
+  const files: ExternalFileRef[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const f = item as Record<string, unknown>
+    if (typeof f.title !== 'string' || !f.title.trim()) continue
+    if (typeof f.url !== 'string' || !f.url.trim()) continue
+    files.push({ title: f.title, url: f.url })
+  }
+  return files
 }
 
 const discoveredTools: DiscoveredTool[] = []
@@ -190,6 +222,11 @@ export async function runToolCommand(
   }
 
   const payload: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
+
+  if (options.onExternalFiles) {
+    const files = extractExternalFiles(payload)
+    if (files.length > 0) options.onExternalFiles(entry.toolName, files)
+  }
 
   // Tools returning openQuestions get the native breakout: the user
   // settles them here, between execution and the model seeing the

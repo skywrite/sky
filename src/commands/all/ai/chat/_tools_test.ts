@@ -150,3 +150,51 @@ test('runToolCommand threads the open-question breakout', async () => {
     expected: { answers: [{ question: 'Cadence?', answer: 'weekdays' }], openQuestions: [] },
   })
 })
+
+test('runToolCommand reports external files to the host', async () => {
+  const data = {
+    report: 'done',
+    files: [
+      { id: 'f1', title: 'Atlas Revenue Model', url: 'https://docs.google.com/spreadsheets/d/f1', action: 'read' },
+      { id: 'f2', title: 'No URL yet', action: 'created' },
+      'not-an-object',
+    ],
+  }
+  const seen: Array<{ toolName: string; files: unknown }> = []
+  await runToolCommand(
+    stubTasks(CommandResult.success(data)),
+    ENTRY,
+    {},
+    {
+      onExternalFiles: (toolName, files) => seen.push({ toolName, files }),
+    },
+  )
+
+  assert({
+    given: 'a tool result whose files mix URL-bearing, URL-less, and malformed entries',
+    should: 'deliver only well-formed title+url pairs, labeled with the tool name',
+    actual: seen,
+    expected: [
+      {
+        toolName: 'fake_tool',
+        files: [{ title: 'Atlas Revenue Model', url: 'https://docs.google.com/spreadsheets/d/f1' }],
+      },
+    ],
+  })
+
+  const silent: unknown[] = []
+  await runToolCommand(
+    stubTasks(CommandResult.success({ report: 'no files here' })),
+    ENTRY,
+    {},
+    {
+      onExternalFiles: (_t, files) => silent.push(files),
+    },
+  )
+  assert({
+    given: 'a tool result without a files array',
+    should: 'not invoke the handler at all',
+    expected: 0,
+    actual: silent.length,
+  })
+})

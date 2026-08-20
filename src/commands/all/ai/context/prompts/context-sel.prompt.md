@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-08-14
+updated: 2026-08-20
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -33,6 +33,12 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - The `rel` field links documents to projects/decisions by name
 - Files inside a project folder (notes, logs, drafts) are documents carrying the project rel: `documents(where: { relContains: "<project-name>" })` returns them, and `projects { files }` lists a folder's file paths
 - Do NOT use `involves` for projects — `involves` is for people only
+
+**External artifacts (Google Docs/Sheets/Slides)** → `relContains: "<title word>"`
+- Chats and documents that analyzed or created an external file carry it in `rel` as a titled link, e.g. `"[Atlas Revenue Model](https://docs.google.com/spreadsheets/...)"`.
+- `relContains` is a case-insensitive substring match, so one distinctive title word finds it: `chats(where: { relContains: "revenue" }, limit: 5) { date summary rel markdown path }`
+- "that spreadsheet/doc/deck about X" → query `chats` AND `documents` with `relContains` on a title word, alongside the usual `summaryContains`/`bodyContains`
+- `relContains: "docs.google.com"` sweeps every Google-file reference when the title is unknown
 
 **People** → `involves: "<person-name>"`
 - Works on: meetings, messages, journals, chats, documents, projects, decisions, goals

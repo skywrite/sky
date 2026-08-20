@@ -26,7 +26,7 @@ import { cachedInstructions } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
-import { writeDocArtifact } from './lib/artifact.ts'
+import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
@@ -376,7 +376,19 @@ export default class GoogleAgentTask extends Command {
 
       output.log('')
       output.log(report.trim())
-      return CommandResult.success({ report, files: state.files, steps, artifact })
+      // Read-only missions report the target too: a caller (ai:chat) records
+      // the files a mission concerned, not just the ones it edited.
+      const readTarget =
+        target && targetFile
+          ? {
+              id: target.fileId,
+              title: targetFile.name,
+              url: targetFile.webViewLink,
+              kind: workspaceKind(targetFile.mimeType),
+              action: 'read' as const,
+            }
+          : undefined
+      return CommandResult.success({ report, files: withReadTarget(state.files, readTarget), steps, artifact })
     } catch (err) {
       return CommandResult.error(err instanceof Error ? err.message : String(err))
     } finally {

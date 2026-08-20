@@ -94,3 +94,18 @@ test('Document.setRel - empty rel sets yaml to undefined', () => {
     expected: undefined,
   })
 })
+
+test('Document.setRel - markdown-link entries survive the YAML round-trip', () => {
+  // rel can carry external artifact links: the serializer must quote the
+  // string so `[` does not re-parse as a YAML flow sequence.
+  const link = '[Atlas Revenue Model](https://docs.google.com/spreadsheets/d/abc123/edit)'
+  const doc = new Document({ title: 'Test' }, '# Test').setRel(ImmutableSet._fromArray(ImmutableSet<string>, [link]))
+  const reparsed = Document.fromMarkdown(doc.toMarkdown())
+
+  assert({
+    given: 'a rel entry shaped as a markdown link',
+    should: 'come back as the same single string after serialize + parse',
+    actual: Array.from(reparsed.rel),
+    expected: [link],
+  })
+})

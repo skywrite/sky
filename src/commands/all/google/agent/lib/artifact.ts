@@ -17,6 +17,19 @@ export function docArtifactFileName(time: string, title: string, medium = 'gdoc'
   return `actions/docs/${time.replace(':', '-')}_${medium}_${slug}.md`
 }
 
+/**
+ * The mission's result files: everything touched, plus the `--file` target
+ * when the mission only read it. Touched files stay first and verbatim; a
+ * target that was itself created or updated is already among them and is
+ * not repeated. Read-only targets belong in the result (the caller may
+ * cross-reference them) but not in `state.files`, which gates the notebook
+ * artifact and the "touched" recap.
+ */
+export function withReadTarget(files: MissionFile[], readTarget?: MissionFile): MissionFile[] {
+  if (!readTarget || files.some((f) => f.id === readTarget.id)) return files
+  return [...files, readTarget]
+}
+
 export interface DocArtifactInput {
   date: string
   time: string
@@ -39,6 +52,10 @@ export function buildDocArtifact(input: DocArtifactInput): string {
     `account: ${input.account}`,
     'files:',
     ...input.files.map((f) => `  - "[${f.title}](${f.url ?? f.id})" # ${f.action}`),
+    // rel repeats the files as plain links so relContains queries find this
+    // record by title or host, like any other rel'd document.
+    'rel:',
+    ...input.files.map((f) => `  - "[${f.title}](${f.url ?? f.id})"`),
     'tags: google-docs',
     '---',
     '',

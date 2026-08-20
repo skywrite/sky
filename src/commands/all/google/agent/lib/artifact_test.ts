@@ -1,5 +1,6 @@
 import { assert, test } from '#test'
-import { artifactMedium, buildDocArtifact, docArtifactFileName } from './artifact.ts'
+import { artifactMedium, buildDocArtifact, docArtifactFileName, withReadTarget } from './artifact.ts'
+import type { MissionFile } from './tools.ts'
 
 test('docArtifactFileName', () => {
   assert({
@@ -47,5 +48,48 @@ test('buildDocArtifact', () => {
     should: 'title the artifact after it',
     expected: true,
     actual: artifact.includes('# Atlas Q3 Plan'),
+  })
+
+  assert({
+    given: 'a touched file',
+    should: 'mirror it into rel as a quoted titled link',
+    expected: true,
+    actual: artifact.includes('rel:\n  - "[Atlas Q3 Plan](https://docs.google.com/document/d/file-1)"'),
+  })
+})
+
+test('withReadTarget', () => {
+  const edited: MissionFile = {
+    id: 'file-1',
+    title: 'Atlas Q3 Plan',
+    url: 'https://docs.google.com/document/d/file-1',
+    action: 'updated',
+  }
+  const read: MissionFile = {
+    id: 'file-2',
+    title: 'Atlas Revenue Model',
+    url: 'https://docs.google.com/spreadsheets/d/file-2',
+    action: 'read',
+  }
+
+  assert({
+    given: 'a read-only target the mission never edited',
+    should: 'append it after the touched files',
+    expected: ['file-1', 'file-2'],
+    actual: withReadTarget([edited], read).map((f) => f.id),
+  })
+
+  assert({
+    given: 'a target the mission also edited',
+    should: 'keep the touched entry only',
+    expected: ['file-1'],
+    actual: withReadTarget([edited], { ...read, id: 'file-1' }).map((f) => f.id),
+  })
+
+  assert({
+    given: 'no target file',
+    should: 'return the touched files unchanged',
+    expected: ['file-1'],
+    actual: withReadTarget([edited], undefined).map((f) => f.id),
   })
 })

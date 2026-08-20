@@ -2,7 +2,7 @@
 name: context-evolve
 schema: 0.2.0
 created: 2026-03-01
-updated: 2026-08-14
+updated: 2026-08-20
 description: Evolve GraphQL queries based on conversation direction
 ---
 
@@ -35,6 +35,11 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Works on: meetings, messages, journals, documents
 - The `rel` field links documents to projects/decisions by name
 - Do NOT use `involves` for projects — `involves` is for people only
+
+**External artifacts (Google Docs/Sheets/Slides)** → `relContains: "<title word>"`
+- Chats and documents that analyzed or created an external file carry it in `rel` as a titled link, e.g. `"[Atlas Revenue Model](https://docs.google.com/spreadsheets/...)"`.
+- `relContains` is a case-insensitive substring match, so one distinctive title word finds it; `relContains: "docs.google.com"` sweeps every Google-file reference when the title is unknown
+- When the conversation turns to a spreadsheet, doc, or deck handled earlier, query `chats` AND `documents` with `relContains` on a title word
 
 **People** → `involves: "<person-name>"`
 - Works on: meetings, messages, journals, chats, documents, projects, decisions, goals
