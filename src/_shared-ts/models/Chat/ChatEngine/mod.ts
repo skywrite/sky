@@ -17,7 +17,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 
@@ -140,14 +140,27 @@ export interface ChatEngineOptions {
 
 /**
  * The model-facing time prefix for a user message. `when` is a notebook
- * datetime (`YYYY-MM-DD HH:MM`); during extended hours (24:00 and beyond)
- * the wall-clock equivalent is appended so the model never has to
- * de-extend late-night dates itself.
+ * datetime (`YYYY-MM-DD HH:MM`). The weekday rides along because models
+ * cannot reliably derive one from a bare date, and during extended hours
+ * (24:00 and beyond) the wall-clock equivalent is appended so the model
+ * never has to de-extend late-night dates itself.
  */
 export function timeStampLine(when: string): string {
+  const stamped = withWeekday(when)
   const hours = Number(when.split(' ')[1]?.split(':')[0])
-  if (!(hours >= 24)) return `[Time: ${when}]`
-  return `[Time: ${when} notebook - wall clock ${new PlainDateTime(when).normalize().toString()}]`
+  if (!(hours >= 24)) return `[Time: ${stamped}]`
+  return `[Time: ${stamped} notebook - wall clock ${new PlainDateTime(when).normalize().toString()}]`
+}
+
+/** "2026-08-20 07:58" -> "2026-08-20 Thu 07:58"; anything unparseable passes through untouched. */
+function withWeekday(when: string): string {
+  const match = when.match(/^(\d{4}-\d{2}-\d{2}) /)
+  if (!match) return when
+  try {
+    return `${match[1]} ${new PlainDate(match[1]).dayShort} ${when.slice(match[0].length)}`
+  } catch {
+    return when
+  }
 }
 
 /** Short human digest of a tool input for the turn log — never the payload. */

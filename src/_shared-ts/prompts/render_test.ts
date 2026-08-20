@@ -23,6 +23,33 @@ test('renderTemplate - namespaced variable substitution', () => {
   assert({ actual: warnings.length, expected: 0, given, should: 'have no warnings' })
 })
 
+test('renderTemplate - notebookDay derives from notebookDate', () => {
+  const given = 'a template using context.notebookDay'
+  const should = 'render the weekday of the supplied notebook date'
+
+  const template = '{{context.notebookDate}} is a {{context.notebookDay}}.'
+  const input: RenderInput = {
+    context: { notebookDate: '2026-08-20' },
+  }
+  const { output, warnings } = renderTemplate(template, input)
+
+  assert({ actual: output, expected: '2026-08-20 is a Thursday.', given, should })
+  assert({ actual: warnings.length, expected: 0, given, should: 'have no warnings' })
+})
+
+test('renderTemplate - notebookDay ignores a caller-supplied value', () => {
+  const given = 'a caller passing a notebookDay that contradicts notebookDate'
+  const should = 'derive the weekday from notebookDate so the pair cannot disagree'
+
+  const template = '{{context.notebookDay}}'
+  const input: RenderInput = {
+    context: { notebookDate: '2026-08-20', notebookDay: 'Funday' },
+  }
+  const { output } = renderTemplate(template, input)
+
+  assert({ actual: output, expected: 'Thursday', given, should })
+})
+
 test('renderTemplate - user namespace substitution', () => {
   const given = 'a template with user.input'
   const should = 'substitute user values correctly'

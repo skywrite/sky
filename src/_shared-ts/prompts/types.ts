@@ -84,6 +84,8 @@ export interface PromptMetadata {
 export interface RuntimeContext {
   /** Current notebook date (YYYY-MM-DD) */
   notebookDate: string
+  /** Weekday of the notebook date (e.g., "Thursday") - always derived from notebookDate at render time */
+  notebookDay: string
   /** Current notebook time (HH:MM) */
   notebookTime: string
   /** System/wall-clock date (YYYY-MM-DD) */

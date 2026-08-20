@@ -7,6 +7,7 @@ Handlebars.Utils.escapeExpression = (str: string) => (str == null ? '' : str)
 import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { parsePromptFile } from './parse.ts'
 import type {
   GlobalContext,
@@ -57,11 +58,27 @@ function buildContextDefaults(): RuntimeContext {
 
   return {
     notebookDate: date,
+    notebookDay: new PlainDate(now).dayLong,
     notebookTime: time,
     systemDate: date,
     systemTime: time,
     notebookTimezone: timezone,
     systemTimezone: timezone,
+  }
+}
+
+/**
+ * notebookDay always derives from the merged notebookDate rather than the
+ * caller or the clock: a supplied pair could disagree (during extended hours
+ * the system date is already tomorrow), and models cannot catch a weekday
+ * that contradicts its date.
+ */
+function deriveNotebookDay(context: Record<string, unknown>): void {
+  if (typeof context.notebookDate !== 'string') return
+  try {
+    context.notebookDay = new PlainDate(context.notebookDate).dayLong
+  } catch {
+    // Malformed date: keep the clock-derived default.
   }
 }
 
@@ -208,6 +225,7 @@ export function renderParsedPrompt(parsed: ParsedPrompt, input: RenderInput = {}
 
   // Merge caller input
   const namespacedContext = mergeContexts(defaults, input)
+  deriveNotebookDay(namespacedContext.context)
 
   // Auto-populate me namespace from AboutMe profile (callers can override)
   if (!namespacedContext.me) {
@@ -263,6 +281,7 @@ export function renderTemplate(template: string, input: RenderInput = {}): Rende
 
   // Merge caller input
   const namespacedContext = mergeContexts(defaults, input)
+  deriveNotebookDay(namespacedContext.context)
 
   // Auto-populate me namespace from AboutMe profile (callers can override)
   if (!namespacedContext.me) {

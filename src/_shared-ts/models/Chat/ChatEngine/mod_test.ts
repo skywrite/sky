@@ -154,15 +154,21 @@ test('ChatEngine.seedConversation', async () => {
 test('timeStampLine', () => {
   assert({
     given: 'a normal-hours notebook datetime',
-    should: 'render a plain stamp',
+    should: 'render a stamp carrying the weekday',
     actual: timeStampLine('2026-08-15 14:32'),
-    expected: '[Time: 2026-08-15 14:32]',
+    expected: '[Time: 2026-08-15 Sat 14:32]',
   })
   assert({
     given: 'an extended-hours datetime crossing a month boundary',
-    should: 'append the de-extended wall-clock equivalent',
+    should: 'weekday the notebook date and append the de-extended wall-clock equivalent',
     actual: timeStampLine('2026-08-31 25:30'),
-    expected: '[Time: 2026-08-31 25:30 notebook - wall clock 2026-09-01 01:30]',
+    expected: '[Time: 2026-08-31 Mon 25:30 notebook - wall clock 2026-09-01 01:30]',
+  })
+  assert({
+    given: 'a datetime that does not parse as a date',
+    should: 'pass it through without a weekday rather than throw',
+    actual: timeStampLine('sometime later'),
+    expected: '[Time: sometime later]',
   })
 })
 
@@ -179,7 +185,7 @@ test('ChatEngine.appendUserMessage - stamps prefix the model-facing message, per
     expected: [
       {
         role: 'user',
-        content: '[Time: 2026-08-15 14:32]\nfirst part\n\n[Time: 2026-08-15 14:40]\nsecond part',
+        content: '[Time: 2026-08-15 Sat 14:32]\nfirst part\n\n[Time: 2026-08-15 Sat 14:40]\nsecond part',
       },
     ],
   })
@@ -200,9 +206,9 @@ test('ChatEngine.seedConversation - restamps user messages only', async () => {
     should: 'prefix stamped user messages, never assistant ones',
     actual: calls[0].messages,
     expected: [
-      { role: 'user', content: '[Time: 2026-08-14 09:05]\nearlier question' },
+      { role: 'user', content: '[Time: 2026-08-14 Fri 09:05]\nearlier question' },
       { role: 'assistant', content: 'earlier answer' },
-      { role: 'user', content: 'pre-stamp question\n\n[Time: 2026-08-15 14:32]\nfollow-up' },
+      { role: 'user', content: 'pre-stamp question\n\n[Time: 2026-08-15 Sat 14:32]\nfollow-up' },
     ],
   })
 })

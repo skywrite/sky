@@ -88,6 +88,10 @@ export const RESERVED_NAMESPACES = {
       type: 'string' as const,
       description: 'Current notebook date (YYYY-MM-DD)',
     },
+    notebookDay: {
+      type: 'string' as const,
+      description: 'Weekday of the notebook date (e.g., "Thursday") - derived from notebookDate',
+    },
     notebookTime: {
       type: 'string' as const,
       description: 'Current notebook time (HH:MM)',
