@@ -17,7 +17,7 @@ const WAKE_LOOKBACK_MS = 12 * 3_600_000
 const params = {
   day: dayYesterdayArg(),
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
-  open: Flag.bool('Open the recap in the editor after writing', { short: 'o', default: false }),
+  noEditor: Flag.bool('Skip opening the recap in the editor', { default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
 }
 
@@ -52,7 +52,7 @@ export default class RecapGithubTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { day, dryRun, open, rel } = args
+    const { day, dryRun, noEditor, rel } = args
 
     if (!(await isCommandAvailable('gh'))) {
       return CommandResult.fail('gh CLI not found. Install GitHub CLI and run: gh auth login')
@@ -117,7 +117,8 @@ export default class RecapGithubTask extends Command {
     const file = await writeRecapFile({ day, app: APP, prefix: clockPrefix(firstClock), contents })
     output.log(`Recapped GitHub activity in ${repos.length} repo${repos.length === 1 ? '' : 's'} → ${file}`)
 
-    if (open) openEditor([{ file }])
+    // The recap is meant to be looked at — pop it into the editor.
+    if (!noEditor) await openEditor([{ file }])
 
     return CommandResult.success({ file, repos: repos.length })
   }

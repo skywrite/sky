@@ -24,7 +24,7 @@ const DEFAULT_DIGEST_PROFILE = 'default-haiku-4.5'
 const params = {
   day: dayYesterdayArg(),
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
-  open: Flag.bool('Open the recap in the editor after writing', { short: 'o', default: false }),
+  noEditor: Flag.bool('Skip opening the recap in the editor', { default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
   noAi: Flag.bool('Skip AI session digests (mechanical trail only)', { default: false }),
   model: Flag.string('Model profile for session digests', {
@@ -70,7 +70,7 @@ export default class RecapClaudeCodeTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { day, dryRun, open, rel, noAi, model, projectsDir } = args
+    const { day, dryRun, noEditor, rel, noAi, model, projectsDir } = args
 
     // A bad -m should fail before any scanning happens.
     if (!noAi) {
@@ -149,7 +149,8 @@ export default class RecapClaudeCodeTask extends Command {
     const file = await writeRecapFile({ day, app: APP, prefix: clockPrefix(firstClock), contents })
     output.log(`Recapped ${sessions.length} Claude Code session${sessions.length === 1 ? '' : 's'} → ${file}`)
 
-    if (open) openEditor([{ file }])
+    // The recap is meant to be looked at — pop it into the editor.
+    if (!noEditor) await openEditor([{ file }])
 
     return CommandResult.success({ file, sessions: sessions.length })
   }
