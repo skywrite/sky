@@ -5,7 +5,7 @@ import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { SLACK_WORKSPACE } from '#config'
-import { captureLaterItems } from './lib/capture.ts'
+import { captureLaterItems, openInSlack } from './lib/capture.ts'
 import {
   backfillMissingMessages,
   fetchInProgressLater,
@@ -20,6 +20,9 @@ const MAX_LISTED = 20
 
 const params = {
   captureBatch: Flag.number('Capture the oldest N items in the queue (repeat for the next N)', { short: 'n' }),
+  open: Flag.bool('Also open each item this run lands in the notebook in Slack (for threads needing a reply)', {
+    default: false,
+  }),
   limit: Flag.number('Max saved items to fetch from Slack', { default: 600 }),
 }
 
@@ -30,6 +33,8 @@ type Result = {
   inProgressTotal?: number
   captured: string[]
   completed: number
+  /** Items opened in Slack via --open */
+  opened: number
   /** Items still in progress in the queue once this run is done */
   remaining: number
   failures: string[]
@@ -57,12 +62,16 @@ export default class SlackLaterTask extends Command {
       'and auto-rel apply either way, each item is then marked complete in',
       'Slack, and captured files open in the editor when done.',
       '',
+      '--open also opens each item the run lands in the notebook in Slack —',
+      'captured threads and already-captured skips alike, since those are the',
+      'ones most likely still waiting on a reply.',
+      '',
       'Completed items drop off the list, so the same command run again takes',
       'the next N — drain the backlog a batch at a time, checking tags between',
       'runs. There is deliberately no --capture all here: the queue drains in',
       'batches, never in one sweep.',
     ],
-    usage: ['sky slack:later', 'sky slack:later --capture-batch 5', 'sky slack:later -n 5'],
+    usage: ['sky slack:later', 'sky slack:later --capture-batch 5', 'sky slack:later -n 5 --open'],
     params,
   }
 
@@ -73,6 +82,9 @@ export default class SlackLaterTask extends Command {
       return CommandResult.fail(
         `Invalid --capture-batch: ${args.captureBatch} (use a whole number of items, 1 or more)`,
       )
+    }
+    if (args.open && args.captureBatch === undefined) {
+      return CommandResult.fail('--open requires --capture-batch — the listing alone opens nothing')
     }
 
     if (!SLACK_WORKSPACE) {
@@ -118,6 +130,7 @@ export default class SlackLaterTask extends Command {
         inProgressTotal: list.counts.in_progress,
         captured: [],
         completed: 0,
+        opened: 0,
         remaining: list.counts.in_progress ?? queue.length,
         failures: [],
       })
@@ -161,12 +174,15 @@ export default class SlackLaterTask extends Command {
       openEditor(outcome.openTargets.map((file) => ({ file })))
       await delay(500)
     }
+    // Slack last, so the user lands there ready to respond
+    if (args.open) await openInSlack(outcome.openLinks, output)
 
     return CommandResult.success({
       fetched: list.items.length,
       inProgressTotal: list.counts.in_progress,
       captured: outcome.captured,
       completed: outcome.completed,
+      opened: args.open ? outcome.openLinks.length : 0,
       remaining,
       failures: outcome.failures,
     })

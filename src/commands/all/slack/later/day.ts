@@ -8,7 +8,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { SLACK_WORKSPACE } from '#config'
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { captureLaterItems } from './lib/capture.ts'
+import { captureLaterItems, openInSlack } from './lib/capture.ts'
 import {
   backfillMissingMessages,
   fetchInProgressLater,
@@ -26,6 +26,9 @@ const params = {
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
   capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
   captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
+  open: Flag.bool('Also open each item this run lands in the notebook in Slack (for threads needing a reply)', {
+    default: false,
+  }),
   limit: Flag.number('Max saved items to fetch from Slack', { default: 600 }),
 }
 
@@ -48,6 +51,8 @@ type Result = {
   matched: number
   captured: string[]
   completed: number
+  /** Items opened in Slack via --open */
+  opened: number
   /** Items still in progress for the day once this run is done */
   remaining: number
   failures: string[]
@@ -78,12 +83,16 @@ export default class SlackLaterDayTask extends Command {
       '--capture-batch N takes only the first N matched items and reports what',
       'is left. Completed items drop off the list, so the same command run again',
       'takes the next N — capture a batch, check its tags, run it again.',
+      '',
+      '--open also opens each item the run lands in the notebook in Slack —',
+      'captured threads and already-captured skips alike, since those are the',
+      'ones most likely still waiting on a reply.',
     ],
     usage: [
       'sky slack:later:day',
       'sky slack:later:day --capture all',
       'sky slack:later:day 2026-06-03 --capture-batch 10',
-      'sky slack:later:day 2026-06-03 --capture 1,3',
+      'sky slack:later:day 2026-06-03 --capture 1,3 --open',
       'sky slack:later:day 2026-06-03 --saved-on',
     ],
     params,
@@ -108,6 +117,9 @@ export default class SlackLaterDayTask extends Command {
       return CommandResult.fail(
         `Invalid --capture-batch: ${args.captureBatch} (use a whole number of items, 1 or more)`,
       )
+    }
+    if (args.open && !args.capture && args.captureBatch === undefined) {
+      return CommandResult.fail('--open requires --capture or --capture-batch — the listing alone opens nothing')
     }
 
     if (!SLACK_WORKSPACE) {
@@ -167,6 +179,7 @@ export default class SlackLaterDayTask extends Command {
         matched: matched.length,
         captured: [],
         completed: 0,
+        opened: 0,
         remaining: matched.length,
         failures: [],
       })
@@ -220,6 +233,8 @@ export default class SlackLaterDayTask extends Command {
       openEditor(outcome.openTargets.map((file) => ({ file })))
       await delay(500)
     }
+    // Slack last, so the user lands there ready to respond
+    if (args.open) await openInSlack(outcome.openLinks, output)
 
     return CommandResult.success({
       day: dayStr,
@@ -228,6 +243,7 @@ export default class SlackLaterDayTask extends Command {
       matched: matched.length,
       captured: outcome.captured,
       completed: outcome.completed,
+      opened: args.open ? outcome.openLinks.length : 0,
       remaining,
       failures: outcome.failures,
     })
