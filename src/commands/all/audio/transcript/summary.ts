@@ -6,6 +6,7 @@ import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
@@ -192,7 +193,8 @@ export default class AudioTranscriptSummaryTask extends Command {
       // --from-audio: transcribe → clean. --from-zoom-vtt: clean an existing transcript.
       const cleanResult = await tasks.run('audio:transcript:clean', useAudioPipeline ? { fromAudio } : { fromZoomVtt })
       if (!cleanResult.ok || !cleanResult.data) {
-        return CommandResult.fail(`Transcript pipeline failed: ${cleanResult.message}`)
+        // No prefix: callers (meeting:new, video:new) already label the pipeline failure.
+        return CommandResult.fail(cleanResult.message ?? 'Transcript cleaning failed')
       }
       transcript = cleanResult.data.cleanedText
       pipelineWho = cleanResult.data.who
@@ -253,7 +255,8 @@ export default class AudioTranscriptSummaryTask extends Command {
     } catch (err) {
       const error = err as Error
       output.error(`AI Error: ${error.message}`)
-      return CommandResult.error(error, 'Failed to generate summary')
+      await logAIError({ source: 'audio:transcript:summary', stage: 'summary', message: error.message })
+      return CommandResult.error(error, `Failed to generate summary: ${error.message}`)
     }
 
     log.debug('summary generated', { chars: summary.length })
@@ -320,6 +323,11 @@ export default class AudioTranscriptSummaryTask extends Command {
     } catch (err) {
       output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
       log.warn('metadata extraction failed', { error: err, raw: extractRaw })
+      await logAIError({
+        source: 'audio:transcript:summary',
+        stage: 'extract',
+        message: `${(err as Error).message}${extractRaw ? ` — raw head: ${extractRaw.slice(0, 200)}` : ''}`,
+      })
     }
 
     // Duration computed from VTT cue timestamps is exact — prefer it over the
@@ -449,6 +457,11 @@ Example output: {"time": "2026-03-31 25:30"}`,
         } catch (err) {
           output.log(colors.yellow(`Failed to parse corrections: ${err}`))
           log.warn('correction parse failed', { error: err, raw: jsonText })
+          await logAIError({
+            source: 'audio:transcript:summary',
+            stage: 'corrections-parse',
+            message: `${(err as Error).message}${jsonText ? ` — raw head: ${jsonText.slice(0, 200)}` : ''}`,
+          })
         }
       }
     }

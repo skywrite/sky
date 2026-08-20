@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
@@ -373,7 +374,12 @@ export default class AudioTranscriptCleanTask extends Command {
       output.error(`AI Error: ${error.message}`)
       if (error.text) output.error(`Response text: ${error.text}`)
       if (error.cause) output.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`)
-      return CommandResult.error(error, 'Failed to analyze transcript')
+      await logAIError({
+        source: 'audio:transcript:clean',
+        stage: 'analysis',
+        message: `${error.message}${error.text ? ` — response head: ${error.text.slice(0, 200)}` : ''}`,
+      })
+      return CommandResult.error(error, `Failed to analyze transcript: ${error.message}`)
     }
 
     // The contract asks for one issue per distinct problem, but models leak
