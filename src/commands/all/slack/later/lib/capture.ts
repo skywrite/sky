@@ -1,11 +1,16 @@
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import { runCommand } from '#lib/sys/mod.ts'
+import { renderLaterRow } from './list.ts'
 import { oneLine } from './pick.ts'
+
+/** One queue row as the capture and open flows consume it */
+export type LaterCaptureRow = { item: AgentSlackLaterItem; timeLabel: string; link: string }
 
 export type LaterCaptureOutcome = {
   /** Notebook-relative paths written by the captures */
@@ -14,8 +19,8 @@ export type LaterCaptureOutcome = {
   openTargets: string[]
   /** Items marked complete in Slack */
   completed: number
-  /** Links this run landed in the notebook (fresh captures and dedup skips) — what --open opens */
-  openLinks: string[]
+  /** Rows this run landed in the notebook (fresh captures and dedup skips) — what --open opens */
+  openRows: LaterCaptureRow[]
   failures: string[]
 }
 
@@ -24,17 +29,18 @@ export type LaterCaptureOutcome = {
  * Slack — the Later list stays the ledger of what remains.
  */
 export async function captureLaterItems(
-  links: string[],
+  rows: LaterCaptureRow[],
   deps: { tasks: CommandService; output: OutputHandler },
 ): Promise<LaterCaptureOutcome> {
   const { tasks, output } = deps
   const captured: string[] = []
   const openTargets: string[] = []
-  const openLinks: string[] = []
+  const openRows: LaterCaptureRow[] = []
   const failures: string[] = []
   let completed = 0
 
-  for (const link of links) {
+  for (const row of rows) {
+    const { link } = row
     output.log('')
     output.log(`Capturing ${link}`)
     const result = await tasks.run('slack:follow:new', { link, noEditor: true })
@@ -48,7 +54,7 @@ export async function captureLaterItems(
         const done = await runAgentSlack(['later', 'complete', link])
         if (done.success) {
           completed++
-          openLinks.push(link)
+          openRows.push(row)
         } else {
           failures.push(`${link}: already captured; complete failed — ${oneLine(done.stderr || done.stdout, 120)}`)
         }
@@ -66,7 +72,7 @@ export async function captureLaterItems(
     if (result.data?.followed) output.log('  Live thread — following for new replies')
     captured.push(...files)
     openTargets.push(...files.map((p) => path.join(DIR_BASE, p)))
-    openLinks.push(link)
+    openRows.push(row)
 
     const done = await runAgentSlack(['later', 'complete', link])
     if (done.success) {
@@ -76,20 +82,23 @@ export async function captureLaterItems(
     }
   }
 
-  return { captured, openTargets, completed, openLinks, failures }
+  return { captured, openTargets, completed, openRows, failures }
 }
 
 /**
- * Open links in Slack via macOS `open` (the permalink redirects into the
- * app), paced so each lands as its own entry in Slack's back stack — the
- * last-opened item is the one left on screen.
+ * Open queue rows in Slack via macOS `open` (the permalink redirects into
+ * the app), paced so each lands as its own entry in Slack's back stack — the
+ * last-opened row is the one left on screen. Each row prints as it opens,
+ * so the terminal keeps a clickable recap of exactly what was opened (once
+ * completed, the items no longer wear Slack's saved-for-later badge).
  */
-export async function openInSlack(links: string[], output: OutputHandler): Promise<void> {
-  if (links.length === 0) return
+export async function openInSlack(rows: LaterCaptureRow[], output: OutputHandler): Promise<void> {
+  if (rows.length === 0) return
   output.log('')
-  output.log(`Opening ${links.length} in Slack…`)
-  for (const link of links) {
-    await runCommand('open', [link])
+  output.log(`Opening ${rows.length} in Slack (the last stays on screen):`)
+  for (const [index, row] of rows.entries()) {
+    await runCommand('open', [row.link])
+    for (const line of renderLaterRow(row, index, {})) output.log(line)
     await delay(500)
   }
 }

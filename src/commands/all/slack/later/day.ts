@@ -26,9 +26,10 @@ const params = {
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
   capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
   captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
-  open: Flag.bool('Also open each item this run lands in the notebook in Slack (for threads needing a reply)', {
-    default: false,
-  }),
+  open: Flag.stringOrBool(
+    'Open items in Slack: bare --open opens what a capture run lands; --open=3 alone opens the first 3 matched read-only',
+    { bareValue: 'landed' },
+  ),
   limit: Flag.number('Max saved items to fetch from Slack', { default: 600 }),
 }
 
@@ -84,15 +85,18 @@ export default class SlackLaterDayTask extends Command {
       'is left. Completed items drop off the list, so the same command run again',
       'takes the next N — capture a batch, check its tags, run it again.',
       '',
-      '--open also opens each item the run lands in the notebook in Slack —',
-      'captured threads and already-captured skips alike, since those are the',
-      'ones most likely still waiting on a reply.',
+      'Bare --open on a capture run also opens each item the run lands in',
+      'Slack — captured threads and already-captured skips alike, since those',
+      'are the ones most likely still waiting on a reply. --open=N alone opens',
+      'the first N matched read-only: nothing completes, so the items keep',
+      'their saved-for-later badge in Slack.',
     ],
     usage: [
       'sky slack:later:day',
       'sky slack:later:day --capture all',
       'sky slack:later:day 2026-06-03 --capture-batch 10',
       'sky slack:later:day 2026-06-03 --capture 1,3 --open',
+      'sky slack:later:day 2026-06-03 --open=3',
       'sky slack:later:day 2026-06-03 --saved-on',
     ],
     params,
@@ -118,8 +122,22 @@ export default class SlackLaterDayTask extends Command {
         `Invalid --capture-batch: ${args.captureBatch} (use a whole number of items, 1 or more)`,
       )
     }
-    if (args.open && !args.capture && args.captureBatch === undefined) {
-      return CommandResult.fail('--open requires --capture or --capture-batch — the listing alone opens nothing')
+    // --open wears two hats: bare with a capture run (open what lands), or
+    // --open=N alone (open the first N read-only — they keep their Later badge)
+    const capturing = args.capture !== undefined || args.captureBatch !== undefined
+    const openBare = args.open === 'landed'
+    let openCount: number | undefined
+    if (args.open !== undefined && !openBare) {
+      openCount = Number(args.open)
+      if (!Number.isInteger(openCount) || openCount < 1) {
+        return CommandResult.fail(`Invalid --open: ${args.open} (bare --open with a capture run, or --open=N alone)`)
+      }
+      if (capturing) {
+        return CommandResult.fail('With a capture run, --open takes no count — bare --open opens what the run lands')
+      }
+    }
+    if (openBare && !capturing) {
+      return CommandResult.fail('Bare --open needs a capture run — use --open=N to open the first N without capturing')
     }
 
     if (!SLACK_WORKSPACE) {
@@ -161,6 +179,27 @@ export default class SlackLaterDayTask extends Command {
     await backfillMissingMessages(matched)
     for (const [index, d] of matched.entries()) {
       for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale })) output.log(line)
+    }
+
+    // Read-only triage: open the first N matched in Slack, capture nothing —
+    // items stay saved, so Slack's Later badge still marks them
+    if (openCount !== undefined) {
+      const toOpen = matched
+        .filter((d) => laterCapturable(d.item))
+        .slice(0, openCount)
+        .map((d) => ({ ...d, timeLabel: d.timeLabel.slice(11) }))
+      await openInSlack(toOpen, output)
+      return CommandResult.success({
+        day: dayStr,
+        fetched: list.items.length,
+        inProgressTotal: list.counts.in_progress,
+        matched: matched.length,
+        captured: [],
+        completed: 0,
+        opened: toOpen.length,
+        remaining: matched.length,
+        failures: [],
+      })
     }
 
     if (matched.length === 0 || (!args.capture && args.captureBatch === undefined)) {
@@ -212,7 +251,7 @@ export default class SlackLaterDayTask extends Command {
     }
 
     const outcome = await captureLaterItems(
-      picked.map((d) => d.link),
+      picked.map((d) => ({ ...d, timeLabel: d.timeLabel.slice(11) })),
       { tasks, output },
     )
 
@@ -234,7 +273,7 @@ export default class SlackLaterDayTask extends Command {
       await delay(500)
     }
     // Slack last, so the user lands there ready to respond
-    if (args.open) await openInSlack(outcome.openLinks, output)
+    if (openBare) await openInSlack(outcome.openRows, output)
 
     return CommandResult.success({
       day: dayStr,
@@ -243,7 +282,7 @@ export default class SlackLaterDayTask extends Command {
       matched: matched.length,
       captured: outcome.captured,
       completed: outcome.completed,
-      opened: args.open ? outcome.openLinks.length : 0,
+      opened: openBare ? outcome.openRows.length : 0,
       remaining,
       failures: outcome.failures,
     })
