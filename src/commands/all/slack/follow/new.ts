@@ -7,7 +7,7 @@ import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE } from '#config'
+import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
@@ -27,13 +27,15 @@ const params = {
     { short: 'e' },
   ),
   when: whenNBTime(),
-  force: Flag.bool('Follow even when the thread is already inactive past the expiry window', { default: false }),
+  force: Flag.bool('Capture even when the thread is already captured, or inactive past the expiry window', {
+    default: false,
+  }),
   noEditor: Flag.bool('Skip opening editors for created files', { hidden: true, default: false }),
 }
 
 type Params = InferParams<typeof params>
 type Result = {
-  /** Follow YAML path — absent when the thread was archived without a follow */
+  /** Follow YAML path — active for live threads, a born-closed archive record for quiet ones */
   file?: string
   followed: boolean
   /** Notebook-relative paths (time/...) of the slack files written */
@@ -56,6 +58,10 @@ export default class SlackFollowNewTask extends Command {
     descriptionLong: [
       'Resolves channel name, message details, and thread info from a Slack link',
       'via slack:cli:export, then writes a Follow YAML file to the follow directory.',
+      '',
+      'A link into an already-captured thread is declined — the earlier capture',
+      'holds the whole thread, identified by channel + root ts across the active',
+      'and archive follow ledgers (--force to capture anyway).',
     ],
     usage: [
       'sky slack:follow:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
@@ -98,6 +104,26 @@ export default class SlackFollowNewTask extends Command {
     }
 
     const data = exportResult.data
+
+    // A saved thread reply whose thread was already captured must not create
+    // a second copy — the parent's capture holds the whole thread. Identity is
+    // channel + root ts, never link strings: one thread wears many URLs. The
+    // archive dir counts because every capture leaves a ledger record there
+    // even when nothing is actively followed.
+    const rootTs = data.threadTs
+    if (!args.force && rootTs !== undefined && rootTs !== data.messageTs) {
+      const ledgers = [
+        { dir: DIR_STATE_FOLLOW_SLACK_ACTIVE, label: 'Duplicate follow' },
+        { dir: DIR_STATE_FOLLOW_SLACK_ARCHIVE, label: 'Already captured' },
+      ]
+      for (const { dir, label } of ledgers) {
+        const owner = (await SlackFollowRegistry.build(dir)).findByThreadRoot(data.channelId, rootTs)
+        if (owner) {
+          output.log(`Thread already captured: ${owner.follow.summary} (${owner.fileName})`)
+          return CommandResult.fail(`${label}: ${owner.fileName}`)
+        }
+      }
+    }
 
     // Default --when to message timestamp (converted to notebook day's timezone)
     const when = rawArgs.when
@@ -191,7 +217,13 @@ export default class SlackFollowNewTask extends Command {
         return CommandResult.fail(`Failed to archive thread: ${slackResult.ok ? 'no file path' : slackResult.message}`)
       }
       const ddfw = new DayDirFileWriter(when.plainDate)
-      return CommandResult.success({ followed: false, slackFiles: [`time/${ddfw.dayDir}/${relPath}`] })
+      const timePath = `time/${ddfw.dayDir}/${relPath}`
+      // Born-closed ledger record: every captured thread leaves a follow YAML,
+      // so the already-captured check never needs to search the notebook itself
+      const archived = candidate.addMessage(when.plainDate.toString(), toTimeRef(timePath)).updateStatus('closed')
+      const archivedPath = path.join(DIR_STATE_FOLLOW_SLACK_ARCHIVE, fileName)
+      await outputFile(archivedPath, archived.toYaml())
+      return CommandResult.success({ file: archivedPath, followed: false, slackFiles: [timePath] })
     }
 
     if (shouldSmartSplit) {

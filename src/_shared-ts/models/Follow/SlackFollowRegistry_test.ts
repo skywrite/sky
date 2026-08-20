@@ -162,6 +162,48 @@ status: active`
   await rm(dir, { recursive: true })
 })
 
+test('findByThreadRoot() matches by channel + root ts', async () => {
+  const dir = await makeTempDir()
+  const linkOnly = `\
+source: Slack
+ref:
+  channel: C0LINKONLY1
+  link: https://atlas.slack.com/archives/C0LINKONLY1/p1750000000000100
+summary: captured before it had replies
+status: closed`
+  await writeYaml(dir, 'threaded.yaml', ACTIVE_YAML)
+  await writeYaml(dir, 'link-only.yaml', linkOnly)
+
+  const registry = await SlackFollowRegistry.build(dir)
+
+  assert({
+    given: 'a follow with a matching ref.thread_ts',
+    should: 'find it',
+    expected: 'threaded',
+    actual: registry.findByThreadRoot('C01234ABC', '1234567890.123456')?.fileName,
+  })
+  assert({
+    given: 'the same root ts under a different channel',
+    should: 'not match',
+    expected: undefined,
+    actual: registry.findByThreadRoot('C0WRONG0000', '1234567890.123456')?.fileName,
+  })
+  assert({
+    given: 'a follow without thread_ts whose ref.link holds the root',
+    should: 'match by the link ts',
+    expected: 'link-only',
+    actual: registry.findByThreadRoot('C0LINKONLY1', '1750000000.000100')?.fileName,
+  })
+  assert({
+    given: 'a different root ts than the ref.link holds',
+    should: 'not match',
+    expected: undefined,
+    actual: registry.findByThreadRoot('C0LINKONLY1', '1750000099.000100')?.fileName,
+  })
+
+  await rm(dir, { recursive: true })
+})
+
 test('findByFileName() returns matching follow', async () => {
   const dir = await makeTempDir()
   await writeYaml(dir, 'slack_sarah.yaml', ACTIVE_YAML)

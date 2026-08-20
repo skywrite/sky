@@ -65,6 +65,21 @@ export default class SlackFollowRegistry {
     return this.byFile.get(name)
   }
 
+  /**
+   * Find the follow tracking a thread, identified by channel + root ts —
+   * never by link strings, since one thread wears many URLs. ref.thread_ts is
+   * authoritative when present; a follow created before its thread had
+   * replies stores none, so its root is the message ts in ref.link (…/p<ts>).
+   */
+  findByThreadRoot(channel: string, rootTs: string): SlackFollowEntry | undefined {
+    const rootDigits = rootTs.replace('.', '')
+    return this.getAll().find(({ follow }) => {
+      if (follow.ref.channel !== channel) return false
+      if (follow.ref.thread_ts) return follow.ref.thread_ts === rootTs
+      return follow.ref.link?.match(/\/p(\d{10,})(?:[?#]|$)/)?.[1] === rootDigits
+    })
+  }
+
   get size(): number {
     return this.byFile.size
   }
