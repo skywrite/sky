@@ -13,6 +13,7 @@ import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
+import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { fetchOrgs, fetchPeople, fetchProjects } from './lib/entityLists.ts'
@@ -96,10 +97,9 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // -----------------------------------------------------------------------------
 
 const ANALYSIS_PROMPT_FILE = new URL('./prompts/transcript-analysis.prompt.md', import.meta.url).pathname
-const CORRECTION_PROMPT_FILE = new URL('./prompts/transcript-correction.prompt.md', import.meta.url).pathname
 
-// Analysis + correction run on the raw transcript and set the quality ceiling for the
-// notes built on it, so they ride the reasoning role — the registry's strongest default.
+// Analysis runs on the raw transcript and sets the quality ceiling for the
+// notes built on it, so it rides the reasoning role — the registry's strongest default.
 // Re-pin to a literal profile here if `reasoning` is ever moved down-tier for cost.
 const TRANSCRIPT_MODEL = ROLES.reasoning
 
@@ -132,6 +132,13 @@ type TranscriptIssue = z.infer<typeof TranscriptIssueSchema>['issues'][number]
 function instancesSuffix(issues: TranscriptIssue[]): string {
   const total = issues.reduce((sum, issue) => sum + issue.occurrences, 0)
   return total > issues.length ? ` (${total} instances)` : ''
+}
+
+/** Terminal labels for corrections applyCorrections() could not land. */
+const DROP_LABELS: Record<DropReason, string> = {
+  'not-found': 'not found in transcript',
+  conflict: 'a different fix already applied for this text',
+  'too-short': 'too short to replace safely',
 }
 
 interface UserCorrection {
@@ -439,49 +446,37 @@ export default class AudioTranscriptCleanTask extends Command {
 
     const corrections = [...reviewCorrections, ...autoCorrections]
 
-    // 6. Apply corrections using AI
-    const correctionPromptContent = await readTextFile(CORRECTION_PROMPT_FILE)
+    // 6. Apply corrections (deterministic find→replace — see lib/applyCorrections.ts
+    // for why this must never go back to an AI rewrite)
+    output.log(colors.cyan('\nApplying corrections...'))
 
-    const correctionInput: RenderInput = {
-      context: {
-        notebookDate: context.notebookNow.date,
-        systemDate: context.systemNow.date,
-        notebookTimezone: context.notebookNow.timezone,
-        systemTimezone: context.systemNow.timezone,
-      },
-      user: {
-        input: transcript,
-        corrections: JSON.stringify(
-          corrections.filter((c) => c.action !== 'skip'),
-          null,
-          2,
-        ),
-        // Reference only: the rewrite must not drift on names analysis didn't flag.
-        knownPeople,
-        knownOrgs,
-        knownProjects,
-      },
-    }
-
-    const { output: correctionPrompt } = renderPromptFile(
-      correctionPromptContent,
-      'transcript-correction.prompt.md',
-      correctionInput,
+    const applyResult = applyCorrections(
+      transcript,
+      corrections
+        .filter((c) => c.action !== 'skip')
+        .map(({ originalText, correction, occurrences }) => ({ originalText, correction, occurrences })),
     )
+    const cleanedTranscript = applyResult.text
 
-    output.log(colors.cyan('\nApplying corrections and formatting...'))
-
-    let cleanedTranscript: string
-    try {
-      const result = await generateText({
-        ...aiModelByProfile(TRANSCRIPT_MODEL),
-        messages: [{ role: 'user', content: correctionPrompt }],
-        maxRetries: 0,
-        timeout: 20 * 60 * 1000, // 20 min — rewriting a long transcript is slow
-      })
-      cleanedTranscript = result.text
-    } catch (err) {
-      return CommandResult.error(err as Error, 'Failed to apply corrections')
+    if (applyResult.applied.length > 0) {
+      const suffix =
+        applyResult.totalReplacements > applyResult.applied.length
+          ? ` (${applyResult.totalReplacements} replacements)`
+          : ''
+      output.log(colors.green(`Applied ${applyResult.applied.length} corrections${suffix}`))
+      for (const entry of applyResult.applied) {
+        if (entry.replaced !== entry.occurrences) {
+          output.log(
+            colors.gray(
+              `  "${entry.originalText}": replaced ${entry.replaced}× (analysis expected ${entry.occurrences})`,
+            ),
+          )
+        }
+      }
+    }
+    for (const entry of applyResult.dropped) {
+      const fix = entry.correction ? ` → "${entry.correction}"` : ''
+      output.log(colors.yellow(`  Dropped (${DROP_LABELS[entry.reason]}): "${entry.originalText}"${fix}`))
     }
 
     // 7. Determine output destination
@@ -508,8 +503,8 @@ export default class AudioTranscriptCleanTask extends Command {
       outputPath = `/tmp/transcript-clean-${slug}.md`
     }
 
-    const appliedCount = corrections.filter((c) => c.action !== 'skip').length
-    const skippedCount = corrections.filter((c) => c.action === 'skip').length
+    const appliedCount = applyResult.applied.length
+    const skippedCount = corrections.length - appliedCount
 
     // Format people arrays for YAML (use flow style for compact output)
     const whoYaml = analysis.who.length > 0 ? `[${analysis.who.map((n) => `"${n}"`).join(', ')}]` : '[]'
