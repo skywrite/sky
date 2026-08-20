@@ -509,8 +509,10 @@ export default class AudioTranscriptCleanTask extends Command {
         return CommandResult.error(new Error('HOME not set'), 'Could not determine home directory')
       }
       outputPath = path.join(home, 'Desktop', filename)
-    } else if ((useAudioPipeline || useTranscriptFile) && isStandalone) {
-      // Standalone pipeline: save to /tmp and open in VSCode
+    } else if (useAudioPipeline || useTranscriptFile) {
+      // Pipeline runs always land in /tmp: standalone for the user to open,
+      // composed (meeting:new) as insurance — a failure downstream must not
+      // lose the interactive review baked into the cleaned text.
       const slug = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -540,7 +542,11 @@ ${cleanedTranscript}
 
     if (outputPath) {
       await writeTextFile(outputPath, content)
-      output.log(colors.green(`\nSaved to ${outputPath}`))
+      if (isStandalone) {
+        output.log(colors.green(`\nSaved to ${outputPath}`))
+      } else {
+        output.log(colors.gray(`\nDumped cleaned transcript to: ${outputPath}`))
+      }
 
       // Open in VSCode when running standalone with a pipeline
       if ((useAudioPipeline || useTranscriptFile) && isStandalone) {
