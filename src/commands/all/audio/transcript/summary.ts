@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { generateText } from 'ai'
+import { generateText, streamText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
@@ -244,16 +244,23 @@ export default class AudioTranscriptSummaryTask extends Command {
     output.log(colors.cyan('\nGenerating summary...'))
 
     let summary: string
+    // Streamed for the same reason as the analysis call (see clean.ts): a long
+    // silent non-streaming socket gets killed by network idle timeouts, and
+    // onError is where the real failure cause surfaces.
+    let streamError: unknown
     try {
-      const result = await generateText({
+      const stream = streamText({
         ...aiModelByProfile(SUMMARY_MODEL),
         prompt: summaryPrompt,
-        maxRetries: 0,
-        timeout: 20 * 60 * 1000, // 20 min
+        timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
+        onError: ({ error }) => {
+          streamError ??= error
+        },
       })
-      summary = result.text
+      summary = await stream.text
+      if (streamError !== undefined) throw streamError
     } catch (err) {
-      const error = err as Error
+      const error = (streamError ?? err) as Error
       output.error(`AI Error: ${error.message}`)
       await logAIError({ source: 'audio:transcript:summary', stage: 'summary', message: error.message })
       return CommandResult.error(error, `Failed to generate summary: ${error.message}`)
@@ -300,7 +307,6 @@ export default class AudioTranscriptSummaryTask extends Command {
       const result = await generateText({
         ...aiModel('balanced'),
         prompt: extractPrompt,
-        maxRetries: 0,
         timeout: 20 * 60 * 1000, // 20 min
       })
 

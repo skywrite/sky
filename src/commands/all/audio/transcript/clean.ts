@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
-import { generateText } from 'ai'
+import { streamText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { z } from 'zod'
@@ -357,20 +357,30 @@ export default class AudioTranscriptCleanTask extends Command {
     output.log(colors.cyan('\nAnalyzing transcript...'))
 
     let analysis: z.infer<typeof TranscriptIssueSchema>
+    // Streamed because a long analysis is minutes of silence as a non-streaming
+    // request — idle sockets get killed by network timeouts; SSE bytes keep it
+    // alive and put it under the provider's stream idle guard. onError captures
+    // the real cause: the SDK's result promises reject with a generic
+    // NoOutputGeneratedError (mirrors ChatEngine).
+    let streamError: unknown
     try {
-      // Use generateText + manual JSON parsing instead of generateObject
+      // Use streamText + manual JSON parsing instead of generateObject
       // because generateObject's tool mode has issues with Anthropic
       const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
-      const result = await generateText({
+      const stream = streamText({
         ...aiModelByProfile(TRANSCRIPT_MODEL),
         prompt: jsonPrompt,
-        maxRetries: 0,
-        timeout: 20 * 60 * 1000, // 20 min — long transcripts are slow to analyze
+        timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
+        onError: ({ error }) => {
+          streamError ??= error
+        },
       })
+      const text = await stream.text
+      if (streamError !== undefined) throw streamError
 
-      analysis = TranscriptIssueSchema.parse(extractJson(result.text))
+      analysis = TranscriptIssueSchema.parse(extractJson(text))
     } catch (err) {
-      const error = err as Error & { text?: string; cause?: unknown }
+      const error = (streamError ?? err) as Error & { text?: string; cause?: unknown }
       output.error(`AI Error: ${error.message}`)
       if (error.text) output.error(`Response text: ${error.text}`)
       if (error.cause) output.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`)
