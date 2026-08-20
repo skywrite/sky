@@ -8,8 +8,8 @@
  *
  * - A unanimously high-confidence group merges per distinct fix: identical
  *   auto-fixes collapse into one entry, while genuinely divergent fixes stay
- *   separate and keep their per-instance semantics (the correction model
- *   resolves each by context; the user is never prompted either way).
+ *   separate — applyCorrections() lands the first one transcript-wide and
+ *   reports the rest as dropped conflicts (the user is never prompted either way).
  * - Any other group merges to a single issue at the group's most cautious
  *   confidence, divergent fixes offered as options — one prompt rules the term.
  */
