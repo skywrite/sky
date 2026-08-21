@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { ALL_LAYOUTS, DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from './registry.ts'
-import v1_1 from './v1_1.ts'
+import v1_1 from './v1_1/mod.ts'
 
 test('registry - patterns and default', () => {
   assert({

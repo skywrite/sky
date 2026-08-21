@@ -1,5 +1,19 @@
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { TimePathInfo } from '../parseTimePath.ts'
+
+/** The one filename every layout agrees on: the day's own document. */
+export const FILE_DAY = 'day.md'
+
+/**
+ * Where in the time tree a document lives, with the date span that level
+ * covers. Day documents span a single day; week-, month-, and year-level
+ * documents (a week plan, a week summary) span every day of their period.
+ * (Only v1.1 has month-level documents - v2 has no month directories.)
+ */
+export type TimePathInfo =
+  | { kind: 'day'; date: PlainDate; start: PlainDate; end: PlainDate }
+  | { kind: 'week'; start: PlainDate; end: PlainDate }
+  | { kind: 'month'; start: PlainDate; end: PlainDate }
+  | { kind: 'year'; start: PlainDate; end: PlainDate }
 
 /**
  * One notebook time-tree layout - the shape of paths under time/.

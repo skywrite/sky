@@ -1,5 +1,5 @@
 import type { NbfsLayout } from './types.ts'
-import v1_1 from './v1_1.ts'
+import v1_1 from './v1_1/mod.ts'
 import { v2, v2Months } from './v2.ts'
 
 /**

@@ -1,9 +1,7 @@
 import * as path from 'node:path'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
-import { FILE_DAY } from '../dayFile.ts'
 import normalizeToPlainDate from '../normalizeToPlainDate.ts'
-import type { TimePathInfo } from '../parseTimePath.ts'
-import type { NbfsLayout } from './types.ts'
+import { FILE_DAY, type NbfsLayout, type TimePathInfo } from './types.ts'
 
 // A week dir is "W14" or month-labeled "03-W14"; parsers accept both
 // regardless of which variant is configured, so flipping the label is a
