@@ -2,7 +2,6 @@ import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir, outputFile } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
-import { dayFile as v2DayFile } from '#shared/nbfs/v2/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import dayFileExists from './dayFileExists.ts'
@@ -21,22 +20,11 @@ test('dayFileExists', async () => {
   await outputFile(path.join(tempDir, dayFile(day)), '# day')
 
   assert({
-    given: 'a day file in the v1.1 layout',
+    given: 'a day file at the configured layout path',
     should: 'return true',
     expected: true,
     actual: await dayFileExists(day, tempDir),
   })
 
-  const v2TempDir = await makeTempDir()
-  await outputFile(path.join(v2TempDir, v2DayFile(day)), '# day')
-
-  assert({
-    given: 'a day file in the v2 layout only',
-    should: 'return true',
-    expected: true,
-    actual: await dayFileExists(day, v2TempDir),
-  })
-
   await rm(tempDir, { recursive: true, force: true })
-  await rm(v2TempDir, { recursive: true, force: true })
 })

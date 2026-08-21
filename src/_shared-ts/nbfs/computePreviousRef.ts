@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import configured from './layout/configured.ts'
 import parseDateFromDayPath from './parseDateFromDayPath.ts'
 
 /**
@@ -16,11 +17,12 @@ import parseDateFromDayPath from './parseDateFromDayPath.ts'
  */
 export default function computePreviousRef(prevTimePath: string, curDate: PlainDate): string {
   const prevDate = parseDateFromDayPath(prevTimePath)
-  // Subpath is everything below the day dir: time/YYYY/MM/DD-DD/<day>/<subpath>.
-  // Positional so both v1.1 (MM-DD) and legacy (DD, xDD) day dirs work.
+  // Subpath is everything below the day dir. The day dir's depth under
+  // time/ comes from the configured layout (4 segments in v1.1, 3 in v2).
+  const depth = configured.dayDir(prevDate).split(path.sep).length
   const parts = prevTimePath.split(path.sep)
   const subpath = parts
-    .slice(parts.indexOf('time') + 5)
+    .slice(parts.indexOf('time') + 1 + depth)
     .join('/')
     .replace(/\.md$/, '')
   const dd = String(prevDate.day).padStart(2, '0')

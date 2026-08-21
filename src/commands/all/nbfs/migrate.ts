@@ -3,8 +3,7 @@ import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { exists, walk } from '#shared/fs/mod.ts'
-import v1ParseDate from '#shared/nbfs/parseDateFromDayPath.ts'
-import { dayDir as v2DayDir, parseDateFromDayPath as v2ParseDate, weekDir as v2WeekDir } from '#shared/nbfs/v2/mod.ts'
+import { v1_1, v2 } from '#shared/nbfs/layout/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -33,7 +32,7 @@ export default class NbfsMigrateTask extends Command {
     name: 'nbfs:migrate',
     description: 'Migrate day files from NBFS v1 to v2 directory structure',
     descriptionLong: [
-      'Moves day directories from v1 paths (YYYY/MM/DD-DD/DD/) to v2 paths (YYYY/MM/W##/MM.DD/).',
+      'Moves day directories from v1.1 paths (YYYY/MM/DD-DD/MM-DD/) to v2 paths (YYYY/W##/MM-DD/).',
       'Dry-run by default — pass --execute to actually move files.',
       'Handles cross-month x-prefix days.',
       'Also moves week-level files (_tracking/, summary.md) to new week directories.',
@@ -72,7 +71,7 @@ export default class NbfsMigrateTask extends Command {
       // Try v1 parse, then legacy formats, then v2 (already migrated)
       let date
       try {
-        date = v1ParseDate(entry.path)
+        date = v1_1.parseDateFromDayPath(entry.path)
       } catch {
         // Try legacy formats (early 2020: underscore week dirs, no week dir)
         const legacyDate = parseLegacyPath(entry.path)
@@ -81,7 +80,7 @@ export default class NbfsMigrateTask extends Command {
         } else {
           // Maybe already in v2 format?
           try {
-            v2ParseDate(entry.path)
+            v2.parseDateFromDayPath(entry.path)
             skipped++
             continue
           } catch {
@@ -91,7 +90,7 @@ export default class NbfsMigrateTask extends Command {
         }
       }
 
-      const newDayDir = path.join(timeDir, v2DayDir(date))
+      const newDayDir = path.join(timeDir, v2.dayDir(date))
 
       // Already at correct path
       if (oldDayDir === newDayDir) {
@@ -103,7 +102,7 @@ export default class NbfsMigrateTask extends Command {
 
       // Track week dir mapping for week-level file migration
       const oldWeekDir = path.dirname(oldDayDir)
-      const newWeekDir = path.join(timeDir, v2WeekDir(date))
+      const newWeekDir = path.join(timeDir, v2.weekDir(date))
       if (!weekMoves.has(oldWeekDir)) {
         weekMoves.set(oldWeekDir, newWeekDir)
       }
