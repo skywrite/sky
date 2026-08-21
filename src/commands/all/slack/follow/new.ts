@@ -4,6 +4,7 @@ import ms from 'ms'
 import openEditor from 'open-editor'
 import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
+import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -30,14 +31,22 @@ const params = {
   force: Flag.bool('Capture even when the thread is already captured, or inactive past the expiry window', {
     default: false,
   }),
+  check: Flag.bool(
+    'Report whether the link is already in the follow registry (active or archive) and stop — no Slack fetch, no capture',
+    {
+      default: false,
+    },
+  ),
   noEditor: Flag.bool('Skip opening editors for created files', { hidden: true, default: false }),
 }
 
 type Params = InferParams<typeof params>
 type Result = {
-  /** Follow YAML path — active for live threads, a born-closed archive record for quiet ones */
+  /** Follow YAML path — active for live threads, a born-closed archive record for quiet ones, the matching record on --check */
   file?: string
   followed: boolean
+  /** --check only: whether the link is already in the follow registry (active or archive) */
+  inRegistry?: boolean
   /** Notebook-relative paths (time/...) of the slack files written */
   slackFiles: string[]
 }
@@ -62,12 +71,17 @@ export default class SlackFollowNewTask extends Command {
       'A link into an already-captured thread is declined — the earlier capture',
       'holds the whole thread, identified by channel + root ts across the active',
       'and archive follow ledgers (--force to capture anyway).',
+      '',
+      '--check reports whether the link is already in those ledgers and stops —',
+      'no Slack fetch, no capture. Identity comes from the link alone, so a',
+      'reply link without a thread_ts param only matches by exact link string.',
     ],
     usage: [
       'sky slack:follow:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
       'sky slack:follow:new "https://..." --interval 4h',
       'sky slack:follow:new "https://..." --expires 7d',
       'sky slack:follow:new "https://..." --expires "2026-07-20 09:00"',
+      'sky slack:follow:new "https://..." --check',
     ],
     params,
   }
@@ -75,6 +89,31 @@ export default class SlackFollowNewTask extends Command {
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
     const { link, interval } = args
+
+    // --check: answer "is this link already in the follow ledgers?" from the
+    // registry alone — no Slack fetch, no capture, no follow. Identity is the
+    // exact link string plus, when the link itself names channel + root ts,
+    // the same thread-root match the capture path uses.
+    if (args.check) {
+      const parsed = parseMessageLink(link)
+      const ledgers = [
+        { dir: DIR_STATE_FOLLOW_SLACK_ACTIVE, label: 'active' },
+        { dir: DIR_STATE_FOLLOW_SLACK_ARCHIVE, label: 'archive' },
+      ]
+      for (const { dir, label } of ledgers) {
+        const registry = await SlackFollowRegistry.build(dir)
+        const match =
+          registry.getAll().find((e) => e.follow.ref.link === link) ??
+          (parsed ? registry.findByThreadRoot(parsed.channelId, parsed.rootTs) : undefined)
+        if (match) {
+          output.log(`In registry (${label}): ${match.follow.summary} (${match.fileName})`)
+          return CommandResult.success({ file: match.path, followed: false, inRegistry: true, slackFiles: [] })
+        }
+      }
+      output.log('Not in registry.')
+      if (!parsed) output.log('  (link form not parseable locally — only exact link strings were compared)')
+      return CommandResult.success({ followed: false, inRegistry: false, slackFiles: [] })
+    }
 
     // Validate --expires up front, before any Slack work
     let expires: PlainDateTime | undefined
