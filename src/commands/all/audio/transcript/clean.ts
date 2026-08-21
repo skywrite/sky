@@ -53,6 +53,12 @@ const params = {
       optional: true,
     },
   ),
+  fromSrt: Flag.string(
+    'Clean an existing .srt transcript (skip transcription). Optional path, or omit to use the newest .srt on the Desktop.',
+    {
+      optional: true,
+    },
+  ),
   output: Flag.string('Write to specific file path', {
     short: 'o',
     optional: true,
@@ -171,6 +177,7 @@ export default class AudioTranscriptCleanTask extends Command {
       'sky audio:transcript:clean                    # Paste transcript via stdin',
       'sky audio:transcript:clean --file input.txt  # Read from file',
       'sky audio:transcript:clean --from-zoom-vtt   # Clean newest .vtt on Desktop',
+      'sky audio:transcript:clean --from-srt        # Clean newest .srt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -178,13 +185,19 @@ export default class AudioTranscriptCleanTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, fromAudio, fromZoomVtt, title, output: outputArg, save: saveArg } = args
+    const { file, fromAudio, fromZoomVtt, fromSrt, title, output: outputArg, save: saveArg } = args
 
     // Handle --from-audio: transcribe first, then clean
     const useAudioPipeline = fromAudio !== undefined
+    // Handle --from-zoom-vtt / --from-srt: clean an existing transcript file (skip
+    // transcription). Each flag owns its format: the bare-flag Desktop search only
+    // matches that extension (a stray .srt can never shadow the meeting .vtt, or
+    // vice versa), and --from-srt refuses non-SRT content outright.
+    if (fromZoomVtt !== undefined && fromSrt !== undefined) {
+      return CommandResult.fail('Use either --from-zoom-vtt or --from-srt, not both')
+    }
     const audioFilePath = typeof fromAudio === 'string' && fromAudio !== 'true' ? fromAudio : undefined
-    // Handle --from-zoom-vtt: clean an existing transcript file (skip transcription)
-    const useTranscriptFile = fromZoomVtt !== undefined
+    const useTranscriptFile = fromZoomVtt !== undefined || fromSrt !== undefined
 
     // 1. Get transcript input
     let transcript: string
@@ -216,16 +229,19 @@ export default class AudioTranscriptCleanTask extends Command {
         return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
       }
     } else if (useTranscriptFile) {
+      const wantSrt = fromSrt !== undefined
+      const flagValue = wantSrt ? fromSrt : fromZoomVtt
+      const ext = wantSrt ? '.srt' : '.vtt'
       let transcriptPath: string
-      if (typeof fromZoomVtt === 'string' && fromZoomVtt !== 'true') {
-        transcriptPath = fromZoomVtt
+      if (typeof flagValue === 'string' && flagValue !== 'true') {
+        transcriptPath = flagValue
       } else {
-        const found = await desktopFilesByExt(['.vtt', '.srt'])
+        const found = await desktopFilesByExt([ext])
         if (found.length === 0) {
-          return CommandResult.fail('No .vtt or .srt file found on Desktop. Please specify a transcript file path.')
+          return CommandResult.fail(`No ${ext} file found on Desktop. Please specify a transcript file path.`)
         }
         if (found.length > 1) {
-          output.log(colors.gray(`${found.length} transcript files on Desktop, using newest`))
+          output.log(colors.gray(`${found.length} ${ext} files on Desktop, using newest`))
         }
         transcriptPath = found[0].path
       }
@@ -235,6 +251,12 @@ export default class AudioTranscriptCleanTask extends Command {
         transcript = await readTextFile(transcriptPath)
       } catch (err) {
         return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
+      }
+      // --from-srt promises an SRT; anything else fails here rather than being
+      // quietly parsed as whatever the content sniff below decides it is.
+      if (wantSrt && !SRT.isSrt(transcript)) {
+        const why = ZoomVTT.isVtt(transcript) ? 'is a WebVTT file — use --from-zoom-vtt' : 'is not an SRT transcript'
+        return CommandResult.fail(`--from-srt: ${path.basename(transcriptPath)} ${why}`)
       }
     } else if (file) {
       transcriptSourcePath = file

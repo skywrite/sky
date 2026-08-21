@@ -63,7 +63,7 @@ export default class VideoNewTask extends Command {
       output.log(colors.cyan(`Using transcript: ${path.basename(srtSourcePath)}`))
 
       const summaryResult = await tasks.run('audio:transcript:summary', {
-        fromZoomVtt: srtSourcePath,
+        fromSrt: srtSourcePath,
         template: 'audio-message',
       })
       if (!summaryResult.ok || !summaryResult.data) {
@@ -189,15 +189,18 @@ export default class VideoNewTask extends Command {
    * Resolve --from-srt to a file. A valueless flag arrives as the string "true" at
    * runtime, which means "search the Desktop".
    *
-   * Searches for .srt only, rather than delegating to the pipeline's Desktop lookup:
-   * that one accepts .vtt too, so a newer meeting VTT sitting on the Desktop would
-   * quietly win over the .srt the user asked for.
+   * Resolved here rather than delegated to the pipeline's own --from-srt lookup so
+   * a wrong path fails before the pipeline starts, and so the attachment import
+   * below gets an absolute path.
    */
   private async resolveSrtPath(
     fromSrt: string,
     output: OutputHandler,
   ): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
     if (typeof fromSrt === 'string' && fromSrt !== 'true') {
+      if (path.extname(fromSrt).toLowerCase() !== '.srt') {
+        return { ok: false, message: `--from-srt requires an .srt file, got: ${path.basename(fromSrt)}` }
+      }
       return { ok: true, path: path.resolve(fromSrt) }
     }
 

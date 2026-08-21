@@ -41,6 +41,12 @@ const params = {
       optional: true,
     },
   ),
+  fromSrt: Flag.string(
+    'Run transcript pipeline: clean, then summarize. Optional path to an .srt transcript, or omit to use the newest .srt on the Desktop.',
+    {
+      optional: true,
+    },
+  ),
   output: Flag.string('Write to specific file path', {
     short: 'o',
     optional: true,
@@ -154,6 +160,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       'sky audio:transcript:summary --file input.txt  # Read from file',
       'sky audio:transcript:summary                   # Paste via stdin',
       'sky audio:transcript:summary --from-zoom-vtt   # Clean + summarize newest .vtt on Desktop',
+      'sky audio:transcript:summary --from-srt        # Clean + summarize newest .srt on Desktop',
     ],
     params,
   }
@@ -165,6 +172,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       text,
       fromAudio,
       fromZoomVtt,
+      fromSrt,
       title,
       output: outputArg,
       save: saveArg,
@@ -179,8 +187,11 @@ export default class AudioTranscriptSummaryTask extends Command {
     }
 
     // Handle pipeline: delegate to clean (audio transcribes first), then summarize
+    if (fromZoomVtt !== undefined && fromSrt !== undefined) {
+      return CommandResult.fail('Use either --from-zoom-vtt or --from-srt, not both')
+    }
     const useAudioPipeline = fromAudio !== undefined
-    const useCleanPipeline = useAudioPipeline || fromZoomVtt !== undefined
+    const useCleanPipeline = useAudioPipeline || fromZoomVtt !== undefined || fromSrt !== undefined
 
     let transcript: string
     let pipelineWho: string[] = []
@@ -190,8 +201,11 @@ export default class AudioTranscriptSummaryTask extends Command {
     let transcriptFilePath: string | null = null
 
     if (useCleanPipeline) {
-      // --from-audio: transcribe → clean. --from-zoom-vtt: clean an existing transcript.
-      const cleanResult = await tasks.run('audio:transcript:clean', useAudioPipeline ? { fromAudio } : { fromZoomVtt })
+      // --from-audio: transcribe → clean. --from-zoom-vtt / --from-srt: clean an existing transcript.
+      const cleanResult = await tasks.run(
+        'audio:transcript:clean',
+        useAudioPipeline ? { fromAudio } : fromSrt !== undefined ? { fromSrt } : { fromZoomVtt },
+      )
       if (!cleanResult.ok || !cleanResult.data) {
         // No prefix: callers (meeting:new, video:new) already label the pipeline failure.
         return CommandResult.fail(cleanResult.message ?? 'Transcript cleaning failed')
