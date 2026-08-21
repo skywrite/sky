@@ -83,7 +83,7 @@ export default class DecisionsClarifyTask extends Command {
   static override description: CommandDescription = {
     name: 'decisions:clarify',
     description:
-      'Draft a complete decision document from the conversation in one call. Returns create-ready fields (matching decisions_create params) plus openQuestions, each carrying a proposed answer. Detects whether the conversation already made the call: a non-null `decision` field means it lands resolved, not pending. Writes nothing.',
+      'Call only when the user has explicitly asked to create/capture a decision — a question about what the decision should be is a design conversation, answered in chat. Draft a complete decision document from the conversation in one call. Returns create-ready fields (matching decisions_create params) plus openQuestions, each carrying a proposed answer. Detects whether the conversation already made the call: a non-null `decision` field means it lands resolved, not pending. Writes nothing.',
     descriptionLong: [
       'Runs the decisions-draft prompt over conversation-supplied inputs and',
       'returns a full draft plus open questions with proposed defaults.',

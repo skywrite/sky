@@ -83,7 +83,7 @@ export default class StreaksClarifyTask extends Command {
   static override description: CommandDescription = {
     name: 'streaks:clarify',
     description:
-      'Draft a complete streak rule document from the conversation in one call — including the full detailed rules — plus openQuestions that close loopholes, each carrying a proposed tightening. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Fields match streaks_create params. Writes nothing.',
+      'Call only when the user has explicitly asked to create/capture a streak — a question about what the streak should be is a design conversation, answered in chat. Draft a complete streak rule document from the conversation in one call — including the full detailed rules — plus openQuestions that close loopholes, each carrying a proposed tightening. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Fields match streaks_create params. Writes nothing.',
     descriptionLong: [
       'Runs the streaks-draft prompt over conversation-supplied inputs and',
       'returns a full rule-doc draft plus loophole questions with proposed',

@@ -71,7 +71,7 @@ export default class IdeasClarifyTask extends Command {
   static override description: CommandDescription = {
     name: 'ideas:clarify',
     description:
-      'Draft a complete idea document from the conversation in one call. Returns create-ready fields (matching ideas_create params) plus openQuestions, each carrying a proposed answer. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Writes nothing.',
+      'Call only when the user has explicitly asked to create/capture an idea — a question about what the idea should be is a design conversation, answered in chat. Draft a complete idea document from the conversation in one call. Returns create-ready fields (matching ideas_create params) plus openQuestions, each carrying a proposed answer. Show the user the draft and the questions with their proposals — unanswered questions mean the proposals stand. Writes nothing.',
     descriptionLong: [
       'Runs the ideas-draft prompt over conversation-supplied inputs and',
       'returns a full draft plus open questions with proposed defaults.',
