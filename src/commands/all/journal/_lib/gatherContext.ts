@@ -18,7 +18,7 @@
  *   - Goals/decisions (12) > journals (8) > day activity (5) > entities (3)
  *   - Recency decays linearly over 14 days (not 180)
  *   - Orgs always pruned
- *   - Token budget: 120k
+ *   - Token budget: 300k
  *
  * EXCLUDED:
  *   - orgs (pruned by scorer)

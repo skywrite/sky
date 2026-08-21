@@ -57,7 +57,9 @@ have a corpus of real failure shapes to draw from.
 - **User-stated sweeps are never volume-limited.** A `recent:`-bounded root
   carries no `limit` — downstream budgeting prunes any excess (8dfbd07). A
   `limit` beside the bound would silently keep only the newest slice of the
-  window.
+  window. The other half of that contract: every consumer that embeds query
+  results in a model prompt owns a ContextAssembler budget — an unbudgeted
+  embed once built multi-million-token prompts the API rejected outright.
 - Every guard intervention is visible in the gather transcript
   (`widened: 1y → 533d (covers stated 2025-03-01)`), and an explicit
   `--since` on `ai:context:files` bypasses extraction and guard entirely.

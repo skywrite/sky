@@ -324,8 +324,11 @@ export function perRow<R>(map: (doc: Document, path: string) => R): (entries: En
  *
  * Date-bounded queries are exempt: a named range is its own limit, and the
  * asker means the whole window. Capping one silently truncates it to the
- * newest N — a two-year window of journals came back as one month — and the
- * context assembler downstream already budgets whatever a range returns.
+ * newest N — a two-year window of journals came back as one month. The
+ * contract this exemption leans on: every consumer that embeds query
+ * results in a model prompt must budget them (ContextAssembler). An
+ * unbudgeted embed once built a multi-million-token prompt the API
+ * rejected outright.
  */
 export const DEFAULT_QUERY_LIMIT = 500
 
