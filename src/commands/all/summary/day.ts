@@ -8,6 +8,7 @@ import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
+import createDayLabeler from '#shared/models/Chat/ChatContext/dayLabel.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -178,16 +179,22 @@ export default class SummaryDayTask extends Command {
     const background = collection.allItems
       .filter((item) => !rootPaths.has(item.path))
       .map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))
+    // Stamp each dated document relative to the summarized day - its own docs
+    // read (TODAY), thread antecedents (N days ago) - so the model never infers
+    // a document's day from its neighbours.
+    const dayLabel = createDayLabeler(day)
     const sections = [
       Collection.from(background).toMarkdown({
         relativeTo: baseDir,
         delimited: true,
+        label: dayLabel,
       }),
       Collection.from(docs.map((d) => ({ doc: d.doc, path: d.path }))).toMarkdown({
         relativeTo: timeDir,
         delimited: true,
         sorted: false,
-        label: (p) => (archivalPaths.has(p) ? 'ARCHIVAL' : undefined),
+        label: (p) =>
+          [dayLabel(p), archivalPaths.has(p) ? 'ARCHIVAL' : undefined].filter(Boolean).join(' | ') || undefined,
       }),
     ]
     const collatedMarkdown = sections.filter((s) => s.length > 0).join('\n\n')

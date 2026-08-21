@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-08-16
+updated: 2026-08-21
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -21,7 +21,7 @@ Core question this answers: **"What did I get done today? Was it meaningful?"**
 
 ## INPUTS
 
-The user message opens with a header - date, location, asset prices, health data - followed by the day's files, each delimited by `<!-- START FILE -->` / `<!-- END FILE -->` with a path comment. The files arrive in a deliberate reading order:
+The user message opens with a header - date, location, asset prices, health data - followed by the day's files, each delimited by `<!-- START FILE -->` / `<!-- END FILE -->` with a path comment. Dated files open their path comment with a date stamp relative to the summarized day - `2026-03-31 Tue (TODAY)`, `(yesterday)`, `(3 days ago)` - so `(TODAY)` always marks the day you are summarizing, and a Background thread from an earlier day is visibly not today's. Undated reference docs (people, orgs, projects) carry no stamp. The files arrive in a deliberate reading order:
 
 **1. Background** (paths outside the day's folder)
 People, orgs, and projects referenced by the day's files, plus earlier messages from threads that continue today. Reference material: use it to understand who and what is being discussed. It is not part of the day's activity - a prior-day thread message explains today's reply, but only today's reply belongs in the summary.
@@ -38,7 +38,7 @@ The day's evidence stream, in time order:
 - `events/` - calendar-sourced records (earnings calls, conferences, personal events): `what:`/`who:`/`when:` frontmatter. A session can appear both here and in `meetings/` - treat title/time twins as ONE session, preferring the meeting's actual `when:` range over the event's scheduled one
 - `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code): itemized commits, PRs, reviews, coding sessions. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below)
 
-Some `messages/` files carry an `ARCHIVAL` marker in their path comment (`<!-- ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
+Some `messages/` files carry an `ARCHIVAL` marker in their path comment, after the date stamp (`<!-- <date> | ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
 Filename time prefixes can exceed 24:00 - `25-30` is late night still belonging to this day. Treat them as-is.
 

@@ -14,9 +14,11 @@ import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import createDayLabeler from '#shared/models/Chat/ChatContext/dayLabel.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 
 // -----------------------------------------------------------------------------
 // Params
@@ -142,9 +144,10 @@ export default class AIContextGatherTask extends Command {
     // Build DomainCollection with entity resolution
     const collection = DomainCollection.fromDocuments(docs, store, { depth })
 
-    // Step 4: Format output
+    // Step 4: Format output - dated documents stamped relative to notebook today
+    const today = (await fetchNow()).plainDateTime.plainDate
     const baseDir = config.DIR_BASE as string
-    const markdown = collection.toMarkdown({ relativeTo: baseDir, delimited: true })
+    const markdown = collection.toMarkdown({ relativeTo: baseDir, delimited: true, label: createDayLabeler(today) })
 
     if (json) {
       output.log(
