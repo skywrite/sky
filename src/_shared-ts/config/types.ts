@@ -34,4 +34,8 @@ export interface SkyConfig {
   server: {
     port: number
   }
+  nbfs: {
+    /** Time-tree layout pattern (e.g. "YYYY/W##/MM-DD") - see nbfs/layout. */
+    layout: string
+  }
 }

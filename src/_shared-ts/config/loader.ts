@@ -3,6 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
 import { parse } from 'jsonc-parser'
+import { DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from '../nbfs/layout/registry.ts'
 import type { SkyConfig } from './types.ts'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
@@ -80,6 +81,7 @@ function defaults(): SkyConfig {
       profiles: {},
     },
     server: { port: 9999 },
+    nbfs: { layout: DEFAULT_LAYOUT_PATTERN },
   }
 }
 
@@ -109,6 +111,15 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.server?.port) config.server.port = parsed.server.port
+    if (parsed.nbfs?.layout) {
+      if (layoutByPattern(parsed.nbfs.layout)) {
+        config.nbfs.layout = parsed.nbfs.layout
+      } else {
+        console.warn(
+          `sky config: unknown nbfs.layout "${parsed.nbfs.layout}" - using ${DEFAULT_LAYOUT_PATTERN}. Supported: ${LAYOUT_PATTERNS.join(', ')}`,
+        )
+      }
+    }
   }
 
   // Env var overrides (highest precedence)
