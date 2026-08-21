@@ -32,7 +32,7 @@ const HEAD_SHARE = 0.6
 export function buildChatTranscript(messages: ConversationMessage[]): string {
   const parts: string[] = []
   for (const message of messages) {
-    // HTML comments (<!-- SUMMARY: ... -->) are pipeline plumbing, not conversation.
+    // HTML comments are markup plumbing (pasted content, legacy markers), not conversation.
     const text = message.content.replace(/<!--[\s\S]*?-->/g, '').trim()
     if (!text) continue
     const cap = message.role === 'user' ? USER_TURN_CHARS : ASSISTANT_TURN_CHARS

@@ -19,11 +19,7 @@ import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchCont
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
 import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
-import ChatDocument, {
-  extractConversationSummary,
-  firstWordsSummary,
-  userSpeakerLabel,
-} from '#shared/models/Chat/document/mod.ts'
+import ChatDocument, { firstWordsSummary, userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -820,7 +816,7 @@ export default class AiChatTask extends Command {
       }
 
       output.log('')
-      output.log(colors.bold(`Resuming: ${truncate(resumeSession.summary || extractConversationSummary(turns), 80)}`))
+      output.log(colors.bold(`Resuming: ${truncate(resumeSession.summary || firstWordsSummary(turns), 80)}`))
       output.log(colors.dim(resumeSession.filePath))
       const replay = turns.slice(-4)
       if (turns.length > replay.length) {

@@ -21,11 +21,11 @@ test('buildChatTranscript labels turns by role', () => {
 test('buildChatTranscript strips hidden comments and skips emptied turns', () => {
   const transcript = buildChatTranscript([
     msg('user', 'Plan the week.'),
-    msg('assistant', 'Focus on Atlas.\n\n<!-- SUMMARY: Weekly planning -->'),
-    msg('assistant', '<!-- SUMMARY: Only plumbing -->'),
+    msg('assistant', 'Focus on Atlas.\n\n<!-- marker: weekly planning -->'),
+    msg('assistant', '<!-- marker: only plumbing -->'),
   ])
   assert({
-    given: 'turns with SUMMARY comments',
+    given: 'turns with HTML comments',
     should: 'strip comments and drop comment-only turns',
     actual: transcript,
     expected: 'User: Plan the week.\n\nAI: Focus on Atlas.',

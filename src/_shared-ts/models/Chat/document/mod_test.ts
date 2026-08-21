@@ -3,7 +3,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import type { ConversationMessage } from '../type.d.ts'
 import { serializeContextLog, splitContextLog } from './ContextLog/mod.ts'
-import ChatDocument, { extractConversationSummary, firstWordsSummary, setUserSpeakerLabel } from './mod.ts'
+import ChatDocument, { firstWordsSummary, setUserSpeakerLabel } from './mod.ts'
 import type { ChatTurn } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -347,37 +347,6 @@ An answer.`
   })
 })
 
-// --- strips SUMMARY comment on create ---
-
-test('ChatDocument.create - strips SUMMARY comment from assistant content', () => {
-  const doc = ChatDocument.create({
-    summary: 'Summary Stripping Test',
-    messages: [
-      { role: 'user', content: 'Hello' },
-      { role: 'assistant', content: 'Response text.\n\n<!-- SUMMARY: Some summary -->' },
-    ],
-    created: '2026-02-10',
-    updated: '2026-02-10',
-    provider: 'claude',
-    model: 'claude-opus-4-6',
-  })
-
-  assert({
-    given: 'assistant turn with SUMMARY comment',
-    should: 'strip the comment',
-    actual: doc.turns[0].content,
-    expected: 'Hello',
-  })
-
-  // The actual markdown should not contain the comment
-  assert({
-    given: 'created document markdown',
-    should: 'not contain SUMMARY comment',
-    actual: doc.toMarkdown().includes('<!-- SUMMARY:'),
-    expected: false,
-  })
-})
-
 // --- conversation ---
 
 test('ChatDocument.conversation - maps speakers to roles', async () => {
@@ -612,45 +581,7 @@ test('ChatDocument - legacy trailing-paren stamps still parse', () => {
   })
 })
 
-// --- extractConversationSummary ---
-
-test('extractConversationSummary - latest SUMMARY comment wins, fallback covers resumes', () => {
-  const withComment: ConversationMessage[] = [
-    { role: 'user', content: 'First question.' },
-    { role: 'assistant', content: 'Answer.\n\n<!-- SUMMARY: Early Topic -->' },
-    { role: 'user', content: 'Second question.' },
-    { role: 'assistant', content: 'Answer two.\n\n<!-- SUMMARY: Evolved Topic -->' },
-  ]
-  assert({
-    given: 'two assistant SUMMARY comments',
-    should: 'take the latest',
-    actual: extractConversationSummary(withComment, 'Original Summary'),
-    expected: 'Evolved Topic',
-  })
-
-  const noComment: ConversationMessage[] = [
-    { role: 'user', content: 'A question with quite a few words in it here.' },
-    { role: 'assistant', content: 'An answer without any summary comment.' },
-  ]
-  assert({
-    given: 'no SUMMARY comment but a resume fallback',
-    should: 'keep the original summary instead of guessing from first words',
-    actual: extractConversationSummary(noComment, 'Original Summary'),
-    expected: 'Original Summary',
-  })
-  assert({
-    given: 'no SUMMARY comment and no fallback',
-    should: 'fall back to the first ten words of the first user message',
-    actual: extractConversationSummary(noComment),
-    expected: 'A question with quite a few words in it here.',
-  })
-  assert({
-    given: 'an empty-string fallback',
-    should: 'ignore it and use first words',
-    actual: extractConversationSummary(noComment, ''),
-    expected: 'A question with quite a few words in it here.',
-  })
-})
+// --- firstWordsSummary ---
 
 test('firstWordsSummary - first user message, capped at ten words', () => {
   assert({
