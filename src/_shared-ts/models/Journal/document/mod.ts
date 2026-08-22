@@ -1,6 +1,5 @@
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
 import expand from '#shared/strings/expand.ts'
-import { dayWord } from '#universal/dates/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { JournalTypes } from '../mod.ts'
 import type { JournalType, Question } from '../type.d.ts'
@@ -90,7 +89,7 @@ export default class JournalDocument extends SectionDocument {
   }
 
   private static buildMarkdown(input: { type: JournalType; date: PlainDateTime; questions: Question[] }): string {
-    const dayWordShort = dayWord(input.date.toDayDateValue(), 'short')
+    const dayWordShort = input.date.plainDate.dayShort
     const lines: string[] = [`# **${input.type}: ${input.date.date} - ${dayWordShort} - ${input.date.time}**`, '']
 
     function renderQuestions(questions: Question[], depth: number): void {

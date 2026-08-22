@@ -167,7 +167,7 @@ export default class Follow {
     }
     const anchor = this.lastActivity ?? this.followSince
     if (!anchor) return Infinity
-    return Math.max(0, now.toTimeDateValue().getTime() - anchor.toTimeDateValue().getTime())
+    return Math.max(0, anchor.until(now).total('milliseconds'))
   }
 
   /**
@@ -177,7 +177,7 @@ export default class Follow {
    */
   isExpired(now: PlainDateTime, maxInactive: string = Follow.DEFAULT_MAX_INACTIVE): boolean {
     if (this.expires) {
-      return now.toTimeDateValue().getTime() >= this.expires.toTimeDateValue().getTime()
+      return this.expires.until(now).total('milliseconds') >= 0
     }
     const maxMs = ms(maxInactive as ms.StringValue)
     if (maxMs === undefined) return false
@@ -189,7 +189,7 @@ export default class Follow {
     if (!anchor) return '10m'
     const HOUR = 3_600_000
     const DAY = 24 * HOUR
-    const inactiveMs = Math.max(0, now.toTimeDateValue().getTime() - anchor.toTimeDateValue().getTime())
+    const inactiveMs = Math.max(0, anchor.until(now).total('milliseconds'))
     if (inactiveMs < 1 * HOUR) return '10m'
     if (inactiveMs < 6 * HOUR) return '30m'
     if (inactiveMs < 1 * DAY) return '1h'

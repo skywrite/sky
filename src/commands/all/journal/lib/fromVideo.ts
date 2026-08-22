@@ -15,7 +15,6 @@ import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { desktopFilesByExt } from '../../audio/transcript/lib/desktopFiles.ts'
 import { groupByType, groupIntoBuckets, journalTypeMenu } from './groupSections.ts'
@@ -140,7 +139,7 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
   const nameParts = [typeSlug, titleSlug].filter(Boolean).join('_')
   const attachment = await stashRecording(videoPath, when, nameParts, config.DIR_ATTACHMENTS, output)
 
-  const h1 = `# **${VIDEO_JOURNAL_TYPE}: ${when.date} - ${dayWord(when.toDayDateValue(), 'short')} - ${when.time}**`
+  const h1 = `# **${VIDEO_JOURNAL_TYPE}: ${when.date} - ${when.plainDate.dayShort} - ${when.time}**`
   const ddfw = new DayDirFileWriter(when.plainDate)
   const pipelineRel = [...clean.who, ...clean.rel].filter(Boolean)
 

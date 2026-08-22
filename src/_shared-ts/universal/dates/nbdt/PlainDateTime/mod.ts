@@ -1,5 +1,6 @@
 import dateTo24H from '../../dateTo24H.ts'
 import YMD from '../../ymd.ts'
+import Duration from '../Duration/mod.ts'
 import PlainDate from '../PlainDate/mod.ts'
 import formatTime from './_formatTime.ts'
 import _parseDateTimeString from './_parseDateTimeString.ts'
@@ -181,18 +182,32 @@ export default class PlainDateTime {
     return new PlainDateTime(newTime, adjustedDate.ymd)
   }
 
-  toDayDateValue(): Date {
-    return this._date.toDate()
+  /**
+   * Wall-clock Duration from this to `other` — Temporal.PlainDateTime.until,
+   * balanced to hours (nbdt Duration's largest unit; Temporal defaults to
+   * days). Zone-free: both sides read on the same (unspecified) clock, so
+   * the delta is exact except across a DST shift between them — the right
+   * tool for staleness timers over stored zone-less timestamps. Extended
+   * and negative hours normalize first. For real instants, use
+   * ZonedDateTime.epochMilliseconds; a zone-less datetime deliberately has
+   * no epoch accessor (Temporal makes the same refusal).
+   */
+  until(other: PlainDateTime): Duration {
+    const wallClockUTC = (dt: PlainDateTime): number => {
+      const n = dt.normalize()
+      const [year, month, day] = n.date.split('-').map(Number)
+      const [hours, minutes] = n.time.split(':').map(Number)
+      return Date.UTC(year, month - 1, day, hours, minutes)
+    }
+    const totalSeconds = Math.round((wallClockUTC(other) - wallClockUTC(this)) / 1000)
+    const sign = totalSeconds < 0 ? -1 : 1
+    const abs = Math.abs(totalSeconds)
+    return new Duration(sign * Math.floor(abs / 3600), sign * (Math.floor(abs / 60) % 60), sign * (abs % 60))
   }
 
-  toTimeDateValue(): Date {
-    const date = this._date.toDate()
-    const [hour, minute] = this.time.split(':')
-
-    date.setHours(parseInt(hour))
-    date.setMinutes(parseInt(minute))
-
-    return date
+  /** Temporal.PlainDateTime.since — `until` with the direction reversed. */
+  since(other: PlainDateTime): Duration {
+    return other.until(this)
   }
 
   toString(): string {

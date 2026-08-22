@@ -1,6 +1,7 @@
 /**
  * Minimal Temporal-compatible Duration.
- * Supports hours, minutes, seconds — enough for meetings and time tracking.
+ * Components are hours, minutes, seconds — enough for meetings and time
+ * tracking; total() also converts to milliseconds for timer math.
  *
  * Follows the Temporal.Duration API surface where applicable:
  *   - `new Duration(hours, minutes, seconds)`
@@ -9,7 +10,7 @@
  *   - `.toString()` → ISO 8601 (e.g. "PT1H30M")
  */
 
-type DurationUnit = 'hours' | 'minutes' | 'seconds'
+type DurationUnit = 'hours' | 'minutes' | 'seconds' | 'milliseconds'
 
 interface DurationLike {
   hours?: number
@@ -117,6 +118,8 @@ export default class Duration {
   total(unit: DurationUnit): number {
     const s = this.#totalSeconds()
     switch (unit) {
+      case 'milliseconds':
+        return s * 1000
       case 'seconds':
         return s
       case 'minutes':

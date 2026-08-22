@@ -4,7 +4,8 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 // import { fetchIpLocation } from '#lib/apis/ipwhois.ts'
 import { toUTCDateString } from '#universal/dates/dates.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
 import { parseCsv, stringifyCsv } from '#universal/encoding/csv/mod.ts'
 import fetchDeviceLocation from './location/fetchDeviceLocation.ts'
 import { assembleGoogleAddressComponents, fetchGoogleGeocode } from './location/fetchGoogleGeocode.ts'
@@ -88,7 +89,9 @@ export default class UtilLocationTask extends Command {
       return CommandResult.success()
     }
 
-    const whenDateVal = when.toTimeDateValue()
+    // The CSV stores UTC; the zone-less `when` reads in the system zone —
+    // the interpretation the old Date bridge made silently, now explicit.
+    const whenDateVal = new ZonedDateTime(when, currentTimezoneIANA()).toDateValue()
     const nowUTCStr = toUTCDateString(whenDateVal)
     const csvFile = path.join(<string>config.DIR_DATA_LOCATION, String(when.plainDate.year), 'location.csv')
 

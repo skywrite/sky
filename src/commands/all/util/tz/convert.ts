@@ -80,7 +80,7 @@ function localUses24Hour(): boolean {
 }
 
 function formatTime(zdt: ZonedDateTime, use24Hour: boolean): string {
-  const jsDate = zdt.toTimeDateValue()
+  const jsDate = zdt.toDateValue()
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: zdt.timezone,
     hour: 'numeric',
@@ -91,7 +91,7 @@ function formatTime(zdt: ZonedDateTime, use24Hour: boolean): string {
 }
 
 function formatDate(zdt: ZonedDateTime): string {
-  const jsDate = zdt.toTimeDateValue()
+  const jsDate = zdt.toDateValue()
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: zdt.timezone,
     weekday: 'short',
@@ -132,7 +132,7 @@ function formatNextClockChange(timezone: string, from: Date): string {
 function buildRow(location: string, zdt: ZonedDateTime, use24Hour: boolean, tone: RowTone): TableRow {
   // Both the offset and the clock change are read at the instant being converted, so a query
   // about a future date reports the shift that follows *it*, not the one following today.
-  const jsDate = zdt.toTimeDateValue()
+  const jsDate = zdt.toDateValue()
   return {
     cells: [
       location,
@@ -249,7 +249,7 @@ export default class UtilTzConvertTask extends Command {
     // Output results
     if (json) {
       const toTemporal = (zdt: ZonedDateTime): string => {
-        const jsDate = zdt.toTimeDateValue()
+        const jsDate = zdt.toDateValue()
         const offset = timezoneToOffsetString(zdt.timezone, jsDate)
         return `${zdt.date}T${zdt.time}:00${offset}[${zdt.timezone}]`
       }

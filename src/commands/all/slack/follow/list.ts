@@ -90,7 +90,6 @@ export default class SlackFollowListTask extends Command {
     })
 
     const now = fetchNowSync()
-    const nowMs = now.plainDateTime.toTimeDateValue().getTime()
     const today = now.plainDateTime.plainDate
 
     const follows: FollowInfo[] = entries.map((e) => {
@@ -99,7 +98,7 @@ export default class SlackFollowListTask extends Command {
       let overdue = false
 
       if (follow.lastChecked) {
-        const elapsedMs = nowMs - follow.lastChecked.toTimeDateValue().getTime()
+        const elapsedMs = follow.lastChecked.until(now.plainDateTime).total('milliseconds')
         ago = humanDuration(elapsedMs)
         const intervalMs = ms(follow.checkInterval as ms.StringValue)
         if (intervalMs !== undefined && elapsedMs >= intervalMs) overdue = true

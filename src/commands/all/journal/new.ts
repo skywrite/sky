@@ -16,7 +16,6 @@ import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import type { JournalType, Question } from '#shared/models/Journal/type.d.ts'
 import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
-import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
 import { journalFromVideo } from './lib/fromVideo.ts'
@@ -185,10 +184,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
 
       // Build journal document using fromMarkdown so YAML is serialized properly
       const bodyMarkdown = [
-        `# **${journalType}: ${journalWhen.date} - ${dayWord(
-          journalWhen.toDayDateValue(),
-          'short',
-        )} - ${journalWhen.time}**`,
+        `# **${journalType}: ${journalWhen.date} - ${journalWhen.plainDate.dayShort} - ${journalWhen.time}**`,
         '',
         data.cleanedText,
       ].join('\n')

@@ -55,9 +55,7 @@ export default class SlackFollowRegistry {
       const intervalMs = ms(follow.checkInterval as ms.StringValue)
       if (intervalMs === undefined) return false
 
-      const lastCheckedMs = follow.lastChecked.toTimeDateValue().getTime()
-      const nowMs = now.toTimeDateValue().getTime()
-      return nowMs - lastCheckedMs >= intervalMs
+      return follow.lastChecked.until(now).total('milliseconds') >= intervalMs
     })
   }
 

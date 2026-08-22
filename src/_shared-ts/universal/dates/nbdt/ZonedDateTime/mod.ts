@@ -140,15 +140,10 @@ export default class ZonedDateTime {
     return this.plainDateTime.time
   }
 
-  // Get a JavaScript Date for just the date (no time) in this timezone
-  // Note: The returned Date will be interpreted in the system's timezone
-  toDayDateValue(): Date {
-    return this.plainDateTime.toDayDateValue()
-  }
-
-  // Get a JavaScript Date representing this exact instant in time
-  // This accounts for the timezone offset to return the correct moment
-  toTimeDateValue(): Date {
+  // The epoch instant this moment names, in milliseconds. Zone offset and
+  // extended hours are resolved here, so duration math never needs a JS
+  // Date. Mirrors Temporal.ZonedDateTime.epochMilliseconds.
+  get epochMilliseconds(): number {
     // Get the base date/time from PlainDateTime
     const [year, month, day] = this.plainDateTime.date.split('-').map(Number)
     const [hours, minutes] = this.plainDateTime.time.split(':').map(Number)
@@ -174,10 +169,13 @@ export default class ZonedDateTime {
     // If we're at 15:00 in LA (UTC-7), we need 15:00 - (-7) = 22:00 UTC
     const utcHours = actualHours - this.offset
 
-    // Create the UTC date
-    const adjustedDate = new Date(Date.UTC(year, month - 1, actualDay, utcHours, minutes))
+    return Date.UTC(year, month - 1, actualDay, utcHours, minutes)
+  }
 
-    return adjustedDate
+  // The one blessed JS Date adapter: the true instant, for Intl and other
+  // Date-only boundaries. Everything else should use epochMilliseconds.
+  toDateValue(): Date {
+    return new Date(this.epochMilliseconds)
   }
 
   // Clone with same timezone
