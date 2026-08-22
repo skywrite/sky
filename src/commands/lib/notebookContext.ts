@@ -10,6 +10,7 @@ import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
+import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
@@ -68,6 +69,13 @@ export async function readDayJournals(day: PlainDate): Promise<ContextFile[]> {
 /** A day's most-important files: time/<day>/most-important/MI*.md. */
 export async function readDayMostImportant(day: PlainDate): Promise<ContextFile[]> {
   return readMatching(path.join(DIR_TIME, dayDir(day), 'most-important'), (f) => MI_FILE.test(f))
+}
+
+/** A day's AI chats: time/<day>/actions/ai-chats/*.md. The conversation rides;
+ * machine HTML comments (e.g. the CONTEXT-LOG turn record) are stripped. */
+export async function readDayChats(day: PlainDate): Promise<ContextFile[]> {
+  const files = await readMatching(path.join(DIR_TIME, dayDir(day), 'actions', 'ai-chats'), (f) => f.endsWith('.md'))
+  return files.map((f) => ({ ...f, body: stripHtmlComments(f.body) }))
 }
 
 /** Pending decisions: every .md under a decisions/<year>/pending/ directory. */

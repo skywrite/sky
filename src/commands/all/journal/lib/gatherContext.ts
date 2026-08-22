@@ -7,12 +7,13 @@
  *   - goals, pending decisions, the current week's week.md, active streaks
  *   - health tracking lines (last 5 days)
  * PER DAY, last 7 days incl. today:
+ *   - AI chats (actions/ai-chats/*.md)
  *   - most-important files (n/MI*.md)
  *   - summary.md if it has content, else day.md
  * PER DAY, last 14 days incl. today:
  *   - journal entries (recurring themes + what was already asked)
  *
- * Message, meeting, chat, and library documents never ride raw: a summarized
+ * Message, meeting, and library documents never ride raw: a summarized
  * day narrates them, and day.md's ledger already records captures and
  * meetings one line each. Deterministic direct-path reads — no store build,
  * no query, no scorer. Tokens are estimated only to warn on runaway size.
@@ -21,6 +22,7 @@ import * as path from 'node:path'
 import {
   type ContextSection,
   formatSections,
+  readDayChats,
   readDayJournals,
   readDayMostImportant,
   readDayNarration,
@@ -35,7 +37,7 @@ import { weekDir } from '#shared/nbfs/mod.ts'
 import { type PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData } from '../../summary/_health.ts'
 
-/** Trailing window (incl. today) whose narration + most-important files ride. */
+/** Trailing window (incl. today) whose narration, most-important files, and AI chats ride. */
 const NARRATION_DAYS = 7
 /** Trailing window (incl. today) whose journal entries ride. */
 const JOURNAL_DAYS = 14
@@ -103,6 +105,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
     for (const file of await readDayJournals(day)) add(`${label} — journal/${file.name}`, file)
     if (i >= NARRATION_DAYS) continue
 
+    for (const file of await readDayChats(day)) add(`${label} — chat: ${file.name}`, file)
     for (const file of await readDayMostImportant(day)) add(`${label} — most important: ${file.name}`, file)
     const narration = await readDayNarration(day)
     if (narration) add(`${label} — ${narration.kind === 'summary' ? 'summary' : 'day.md (no summary)'}`, narration)
