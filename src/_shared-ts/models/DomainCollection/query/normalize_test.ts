@@ -311,6 +311,58 @@ test('normalizeGraphQLQuery', async (t) => {
       expected: null,
     })
   })
+
+  await t.step('folds split anonymous operations into one query', async () => {
+    // The live defect from ai:context:evolve: one unfenced reply, two braced
+    // blocks. Each parses as an anonymous operation and validation rejects
+    // both ("must be the only defined operation").
+    const query = '{ messages(limit: 2) { path } }\n\n{ meetings(limit: 2) { path } }'
+    const normalized = normalizeGraphQLQuery(query)
+    assert({
+      given: 'two anonymous operations in one reply',
+      should: 'keep both root selections',
+      actual: normalized.includes('messages') && normalized.includes('meetings'),
+      expected: true,
+    })
+    assert({
+      given: 'the folded document',
+      should: 'validate clean',
+      actual: await graphQLValidationErrors(normalized),
+      expected: null,
+    })
+  })
+
+  await t.step('folds a named operation beside an anonymous one', async () => {
+    const query = '{ messages(limit: 1) { path } }\nquery Extra { meetings(limit: 1) { path } }'
+    assert({
+      given: 'an anonymous operation next to a named one',
+      should: 'validate clean after folding',
+      actual: await graphQLValidationErrors(normalizeGraphQLQuery(query)),
+      expected: null,
+    })
+  })
+
+  await t.step('auto-aliases collisions the fold creates', async () => {
+    const query = '{ messages(limit: 1) { path } }\n\n{ messages(limit: 5) { path } }'
+    assert({
+      given: 'split operations selecting the same root differently',
+      should: 'validate clean via the alias repair',
+      actual: await graphQLValidationErrors(normalizeGraphQLQuery(query)),
+      expected: null,
+    })
+  })
+
+  await t.step('leaves split operations with variables for validation', () => {
+    // Merging would have to reconcile the declarations; that is the model
+    // repair round's job, not a mechanical fold's.
+    const query = 'query ($d: String) { messages { path } }\n\n{ meetings { path } }'
+    assert({
+      given: 'a split where one operation declares variables',
+      should: 'return it unchanged',
+      actual: normalizeGraphQLQuery(query),
+      expected: query,
+    })
+  })
 })
 
 test('graphQLParseError', async (t) => {

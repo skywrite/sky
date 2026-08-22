@@ -11,7 +11,9 @@
  * parses fine, but validation rejects the whole document ("Unknown
  * argument"). And they select `when` bare — it was a scalar until the When
  * value type shipped — which validation rejects ("must have a selection of
- * subfields"). Normalize before execution.
+ * subfields"). And they split one fetch across several operations
+ * (`{ … } { … }`) — parses fine, but validation allows an anonymous
+ * operation only alone. Normalize before execution.
  */
 
 import type {
@@ -33,6 +35,9 @@ import { getSchema } from './execute.ts'
  *   query — the interior fences otherwise break the whole document
  * - wraps bare selections in `{ ... }` when the string does not already
  *   start with `{` or a `query` operation
+ * - folds several plain query operations into one (`{ … } { … }`) —
+ *   models split one fetch across anonymous operations, and validation
+ *   rejects an anonymous operation that is not alone
  * - hoists filter keys misplaced as field arguments into `where`
  *   (`journals(recent: "7d")` → `journals(where: {recent: "7d"})`) —
  *   models emit these and validation rejects the whole document
@@ -51,7 +56,7 @@ export function normalizeGraphQLQuery(query: string): string {
   // formatting survives. Only a multi-block reply needs the reparse to merge.
   const q = chunks.length === 1 ? chunks[0] : mergeTopLevelSelections(chunks)
 
-  return autoAliasConflictingFields(hoistMisplacedFilterArgs(q))
+  return autoAliasConflictingFields(hoistMisplacedFilterArgs(mergeSplitOperations(q)))
 }
 
 /**
@@ -113,6 +118,51 @@ function mergeTopLevelSelections(chunks: string[]): string {
       },
     ],
   })
+}
+
+/**
+ * Fold a document containing several plain query operations into one.
+ *
+ * Models asked for one query sometimes emit two braced blocks in a single
+ * unfenced reply (`{ … } { … }`). That parses as two anonymous operations,
+ * and validation rejects each of them ("This anonymous operation must be
+ * the only defined operation") — while a named split would need an
+ * operationName the executor never provides. The intent is one fetch, so
+ * the operations' root selections are concatenated into a single anonymous
+ * operation; collisions the fold creates are resolved downstream by
+ * autoAliasConflictingFields, and fragment definitions are kept. A single
+ * operation is untouched, and anything beyond plain queries — mutations,
+ * variable definitions, operation directives — is left for validation to
+ * report.
+ */
+function mergeSplitOperations(query: string): string {
+  let doc: DocumentNode
+  try {
+    doc = parse(query)
+  } catch {
+    return query
+  }
+
+  const ops = doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
+  if (ops.length <= 1) return query
+  const plainQueries = ops.every(
+    (op) =>
+      op.operation === OperationTypeNode.QUERY &&
+      (op.variableDefinitions?.length ?? 0) === 0 &&
+      (op.directives?.length ?? 0) === 0,
+  )
+  if (!plainQueries) return query
+
+  const merged: OperationDefinitionNode = {
+    kind: Kind.OPERATION_DEFINITION,
+    operation: OperationTypeNode.QUERY,
+    selectionSet: {
+      kind: Kind.SELECTION_SET,
+      selections: ops.flatMap((op) => op.selectionSet.selections),
+    },
+  }
+  const rest = doc.definitions.filter((d) => d.kind !== Kind.OPERATION_DEFINITION)
+  return print({ ...doc, definitions: [merged, ...rest] })
 }
 
 /** The only arguments root query fields accept (see dev/schema/generate.ts). */
