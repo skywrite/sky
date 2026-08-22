@@ -1,17 +1,20 @@
 import { copyFile, mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import * as p from '@clack/prompts'
 import openEditor from 'open-editor'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, dayFileExists, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
+import { isTerminal } from '#shared/sys/mod.ts'
+import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   who: Arg.string('Person or group (optional with --from-voice-memo/--from-zoom-vtt)', { optional: true }),
@@ -30,6 +33,7 @@ const params = {
   summary: Flag.string('Meeting summary', { short: 's', default: () => '' }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-meeting tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
+  noActions: Flag.bool('Skip action-item acceptance into the day/schedule/next lists', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -55,6 +59,7 @@ export default class MeetingNewTask extends Command {
     let rel: string[] | undefined
     let tags: string | undefined
     let transcriptSourcePath: string | null = null
+    let actionItems: TranscriptActionItem[] = []
 
     if (fromVoiceMemo !== undefined && fromZoomVtt !== undefined) {
       return CommandResult.fail('Use either --from-voice-memo or --from-zoom-vtt, not both')
@@ -91,6 +96,12 @@ export default class MeetingNewTask extends Command {
       summary = data.title
       body = data.body
       rel = data.rel.length > 0 ? data.rel : undefined
+
+      // The extract call is the primary source of action items — it resolves
+      // relative due phrases ("Friday") to dates. The deterministic section
+      // parse is the fallback when it failed or omitted them; those items
+      // carry no dates and so route to the Next list.
+      actionItems = data.actionItems.length > 0 ? data.actionItems : parseActionItemsSection(data.body)
 
       // Parse time from summary if available
       if (data.time) {
@@ -214,11 +225,113 @@ export default class MeetingNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write day item')
     }
 
+    // Formal acceptance of the meeting's action items: nothing routes anywhere
+    // without an explicit confirm. Runs after the meeting file and day item are
+    // on disk so a cancel or crash here can't lose them, and before openEditor
+    // so the prompt isn't buried by the editor stealing focus. Professional
+    // meetings only — the category default.
+    if (actionItems.length > 0 && !args.noActions && category.startsWith('Professional') && isTerminal()) {
+      try {
+        await this.acceptActionItems(actionItems, context, tasks)
+      } catch (err) {
+        output.error(`Action-item routing failed: ${(err as Error).message}`)
+      }
+    }
+
     openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
     await delay(500)
 
     output.log(`\n  Successfully created meeting ${file}.\n`)
 
     return CommandResult.success({ file })
+  }
+
+  // One selector over every extracted item, the speaker's own ("(me)")
+  // preselected: a missed or misattributed marker stays one keystroke from
+  // rescue instead of silently lost. Routes are decided up front so each
+  // option's hint can say where acceptance sends it.
+  private async acceptActionItems(
+    items: TranscriptActionItem[],
+    context: CommandArgs<Params>['context'],
+    tasks: CommandArgs<Params>['tasks'],
+  ): Promise<void> {
+    const { output } = context
+    const today = String(context.notebookNow.date)
+
+    const routes = await Promise.all(items.map((item) => planActionItemRoute(item, today)))
+
+    const indexes = items.map((_, i) => i)
+    const selected = await p.multiselect({
+      message: 'Accept action items (space toggles, enter confirms)',
+      options: indexes.map((i) => ({
+        value: i,
+        label: items[i].text,
+        hint: [items[i].mine ? 'me' : null, `→ ${routes[i].destination}`].filter(Boolean).join(' · '),
+      })),
+      initialValues: indexes.filter((i) => items[i].mine),
+      required: false,
+    })
+
+    if (p.isCancel(selected)) {
+      output.log('  Action items skipped.')
+      return
+    }
+
+    // Meeting order, not toggle order
+    const accepted = [...selected].sort((a, b) => a - b)
+    if (accepted.length === 0) {
+      output.log('  No action items accepted.')
+      return
+    }
+
+    let routed = 0
+    for (const i of accepted) {
+      try {
+        await executeActionItemRoute(routes[i], tasks)
+        routed++
+        output.log(`  ✓ ${items[i].text} → ${routes[i].destination}`)
+      } catch (err) {
+        output.error(`  ✗ ${items[i].text} — ${(err as Error).message}`)
+      }
+    }
+    const declined = items.length - accepted.length
+    output.log(`  Routed ${routed} of ${accepted.length} accepted action items (${declined} declined).`)
+  }
+}
+
+// Where an accepted action item lands. Decided before the selector renders so
+// the hint can announce it, executed only after the user confirms.
+type ActionItemRoute =
+  | { kind: 'next'; task: string; destination: string }
+  | { kind: 'commitments'; task: string; when: PlainDate; destination: string }
+  | { kind: 'schedule'; task: string; when: PlainDate; destination: string }
+
+async function planActionItemRoute(item: TranscriptActionItem, today: string): Promise<ActionItemRoute> {
+  // A past date can't be scheduled — an overdue commitment is still next work.
+  const date = item.date !== null && item.date >= today ? item.date : null
+  if (date === null) return { kind: 'next', task: item.text, destination: 'next-professional' }
+
+  // The HH:MM prefix is the day-item convention, and how day:schedule:update
+  // recognizes a Commitment when it drains the schedule file on the morning.
+  const task = item.time !== null ? `${item.time} > ${item.text}` : item.text
+  const when = new PlainDate(date)
+
+  if (await dayFileExists(when)) {
+    return { kind: 'commitments', task, when, destination: `${date} Commitments` }
+  }
+  return { kind: 'schedule', task, when, destination: `schedule-professional ${date}` }
+}
+
+async function executeActionItemRoute(route: ActionItemRoute, tasks: CommandArgs<Params>['tasks']): Promise<void> {
+  if (route.kind === 'commitments') {
+    await writeDayItems(route.when, 'Professional Commitments', route.task)
+    return
+  }
+  const result =
+    route.kind === 'next'
+      ? await tasks.run('next:add', { task: route.task })
+      : await tasks.run('day:todo:add', { task: route.task, when: route.when })
+  if (!result.ok) {
+    throw new Error(result.message ?? `${route.kind === 'next' ? 'next:add' : 'day:todo:add'} failed`)
   }
 }

@@ -5,6 +5,7 @@ import colors from 'picocolors'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { normalizeActionItems, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
@@ -83,6 +84,7 @@ type Result = {
   medium: string | null // Call medium: Zoom, Phone, Google Meet, etc.
   who: string[] // Attendees - people in the meeting
   rel: string[] // Related - people mentioned but not attending
+  actionItems: TranscriptActionItem[] // Structured "## Action Items" bullets (meeting template; [] when none)
   summary: string
   body: string // Full markdown output
   cleanedText: string // Input transcript (cleaned if from audio pipeline)
@@ -295,6 +297,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       to?: string
       who?: string[]
       rel?: string[]
+      actionItems?: unknown // Validated by normalizeActionItems, never trusted as typed
     }
 
     output.log(colors.cyan('Extracting metadata...'))
@@ -313,6 +316,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     let extractedRel: string[] = []
     let extractedFrom: string | null = null
     let extractedTo: string | null = null
+    let extractedActionItems: TranscriptActionItem[] = []
     const isMessageTemplate = template === 'audio-message'
 
     // Hoisted so the failure warn can carry the payload that failed to parse.
@@ -334,6 +338,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       extractedDuration = extracted.durationMinutes ?? null
       extractedMedium = extracted.medium || null
       extractedRel = Array.isArray(extracted.rel) ? extracted.rel : []
+      extractedActionItems = normalizeActionItems(extracted.actionItems)
       if (isMessageTemplate) {
         extractedFrom = extracted.from || null
         extractedTo = extracted.to || null
@@ -539,6 +544,7 @@ ${summary}
       medium: extractedMedium,
       who: finalWho,
       rel: finalRel,
+      actionItems: extractedActionItems,
       summary: summarySection,
       body: summary,
       cleanedText: transcript,
