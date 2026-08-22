@@ -1,10 +1,10 @@
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { PORT_SERVER, DAY_START_COMMANDS } from '#config'
+import { dayFileExists } from '#lib/nbfs/mod.ts'
 import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import dayFileExists from './lib/dayFileExists.ts'
 
 interface UpdateStartOptions {
   tz?: string
