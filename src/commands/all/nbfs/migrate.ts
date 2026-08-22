@@ -5,7 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { exists, walk } from '#shared/fs/mod.ts'
 import { configured } from '#shared/nbfs/layout/mod.ts'
 import { toTimeRef } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   execute: Flag.bool('Actually perform the migration (dry-run by default)', {
@@ -100,9 +100,11 @@ export default class NbfsMigrateTask extends Command {
 
       moves.push({ oldDir: oldDayDir, newDir: newDayDir, date: date.ymd })
 
-      // Track week dir mapping for week-level file migration
+      // Track week dir mapping for week-level file migration. Week files
+      // live in the week's first in-year bucket, so a boundary week's
+      // mapping can't depend on which of its days the walk saw first.
       const oldWeekDir = path.dirname(oldDayDir)
-      const newWeekDir = path.join(timeDir, configured.weekDir(date))
+      const newWeekDir = path.join(timeDir, configured.weekDir(Week.of(date).startInYear))
       if (!weekMoves.has(oldWeekDir)) {
         weekMoves.set(oldWeekDir, newWeekDir)
       }
