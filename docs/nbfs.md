@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-22
 ---
 
 # Notebook time and the notebook filesystem
@@ -18,6 +18,9 @@ Two claims to hold onto, because everything below follows from them:
   it starts and ends when you say it ends, and it can run past midnight.
 
 ## Path anatomy
+
+How the tree nests below `time/` is configurable — see [Layouts](#layouts). This is the
+anatomy of the **default** layout, `YYYY/MM/DD-DD/MM-DD`:
 
 ```
 ~/Sky/time/2026/03/30-05/03-31/day.md
@@ -203,7 +206,8 @@ case without becoming ambiguous for the rare one.
 
 ## The API
 
-Everything from `#shared/nbfs/mod.ts`:
+Everything from `#shared/nbfs/mod.ts`. Path builders and parsers speak the configured
+layout — the examples show the default:
 
 | Function | Returns |
 |---|---|
@@ -212,6 +216,8 @@ Everything from `#shared/nbfs/mod.ts`:
 | `dayFile(date)` | `2026/03/30-05/03-31/day.md` |
 | `dayAttachmentsDir(date)` | `2026/03/31` |
 | `parseDateFromDayPath(path)` | `PlainDate` — the inverse of `dayFile` |
+| `parseTimePath(path)` | The year, week, or day span a time-tree path covers, or `null` |
+| `toTimeRef(path)` | `YYYY-MM-DD/subpath` — a path in *any* historical layout, reduced to its identity |
 | `readDay(date)` / `writeDay(doc)` | A `DayDocument`, and back to disk |
 | `fetchNow()` / `fetchNowSync()` | `ZonedDateTime` in notebook time |
 | `dayTimezone(date)` | IANA zone string for that day |
@@ -223,30 +229,77 @@ Paths are relative to `DIR_TIME` (`<notebook>/time`), so every one of these take
 optional `timeDir` — which is how the test suite runs against fixtures instead of your real
 notebook.
 
-## Format versions
+## Layouts
 
-| Version | Day path | Status |
+How day directories nest under the year is configurable. Every layout keeps the same
+invariants — weeks run Monday–Sunday, day directories are named `MM-DD` and carry their own
+month, a day's contents never split, and the year is the outermost boundary — so a layout
+only decides how week directories are named and whether a month level sits above them.
+
+The config value is the path shape itself:
+
+| `nbfs.layout` | Day path | Notes |
 |---|---|---|
-| v1 | `2026/03/30-05/31/`, cross-month as `x01` | Retired |
-| **v1.1** | `2026/03/30-05/03-31/` | **Current** — what everything reads and writes |
-| v2 | `2026/04/W14/03.31/` | Deferred — see below |
+| `YYYY/MM/DD-DD/MM-DD` | `2026/03/30-05/03-31/` | **The default.** Weeks under month directories, named by first and last day numbers |
+| `YYYY/W##/MM-DD` | `2026/W14/03-31/` | No month level — numbered weeks are the only container |
+| `YYYY/MM-W##/MM-DD` | `2026/03-W14/03-31/` | The same tree with the week's month as a scannable prefix |
 
-**v1 → v1.1** replaced `DD` day directories and the `x` prefix for cross-month spillover
-with `MM-DD`. The `x` marker sorted correctly but wasn't self-describing: you needed the
-week directory to know what month `x01` meant. `sky nbfs:migrate` handles v1 notebooks.
+The `W##` layouts exist because the default's month level has to lie at month boundaries —
+a week files under its first day's month even when most of it belongs to the next month —
+and because a `DD-DD` week range reads like an `MM-DD` day directory. Dropping the month
+container and giving weeks shape-distinct names fixes both.
 
-**v2** is designed but not adopted. It numbers weeks `W00`–`W53` and files each week under
-the month of its **Thursday** (the ISO rule), with `W00` and `W53` as overflow buckets for
-year boundaries. That fixes the one thing v1.1 is genuinely awkward about: a week spanning
-two months is filed under whichever month it *started* in, so under v1.1 the Mar 30 – Apr 5
-week sits entirely under `03/` even though five of its seven days are April. Under v2 the
-same week goes under `04/`, because its Thursday is April 2.
+Week numbers are **sky weeks**, not ISO: mid-year the two agree, but every day files under
+its own calendar year, so a week straddling New Year splits at the boundary — its December
+days under `2025/W53/`, its January days under `2026/W00/`. (`W00` holds January days ISO
+assigns to the old year; `W53` holds December days ISO assigns to the new year, or a
+genuine 53rd week in long years.)
 
-Do not migrate to v2 yet. `sky nbfs:migrate` will move the files — it is dry-run by default
-and needs `--execute` — but only `readDay()` understands v2 paths, and it falls back to
-them. Writes always go to v1.1, and `parseDateFromDayPath()`, which the document store and
-GraphQL layer depend on, only parses v1.1. A migrated notebook would read back but write
-into a second parallel tree.
+In the `MM-W##` variant the prefix is the month of the week's first in-year day, so the
+boundary buckets are always `01-W00` and `12-W53`. It is a label, not a container: nothing
+parses it and no file's location depends on it, and the parsers accept both `W##` forms
+regardless of which is configured — flipping the label later is a plain rename migration,
+not a format break.
+
+### Configuring
+
+In `~/.sky/config.jsonc`:
+
+```jsonc
+{
+  "nbfs": {
+    "layout": "YYYY/W##/MM-DD"
+  }
+}
+```
+
+The setting governs the whole system — `weekDir()`, `dayDir()` and `dayFile()` build
+configured-layout paths, commands write into them, and the parsers read them. An
+unrecognized value warns at startup, lists the supported patterns, and keeps the default.
+
+### Switching an existing notebook
+
+Config and tree move together: change the setting, then re-file the tree.
+
+```bash
+sky nbfs:migrate              # dry-run: show the plan
+sky nbfs:migrate --execute    # actually move
+```
+
+`nbfs:migrate` parses every layout the notebook has ever written — v1's `DD`/`xDD` day
+directories, v1.1 week ranges including year-boundary artifacts, both `W##` variants —
+moves week-level files (`_tracking/`, `week.md`, …) along with the days, cleans up emptied
+directories, and reports any leftover documents no layout claims. It refuses to run if two
+sources map to one destination or a destination already exists, so a partial or repeated
+run is safe. Stop the service and pause any file-sync tool watching the notebook while it
+moves files, and commit the result to the notebook's git as a single rename-only commit.
+
+### History
+
+v1 named day directories with a bare `DD` and marked cross-month spillover with an `x`
+prefix (`x01`). The marker sorted correctly but wasn't self-describing — you needed the
+week directory to know what month `x01` meant — so v1.1 replaced both with `MM-DD`. v1 is
+no longer selectable, but `nbfs:migrate` and `toTimeRef()` still read it.
 
 ## See also
 
