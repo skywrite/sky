@@ -46,6 +46,36 @@ export default function parseDateFromDayPath(filePath: string): PlainDate {
     throw new Error(`Invalid date components in path ${filePath}: year=${yearStr}, dayDir=${dayStr}`)
   }
 
+  const month = parseInt(dayDirMatch[1], 10)
+  const day = parseInt(dayDirMatch[2], 10)
+
   // The MM-DD day dir carries its own month — cross-month safe
-  return new PlainDate(year, parseInt(dayDirMatch[1], 10), parseInt(dayDirMatch[2], 10))
+  return new PlainDate(adjustV1_1BoundaryYear(year, month, day, parts[offset + 1], parts[offset + 2]), month, day)
+}
+
+/**
+ * v1.1's one lie, arbitrated by the week range. week:new created a whole
+ * week under its Monday's year, so a January day of year Y+1 can sit at
+ * Y/12/DD-DD/01-DD — the same shape a correctly-filed boundary day has
+ * under its own year (Y/12/DD-DD/01-DD with the week starting in December
+ * of Y-1). The week range decides: bump the year only when the bumped
+ * date's true Monday–Sunday week starts in the December the path names and
+ * carries exactly the range in the directory name.
+ */
+export function adjustV1_1BoundaryYear(
+  year: number,
+  month: number,
+  day: number,
+  monthSeg: string | undefined,
+  weekSeg: string | undefined,
+): number {
+  if (monthSeg !== '12' || month !== 1 || !weekSeg) return year
+
+  const bumped = new PlainDate(year + 1, month, day)
+  const weekStart = bumped.addDays(-(bumped.dayOfWeek - 1))
+  if (weekStart.month !== 12 || weekStart.year !== year) return year
+
+  const weekEnd = weekStart.addDays(6)
+  const range = `${weekStart.dayPadded}-${weekEnd.dayPadded}`
+  return range === weekSeg ? year + 1 : year
 }

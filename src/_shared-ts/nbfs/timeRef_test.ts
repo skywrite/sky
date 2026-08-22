@@ -161,3 +161,33 @@ test('isTimeRef tells refs from paths', () => {
     ],
   })
 })
+
+test('toTimeRef reduces a v2 path to its ref', () => {
+  assert({
+    given: 'a v2 path with a bare week dir',
+    should: 'read year and day dir directly',
+    actual: toTimeRef('time/2026/W14/04-01/actions/meetings/atlas-sync.md'),
+    expected: '2026-04-01/actions/meetings/atlas-sync.md',
+  })
+  assert({
+    given: 'a v2 path with a month-labeled week dir',
+    should: 'ignore the label',
+    actual: toTimeRef('time/2026/03-W14/03-31/day.md'),
+    expected: '2026-03-31/day.md',
+  })
+})
+
+test('toTimeRef arbitrates the v1.1 year-boundary artifact by week range', () => {
+  assert({
+    given: 'a January day filed under the previous year by week:new (2025/12/29-04/01-02)',
+    should: 'bump to the true year',
+    actual: toTimeRef('time/2025/12/29-04/01-02/day.md'),
+    expected: '2026-01-02/day.md',
+  })
+  assert({
+    given: 'the same date correctly filed under its own year (2026/12/29-04/01-02)',
+    should: 'keep the path year',
+    actual: toTimeRef('time/2026/12/29-04/01-02/day.md'),
+    expected: '2026-01-02/day.md',
+  })
+})

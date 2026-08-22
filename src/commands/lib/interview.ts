@@ -22,6 +22,7 @@ import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scor
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { toTimeRef } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
@@ -75,9 +76,12 @@ export function refForNotebookPath(relPath: string): string | undefined {
       return rest ? `places/${rest}` : undefined
     }
     case 'time': {
-      // time/<yyyy>/<mm>/<week>/<mm-dd>/<subpath>.md → <yyyy>-<mm-dd>/<subpath>
-      const match = relPath.match(/^time\/(\d{4})\/\d{2}\/[^/]+\/(\d{2}-\d{2})\/(.+)\.md$/)
-      return match ? `${match[1]}-${match[2]}/${match[3]}` : undefined
+      // time/<layout path>/<subpath>.md → <yyyy-mm-dd>/<subpath>, any layout
+      try {
+        return toTimeRef(relPath).replace(/\.md$/, '')
+      } catch {
+        return undefined
+      }
     }
     default:
       return undefined

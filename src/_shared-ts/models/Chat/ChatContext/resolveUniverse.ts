@@ -16,7 +16,7 @@
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists } from '#shared/fs/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayDir, toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 export interface UniverseResolution {
@@ -31,38 +31,21 @@ export interface UniverseResolution {
 }
 
 /**
- * Extract the date and below-day sub-path from a time/ path in any of the
- * historical day-directory schemes:
- *
- *   time/2026/03/02-08/03-04/…   week range + MM-DD day
- *   time/2025/05/05-11/10/…      week range + bare DD day
- *   time/2026/07/W31/07.27/…     week number + MM.DD day
+ * Extract the date and below-day sub-path from a time/ path in any layout
+ * the notebook has ever written, via toTimeRef — the canonical
+ * historical-path parser (v1.1 week ranges, legacy DD/xDD days, v2 week
+ * dirs, including v1.1's year-boundary artifacts).
  */
 export function parseOldDayPath(rel: string): { ymd: string; subpath: string } | null {
-  const segs = rel.split('/')
-  if (segs.length < 6 || segs[0] !== 'time') return null
-
-  const year = Number(segs[1])
-  const month = Number(segs[2])
-  const day = segs[4]
-  if (!Number.isInteger(year) || year < 1900 || year > 2100) return null
-  if (!Number.isInteger(month) || month < 1 || month > 12) return null
-
-  let m = month
-  let d: number
-  const monthDay = day.match(/^(\d{2})[-.](\d{2})$/)
-  if (monthDay) {
-    m = Number(monthDay[1])
-    d = Number(monthDay[2])
-  } else if (/^\d{1,2}$/.test(day)) {
-    d = Number(day)
-  } else {
+  let ref: string
+  try {
+    ref = toTimeRef(rel)
+  } catch {
     return null
   }
-  if (m < 1 || m > 12 || d < 1 || d > 31) return null
-
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return { ymd: `${year}-${pad(m)}-${pad(d)}`, subpath: segs.slice(5).join('/') }
+  const ymd = ref.slice(0, 10)
+  const subpath = ref.slice(11)
+  return subpath ? { ymd, subpath } : null
 }
 
 /** Count common trailing path segments of two relative paths. */

@@ -22,9 +22,15 @@ test('parseOldDayPath - historical day-directory schemes', () => {
     expected: { ymd: '2025-05-10', subpath: 'actions/notes/idea.md' },
   })
   assert({
-    given: 'a week-number scheme with an MM.DD day segment',
+    given: 'a v2 path with a bare week dir',
     should: 'extract the date and sub-path',
-    actual: parseOldDayPath('time/2026/07/W31/07.27/day.md'),
+    actual: parseOldDayPath('time/2026/W31/07-27/day.md'),
+    expected: { ymd: '2026-07-27', subpath: 'day.md' },
+  })
+  assert({
+    given: 'a v2 path with a month-labeled week dir',
+    should: 'extract the date and sub-path',
+    actual: parseOldDayPath('time/2026/07-W31/07-27/day.md'),
     expected: { ymd: '2026-07-27', subpath: 'day.md' },
   })
   assert({

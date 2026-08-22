@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import dayDir from './dayDir.ts'
+import { adjustV1_1BoundaryYear } from './layout/v1_1/parseDateFromDayPath.ts'
 
 // The universal time ref: `YYYY-MM-DD/subpath`.
 //
@@ -23,6 +24,9 @@ const REGEX_REF = /^(?<year>\d{4})-(?<month>0[1-9]|1[0-2])-(?<day>0[1-9]|[12][0-
 const REGEX_DAY_DIR = /^(?:(?<month>0[1-9]|1[0-2])-)?(?<cross>x)?(?<day>0[1-9]|[12][0-9]|3[01])$/
 
 const REGEX_WEEK_DIR = /^(?<first>[0-3][0-9])-(?<last>[0-3][0-9])$/
+
+/** v2 week dir: W## with an optional month label (03-W14). */
+const REGEX_WEEK_DIR_V2 = /^(?:\d{2}-)?W\d{2}$/
 
 export function isTimeRef(value: string): boolean {
   return REGEX_REF.test(value)
@@ -51,6 +55,25 @@ export function toTimeRef(pathOrRef: string): string {
     throw new Error(`Invalid time ref or day path: missing 'time' directory in ${pathOrRef}`)
   }
 
+  // v2 layouts: time/YYYY/W##/MM-DD/… — the year segment never lies in v2,
+  // so the ref is a straight read of year and day dir.
+  const v2Week = parts[timeIndex + 2]
+  if (v2Week && REGEX_WEEK_DIR_V2.test(v2Week)) {
+    const yearSeg = parts[timeIndex + 1]
+    const daySeg = parts[timeIndex + 3]
+    const sub = parts.slice(timeIndex + 4).join('/')
+    const dayMatchV2 = daySeg?.match(REGEX_DAY_DIR)
+    if (!/^\d{4}$/.test(yearSeg ?? '') || !dayMatchV2?.groups?.month || !sub) {
+      throw new Error(`Invalid time ref or day path: ${pathOrRef}`)
+    }
+    const date = new PlainDate(
+      parseInt(yearSeg, 10),
+      parseInt(dayMatchV2.groups.month, 10),
+      parseInt(dayMatchV2.groups.day, 10),
+    )
+    return `${date.yearPadded}-${date.monthPadded}-${date.dayPadded}/${sub}`
+  }
+
   const [yearStr, monthStr, weekStr, dayDirStr] = parts.slice(timeIndex + 1, timeIndex + 5)
   const subpath = parts.slice(timeIndex + 5).join('/')
   const dayMatch = dayDirStr?.match(REGEX_DAY_DIR)
@@ -63,6 +86,12 @@ export function toTimeRef(pathOrRef: string): string {
   const day = parseInt(dayMatch.groups.day, 10)
   if (!(month >= 1 && month <= 12)) {
     throw new Error(`Invalid time ref or day path: ${pathOrRef}`)
+  }
+
+  // v1.1 cross-year: a January day filed under a December week dir may carry
+  // the week's year rather than its own — the week range arbitrates.
+  if (dayMatch.groups.month) {
+    year = adjustV1_1BoundaryYear(year, month, day, monthStr, weekStr)
   }
 
   // Legacy cross-month: the week dir's month belongs to its first day, so in

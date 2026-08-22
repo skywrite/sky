@@ -11,6 +11,7 @@ import type { RealtimeFunctionTool } from 'openai/resources/realtime/realtime'
 import type { CommandService } from '#commands/mod.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { toTimeRef } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 
 /** Total notebook text handed to the delegate model (~40k tokens). */
@@ -114,19 +115,18 @@ export function describeNotebookPath(path: string): string {
   const peopleIdx = parts.indexOf('people')
   if (peopleIdx >= 0) return `Person profile — ${file}`
 
-  // .../time/YYYY/MM/DD-DD/MM-DD/(journal|actions/<kind>)/file.md
+  // Any time-tree layout: toTimeRef canonicalizes the path to its date,
+  // including v1.1's year-boundary artifacts (12/29-04 holding 01-02).
   const timeIdx = parts.indexOf('time')
-  if (timeIdx >= 0 && parts.length >= timeIdx + 6) {
-    const year = Number(parts[timeIdx + 1])
-    const weekMonth = parts[timeIdx + 2]
-    const dayPart = parts[timeIdx + 4] // MM-DD
-    const fileMonth = dayPart.split('-')[0]
-    if (Number.isFinite(year) && /^\d{2}-\d{2}$/.test(dayPart)) {
-      // A week folder can cross the year boundary (12/29-04 holding 01-02).
-      const adjustedYear = weekMonth === '12' && fileMonth === '01' ? year + 1 : year
-      const kindDir = parts[timeIdx + 5] === 'actions' ? (parts[timeIdx + 6] ?? '') : parts[timeIdx + 5]
+  if (timeIdx >= 0) {
+    try {
+      const ref = toTimeRef(parts.slice(timeIdx).join('/'))
+      const [ymd, ...sub] = ref.split('/')
+      const kindDir = sub[0] === 'actions' ? (sub[1] ?? '') : (sub[0] ?? '')
       const kind = KIND_LABELS[kindDir] ?? (kindDir ? kindDir.charAt(0).toUpperCase() + kindDir.slice(1) : 'Document')
-      return `${kind} — ${adjustedYear}-${dayPart} — ${file}`
+      return `${kind} — ${ymd} — ${file}`
+    } catch {
+      // Not a day path (year-level docs, malformed) — fall through to raw.
     }
   }
 

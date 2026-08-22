@@ -88,3 +88,18 @@ test(`${parseDateFromDayPath.name} - throws on invalid path`, () => {
     })
   }
 })
+
+test('parseDateFromDayPath arbitrates the year-boundary artifact by week range', () => {
+  assert({
+    given: 'a January day filed under the previous year by week:new',
+    should: 'bump to the true year',
+    actual: parseDateFromDayPath('time/2025/12/29-04/01-02/day.md').toString(),
+    expected: '2026-01-02',
+  })
+  assert({
+    given: 'the same date correctly filed under its own year',
+    should: 'keep the path year',
+    actual: parseDateFromDayPath('time/2026/12/29-04/01-02/day.md').toString(),
+    expected: '2026-01-02',
+  })
+})
