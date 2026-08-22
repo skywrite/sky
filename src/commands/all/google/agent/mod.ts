@@ -148,7 +148,7 @@ export default class GoogleAgentTask extends Command {
       return CommandResult.fail('Pass either --file (existing Google file) or --import (local document), not both.')
     }
 
-    let target: { fileId: string; kind?: string } | null = null
+    let target: { fileId: string; kind?: string; tabId?: string } | null = null
     let targetFile: DriveFile | undefined
     if (file) {
       target = resolveFileRef(file)
@@ -259,7 +259,7 @@ export default class GoogleAgentTask extends Command {
     const missionMessage = [
       `Mission: ${mission.trim()}`,
       target && targetFile
-        ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})${importedFrom ? ` — just created by converting the local file ${importedFrom}; the mission concerns this Doc` : ''}`
+        ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})${target.tabId ? ` — the link names tab ${target.tabId}: the mission concerns that tab (pass this tabId to doc tools)` : ''}${importedFrom ? ` — just created by converting the local file ${importedFrom}; the mission concerns this Doc` : ''}`
         : undefined,
       missionData ? `Data (pass verbatim to set_values via its csv parameter):\n\n${missionData.trim()}` : undefined,
       imagePaths.length > 0

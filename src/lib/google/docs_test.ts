@@ -1,5 +1,11 @@
 import { assert, test } from '#test'
-import { collectSuggestionIds, summarizeDocSuggestions, summarizeDocument, validateDocsRequests } from './docs.ts'
+import {
+  collectSuggestionIds,
+  extractBaseText,
+  summarizeDocSuggestions,
+  summarizeDocument,
+  validateDocsRequests,
+} from './docs.ts'
 
 test('validateDocsRequests', () => {
   assert({
@@ -109,6 +115,90 @@ test('summarizeDocument', () => {
   })
 })
 
+test('summarizeDocument with tabs', () => {
+  const heading = (text: string, endIndex: number, headingId?: string) => ({
+    startIndex: 1,
+    endIndex,
+    paragraph: {
+      paragraphStyle: { namedStyleType: 'HEADING_1', headingId },
+      elements: [{ textRun: { content: `${text}\n` } }],
+    },
+  })
+
+  assert({
+    given: 'a document whose single tab arrives via tabs',
+    should: 'compact to the flat single-tab shape',
+    expected: {
+      title: 'Atlas Notes',
+      headings: [{ style: 'HEADING_1', text: 'Overview', startIndex: 1, endIndex: 10, headingId: undefined }],
+      paragraphCount: 1,
+      endIndex: 10,
+    },
+    actual: summarizeDocument({
+      title: 'Atlas Notes',
+      tabs: [
+        {
+          tabProperties: { tabId: 't.0', title: 'Tab 1', nestingLevel: 0 },
+          documentTab: { body: { content: [heading('Overview', 10)] } },
+        },
+      ],
+    }),
+  })
+
+  assert({
+    given: 'a document with nested tabs',
+    should: 'compact to one outline per tab, parents before children',
+    expected: {
+      title: 'Atlas Handbook',
+      tabs: [
+        {
+          tabId: 't.0',
+          tabTitle: 'Overview',
+          nestingLevel: 0,
+          headings: [{ style: 'HEADING_1', text: 'Welcome', startIndex: 1, endIndex: 9, headingId: 'h.one' }],
+          paragraphCount: 1,
+          endIndex: 9,
+        },
+        {
+          tabId: 't.child',
+          tabTitle: 'Details',
+          nestingLevel: 1,
+          headings: [{ style: 'HEADING_1', text: 'Depth', startIndex: 1, endIndex: 7, headingId: undefined }],
+          paragraphCount: 1,
+          endIndex: 7,
+        },
+        {
+          tabId: 't.1',
+          tabTitle: 'Roadmap',
+          nestingLevel: 0,
+          headings: [{ style: 'HEADING_1', text: 'Q3 Goals', startIndex: 1, endIndex: 10, headingId: undefined }],
+          paragraphCount: 1,
+          endIndex: 10,
+        },
+      ],
+    },
+    actual: summarizeDocument({
+      title: 'Atlas Handbook',
+      tabs: [
+        {
+          tabProperties: { tabId: 't.0', title: 'Overview', nestingLevel: 0 },
+          documentTab: { body: { content: [heading('Welcome', 9, 'h.one')] } },
+          childTabs: [
+            {
+              tabProperties: { tabId: 't.child', title: 'Details', nestingLevel: 1 },
+              documentTab: { body: { content: [heading('Depth', 7)] } },
+            },
+          ],
+        },
+        {
+          tabProperties: { tabId: 't.1', title: 'Roadmap', nestingLevel: 0 },
+          documentTab: { body: { content: [heading('Q3 Goals', 10)] } },
+        },
+      ],
+    }),
+  })
+})
+
 test('collectSuggestionIds', () => {
   const doc = {
     body: {
@@ -157,6 +247,26 @@ test('collectSuggestionIds', () => {
     expected: [],
     actual: collectSuggestionIds({
       body: { content: [{ paragraph: { elements: [{ textRun: { content: 'hi' } }] } }] },
+    }),
+  })
+
+  assert({
+    given: 'ids nested under document tabs',
+    should: 'find them wherever they sit',
+    expected: ['suggest.t1'],
+    actual: collectSuggestionIds({
+      tabs: [
+        {
+          tabProperties: { tabId: 't.0' },
+          documentTab: {
+            body: {
+              content: [
+                { paragraph: { elements: [{ textRun: { content: 'x', suggestedInsertionIds: ['suggest.t1'] } }] } },
+              ],
+            },
+          },
+        },
+      ],
     }),
   })
 })
@@ -218,5 +328,116 @@ test('summarizeDocSuggestions', () => {
     actual: summarizeDocSuggestions({
       body: { content: [{ paragraph: { elements: [{ textRun: { content: 'hi' } }] } }] },
     }),
+  })
+})
+
+test('summarizeDocSuggestions across tabs', () => {
+  assert({
+    given: 'suggestions in two different tabs',
+    should: 'label each with its tab and keep context within the tab',
+    expected: [
+      {
+        id: 'suggest.r1',
+        deletes: 'delayed',
+        inserts: 'on track',
+        context: 'The launch is',
+        tabId: 't.0',
+        tabTitle: 'Draft',
+      },
+      { id: 'suggest.i2', deletes: '', inserts: 'Jane Doe', context: 'Owner:', tabId: 't.1', tabTitle: 'Notes' },
+    ],
+    actual: summarizeDocSuggestions({
+      tabs: [
+        {
+          tabProperties: { tabId: 't.0', title: 'Draft', nestingLevel: 0 },
+          documentTab: {
+            body: {
+              content: [
+                {
+                  paragraph: {
+                    elements: [
+                      { textRun: { content: 'The launch is ' } },
+                      { textRun: { content: 'delayed', suggestedDeletionIds: ['suggest.r1'] } },
+                      { textRun: { content: 'on track', suggestedInsertionIds: ['suggest.r1'] } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        {
+          tabProperties: { tabId: 't.1', title: 'Notes', nestingLevel: 0 },
+          documentTab: {
+            body: {
+              content: [
+                {
+                  paragraph: {
+                    elements: [
+                      { textRun: { content: 'Owner: ' } },
+                      { textRun: { content: 'Jane Doe', suggestedInsertionIds: ['suggest.i2'] } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+  })
+
+  assert({
+    given: 'a single-tab document arriving via tabs',
+    should: 'omit the tab labels',
+    expected: [{ id: 'suggest.s1', deletes: '', inserts: 'new', context: 'base' }],
+    actual: summarizeDocSuggestions({
+      tabs: [
+        {
+          tabProperties: { tabId: 't.0', title: 'Main', nestingLevel: 0 },
+          documentTab: {
+            body: {
+              content: [
+                {
+                  paragraph: {
+                    elements: [
+                      { textRun: { content: 'base ' } },
+                      { textRun: { content: 'new', suggestedInsertionIds: ['suggest.s1'] } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+  })
+})
+
+test('extractBaseText', () => {
+  assert({
+    given: 'runs with pending insertions, deletions, and table cells',
+    should: 'keep base and struck-out text, drop inserted text',
+    expected: 'The launch is delayed for spring.\ncell text\n',
+    actual: extractBaseText([
+      {
+        paragraph: {
+          elements: [
+            { textRun: { content: 'The launch is ' } },
+            { textRun: { content: 'delayed', suggestedDeletionIds: ['suggest.r1'] } },
+            { textRun: { content: 'on track', suggestedInsertionIds: ['suggest.r1'] } },
+            { textRun: { content: ' for spring.\n' } },
+          ],
+        },
+      },
+      {
+        table: {
+          tableRows: [
+            { tableCells: [{ content: [{ paragraph: { elements: [{ textRun: { content: 'cell text\n' } }] } }] }] },
+          ],
+        },
+      },
+    ]),
   })
 })

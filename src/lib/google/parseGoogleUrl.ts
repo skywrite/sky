@@ -4,6 +4,8 @@ export interface ParsedGoogleUrl {
   fileId: string
   /** Known for docs/sheets/slides URLs; undefined for generic Drive links. */
   kind?: WorkspaceKind
+  /** Present when a Docs URL names a tab (?tab=t.…) — a link copied from a specific tab. */
+  tabId?: string
 }
 
 const WORKSPACE_PATHS: Array<{ prefix: string; kind: WorkspaceKind }> = [
@@ -39,7 +41,8 @@ export function parseGoogleUrl(input: string): ParsedGoogleUrl | null {
     for (const { prefix, kind } of WORKSPACE_PATHS) {
       if (url.pathname.startsWith(prefix)) {
         const fileId = url.pathname.slice(prefix.length).split('/')[0]
-        if (fileId) return { fileId, kind }
+        const tabId = url.searchParams.get('tab')
+        if (fileId) return tabId ? { fileId, kind, tabId } : { fileId, kind }
       }
     }
     return null

@@ -17,6 +17,7 @@ import {
   listComments,
   listDocSuggestionIds,
   listDocSuggestions,
+  listDocTabs,
   shareFile,
   createDocFromMarkdown,
   createPresentation,
@@ -28,6 +29,7 @@ import {
   extractChartIds,
   fetchThumbnailPng,
   getDocOutline,
+  getDocTabTexts,
   getElementAnchor,
   getFile,
   getPresentationOutline,
@@ -218,21 +220,42 @@ export function createAgentTools(deps: {
 
     read_file: {
       description:
-        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs.',
-      inputSchema: jsonSchema<{ fileId: string; offset?: number }>({
+        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
+      inputSchema: jsonSchema<{ fileId: string; offset?: number; tabId?: string }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
           offset: { type: 'number', description: 'Character offset a truncated read told you to continue from' },
+          tabId: { type: 'string', description: 'Docs only: read just this tab (plain text, not markdown)' },
         },
         required: ['fileId'],
       }),
-      execute: async ({ fileId, offset }: { fileId: string; offset?: number }) => {
+      execute: async ({ fileId, offset, tabId }: { fileId: string; offset?: number; tabId?: string }) => {
         try {
           const file = await getFile(client, fileId)
           const kind = workspaceKind(file.mimeType)
           if (!kind) return `Error: "${file.name}" is not a Doc/Sheet/Slides file (${file.mimeType})`
-          const full = await exportFile(client, file.id, EXPORT_MIME[kind])
+          if (tabId !== undefined) {
+            if (kind !== 'doc') return `Error: tabId applies only to Docs — "${file.name}" is a ${kind}`
+            const tabs = await getDocTabTexts(client, fileId)
+            const tab = tabs.find((t) => t.tabId === tabId)
+            if (!tab) {
+              const known = tabs.map((t) => `${t.tabId} ("${t.tabTitle ?? 'untitled'}")`).join(', ')
+              return `Error: no tab ${tabId} in "${file.name}" — its tabs: ${known}`
+            }
+            const page = paginateRead(tab.text, offset)
+            if (!page) return `Error: offset ${offset} is past the end — the tab is ${tab.text.length} chars`
+            log(
+              `Read "${file.name}" tab "${tab.tabTitle ?? tabId}" (${
+                page.start > 0 ? `chars ${page.start}-${page.end} of ` : ''
+              }${tab.text.length} chars)`,
+            )
+            return { id: file.id, name: file.name, kind, tabId, tabTitle: tab.tabTitle, content: page.content }
+          }
+          const [full, docTabs] = await Promise.all([
+            exportFile(client, file.id, EXPORT_MIME[kind]),
+            kind === 'doc' ? listDocTabs(client, fileId) : Promise.resolve([]),
+          ])
           const page = paginateRead(full, offset)
           if (!page) return `Error: offset ${offset} is past the end — "${file.name}" is ${full.length} chars`
           log(
@@ -240,7 +263,12 @@ export function createAgentTools(deps: {
               ? `Read "${file.name}" (${kind}, chars ${page.start}-${page.end} of ${full.length})`
               : `Read "${file.name}" (${kind}, ${full.length} chars${page.complete ? '' : `, first ${page.end} returned`})`,
           )
-          return { id: file.id, name: file.name, kind, content: page.content }
+          const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: page.content }
+          if (docTabs.length > 1) {
+            result.tabs = docTabs.map((t) => ({ tabId: t.tabId, title: t.title }))
+            result.note = `This doc has ${docTabs.length} tabs — the export includes all of them, each opening with its tab title as a # heading. Tab-targeted tools need the tabIds listed here.`
+          }
+          return result
         } catch (err) {
           return toolError(err)
         }
@@ -272,7 +300,7 @@ export function createAgentTools(deps: {
 
     replace_doc_content: {
       description:
-        'Replace the ENTIRE content of an existing Google Doc with new markdown. Destructive — prior content remains only in Drive version history. Use solely on the mission-target document.',
+        'Replace the ENTIRE content of an existing Google Doc with new markdown. Destructive — prior content remains only in Drive version history. Use solely on the mission-target document. Refuses docs with several tabs (the replacement would overwrite ALL of them) — edit those per tab with batch_update_doc instead.',
       inputSchema: jsonSchema<{ fileId: string; markdown: string }>({
         type: 'object',
         properties: {
@@ -283,6 +311,10 @@ export function createAgentTools(deps: {
       }),
       execute: async ({ fileId, markdown }: { fileId: string; markdown: string }) => {
         try {
+          const tabs = await listDocTabs(client, fileId)
+          if (tabs.length > 1) {
+            return `Error: this doc has ${tabs.length} tabs — replacing the whole file would overwrite ALL of them. Edit the target tab with batch_update_doc (tabId from get_doc_outline) or suggest_doc_edit instead.`
+          }
           const file = await replaceFileWithMarkdown(client, fileId, markdown)
           track(state, 'updated', file)
           log(`Rewrote "${file.name ?? fileId}" — ${file.webViewLink ?? file.id}`)
@@ -295,7 +327,7 @@ export function createAgentTools(deps: {
 
     batch_update_doc: {
       description:
-        'Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first.',
+        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}.",
       inputSchema: jsonSchema<{ fileId: string; requests: Array<Record<string, unknown>> }>({
         type: 'object',
         properties: {
@@ -787,7 +819,7 @@ export function createAgentTools(deps: {
 
     add_anchored_comment: {
       description:
-        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), one cell (Sheets, pass sheetId + range), or a text passage (Docs — pass searchText, a VERBATIM snippet from the doc, distinctive enough to be unique; the comment binds to its first occurrence). Slower than add_comment (~20s each) but the comment appears AT its location. On any error (browser missing, signed out), fall back to add_comment.',
+        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), one cell (Sheets, pass sheetId + range), or a text passage (Docs — pass searchText, a VERBATIM snippet from the doc, distinctive enough to be unique; the comment binds to its first occurrence, and on a doc with several tabs also pass the tabId holding the text). Slower than add_comment (~20s each) but the comment appears AT its location. On any error (browser missing, signed out), fall back to add_comment.',
       inputSchema: jsonSchema<{
         fileId: string
         comment: string
@@ -796,6 +828,7 @@ export function createAgentTools(deps: {
         sheetId?: number
         range?: string
         searchText?: string
+        tabId?: string
       }>({
         type: 'object',
         properties: {
@@ -812,6 +845,10 @@ export function createAgentTools(deps: {
             type: 'string',
             description: 'Docs: verbatim unique text from the document the comment anchors to',
           },
+          tabId: {
+            type: 'string',
+            description: 'Docs with several tabs: the tab holding searchText (from get_doc_outline or read_file)',
+          },
         },
         required: ['fileId', 'comment'],
       }),
@@ -823,6 +860,7 @@ export function createAgentTools(deps: {
         sheetId,
         range,
         searchText,
+        tabId,
       }: {
         fileId: string
         comment: string
@@ -831,6 +869,7 @@ export function createAgentTools(deps: {
         sheetId?: number
         range?: string
         searchText?: string
+        tabId?: string
       }) => {
         if (!comment.trim()) return 'Error: comment content is empty'
         try {
@@ -853,8 +892,8 @@ export function createAgentTools(deps: {
             where = `cell ${range}`
           } else if (kind === 'doc') {
             if (!searchText?.trim()) return 'Error: pass searchText (verbatim doc text) for a Docs anchored comment'
-            await addDocsComment({ documentId: fileId, searchText: searchText.trim(), comment: comment.trim() })
-            where = `text "${searchText.trim().slice(0, 40)}"`
+            await addDocsComment({ documentId: fileId, searchText: searchText.trim(), comment: comment.trim(), tabId })
+            where = `text "${searchText.trim().slice(0, 40)}"${tabId ? ` (tab ${tabId})` : ''}`
           } else {
             return `Error: "${file.name}" is not a Doc/Sheet/Slides file`
           }
@@ -875,8 +914,14 @@ export function createAgentTools(deps: {
 
     suggest_doc_edit: {
       description:
-        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited unless you pass occurrence (1-based, reading order). replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands — check list_doc_suggestions before any re-issue.',
-      inputSchema: jsonSchema<{ fileId: string; searchText: string; replacement: string; occurrence?: number }>({
+        'Propose a SUGGESTED edit in a Google Doc — a tracked change collaborators Accept or Reject — by driving the local browser session (invisibly, headless) in Suggesting mode. Docs only; when the mission wants changes APPLIED, use replace_doc_content/batch_update_doc instead. searchText is VERBATIM text as it reads in the document (no markdown syntax), distinctive enough to be unique — the first occurrence is edited unless you pass occurrence (1-based, reading order). Docs with several tabs require tabId (from get_doc_outline or read_file); searchText and occurrence then count within that tab. replacement is the full text that should stand in its place: "" proposes deleting the anchor; for an insertion, include unchanged neighboring text in BOTH fields (only the difference is typed). Slower than API edits (~25s each); on any browser error (missing, signed out), leave the proposal as an anchored/panel comment instead. Pending suggestions do NOT appear in read_file output — success is verified against the Docs API here, so never re-check by reading or retry because the text looks unchanged. Issue browser-driven calls ONE AT A TIME (they share one browser); a timed-out call usually still lands — check list_doc_suggestions before any re-issue.',
+      inputSchema: jsonSchema<{
+        fileId: string
+        searchText: string
+        replacement: string
+        occurrence?: number
+        tabId?: string
+      }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
@@ -892,6 +937,10 @@ export function createAgentTools(deps: {
             type: 'number',
             description: 'When searchText repeats: which match to edit, 1-based in reading order (default 1)',
           },
+          tabId: {
+            type: 'string',
+            description: 'The tab holding searchText — required on docs with several tabs',
+          },
         },
         required: ['fileId', 'searchText', 'replacement'],
       }),
@@ -900,11 +949,13 @@ export function createAgentTools(deps: {
         searchText,
         replacement,
         occurrence,
+        tabId,
       }: {
         fileId: string
         searchText: string
         replacement: string
         occurrence?: number
+        tabId?: string
       }) => {
         if (!searchText.trim()) return 'Error: searchText is empty'
         if (occurrence !== undefined && (!Number.isInteger(occurrence) || occurrence < 1)) {
@@ -924,18 +975,27 @@ export function createAgentTools(deps: {
           const file = await getFile(client, fileId)
           if (workspaceKind(file.mimeType) !== 'doc') return `Error: "${file.name}" is not a Google Doc`
           // On a find miss the browser flow would type at an unanchored caret —
-          // prove the anchor exists in the doc's literal text before launching.
-          const text = await exportFile(client, fileId, 'text/plain')
+          // prove the anchor exists in the target tab's base text before
+          // launching (the editor opens on that tab; without a tabId, on the
+          // first — so the anchor must be verified against the same tab).
+          const tabs = await getDocTabTexts(client, fileId)
+          const knownTabs = tabs.map((t) => `${t.tabId} ("${t.tabTitle ?? 'untitled'}")`).join(', ')
+          if (tabId === undefined && tabs.length > 1) {
+            return `Error: "${file.name}" has ${tabs.length} tabs — pass the tabId holding searchText: ${knownTabs}`
+          }
+          const tab = tabId === undefined ? tabs[0] : tabs.find((t) => t.tabId === tabId)
+          if (!tab) return `Error: no tab ${tabId} in "${file.name}" — its tabs: ${knownTabs}`
+          const text = tab.text
           const occurrences = text.split(searchText).length - 1
           if (occurrences === 0) {
-            return 'Error: searchText does not occur in the document — pass text exactly as it reads there (read_file shows markdown; drop its syntax)'
+            return `Error: searchText does not occur in ${tabId !== undefined ? `tab ${tabId}` : 'the document'} — pass text exactly as it reads there (read_file shows markdown; drop its syntax)`
           }
           const target = occurrence ?? 1
           if (target > occurrences) {
             return `Error: searchText occurs ${occurrences} time(s) — occurrence ${target} does not exist`
           }
           const before = new Set(await listDocSuggestionIds(client, fileId))
-          await suggestDocsEdit({ documentId: fileId, searchText, replacement, occurrence: target })
+          await suggestDocsEdit({ documentId: fileId, searchText, replacement, occurrence: target, tabId })
           // The UI flow is blind; the API is the witness — a landed suggestion
           // brings new pending-suggestion ids.
           const found = (await listDocSuggestionIds(client, fileId)).some((id) => !before.has(id))
@@ -958,7 +1018,7 @@ export function createAgentTools(deps: {
 
     list_doc_suggestions: {
       description:
-        'Read the pending suggested text edits on a Google Doc (Docs only): per suggestion its id, the text it deletes, the text it inserts, and the base text just before it for locating. Check before a suggest pass so you never duplicate a pending suggestion (including one whose suggest_doc_edit call timed out), and use it to verify at the end of a suggest mission; also the work list for missions about existing suggestions. Read-only — accepting or rejecting stays with the doc owner in the editor. The API carries no author per suggestion.',
+        'Read the pending suggested text edits on a Google Doc (Docs only): per suggestion its id, the text it deletes, the text it inserts, and the base text just before it for locating — on docs with several tabs, also the tabId/tabTitle it lives in. Check before a suggest pass so you never duplicate a pending suggestion (including one whose suggest_doc_edit call timed out), and use it to verify at the end of a suggest mission; also the work list for missions about existing suggestions. Read-only — accepting or rejecting stays with the doc owner in the editor. The API carries no author per suggestion.',
       inputSchema: jsonSchema<{ fileId: string }>({
         type: 'object',
         properties: { fileId: { type: 'string' } },
@@ -973,6 +1033,8 @@ export function createAgentTools(deps: {
           return {
             suggestions: suggestions.map((s) => ({
               id: s.id,
+              tabId: s.tabId,
+              tabTitle: s.tabTitle,
               deletes: s.deletes.slice(0, 300),
               inserts: s.inserts.slice(0, 300),
               context: s.context,
@@ -1194,7 +1256,7 @@ export function createAgentTools(deps: {
 
     get_doc_outline: {
       description:
-        'Inspect a Google Doc: title, headings with startIndex/endIndex (for range-based styling), paragraph count, end index. Use after writes to verify structure.',
+        'Inspect a Google Doc: title, headings with startIndex/endIndex (for range-based styling), paragraph count, end index. A doc holding several tabs returns one outline per tab under `tabs` (tabId, tabTitle, headings) — indexes are LOCAL to each tab. Use after writes to verify structure.',
       inputSchema: jsonSchema<{ fileId: string }>({
         type: 'object',
         properties: { fileId: { type: 'string' } },
@@ -1203,7 +1265,14 @@ export function createAgentTools(deps: {
       execute: async ({ fileId }: { fileId: string }) => {
         try {
           const outline = await getDocOutline(client, fileId)
-          log(`Inspected "${outline.title ?? fileId}" — ${outline.headings.length} heading(s)`)
+          const headingCount = outline.tabs
+            ? outline.tabs.reduce((n, tab) => n + tab.headings.length, 0)
+            : (outline.headings?.length ?? 0)
+          log(
+            `Inspected "${outline.title ?? fileId}" — ${
+              outline.tabs ? `${outline.tabs.length} tab(s), ` : ''
+            }${headingCount} heading(s)`,
+          )
           return outline
         } catch (err) {
           return toolError(err)

@@ -17,8 +17,10 @@ export function sheetsCommentUrl(spreadsheetId: string, sheetId: number, range: 
   return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit#gid=${sheetId}&range=${encodeURIComponent(range)}`
 }
 
-export function docsCommentUrl(documentId: string): string {
-  return `https://docs.google.com/document/d/${encodeURIComponent(documentId)}/edit`
+/** With a tabId, the URL opens the doc on that tab (multi-tab docs; same format as "Copy link to this tab"). */
+export function docsCommentUrl(documentId: string, tabId?: string): string {
+  const base = `https://docs.google.com/document/d/${encodeURIComponent(documentId)}/edit`
+  return tabId ? `${base}?tab=${encodeURIComponent(tabId)}` : base
 }
 
 /** Cmd+Option+M → type → Cmd+Enter. The docos editor class has been stable for a decade; typing is keyboard-driven so a rename only loses the readiness wait. */
@@ -85,9 +87,11 @@ export async function addDocsComment(options: {
   documentId: string
   searchText: string
   comment: string
+  /** Multi-tab docs: the tab holding searchText — the editor opens on it. */
+  tabId?: string
 }): Promise<void> {
   await withGoogleBrowser({ headless: true }, async (context) => {
-    const page = await openGooglePage(context, docsCommentUrl(options.documentId))
+    const page = await openGooglePage(context, docsCommentUrl(options.documentId, options.tabId))
     await page.waitForTimeout(4000)
     // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
     await page.mouse.click(700, 300)
@@ -98,7 +102,7 @@ export async function addDocsComment(options: {
     // type-and-Enter it replaces landed on match TWO whenever the snippet
     // repeated (fill focuses match 1; Enter advances). The comment binds to
     // the selection left behind.
-    await selectDocMatch(page, options.searchText, 1)
+    await selectDocMatch(page, options.searchText, 1, options.tabId)
     await typeComment(page, options.comment)
   })
 }

@@ -57,12 +57,14 @@ export async function suggestDocsEdit(options: {
   replacement: string
   /** 1-based match to edit in reading order (default: the first). */
   occurrence?: number
+  /** Multi-tab docs: the tab holding searchText — the editor opens on it. */
+  tabId?: string
 }): Promise<void> {
   const occurrence = options.occurrence ?? 1
   const window = editWindow(options.searchText, options.replacement)
   await withGoogleBrowser({ headless: true }, async (context) => {
     await context.grantPermissions(['clipboard-write'], { origin: 'https://docs.google.com' })
-    const page = await openGooglePage(context, docsCommentUrl(options.documentId))
+    const page = await openGooglePage(context, docsCommentUrl(options.documentId, options.tabId))
     await page.waitForTimeout(4000)
     // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
     await page.mouse.click(700, 300)
@@ -74,7 +76,7 @@ export async function suggestDocsEdit(options: {
     // commenter access, where the editor is suggest-only anyway.
     await page.keyboard.press('Meta+Alt+Shift+KeyX')
     await page.waitForTimeout(800)
-    await selectDocMatch(page, options.searchText, occurrence)
+    await selectDocMatch(page, options.searchText, occurrence, options.tabId)
     // Collapse to the anchor start, then walk to the edit window.
     await page.keyboard.press('ArrowLeft')
     for (let i = 0; i < window.caretAdvance; i++) await page.keyboard.press('ArrowRight')

@@ -17,9 +17,16 @@ const COUNTER_RE = /^(\d+) of (\d+)$/
  * match stays selected in the canvas. Throws when the counter never appears
  * (no matches) or holds fewer matches than the requested occurrence; callers
  * pre-verify existence API-side, so a throw here means the live document
- * disagrees with that check.
+ * disagrees with that check. On multi-tab docs pass expectTabId (the tab the
+ * caller navigated to): if the selection lands the editor in a different tab
+ * — find can jump tabs — this throws before anything types into it.
  */
-export async function selectDocMatch(page: Page, searchText: string, occurrence: number): Promise<void> {
+export async function selectDocMatch(
+  page: Page,
+  searchText: string,
+  occurrence: number,
+  expectTabId?: string,
+): Promise<void> {
   await page.keyboard.press('Meta+KeyF')
   const input = page.locator(FIND_INPUT).first()
   await input.waitFor({ state: 'visible', timeout: 5000 })
@@ -58,4 +65,16 @@ export async function selectDocMatch(page: Page, searchText: string, occurrence:
   // Closing the find bar keeps the current match selected in the canvas.
   await page.keyboard.press('Escape')
   await page.waitForTimeout(600)
+
+  // The editor rewrites ?tab= in the URL when a match pulls it to another
+  // tab; if it no longer names the requested tab, the selection is in the
+  // wrong one. (No tab param in the URL proves nothing — skip the check.)
+  if (expectTabId) {
+    const activeTab = new URL(page.url()).searchParams.get('tab')
+    if (activeTab && activeTab !== expectTabId) {
+      throw new Error(
+        `the find selection landed in tab ${activeTab}, not ${expectTabId} — "${searchText}" was not found in the requested tab`,
+      )
+    }
+  }
 }

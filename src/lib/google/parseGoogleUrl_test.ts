@@ -12,6 +12,13 @@ test('parseGoogleUrl workspace links', () => {
   })
 
   assert({
+    given: 'a Docs link naming a tab',
+    should: 'extract the tab id too',
+    expected: { fileId: ID, kind: 'doc', tabId: 't.abc123xyz' },
+    actual: parseGoogleUrl(`https://docs.google.com/document/d/${ID}/edit?tab=t.abc123xyz`),
+  })
+
+  assert({
     given: 'a Sheets link with a fragment',
     should: 'extract the id and kind',
     expected: { fileId: ID, kind: 'sheet' },
