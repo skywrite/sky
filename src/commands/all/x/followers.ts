@@ -224,7 +224,7 @@ export default class XFollowersTask extends Command {
     const now = new Date()
     const year = now.getFullYear()
     const whenStr = dateToLocalString(now)
-    const csvFile = path.join(<string>context.config.DIR_TRACKING, 'social', 'x', String(year), 'followers.csv')
+    const csvFile = path.join(<string>context.config.DIR_DATA, 'social', 'x', String(year), 'followers.csv')
 
     const columns = ['when', 'username', 'followers', 'following']
     const csvExists = await exists(csvFile)

@@ -443,7 +443,7 @@ export default class AiChatTask extends Command {
     let { message: initialMessage } = args
 
     const timeDir = <string>config.DIR_TIME
-    const dataDir = <string>config.DIR_TRACKING
+    const dataDir = <string>config.DIR_DATA
 
     // Resolve the chosen reasoning profile (--reasoning) for turns; a fast model for summaries.
     const reasoningProfile = getProfile(reasoningProfileName)

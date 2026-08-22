@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
-import { DIR_TRACKING_LOCATION } from '#config'
+import { DIR_DATA_LOCATION } from '#config'
 import { fetchWeather } from '#lib/apis/open-weather-map.ts'
 import { fetchLocation } from '#lib/misc/location.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
@@ -19,10 +19,10 @@ export default class UtilWeatherTask extends Command {
     const now = new Date()
     const year = now.getFullYear()
     const nowStr = dateToLocalString(now)
-    const csvFile = path.join(<string>config.DIR_TRACKING_WEATHER, String(year), 'weather.csv')
+    const csvFile = path.join(<string>config.DIR_DATA_WEATHER, String(year), 'weather.csv')
 
     // Ensure location data exists for the current year
-    const locationFile = path.join(DIR_TRACKING_LOCATION, String(year), 'location.csv')
+    const locationFile = path.join(DIR_DATA_LOCATION, String(year), 'location.csv')
     if (!(await exists(locationFile))) {
       output.log('Location data not found for current year, fetching location...')
       await tasks?.run('util:location', { notes: 'start of the year' })

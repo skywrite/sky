@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { DIR_TRACKING_LOCATION } from '#config'
+import { DIR_DATA_LOCATION } from '#config'
 import readTextFile from '#shared/fs/readTextFile.ts'
 import { parseCsv } from '#universal/encoding/csv/mod.ts'
 
@@ -20,7 +20,7 @@ export async function fetchLocation(): Promise<Location> {
 
   const when = new Date() // support as input
   const year = when.getFullYear()
-  const csvFile = path.join(DIR_TRACKING_LOCATION, String(year), 'location.csv')
+  const csvFile = path.join(DIR_DATA_LOCATION, String(year), 'location.csv')
 
   const csvData = await readTextFile(csvFile)
   const csvRecords = parseCsv(csvData).records

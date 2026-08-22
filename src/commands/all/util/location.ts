@@ -90,7 +90,7 @@ export default class UtilLocationTask extends Command {
 
     const whenDateVal = when.toTimeDateValue()
     const nowUTCStr = toUTCDateString(whenDateVal)
-    const csvFile = path.join(<string>config.DIR_TRACKING_LOCATION, String(when.plainDate.year), 'location.csv')
+    const csvFile = path.join(<string>config.DIR_DATA_LOCATION, String(when.plainDate.year), 'location.csv')
 
     const columns = ['when', 'country', 'country_code', 'region', 'city', 'latitude', 'longitude', 'notes']
     const csvExists = await exists(csvFile)

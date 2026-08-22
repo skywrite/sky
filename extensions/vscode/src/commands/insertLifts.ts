@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
-import { DIR_TRACKING } from '#config'
+import { DIR_DATA } from '#config'
 import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 
 const LIFTS_HEADING = 'Lifts'
-const CSV_PATH = path.join(DIR_TRACKING, 'strong', 'strong_workouts.csv')
+const CSV_PATH = path.join(DIR_DATA, 'strong', 'strong_workouts.csv')
 
 // TODO: Replace findHeadingLine/findSectionEnd with SectionDocument.findSection() + position offset
 // (see summarizeAttachment for the pattern)

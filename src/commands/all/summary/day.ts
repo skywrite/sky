@@ -155,7 +155,7 @@ export default class SummaryDayTask extends Command {
     const collection = DomainCollection.fromDocuments(docs, store, { depth: 1, previousHops: PREVIOUS_HOPS })
 
     const healthData = await gatherHealthData(day, timeDir)
-    const priceData = await gatherDayPriceData(day, <string>config.DIR_TRACKING)
+    const priceData = await gatherDayPriceData(day, <string>config.DIR_DATA)
 
     // Archival captures: message files the owner appears nowhere in — threads
     // saved for reference, not activity. Identity comes from about-me.md, the

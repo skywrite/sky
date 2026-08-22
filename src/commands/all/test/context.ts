@@ -25,7 +25,7 @@ export default class TestContextTask extends Command {
     // Demonstrate config access
     output.log('Configuration:')
     output.log(`  DIR_BASE: ${context.config.DIR_BASE}`)
-    output.log(`  DIR_TRACKING: ${context.config.DIR_TRACKING}`)
+    output.log(`  DIR_DATA: ${context.config.DIR_DATA}`)
     output.log('')
 
     // Demonstrate environment variables

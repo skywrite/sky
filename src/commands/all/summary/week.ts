@@ -178,7 +178,7 @@ export default class SummaryWeekTask extends Command {
     // asset prices filtered to the week.
     const healthCsvs = await gatherWeekHealthData(week.start, timeDir)
     if (healthCsvs.length > 0) output.log(`Health CSVs: ${healthCsvs.length}`)
-    const priceCsvs = await gatherWeekPriceData(week.start, week.end, <string>config.DIR_TRACKING)
+    const priceCsvs = await gatherWeekPriceData(week.start, week.end, <string>config.DIR_DATA)
     if (priceCsvs.length > 0) output.log(`Price CSVs: ${priceCsvs.length}`)
 
     // 4. rel: union of the dailies' rel lists. A daily's flat rel list can't
