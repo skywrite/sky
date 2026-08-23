@@ -8,10 +8,12 @@
  * PER DAY, last 7 days incl. today:
  *   - most-important files (what was committed, and whether it completed)
  *   - journal entries (stated intent, distinct from what happened)
+ *   - AI chats (journal-like thinking out loud — what's on the user's mind;
+ *     machine CONTEXT-LOG comments stripped, conversation kept)
  *   - summary.md if it has content, else day.md (today always rides as
  *     day.md — the schedule/reminder/todo ledger the MI must fit around)
  *
- * Message, meeting, chat, and library documents never ride raw: a summarized
+ * Message, meeting, and library documents never ride raw: a summarized
  * day narrates them, and day.md's ledger already records captures and
  * meetings one line each. Health tracking and streaks are deliberately
  * absent — routine maintenance is not MI material, and anything urgent
@@ -23,6 +25,7 @@ import * as path from 'node:path'
 import {
   type ContextSection,
   formatSections,
+  readDayChats,
   readDayJournals,
   readDayMostImportant,
   readDayNarration,
@@ -35,7 +38,7 @@ import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { weekDir } from '#shared/nbfs/mod.ts'
 import { type PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
-/** Trailing window (incl. today) whose journals, MIs, and narration ride. */
+/** Trailing window (incl. today) whose journals, chats, MIs, and narration ride. */
 const LOOKBACK_DAYS = 7
 /** Estimated size above which mi:new warns — the gather itself never caps. */
 export const CONTEXT_TOKENS_TRIPWIRE = 100_000
@@ -86,6 +89,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<MI
     const label = i === 0 ? `${day.ymd} ${day.dayShort} (today)` : `${day.ymd} ${day.dayShort}`
 
     for (const file of await readDayJournals(day)) add(`${label} — journal/${file.name}`, file.body)
+    for (const file of await readDayChats(day)) add(`${label} — chat: ${file.name}`, file.body)
     for (const file of await readDayMostImportant(day)) add(`${label} — most important: ${file.name}`, file.body)
     const narration = await readDayNarration(day)
     if (narration) add(`${label} — ${narration.kind === 'summary' ? 'summary' : 'day.md (no summary)'}`, narration.body)
