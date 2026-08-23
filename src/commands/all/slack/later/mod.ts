@@ -12,6 +12,8 @@ import {
   laterCapturable,
   laterItemLink,
   renderLaterRow,
+  resolveRowMemberNames,
+  resolveRowMentions,
   resolveStaleChannels,
 } from './lib/list.ts'
 
@@ -138,8 +140,12 @@ export default class SlackLaterTask extends Command {
     const stale = resolveStaleChannels(list.items)
     const shown = queue.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0, openCount ?? 0))
     await backfillMissingMessages(shown)
+    const [, groupMembers] = await Promise.all([
+      resolveRowMentions(shown, workspace),
+      resolveRowMemberNames(shown, workspace),
+    ])
     for (const [index, d] of shown.entries()) {
-      for (const line of renderLaterRow(d, index, { stale })) output.log(line)
+      for (const line of renderLaterRow(d, index, { stale, groupMembers })) output.log(line)
     }
     if (shown.length < queue.length) output.log(colors.dim(`  …and ${queue.length - shown.length} more`))
 
@@ -147,7 +153,7 @@ export default class SlackLaterTask extends Command {
     // items stay saved, so Slack's Later badge still marks them
     if (openCount !== undefined) {
       const toOpen = queue.filter((d) => laterCapturable(d.item)).slice(0, openCount)
-      await openInSlack(toOpen, output)
+      await openInSlack(toOpen, output, { groupMembers })
       return CommandResult.success({
         fetched: list.items.length,
         inProgressTotal: list.counts.in_progress,
@@ -214,7 +220,7 @@ export default class SlackLaterTask extends Command {
       await delay(500)
     }
     // Slack last, so the user lands there ready to respond
-    if (openBare) await openInSlack(outcome.openRows, output)
+    if (openBare) await openInSlack(outcome.openRows, output, { groupMembers })
 
     return CommandResult.success({
       fetched: list.items.length,

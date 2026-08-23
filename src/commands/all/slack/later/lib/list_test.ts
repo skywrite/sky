@@ -7,6 +7,8 @@ import {
   laterIsThreadReply,
   laterItemLink,
   renderLaterRow,
+  resolveRowMemberNames,
+  resolveRowMentions,
   resolveStaleChannels,
 } from './list.ts'
 
@@ -34,6 +36,16 @@ test('laterChannelLabel picks the right conversation label', () => {
     should: 'list the member handles',
     actual: laterChannelLabel(item({ channel_name: 'mpdm-alice--bob.smith--carol-1' })),
     expected: 'alice, bob.smith, carol',
+  })
+  assert({
+    given: 'a group DM slug with resolved live members',
+    should: 'show the member names instead of the slug handles',
+    actual: laterChannelLabel(item({ channel_name: 'mpdm-alice--bob.smith--carol-1' }), [
+      'Alice Doe',
+      'Dana Roe',
+      'Bob Smith',
+    ]),
+    expected: 'Alice Doe, Dana Roe, Bob Smith',
   })
   assert({
     given: 'no channel name',
@@ -285,6 +297,146 @@ test('backfillMissingMessages hydrates only bodyless rows on live channels', asy
     should: 'keep the row bodyless',
     actual: gone.message,
     expected: undefined,
+  })
+})
+
+test('resolveRowMentions substitutes names into row bodies in place', async () => {
+  const mentioned = item({
+    channel_name: 'general',
+    message: { content: 'thanks @U0123ABCDEF — see <#C0456ATLASX> and <!subteam^S0789TEAMAB>' },
+  })
+  const unknown = item({ channel_name: 'general', ts: '1750000001.000100', message: { content: 'ping @U0999MISSING' } })
+  const bodyless = item({ channel_name: 'general', ts: '1750000002.000100' })
+
+  const asked: Record<string, string[]> = {}
+  await resolveRowMentions([{ item: mentioned }, { item: unknown }, { item: bodyless }], 'https://atlas.slack.com', {
+    users: async (ids) => {
+      asked.users = ids.sort()
+      return new Map([['U0123ABCDEF', 'Jane Smith']])
+    },
+    channels: async (ids) => {
+      asked.channels = ids
+      return new Map([['C0456ATLASX', 'atlas-updates']])
+    },
+    usergroups: async (ids) => {
+      asked.usergroups = ids
+      return new Map([['S0789TEAMAB', 'atlas-core']])
+    },
+  })
+
+  assert({
+    given: 'rows with user, channel, and usergroup mentions',
+    should: 'pass each collected id family to its resolver',
+    actual: asked,
+    expected: {
+      users: ['U0123ABCDEF', 'U0999MISSING'],
+      channels: ['C0456ATLASX'],
+      usergroups: ['S0789TEAMAB'],
+    },
+  })
+  assert({
+    given: 'a body whose mentions all resolve',
+    should: 'carry names instead of ids',
+    actual: mentioned.message?.content,
+    expected: 'thanks @Jane Smith — see #atlas-updates and @atlas-core',
+  })
+  assert({
+    given: 'a mention that resolves nowhere',
+    should: 'stay a readable raw id',
+    actual: unknown.message?.content,
+    expected: 'ping @U0999MISSING',
+  })
+  assert({
+    given: 'a bodyless row',
+    should: 'stay bodyless',
+    actual: bodyless.message,
+    expected: undefined,
+  })
+})
+
+test('resolveRowMemberNames prefers live membership and excludes self', async () => {
+  const inBoot = item({ channel_id: 'C0GROUPLIVE', channel_name: 'mpdm-alice--bob.smith--carol-1' })
+  const notInBoot = item({
+    channel_id: 'C0GROUPCOLD',
+    channel_name: 'mpdm-alice--dana-1',
+    ts: '1750000001.000100',
+  })
+  const askedUsers: string[][] = []
+  const askedHandles: string[][] = []
+  const members = await resolveRowMemberNames(
+    [
+      { item: inBoot },
+      { item: notInBoot },
+      { item: item({ channel_name: 'general', ts: '1750000002.000100' }) },
+      { item: item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe', ts: '1750000003.000100' }) },
+    ],
+    'https://atlas.slack.com',
+    {
+      // live membership covers the first group and carries the session user;
+      // the second group predates the boot payload's window
+      membership: async () => ({
+        selfId: 'U0SELF00001',
+        membersByChannel: new Map([['C0GROUPLIVE', ['U0SELF00001', 'U0ALICE0001', 'U0DANA00001']]]),
+      }),
+      users: async (ids) => {
+        askedUsers.push(ids.sort())
+        return new Map([
+          ['U0ALICE0001', 'Alice Doe'],
+          ['U0DANA00001', 'Dana Roe'],
+        ])
+      },
+      handles: async (handles) => {
+        askedHandles.push(handles.sort())
+        return new Map([['alice', 'Alice Doe']])
+      },
+    },
+  )
+  assert({
+    given: 'one boot-covered group and one older group among other rows',
+    should: 'resolve member ids minus self, and slug handles only for the uncovered group',
+    actual: { askedUsers, askedHandles },
+    expected: { askedUsers: [['U0ALICE0001', 'U0DANA00001']], askedHandles: [['alice', 'dana']] },
+  })
+  assert({
+    given: 'the resolved map',
+    should: 'key member names by conversation id, slug fallback keeping raw handles for misses',
+    actual: { live: members.get('C0GROUPLIVE'), cold: members.get('C0GROUPCOLD') },
+    expected: { live: ['Alice Doe', 'Dana Roe'], cold: ['Alice Doe', 'dana'] },
+  })
+
+  let membershipCalls = 0
+  await resolveRowMemberNames([{ item: item({ channel_name: 'general' }) }], 'https://atlas.slack.com', {
+    membership: async () => {
+      membershipCalls++
+      return { membersByChannel: new Map() }
+    },
+    users: async () => new Map(),
+    handles: async () => new Map(),
+  })
+  assert({
+    given: 'no group rows at all',
+    should: 'skip the membership fetch entirely',
+    actual: membershipCalls,
+    expected: 0,
+  })
+})
+
+test('renderLaterRow shows member display names in group head lines', () => {
+  const row = {
+    item: item({ channel_name: 'mpdm-alice--bob.smith--carol-1', message: { content: 'sync?' } }),
+    timeLabel: '09:30',
+    link: 'https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100',
+  }
+  assert({
+    given: 'a group row with member names in context',
+    should: 'label with the resolved names',
+    actual: stripAnsi(
+      renderLaterRow(row, 0, {
+        hyperlinks: false,
+        groupMembers: new Map([['C0123ABCDEF', ['Alice Doe', 'Bob Smith', 'Carol Roe']]]),
+      }),
+    )[0],
+    expected: '   1. 09:30  Alice Doe, Bob Smith, Carol Roe',
   })
 })
 

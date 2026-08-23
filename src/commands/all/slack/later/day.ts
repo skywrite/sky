@@ -15,6 +15,8 @@ import {
   laterCapturable,
   laterItemLink,
   renderLaterRow,
+  resolveRowMemberNames,
+  resolveRowMentions,
   resolveStaleChannels,
 } from './lib/list.ts'
 import { parseSelection } from './lib/pick.ts'
@@ -179,8 +181,13 @@ export default class SlackLaterDayTask extends Command {
     )
     const stale = resolveStaleChannels(list.items)
     await backfillMissingMessages(matched)
+    const [, groupMembers] = await Promise.all([
+      resolveRowMentions(matched, workspace),
+      resolveRowMemberNames(matched, workspace),
+    ])
     for (const [index, d] of matched.entries()) {
-      for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale })) output.log(line)
+      for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale, groupMembers }))
+        output.log(line)
     }
 
     // Read-only triage: open the first N matched in Slack, capture nothing —
@@ -190,7 +197,7 @@ export default class SlackLaterDayTask extends Command {
         .filter((d) => laterCapturable(d.item))
         .slice(0, openCount)
         .map((d) => ({ ...d, timeLabel: d.timeLabel.slice(11) }))
-      await openInSlack(toOpen, output)
+      await openInSlack(toOpen, output, { groupMembers })
       return CommandResult.success({
         day: dayStr,
         fetched: list.items.length,
@@ -278,7 +285,7 @@ export default class SlackLaterDayTask extends Command {
       await delay(500)
     }
     // Slack last, so the user lands there ready to respond
-    if (openBare) await openInSlack(outcome.openRows, output)
+    if (openBare) await openInSlack(outcome.openRows, output, { groupMembers })
 
     return CommandResult.success({
       day: dayStr,

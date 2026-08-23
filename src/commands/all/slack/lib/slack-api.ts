@@ -11,6 +11,37 @@ export async function getSlackCredentials(
   return { token: tokenResult.stdout.trim(), cookie: cookieResult.stdout.trim() }
 }
 
+/**
+ * Call Slack's edge cache API (edgeapi.slack.com) on the same keychain creds —
+ * lookups the classic API no longer serves under Enterprise Grid, e.g.
+ * usergroups. `scopeId` picks the cache: the enterprise (E…) or a team (T…).
+ * Edge successes carry no `ok` field; failures carry `ok: false`.
+ */
+export async function slackEdgeApiCall(
+  workspaceUrl: string,
+  scopeId: string,
+  path: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown> | undefined> {
+  const creds = await getSlackCredentials(workspaceUrl)
+  if (!creds) return undefined
+  try {
+    const response = await fetch(`https://edgeapi.slack.com/cache/${scopeId}/${path}`, {
+      method: 'POST',
+      headers: {
+        Cookie: `d=${encodeURIComponent(creds.cookie)}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token: creds.token, ...payload }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const json = (await response.json()) as Record<string, unknown>
+    return json.ok === false ? undefined : json
+  } catch {
+    return undefined
+  }
+}
+
 export async function slackApiCall(
   workspaceUrl: string,
   method: string,
@@ -34,6 +65,7 @@ export async function slackApiCall(
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formBody,
+      signal: AbortSignal.timeout(10_000),
     })
     const json = (await response.json()) as Record<string, unknown>
     return json.ok ? json : undefined

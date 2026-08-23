@@ -93,3 +93,41 @@ test('resolveContent: resolves users and channels together', () => {
     expected: '@Jane see #atlas-team',
   })
 })
+
+test('resolveContent: resolves W-prefixed Enterprise Grid user IDs', () => {
+  const names = new Map([['W0123GRIDXY', 'Mike Doe']])
+  assert({
+    given: 'a grid-native @mention (W-prefixed id)',
+    should: 'replace it like a U-prefixed one',
+    actual: resolveContent('ping @W0123GRIDXY', names, noChannels),
+    expected: 'ping @Mike Doe',
+  })
+})
+
+test('resolveContent: prefers the label of a usergroup mention', () => {
+  assert({
+    given: 'a subteam mention carrying its own |@handle label',
+    should: 'use the label without needing the map',
+    actual: resolveContent('cc <!subteam^S0123TEAMAB|@atlas-core>', new Map(), noChannels),
+    expected: 'cc @atlas-core',
+  })
+})
+
+test('resolveContent: resolves a bare usergroup mention via the map', () => {
+  const usergroups = new Map([['S0123TEAMAB', 'atlas-core']])
+  assert({
+    given: 'a label-less subteam mention with a known id',
+    should: 'replace it with the @handle',
+    actual: resolveContent('cc <!subteam^S0123TEAMAB> please', new Map(), noChannels, usergroups),
+    expected: 'cc @atlas-core please',
+  })
+})
+
+test('resolveContent: unknown usergroup keeps the ID readable', () => {
+  assert({
+    given: 'a subteam mention with no name available',
+    should: 'strip the wrapper but keep the ID',
+    actual: resolveContent('cc <!subteam^S0999UNKNOWN>', new Map(), noChannels),
+    expected: 'cc @S0999UNKNOWN',
+  })
+})

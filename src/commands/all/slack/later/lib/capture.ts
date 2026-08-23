@@ -6,7 +6,7 @@ import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import { runCommand } from '#lib/sys/mod.ts'
-import { renderLaterRow } from './list.ts'
+import { type LaterRowContext, renderLaterRow } from './list.ts'
 import { oneLine } from './pick.ts'
 
 /** One queue row as the capture and open flows consume it */
@@ -103,13 +103,17 @@ export async function captureLaterItems(
  * so the terminal keeps a clickable recap of exactly what was opened (once
  * completed, the items no longer wear Slack's saved-for-later badge).
  */
-export async function openInSlack(rows: LaterCaptureRow[], output: OutputHandler): Promise<void> {
+export async function openInSlack(
+  rows: LaterCaptureRow[],
+  output: OutputHandler,
+  context: LaterRowContext = {},
+): Promise<void> {
   if (rows.length === 0) return
   output.log('')
   output.log(`Opening ${rows.length} in Slack (the last stays on screen):`)
   for (const [index, row] of rows.entries()) {
     await runCommand('open', [row.link])
-    for (const line of renderLaterRow(row, index, {})) output.log(line)
+    for (const line of renderLaterRow(row, index, context)) output.log(line)
     await delay(500)
   }
 }

@@ -1,25 +1,29 @@
 import {
   type AgentSlackFile,
   type AgentSlackMessage,
-  type AgentSlackUser,
   collectChannelIds,
+  collectSubteamIds,
   collectUserIds,
-  parseUser,
 } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import {
   type ConversationType,
   extractWorkspaceUrl,
   formatChannelLabel,
-  formatNameList,
   formatSlackTimestamp,
   inferConversationType,
   resolveContent,
 } from '#commands/all/slack/lib/mod.ts'
-import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
+import {
+  resolveChannelInfo,
+  resolveChannelNames,
+  resolveUsergroupNames,
+  resolveUserName,
+  resolveUserNames,
+} from '#commands/all/slack/lib/resolveNames.ts'
+import { slackApiCall } from '#commands/all/slack/lib/slack-api.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { runCommand } from '#lib/sys/mod.ts'
 
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
@@ -141,14 +145,14 @@ export default class SlackCliExportTask extends Command {
       }
     }
 
-    // Resolve all user IDs
+    // Resolve all user IDs (the users.info fallback needs the workspace URL)
+    const workspaceUrl = extractWorkspaceUrl(args.link)
     const userIds = collectUserIds(allAgentMessages)
-    const userNames = await resolveUserNames(userIds)
+    const userNames = await resolveUserNames(userIds, workspaceUrl)
 
     // Resolve channel info (name + actual conversation type from API)
     const channelId = data.message.channel_id
     let conversationType = inferConversationType(channelId)
-    const workspaceUrl = extractWorkspaceUrl(args.link)
     let channelName: string | undefined
 
     let channelMembers: string[] | undefined
@@ -160,14 +164,13 @@ export default class SlackCliExportTask extends Command {
       if (info.detectedType) conversationType = info.detectedType
     }
 
-    // Resolve channels mentioned in message text (<#C…>) to names
-    const channelNames = new Map<string, string>()
-    if (workspaceUrl) {
-      for (const id of collectChannelIds(allAgentMessages)) {
-        const info = await resolveChannelInfo(id, userNames, workspaceUrl)
-        if (info.name) channelNames.set(id, info.name)
-      }
-    }
+    // Resolve channels (<#C…>) and usergroups (<!subteam^S…>) mentioned in message text
+    const channelNames = workspaceUrl
+      ? await resolveChannelNames(collectChannelIds(allAgentMessages), userNames, workspaceUrl)
+      : new Map<string, string>()
+    const usergroupNames = workspaceUrl
+      ? await resolveUsergroupNames(collectSubteamIds(allAgentMessages), workspaceUrl)
+      : new Map<string, string>()
 
     // An unanswered DM has the current user's name nowhere in its messages —
     // resolveRecipient needs it, so fetch it exactly when a DM's author is its
@@ -185,7 +188,7 @@ export default class SlackCliExportTask extends Command {
     const message: FetchedMessage = {
       ts: data.message.ts,
       timeLabel: formatSlackTimestamp(data.message.ts, timezone),
-      text: resolveContent(data.message.content || '', userNames, channelNames),
+      text: resolveContent(data.message.content || '', userNames, channelNames, usergroupNames),
       userId: data.message.author?.user_id,
       userName: data.message.author?.user_id ? userNames.get(data.message.author.user_id) : undefined,
       threadTs: data.message.thread_ts,
@@ -202,7 +205,7 @@ export default class SlackCliExportTask extends Command {
           (m): ThreadReply => ({
             ts: m.ts,
             timeLabel: formatSlackTimestamp(m.ts, timezone),
-            text: resolveContent(m.content || '', userNames, channelNames),
+            text: resolveContent(m.content || '', userNames, channelNames, usergroupNames),
             userId: m.author?.user_id,
             userName: m.author?.user_id ? userNames.get(m.author.user_id) : undefined,
             files: m.files,
@@ -267,139 +270,8 @@ export default class SlackCliExportTask extends Command {
 }
 
 // =============================================================================
-// User resolution (calls agent-slack CLI)
+// Export-specific lookups (name resolution itself lives in lib/resolveNames.ts)
 // =============================================================================
-
-async function resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>()
-  await Promise.all(
-    userIds.map(async (id) => {
-      const result = await runAgentSlack(['user', 'get', id])
-      if (result.code === 0) {
-        try {
-          const user: AgentSlackUser = JSON.parse(result.stdout)
-          const name = parseUser(user)
-          if (name) map.set(id, name)
-        } catch {
-          /* skip */
-        }
-      }
-    }),
-  )
-  return map
-}
-
-async function resolveUserName(
-  userId: string,
-  userNames: Map<string, string>,
-  workspaceUrl?: string,
-): Promise<string | undefined> {
-  let name = userNames.get(userId)
-  if (name) return name
-  let hasFullName = false
-  const result = await runAgentSlack(['user', 'get', userId])
-  if (result.code === 0) {
-    try {
-      const user: AgentSlackUser = JSON.parse(result.stdout)
-      hasFullName = !!(user.real_name || user.display_name)
-      name = parseUser(user)
-      if (name) userNames.set(userId, name)
-    } catch {
-      /* skip */
-    }
-  }
-  // Fallback to Slack API when agent-slack has no full name (Connect users)
-  if (!hasFullName && workspaceUrl) {
-    const json = await slackApiCall(workspaceUrl, 'users.info', { user: userId })
-    if (json) {
-      const user = json.user as Record<string, unknown> | undefined
-      const profile = user?.profile as Record<string, string> | undefined
-      const fullName = (user?.real_name as string) || profile?.real_name || profile?.display_name
-      if (fullName) {
-        name = fullName
-        userNames.set(userId, name)
-      }
-    }
-  }
-  return name
-}
-
-// =============================================================================
-// Channel resolution (reads agent-slack credentials from Keychain)
-// =============================================================================
-
-async function getSlackCredentials(workspaceUrl: string): Promise<{ token: string; cookie: string } | undefined> {
-  const [tokenResult, cookieResult] = await Promise.all([
-    runCommand('security', ['find-generic-password', '-s', 'agent-slack', '-a', `xoxc:${workspaceUrl}`, '-w']),
-    runCommand('security', ['find-generic-password', '-s', 'agent-slack', '-a', 'xoxd', '-w']),
-  ])
-  if (tokenResult.code !== 0 || cookieResult.code !== 0) return undefined
-  return { token: tokenResult.stdout.trim(), cookie: cookieResult.stdout.trim() }
-}
-
-async function slackApiCall(
-  workspaceUrl: string,
-  method: string,
-  params: Record<string, string>,
-): Promise<Record<string, unknown> | undefined> {
-  const creds = await getSlackCredentials(workspaceUrl)
-  if (!creds) return undefined
-
-  const formBody = new URLSearchParams({ token: creds.token, ...params })
-  try {
-    const response = await fetch(`${workspaceUrl}/api/${method}`, {
-      method: 'POST',
-      headers: {
-        Cookie: `d=${encodeURIComponent(creds.cookie)}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formBody,
-    })
-    const json = (await response.json()) as Record<string, unknown>
-    return json.ok ? json : undefined
-  } catch {
-    return undefined
-  }
-}
-
-type ChannelInfo = { name?: string; members?: string[]; detectedType?: ConversationType }
-
-async function resolveChannelInfo(
-  channelId: string,
-  userNames: Map<string, string>,
-  workspaceUrl: string,
-): Promise<ChannelInfo> {
-  const json = await slackApiCall(workspaceUrl, 'conversations.info', { channel: channelId })
-  if (!json) return {}
-
-  const channel = json.channel as Record<string, unknown> | undefined
-  if (!channel) return {}
-
-  // Use API flags to detect actual conversation type (ID prefix is unreliable)
-  if (channel.is_im === true) {
-    const dmUserId = channel.user as string | undefined
-    if (dmUserId) {
-      const userName = await resolveUserName(dmUserId, userNames, workspaceUrl)
-      if (userName) return { name: `DM with ${userName}`, members: [userName], detectedType: 'dm' }
-    }
-    return { detectedType: 'dm' }
-  }
-
-  if (channel.is_mpim === true) {
-    let memberNames = await resolveGroupDmMembers(channelId, userNames, workspaceUrl)
-    if (memberNames.length === 0) {
-      // Enterprise Grid blocks conversations.members (enterprise_is_restricted) —
-      // fall back to the member handles encoded in the mpdm channel name itself
-      memberNames = await resolveMpdmSlugMembers(channel.name as string | undefined)
-    }
-    const name = memberNames.length > 0 ? `DM with ${formatNameList(memberNames)}` : undefined
-    return { name, members: memberNames.length > 0 ? memberNames : undefined, detectedType: 'group' }
-  }
-
-  // Regular channel — use the name field
-  const name = channel.name as string | undefined
-  return { name, detectedType: 'channel' }
-}
 
 /** The current user's display name via auth.test on the keychain creds. */
 async function resolveSelfName(userNames: Map<string, string>, workspaceUrl: string): Promise<string | undefined> {
@@ -407,44 +279,6 @@ async function resolveSelfName(userNames: Map<string, string>, workspaceUrl: str
   const selfId = json?.user_id as string | undefined
   if (!selfId) return undefined
   return resolveUserName(selfId, userNames, workspaceUrl)
-}
-
-/** Resolve mpdm slug handles ("bob.smith") to display names via agent-slack; the handle itself is the fallback. */
-async function resolveMpdmSlugMembers(channelName: string | undefined): Promise<string[]> {
-  const names: string[] = []
-  for (const handle of mpdmMemberHandles(channelName)) {
-    const result = await runAgentSlack(['user', 'get', handle])
-    let resolved: string | undefined
-    if (result.code === 0) {
-      try {
-        resolved = parseUser(JSON.parse(result.stdout) as AgentSlackUser)
-      } catch {
-        /* fall through to the handle */
-      }
-    }
-    names.push(resolved || handle)
-  }
-  return names
-}
-
-async function resolveGroupDmMembers(
-  channelId: string,
-  userNames: Map<string, string>,
-  workspaceUrl: string,
-): Promise<string[]> {
-  const membersJson = await slackApiCall(workspaceUrl, 'conversations.members', { channel: channelId })
-  if (!membersJson) return []
-
-  const memberIds = membersJson.members as string[] | undefined
-  if (!memberIds || memberIds.length === 0) return []
-
-  const names: string[] = []
-  for (const id of memberIds) {
-    const name = await resolveUserName(id, userNames, workspaceUrl)
-    if (name) names.push(name)
-  }
-
-  return names
 }
 
 async function resolvePermalink(
