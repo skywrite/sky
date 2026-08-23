@@ -7,7 +7,14 @@
  * alongside hand-written or auto-chosen rel, never instead of them.
  */
 
-import type { ExternalFileRef } from '../_tools.ts'
+/**
+ * An external file a tool reported touching. Structural on purpose — the
+ * hosts' tool layers own their own richer refs and pass them straight in.
+ */
+export interface ExternalFileRef {
+  title: string
+  url: string
+}
 
 /**
  * Collects title-by-URL across a session. Re-touching a file keeps one
