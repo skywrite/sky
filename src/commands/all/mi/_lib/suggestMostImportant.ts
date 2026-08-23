@@ -4,9 +4,9 @@ import colors from 'picocolors'
 import { z } from 'zod'
 import type { CommandContext } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { miFrontmatter, toSingleLine } from '#shared/models/MostImportant/frontmatter.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -50,18 +50,41 @@ const SuggestionsSchema = z.object({
 // Clarification loop
 // ---------------------------------------------------------------------------
 
-type ClarifierResult =
-  | { status: 'clear'; mi: string; summary: string }
-  | { status: 'unclear'; question: string; reason: string }
+/** Wrapped in an object because structured output needs an object at the top level. */
+const ClarifierSchema = z.object({
+  result: z.discriminatedUnion('status', [
+    z.object({
+      status: z.literal('clear'),
+      mi: z.string().describe('The sharpened MI statement — a single line'),
+      summary: z.string().describe('Why this MI is high-leverage today (1 sentence)'),
+    }),
+    z.object({
+      status: z.literal('unclear'),
+      question: z.string().describe('Your single sharpening question'),
+      reason: z.string().describe("What's missing — specificity, action, or strategic alignment (1 sentence)"),
+    }),
+  ]),
+})
+
+const FinalStatementSchema = z.object({
+  mi: z.string().describe('The final sharpened MI statement — a single line starting with an action verb'),
+})
 
 interface ClarifyResult {
   statement: string
   conversation: string
 }
 
+function warnAIError(err: unknown): void {
+  p.log.warn(colors.dim(err instanceof Error ? err.message : String(err)))
+}
+
 /**
  * Run the MI clarifier to sharpen the selected MI.
  * Returns the clarified MI statement + conversation, or null if user cancels.
+ * Every exit yields a single-line statement — it becomes YAML `summary:` and
+ * a day-file link label downstream, where a multi-line value silently
+ * corrupts the document.
  */
 async function clarifyMI(
   initialInput: string,
@@ -71,10 +94,9 @@ async function clarifyMI(
   const clarifierContent = await readTextFile(PROMPT_CLARIFY)
   let currentInput = initialInput
   let conversationHistory = `User's initial MI: "${initialInput}"`
+  let lastWasUserEdit = false
 
-  for (let round = 0; round < MAX_CLARIFICATION_ROUNDS; round++) {
-    spinner.start('Sharpening your MI...')
-
+  const renderClarifier = () => {
     const clarifierInput: RenderInput = {
       clarifier: {
         currentInput,
@@ -82,21 +104,26 @@ async function clarifyMI(
         notebookContext,
       },
     }
+    return renderPromptFile(clarifierContent, 'mi-clarifier.prompt.md', clarifierInput).output
+  }
 
-    const { output: renderedClarifier } = renderPromptFile(clarifierContent, 'mi-clarifier.prompt.md', clarifierInput)
+  for (let round = 0; round < MAX_CLARIFICATION_ROUNDS; round++) {
+    spinner.start('Sharpening your MI...')
 
-    let clarifierResult: ClarifierResult
+    let clarifierResult: z.infer<typeof ClarifierSchema>['result']
 
     try {
-      const result = await generateText({
+      const result = await generateObject({
         ...aiModel('reasoning'),
-        prompt: renderedClarifier,
+        schema: ClarifierSchema,
+        prompt: renderClarifier(),
       })
 
-      clarifierResult = extractJson<typeof clarifierResult>(result.text)
-    } catch {
-      spinner.stop('Clarification failed')
-      return { statement: currentInput, conversation: conversationHistory }
+      clarifierResult = result.object.result
+    } catch (err) {
+      spinner.stop(colors.yellow('Clarification failed — continuing with your statement unsharpened'))
+      warnAIError(err)
+      return { statement: toSingleLine(currentInput), conversation: conversationHistory }
     }
 
     if (clarifierResult.status === 'clear') {
@@ -114,7 +141,7 @@ async function clarifyMI(
       }
 
       if (confirmed) {
-        return { statement: clarifierResult.mi, conversation: conversationHistory }
+        return { statement: toSingleLine(clarifierResult.mi), conversation: conversationHistory }
       }
 
       const edited = await p.text({
@@ -126,7 +153,8 @@ async function clarifyMI(
         return null
       }
 
-      currentInput = edited as string
+      currentInput = toSingleLine(edited as string)
+      lastWasUserEdit = true
       conversationHistory += `\nUser refined to: "${currentInput}"`
       continue
     }
@@ -145,9 +173,32 @@ async function clarifyMI(
 
     conversationHistory += `\nAI asked: "${clarifierResult.question}"\nUser answered: "${answer}"`
     currentInput = `${currentInput}\n\nClarification: ${answer}`
+    lastWasUserEdit = false
   }
 
-  return { statement: currentInput, conversation: conversationHistory }
+  // Rounds exhausted. A user edit stands as written; a trailing Q&A leaves
+  // currentInput as a multi-line blob, so force one final synthesis into a
+  // statement instead of letting the blob escape.
+  if (lastWasUserEdit) {
+    return { statement: toSingleLine(currentInput), conversation: conversationHistory }
+  }
+
+  spinner.start('Finalizing your MI...')
+  try {
+    const final = await generateObject({
+      ...aiModel('reasoning'),
+      schema: FinalStatementSchema,
+      prompt:
+        renderClarifier() +
+        '\n\nClarification rounds are exhausted. Do not ask another question. Synthesize the final MI statement from the conversation above.',
+    })
+    spinner.stop(colors.green('MI finalized'))
+    return { statement: toSingleLine(final.object.mi), conversation: conversationHistory }
+  } catch (err) {
+    spinner.stop(colors.yellow('Finalizing failed — continuing with your statement unsharpened'))
+    warnAIError(err)
+    return { statement: toSingleLine(currentInput), conversation: conversationHistory }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -270,10 +321,9 @@ async function synthesizeMI(opts: {
 
   spinner.stop(colors.green('Document ready'))
 
-  // Build frontmatter programmatically for reliability
-  const frontmatter = ['---', `summary: ${statement}`, 'complete:', 'dateStarted:', 'rel:', 'tags:', '---'].join('\n')
-
-  return frontmatter + '\n\n' + body + '\n'
+  // Frontmatter is built programmatically (never by the model) and
+  // YAML-serialized so any summary round-trips.
+  return miFrontmatter(statement) + '\n\n' + body + '\n'
 }
 
 /**
