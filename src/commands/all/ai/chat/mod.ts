@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename } from 'node:fs/promises'
+import { mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -18,9 +18,10 @@ import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
+import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import ChatDocument, { firstWordsSummary, userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
-import { reconstructResumeState, type ResumeState, verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
+import { verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
 import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -89,18 +90,6 @@ type Params = InferParams<typeof params>
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 
 type Result = { saved?: string; turns?: number }
-
-/** Everything the save path needs to write a resumed chat back to its file. */
-interface ResumeSession {
-  filePath: string
-  created: string
-  summary: string
-  rel: string[]
-  tags: string[]
-  /** false when yaml turns: swallowed following lines — never overwrite those */
-  frontmatterHealthy: boolean
-  state: ResumeState
-}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -465,24 +454,7 @@ export default class AiChatTask extends Command {
     // recorded context universe restored, and the same file updated on exit.
     let resumeSession: ResumeSession | null = null
     if (resume) {
-      const chatsDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
-      const chats: Array<{ file: string; label: string; hint: string }> = []
-      if (await exists(chatsDir)) {
-        const names = (await readdir(chatsDir))
-          .filter((n) => n.endsWith('.md'))
-          .sort()
-          .reverse()
-        for (const name of names) {
-          const doc = ChatDocument.fromMarkdown(await readTextFile(path.join(chatsDir, name)))
-          const time = name.slice(0, 5).replace('-', ':')
-          const exchanges = Math.floor(doc.conversation.length / 2)
-          chats.push({
-            file: path.join(chatsDir, name),
-            label: `${time}  ${truncate(doc.summary || name, 70)}`,
-            hint: `${exchanges} exchange${exchanges === 1 ? '' : 's'}`,
-          })
-        }
-      }
+      const chats = await listDayChats(path.join(timeDir, dayDir(today), 'actions', 'ai-chats'))
 
       const OLDER = '__older__'
       let filePath: string
@@ -495,7 +467,11 @@ export default class AiChatTask extends Command {
         const picked = await p.select({
           message: `Resume which chat from ${today}?`,
           options: [
-            ...chats.map((c) => ({ value: c.file, label: c.label, hint: c.hint })),
+            ...chats.map((c) => ({
+              value: c.path,
+              label: `${c.time}  ${truncate(c.summary || path.basename(c.path), 70)}`,
+              hint: `${c.exchanges} exchange${c.exchanges === 1 ? '' : 's'}`,
+            })),
             { value: OLDER, label: 'Older…', hint: 'previous days' },
           ],
         })
@@ -512,19 +488,9 @@ export default class AiChatTask extends Command {
         }
       }
 
-      const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
-      const state = reconstructResumeState(doc)
-      if (state.conversation.length === 0) {
+      resumeSession = await loadResumeSession(filePath)
+      if (resumeSession.state.conversation.length === 0) {
         return CommandResult.fail(`Nothing to resume: no conversation parsed from ${filePath}`)
-      }
-      resumeSession = {
-        filePath,
-        created: String(doc.yaml['created'] ?? formatDate(startTime)),
-        summary: doc.summary,
-        rel: Array.from(doc.rel),
-        tags: Array.from(doc.tags),
-        frontmatterHealthy: typeof doc.yaml['turns'] === 'number',
-        state,
       }
       // Resuming a saved chat always writes back — overrides an explicit -E.
       ephemeral = false
