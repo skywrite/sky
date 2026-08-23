@@ -46,13 +46,36 @@ configureLogging({ stream: 'cli' })
  * (names, paths, prompts) and these files are world-readable in /tmp. The
  * command name alone is safe.
  */
-const invocation = beginEvent(logger('cli'), 'invocation')
-invocation.set({ tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
+const logCli = logger('cli')
+const invocation = beginEvent(logCli, 'invocation')
+invocation.set({ pid: process.pid, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
 let outcome = 'unknown'
 // Whatever went wrong, held untyped: Bun throws non-Error values for some
 // failures (a missing module arrives as a ResolveMessage), and the record's
 // serializer handles arbitrary shapes, so nothing is filtered on the way in.
 let thrown: unknown
+
+/**
+ * A deliberate exception to one-event-per-unit-of-work: a process that hangs
+ * forever, or is killed with SIGKILL, never runs an exit hook and would
+ * otherwise leave no trace at all — which is exactly the failure mode worth
+ * catching, having bitten twice (a busy-spinning orphan, a wedged chat
+ * process). Pairing this with the exit record makes an unmatched start the
+ * fingerprint of a hang, and the pid says what to go look at:
+ *
+ *   jq -s 'map(select(.event | startswith("invocation"))) | group_by(.pid)
+ *          | map(select(length == 1)) | flatten' /tmp/sky/logs/cli.*.jsonl
+ *
+ * Only argv[0] is recorded. Later arguments carry notebook content, and the
+ * resolved command name does not exist yet — a hang during module import has
+ * no name to report but still has a pid.
+ */
+logCli.info('invocation-start', {
+  event: 'invocation-start',
+  pid: process.pid,
+  command: String(args._[0] ?? ''),
+  tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+})
 
 // Every outcome path in run() ends in exit(), which never returns to the
 // caller — so the event is emitted from an exit hook rather than at the end of
