@@ -82,6 +82,7 @@ function createMockStore(): MarkdownStore {
     decisions: createMockCollection([]),
     goals: createMockCollection([]),
     streaks: createMockCollection([]),
+    tracking: createMockCollection([]),
     ideas: createMockCollection([]),
     places: createMockCollection([]),
     time: createMockCollection([...meetingsData, ...daysData, ...journalsData]),

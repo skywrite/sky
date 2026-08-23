@@ -32,6 +32,7 @@ import project from './project.ts'
 import recap from './recap.ts'
 import { type ResolverContext, createDayLookup, getDateForDocument, listResolver } from './shared.ts'
 import streak from './streak.ts'
+import tracking from './tracking.ts'
 import video from './video.ts'
 
 // Filter types (match schema.graphql inputs), re-exported so callers keep a
@@ -52,6 +53,7 @@ export type { PlaceFilter } from './place.ts'
 export type { ProjectFilter } from './project.ts'
 export type { RecapFilter } from './recap.ts'
 export type { StreakFilter } from './streak.ts'
+export type { TrackingFilter } from './tracking.ts'
 export type { VideoFilter } from './video.ts'
 
 export interface DomainResolverOptions {
@@ -99,6 +101,7 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
     goals: listResolver(goal, ctx),
     ideas: listResolver(idea, ctx),
     streaks: listResolver(streak, ctx),
+    tracking: listResolver(tracking, ctx),
     places: listResolver(place, ctx),
     days: listResolver(day, ctx),
     journals: listResolver(journal, ctx),

@@ -169,6 +169,7 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
     decisions: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.decisions(args, ctx, info) ?? [],
     goals: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.goals(args, ctx, info) ?? [],
     streaks: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.streaks(args, ctx, info) ?? [],
+    tracking: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.tracking(args, ctx, info) ?? [],
     places: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.places(args, ctx, info) ?? [],
     ideas: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.ideas(args, ctx, info) ?? [],
     days: (_: unknown, args: any, ctx: any, info: any) => liveDc()?.days(args, ctx, info) ?? [],

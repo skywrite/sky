@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-08-17T15:22:13.213Z
+# Generated at: 2026-08-23T11:26:22.445Z
 # =============================================================================
 
 type Query {
@@ -24,6 +24,7 @@ type Query {
   places(where: PlaceFilter, limit: Int): [Place!]!
   ideas(where: IdeaFilter, limit: Int): [Idea!]!
   streaks(where: StreakFilter, limit: Int): [Streak!]!
+  tracking(where: TrackingFilter, limit: Int): [Tracking!]!
   days(where: DayFilter, limit: Int): [Day!]!
   journals(where: JournalFilter, limit: Int): [Journal!]!
   chats(where: ChatFilter, limit: Int): [Chat!]!
@@ -36,6 +37,16 @@ type Query {
 # =============================================================================
 # Document Types
 # =============================================================================
+
+"""
+One column of a tracking record schema (everything after the implicit date)
+"""
+type TrackingColumn {
+  name: String! # Column name in the record CSV
+  type: String! # Value shape: time, number, duration, range, word, text
+  unit: String # Unit label (lbs, hrs, miles, ...)
+  aggregate: String # Daily rollup rule: last, sum, mean, collect
+}
 
 """
 A point in time with an optional length. End is derived, never stored.
@@ -237,6 +248,27 @@ type Streak {
   monthDone: Int! # Completions this month (through yesterday, plus today once done)
   monthTracked: Int! # Tracked days this month — the consistency denominator
   lastDone: String # Most recent completed day (YYYY-MM-DD)
+  tags: [String!]! # Tags
+  rel: [String!]! # Related entities
+  markdown: String! # Full document content (the why)
+  path: String! # File path
+}
+
+"""
+Tracked-metric definition: the capture question, record schema, and rollup rules (active/archived)
+"""
+type Tracking {
+  name: String! # Tracking identifier/slug — also the record CSV basename
+  title: String! # Human name of the metric
+  status: String! # Status: active, archived (derived from path)
+  question: String # The question capture asks; absent = never prompted
+  ask: String! # Capture window: morning, evening, anytime
+  schedule: String! # Entry cadence: daily, weekdays, manual (never swept, logged on demand)
+  storage: String! # Where records live: weekly (time-tree shards), yearly (data/tracking/{year})
+  category: String # Informational grouping (health, execution, ...)
+  columns: [TrackingColumn!]! # Record schema after the implicit date column
+  start: String # First tracked day (YYYY-MM-DD)
+  end: String # Last tracked day, inclusive; a future value is a planned end
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
   markdown: String! # Full document content (the why)
@@ -526,6 +558,21 @@ input StreakFilter {
   titleContains: String
   status: String
   schedule: String
+  tagsContains: String
+  tagsContainsAny: [String!]
+  tagsContainsAll: [String!]
+  tagsStartsWith: String
+  relContains: String
+  bodyContains: String
+}
+
+input TrackingFilter {
+  name: String
+  nameContains: String
+  titleContains: String
+  status: String
+  category: String
+  ask: String
   tagsContains: String
   tagsContainsAny: [String!]
   tagsContainsAll: [String!]

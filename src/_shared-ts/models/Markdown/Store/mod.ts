@@ -18,7 +18,9 @@ import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import ProjectStore from '#shared/models/Store/ProjectStore/mod.ts'
 import StreakStore from '#shared/models/Store/StreakStore/mod.ts'
+import TrackingStore from '#shared/models/Store/TrackingStore/mod.ts'
 import StreakDocument from '#shared/models/Streak/mod.ts'
+import TrackingDocument from '#shared/models/Tracking/mod.ts'
 
 export type EntityType =
   | 'person'
@@ -27,6 +29,7 @@ export type EntityType =
   | 'decision'
   | 'goal'
   | 'streak'
+  | 'tracking'
   | 'idea'
   | 'place'
   | 'url'
@@ -39,6 +42,7 @@ export type ResolvedRef =
   | { type: 'decision'; value: DecisionDocument; path: string; raw: string }
   | { type: 'goal'; value: GoalDocument; path: string; raw: string }
   | { type: 'streak'; value: StreakDocument; path: string; raw: string }
+  | { type: 'tracking'; value: TrackingDocument; path: string; raw: string }
   | { type: 'idea'; value: IdeaDocument; path: string; raw: string }
   | { type: 'place'; value: PlaceDocument; path: string; raw: string }
   | { type: 'document'; value: Document; path: string; raw: string }
@@ -62,6 +66,7 @@ export interface MarkdownStoreConfig {
   decisionsDir?: string
   goalsDir?: string
   streaksDir?: string
+  trackingDir?: string
   ideasDir?: string
   placesDir?: string
   libraryDir?: string
@@ -76,6 +81,7 @@ export default class MarkdownStore {
   readonly decisions: DecisionStore
   readonly goals: GoalStore
   readonly streaks: StreakStore
+  readonly tracking: TrackingStore
   readonly ideas: IdeaStore
   readonly places: PlaceStore
   readonly time: DocumentStore
@@ -91,6 +97,7 @@ export default class MarkdownStore {
     decisions: DecisionStore,
     goals: GoalStore,
     streaks: StreakStore,
+    tracking: TrackingStore,
     ideas: IdeaStore,
     places: PlaceStore,
     time: DocumentStore,
@@ -103,6 +110,7 @@ export default class MarkdownStore {
     this.decisions = decisions
     this.goals = goals
     this.streaks = streaks
+    this.tracking = tracking
     this.ideas = ideas
     this.places = places
     this.time = time
@@ -111,20 +119,35 @@ export default class MarkdownStore {
   }
 
   static async build(cfg: MarkdownStoreConfig): Promise<MarkdownStore> {
-    const [people, orgs, projects, decisions, goals, streaks, ideas, places, time, library] = await Promise.all([
-      PeopleStore.build(cfg.peopleDirs),
-      OrgStore.build(cfg.orgDirs),
-      cfg.projectsDir ? ProjectStore.build(cfg.projectsDir) : Promise.resolve(ProjectStore.empty()),
-      cfg.decisionsDir ? DecisionStore.build(cfg.decisionsDir) : Promise.resolve(DecisionStore.empty()),
-      cfg.goalsDir ? GoalStore.build(cfg.goalsDir) : Promise.resolve(GoalStore.empty()),
-      cfg.streaksDir ? StreakStore.build(cfg.streaksDir) : Promise.resolve(StreakStore.empty()),
-      cfg.ideasDir ? IdeaStore.build(cfg.ideasDir) : Promise.resolve(IdeaStore.empty()),
-      cfg.placesDir ? PlaceStore.build(cfg.placesDir) : Promise.resolve(PlaceStore.empty()),
-      DocumentStore.build(cfg.timeDirs ?? []),
-      DocumentStore.build(cfg.libraryDir ? [cfg.libraryDir] : []),
-    ])
+    const [people, orgs, projects, decisions, goals, streaks, tracking, ideas, places, time, library] =
+      await Promise.all([
+        PeopleStore.build(cfg.peopleDirs),
+        OrgStore.build(cfg.orgDirs),
+        cfg.projectsDir ? ProjectStore.build(cfg.projectsDir) : Promise.resolve(ProjectStore.empty()),
+        cfg.decisionsDir ? DecisionStore.build(cfg.decisionsDir) : Promise.resolve(DecisionStore.empty()),
+        cfg.goalsDir ? GoalStore.build(cfg.goalsDir) : Promise.resolve(GoalStore.empty()),
+        cfg.streaksDir ? StreakStore.build(cfg.streaksDir) : Promise.resolve(StreakStore.empty()),
+        cfg.trackingDir ? TrackingStore.build(cfg.trackingDir) : Promise.resolve(TrackingStore.empty()),
+        cfg.ideasDir ? IdeaStore.build(cfg.ideasDir) : Promise.resolve(IdeaStore.empty()),
+        cfg.placesDir ? PlaceStore.build(cfg.placesDir) : Promise.resolve(PlaceStore.empty()),
+        DocumentStore.build(cfg.timeDirs ?? []),
+        DocumentStore.build(cfg.libraryDir ? [cfg.libraryDir] : []),
+      ])
 
-    return new MarkdownStore(people, orgs, projects, decisions, goals, streaks, ideas, places, time, library, cfg)
+    return new MarkdownStore(
+      people,
+      orgs,
+      projects,
+      decisions,
+      goals,
+      streaks,
+      tracking,
+      ideas,
+      places,
+      time,
+      library,
+      cfg,
+    )
   }
 
   /**
@@ -140,6 +163,7 @@ export default class MarkdownStore {
       decisionsDir: config.DIR_DECISIONS,
       goalsDir: config.DIR_GOALS,
       streaksDir: config.DIR_STREAKS,
+      trackingDir: config.DIR_TRACKING,
       ideasDir: config.DIR_IDEAS,
       placesDir: config.DIR_PLACES,
       libraryDir: config.DIR_LIBRARY,
@@ -185,6 +209,7 @@ export default class MarkdownStore {
     if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) return this.decisions
     if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) return this.goals
     if (this.dirs.streaksDir && filePath.startsWith(this.dirs.streaksDir)) return this.streaks
+    if (this.dirs.trackingDir && filePath.startsWith(this.dirs.trackingDir)) return this.tracking
     if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
     if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
     if (this.dirs.libraryDir && filePath.startsWith(this.dirs.libraryDir)) return this.library
@@ -217,7 +242,7 @@ export default class MarkdownStore {
   }
 
   /**
-   * Resolution order: URL, projects/, decisions/, goals/, streaks/, ideas/, places/, library/, person, org, time doc, unresolved
+   * Resolution order: URL, projects/, decisions/, goals/, streaks/, tracking/, ideas/, places/, library/, person, org, time doc, unresolved
    */
   resolve(raw: string, context?: ResolveContext): ResolvedRef {
     // Guard against null/undefined/non-string values
@@ -279,6 +304,14 @@ export default class MarkdownStore {
       const streak = this.streaks.find(streakName)
       if (streak) {
         return { type: 'streak', value: streak.value, path: streak.path, raw }
+      }
+    }
+
+    if (raw.startsWith('tracking/')) {
+      const trackingName = raw.slice('tracking/'.length)
+      const tracking = this.tracking.find(trackingName)
+      if (tracking) {
+        return { type: 'tracking', value: tracking.value, path: tracking.path, raw }
       }
     }
 

@@ -16,6 +16,7 @@ import type ProjectDocument from '#shared/models/Project/mod.ts'
 import RecapDocument from '#shared/models/Recap/mod.ts'
 import type { ResolvedRef } from '#shared/models/Store/mod.ts'
 import StreakDocument from '#shared/models/Streak/mod.ts'
+import TrackingDocument from '#shared/models/Tracking/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 import { executeQuery } from './query/execute.ts'
@@ -161,6 +162,7 @@ export default class DomainCollection {
     addAll(store.decisions.getAll())
     addAll(store.goals.getAll())
     addAll(store.streaks.getAll())
+    addAll(store.tracking.getAll())
     addAll(store.ideas.getAll())
     addAll(store.places.getAll())
     addAll(store.time.getAll())
@@ -218,6 +220,22 @@ export default class DomainCollection {
       .filter((_, path) => detectTypeFromPath(path) === 'streak')
       .getAll()
       .map((doc) => (doc instanceof StreakDocument ? doc : new StreakDocument(doc.yaml, doc.markdown, doc.yamlError)))
+  }
+
+  /**
+   * All tracking definition documents.
+   *
+   * Constructed rather than cast, like streaks: fromStore holds real
+   * TrackingDocuments, but fromDocuments-built collections (ai:context) parse
+   * everything as plain Document, so the cast would lie there.
+   */
+  get tracking(): TrackingDocument[] {
+    return this.collection
+      .filter((_, path) => detectTypeFromPath(path) === 'tracking')
+      .getAll()
+      .map((doc) =>
+        doc instanceof TrackingDocument ? doc : new TrackingDocument(doc.yaml, doc.markdown, doc.yamlError),
+      )
   }
 
   /** All idea documents */

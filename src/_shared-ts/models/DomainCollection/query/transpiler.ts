@@ -268,6 +268,8 @@ function pluralize(type: string): string {
       return 'goals'
     case 'streak':
       return 'streaks'
+    case 'tracking':
+      return 'tracking'
     case 'idea':
       return 'ideas'
     case 'day':

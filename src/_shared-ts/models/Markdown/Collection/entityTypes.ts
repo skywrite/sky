@@ -15,6 +15,7 @@ export type CollectionEntityType =
   | 'decision'
   | 'goal'
   | 'streak'
+  | 'tracking'
   | 'idea'
   | 'place'
   | 'message'
@@ -52,16 +53,17 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
   decision: 3,
   goal: 4,
   streak: 5,
-  idea: 6,
-  place: 7,
-  message: 8,
-  meeting: 9,
-  video: 10,
-  recap: 11,
-  journal: 12,
-  chat: 13,
-  document: 14,
-  day: 15,
+  tracking: 6,
+  idea: 7,
+  place: 8,
+  message: 9,
+  meeting: 10,
+  video: 11,
+  recap: 12,
+  journal: 13,
+  chat: 14,
+  document: 15,
+  day: 16,
 }
 
 /**
@@ -85,6 +87,9 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/decisions/'), type: 'decision' },
   { pattern: (p) => p.includes('/goals/'), type: 'goal' },
   { pattern: (p) => p.includes('/streaks/'), type: 'streak' },
+  // Definitions only — record CSVs live outside the corpus; the guard keeps
+  // a stray md under any data/ tracking dir from masquerading as a definition.
+  { pattern: (p) => p.includes('/tracking/') && !p.includes('/data/'), type: 'tracking' },
   { pattern: (p) => p.includes('/ideas/'), type: 'idea' },
   { pattern: (p) => p.includes('/places/'), type: 'place' },
   { pattern: (p) => p.includes('/messages/') || p.includes('/slack/') || p.includes('/email/'), type: 'message' },

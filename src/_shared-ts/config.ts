@@ -48,6 +48,7 @@ export const DIR_CODE_SERVICES = path.join(DIR_CODE, 'services')
 export const DIR_DATA = path.join(DIR_BASE, 'data')
 export const DIR_DATA_ASSETS = path.join(DIR_DATA, 'assets')
 export const DIR_DATA_LOCATION = path.join(DIR_DATA, 'location')
+export const DIR_DATA_TRACKING = path.join(DIR_DATA, 'tracking')
 export const DIR_DATA_WEATHER = path.join(DIR_DATA, 'weather')
 
 export const DIR_DECISIONS = path.join(DIR_BASE, 'decisions')
@@ -62,6 +63,7 @@ export const DIR_PROJECTS = path.join(DIR_BASE, 'projects')
 export const DIR_PROJECTS_OPEN = path.join(DIR_PROJECTS, 'open')
 export const DIR_STREAKS = path.join(DIR_BASE, 'streaks')
 export const DIR_TIME = path.join(DIR_BASE, 'time')
+export const DIR_TRACKING = path.join(DIR_BASE, 'tracking')
 export const DIR_ORGS = path.join(DIR_BASE, 'orgs')
 
 // Walk order matters: DIR_ORGS before DIR_PROJECTS so orgs are loaded when tracking project references
@@ -77,6 +79,7 @@ export const DIRS_MARKDOWN = [
   DIR_PROJECTS,
   DIR_STREAKS,
   DIR_TIME,
+  DIR_TRACKING,
 ]
 
 export const FILE_SKY_CODE_ENV = path.join(DIR_CODE_SRC, '.env')

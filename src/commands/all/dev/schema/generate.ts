@@ -32,6 +32,19 @@ interface FilterDef {
 
 // Shared value types (not documents in their own right)
 const VALUE_TYPES: Record<string, TypeDef> = {
+  TrackingColumn: {
+    description: 'One column of a tracking record schema (everything after the implicit date)',
+    fields: {
+      name: { type: 'String!', description: 'Column name in the record CSV' },
+      type: { type: 'String!', description: 'Value shape: time, number, duration, range, word, text' },
+      unit: { type: 'String', description: 'Unit label (lbs, hrs, miles, ...)', nullable: true },
+      aggregate: {
+        type: 'String',
+        description: 'Daily rollup rule: last, sum, mean, collect',
+        nullable: true,
+      },
+    },
+  },
   When: {
     description: 'A point in time with an optional length. End is derived, never stored.',
     fields: {
@@ -235,6 +248,36 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
       monthDone: { type: 'Int!', description: 'Completions this month (through yesterday, plus today once done)' },
       monthTracked: { type: 'Int!', description: 'Tracked days this month — the consistency denominator' },
       lastDone: { type: 'String', description: 'Most recent completed day (YYYY-MM-DD)', nullable: true },
+      tags: { type: '[String!]!', description: 'Tags' },
+      rel: { type: '[String!]!', description: 'Related entities' },
+      markdown: { type: 'String!', description: 'Full document content (the why)' },
+      path: { type: 'String!', description: 'File path' },
+    },
+  },
+  Tracking: {
+    description: 'Tracked-metric definition: the capture question, record schema, and rollup rules (active/archived)',
+    fields: {
+      name: { type: 'String!', description: 'Tracking identifier/slug — also the record CSV basename' },
+      title: { type: 'String!', description: 'Human name of the metric' },
+      status: { type: 'String!', description: 'Status: active, archived (derived from path)' },
+      question: { type: 'String', description: 'The question capture asks; absent = never prompted', nullable: true },
+      ask: { type: 'String!', description: 'Capture window: morning, evening, anytime' },
+      schedule: {
+        type: 'String!',
+        description: 'Entry cadence: daily, weekdays, manual (never swept, logged on demand)',
+      },
+      storage: {
+        type: 'String!',
+        description: 'Where records live: weekly (time-tree shards), yearly (data/tracking/{year})',
+      },
+      category: { type: 'String', description: 'Informational grouping (health, execution, ...)', nullable: true },
+      columns: { type: '[TrackingColumn!]!', description: 'Record schema after the implicit date column' },
+      start: { type: 'String', description: 'First tracked day (YYYY-MM-DD)', nullable: true },
+      end: {
+        type: 'String',
+        description: 'Last tracked day, inclusive; a future value is a planned end',
+        nullable: true,
+      },
       tags: { type: '[String!]!', description: 'Tags' },
       rel: { type: '[String!]!', description: 'Related entities' },
       markdown: { type: 'String!', description: 'Full document content (the why)' },
@@ -529,6 +572,22 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       bodyContains: 'String',
     },
   },
+  TrackingFilter: {
+    fields: {
+      name: 'String',
+      nameContains: 'String',
+      titleContains: 'String',
+      status: 'String',
+      category: 'String',
+      ask: 'String',
+      tagsContains: 'String',
+      tagsContainsAny: '[String!]',
+      tagsContainsAll: '[String!]',
+      tagsStartsWith: 'String',
+      relContains: 'String',
+      bodyContains: 'String',
+    },
+  },
   PlaceFilter: {
     fields: {
       nameContains: 'String',
@@ -754,6 +813,9 @@ function pluralize(typeName: string): string {
       return 'people'
     case 'Day':
       return 'days'
+    case 'Tracking':
+      // Mass noun: the root field lists tracking definitions, not "trackings".
+      return 'tracking'
     default:
       return typeName.toLowerCase() + 's'
   }

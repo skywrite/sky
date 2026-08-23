@@ -7,6 +7,7 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
   goal: 5,
   decision: 5,
   streak: 4,
+  tracking: 4,
   project: 4,
   person: 3,
   org: 3,
