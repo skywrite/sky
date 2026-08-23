@@ -1,27 +1,13 @@
 import colors from 'picocolors'
-import { getManifest, type CommandEntry } from '#commands/all/cli/_commandsManifest.ts'
 import type { Args } from '#commands/lib/commands.d.ts'
 import type { CommandArgs } from '#commands/lib/commands.d.ts'
-import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type CommandContext from './CommandContext.ts'
+import { loadCommand } from './commandLoader.ts'
+import { withCommandRun } from './commandLog.ts'
 import type { CommandTypesRegistry } from './CommandTypesRegistry.ts'
 import type { Prompt } from './Prompt.ts'
-
-/**
- * Shared task class cache (singleton)
- */
-const commandCache = new Map<string, typeof Command>()
-
-/** Find a command in the manifest by name (local overrides core) */
-async function findCommand(commandName: string): Promise<CommandEntry | null> {
-  const manifest = await getManifest()
-  for (const source of ['local', 'global', 'core'] as const) {
-    const entry = manifest.commands[source].find((c) => c.name === commandName)
-    if (entry) return entry
-  }
-  return null
-}
+import { resolveCommandArgs } from './resolveCommandArgs.ts'
 
 /**
  * CommandService provides task composition and orchestration capabilities.
@@ -179,32 +165,8 @@ export default class CommandService {
    * const instance = new TaskClass()
    * ```
    */
-  async get(commandName: string): Promise<typeof Command> {
-    if (commandCache.has(commandName)) {
-      return commandCache.get(commandName)!
-    }
-
-    // Resolve via manifest (supports core, local, and global commands)
-    const entry = await findCommand(commandName)
-    if (!entry) {
-      throw new Error(`Command '${commandName}' not found. Run 'sky cli:commands --rebuild' to update the manifest.`)
-    }
-
-    let commandMod: any
-    try {
-      commandMod = await import(entry.file)
-    } catch (e) {
-      throw new Error(`Failed to load command '${commandName}' from ${entry.file}: ${(e as Error).message}`)
-    }
-
-    const TaskClass = commandMod.default
-
-    if (!TaskClass || typeof TaskClass !== 'function' || !TaskClass.description) {
-      throw new Error(`Command '${commandName}' does not export a Command class as default export`)
-    }
-
-    commandCache.set(commandName, TaskClass)
-    return TaskClass
+  get(commandName: string): Promise<typeof Command> {
+    return loadCommand(commandName)
   }
 
   /**
@@ -258,69 +220,55 @@ export default class CommandService {
   // Implementation
   // deno-lint-ignore no-explicit-any
   async run<T = any>(commandName: string, argsOverride?: Record<string, unknown>): Promise<CommandResult<T>> {
-    // Load task class
+    // Wrapped rather than bracketed around execution alone, so a command that
+    // fails to load or whose arguments do not typecheck still reports that it
+    // was attempted. See commandLog.ts for what a run looks like in the log.
+    return withCommandRun(
+      { command: commandName, parent: this.currentTaskName, depth: this.context.compositionDepth },
+      () => this.dispatch<T>(commandName, argsOverride),
+    )
+  }
+
+  /** Resolve arguments, fork a child scope, and hand off to the command. */
+  // deno-lint-ignore no-explicit-any
+  private async dispatch<T = any>(
+    commandName: string,
+    argsOverride?: Record<string, unknown>,
+  ): Promise<CommandResult<T>> {
     const TaskClass = await this.get(commandName)
     const commandInstance = new (TaskClass as any)() // Cast to any to handle abstract class
-    const commandDescription = TaskClass.description
 
-    // Step 1: Transform parent args using child task's description
-    // This applies the child's parse() and default() functions
-    const baseArgsForTransform: Args = { _: [], ...this.currentArgs }
+    const commandArgs = await this.forkChild(commandName, TaskClass.description, argsOverride)
+    return (await commandInstance.run(commandArgs)) as CommandResult<T>
+  }
 
-    let transformedArgs: Record<string, unknown>
-    if (commandDescription?.params) {
-      // Include argsOverride so required-param checks see them.
-      // Already-parsed objects (PlainDate) skip parsing via needsParsing() check.
-      // Pass compositionDepth to suppress unknown-flag warnings for nested task calls.
-      const argsWithOverrides: Args = { ...baseArgsForTransform, ...argsOverride }
-      transformedArgs = await transformTypedParamsArgs(commandDescription.params, argsWithOverrides, {
-        compositionDepth: this.context.compositionDepth + 1,
-      })
-    } else {
-      transformedArgs = this.currentArgs
-    }
-
-    // Step 2: Merge transformed args with overrides
-    // Overrides are passed through unchanged - parent tasks already have parsed values.
-    // Server handlers should pre-parse values before calling CommandService.
-    // Priority: task defaults < parent args < overrides
-    const finalArgs = { ...transformedArgs, ...argsOverride }
-
-    // stringOrBool overrides are presence signals, not parsed values — the
-    // raw re-spread above would hand run() the caller's boolean (true) where
-    // it expects the resolved string, so re-resolve them through the schema
-    for (const [name, def] of Object.entries(commandDescription?.params ?? {})) {
-      if (def.type === 'stringOrBool' && def.schema && name in finalArgs) {
-        const resolved = def.schema.safeParse(finalArgs[name])
-        if (resolved.success) finalArgs[name] = resolved.data
-      }
-    }
-
-    // Step 3: Create child context with nested output and incremented composition depth
-    const childOutput = this.context.output.child?.(commandName) ?? this.context.output
-    const childContext = this.context.fork({
-      output: childOutput,
+  /**
+   * Build the CommandArgs a child command runs with: its resolved arguments,
+   * and a forked scope one level deeper carrying `commandName` as the task name
+   * so grandchildren know their parent.
+   */
+  private async forkChild(
+    commandName: string,
+    description: typeof Command.description,
+    argsOverride?: Record<string, unknown>,
+  ): Promise<CommandArgs> {
+    const args = await resolveCommandArgs({
+      description,
+      callerArgs: this.currentArgs,
+      overrides: argsOverride,
+      callerDepth: this.context.compositionDepth,
+    })
+    const context = this.context.fork({
+      output: this.context.output.child?.(commandName) ?? this.context.output,
       compositionDepth: this.context.compositionDepth + 1,
       parentTaskName: this.currentTaskName,
     })
-
-    // Step 4: Create child CommandService for subtask
-    // The child service carries the final merged args for its own subtasks
-    // Pass commandName as currentTaskName so grandchildren know their parent
-    const childService = new CommandService(childContext, finalArgs, this.rawArgs, commandName)
-
-    // Step 5: Create CommandArgs for child task
-    const commandArgs: CommandArgs = {
-      args: finalArgs,
-      context: childContext,
-      tasks: childService,
+    return {
+      args,
+      context,
+      tasks: new CommandService(context, args, this.rawArgs, commandName),
       rawArgs: this.rawArgs,
     }
-
-    // Step 6: Execute task
-    const result = await commandInstance.run(commandArgs)
-
-    return result as CommandResult<T>
   }
 
   /**
@@ -441,52 +389,14 @@ export default class CommandService {
     commandName: string,
     argsOverride?: Record<string, unknown>,
   ): AsyncGenerator<Prompt, CommandResult<T>, string> {
-    // Load task class
     const TaskClass = await this.get(commandName)
     // deno-lint-ignore no-explicit-any
     const commandInstance = new (TaskClass as any)()
-    const commandDescription = TaskClass.description
+    const commandArgs = await this.forkChild(commandName, TaskClass.description, argsOverride)
 
-    // Step 1: Transform parent args using child task's description
-    const baseArgsForTransform: Args = { _: [], ...this.currentArgs }
-
-    let transformedArgs: Record<string, unknown>
-    if (commandDescription?.params) {
-      // Include argsOverride so required-param checks see them (see run() for details)
-      // Pass compositionDepth to suppress unknown-flag warnings for nested task calls.
-      const argsWithOverrides: Args = { ...baseArgsForTransform, ...argsOverride }
-      transformedArgs = await transformTypedParamsArgs(commandDescription.params, argsWithOverrides, {
-        compositionDepth: this.context.compositionDepth + 1,
-      })
-    } else {
-      transformedArgs = this.currentArgs
-    }
-
-    // Step 2: Merge transformed args with overrides
-    const finalArgs = { ...transformedArgs, ...argsOverride }
-
-    // Step 3: Create child context with nested output and incremented composition depth
-    const childOutput = this.context.output.child?.(commandName) ?? this.context.output
-    const childContext = this.context.fork({
-      output: childOutput,
-      compositionDepth: this.context.compositionDepth + 1,
-      parentTaskName: this.currentTaskName,
-    })
-
-    // Step 4: Create child CommandService for subtask
-    // Pass commandName as currentTaskName so grandchildren know their parent
-    const childService = new CommandService(childContext, finalArgs, this.rawArgs, commandName)
-
-    // Step 5: Create CommandArgs for child task
-    const commandArgs: CommandArgs = {
-      args: finalArgs,
-      context: childContext,
-      tasks: childService,
-      rawArgs: this.rawArgs,
-    }
-
-    // Step 6: Delegate to task's runWithPrompts generator
-    // yield* forwards all prompts to our caller and returns the final result
+    // yield* forwards every prompt to our caller and returns the final result.
+    // Not wrapped in a command run: an interactive generator's duration is
+    // mostly time spent waiting on a person, which would be noise in the log.
     const result = yield* commandInstance.runWithPrompts(commandArgs)
 
     return result as CommandResult<T>
