@@ -21,6 +21,8 @@ export type LaterCaptureOutcome = {
   completed: number
   /** Rows this run landed in the notebook (fresh captures and dedup skips) — what --open opens */
   openRows: LaterCaptureRow[]
+  /** Links whose saved message is gone from Slack (deleted) — skipped, left in the queue */
+  skipped: string[]
   failures: string[]
 }
 
@@ -36,6 +38,7 @@ export async function captureLaterItems(
   const captured: string[] = []
   const openTargets: string[] = []
   const openRows: LaterCaptureRow[] = []
+  const skipped: string[] = []
   const failures: string[] = []
   let completed = 0
 
@@ -60,6 +63,14 @@ export async function captureLaterItems(
         }
         continue
       }
+      // A message Slack no longer serves (deleted since it was saved) is an
+      // expected outcome, not a crash — say so plainly and leave the item
+      // saved: completing it would silently drop the last trace of it
+      if (result.message?.includes('Message not found')) {
+        output.log('  Message not found in Slack (deleted) — skipped')
+        skipped.push(link)
+        continue
+      }
       failures.push(`${link}: ${result.message}`)
       continue
     }
@@ -82,7 +93,7 @@ export async function captureLaterItems(
     }
   }
 
-  return { captured, openTargets, completed, openRows, failures }
+  return { captured, openTargets, completed, openRows, skipped, failures }
 }
 
 /**

@@ -52,6 +52,8 @@ type Result = {
   matched: number
   captured: string[]
   completed: number
+  /** Links whose saved message is gone from Slack (deleted) — skipped, still in the queue */
+  skipped: string[]
   /** Items opened in Slack via --open */
   opened: number
   /** Items still in progress for the day once this run is done */
@@ -196,6 +198,7 @@ export default class SlackLaterDayTask extends Command {
         matched: matched.length,
         captured: [],
         completed: 0,
+        skipped: [],
         opened: toOpen.length,
         remaining: matched.length,
         failures: [],
@@ -218,6 +221,7 @@ export default class SlackLaterDayTask extends Command {
         matched: matched.length,
         captured: [],
         completed: 0,
+        skipped: [],
         opened: 0,
         remaining: matched.length,
         failures: [],
@@ -262,6 +266,7 @@ export default class SlackLaterDayTask extends Command {
     output.log('')
     output.log(`Captured ${outcome.captured.length}/${picked.length}; completed in Slack: ${outcome.completed}`)
     for (const failure of outcome.failures) output.log(colors.red(`  ! ${failure}`))
+    for (const link of outcome.skipped) output.log(colors.dim(`  – ${link}: not found in Slack (deleted) — skipped`))
     if (remaining > 0) {
       const next =
         args.captureBatch === undefined ? '' : ` — re-run for the next ${Math.min(args.captureBatch, remaining)}`
@@ -282,6 +287,7 @@ export default class SlackLaterDayTask extends Command {
       matched: matched.length,
       captured: outcome.captured,
       completed: outcome.completed,
+      skipped: outcome.skipped,
       opened: openBare ? outcome.openRows.length : 0,
       remaining,
       failures: outcome.failures,
