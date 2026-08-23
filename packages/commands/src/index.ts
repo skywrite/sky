@@ -43,6 +43,10 @@ export {
 export { Arg, ArgOrFlag, Flag } from '../../../src/commands/lib/params.ts'
 export type { InferParams, ParamDef, ParamOptions, ParamsRecord } from '../../../src/commands/lib/params.ts'
 
+// ── Arg parsing helpers ───────────────────────────────────────────
+export { parsePartialDate } from '../../../src/commands/lib/args/parsePartialDate.ts'
+export type { ParsePartialDateOptions } from '../../../src/commands/lib/args/parsePartialDate.ts'
+
 // ── AI Chat tool decorator ────────────────────────────────────────
 export { AIChatTool } from '../../../src/commands/lib/AIChatTool.ts'
 export type { AIChatToolOptions } from '../../../src/commands/lib/AIChatTool.ts'
