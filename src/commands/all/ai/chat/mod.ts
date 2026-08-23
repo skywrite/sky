@@ -1,4 +1,3 @@
-import { mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,26 +7,22 @@ import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
-import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
-import { AI_ERROR_LOG_DISPLAY, AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
+import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { PORT_SERVER } from '#shared/config.ts'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import { artifactRelEntries, recordExternalFiles } from '#shared/models/Chat/artifactRel.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import { recordExternalFiles } from '#shared/models/Chat/artifactRel.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
 import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
-import { serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
-import ChatDocument, { firstWordsSummary, userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
-import { verifyResumeCandidate } from '#shared/models/Chat/document/resume.ts'
+import { saveChat } from '#shared/models/Chat/ChatStore/save.ts'
+import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
-import { dayDir, fetchNow, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
@@ -176,10 +171,6 @@ function buildContextPrompt({ ctx, days, activityMarkdown }: ContextInput): stri
   return parts.join('\n')
 }
 
-function formatDate(dt: PlainDateTime): string {
-  return dt.plainDate.ymd
-}
-
 /**
  * Notebook datetime for a turn stamp (`YYYY-MM-DD HH:MM`, extended hours
  * kept). Undefined when now can't be computed — the turn proceeds
@@ -191,24 +182,6 @@ async function fetchWhen(): Promise<string | undefined> {
   } catch {
     return undefined
   }
-}
-
-function slugify(text: string, maxWords = 7): string {
-  // Take first N words, preserve case, replace non-alphanumeric with dashes
-  const words = text.trim().split(/\s+/).slice(0, maxWords).join(' ')
-
-  return words
-    .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except spaces
-    .replace(/\s+/g, '-') // Replace spaces with dashes
-    .replace(/-+/g, '-') // Collapse multiple dashes
-    .replace(/^-|-$/g, '') // Trim leading/trailing dashes
-}
-
-function formatFilename(dt: PlainDateTime, summary: string): string {
-  // Format: HH-MM_Slugified-Summary.md
-  const timeStr = dt.time.replace(':', '-')
-  const slug = slugify(summary)
-  return `${timeStr}_${slug}.md`
 }
 
 interface OlderChatRow {
@@ -663,7 +636,6 @@ export default class AiChatTask extends Command {
     // External files the session's tools touched (title by URL) — saved as
     // "[Title](url)" rel entries so the transcript points at its artifacts.
     const externalFiles = new Map<string, string>()
-    const createdDate = resumeSession?.created ?? formatDate(startTime)
     let isFirstTurn = true
     let hasNewMessages = false
     let splitViewEnabled = false
@@ -1072,139 +1044,59 @@ export default class AiChatTask extends Command {
     // Save conversation if there were any turns (unless --ephemeral). A
     // resumed session with no new messages leaves its file untouched.
     if (turns.length > 0 && !ephemeral && (!resumeSession || hasNewMessages)) {
-      const endTime = (await fetchNow()).plainDateTime
-      const updatedDate = formatDate(endTime)
-      const exchangeCount = Math.floor(turns.length / 2)
-
-      // A resumed chat keeps its saved summary verbatim (filled only when the
-      // file lacks one); a new chat is titled at save time from the packed
-      // transcript, whose head-biased packing anchors the title to the opening
-      // topic rather than the latest exchange.
-      const priorSummary = resumeSession?.summary || undefined
-      const firstWords = firstWordsSummary(turns)
-
-      // Hand-written values always win: auto-enrichment fills tags/rel only
-      // when the chat (or the file a resume carries forward) has none.
-      const priorTags = resumeSession && resumeSession.tags.length > 0 ? resumeSession.tags : undefined
-      const priorRel = resumeSession && resumeSession.rel.length > 0 ? resumeSession.rel : undefined
-      const wantAutoTag = !priorTags && !noAutoTag
-      const wantAutoRel = !priorRel && !noAutoRel
-      if (wantAutoTag || wantAutoRel) {
-        const choosing = [wantAutoTag ? 'tags' : '', wantAutoRel ? 'rel' : ''].filter(Boolean).join(' and ')
-        output.log('')
-        output.log(colors.dim(`Choosing ${choosing} from the archived-chat corpus…`))
-      }
-      const transcript = buildChatTranscript(turns)
-      const enrichInput = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
-      const [autoSummary, autoTags, autoRel] = await Promise.all([
-        priorSummary ? Promise.resolve(undefined) : summarizeTranscript(transcript, { kind: CHAT_ENRICH.kind }),
-        wantAutoTag ? autoTagMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
-        wantAutoRel ? autoRelMessage(enrichInput, CHAT_ENRICH) : Promise.resolve(undefined),
-      ])
-      if (autoTags) output.log(colors.dim(`Auto-tags: ${autoTags}`))
-      if (autoRel) output.log(colors.dim(`Auto-rel: ${autoRel.join('; ')}`))
-      const summary = priorSummary ?? autoSummary ?? firstWords
-
-      let savePath: string
-      if (resumeSession) {
-        // Write back to the original file: filename and created stay stable
-        // (day-file links and the chats resolver depend on the filename).
-        savePath = resumeSession.filePath
-      } else {
-        // Create save path: {timeDir}/{dayDir}/actions/ai-chats/{filename}.md
-        const aiDir = path.join(timeDir, dayDir(today), 'actions', 'ai-chats')
-        if (!(await exists(aiDir))) {
-          await mkdir(aiDir, { recursive: true })
-        }
-        savePath = path.join(aiDir, formatFilename(startTime, summary))
-      }
-
-      const chatDoc = ChatDocument.create({
-        summary,
-        messages: turns,
-        created: createdDate,
-        updated: updatedDate,
+      const saved = await saveChat({
+        turns,
+        contextLog: chatContext.log,
+        resume: resumeSession,
+        timeDir,
+        day: today,
+        startTime,
+        endTime: (await fetchNow()).plainDateTime,
         provider: reasoningProfile.provider,
         model: reasoningProfile.model,
-        // Artifact links ride alongside whichever rel won (hand-written,
-        // resumed, or auto) — a session that touched a Google file always
-        // records it, deduped against entries already carrying the URL.
-        rel: mergeRel(priorRel ?? autoRel, artifactRelEntries(externalFiles, priorRel)),
-        tags: priorTags ?? autoTags?.split('; '),
-      })
-      let markdown = chatDoc.toMarkdown()
-
-      // Append per-turn context log as hidden trailing comments (resume
-      // reads this back via splitContextLog — the format is locked by
-      // contextLog_test.ts, byte for byte)
-      markdown += serializeContextLog(chatContext.log)
-
-      if (resumeSession) {
-        const rs = resumeSession
-        const abortOverwrite = async (why: string) => {
-          const recoveryDir = path.dirname(AI_ERROR_LOG_PATH)
-          await mkdir(recoveryDir, { recursive: true })
-          const recoveryPath = path.join(
-            recoveryDir,
-            `resume-recovery_${endTime.plainDate.ymd}_${endTime.time.replace(':', '-')}.md`,
-          )
-          await writeTextFile(recoveryPath, markdown)
+        externalFiles,
+        autoTag: !noAutoTag,
+        autoRel: !noAutoRel,
+        logToDay: log ? { category: category || 'Professional' } : null,
+        onProgress: (event) => {
           output.log('')
-          output.log(colors.red(`NOT saved to ${rs.filePath} — ${why}.`))
-          output.log(colors.red(`Original left untouched; this session's transcript written to ${recoveryPath}`))
-          return CommandResult.success({ saved: recoveryPath, turns: exchangeCount })
-        }
+          output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
+        },
+      })
 
-        if (!rs.frontmatterHealthy) {
-          return await abortOverwrite('its frontmatter is malformed and a rewrite would lose data')
-        }
-        const check = verifyResumeCandidate(markdown, rs.state)
-        if (!check.ok) {
-          return await abortOverwrite(`the write-back self-check failed (${check.reason})`)
-        }
-        // Atomic replace: a crash mid-write must never leave a truncated
-        // transcript at the original path.
-        const tmpPath = path.join(path.dirname(savePath), `.${path.basename(savePath)}.resume-tmp`)
-        await writeTextFile(tmpPath, markdown)
-        await rename(tmpPath, savePath)
-      } else {
-        await writeTextFile(savePath, markdown)
+      if (saved.autoTags) output.log(colors.dim(`Auto-tags: ${saved.autoTags}`))
+      if (saved.autoRel) output.log(colors.dim(`Auto-rel: ${saved.autoRel.join('; ')}`))
+
+      // The write-back gate refused: the original still holds the earlier
+      // session, and this one's transcript is parked where it can be recovered.
+      if (saved.aborted) {
+        output.log('')
+        output.log(colors.red(`NOT saved to ${saved.aborted.originalPath} — ${saved.aborted.reason}.`))
+        output.log(colors.red(`Original left untouched; this session's transcript written to ${saved.path}`))
+        return CommandResult.success({ saved: saved.path, turns: saved.exchanges })
       }
 
       if (!noEditor) {
-        openEditor([{ file: savePath }])
+        openEditor([{ file: saved.path }])
         await delay(500)
       }
 
       output.log('')
-      output.log(colors.green(`Conversation saved to ${savePath}`))
-      output.log(colors.dim(`${exchangeCount} turn${exchangeCount !== 1 ? 's' : ''} recorded`))
-      if (resumeSession) {
+      output.log(colors.green(`Conversation saved to ${saved.path}`))
+      output.log(colors.dim(`${saved.exchanges} turn${saved.exchanges !== 1 ? 's' : ''} recorded`))
+      if (saved.resumed) {
         output.log(colors.dim('(resumed — original file updated in place)'))
       }
 
-      // Optionally log to day file (skipped on resume: the chat was already
-      // logged when first saved, and a new time key would duplicate it)
-      if (log && !resumeSession) {
-        try {
-          const relativePath = `actions/ai-chats/${path.basename(savePath)}`
-          const key = `${startTime.time} > AI Chat`
-          const value = `[${summary}](${relativePath})`
-          const cat = category || 'Professional'
-
-          let dayDoc = await readDay(today)
-          dayDoc = dayDoc.setCompleteItem(key, value, { time: startTime.time, category: cat })
-          await writeDay(dayDoc)
-
-          output.log(colors.dim(`Logged to day file under "${cat} Complete"`))
-        } catch (err) {
-          output.log(colors.yellow(`Warning: Failed to log to day file: ${(err as Error).message}`))
-        }
-      } else if (log && resumeSession) {
+      if (saved.dayLog?.logged) {
+        output.log(colors.dim(`Logged to day file under "${saved.dayLog.category} Complete"`))
+      } else if (saved.dayLog?.reason === 'resume') {
         output.log(colors.dim('Day-file log skipped on resume.'))
+      } else if (saved.dayLog) {
+        output.log(colors.yellow(`Warning: Failed to log to day file: ${saved.dayLog.message}`))
       }
 
-      return CommandResult.success({ saved: savePath, turns: exchangeCount })
+      return CommandResult.success({ saved: saved.path, turns: saved.exchanges })
     }
 
     output.log('')
