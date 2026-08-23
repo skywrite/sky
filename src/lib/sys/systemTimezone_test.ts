@@ -75,10 +75,14 @@ test('readSystemTimezone - returns null only after exhausting retries', async ()
     actual: zone,
     expected: null,
   })
+  // Thresholded below the nominal 40ms rather than at it. The point is to tell
+  // two delays apart from one (~20ms) or none (~0ms), and `>= 40` left no room
+  // for timers that fire a hair early — it cleared by well under a millisecond
+  // locally and failed on CI.
   assert({
     given: '3 attempts spaced 20ms apart',
     should: 'wait through both retry delays before giving up',
-    actual: elapsed >= 40,
+    actual: elapsed >= 30,
     expected: true,
   })
 })
