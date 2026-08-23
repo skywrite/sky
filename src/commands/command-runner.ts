@@ -16,7 +16,7 @@ import * as config from '#config'
 import { parsedArgs as args } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import { exists } from '#shared/fs/mod.ts'
-import { configureLogging } from '#shared/log.ts'
+import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
 
 // Install before any command module loads, so AI SDK warnings from every
@@ -25,9 +25,48 @@ import { env, exit } from '#shared/sys/mod.ts'
 routeAISDKWarningsToLog()
 
 // CLI is its own log-stream family (cli.<date>.jsonl). Console mirroring stays
-// off — stdout belongs to the terminal UI. Idempotent, so richer per-invocation
-// wiring can land here later without conflict.
+// off — stdout belongs to the terminal UI.
 configureLogging({ stream: 'cli' })
+
+/**
+ * One wide event per CLI invocation. Timing starts at module load, so
+ * durationMs is the wall time the user actually waits, command-module import
+ * included.
+ *
+ * The timezone is read from Intl rather than the environment because Intl is
+ * what goes wrong: it intermittently resolves to UTC after a wake, which is
+ * how day-file writes have landed on the wrong day. One sample at startup is
+ * the whole signal — the engine resolves the zone once per process and only
+ * re-reads it if something assigns process.env.TZ, which no command does, so
+ * a second sample later in the run could never disagree:
+ *
+ *   jq 'select(.tz == "UTC")' /tmp/sky/logs/cli.*.jsonl
+ *
+ * Arguments are deliberately not recorded — they carry notebook content
+ * (names, paths, prompts) and these files are world-readable in /tmp. The
+ * command name alone is safe.
+ */
+const invocation = beginEvent(logger('cli'), 'invocation')
+invocation.set({ tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
+let outcome = 'unknown'
+// Whatever went wrong, held untyped: Bun throws non-Error values for some
+// failures (a missing module arrives as a ResolveMessage), and the record's
+// serializer handles arbitrary shapes, so nothing is filtered on the way in.
+let thrown: unknown
+
+// Every outcome path in run() ends in exit(), which never returns to the
+// caller — so the event is emitted from an exit hook rather than at the end of
+// run(). The daily sink writes synchronously, so a record emitted here still
+// reaches disk.
+process.on('exit', (code) => {
+  const fields = { exitCode: code }
+  // A failed invocation is logged at error level so it survives a raised
+  // SKY_LOG_LEVEL; every other outcome (including a command's own `fail`,
+  // which is a legitimate answer) rides at info and is told apart by
+  // `.outcome`.
+  if (outcome === 'error') invocation.fail(thrown, fields)
+  else invocation.emit(outcome, fields)
+})
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -70,22 +109,26 @@ async function run() {
     commandDescription = TaskClass.description
     commandFn = (args: CommandArgs) => commandInstance.run(args)
   } else {
+    outcome = 'usage'
     console.error(colors.red(`\n  Command must export a class extending Command as default export.\n`))
     console.error(colors.gray(`  File: ${file}\n`))
     exit(1)
   }
 
   if (!commandDescription) {
+    outcome = 'usage'
     console.error(colors.red(`\n  Command does not have description.\n`))
     exit(1)
   }
 
   if (!commandDescription.name) {
+    outcome = 'usage'
     console.error(colors.red(`\n  Command does not have name.\n`))
     exit(1)
   }
 
   const commandName = commandDescription?.name
+  invocation.set({ command: commandName })
   const envObj = env.toObject()
 
   // Disable task name prefix for all tasks
@@ -107,6 +150,7 @@ async function run() {
   }
 
   if (args.help || args.h) {
+    outcome = 'help'
     const helpMesssage = helpMessage(commandDescription)
     console.log(helpMesssage)
 
@@ -130,6 +174,7 @@ async function run() {
       const fn = postProcessFns.shift() as CommandDescriptionCliPostProcessFunction
       const result = fn(commandArgs.args, args, commandDescription)
       if (result) {
+        outcome = 'usage'
         console.error(colors.red(`\n  ${result}\n`))
         exit(1)
       }
@@ -156,6 +201,9 @@ async function run() {
     const errorObj = error instanceof Error ? error : new Error(String(error))
     const taskResult = CommandResult.error(errorObj)
 
+    outcome = 'error'
+    thrown = errorObj
+
     // Log task failure
     context.output.commandEnd?.('error')
 
@@ -172,6 +220,8 @@ async function run() {
 
     // Handle different result statuses
     if (isError(taskResult)) {
+      outcome = 'error'
+      thrown = taskResult.error ?? new Error(taskResult.message)
       context.output.commandEnd?.('error')
       console.error(colors.red(`\n  ERROR: ${taskResult.message}\n`))
       if (taskResult.error?.stack) {
@@ -179,6 +229,7 @@ async function run() {
       }
       exit(1)
     } else if (isFail(taskResult)) {
+      outcome = 'fail'
       context.output.commandEnd?.('fail')
       console.error(colors.yellow(`\n  FAILED: ${taskResult.message}\n`))
       if (taskResult.data) {
@@ -187,10 +238,12 @@ async function run() {
       exit(1)
     } else {
       // Success case - task ran successfully
+      outcome = 'success'
       context.output.commandEnd?.('success')
     }
   } else if (result === undefined || result === null) {
     // Legacy task - assume success
+    outcome = 'success'
     context.output.commandEnd?.('success')
     // Warn in development
     if (env.toObject().NODE_ENV !== 'production') {
@@ -279,6 +332,10 @@ function outputError(error: unknown) {
 try {
   await run()
 } catch (err) {
+  // A CommandRunnerError means the arguments never typechecked, so the command
+  // itself never ran — that is a usage failure, not a command failure.
+  outcome = err instanceof CommandRunnerError ? 'usage' : 'error'
+  thrown = err
   outputError(err)
   exit(1)
 }
