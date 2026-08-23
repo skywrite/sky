@@ -47,8 +47,12 @@ configureLogging({ stream: 'cli' })
  * command name alone is safe.
  */
 const logCli = logger('cli')
+const attempted = String(args._[0] ?? '').replace(/\/+/g, ':')
 const invocation = beginEvent(logCli, 'invocation')
-invocation.set({ pid: process.pid, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
+// Seeded with the attempted name so a command that never resolves still
+// reports what was asked for; the resolved description name overwrites it
+// below once known, which for anything in the manifest is the same string.
+invocation.set({ command: attempted, pid: process.pid, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })
 let outcome = 'unknown'
 // Whatever went wrong, held untyped: Bun throws non-Error values for some
 // failures (a missing module arrives as a ResolveMessage), and the record's
@@ -66,14 +70,21 @@ let thrown: unknown
  *   jq -s 'map(select(.event | startswith("invocation"))) | group_by(.pid)
  *          | map(select(length == 1)) | flatten' /tmp/sky/logs/cli.*.jsonl
  *
- * Only argv[0] is recorded. Later arguments carry notebook content, and the
- * resolved command name does not exist yet — a hang during module import has
- * no name to report but still has a pid.
+ * Only argv[0] is recorded. Later arguments carry notebook content.
+ *
+ * The name is normalized to colon form — the same transform the manifest uses
+ * to derive command names and that resolveCommandFile uses to look them up —
+ * so it is the registered command name for anything that resolves, and the
+ * start and end records for one invocation always agree. Resolving through
+ * the manifest itself would be worse here: it imports every command module to
+ * build its entries, so waiting on it would blind this record during the very
+ * phase most likely to hang, and would leave a mistyped command with no
+ * record of what was attempted.
  */
 logCli.info('invocation-start', {
   event: 'invocation-start',
   pid: process.pid,
-  command: String(args._[0] ?? ''),
+  command: attempted,
   tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
 })
 
