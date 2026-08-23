@@ -14,8 +14,9 @@ import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlCommen
 import { dayDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
-/** Most-important files live under a day's most-important/ directory as MI1.md, MI2.md, … */
-export const MI_FILE = /^MI\d+\.md$/i
+/** Most-important files live under a day's most-important/ directory as
+ * MI1.md, MI2.md, … — optionally suffixed with a summary slug (MI2_Ship-Docs.md). */
+export const MI_FILE = /^MI\d+(?:[_-].*)?\.md$/i
 
 /** One titled block of assembled context. */
 export interface ContextSection {
@@ -59,6 +60,14 @@ async function readMatching(dir: string, match: (name: string) => boolean): Prom
 /** Every goal document: goals/*.md. */
 export async function readGoals(): Promise<ContextFile[]> {
   return readMatching(DIR_GOALS, (f) => f.endsWith('.md'))
+}
+
+/** Standing planning files at the top of time/: commitments.md, next-*.md, schedule-*.md. */
+export const PLANNING_FILE = /^(commitments|next-|schedule-).*\.md$/
+
+/** The standing planning files — the deferred/scheduled backlog that outlives any one week. */
+export async function readPlanningFiles(): Promise<ContextFile[]> {
+  return readMatching(DIR_TIME, (f) => PLANNING_FILE.test(f))
 }
 
 /** A day's journal entries: time/<day>/journal/*.md. */

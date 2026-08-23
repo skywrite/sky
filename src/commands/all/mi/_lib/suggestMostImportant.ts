@@ -398,6 +398,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
     user: {
       dayOfWeek: miContext.today.dayOfWeek,
       ...(miContext.today.time ? { time: miContext.today.time, timeOfDay: miContext.today.timeOfDay } : {}),
+      ...(miContext.todayMIs.length > 0 ? { todayMIs: miContext.todayMIs.map((s) => `- ${s}`).join('\n') } : {}),
       dayContext: miContext.contextMarkdown,
     },
   })

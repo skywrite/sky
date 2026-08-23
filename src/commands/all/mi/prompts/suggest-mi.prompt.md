@@ -2,7 +2,7 @@
 name: suggest-mi
 schema: 0.2.0
 created: 2026-01-26
-updated: 2026-08-17
+updated: 2026-08-23
 description: Suggest 3 specific, actionable Most Important items based on day context
 ---
 
@@ -49,11 +49,19 @@ A good Most Important item is:
 
 ## Context
 
-Goals, pending decisions, this week's plan, and the last 7 days: journal entries, most-important files (with completion state), and a daily summary per day (today appears as its raw day ledger — schedule, reminders, todos).
+Goals, pending decisions, standing planning files (commitments, next-*, schedule-*), this week's plan, and the last 7 days: journal entries, AI chats, most-important files (with completion state), and a daily summary per day (today appears as its raw day ledger — schedule, reminders, todos).
 
 {{user.dayContext}}
 
 ---
+{{#if user.todayMIs}}
+
+## Already Committed Today
+
+These Most Important items are already committed for today. Do NOT suggest, repeat, or rephrase any of them — the user is asking what comes NEXT after them:
+
+{{user.todayMIs}}
+{{/if}}
 
 First, write a 1-2 line `contextSummary` that captures the key themes and pressures from the context above. This will be displayed to the user above the suggestions.
 
@@ -63,6 +71,7 @@ Then generate 3 suggestions. Each must:
 3. Be completable in one focused work session today
 4. Reference actual items from the context above
 5. Pass the 10x filter
+6. Not repeat or rephrase anything under "Already Committed Today"
 
 Make the 3 options diverse, but **always anchor at least one suggestion to an active goal**:
 - One **goal-advancing** (the single highest-leverage action that moves a goal forward today)
