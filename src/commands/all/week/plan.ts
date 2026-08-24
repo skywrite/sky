@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import openEditor from 'open-editor'
+import colors from 'picocolors'
 import { Arg, Command, CommandResult, isFailOrError } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
@@ -102,6 +103,7 @@ export default class WeekPlanTask extends Command {
 
     output.log('Reading your notebook context...')
     const planContext = await gatherPlanContext(week, today)
+    output.log(`${colors.cyan('Drafting from:')}\n  ${planContext.manifest.join('\n  ')}`)
 
     // refine: context-aware follow-ups, asked only when the model has some
     const questions = await generateRefineQuestions({
