@@ -80,7 +80,7 @@ export default class WeekPlanTask extends Command {
       const item = await p.text({
         message: answers.dump.length
           ? `Anything else? (${answers.dump.length} so far)`
-          : 'What do you want to get done this week?',
+          : 'What do you want to get done this week? (one item at a time)',
         placeholder: 'enter to finish',
       })
       if (p.isCancel(item)) {
