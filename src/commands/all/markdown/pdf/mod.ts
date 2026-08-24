@@ -3,9 +3,9 @@ import { marked } from 'marked'
 import { chromium } from 'playwright'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_OUTPUT } from '#config'
 import { readTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import { env } from '#shared/sys/mod.ts'
 
 const THEMES_DIR = new URL('./themes', import.meta.url).pathname
 const AVAILABLE_THEMES = ['github', 'gothic', 'newsprint', 'night', 'pixyll', 'whitey'] as const
@@ -62,8 +62,7 @@ export default class MarkdownPdfTask extends Command {
     // Derive defaults from filename
     const basename = path.basename(file, path.extname(file))
     const title = titleFlag ?? basename
-    const home = env.get('HOME') ?? '/tmp'
-    const pdfPath = outputFlag ?? path.join(home, 'Desktop', `${basename}.pdf`)
+    const pdfPath = outputFlag ?? path.join(DIR_OUTPUT, `${basename}.pdf`)
 
     // 1. Read markdown and theme CSS
     const cssPath = path.join(THEMES_DIR, `${theme}.css`)

@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_OUTPUT } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
@@ -15,7 +16,6 @@ import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData, type HealthData } from './_health.ts'
@@ -421,7 +421,6 @@ export default class SummaryDayTask extends Command {
   }
 
   private pdfPath(day: PlainDate): string {
-    const home = env.get('HOME') ?? '/tmp'
-    return path.join(home, 'Desktop', `${day.ymd}_summary.pdf`)
+    return path.join(DIR_OUTPUT, `${day.ymd}_summary.pdf`)
   }
 }

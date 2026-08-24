@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import * as path from 'node:path'
+import { DIR_INPUT } from '#config'
 import { exists, readDir } from '#shared/fs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.heic'])
 
@@ -10,19 +10,15 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.has(ext)
 }
 
-/** Return all image files on ~/Desktop, sorted by modification time (capture order). */
+/** Return all image files in the input dir (default: ~/Desktop), sorted by modification time (capture order). */
 export async function findScreenshotsOnDesktop(): Promise<string[]> {
-  const home = env.get('HOME')
-  if (!home) return []
-
-  const desktopPath = path.join(home, 'Desktop')
-  if (!(await exists(desktopPath))) return []
+  if (!(await exists(DIR_INPUT))) return []
 
   const images: { path: string; mtime: number }[] = []
 
-  for await (const entry of readDir(desktopPath)) {
+  for await (const entry of readDir(DIR_INPUT)) {
     if (!entry.isFile || !isImageFile(entry.name)) continue
-    const fullPath = path.join(desktopPath, entry.name)
+    const fullPath = path.join(DIR_INPUT, entry.name)
     const info = await stat(fullPath)
     images.push({ path: fullPath, mtime: info.mtimeMs ?? 0 })
   }

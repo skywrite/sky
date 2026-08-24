@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { marked } from 'marked'
+import { DIR_OUTPUT } from '#config'
 import { readTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import type { MarkdownPreviewTheme } from './types.ts'
@@ -11,7 +11,7 @@ const BRAVE_EXECUTABLE = '/Applications/Brave Browser.app/Contents/MacOS/Brave B
 
 export async function exportMarkdownPreviewPdf(filePath: string, theme: MarkdownPreviewTheme): Promise<string> {
   const basename = path.basename(filePath, path.extname(filePath))
-  const pdfPath = path.join(os.homedir(), 'Desktop', `${basename}.pdf`)
+  const pdfPath = path.join(DIR_OUTPUT, `${basename}.pdf`)
   const cssPath = path.join(THEMES_DIR, `${theme}.css`)
 
   const [raw, css] = await Promise.all([readTextFile(filePath), readTextFile(cssPath)])

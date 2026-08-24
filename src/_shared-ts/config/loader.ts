@@ -61,6 +61,8 @@ function defaults(): SkyConfig {
     dir: path.join(os.homedir(), 'Sky'),
     userDataDir: path.join(os.homedir(), 'Sky-Data'),
     codeDir: detectCodeDir(),
+    inputDir: path.join(os.homedir(), 'Desktop'),
+    outputDir: path.join(os.homedir(), 'Desktop'),
     editor: undefined,
     categories: ['Professional', 'Personal'],
     commands: {
@@ -101,6 +103,8 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.dir) config.dir = expandTilde(parsed.dir)
     if (parsed.userDataDir) config.userDataDir = expandTilde(parsed.userDataDir)
     if (parsed.codeDir) config.codeDir = expandTilde(parsed.codeDir)
+    if (parsed.inputDir) config.inputDir = expandTilde(parsed.inputDir)
+    if (parsed.outputDir) config.outputDir = expandTilde(parsed.outputDir)
     if (parsed.editor) config.editor = parsed.editor
     if (parsed.categories) config.categories = parsed.categories
     if (parsed.commands?.dirs) config.commands.dirs = parsed.commands.dirs.map(expandTilde)
@@ -126,6 +130,8 @@ export function loadSkyConfig(): SkyConfig {
   if (process.env.SKY_DIR) config.dir = process.env.SKY_DIR
   if (process.env.SKY_DATA_DIR) config.userDataDir = process.env.SKY_DATA_DIR
   if (process.env.SKY_CODE_DIR) config.codeDir = process.env.SKY_CODE_DIR
+  if (process.env.SKY_INPUT_DIR) config.inputDir = process.env.SKY_INPUT_DIR
+  if (process.env.SKY_OUTPUT_DIR) config.outputDir = process.env.SKY_OUTPUT_DIR
 
   // Canonicalize path case (macOS is case-insensitive but Bun's module
   // cache keys on exact strings — mismatched case breaks instanceof)

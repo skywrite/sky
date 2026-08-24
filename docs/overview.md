@@ -191,6 +191,12 @@ Binary attachments and machine state don't belong in your life's history.
   // Operational data — attachments, state, not git-tracked
   "userDataDir": "~/Sky-Data",
 
+  // Where commands look for user-dropped files when a --from-* flag omits its path
+  "inputDir": "~/Desktop",
+
+  // Where commands write files for you — generated images, PDF exports, saved transcripts
+  "outputDir": "~/Desktop",
+
   // Preferred editor for opening files after creation
   "editor": "code",
 
@@ -251,6 +257,8 @@ notebook without touching your real one.
 | `SKY_DIR` | `dir` |
 | `SKY_DATA_DIR` | `userDataDir` |
 | `SKY_CODE_DIR` | `codeDir` |
+| `SKY_INPUT_DIR` | `inputDir` |
+| `SKY_OUTPUT_DIR` | `outputDir` |
 
 ## Where to go next
 

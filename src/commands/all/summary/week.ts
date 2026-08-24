@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_OUTPUT } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
@@ -9,7 +10,6 @@ import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { dayDir, fetchNow, weekDir } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { gatherWeekHealthData, type WeekHealthCsv } from './_health.ts'
@@ -381,7 +381,6 @@ export default class SummaryWeekTask extends Command {
   }
 
   private pdfPath(week: Week): string {
-    const home = env.get('HOME') ?? '/tmp'
-    return path.join(home, 'Desktop', `${week.toString()}_weekly_summary.pdf`)
+    return path.join(DIR_OUTPUT, `${week.toString()}_weekly_summary.pdf`)
   }
 }

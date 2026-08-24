@@ -3,7 +3,7 @@ import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_DECISIONS, DIR_DESKTOP } from '#config'
+import { DIR_DECISIONS, DIR_OUTPUT } from '#config'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import DecisionDocument from '#shared/models/Decision/mod.ts'
 
@@ -195,7 +195,7 @@ export default class DecisionsExportTask extends Command {
 
     // Export as PDF via markdown:pdf
     const pdfFilename = buildPdfFilename(decision.identified, decision.name)
-    const pdfPath = path.join(DIR_DESKTOP, pdfFilename)
+    const pdfPath = path.join(DIR_OUTPUT, pdfFilename)
 
     const pdfResult = await tasks.run<{ pdfPath: string }>('markdown:pdf', {
       _: ['markdown:pdf', decision.path],

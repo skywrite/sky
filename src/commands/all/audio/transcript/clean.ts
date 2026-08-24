@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { streamText } from 'ai'
@@ -7,13 +8,14 @@ import { z } from 'zod'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_OUTPUT } from '#config'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { env, isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
+import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
@@ -526,11 +528,8 @@ export default class AudioTranscriptCleanTask extends Command {
     } else if (saveArg) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const filename = `transcript_${timestamp}.md`
-      const home = env.get('HOME')
-      if (!home) {
-        return CommandResult.error(new Error('HOME not set'), 'Could not determine home directory')
-      }
-      outputPath = path.join(home, 'Desktop', filename)
+      await mkdir(DIR_OUTPUT, { recursive: true })
+      outputPath = path.join(DIR_OUTPUT, filename)
     } else if (useAudioPipeline || useTranscriptFile) {
       // Pipeline runs always land in /tmp: standalone for the user to open,
       // composed (meeting:new) as insurance — a failure downstream must not

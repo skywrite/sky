@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText, streamText } from 'ai'
 import openEditor from 'open-editor'
@@ -5,6 +6,7 @@ import colors from 'picocolors'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DIR_OUTPUT } from '#config'
 import { normalizeActionItems, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
@@ -13,7 +15,7 @@ import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { env, isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
+import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
 
 // -----------------------------------------------------------------------------
@@ -503,11 +505,8 @@ Example output: {"time": "2026-03-31 25:30"}`,
     } else if (saveArg) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const filename = `summary_${timestamp}.md`
-      const home = env.get('HOME')
-      if (!home) {
-        return CommandResult.error(new Error('HOME not set'), 'Could not determine home directory')
-      }
-      outputPath = path.join(home, 'Desktop', filename)
+      await mkdir(DIR_OUTPUT, { recursive: true })
+      outputPath = path.join(DIR_OUTPUT, filename)
     } else if (useCleanPipeline && isStandalone) {
       // Standalone pipeline: save to /tmp and open in VSCode
       outputPath = `/tmp/transcript-summary-${slugify(correctedTitle)}.md`

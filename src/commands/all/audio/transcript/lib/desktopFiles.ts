@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import * as path from 'node:path'
+import { DIR_INPUT } from '#config'
 import { exists, readDir } from '#shared/fs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 
 export interface DesktopCandidate {
   /** Absolute file path */
@@ -27,22 +27,18 @@ export function sortNewestFirst(candidates: readonly DesktopCandidate[]): Deskto
 }
 
 /**
- * Files on the Desktop with one of `extensions` (lowercase, dot included), most
- * recently arrived first. Empty when HOME is unset or there is no Desktop directory.
+ * Files in the input dir (default: ~/Desktop) with one of `extensions` (lowercase,
+ * dot included), most recently arrived first. Empty when the input dir does not exist.
  */
 export async function desktopFilesByExt(extensions: readonly string[]): Promise<DesktopCandidate[]> {
-  const home = env.get('HOME')
-  if (!home) return []
-
-  const desktopPath = path.join(home, 'Desktop')
-  if (!(await exists(desktopPath))) return []
+  if (!(await exists(DIR_INPUT))) return []
 
   const candidates: DesktopCandidate[] = []
-  for await (const entry of readDir(desktopPath)) {
+  for await (const entry of readDir(DIR_INPUT)) {
     if (!entry.isFile) continue
     if (!extensions.includes(path.extname(entry.name).toLowerCase())) continue
 
-    const filePath = path.join(desktopPath, entry.name)
+    const filePath = path.join(DIR_INPUT, entry.name)
     try {
       const { mtimeMs, ctimeMs } = await stat(filePath)
       candidates.push({ path: filePath, mtimeMs, ctimeMs })

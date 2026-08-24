@@ -10,6 +10,10 @@ export interface SkyConfig {
   dir: string
   userDataDir: string
   codeDir: string
+  /** Where commands look for user-dropped files when a --from-* flag omits its path (default: ~/Desktop). */
+  inputDir: string
+  /** Where commands write files for the user — generated images, PDF exports, saved transcripts (default: ~/Desktop). */
+  outputDir: string
   editor: string | undefined
   categories: string[]
   commands: {
