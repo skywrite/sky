@@ -62,9 +62,10 @@ export default class WeekPlanTask extends Command {
       if (isFailOrError(result)) return result
     }
 
-    // week.md is the user's pen after the draft — an existing one means done
+    // week.md is the user's pen after the draft — an existing one is opened, never redrafted
     if (await exists(weekMdPath)) {
-      output.log(`${week.toString()} already has a week.md (${weekMdPath}) — nothing to do.`)
+      output.log(`${week.toString()} already has a week.md — opening it.`)
+      await openEditor([{ file: weekMdPath }])
       return CommandResult.success()
     }
 
