@@ -382,6 +382,58 @@ test('ChatContext.firstTurn - alias-repeated paths earn no multi-hit bonus', asy
   })
 })
 
+test('ChatContext.evolveTurn - a quiet turn logs the reused partition', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+  const report = await context.evolveTurn('and her role?', [])
+
+  const t1 = context.log[0]
+  const t2 = context.log[1]
+  assert({
+    given: 'an evolve turn whose queries did not change',
+    should: 'return no rebuild but log the reused partition with the shipped stats',
+    actual: {
+      noRebuild: report.rebuilt === undefined,
+      turn: t2?.turn,
+      reused: t2?.stats?.reused,
+      sameTokens: t2?.stats?.docTokens === t1?.stats?.docTokens,
+      sameKept: t2?.stats?.kept === t1?.stats?.kept,
+      noDiff: t2?.diff === undefined && t2?.universe === undefined,
+    },
+    expected: { noRebuild: true, turn: 2, reused: true, sameTokens: true, sameKept: true, noDiff: true },
+  })
+})
+
+test('ChatContext.evolveTurn - a failed evolve stays distinguishable from a quiet one', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(fail('evolve exploded')),
+      executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('who is Jane Doe?')
+  await context.evolveTurn('and her role?', [])
+
+  const t2 = context.log[1]
+  assert({
+    given: 'an evolve turn whose pipeline failed',
+    should: 'log errors and no stats — never a reused partition',
+    actual: { errors: t2?.errors?.length, stats: t2?.stats },
+    expected: { errors: 1, stats: undefined },
+  })
+})
+
 test('ChatContext.restore - distinct recorded executions accumulate the multi-hit bonus', async () => {
   const state: ResumeState = {
     conversation: [],
@@ -498,18 +550,18 @@ test('ChatContext.evolveTurn - unchanged', async () => {
 
   assert({
     given: 'an evolve turn that changed nothing',
-    should: 'skip the rebuild but still write a minimal turn entry',
+    should: 'skip the rebuild and log the reused partition',
     actual: {
       rebuilt: report.rebuilt,
       errors: report.errors,
-      entries: context.log.map((e) => ({ turn: e.turn, queries: e.queries, hasStats: e.stats !== undefined })),
+      entries: context.log.map((e) => ({ turn: e.turn, queries: e.queries, reused: e.stats?.reused === true })),
     },
     expected: {
       rebuilt: undefined,
       errors: [],
       entries: [
-        { turn: 1, queries: ['q1'], hasStats: true },
-        { turn: 2, queries: ['q1'], hasStats: false },
+        { turn: 1, queries: ['q1'], reused: false },
+        { turn: 2, queries: ['q1'], reused: true },
       ],
     },
   })

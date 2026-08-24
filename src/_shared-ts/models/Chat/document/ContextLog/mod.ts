@@ -98,6 +98,13 @@ export interface TurnStats {
    * when the log is inspected or a session resumes from it.
    */
   truncated?: QueryTruncation[]
+  /**
+   * This turn reused the previous rebuild's partition (a quiet turn:
+   * queries unchanged, context byte-identical, prompt cache preserved).
+   * The numbers describe the context as shipped this turn; per-turn events
+   * (truncated) are not carried. Absent stats + errors = a broken turn.
+   */
+  reused?: boolean
 }
 
 export interface ContextTurnLog {

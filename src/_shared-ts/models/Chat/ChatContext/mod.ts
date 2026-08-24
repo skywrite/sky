@@ -244,6 +244,8 @@ export default class ChatContext {
   private turnErrors: string[] = []
   /** Capped query results this turn, recorded into the turn's stats. */
   private turnTruncations: QueryTruncation[] = []
+  /** Stats of the last computed rebuild — quiet turns log them as reused. */
+  private lastStats: TurnStats | undefined
 
   constructor(opts: ChatContextOptions) {
     this.today = opts.today
@@ -502,7 +504,11 @@ export default class ChatContext {
    * Turns 2+: evolve the query set if the conversation direction shifted,
    * execute whatever queries are genuinely new, and reassemble when
    * anything changed. An unchanged turn returns no rebuild — the host's
-   * context prompt stays as it was.
+   * context prompt stays byte-identical and prompt-cached (decay defers to
+   * the next real rebuild, where turns-since-last-hit catches up at once).
+   * The quiet turn still logs the reused partition's stats (`reused`) so
+   * it stays distinguishable from a broken turn, which logs errors and no
+   * stats.
    */
   async evolveTurn(userMessage: string, recentConversation: ConversationMessage[]): Promise<TurnContextReport> {
     this.turnNumber++
@@ -578,6 +584,19 @@ export default class ChatContext {
       const message = (err as Error).message
       this.turnErrors.push(message)
       await this.logError({ source: 'ai:chat', stage: 'context:evolve', message, question: userMessage })
+    }
+
+    // A quiet turn reuses the previous partition. Record that reuse — the
+    // carried stats describe the context as shipped this turn — so quiet
+    // turns stay distinguishable from broken ones in the saved log.
+    // Per-turn events (truncated) belong to the rebuild that saw them.
+    if (!rebuilt && this.turnErrors.length === 0 && this.lastStats) {
+      const { truncated: _truncated, ...carried } = this.lastStats
+      this.contextLog.push({
+        turn: this.turnNumber,
+        queries: [...this.queries],
+        stats: { ...carried, reused: true },
+      })
     }
 
     this.ensureErrorEntry()
@@ -791,6 +810,7 @@ export default class ChatContext {
         turnStats.truncated = [...this.turnTruncations]
       }
     }
+    if (turnStats) this.lastStats = turnStats
 
     // Compute diff: files new to the universe this turn. Query results
     // repeat a path once per alias that matched it — dedupe within the
