@@ -116,10 +116,27 @@ test('provenanceBoost', () => {
   const broadTwice: DocProvenance = { tier: 'broad', hits: 3, lastHitTurn: 2 }
 
   assert({
-    given: 'no evidence, one targeted hit, and repeated broad hits',
+    given: 'no evidence, one targeted hit, and repeated broad hits, each scored on its own turn',
     should: 'boost 0, the tier value, and the tier value plus the multi-hit bonus',
-    actual: [provenanceBoost(undefined), provenanceBoost(targeted), provenanceBoost(broadTwice)],
+    actual: [provenanceBoost(undefined, 1), provenanceBoost(targeted, 1), provenanceBoost(broadTwice, 2)],
     expected: [0, 10, 5],
+  })
+})
+
+test('provenanceBoost - decays per idle turn and resets on re-hit', () => {
+  const hit: DocProvenance = { tier: 'targeted', hits: 1, lastHitTurn: 1 }
+  const round = (n: number) => Math.round(n * 100) / 100
+
+  assert({
+    given: 'a targeted hit scored on its turn, one and two turns later, and after a re-hit',
+    should: 'carry full boost fresh, fade by ×0.7 per idle turn, and restore on re-retrieval',
+    actual: [
+      round(provenanceBoost(hit, 1)),
+      round(provenanceBoost(hit, 2)),
+      round(provenanceBoost(hit, 3)),
+      round(provenanceBoost({ ...hit, lastHitTurn: 3 }, 3)),
+    ],
+    expected: [10, 7, 4.9, 10],
   })
 })
 
@@ -129,7 +146,7 @@ test('provenanceBoost', () => {
 
 test('createChatScorer - no evidence degrades to the shared prior', async () => {
   const collection = await fixtureCollection([FIX.person, FIX.meeting, FIX.goal, FIX.day])
-  const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance: new Map() })
+  const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance: new Map(), turn: 1 })
   const base = createRecencyTypeScorer(TODAY)
 
   assert({
@@ -147,6 +164,7 @@ test('createChatScorer - lexical lifts the doc the topic names', async () => {
     collection,
     terms: ['jane', 'doe'],
     provenance: new Map(),
+    turn: 1,
   })
   const personScore = verdictScore(scorer(itemFor(collection, FIX.person)))
   const digestScore = verdictScore(scorer(itemFor(collection, FIX.digest)))
@@ -172,6 +190,7 @@ test('createChatScorer - short terms match whole words only', async () => {
     collection,
     terms: ['ent'],
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
 
@@ -193,6 +212,7 @@ test('createChatScorer - header channels outrank body mentions', async () => {
     collection,
     terms: ['nimbus'],
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
   const dealLex = lexicalByPath.get(FIX.deal) ?? 0
@@ -219,6 +239,7 @@ test('createChatScorer - an accented card is found by its unaccented spelling', 
     collection,
     terms: extractTopicTerms('who is Zoe Nunez?', []),
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
 
@@ -239,6 +260,7 @@ test('createChatScorer - rel channel matches bare entity names', async () => {
     collection,
     terms: ['nimbus'],
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
 
@@ -261,6 +283,7 @@ test('createChatScorer - routing segments earn no name evidence', async () => {
     collection,
     terms: ['ops', 'deals'],
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
 
@@ -280,6 +303,7 @@ test('createChatScorer - tags channel carries taxonomy terms', async () => {
     collection,
     terms: ['acquisitions'],
     provenance: new Map(),
+    turn: 1,
   })
   collection.allItems.forEach((i) => scorer(i))
 
@@ -303,9 +327,9 @@ test('createChatScorer - targeted retrieval clears the floor even at a strong to
   const collection = await fixtureCollection([FIX.person, FIX.glossary, FIX.goal])
   const provenance = new Map<string, DocProvenance>([
     [FIX.person, { tier: 'targeted', hits: 2, lastHitTurn: 2 }],
-    [FIX.glossary, { tier: 'targeted', hits: 1, lastHitTurn: 1 }],
+    [FIX.glossary, { tier: 'targeted', hits: 1, lastHitTurn: 2 }],
   ])
-  const { scorer } = createChatScorer({ today: TODAY, collection, terms: ['jane', 'doe'], provenance })
+  const { scorer } = createChatScorer({ today: TODAY, collection, terms: ['jane', 'doe'], provenance, turn: 2 })
   const asm = ContextAssembler.from(collection, {
     scorer,
     maxTokens: 300_000,
@@ -330,7 +354,7 @@ test('createChatScorer - targeted retrieval clears the floor even at a strong to
 test('createChatScorer - targeted retrieval outranks the recency prior', async () => {
   const collection = await fixtureCollection([FIX.person, FIX.meeting])
   const provenance = new Map<string, DocProvenance>([[FIX.person, { tier: 'targeted', hits: 1, lastHitTurn: 1 }]])
-  const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance })
+  const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance, turn: 1 })
 
   assert({
     given: 'an undated person card a targeted query returned, against a week-old meeting',
@@ -341,5 +365,18 @@ test('createChatScorer - targeted retrieval outranks the recency prior', async (
         verdictScore(scorer(itemFor(collection, FIX.person))) > verdictScore(scorer(itemFor(collection, FIX.meeting))),
     },
     expected: { person: 16, personWins: true },
+  })
+})
+
+test('createChatScorer - stale retrieval decays toward the prior', async () => {
+  const collection = await fixtureCollection([FIX.person, FIX.meeting])
+  const provenance = new Map<string, DocProvenance>([[FIX.person, { tier: 'targeted', hits: 1, lastHitTurn: 1 }]])
+  const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance, turn: 3 })
+
+  assert({
+    given: 'the same targeted hit scored two turns after its retrieval, never re-returned',
+    should: 'carry the boost at ×0.49 instead of holding +10 forever',
+    actual: Math.round(verdictScore(scorer(itemFor(collection, FIX.person))) * 100) / 100,
+    expected: 10.9,
   })
 })

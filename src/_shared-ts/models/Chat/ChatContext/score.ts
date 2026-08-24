@@ -40,6 +40,17 @@ export const CHAT_SCORE = {
   tierBoost: { targeted: 10, medium: 7, broad: 4 } as Record<RetrievalTier, number>,
   /** Extra evidence when two or more distinct query executions returned the doc. */
   multiHitBonus: 1,
+  /**
+   * Per-turn decay of the provenance boost. Retrieval evidence goes
+   * stale: each turn a doc goes without being re-returned by a query
+   * multiplies its boost by this — a fresh targeted hit carries +10,
+   * ranks like a fresh broad sweep two idle turns later (×0.49), and is
+   * gone within six. Re-retrieval restores full strength (lastHitTurn
+   * advances) and lexical evidence never decays, so context tracks
+   * conversation drift instead of growing monotonically until the token
+   * budget — not relevance — decides what survives.
+   */
+  provenanceDecayPerTurn: 0.7,
   /** Ceiling of the lexical component. */
   lexicalMax: 8,
   /** Body-occurrence density (per 1k tokens) that earns full term credit. */
@@ -79,10 +90,10 @@ export const CHAT_SCORE = {
 /**
  * Scoring-semantics tag recorded in each turn's stats. Bump when the
  * score composition or weights change materially — logged scores are only
- * interpretable against the semantics that produced them ('s3' = composed
- * scorer + relevance floor).
+ * interpretable against the semantics that produced them ('s4' = composed
+ * scorer + relevance floor + per-turn provenance decay).
  */
-export const SCORING = 's3'
+export const SCORING = 's4'
 
 // -----------------------------------------------------------------------------
 // Provenance — retrieval evidence accumulated by ChatContext
@@ -114,9 +125,16 @@ export function strongerTier(a: RetrievalTier, b: RetrievalTier): RetrievalTier 
   return TIER_RANK[a] >= TIER_RANK[b] ? a : b
 }
 
-export function provenanceBoost(prov: DocProvenance | undefined): number {
+/**
+ * The boost a doc's retrieval evidence earns at a given turn. Tier and
+ * multi-hit set the strength; turns since the doc was last returned decay
+ * it (see provenanceDecayPerTurn) — evidence is a claim about what the
+ * conversation is asking NOW, and an unrenewed claim fades.
+ */
+export function provenanceBoost(prov: DocProvenance | undefined, currentTurn: number): number {
   if (!prov) return 0
-  return CHAT_SCORE.tierBoost[prov.tier] + (prov.hits >= 2 ? CHAT_SCORE.multiHitBonus : 0)
+  const base = CHAT_SCORE.tierBoost[prov.tier] + (prov.hits >= 2 ? CHAT_SCORE.multiHitBonus : 0)
+  return base * CHAT_SCORE.provenanceDecayPerTurn ** Math.max(0, currentTurn - prov.lastHitTurn)
 }
 
 // -----------------------------------------------------------------------------
@@ -458,6 +476,8 @@ export interface ChatScorerOptions {
   collection: DomainCollection
   terms: string[]
   provenance: ReadonlyMap<string, DocProvenance>
+  /** The turn being scored — provenance boosts decay by turns since last hit. */
+  turn: number
 }
 
 /**
@@ -479,7 +499,7 @@ export function createChatScorer(opts: ChatScorerOptions): {
     if (ambient.keep !== 'scored') return ambient
     const lex = lexical(item.path)
     lexicalByPath.set(item.path, lex)
-    return scored(ambient.score + lex + provenanceBoost(opts.provenance.get(item.path)))
+    return scored(ambient.score + lex + provenanceBoost(opts.provenance.get(item.path), opts.turn))
   }
 
   return { scorer, lexicalByPath }

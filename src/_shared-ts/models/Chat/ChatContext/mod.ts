@@ -732,6 +732,7 @@ export default class ChatContext {
         collection: this.collection,
         terms: this.topicTerms,
         provenance: this.provenance,
+        turn: this.turnNumber,
       })
       const assembler = ContextAssembler.from(this.collection, {
         scorer: withPinnedPaths(scorer, this.pinnedPaths),

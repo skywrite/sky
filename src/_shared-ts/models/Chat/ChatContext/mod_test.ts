@@ -354,7 +354,7 @@ test('ChatContext.firstTurn - relevance floor sizes context to the question', as
       floored: 3,
       floorApplied: true,
       budget: 300_000,
-      scoring: 's3',
+      scoring: 's4',
     },
   })
 })
