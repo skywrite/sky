@@ -101,7 +101,7 @@ export function stripCodeFence(md: string): string {
 /** A draft is usable when it is the file we asked for, not prose about one. */
 export function isValidDraft(md: string, week: Week): boolean {
   return (
-    md.startsWith(`# ${week.toString()}`) &&
+    md.startsWith(`# ${week.toString()}: Week Plan`) &&
     md.includes('## Summary') &&
     md.includes('## Priorities') &&
     md.includes('### Professional') &&

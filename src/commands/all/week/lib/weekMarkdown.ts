@@ -58,7 +58,7 @@ export function renderWeekMarkdown(week: Week, createdYmd: string, priorities: P
   const lines: string[] = []
 
   lines.push(buildWeekFrontmatter(createdYmd, `Week plan for ${week.toString()}`))
-  lines.push(`# ${week.toString()}`)
+  lines.push(`# ${week.toString()}: Week Plan`)
   lines.push('')
   lines.push('## Summary')
   lines.push('')

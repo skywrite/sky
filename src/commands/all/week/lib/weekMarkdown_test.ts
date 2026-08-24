@@ -8,7 +8,7 @@ updated: 2026-08-05
 summary: Week plan for 2026-W33
 ---
 
-# 2026-W33
+# 2026-W33: Week Plan
 
 ## Priorities
 
@@ -67,7 +67,7 @@ updated: 2026-08-12
 summary: Week plan for 2026-W34
 ---
 
-# 2026-W34
+# 2026-W34: Week Plan
 
 ## Summary
 

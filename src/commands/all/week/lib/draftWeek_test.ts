@@ -4,7 +4,7 @@ import { assembleWeekFile, isValidDraft, stripCodeFence } from './draftWeek.ts'
 
 const WEEK = Week.from(2026, 34)
 
-const GOOD_DRAFT = `# 2026-W34
+const GOOD_DRAFT = `# 2026-W34: Week Plan
 
 ## Summary
 
@@ -62,7 +62,7 @@ test('assembleWeekFile - lifts the summary line into code-built frontmatter', ()
     given: 'model output with a summary first line and a valid body',
     should: 'start with frontmatter carrying dates and the lifted summary',
     actual: assembled?.file.startsWith(
-      '---\ncreated: 2026-08-12\nupdated: 2026-08-12\nsummary: The pivot week\n---\n\n# 2026-W34',
+      '---\ncreated: 2026-08-12\nupdated: 2026-08-12\nsummary: The pivot week\n---\n\n# 2026-W34: Week Plan',
     ),
     expected: true,
   })

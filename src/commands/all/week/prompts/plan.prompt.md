@@ -1,6 +1,6 @@
 ---
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-24
 description: Week plan drafter - interview answers + notebook context to a seeded week.md
 ---
 
@@ -30,7 +30,7 @@ personal: <item>
 One deferred item per line. The file body itself has exactly this structure:
 
 ```
-# <week id, exactly as given>
+# <week id, exactly as given>: Week Plan
 
 ## Summary
 
