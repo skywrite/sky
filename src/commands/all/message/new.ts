@@ -265,6 +265,7 @@ export default class MessageNewTask extends Command {
             { value: 'iMessage', label: 'iMessage' },
             { value: 'Telegram', label: 'Telegram' },
             { value: 'Slack', label: 'Slack' },
+            { value: 'LinkedIn Messages', label: 'LinkedIn Messages' },
           ],
         })
 
