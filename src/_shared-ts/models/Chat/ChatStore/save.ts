@@ -19,9 +19,12 @@ import { mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
+import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_PATH } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
+import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import { dayDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
@@ -52,13 +55,28 @@ export interface SaveEnricher {
   summarize(transcript: string): Promise<string | undefined>
   chooseTags(subject: EnrichSubject): Promise<string | undefined>
   chooseRel(subject: EnrichSubject): Promise<string[] | undefined>
+  /**
+   * Distill cross-session memories (ai/memory/ ops) from the finished
+   * conversation. Optional: a host that passes no memoryDir never invokes
+   * it, and undefined means abstain — the save proceeds without memory ops.
+   */
+  distillMemories?(transcript: string, memories: MemoryEntry[]): Promise<MemoryOp[] | undefined>
 }
 
 export const corpusEnricher: SaveEnricher = {
   summarize: (transcript) => summarizeTranscript(transcript, { kind: CHAT_ENRICH.kind }),
   chooseTags: (subject) => autoTagMessage(subject, CHAT_ENRICH),
   chooseRel: (subject) => autoRelMessage(subject, CHAT_ENRICH),
+  distillMemories: (transcript, memories) => distillMemories({ transcript, memories, kind: CHAT_ENRICH.kind }),
 }
+
+/**
+ * The distiller reads a wider packing than the 8k classifier budget: a
+ * remember-request or correction can sit mid-conversation, exactly where the
+ * head+tail clip cuts. Still bounded — the save path must stay a save, not a
+ * second context assembly.
+ */
+const MEMORY_TRANSCRIPT_CHARS = 48_000
 
 // -----------------------------------------------------------------------------
 // Filenames
@@ -114,6 +132,12 @@ export interface SaveChatInput {
   autoRel?: boolean
   /** Record the chat as a day-file complete item (new chats only) */
   logToDay?: { category: string } | null
+  /**
+   * The AI-owned memory store (ai/memory/) — the one notebook space with a
+   * standing write license. When set, the save distills the conversation
+   * into memory ops and applies them; absent, no memory work happens.
+   */
+  memoryDir?: string | null
   /** Where a refused write-back parks its transcript; defaults beside the AI error log */
   recoveryDir?: string
   onProgress?: (event: SaveProgress) => void
@@ -141,6 +165,8 @@ export interface SaveChatReport {
   /** What the corpus chose, when it was asked and answered */
   autoTags?: string
   autoRel?: string[]
+  /** Memory distillation outcomes, applied and skipped alike — the host's 🧠 lines */
+  memoryOps?: MemoryOpOutcome[]
   /** Present only when logToDay was requested */
   dayLog?: DayLogOutcome
 }
@@ -173,10 +199,19 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   const transcript = buildChatTranscript(turns)
   const subject: EnrichSubject = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
-  const [autoSummary, autoTags, autoRel] = await Promise.all([
+  const wantMemory = Boolean(input.memoryDir && enricher.distillMemories)
+  const [autoSummary, autoTags, autoRel, memoryOps] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel ? enricher.chooseRel(subject) : Promise.resolve(undefined),
+    // A distillation failure must never fail the save — abstain instead.
+    wantMemory
+      ? loadMemories(input.memoryDir as string)
+          .then((memories) =>
+            enricher.distillMemories!(buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }), memories),
+          )
+          .catch(() => undefined)
+      : Promise.resolve(undefined),
   ])
   const summary = priorSummary ?? autoSummary ?? firstWords
 
@@ -207,14 +242,33 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     tags: priorTags ?? autoTags?.split('; '),
   })
 
+  // Memory ops apply before the transcript serializes so this save's
+  // context log records them — as a NEW final entry, never a mutation of a
+  // carried-forward one: the resume write-back self-check compares restored
+  // entries byte-for-byte. The memory files themselves are written even if
+  // a resume write-back is later refused — the conversation happened, and
+  // the refusal gate protects the original transcript, not the store.
+  let logEntries = contextLog
+  let memoryOutcomes: MemoryOpOutcome[] | undefined
+  if (input.memoryDir && memoryOps && memoryOps.length > 0) {
+    memoryOutcomes = await applyMemoryOps({
+      memoryDir: input.memoryDir,
+      ops: memoryOps,
+      today: endTime.plainDate.ymd,
+      source: path.relative(path.dirname(timeDir), savePath),
+    })
+    logEntries = [...contextLog, { turn: contextLog.at(-1)?.turn ?? 0, queries: [], memory: memoryOutcomes }]
+  }
+
   // The per-turn context log trails as hidden comments — resume reads it
   // back via splitContextLog, and the format is locked byte for byte by
   // contextLog_test.ts.
-  const markdown = doc.toMarkdown() + serializeContextLog(contextLog)
+  const markdown = doc.toMarkdown() + serializeContextLog(logEntries)
 
   const report: SaveChatReport = { path: savePath, exchanges, resumed: resume !== null, summary }
   if (autoTags) report.autoTags = autoTags
   if (autoRel) report.autoRel = autoRel
+  if (memoryOutcomes && memoryOutcomes.length > 0) report.memoryOps = memoryOutcomes
 
   if (resume) {
     const refusal = await refuseWriteBack(resume, markdown)

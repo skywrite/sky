@@ -28,12 +28,15 @@
  * Stage 3, `baseline` with the opt-in summary baseline), and the
  * sweep-stratified admission added `policy`/`sweep` on stats plus `via` on
  * doc records — recorded because they are tunable and a logged score is
- * only interpretable against the parameters that produced it. Optional
- * fields never bump the version: the reader tolerates their absence, and a
- * bump would orphan resume for every transcript already on disk.
+ * only interpretable against the parameters that produced it, and the
+ * memory distiller added `memory` on entries (the session's ai/memory ops).
+ * Optional fields never bump the version: the reader tolerates their
+ * absence, and a bump would orphan resume for every transcript already on
+ * disk.
  */
 
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
+import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 
 export const CONTEXT_LOG_VERSION = 2
 
@@ -119,6 +122,13 @@ export interface ContextTurnLog {
   pruned?: ContextDocRecord[]
   /** Tool calls the model made this turn */
   tools?: ToolCallRecord[]
+  /**
+   * Save-time memory distillation outcomes (ai/memory/ ops, applied and
+   * skipped alike). Written as a fresh final entry appended at save — never
+   * onto an entry a resume carried forward, which the resume write-back
+   * self-check compares byte-for-byte.
+   */
+  memory?: MemoryOpOutcome[]
   /** Context-pipeline failures this turn (also in ai-errors.jsonl) */
   errors?: string[]
 }
@@ -137,6 +147,7 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     if (entry.diff && entry.diff.length > 0) fields.push(recordArrayField('diff', entry.diff))
     if (entry.pruned && entry.pruned.length > 0) fields.push(recordArrayField('pruned', entry.pruned))
     if (entry.tools && entry.tools.length > 0) fields.push(recordArrayField('tools', entry.tools))
+    if (entry.memory && entry.memory.length > 0) fields.push(recordArrayField('memory', entry.memory))
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')

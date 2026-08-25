@@ -28,8 +28,14 @@ const CLIP_MARK = ' […]'
 const OMISSION_MARK = '\n\n[... middle omitted ...]\n\n'
 const HEAD_SHARE = 0.6
 
-/** Role-labeled transcript of a chat's turns, packed to the classifier budget. */
-export function buildChatTranscript(messages: ConversationMessage[]): string {
+/**
+ * Role-labeled transcript of a chat's turns, packed to the classifier budget
+ * by default. A consumer that needs more of the conversation (the memory
+ * distiller reads for mid-conversation corrections, not just the topic)
+ * raises the total budget via maxChars; the per-turn clips stay.
+ */
+export function buildChatTranscript(messages: ConversationMessage[], opts: { maxChars?: number } = {}): string {
+  const maxChars = opts.maxChars ?? MAX_TRANSCRIPT_CHARS
   const parts: string[] = []
   for (const message of messages) {
     // HTML comments are markup plumbing (pasted content, legacy markers), not conversation.
@@ -40,9 +46,9 @@ export function buildChatTranscript(messages: ConversationMessage[]): string {
     parts.push(`${label}: ${truncate(text, cap, CLIP_MARK)}`)
   }
   const transcript = parts.join('\n\n')
-  if (transcript.length <= MAX_TRANSCRIPT_CHARS) return transcript
+  if (transcript.length <= maxChars) return transcript
 
-  const budget = MAX_TRANSCRIPT_CHARS - OMISSION_MARK.length
+  const budget = maxChars - OMISSION_MARK.length
   const headChars = Math.floor(budget * HEAD_SHARE)
   const head = truncate(transcript, headChars)
   let tail = transcript.slice(transcript.length - (budget - headChars))

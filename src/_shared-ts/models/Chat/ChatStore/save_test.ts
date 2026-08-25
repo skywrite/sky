@@ -1,8 +1,11 @@
 import * as path from 'node:path'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import type { MemoryEntry } from '#shared/models/Memory/mod.ts'
+import type { MemoryOp } from '#shared/models/Memory/write.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { loadResumeSession } from './mod.ts'
@@ -39,6 +42,8 @@ const neverCalled: SaveEnricher = {
   summarize: () => Promise.reject(new Error('summarize must not be called')),
   chooseTags: () => Promise.reject(new Error('chooseTags must not be called')),
   chooseRel: () => Promise.reject(new Error('chooseRel must not be called')),
+  // Every save in this file that passes no memoryDir must never distill.
+  distillMemories: () => Promise.reject(new Error('distillMemories must not be called')),
 }
 
 async function tmpNotebook(): Promise<string> {
@@ -369,5 +374,178 @@ test('saveChat - day-file logging is skipped on resume, never duplicated', async
     should: 'skip it — the chat was logged when it was first saved',
     actual: report.dayLog,
     expected: { logged: false, reason: 'resume' },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Memory distillation
+// ---------------------------------------------------------------------------
+
+const seededMemory = [
+  '---',
+  'created: 2026-01-05',
+  'updated: 2026-01-05',
+  'kind: preference',
+  'summary: Use metric units',
+  'source: hand-seeded',
+  'lastConfirmed: 2026-01-05',
+  'uses: 1',
+  '---',
+  '',
+  'Use metric units in answers.',
+  '',
+].join('\n')
+
+test('saveChat - memory ops apply, report their outcomes, and land in the context log', async () => {
+  const timeDir = await tmpNotebook()
+  const memoryDir = await makeTempDir({ prefix: 'sky-memory-' })
+  await writeTextFile(path.join(memoryDir, 'metric-units.md'), seededMemory)
+
+  let sawIndex: MemoryEntry[] | undefined
+  let sawTranscript: string | undefined
+  const distilled: MemoryOp[] = [
+    {
+      op: 'create',
+      kind: 'glossary',
+      slug: 'big-deck',
+      summary: 'The big deck means the Atlas overview deck',
+      body: 'When Jane says "the big deck" she means the Atlas overview deck.',
+    },
+    { op: 'confirm', slug: 'never-written' },
+    { op: 'propose', flow: 'decision', gist: 'Atlas launch date settled' },
+  ]
+
+  const report = await saveChat({
+    turns: TURNS,
+    contextLog: [],
+    resume: null,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    memoryDir,
+    enricher: stubEnricher({
+      distillMemories: async (transcript, memories) => {
+        sawTranscript = transcript
+        sawIndex = memories
+        return distilled
+      },
+    }),
+  })
+
+  assert({
+    given: 'a distillation returning a create, a doomed confirm, and a proposal',
+    should: 'report every outcome, applied and skipped alike',
+    actual: report.memoryOps,
+    expected: [
+      {
+        op: 'create',
+        slug: 'big-deck',
+        kind: 'glossary',
+        summary: 'The big deck means the Atlas overview deck',
+        outcome: 'applied',
+      },
+      { op: 'confirm', slug: 'never-written', summary: 'never-written', outcome: 'skipped', reason: 'no such memory' },
+      { op: 'propose', summary: 'Atlas launch date settled → decision', outcome: 'applied' },
+    ],
+  })
+
+  assert({
+    given: 'the distiller inputs',
+    should: 'carry the current memory index and the packed conversation',
+    actual: {
+      slugs: (sawIndex ?? []).map((m) => m.slug),
+      transcriptHasChat: Boolean(sawTranscript?.includes('Atlas launch')),
+    },
+    expected: { slugs: ['metric-units'], transcriptHasChat: true },
+  })
+
+  const written = await readTextFile(path.join(memoryDir, 'big-deck.md'))
+  assert({
+    given: 'the created memory file',
+    should: 'stamp the save day and point source at the saved chat',
+    actual: {
+      lastConfirmed: written.includes('lastConfirmed: 2026-01-27'),
+      source: written.includes(`source: ${path.relative(path.dirname(timeDir), report.path)}`),
+    },
+    expected: { lastConfirmed: true, source: true },
+  })
+
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'the saved transcript',
+    should: 'record the memory outcomes as a final context-log entry',
+    actual: doc.contextLog,
+    expected: [{ turn: 0, queries: [], memory: report.memoryOps }],
+  })
+})
+
+test('saveChat - the memory log entry appends without tripping the resume write-back gate', async () => {
+  const timeDir = await tmpNotebook()
+  const memoryDir = await makeTempDir({ prefix: 'sky-memory-' })
+  const priorLog: ContextTurnLog[] = [{ turn: 1, queries: ['{ chats { path } }'] }]
+
+  const first = await saveChat({
+    turns: TURNS,
+    contextLog: priorLog,
+    resume: null,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: stubEnricher(),
+  })
+
+  const resume = await loadResumeSession(first.path)
+  const continued = [
+    ...TURNS,
+    msg('user', 'Remember: the announcement outline is still in progress.', '2026-01-28 08:12'),
+    msg('assistant', 'Noted.', '2026-01-28 08:13'),
+  ]
+
+  const report = await saveChat({
+    turns: continued,
+    contextLog: [...(resume?.state.contextLog ?? [])],
+    resume,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: new PlainDateTime('2026-01-28 08:20'),
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    memoryDir,
+    enricher: stubEnricher({
+      distillMemories: async () => [
+        {
+          op: 'create',
+          kind: 'thread',
+          slug: 'announcement-outline',
+          summary: 'Announcement outline in progress',
+          body: 'Jane is mid-draft on the Atlas announcement outline.',
+        },
+      ],
+    }),
+  })
+
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'a resumed save that applied memory ops',
+    should: 'write back unrefused, carried entries intact, memory as a new final entry',
+    actual: {
+      aborted: report.aborted,
+      firstEntry: doc.contextLog[0],
+      finalEntry: { turn: doc.contextLog.at(-1)?.turn, memory: doc.contextLog.at(-1)?.memory?.length },
+      entries: doc.contextLog.length,
+    },
+    expected: {
+      aborted: undefined,
+      firstEntry: priorLog[0],
+      finalEntry: { turn: 1, memory: 1 },
+      entries: 2,
+    },
   })
 })

@@ -52,10 +52,12 @@ export interface MemoryEntry {
   body: string
   /** Freshest of lastConfirmed/updated/created (YYYY-MM-DD), for ordering */
   freshness?: string
+  /** Hand-set guard: the distiller and consolidator must never rewrite or delete this file */
+  locked?: boolean
 }
 
 /** YAML dates may parse as Date objects or strings — normalize to YYYY-MM-DD. */
-function yamlDate(value: unknown): string | undefined {
+export function yamlDate(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString().slice(0, 10)
   if (typeof value === 'string' && value.length > 0) return value.slice(0, 10)
   return undefined
@@ -69,7 +71,15 @@ function toEntry(filePath: string, doc: Document): MemoryEntry {
   const slug = filePath.slice(filePath.lastIndexOf('/') + 1).replace(/\.md$/, '')
   const freshness =
     yamlDate(doc.yaml['lastConfirmed']) ?? yamlDate(doc.yaml['updated']) ?? yamlDate(doc.yaml['created'])
-  return { path: filePath, slug, kind, summary, body, ...(freshness ? { freshness } : {}) }
+  return {
+    path: filePath,
+    slug,
+    kind,
+    summary,
+    body,
+    ...(freshness ? { freshness } : {}),
+    ...(doc.yaml['locked'] === true ? { locked: true } : {}),
+  }
 }
 
 /**

@@ -105,3 +105,21 @@ test('buildChatTranscript never strands a surrogate at the tail cut', () => {
     expected: true,
   })
 })
+
+test('buildChatTranscript - maxChars raises the packing budget', () => {
+  const turns: ConversationMessage[] = Array.from({ length: 40 }, (_, i) =>
+    msg(i % 2 === 0 ? 'user' : 'assistant', `Turn ${i}: ${'launch details '.repeat(40)}`),
+  )
+  const packed = buildChatTranscript(turns)
+  const wide = buildChatTranscript(turns, { maxChars: 48_000 })
+  assert({
+    given: 'a chat well past the default 8k budget, packed at default and at 48k',
+    should: 'clip the middle at default and keep the whole conversation at 48k',
+    actual: {
+      packedClipped: packed.includes('[... middle omitted ...]'),
+      wideClipped: wide.includes('[... middle omitted ...]'),
+      wideIsLonger: wide.length > packed.length,
+    },
+    expected: { packedClipped: true, wideClipped: false, wideIsLonger: true },
+  })
+})

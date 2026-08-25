@@ -379,3 +379,25 @@ test('serializeContextLog - empty input serializes to empty string', () => {
     expected: '',
   })
 })
+
+test('serializeContextLog - a memory entry round-trips', () => {
+  const entries: ContextTurnLog[] = [
+    { turn: 1, queries: [] },
+    {
+      turn: 1,
+      queries: [],
+      memory: [
+        { op: 'create', slug: 'big-deck', kind: 'glossary', summary: 'The big deck', outcome: 'applied' },
+        { op: 'confirm', slug: 'missing', summary: 'missing', outcome: 'skipped', reason: 'no such memory' },
+      ],
+    },
+  ]
+  const serialized = serializeContextLog(entries)
+  const { body, entries: parsed } = splitContextLog(`Chat body.\n${serialized}`)
+  assert({
+    given: 'a final entry carrying memory op outcomes',
+    should: 'serialize one record per line and parse back intact',
+    actual: { body, parsed, oneLine: serialized.includes('{"op":"create","slug":"big-deck"') },
+    expected: { body: 'Chat body.\n', parsed: entries, oneLine: true },
+  })
+})

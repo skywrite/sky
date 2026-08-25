@@ -99,6 +99,15 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 const PROMPT_FILE = new URL('./prompts/chat.prompt.md', import.meta.url).pathname
 
+/** Verb per memory op for the exit summary's 🧠 lines. */
+const MEMORY_VERBS: Record<string, string> = {
+  create: 'remembered',
+  confirm: 'reinforced',
+  update: 'revised',
+  delete: 'forgot',
+  propose: 'proposed',
+}
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -1066,6 +1075,7 @@ export default class AiChatTask extends Command {
         externalFiles,
         autoTag: !noAutoTag,
         autoRel: !noAutoRel,
+        memoryDir: DIR_AI_MEMORY,
         logToDay: log ? { category: category || 'Professional' } : null,
         onProgress: (event) => {
           output.log('')
@@ -1075,6 +1085,21 @@ export default class AiChatTask extends Command {
 
       if (saved.autoTags) output.log(colors.dim(`Auto-tags: ${saved.autoTags}`))
       if (saved.autoRel) output.log(colors.dim(`Auto-rel: ${saved.autoRel.join('; ')}`))
+
+      // What the session taught the standing memory store (ai/memory/).
+      // Loud on purpose: every write to the machine-owned store is shown,
+      // and silence means nothing was written. Rendered before the aborted
+      // check — memory files land even when a resume write-back is refused.
+      if (saved.memoryOps && saved.memoryOps.length > 0) {
+        output.log('')
+        for (const m of saved.memoryOps) {
+          const verb = (MEMORY_VERBS[m.op] ?? m.op).padEnd(10)
+          const detail =
+            m.op === 'confirm' && m.uses !== undefined ? ` (uses: ${m.uses})` : m.kind ? ` (${m.kind})` : ''
+          const line = `🧠 ${verb} ${m.summary}${detail}`
+          output.log(m.outcome === 'skipped' ? colors.dim(`${line} — skipped: ${m.reason}`) : line)
+        }
+      }
 
       // The write-back gate refused: the original still holds the earlier
       // session, and this one's transcript is parked where it can be recovered.
