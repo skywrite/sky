@@ -70,6 +70,8 @@ export interface MarkdownStoreConfig {
   ideasDir?: string
   placesDir?: string
   libraryDir?: string
+  /** The AI-owned ai/ dir (ai/memory/ and future ai/ spaces) */
+  aiDir?: string
   timeDirs?: string[]
 }
 
@@ -86,6 +88,7 @@ export default class MarkdownStore {
   readonly places: PlaceStore
   readonly time: DocumentStore
   readonly library: DocumentStore
+  readonly ai: DocumentStore
 
   /** Stored config for routing set/delete to correct sub-store */
   private dirs: MarkdownStoreConfig
@@ -102,6 +105,7 @@ export default class MarkdownStore {
     places: PlaceStore,
     time: DocumentStore,
     library: DocumentStore,
+    ai: DocumentStore,
     dirs: MarkdownStoreConfig,
   ) {
     this.people = people
@@ -115,11 +119,12 @@ export default class MarkdownStore {
     this.places = places
     this.time = time
     this.library = library
+    this.ai = ai
     this.dirs = dirs
   }
 
   static async build(cfg: MarkdownStoreConfig): Promise<MarkdownStore> {
-    const [people, orgs, projects, decisions, goals, streaks, tracking, ideas, places, time, library] =
+    const [people, orgs, projects, decisions, goals, streaks, tracking, ideas, places, time, library, ai] =
       await Promise.all([
         PeopleStore.build(cfg.peopleDirs),
         OrgStore.build(cfg.orgDirs),
@@ -132,6 +137,7 @@ export default class MarkdownStore {
         cfg.placesDir ? PlaceStore.build(cfg.placesDir) : Promise.resolve(PlaceStore.empty()),
         DocumentStore.build(cfg.timeDirs ?? []),
         DocumentStore.build(cfg.libraryDir ? [cfg.libraryDir] : []),
+        DocumentStore.build(cfg.aiDir ? [cfg.aiDir] : []),
       ])
 
     return new MarkdownStore(
@@ -146,6 +152,7 @@ export default class MarkdownStore {
       places,
       time,
       library,
+      ai,
       cfg,
     )
   }
@@ -167,6 +174,7 @@ export default class MarkdownStore {
       ideasDir: config.DIR_IDEAS,
       placesDir: config.DIR_PLACES,
       libraryDir: config.DIR_LIBRARY,
+      aiDir: config.DIR_AI,
       timeDirs: [config.DIR_TIME],
     })
   }
@@ -213,6 +221,7 @@ export default class MarkdownStore {
     if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
     if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
     if (this.dirs.libraryDir && filePath.startsWith(this.dirs.libraryDir)) return this.library
+    if (this.dirs.aiDir && filePath.startsWith(this.dirs.aiDir)) return this.ai
     for (const dir of this.dirs.timeDirs ?? []) {
       if (filePath.startsWith(dir)) return this.time
     }
@@ -399,6 +408,9 @@ export default class MarkdownStore {
 
     const libraryDoc = this.library.findByPath(filePath)
     if (libraryDoc) return { doc: libraryDoc, type: 'document' }
+
+    const aiDoc = this.ai.findByPath(filePath)
+    if (aiDoc) return { doc: aiDoc, type: 'document' }
 
     return undefined
   }

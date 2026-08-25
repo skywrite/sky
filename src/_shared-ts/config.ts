@@ -47,6 +47,12 @@ export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')
 export const DIR_CODE_SRC_COMMANDS = path.join(DIR_CODE_SRC, 'commands')
 export const DIR_CODE_SERVICES = path.join(DIR_CODE, 'services')
 
+// AI-owned space: the assistant may create/update/delete inside ai/ (today
+// just ai/memory/, the cross-session chat memory) without per-item approval —
+// unlike the rest of the notebook, which only deliberate capture flows write.
+export const DIR_AI = path.join(DIR_BASE, 'ai')
+export const DIR_AI_MEMORY = path.join(DIR_AI, 'memory')
+
 export const DIR_DATA = path.join(DIR_BASE, 'data')
 export const DIR_DATA_ASSETS = path.join(DIR_DATA, 'assets')
 export const DIR_DATA_LOCATION = path.join(DIR_DATA, 'location')
@@ -70,6 +76,7 @@ export const DIR_ORGS = path.join(DIR_BASE, 'orgs')
 
 // Walk order matters: DIR_ORGS before DIR_PROJECTS so orgs are loaded when tracking project references
 export const DIRS_MARKDOWN = [
+  DIR_AI,
   DIR_DECISIONS,
   DIR_GOALS,
   DIR_IDEAS,

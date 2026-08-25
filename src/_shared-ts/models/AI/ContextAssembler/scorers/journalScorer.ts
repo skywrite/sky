@@ -29,6 +29,7 @@ const TYPE_SCORES: Record<CollectionEntityType, number> = {
   project: 3,
   person: 3,
   idea: 2,
+  memory: 2, // AI chat memory (answer preferences, glossary) — rarely journal material
   place: 1,
   org: 0, // unused — orgs are excluded below; entry required by the exhaustive Record
 }

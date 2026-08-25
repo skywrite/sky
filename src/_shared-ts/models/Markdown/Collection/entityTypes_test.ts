@@ -32,6 +32,24 @@ test('detectTypeFromPath - messages still detected alongside chat pattern', () =
   })
 })
 
+test('detectTypeFromPath - ai/memory paths are memories', () => {
+  assert({
+    given: 'an ai/memory path',
+    should: 'detect type memory',
+    actual: detectTypeFromPath('/nb/ai/memory/deck-shorthand.md'),
+    expected: 'memory',
+  })
+})
+
+test('detectTypeFromPath - other ai/ paths stay documents', () => {
+  assert({
+    given: 'an ai/ path outside memory/',
+    should: 'detect type document',
+    actual: detectTypeFromPath('/nb/ai/scratch/notes.md'),
+    expected: 'document',
+  })
+})
+
 test('detectTypeFromPath - project overview paths are projects', () => {
   assert({
     given: 'a _project/overview.md path under a status dir',

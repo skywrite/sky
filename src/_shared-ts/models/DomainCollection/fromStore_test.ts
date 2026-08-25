@@ -32,6 +32,7 @@ function createFullMockStore(config: {
   places?: Array<{ doc: PlaceDocument; path: string }>
   time?: Array<{ doc: Document; path: string }>
   library?: Array<{ doc: Document; path: string }>
+  ai?: Array<{ doc: Document; path: string }>
 }): MarkdownStore {
   return {
     people: {
@@ -68,6 +69,9 @@ function createFullMockStore(config: {
     library: {
       getAll: () => Collection.from(config.library ?? [], 'document'),
     },
+    ai: {
+      getAll: () => Collection.from(config.ai ?? [], 'memory'),
+    },
     resolve: () => ({ type: 'unresolved', value: null, raw: '' }),
     resolveAll: () => [],
   } as unknown as MarkdownStore
@@ -82,6 +86,19 @@ test('DomainCollection.fromStore - creates empty collection from empty store', (
     should: 'have size 0',
     actual: collection.size,
     expected: 0,
+  })
+})
+
+test('DomainCollection.fromStore - includes ai memories typed as memory', () => {
+  const memory = Document.fromMarkdown(md('kind: glossary', 'The big deck means the Atlas overview deck.'))
+  const store = createFullMockStore({ ai: [{ doc: memory, path: '/nb/ai/memory/deck-shorthand.md' }] })
+  const collection = DomainCollection.fromStore(store)
+
+  assert({
+    given: 'a store with one ai/memory document',
+    should: 'include it with entity type memory',
+    actual: collection.allItems.map((i) => ({ path: i.path, type: i.type })),
+    expected: [{ path: '/nb/ai/memory/deck-shorthand.md', type: 'memory' }],
   })
 })
 

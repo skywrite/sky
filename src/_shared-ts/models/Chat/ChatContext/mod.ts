@@ -24,6 +24,7 @@ import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
@@ -116,7 +117,7 @@ export interface TurnContextReport {
 }
 
 export interface SeedReport {
-  counts: { today: number; prev: number; goals: number; decisions: number }
+  counts: { today: number; prev: number; goals: number; decisions: number; memory: number }
   fetchMs: number
   collectionMs: number
   /** Deduplicated universe size — the host's "Found: N documents" count. */
@@ -277,8 +278,8 @@ export default class ChatContext {
 
   /**
    * Fresh session: gather the baseline universe from the notebook service —
-   * today's documents, the previous days' activity, goals, and pending
-   * decisions.
+   * today's documents, the previous days' activity, goals, pending
+   * decisions, and the AI memory store (ai/memory/).
    */
   async seedBaseline(): Promise<SeedReport> {
     const prevStart = this.today.addDays(-(this.days - 1))
@@ -289,7 +290,7 @@ export default class ChatContext {
     // sweep cost seconds of serialize for content the query-targeted rel
     // path (ai:context:files) is meant to fetch when relevant.
     let t0 = performance.now()
-    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs] = await Promise.all([
+    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, memoryDocs] = await Promise.all([
       this.fetchContext(`{ documents(where: { date: "${this.today}", pathContains: "/time/" }) { path } }`, 1),
       this.fetchContext(
         `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
@@ -297,6 +298,12 @@ export default class ChatContext {
       ),
       this.fetchContext(`{ goals { path } }`, 0),
       this.fetchContext(`{ decisions(where: { pending: true }) { path } }`, 0),
+      // The AI's cross-session memories join the universe UNPINNED: unlike
+      // goals they must compete — the s4 scorer's lexical channel surfaces
+      // the on-topic ones and the floor sheds the rest. Preference-kind
+      // memories additionally ride the system prompt (host-rendered), which
+      // this universe copy does not replace.
+      this.fetchContext(`{ documents(where: { pathContains: "${MEMORY_PATH_SEGMENT}" }) { path } }`, 0),
     ])
     const fetchMs = performance.now() - t0
 
@@ -350,7 +357,7 @@ export default class ChatContext {
     // Deduplicate all docs by path
     const seen = new Set<string>()
     const allDocs: Array<{ doc: Document; path: string }> = []
-    for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs]) {
+    for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs, ...memoryDocs]) {
       if (!seen.has(d.path)) {
         seen.add(d.path)
         allDocs.push(d)
@@ -377,6 +384,7 @@ export default class ChatContext {
         prev: prevDocsRaw.length,
         goals: goalDocs.length,
         decisions: decisionDocs.length,
+        memory: memoryDocs.length,
       },
       fetchMs,
       collectionMs,

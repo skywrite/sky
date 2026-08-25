@@ -6,6 +6,7 @@ import { recencyScore } from './recencyScore.ts'
 const TYPE_SCORES: Record<CollectionEntityType, number> = {
   goal: 5,
   decision: 5,
+  memory: 4, // AI cross-session memory: present when on-topic (lexical lifts it), sheds under floor pressure otherwise
   streak: 4,
   tracking: 4,
   project: 4,

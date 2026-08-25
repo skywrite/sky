@@ -18,6 +18,7 @@ export type CollectionEntityType =
   | 'tracking'
   | 'idea'
   | 'place'
+  | 'memory'
   | 'message'
   | 'meeting'
   | 'video'
@@ -42,7 +43,7 @@ export interface CollectionItem<T = unknown> {
  *
  * Order rationale:
  * 1. Entities (org, person, project) - context about who/what
- * 2. Decisions and goals - strategic context
+ * 2. Decisions, goals, and AI memory - standing strategic context
  * 3. Activity (messages, meetings, journals) - chronological content
  * 4. Day files and generic documents - catch-all
  */
@@ -52,18 +53,19 @@ export const ENTITY_TYPE_PRIORITY: Record<CollectionEntityType, number> = {
   project: 2,
   decision: 3,
   goal: 4,
-  streak: 5,
-  tracking: 6,
-  idea: 7,
-  place: 8,
-  message: 9,
-  meeting: 10,
-  video: 11,
-  recap: 12,
-  journal: 13,
-  chat: 14,
-  document: 15,
-  day: 16,
+  memory: 5,
+  streak: 6,
+  tracking: 7,
+  idea: 8,
+  place: 9,
+  message: 10,
+  meeting: 11,
+  video: 12,
+  recap: 13,
+  journal: 14,
+  chat: 15,
+  document: 16,
+  day: 17,
 }
 
 /**
@@ -75,6 +77,9 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   // shadow entity dir names (library/ideas/, library/things/), so it must
   // claim its paths before any entity pattern can.
   { pattern: (p) => p.includes('/library/'), type: 'document' },
+  // The AI's cross-session memory notes. Only ai/memory/ is typed — other
+  // future ai/ subdirs fall through to 'document'.
+  { pattern: (p) => p.includes('/ai/memory/'), type: 'memory' },
   { pattern: (p) => p.includes('/orgs/') || p.includes('/organizations/'), type: 'org' },
   { pattern: (p) => p.includes('/people/') || p.includes('/people-'), type: 'person' },
   // Only the canonical _project/overview.md is the project itself — the

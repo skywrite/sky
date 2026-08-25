@@ -10,7 +10,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
-import { PORT_SERVER } from '#shared/config.ts'
+import { DIR_AI_MEMORY, PORT_SERVER } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { recordExternalFiles } from '#shared/models/Chat/artifactRel.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
@@ -20,6 +20,7 @@ import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/mod
 import { saveChat } from '#shared/models/Chat/ChatStore/save.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
+import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -586,9 +587,9 @@ export default class AiChatTask extends Command {
       peopleEntities = people
       output.log(
         colors.dim(
-          `[server] POST /context x4: ${seed.fetchMs.toFixed(
+          `[server] POST /context x5: ${seed.fetchMs.toFixed(
             0,
-          )}ms — today=${seed.counts.today}, prev=${seed.counts.prev}, goals=${seed.counts.goals}, decisions=${seed.counts.decisions}`,
+          )}ms — today=${seed.counts.today}, prev=${seed.counts.prev}, goals=${seed.counts.goals}, decisions=${seed.counts.decisions}, memory=${seed.counts.memory}`,
         ),
       )
 
@@ -609,6 +610,13 @@ export default class AiChatTask extends Command {
     output.log(`  - ${ctx.health.length} days of health data`)
     output.log(`  - ${ctx.prices.length} days of price data`)
 
+    // The AI's standing memory: preference-kind memories render into a
+    // system-prompt block, frozen here for the whole session so the base
+    // prompt stays byte-identical and prompt-cached. Loaded straight from
+    // disk (not the service) — resumed sessions get it too, and a service
+    // outage costs context documents, never the standing preferences.
+    const memoryBlock = renderPreferenceBlock(await loadMemories(DIR_AI_MEMORY))
+
     // Load system prompt
     const promptContent = await readTextFile(PROMPT_FILE)
     const renderInput: RenderInput = {
@@ -621,6 +629,7 @@ export default class AiChatTask extends Command {
         systemTimezone: context.systemNow.timezone,
       },
       entities: { block: formatPeopleBlock(peopleEntities) },
+      memory: { block: memoryBlock },
     }
     const { output: baseSystemPrompt } = renderPromptFile(promptContent, 'chat.prompt.md', renderInput)
     // Kept as a separate segment (not concatenated onto the base prompt) so

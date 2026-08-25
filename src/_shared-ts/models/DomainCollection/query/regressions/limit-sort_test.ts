@@ -87,6 +87,7 @@ function createMockStore(): MarkdownStore {
     places: createMockCollection([]),
     time: createMockCollection([...meetingsData, ...daysData, ...journalsData]),
     library: createMockCollection([]),
+    ai: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 

@@ -31,6 +31,7 @@ const FIX = {
   person: abs('people/Jane-Doe.md'),
   ownChat: abs('time/2026/01/26-01/01-27/actions/ai-chats/09-00_Prior-Session.md'),
   weekPlan: abs('time/2026/01/26-01/week.md'),
+  memory: abs('ai/memory/atlas-terms.md'),
 }
 
 async function fixtureDoc(absPath: string): Promise<{ doc: Document; path: string }> {
@@ -62,12 +63,19 @@ function makeContext(overrides: Partial<ChatContextOptions> = {}) {
 }
 
 /** A service fetch fake keyed on the query's distinguishing substring. */
-function fetchFake(sets: { today?: string[]; prev?: string[]; goals?: string[]; decisions?: string[] }) {
+function fetchFake(sets: {
+  today?: string[]
+  prev?: string[]
+  goals?: string[]
+  decisions?: string[]
+  memory?: string[]
+}) {
   return async (query: string): Promise<Array<{ doc: Document; path: string }>> => {
     let paths: string[] = []
     if (query.includes('dateGte')) paths = sets.prev ?? []
     else if (query.includes('goals')) paths = sets.goals ?? []
     else if (query.includes('decisions')) paths = sets.decisions ?? []
+    else if (query.includes('ai/memory')) paths = sets.memory ?? []
     else paths = sets.today ?? []
     return await Promise.all(paths.map(fixtureDoc))
   }
@@ -84,22 +92,23 @@ test('ChatContext.seedBaseline', async () => {
       prev: [FIX.summary, FIX.journal, FIX.meeting],
       goals: [FIX.goal],
       decisions: [FIX.decision],
+      memory: [FIX.memory],
     }),
   })
   const report = await context.seedBaseline()
 
   assert({
-    given: 'a previous day that has a summary alongside raw activity',
-    should: 'keep the summary and journal but drop the raw meeting',
+    given: 'a previous day that has a summary alongside raw activity, plus an AI memory',
+    should: 'keep the summary and journal, drop the raw meeting, and admit the memory',
     actual: {
       paths: [...context.paths].sort(),
       size: report.size,
       counts: report.counts,
     },
     expected: {
-      paths: [FIX.day, FIX.summary, FIX.journal, FIX.goal, FIX.decision].sort(),
-      size: 5,
-      counts: { today: 1, prev: 3, goals: 1, decisions: 1 },
+      paths: [FIX.day, FIX.summary, FIX.journal, FIX.goal, FIX.decision, FIX.memory].sort(),
+      size: 6,
+      counts: { today: 1, prev: 3, goals: 1, decisions: 1, memory: 1 },
     },
   })
 })

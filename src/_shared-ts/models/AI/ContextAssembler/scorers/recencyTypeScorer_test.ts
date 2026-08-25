@@ -85,6 +85,7 @@ const entityFixtures = [
   },
   { type: 'goal' as const, path: '/goals/fitness.md', expected: 8, description: 'goal (3 + 5)' },
   { type: 'decision' as const, path: '/decisions/hire.md', expected: 8, description: 'decision (3 + 5)' },
+  { type: 'memory' as const, path: '/ai/memory/deck-shorthand.md', expected: 7, description: 'memory (3 + 4)' },
   { type: 'idea' as const, path: '/ideas/thing.md', expected: 5, description: 'idea (3 + 2)' },
   { type: 'place' as const, path: '/places/cafe.md', expected: 4, description: 'place (3 + 1)' },
 ]

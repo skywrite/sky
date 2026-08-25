@@ -11,6 +11,7 @@ export const ENTITY_TYPES: ReadonlySet<CollectionEntityType> = new Set([
   'idea',
   'place',
   'decision',
+  'memory',
 ])
 
 /**
