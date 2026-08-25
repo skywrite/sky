@@ -1,5 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
 import type { MemoryEntry } from '#shared/models/Memory/mod.ts'
 
@@ -66,7 +67,9 @@ export async function dedupeMemories(memories: MemoryEntry[], role: Role = 'fast
     return object.merges.filter(
       (m) => usable(m.keep) && m.absorb.length > 0 && m.absorb.every((s) => usable(s) && s !== m.keep),
     )
-  } catch {
+  } catch (err) {
+    // Abstain, but never silently — mirrors the distiller.
+    await logAIError({ source: 'ai:memory:consolidate', stage: 'memory:dedupe', message: (err as Error).message })
     return undefined
   }
 }

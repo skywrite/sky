@@ -1,5 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
 import { MEMORY_KINDS, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import type { MemoryOp } from '#shared/models/Memory/write.ts'
@@ -96,7 +97,10 @@ export async function distillMemories(input: DistillInput, role: Role = 'fast'):
       ].join('\n'),
     })
     return object.ops
-  } catch {
+  } catch (err) {
+    // Abstain, but never silently: a chronically failing distiller must be
+    // distinguishable from "nothing worth remembering" in ai-errors.jsonl.
+    await logAIError({ source: 'ai:chat', stage: 'memory:distill', message: (err as Error).message })
     return undefined
   }
 }

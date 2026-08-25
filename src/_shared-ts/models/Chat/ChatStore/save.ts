@@ -21,7 +21,7 @@ import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
-import { AI_ERROR_LOG_PATH } from '#shared/ai/errorLog.ts'
+import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
@@ -204,13 +204,18 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel ? enricher.chooseRel(subject) : Promise.resolve(undefined),
-    // A distillation failure must never fail the save — abstain instead.
+    // A distillation failure must never fail the save — abstain instead,
+    // logged: this catch covers the store read (the distiller logs its own
+    // model failures before returning undefined).
     wantMemory
       ? loadMemories(input.memoryDir as string)
           .then((memories) =>
             enricher.distillMemories!(buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }), memories),
           )
-          .catch(() => undefined)
+          .catch(async (err) => {
+            await logAIError({ source: 'ai:chat', stage: 'memory', message: (err as Error).message })
+            return undefined
+          })
       : Promise.resolve(undefined),
   ])
   const summary = priorSummary ?? autoSummary ?? firstWords
