@@ -11,6 +11,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { DIR_AI_MEMORY } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import {
@@ -19,6 +20,7 @@ import {
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
+import { loadMemories, renderVocabularyBlock } from '#shared/models/Memory/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -88,11 +90,12 @@ export default class AIContextSelectorTask extends Command {
     const { config, output } = context
     const { question, since, until, from } = args
 
-    // Load prompt, schema, and entity context in parallel
-    const [promptContent, schema, entityCtx] = await Promise.all([
+    // Load prompt, schema, entity context, and learned vocabulary in parallel
+    const [promptContent, schema, entityCtx, memories] = await Promise.all([
       readTextFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
       gatherEntityContext(config as Record<string, unknown>),
+      loadMemories(DIR_AI_MEMORY),
     ])
 
     const entityBlock = formatEntityContext(entityCtx)
@@ -109,6 +112,10 @@ export default class AIContextSelectorTask extends Command {
       },
       user: { schema },
       entities: { block: entityBlock },
+      // Glossary/lesson memories: the user's shorthand and retrieval notes,
+      // read fresh each invocation so a correction distilled by one session
+      // sharpens the next session's very first query.
+      memory: { vocabulary: renderVocabularyBlock(memories) },
     }
 
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-sel.prompt.md', renderInput)

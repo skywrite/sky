@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { assert, test } from '#test'
-import { loadMemories, MEMORY_BLOCK, renderPreferenceBlock } from './mod.ts'
+import { loadMemories, MEMORY_BLOCK, renderPreferenceBlock, renderVocabularyBlock } from './mod.ts'
 
 async function memoryDirWith(files: Record<string, string>): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'memory-test-'))
@@ -139,6 +139,42 @@ test('renderPreferenceBlock - empty without preferences, capped by tokens', asyn
       should: 'stop at the cap instead of appending later preferences out of order',
       actual: block,
       expected: '',
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('renderVocabularyBlock - glossary and lesson bodies only, freshest first', async () => {
+  const dir = await memoryDirWith({
+    'atlas-shorthand.md': memoryFile({
+      kind: 'glossary',
+      lastConfirmed: '2026-02-20',
+      body: 'When Jane says "the big deck" she means the Atlas overview deck.',
+    }),
+    'brand-tags.md': memoryFile({
+      kind: 'lesson',
+      lastConfirmed: '2026-03-01',
+      body: 'Rebrand documents are tagged Brand/, not "rebrand".',
+    }),
+    'answer-terse.md': memoryFile({
+      kind: 'preference',
+      lastConfirmed: '2026-03-05',
+      body: 'Preferences stay out of the vocabulary block.',
+    }),
+    'open-loop.md': memoryFile({
+      kind: 'thread',
+      lastConfirmed: '2026-03-06',
+      body: 'Threads stay out too.',
+    }),
+  })
+  try {
+    assert({
+      given: 'glossary, lesson, preference, and thread memories',
+      should: 'render only glossary and lesson bodies, freshest first',
+      actual: renderVocabularyBlock(await loadMemories(dir)),
+      expected:
+        '- Rebrand documents are tagged Brand/, not "rebrand".\n- When Jane says "the big deck" she means the Atlas overview deck.',
     })
   } finally {
     await rm(dir, { recursive: true, force: true })

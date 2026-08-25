@@ -16,6 +16,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { DIR_AI_MEMORY } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import {
   dropInvalidSelections,
@@ -23,6 +24,7 @@ import {
   graphQLValidationErrors,
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
+import { loadMemories, renderVocabularyBlock } from '#shared/models/Memory/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -95,11 +97,12 @@ export default class AIContextEvolveTask extends Command {
     const currentQueries: string[] = JSON.parse(queriesJson)
     const recentTurns: Array<{ role: string; content: string }> = JSON.parse(conversationJson)
 
-    // Load prompt, schema, and entity context in parallel
-    const [promptContent, graphqlSchema, entityCtx] = await Promise.all([
+    // Load prompt, schema, entity context, and learned vocabulary in parallel
+    const [promptContent, graphqlSchema, entityCtx, memories] = await Promise.all([
       readTextFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
       gatherEntityContext(config as Record<string, unknown>),
+      loadMemories(DIR_AI_MEMORY),
     ])
 
     const entityBlock = formatEntityContext(entityCtx)
@@ -115,6 +118,9 @@ export default class AIContextEvolveTask extends Command {
       },
       user: { schema: graphqlSchema },
       entities: { block: entityBlock },
+      // Same learned vocabulary as ai:context:sel — evolve turns must not
+      // lose the shorthand resolution the first turn queried with.
+      memory: { vocabulary: renderVocabularyBlock(memories) },
     }
 
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-evolve.prompt.md', renderInput)

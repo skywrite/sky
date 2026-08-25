@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-08-20
+updated: 2026-08-24
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -103,6 +103,16 @@ Match informal user phrasing to the closest entity name above. For example:
 People are listed as `Canonical Name (aka Alias1, Alias2)` — always filter by the canonical name, not the alias.
 
 Always use the exact entity name from the lists above in your filters. Do NOT invent names.
+{{/if}}
+
+{{#if memory.vocabulary}}
+## Learned Vocabulary & Retrieval Notes
+
+Standing notes distilled from past conversations (the assistant's ai/memory/ store): what the user's shorthand means, and which retrieval strategies work in this notebook.
+
+{{{memory.vocabulary}}}
+
+When the question uses one of these terms, put the canonical names, tags, or terms from the note into your filters ALONGSIDE the user's own words - never instead of them (documents may carry either spelling). A note that names a tag or location outranks guessing.
 {{/if}}
 
 ## Output Format

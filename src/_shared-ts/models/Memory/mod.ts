@@ -112,10 +112,26 @@ export async function loadMemories(memoryDir: string): Promise<MemoryEntry[]> {
  * byte-identical across turns to keep its prompt-cache breakpoint.
  */
 export function renderPreferenceBlock(memories: MemoryEntry[]): string {
+  return renderKindBlock(memories, ['preference'])
+}
+
+/**
+ * The query-producer block: glossary and lesson memories — what the user's
+ * shorthand means and which retrieval strategies work in this notebook.
+ * Injected into ai:context:sel / ai:context:evolve so first-turn queries
+ * already search canonical terms instead of waiting for the model to
+ * decode the alias after retrieval has missed.
+ */
+export function renderVocabularyBlock(memories: MemoryEntry[]): string {
+  return renderKindBlock(memories, ['glossary', 'lesson'])
+}
+
+/** One bullet per memory of the given kinds, freshest first up to the token cap. */
+function renderKindBlock(memories: MemoryEntry[], kinds: readonly MemoryKind[]): string {
   const lines: string[] = []
   let tokens = 0
   for (const m of memories) {
-    if (m.kind !== 'preference') continue
+    if (!m.kind || !kinds.includes(m.kind)) continue
     const text = m.body.replace(/\s*\n\s*/g, ' ').trim()
     if (!text) continue
     const line = `- ${text}`
