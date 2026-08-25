@@ -143,6 +143,8 @@ export interface ApplyMemoryOpsInput {
   today: string
   /** Notebook-relative path of the teaching chat, recorded as source: */
   source: string
+  /** Op ceiling override — the consolidator legitimately batches more than a save's cap */
+  maxOps?: number
 }
 
 /**
@@ -153,8 +155,9 @@ export interface ApplyMemoryOpsInput {
  */
 export async function applyMemoryOps(input: ApplyMemoryOpsInput): Promise<MemoryOpOutcome[]> {
   const outcomes: MemoryOpOutcome[] = []
+  const cap = input.maxOps ?? MAX_OPS_PER_SAVE
   for (const [i, op] of input.ops.entries()) {
-    if (i >= MAX_OPS_PER_SAVE) {
+    if (i >= cap) {
       outcomes.push({ op: op.op, summary: opGist(op), outcome: 'skipped', reason: 'per-save op cap' })
       continue
     }

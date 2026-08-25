@@ -304,3 +304,25 @@ test('applyMemoryOps - ops beyond the per-save cap are skipped visibly', async (
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('applyMemoryOps - maxOps raises the cap for consolidation batches', async () => {
+  const dir = await tmpMemoryDir()
+  try {
+    const ops: MemoryOp[] = Array.from({ length: MAX_OPS_PER_SAVE + 2 }, (_, i) => ({
+      op: 'create' as const,
+      kind: 'thread' as const,
+      slug: `batch-${i}`,
+      summary: `Batch ${i}`,
+      body: `Body ${i}.`,
+    }))
+    const outcomes = await applyMemoryOps({ memoryDir: dir, ops, today: TODAY, source: SOURCE, maxOps: 64 })
+    assert({
+      given: 'a batch beyond the save cap with maxOps raised',
+      should: 'apply every op',
+      actual: outcomes.filter((o) => o.outcome === 'applied').length,
+      expected: MAX_OPS_PER_SAVE + 2,
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

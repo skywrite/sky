@@ -52,6 +52,8 @@ export interface MemoryEntry {
   body: string
   /** Freshest of lastConfirmed/updated/created (YYYY-MM-DD), for ordering */
   freshness?: string
+  /** Distinct sessions that confirmed this memory (see the confirm op) */
+  uses: number
   /** Hand-set guard: the distiller and consolidator must never rewrite or delete this file */
   locked?: boolean
 }
@@ -78,6 +80,7 @@ function toEntry(filePath: string, doc: Document): MemoryEntry {
     summary,
     body,
     ...(freshness ? { freshness } : {}),
+    uses: Number(doc.yaml['uses'] ?? 0) || 0,
     ...(doc.yaml['locked'] === true ? { locked: true } : {}),
   }
 }
