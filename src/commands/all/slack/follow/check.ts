@@ -139,7 +139,6 @@ export default class SlackFollowCheckTask extends Command {
           const latestReply = newReplies[newReplies.length - 1]
           const from = latestReply.userName || latestReply.userId || '-'
           const to = resolveRecipient(data, from)
-          const summary = `${follow.summary} (${newReplies.length} new)`
 
           // Collect file attachments from new replies
           const newReplyFiles = newReplies.flatMap((r) => r.files ?? [])
@@ -189,7 +188,6 @@ export default class SlackFollowCheckTask extends Command {
             const updatedDoc = new MessageDocument(
               {
                 ...oldDoc.yaml,
-                summary,
                 ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
               },
               oldDoc.markdown,
@@ -201,7 +199,7 @@ export default class SlackFollowCheckTask extends Command {
             const slackResult = await tasks.run('slack:new', {
               from,
               to,
-              summary,
+              summary: follow.summary,
               when: nowDt,
               markdown,
               follow: fileName,

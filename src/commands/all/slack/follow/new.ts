@@ -13,7 +13,7 @@ import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
-import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
@@ -91,24 +91,13 @@ export default class SlackFollowNewTask extends Command {
     const { link, interval } = args
 
     // --check: answer "is this link already in the follow ledgers?" from the
-    // registry alone — no Slack fetch, no capture, no follow. Identity is the
-    // exact link string plus, when the link itself names channel + root ts,
-    // the same thread-root match the capture path uses.
+    // registry alone — no Slack fetch, no capture, no follow.
     if (args.check) {
       const parsed = parseMessageLink(link)
-      const ledgers = [
-        { dir: DIR_STATE_FOLLOW_SLACK_ACTIVE, label: 'active' },
-        { dir: DIR_STATE_FOLLOW_SLACK_ARCHIVE, label: 'archive' },
-      ]
-      for (const { dir, label } of ledgers) {
-        const registry = await SlackFollowRegistry.build(dir)
-        const match =
-          registry.getAll().find((e) => e.follow.ref.link === link) ??
-          (parsed ? registry.findByThreadRoot(parsed.channelId, parsed.rootTs) : undefined)
-        if (match) {
-          output.log(`In registry (${label}): ${match.follow.summary} (${match.fileName})`)
-          return CommandResult.success({ file: match.path, followed: false, inRegistry: true, slackFiles: [] })
-        }
+      const match = await findCapturedThread(link, parsed)
+      if (match) {
+        output.log(`In registry (${match.ledger}): ${match.summary} (${match.fileName})`)
+        return CommandResult.success({ file: match.path, followed: false, inRegistry: true, slackFiles: [] })
       }
       output.log('Not in registry.')
       if (!parsed) output.log('  (link form not parseable locally — only exact link strings were compared)')
@@ -126,13 +115,18 @@ export default class SlackFollowNewTask extends Command {
       }
     }
 
-    // 0. Check for duplicate follow
-    if (await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE)) {
-      const registry = await SlackFollowRegistry.build()
-      const dupe = registry.getAll().find((e) => e.follow.ref.link === link)
+    // 0. Decline duplicates before any Slack work. Identity is channel + root
+    //    ts — never link strings, one thread wears many URL spellings — and a
+    //    root p-link names the thread key directly. A bare reply p-link only
+    //    names its own ts, so it can pass here; the post-export check below
+    //    catches it once Slack reveals the true root.
+    if (!args.force) {
+      const dupe = await findCapturedThread(link, parseMessageLink(link))
       if (dupe) {
-        output.log(`Already following this link: ${dupe.follow.summary} (${dupe.fileName})`)
-        return CommandResult.fail(`Duplicate follow: ${dupe.fileName}`)
+        output.log(`Thread already captured: ${dupe.summary} (${dupe.fileName})`)
+        return CommandResult.fail(
+          `${dupe.ledger === 'active' ? 'Duplicate follow' : 'Already captured'}: ${dupe.fileName}`,
+        )
       }
     }
 
@@ -144,23 +138,21 @@ export default class SlackFollowNewTask extends Command {
 
     const data = exportResult.data
 
-    // A saved thread reply whose thread was already captured must not create
-    // a second copy — the parent's capture holds the whole thread. Identity is
-    // channel + root ts, never link strings: one thread wears many URLs. The
-    // archive dir counts because every capture leaves a ledger record there
-    // even when nothing is actively followed.
-    const rootTs = data.threadTs
-    if (!args.force && rootTs !== undefined && rootTs !== data.messageTs) {
-      const ledgers = [
-        { dir: DIR_STATE_FOLLOW_SLACK_ACTIVE, label: 'Duplicate follow' },
-        { dir: DIR_STATE_FOLLOW_SLACK_ARCHIVE, label: 'Already captured' },
-      ]
-      for (const { dir, label } of ledgers) {
-        const owner = (await SlackFollowRegistry.build(dir)).findByThreadRoot(data.channelId, rootTs)
-        if (owner) {
-          output.log(`Thread already captured: ${owner.follow.summary} (${owner.fileName})`)
-          return CommandResult.fail(`${label}: ${owner.fileName}`)
-        }
+    // A link into an already-captured thread must not create a second copy —
+    // the earlier capture holds the whole thread. The pre-export check misses
+    // only when the link alone can't name the thread root (a bare reply
+    // p-link, an unparseable form); the export just resolved the real
+    // identity, so check the ledgers once more. Thread roots carry
+    // thread_ts === ts, and bare messages fall back to their own ts, which
+    // findByThreadRoot matches out of a stored ref.link.
+    if (!args.force) {
+      const rootTs = data.threadTs ?? data.messageTs
+      const owner = await findCapturedThread(link, { channelId: data.channelId, rootTs })
+      if (owner) {
+        output.log(`Thread already captured: ${owner.summary} (${owner.fileName})`)
+        return CommandResult.fail(
+          `${owner.ledger === 'active' ? 'Duplicate follow' : 'Already captured'}: ${owner.fileName}`,
+        )
       }
     }
 
@@ -442,6 +434,35 @@ export default class SlackFollowNewTask extends Command {
 
     return CommandResult.success({ file: filePath, followed: true, slackFiles: initialMessages.map((m) => m.path) })
   }
+}
+
+type CapturedThread = { fileName: string; path: string; summary: string; ledger: 'active' | 'archive' }
+
+/**
+ * Find the ledger record already holding a message's thread, across the
+ * active and archive follow dirs. Identity is channel + root ts first — one
+ * thread wears many URL spellings (workspace vs enterprise hosts, thread_ts
+ * params) — with exact link equality as the fallback for links that don't
+ * parse. Archive counts: every capture leaves a record there even when
+ * nothing is actively followed.
+ */
+export async function findCapturedThread(
+  link: string,
+  parsed: { channelId: string; rootTs: string } | undefined,
+  dirs = { active: DIR_STATE_FOLLOW_SLACK_ACTIVE, archive: DIR_STATE_FOLLOW_SLACK_ARCHIVE },
+): Promise<CapturedThread | undefined> {
+  const ledgers = [
+    { dir: dirs.active, ledger: 'active' as const },
+    { dir: dirs.archive, ledger: 'archive' as const },
+  ]
+  for (const { dir, ledger } of ledgers) {
+    const registry = await SlackFollowRegistry.build(dir)
+    const match =
+      (parsed ? registry.findByThreadRoot(parsed.channelId, parsed.rootTs) : undefined) ??
+      registry.getAll().find((e) => e.follow.ref.link === link)
+    if (match) return { fileName: match.fileName, path: match.path, summary: match.follow.summary, ledger }
+  }
+  return undefined
 }
 
 /**
