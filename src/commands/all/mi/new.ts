@@ -14,12 +14,12 @@ import { dayDir, fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { suggestMostImportant } from './_lib/suggestMostImportant.ts'
 
 /** Corpus framing for enriching an MI: self-authored with no counterparty,
- * like a journal entry, so the journal archive carries the tag vocabulary.
- * A single focused action warrants fewer tags than a journal's five. */
+ * like a journal entry, so the journal archive carries the tag vocabulary
+ * and the same tag depth. */
 const MI_ENRICH: { mediums: string[]; kind: string; maxTags: number } = {
   mediums: ['journal'],
   kind: 'most important item (daily focus)',
-  maxTags: 3,
+  maxTags: 5,
 }
 
 const params = {
@@ -152,7 +152,10 @@ export default class MiNewTask extends Command {
     const filePath = await ddfw.write(`most-important/${fileName}`, markdown)
 
     if (summary) {
-      const entryTime = aiDueBy || when.time
+      // Day-file items require an HH:MM prefix (every reader matches
+      // /^\d{2}:\d{2} >/), so free-text due-by ("EOD") falls back to now.
+      const dueTime = aiDueBy?.match(/^(\d{1,2}):(\d{2})$/)
+      const entryTime = dueTime ? `${dueTime[1].padStart(2, '0')}:${dueTime[2]}` : when.time
       const dayItem = `${entryTime} > MI/${count} -> [${summary}](most-important/${path.basename(filePath)})`
       let dayObj = await readDay(whenDay)
       dayObj = dayObj.addMostImportantItem(dayItem)

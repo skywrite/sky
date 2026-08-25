@@ -1,58 +1,23 @@
 ---
 schema: 0.1.1
-description: MI Synthesizer - produces a clean MI document from the interview conversation
+description: MI Synthesizer - enriches the interview answers into the document sections
 created: 2026-02-16
-updated: 2026-02-16
+updated: 2026-08-23
 ---
 
-You are writing the Most Important (MI) document for a CEO's daily focus system.
+You are writing a CEO's Most Important (MI) document — the single daily focus item — from their interview answers.
 
-Take the interview conversation below and produce a clean, well-structured MI document body in markdown. The frontmatter is handled separately — you produce ONLY the body starting from the H1 heading.
+Enrich the answers through and through: structure, sharpen, and expand the user's material into a well-written document. Keep every substantive point they made — enrichment adds clarity, structure, and context; it never drops content. Build on their vocabulary and specifics; no corporate filler, nothing invented that the material doesn't support.
 
-## Output Format
+Sections to produce:
 
-```markdown
-# **{{synthesizer.date}} - {{synthesizer.dayWord}}**
+- **focus** — 1-3 sentences. Start from the MI statement (keep its action verb and specifics), with enough context that re-reading it tomorrow makes sense.{{#if synthesizer.dueBy}} Work the deadline ({{synthesizer.dueBy}}) in naturally.{{/if}}
+- **whyThisMatters** — the strategic reasoning, enriched from the user's answer and the clarification conversation. What's at stake today, and how it compounds.
+- **doneLooksLike** — concrete, checkable outcomes ("sent", "decided", "live" — not "worked on"), drawn from the answers.
+{{#if synthesizer.dependencies}}- **dependencies** — who is depended on and what they must do, with names and actions.{{/if}}
+{{#if synthesizer.notes}}- **notes** — the user's additional context, cleaned up and organized.{{/if}}
 
-## Focus
-
-[1-3 sentences: the MI statement with enough context that re-reading it tomorrow makes sense. Start with the action verb.]
-
-## Why This Matters
-
-[2-4 sentences: strategic reasoning. How does completing this move my company toward being worth a $100B market cap? What's at stake if it doesn't get done today?]
-
-## Done Looks Like
-
-[Bullet list: 2-4 concrete, checkable outcomes that define "done" for today. Extract from the conversation — don't invent.]
-
-{{#if synthesizer.dependencies}}
-## Dependencies
-
-[Who the CEO depends on and what they need to do. Be specific with names and actions.]
-
-{{/if}}
-{{#if synthesizer.notes}}
-## Notes
-
-[Any additional context the user provided, cleaned up.]
-
-{{/if}}
-## Reflection
-
-
-```
-
-## Rules
-
-1. Use the user's own words and specifics — don't generalize or add corporate fluff
-2. Keep it tight. Every sentence should earn its place.
-3. "Done Looks Like" items must be concrete and checkable, not vague ("sent" not "worked on")
-4. If the conversation doesn't provide enough info for a section, write a minimal version rather than inventing content
-5. The Reflection section is always empty (filled in at end-of-day)
-6. Output ONLY the markdown body. No code fences, no preamble.
-
-## Interview Data
+## Interview Material
 
 **MI Statement:** {{synthesizer.statement}}
 
@@ -61,14 +26,16 @@ Take the interview conversation below and produce a clean, well-structured MI do
 {{/if}}
 
 {{#if synthesizer.conversation}}
-**Clarification Conversation:**
+**Clarification conversation:**
 {{synthesizer.conversation}}
 {{/if}}
 
-**Strategic Reasoning (user's answer):** {{synthesizer.strategic}}
+{{#if synthesizer.strategic}}
+**Why it matters (user's answer):** {{synthesizer.strategic}}
+{{/if}}
 
 {{#if synthesizer.doneLooksLike}}
-**What done looks like (user's answer):** {{synthesizer.doneLooksLike}}
+**Done looks like (user's answer):** {{synthesizer.doneLooksLike}}
 {{/if}}
 
 {{#if synthesizer.dependencies}}

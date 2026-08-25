@@ -1,5 +1,5 @@
 import * as p from '@clack/prompts'
-import { generateObject, generateText } from 'ai'
+import { generateObject } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import type { CommandContext } from '#commands/mod.ts'
@@ -8,9 +8,10 @@ import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { miFrontmatter, toSingleLine } from '#shared/models/MostImportant/frontmatter.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { dayWord } from '#universal/dates/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { CONTEXT_TOKENS_TRIPWIRE, gatherContext } from './gatherContext.ts'
+import { buildMIBody, type MISections, type QAAnswers } from './miDocument.ts'
+import { readMultiline } from './readMultiline.ts'
 
 const PROMPT_FILE = new URL('../prompts/suggest-mi.prompt.md', import.meta.url).pathname
 const PROMPT_CLARIFY = new URL('../prompts/mi-clarifier.prompt.md', import.meta.url).pathname
@@ -205,69 +206,42 @@ async function clarifyMI(
 // Interactive Q&A
 // ---------------------------------------------------------------------------
 
-interface QAAnswers {
-  dueBy?: string
-  strategic: string
-  doneLooksLike: string
-  dependencies?: string
-  notes?: string
-}
-
 /**
- * Ask the MI template questions interactively in the terminal.
- * Returns the collected answers, or null if user cancels.
+ * Ask the MI template questions in the terminal. The prose questions use the
+ * multi-line reader so answers arrive at full fidelity — pasted paragraphs,
+ * blank lines and all — instead of being cut at the first ENTER.
+ * Returns the answers, or null if the user cancels.
  */
-async function askMIQuestions(statement: string, depend?: boolean): Promise<QAAnswers | null> {
-  // Q: When is this due?
+async function askMIQuestions(depend?: boolean): Promise<QAAnswers | null> {
   const dueBy = await p.text({
     message: 'When is this due today?\n',
-    placeholder: 'e.g., 15:00, EOD — press ENTER to skip',
+    placeholder: 'e.g., 15:00 — press ENTER to skip',
   })
 
   if (p.isCancel(dueBy)) return null
 
-  // Q: Does this move your company toward 10x? Elaborate.
-  const strategic = await p.text({
-    message: 'How does this move you toward 10x?\n',
-    placeholder: "Strategic reasoning — what's at stake if this doesn't get done today?",
-  })
+  const strategic = await readMultiline('How does this move you toward 10x?')
+  if (strategic === null) return null
 
-  if (p.isCancel(strategic)) return null
+  const doneLooksLike = await readMultiline('What does "done" look like by end of day?')
+  if (doneLooksLike === null) return null
 
-  // Q: What does done look like?
-  const doneLooksLike = await p.text({
-    message: 'What does "done" look like by end of day?\n',
-    placeholder: 'Concrete outcomes — e.g., "email sent", "decision made", "doc reviewed"',
-  })
-
-  if (p.isCancel(doneLooksLike)) return null
-
-  // Q: Dependencies (only if --depend flag)
   let dependencies: string | undefined
   if (depend) {
-    const deps = await p.text({
-      message: 'Who do you depend on, and what do they need to do?\n',
-      placeholder: 'e.g., "Sarah needs to review the term sheet by 2pm"',
-    })
-
-    if (p.isCancel(deps)) return null
-    if (deps) dependencies = deps as string
+    const deps = await readMultiline('Who do you depend on, and what do they need to do?')
+    if (deps === null) return null
+    if (deps) dependencies = deps
   }
 
-  // Q: Any other notes?
-  const notes = await p.text({
-    message: 'Any other context or notes?\n',
-    placeholder: 'Press ENTER to skip',
-  })
-
-  if (p.isCancel(notes)) return null
+  const notes = await readMultiline('Any other context or notes?')
+  if (notes === null) return null
 
   return {
     dueBy: (dueBy as string) || undefined,
-    strategic: (strategic as string) || '',
-    doneLooksLike: (doneLooksLike as string) || '',
+    strategic,
+    doneLooksLike,
     dependencies,
-    notes: (notes as string) || undefined,
+    notes: notes || undefined,
   }
 }
 
@@ -275,8 +249,24 @@ async function askMIQuestions(statement: string, depend?: boolean): Promise<QAAn
 // AI Synthesis
 // ---------------------------------------------------------------------------
 
+const EnrichedSectionsSchema = z.object({
+  focus: z
+    .string()
+    .describe('1-3 sentences starting from the MI statement, with enough context to make sense tomorrow'),
+  whyThisMatters: z
+    .string()
+    .describe("The strategic reasoning, enriched from the user's answer — every point kept, written well"),
+  doneLooksLike: z.array(z.string()).min(1).describe('Concrete, checkable outcomes drawn from the answers'),
+  dependencies: z.string().nullish().describe('Only when the user gave dependencies: who, and what they must do'),
+  notes: z.string().nullish().describe('Only when the user gave notes: their additional context, cleaned up'),
+})
+
 /**
- * Use AI to synthesize the MI interview into a polished markdown document.
+ * Build the MI document: the model enriches the interview answers into the
+ * document sections — structured, sharpened, expanded — keeping every
+ * substantive point the user made. The heading skeleton and frontmatter are
+ * built in code, never by the model, and when enrichment fails the raw
+ * answers stand so the document always reflects what the user said.
  * Returns the full markdown content (frontmatter + body).
  */
 async function synthesizeMI(opts: {
@@ -288,17 +278,15 @@ async function synthesizeMI(opts: {
 }): Promise<string> {
   const { statement, conversation, answers, today, spinner } = opts
 
-  spinner.start('Writing your MI document...')
+  spinner.start('Enriching your answers...')
 
   const synthContent = await readTextFile(PROMPT_SYNTHESIZE)
   const synthInput: RenderInput = {
     synthesizer: {
-      date: today.ymd,
-      dayWord: dayWord(today.toDate(), 'short'),
       statement,
       conversation,
       dueBy: answers.dueBy || undefined,
-      strategic: answers.strategic,
+      strategic: answers.strategic || undefined,
       doneLooksLike: answers.doneLooksLike || undefined,
       dependencies: answers.dependencies || undefined,
       notes: answers.notes || undefined,
@@ -307,56 +295,39 @@ async function synthesizeMI(opts: {
 
   const { output: renderedSynth } = renderPromptFile(synthContent, 'mi-synthesizer.prompt.md', synthInput)
 
-  let body: string
-  try {
-    const result = await generateText({
-      ...aiModel('reasoning'),
-      prompt: renderedSynth,
-    })
-    body = result.text.trim()
-  } catch {
-    spinner.stop('Synthesis failed — using raw answers')
-    body = fallbackBody(statement, answers, today)
+  // Raw answers are the floor: any section enrichment leaves empty — or the
+  // whole call failing — falls back to what the user actually wrote.
+  let sections: MISections = {
+    focus: statement,
+    whyThisMatters: answers.strategic,
+    doneLooksLike: answers.doneLooksLike,
+    ...(answers.dependencies ? { dependencies: answers.dependencies } : {}),
+    ...(answers.notes ? { notes: answers.notes } : {}),
   }
 
-  spinner.stop(colors.green('Document ready'))
+  try {
+    const result = await generateObject({
+      ...aiModel('reasoning'),
+      schema: EnrichedSectionsSchema,
+      prompt: renderedSynth,
+    })
+    const enriched = result.object
+    sections = {
+      focus: enriched.focus.trim() || statement,
+      whyThisMatters: enriched.whyThisMatters.trim() || answers.strategic,
+      doneLooksLike: enriched.doneLooksLike.length > 0 ? enriched.doneLooksLike : answers.doneLooksLike,
+      ...(answers.dependencies ? { dependencies: enriched.dependencies?.trim() || answers.dependencies } : {}),
+      ...(answers.notes ? { notes: enriched.notes?.trim() || answers.notes } : {}),
+    }
+    spinner.stop(colors.green('Document ready'))
+  } catch (err) {
+    spinner.stop(colors.yellow('Enrichment failed — keeping your answers as written'))
+    warnAIError(err)
+  }
 
   // Frontmatter is built programmatically (never by the model) and
   // YAML-serialized so any summary round-trips.
-  return miFrontmatter(statement) + '\n\n' + body + '\n'
-}
-
-/**
- * Fallback body if AI synthesis fails — structured but not polished.
- */
-function fallbackBody(statement: string, answers: QAAnswers, today: PlainDate): string {
-  const lines = [
-    `# **${today.ymd} - ${dayWord(today.toDate(), 'short')}**`,
-    '',
-    '## Focus',
-    '',
-    statement,
-    '',
-    '## Why This Matters',
-    '',
-    answers.strategic || '(not provided)',
-    '',
-    '## Done Looks Like',
-    '',
-    answers.doneLooksLike || '(not provided)',
-  ]
-
-  if (answers.dependencies) {
-    lines.push('', '## Dependencies', '', answers.dependencies)
-  }
-
-  if (answers.notes) {
-    lines.push('', '## Notes', '', answers.notes)
-  }
-
-  lines.push('', '## Reflection', '', '')
-
-  return lines.join('\n')
+  return miFrontmatter(statement) + '\n\n' + buildMIBody(sections, today) + '\n'
 }
 
 // ---------------------------------------------------------------------------
@@ -523,8 +494,8 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
 
   output.log(`\n${colors.green('→')} ${colors.bold(clarified.statement)}`)
 
-  // 8. Interactive Q&A — ask the MI template questions
-  const answers = await askMIQuestions(clarified.statement, depend)
+  // 8. Q&A in the terminal — prose answers through the multi-line reader
+  const answers = await askMIQuestions(depend)
 
   if (answers === null) {
     p.cancel('Cancelled.')
