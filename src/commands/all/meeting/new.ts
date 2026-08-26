@@ -304,7 +304,7 @@ export default class MeetingNewTask extends Command {
 type ActionItemRoute =
   | { kind: 'next'; task: string; destination: string }
   | { kind: 'commitments'; task: string; when: PlainDate; destination: string }
-  | { kind: 'schedule'; task: string; when: PlainDate; destination: string }
+  | { kind: 'todo'; task: string; when: PlainDate; destination: string }
 
 async function planActionItemRoute(item: TranscriptActionItem, today: string): Promise<ActionItemRoute> {
   // A past date can't be scheduled — an overdue commitment is still next work.
@@ -313,13 +313,16 @@ async function planActionItemRoute(item: TranscriptActionItem, today: string): P
 
   // The HH:MM prefix is the day-item convention, and how day:schedule:update
   // recognizes a Commitment when it drains the schedule file on the morning.
+  // Only a timed item is a Commitment; a dated one without a time is a Todo
+  // on its day, mirroring that drain's split.
   const task = item.time !== null ? `${item.time} > ${item.text}` : item.text
   const when = new PlainDate(date)
 
   if (await dayFileExists(when)) {
-    return { kind: 'commitments', task, when, destination: `${date} Commitments` }
+    if (item.time !== null) return { kind: 'commitments', task, when, destination: `${date} Commitments` }
+    return { kind: 'todo', task, when, destination: `${date} Todos` }
   }
-  return { kind: 'schedule', task, when, destination: `schedule-professional ${date}` }
+  return { kind: 'todo', task, when, destination: `schedule-professional ${date}` }
 }
 
 async function executeActionItemRoute(route: ActionItemRoute, tasks: CommandArgs<Params>['tasks']): Promise<void> {
@@ -327,6 +330,8 @@ async function executeActionItemRoute(route: ActionItemRoute, tasks: CommandArgs
     await writeDayItems(route.when, 'Professional Commitments', route.task)
     return
   }
+  // day:todo:add itself forks on whether the day file exists yet: into its
+  // Todos list when it does, into the schedule file's date entry when not.
   const result =
     route.kind === 'next'
       ? await tasks.run('next:add', { task: route.task })
