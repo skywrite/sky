@@ -74,6 +74,7 @@ will be a mystery.
 | | |
 |---|---|
 | [Install](docs/INSTALL.md) | Setup, API keys, background service, troubleshooting |
+| [Upgrade](docs/upgrade.md) | Updating a clone: reading what landed, data migrations, rollback |
 | [Dependencies](docs/dependencies.md) | What Sky needs installed, required vs optional |
 | [Overview](docs/overview.md) | How the notebook is laid out, and why |
 | [Notebook time & NBFS](docs/nbfs.md) | The file layout and time model in depth |
