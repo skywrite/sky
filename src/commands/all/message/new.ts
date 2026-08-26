@@ -11,8 +11,9 @@ import slugify from '#lib/string/slugify.ts'
 import { exists } from '#shared/fs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
-import { extractMessageFromImage, renameSenders, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
+import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
+import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
 import { parseCorrections } from './_lib/parseCorrections.ts'
 
@@ -277,43 +278,64 @@ export default class MessageNewTask extends Command {
         medium = selected
       }
 
-      // 5. Show extracted metadata and allow corrections
-      output.log(colors.cyan('\n─── Extracted ───'))
-      output.log(colors.white(`  From:     ${from ?? '(none)'}`))
-      output.log(colors.white(`  To:       ${to ?? '(none)'}`))
-      if (messages.length > 0) {
-        output.log(colors.white(`  Senders:  ${senderSummary(messages)}`))
-      }
-      output.log(colors.white(`  Medium:   ${medium}`))
-      output.log(colors.white(`  Summary:  ${summary ?? '(none)'}`))
-      output.log(colors.white(`  When:     ${when}`))
-      output.log(colors.white(`  Images:   ${imagePaths.length}`))
-      if (extraction.continuityNotes) {
-        output.log(colors.yellow(`  Notes:    ${extraction.continuityNotes}`))
-      }
-      output.log(colors.cyan('─────────────────'))
+      // 5. Show extracted metadata and take correction rounds until accepted —
+      // re-displaying after each round so a misapplied correction is visible
+      // before anything is written.
+      while (true) {
+        output.log(colors.cyan('\n─── Extracted ───'))
+        output.log(colors.white(`  From:     ${from ?? '(none)'}`))
+        output.log(colors.white(`  To:       ${to ?? '(none)'}`))
+        if (messages.length > 0) {
+          output.log(colors.white(`  Senders:  ${senderSummary(messages)}`))
+        }
+        output.log(colors.white(`  Medium:   ${medium}`))
+        output.log(colors.white(`  Summary:  ${summary ?? '(none)'}`))
+        output.log(colors.white(`  When:     ${when}`))
+        output.log(colors.white(`  Images:   ${imagePaths.length}`))
+        if (extraction.continuityNotes) {
+          output.log(colors.yellow(`  Notes:    ${extraction.continuityNotes}`))
+        }
+        output.log(colors.cyan('─────────────────'))
 
-      const corrections = await p.text({
-        message: 'Any corrections? (Enter to accept)',
-        placeholder: 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
-      })
+        const corrections = await p.text({
+          message: 'Any corrections? (Enter to accept)',
+          placeholder: 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
+        })
 
-      if (p.isCancel(corrections)) {
-        p.cancel('Cancelled.')
-        return CommandResult.fail('Cancelled')
-      }
+        if (p.isCancel(corrections)) {
+          p.cancel('Cancelled.')
+          return CommandResult.fail('Cancelled')
+        }
 
-      if (corrections) {
+        if (!corrections) break
+
         output.log(colors.gray('Parsing corrections...'))
 
-        // An explicitly typed `when:` is read here, not by the model — it can't
-        // then normalize an extended hour or roll the date forward. Applied
-        // before the call so a model failure can't discard it.
-        const typedTime = extractTypedTime(corrections)
+        // Explicitly typed when:/from:/to: are read here, not by the model — an
+        // explicit value can't be normalized, reinterpreted as a sender rename,
+        // or discarded on a model failure. Applied before the call so the model
+        // sees the corrected state, and re-asserted after it (typed from/to via
+        // applyParticipantCorrections) so nothing it returns can override them.
+        const typedTime = extractTypedTime(corrections, context.notebookNow.date)
         if (typedTime) {
           const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
           when = new PlainDateTime(typedTime.hasDate ? typedTime.value : `${when.plainDate} ${typedTime.value}`)
+          if (typedTime.yearInferred) {
+            output.log(colors.gray(`  Typed time "${typedTime.raw}" read as ${typedTime.value}`))
+          }
+        } else {
+          const rawTime = labelledTimeRaw(corrections)
+          if (rawTime) {
+            output.log(
+              colors.yellow(
+                `  Typed time "${rawTime}" isn't HH:MM, MM-DD HH:MM, or YYYY-MM-DD HH:MM — the AI will interpret it`,
+              ),
+            )
+          }
         }
+        const typed = extractTypedParticipants(corrections)
+        if (typed.from !== undefined) from = typed.from
+        if (typed.to !== undefined) to = typed.to
 
         const c = await parseCorrections({
           from,
@@ -321,12 +343,11 @@ export default class MessageNewTask extends Command {
           medium,
           summary,
           when: when.time,
+          today: context.notebookNow.date,
           senders: [...new Set(messages.map((m) => m.sender))],
           corrections,
         })
 
-        if (c.from !== undefined) from = c.from ?? undefined
-        if (c.to !== undefined) to = c.to ?? undefined
         if (c.medium) medium = c.medium
         if (c.summary) summary = c.summary
         if (!typedTime && c.when) {
@@ -338,15 +359,11 @@ export default class MessageNewTask extends Command {
           const dateTimeStr = hasDate ? c.when : `${when.plainDate} ${c.when}`
           when = new PlainDateTime(dateTimeStr)
         }
-        if (c.senderRenames && c.senderRenames.length > 0) {
-          messages = renameSenders(messages, c.senderRenames)
-          // Keep metadata in sync when a renamed sender is also the from/to value
-          // (explicit from:/to: corrections were applied above and win over this)
-          for (const r of c.senderRenames) {
-            if (from === r.from) from = r.to
-            if (to === r.from) to = r.to
-          }
-        }
+
+        const applied = applyParticipantCorrections({ from, to, messages }, typed, c)
+        from = applied.from
+        to = applied.to
+        messages = applied.messages
 
         output.log(colors.green('Applied corrections.'))
       }

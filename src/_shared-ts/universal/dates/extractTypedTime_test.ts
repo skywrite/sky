@@ -1,7 +1,7 @@
 import { assert, test } from '#test'
-import { extractTypedTime } from './extractTypedTime.ts'
+import { extractTypedTime, labelledTimeRaw } from './extractTypedTime.ts'
 
-const value = (correction: string) => extractTypedTime(correction)?.value ?? null
+const value = (correction: string, referenceDate?: string) => extractTypedTime(correction, referenceDate)?.value ?? null
 
 test('extractTypedTime reads the labelled forms the prompts advertise', () => {
   assert({
@@ -113,6 +113,77 @@ test('extractTypedTime declines what it should not guess at', () => {
     given: 'a correction with no time at all',
     should: 'return null',
     actual: value('medium: Zoom, rel: Alice'),
+    expected: null,
+  })
+})
+
+test('extractTypedTime resolves partial dates against the reference date', () => {
+  assert({
+    given: 'a month-day already past in the reference year',
+    should: 'use the reference year',
+    actual: value('time: 03-14 13:00', '2026-07-15'),
+    expected: '2026-03-14 13:00',
+  })
+  assert({
+    given: 'a month-day still ahead in the reference year',
+    should: 'use the previous year — corrections describe the past',
+    actual: value('time: 11-05 13:00', '2026-07-15'),
+    expected: '2025-11-05 13:00',
+  })
+  assert({
+    given: 'the reference day itself, in single-digit notation',
+    should: 'stay in the reference year and zero-pad',
+    actual: value('when: 7-15 9:05', '2026-07-15'),
+    expected: '2026-07-15 09:05',
+  })
+  assert({
+    given: 'Feb 29 with a non-leap reference year',
+    should: 'walk back to the latest leap year',
+    actual: value('time: 02-29 10:00', '2026-07-15'),
+    expected: '2024-02-29 10:00',
+  })
+  assert({
+    given: 'a partial date but no reference date to resolve against',
+    should: 'decline rather than guess a year',
+    actual: value('time: 03-14 13:00'),
+    expected: null,
+  })
+  assert({
+    given: 'a day no month has',
+    should: 'decline it',
+    actual: value('time: 06-31 13:00', '2026-07-15'),
+    expected: null,
+  })
+  assert({
+    given: 'an out-of-range month',
+    should: 'decline it',
+    actual: value('time: 13-05 13:00', '2026-07-15'),
+    expected: null,
+  })
+})
+
+test('extractTypedTime reports whether the year was inferred', () => {
+  const partial = extractTypedTime('time: 03-14 13:00', '2026-07-15')
+  const full = extractTypedTime('time: 2026-03-14 13:00', '2026-07-15')
+  assert({
+    given: 'a partial date and a full date',
+    should: 'flag only the inferred year',
+    actual: [partial?.yearInferred, full?.yearInferred],
+    expected: [true, false],
+  })
+})
+
+test('labelledTimeRaw surfaces a typed time extractTypedTime declines', () => {
+  assert({
+    given: 'relative phrasing under the time label',
+    should: 'return the raw text so the caller can warn about the AI fallback',
+    actual: labelledTimeRaw('when: an hour later than that'),
+    expected: 'an hour later than that',
+  })
+  assert({
+    given: 'a correction with no labelled time',
+    should: 'return null',
+    actual: labelledTimeRaw('summary: the 3:30 standup ran long'),
     expected: null,
   })
 })

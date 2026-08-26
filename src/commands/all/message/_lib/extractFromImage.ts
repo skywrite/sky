@@ -31,8 +31,18 @@ const ExtractionSchema = z.object({
     .describe(
       'Messaging platform (e.g. WhatsApp, iMessage, Signal, Telegram, Slack, Discord, Teams). Null if unclear.',
     ),
-  from: z.string().nullable().describe('Who sent the message(s). Null if unclear.'),
-  to: z.string().nullable().describe('Who received the message(s). Null if unclear.'),
+  from: z
+    .string()
+    .nullable()
+    .describe(
+      'Who the conversation is from: the sender of its first message, regardless of who took the screenshot. Null if unclear.',
+    ),
+  to: z
+    .string()
+    .nullable()
+    .describe(
+      'Who that first message was written to — the other party, or "Me" when the conversation opens incoming. Null if unclear.',
+    ),
   summary: z
     .string()
     .describe(

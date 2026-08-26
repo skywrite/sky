@@ -26,7 +26,10 @@ const CorrectionsSchema = z.object({
       }),
     )
     .optional()
-    .describe('Dialogue sender renames, only if the user renamed people'),
+    .describe(
+      'Dialogue sender renames, only when the user explicitly renames a person ("Me is Alex"). ' +
+        'Never derived from a from/to field correction.',
+    ),
 })
 
 export type ParsedCorrections = z.infer<typeof CorrectionsSchema>
@@ -37,6 +40,8 @@ export interface CorrectionsContext {
   medium?: string
   summary?: string
   when: string
+  /** The notebook's current date, so year-less dates resolve to the recent past. */
+  today: string
   senders: string[]
   corrections: string
 }
@@ -50,6 +55,7 @@ export async function parseCorrections(ctx: CorrectionsContext): Promise<ParsedC
       medium: ctx.medium ?? 'null',
       summary: ctx.summary ?? 'null',
       when: ctx.when,
+      today: ctx.today,
       senders: ctx.senders.length > 0 ? ctx.senders.join(', ') : '(none)',
       corrections: ctx.corrections,
     },
@@ -57,7 +63,7 @@ export async function parseCorrections(ctx: CorrectionsContext): Promise<ParsedC
   const { output: prompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
 
   const result = await generateObject({
-    ...aiModel('balanced'),
+    ...aiModel('reasoning'),
     schema: CorrectionsSchema,
     prompt,
   })

@@ -1,6 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-02-15
+updated: 2026-08-25
 description: Extract messaging conversation data from one or more screenshots using AI vision
 ---
 
@@ -11,6 +12,11 @@ Attribute every message to its sender by real name:
 - Use names visible in the screenshot — bubble labels, or the chat header for the other party in a 1:1 chat.
 - Outgoing messages (typically right-aligned) belong to the account owner who took the screenshot. Use their name if it is visible or supplied in the additional context; otherwise call them "Me".
 - Never use placeholders like "Person 1" or "Person 2".
+
+Direction (`from`/`to`):
+
+- `from` is whoever sent the first message of the reconstructed conversation — the party who opened this exchange — and `to` is who they were writing to.
+- This is independent of who took the screenshot: when the other party opened the exchange, they are `from` and the owner ("Me") is `to`.
 
 Date the conversation:
 
