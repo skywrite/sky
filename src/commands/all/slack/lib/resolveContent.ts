@@ -21,5 +21,7 @@ export default function resolveContent(
         const name = label || usergroupNames.get(subteamId)
         return name ? `@${name}` : `@${subteamId}`
       })
+      // Slack wraps email addresses as <mailto:addr|label>; keep only the address
+      .replace(/<mailto:([^|>]+)(?:\|[^>]*)?>/g, (_match, address: string) => address)
   )
 }

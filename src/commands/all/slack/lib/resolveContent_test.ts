@@ -131,3 +131,30 @@ test('resolveContent: unknown usergroup keeps the ID readable', () => {
     expected: 'cc @S0999UNKNOWN',
   })
 })
+
+test('resolveContent: strips a mailto link to the bare address', () => {
+  assert({
+    given: 'a Slack mailto link whose label repeats the address',
+    should: 'keep only the address',
+    actual: resolveContent('reach me at <mailto:jane@example.com|jane@example.com> anytime', new Map(), noChannels),
+    expected: 'reach me at jane@example.com anytime',
+  })
+})
+
+test('resolveContent: mailto link with a differing label still shows the address', () => {
+  assert({
+    given: 'a mailto link labeled with a display name',
+    should: 'keep the address, not the label',
+    actual: resolveContent('ask <mailto:jane@example.com|Jane Smith>', new Map(), noChannels),
+    expected: 'ask jane@example.com',
+  })
+})
+
+test('resolveContent: strips a label-less mailto link', () => {
+  assert({
+    given: 'a mailto link with no |label',
+    should: 'keep only the address',
+    actual: resolveContent('email <mailto:atlas@example.com> please', new Map(), noChannels),
+    expected: 'email atlas@example.com please',
+  })
+})
