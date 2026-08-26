@@ -20,6 +20,17 @@ test('validateDocsRequests', () => {
   })
 
   assert({
+    given: 'a tab-management batch',
+    should: 'pass',
+    expected: null,
+    actual: validateDocsRequests([
+      { addDocumentTab: { tabProperties: { title: 'Appendix', index: 1 } } },
+      { updateDocumentTabProperties: { tabProperties: { tabId: 't.abc123', title: 'Overview' }, fields: 'title' } },
+      { deleteTab: { tabId: 't.def456' } },
+    ]),
+  })
+
+  assert({
     given: 'a non-array',
     should: 'name the shape problem',
     expected: true,

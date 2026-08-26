@@ -25,6 +25,9 @@ export const DOCS_ALLOWED_REQUESTS = new Set([
   'insertInlineImage',
   'createHeader',
   'createFooter',
+  'addDocumentTab',
+  'updateDocumentTabProperties',
+  'deleteTab',
 ])
 
 const MAX_REQUESTS_PER_BATCH = 100

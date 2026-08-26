@@ -327,7 +327,7 @@ export function createAgentTools(deps: {
 
     batch_update_doc: {
       description:
-        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}.",
+        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}. Tabs themselves are managed here too: addDocumentTab creates one (tabProperties: title, index), updateDocumentTabProperties renames/moves one (tabProperties + fields mask), deleteTab removes one — replies are not returned, so call get_doc_outline after adding a tab to learn its tabId.",
       inputSchema: jsonSchema<{ fileId: string; requests: Array<Record<string, unknown>> }>({
         type: 'object',
         properties: {
