@@ -8,6 +8,7 @@
  */
 
 export type { ConversationType } from './types.ts'
+export { default as normalizeFences } from './normalizeFences.ts'
 export { default as resolveContent } from './resolveContent.ts'
 export { default as extractWorkspaceUrl } from './extractWorkspaceUrl.ts'
 export { default as inferConversationType } from './inferConversationType.ts'

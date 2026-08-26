@@ -1,4 +1,5 @@
 import { WebClient } from '@slack/web-api'
+import normalizeFences from '#commands/all/slack/lib/normalizeFences.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -492,7 +493,7 @@ function createUserNameResolver(client: WebClient): ResolveUserName {
 }
 
 async function normalizeSlackMessageText(text: string, resolveUserName: ResolveUserName): Promise<string> {
-  let normalized = decodeSlackEntities(text)
+  let normalized = normalizeFences(decodeSlackEntities(text))
 
   const mentionedUserIds = collectMentionedUserIds(normalized)
   if (mentionedUserIds.length === 0) return normalized

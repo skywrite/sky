@@ -12,6 +12,7 @@ import {
   formatChannelLabel,
   formatSlackTimestamp,
   inferConversationType,
+  normalizeFences,
   resolveContent,
 } from '#commands/all/slack/lib/mod.ts'
 import {
@@ -188,7 +189,7 @@ export default class SlackCliExportTask extends Command {
     const message: FetchedMessage = {
       ts: data.message.ts,
       timeLabel: formatSlackTimestamp(data.message.ts, timezone),
-      text: resolveContent(data.message.content || '', userNames, channelNames, usergroupNames),
+      text: normalizeFences(resolveContent(data.message.content || '', userNames, channelNames, usergroupNames)),
       userId: data.message.author?.user_id,
       userName: data.message.author?.user_id ? userNames.get(data.message.author.user_id) : undefined,
       threadTs: data.message.thread_ts,
@@ -205,7 +206,7 @@ export default class SlackCliExportTask extends Command {
           (m): ThreadReply => ({
             ts: m.ts,
             timeLabel: formatSlackTimestamp(m.ts, timezone),
-            text: resolveContent(m.content || '', userNames, channelNames, usergroupNames),
+            text: normalizeFences(resolveContent(m.content || '', userNames, channelNames, usergroupNames)),
             userId: m.author?.user_id,
             userName: m.author?.user_id ? userNames.get(m.author.user_id) : undefined,
             files: m.files,
