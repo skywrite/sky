@@ -2,7 +2,7 @@
  * Action items carried out of a transcript summary.
  *
  * The pipeline's metadata-extract call is the primary source — it returns the
- * `## Action Items` bullets as structured entries and resolves relative due
+ * summary's action-item bullets as structured entries and resolves relative due
  * phrases ("Friday", "in two weeks") to absolute dates. parseActionItemsSection
  * is the deterministic fallback when that call fails or omits the field: it can
  * read the bullets but never resolve a date, so fallback items come back
@@ -11,7 +11,10 @@
 
 export interface TranscriptActionItem {
   text: string
-  /** True when the summary marks the item as the notebook owner's ("(me)"). */
+  /**
+   * True when the item is the notebook owner's: under `## Action Items (me)`,
+   * or marked "(me)" in a legacy single `## Action Items` section.
+   */
   mine: boolean
   /** Committed day (YYYY-MM-DD), or null when the item is undated. */
   date: string | null
@@ -49,8 +52,17 @@ export function normalizeActionItems(raw: unknown): TranscriptActionItem[] {
 const ME_MARKER_RE = /\(\s*me\s*\)/gi
 const ME_IN_PAREN_RE = /\(\s*me\s*,\s*/gi
 
-function bulletToItem(bullet: string): TranscriptActionItem {
-  const mine = /\(\s*me\s*[),]/i.test(bullet)
+// Ownership comes from which section a bullet sits in. The legacy single
+// section carries no ownership itself — its "(me)" markers do — and a stray
+// marker inside a split section still counts as a claim of ownership.
+const SECTION_OWNERSHIP: Record<string, boolean> = {
+  'action items (me)': true,
+  'action items (others)': false,
+  'action items': false,
+}
+
+function bulletToItem(bullet: string, sectionMine: boolean): TranscriptActionItem {
+  const mine = sectionMine || /\(\s*me\s*[),]/i.test(bullet)
   const text = bullet
     .replace(/^\[[ xX]\]\s*/, '')
     .replace(ME_MARKER_RE, '')
@@ -64,29 +76,31 @@ function bulletToItem(bullet: string): TranscriptActionItem {
 }
 
 /**
- * Fallback: read the bullets under "## Action Items" straight from the summary
- * body. The "(me)" marker is detected and then stripped from the text.
+ * Fallback: read the bullets under the action-item sections straight from the
+ * summary body — "## Action Items (me)" / "## Action Items (others)", or the
+ * legacy single "## Action Items" section. A "(me)" marker is detected and
+ * then stripped from the text either way.
  */
 export function parseActionItemsSection(body: string): TranscriptActionItem[] {
-  const bullets: string[] = []
-  let inSection = false
+  const bullets: { text: string; sectionMine: boolean }[] = []
+  let sectionMine: boolean | null = null
 
   for (const line of body.split('\n')) {
     const header = line.match(/^#{1,6}\s+(.+?)\s*$/)
     if (header) {
-      inSection = header[1].toLowerCase() === 'action items'
+      sectionMine = SECTION_OWNERSHIP[header[1].toLowerCase()] ?? null
       continue
     }
-    if (!inSection) continue
+    if (sectionMine === null) continue
 
     const bullet = line.match(/^[-*]\s+(.*\S)\s*$/)
     if (bullet) {
-      bullets.push(bullet[1])
+      bullets.push({ text: bullet[1], sectionMine })
     } else if (bullets.length > 0 && /^\s+\S/.test(line)) {
       // Indented continuation of the previous bullet
-      bullets[bullets.length - 1] += ` ${line.trim()}`
+      bullets[bullets.length - 1].text += ` ${line.trim()}`
     }
   }
 
-  return bullets.map(bulletToItem).filter((item) => item.text.length > 0)
+  return bullets.map((b) => bulletToItem(b.text, b.sectionMine)).filter((item) => item.text.length > 0)
 }

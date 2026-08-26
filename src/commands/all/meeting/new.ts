@@ -246,10 +246,10 @@ export default class MeetingNewTask extends Command {
     return CommandResult.success({ file })
   }
 
-  // One selector over every extracted item, the speaker's own ("(me)")
-  // preselected: a missed or misattributed marker stays one keystroke from
-  // rescue instead of silently lost. Routes are decided up front so each
-  // option's hint can say where acceptance sends it.
+  // One selector over every extracted item, the speaker's own preselected:
+  // a misattributed owner stays one keystroke from rescue instead of silently
+  // lost. Routes are decided up front so each option's hint can say where
+  // acceptance sends it.
   private async acceptActionItems(
     items: TranscriptActionItem[],
     context: CommandArgs<Params>['context'],

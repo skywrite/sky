@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-15
-updated: 2026-06-25
+updated: 2026-08-26
 description: Generate a structured summary from a meeting transcript
 ---
 
@@ -42,8 +42,11 @@ Create additional ## headers to group related categories, misc points, observati
 ## Decisions
 (only include if explicitly stated)
 
-## Action Items
-(Only items explicitly stated — never inferred. One imperative bullet each. Note the owner, mark items the speaker is responsible for with "(me)", and include a due date or timeframe if one was mentioned.)
+## Action Items (me)
+(Only items explicitly stated — never inferred, and only ones the speaker is responsible for. One imperative bullet each, with a due date or timeframe if one was mentioned. An item the speaker shares with someone else belongs here, with the co-owner named. Omit this section when there are none.)
+
+## Action Items (others)
+(Items owned by anyone other than the speaker, same rules. Name the owner in each bullet. When the owner is unclear, put the item here and note that. Omit this section when there are none.)
 
 ## Important Questions
 (notable questions raised during the meeting and who asked them)

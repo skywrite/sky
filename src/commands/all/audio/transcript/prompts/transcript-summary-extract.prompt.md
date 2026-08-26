@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-19
-updated: 2026-08-22
+updated: 2026-08-26
 description: Extract structured metadata from a meeting summary
 ---
 
@@ -37,8 +37,8 @@ Return ONLY valid JSON (no markdown fences):
 - **medium**: The call/meeting medium if stated (e.g., "Zoom", "Phone", "Google Meet", "Teams", "In Person"). null if not mentioned.
 - **who**: Attendees - people who were IN the meeting (from ## Attendees section)
 - **rel**: Related people - people MENTIONED or discussed but not attending. If unsure whether someone attended, put them here.
-- **actionItems**: One entry per bullet in the `## Action Items` section, in order. `[]` when that section is missing or empty. Never invent items that aren't in the section. Per entry:
+- **actionItems**: One entry per bullet in the `## Action Items (me)` and `## Action Items (others)` sections (a summary may instead have a single legacy `## Action Items` section), in document order. `[]` when those sections are missing or empty. Never invent items that aren't in them. Per entry:
   - **text**: The task as an imperative sentence, without any "(me)" marker and without a due-date phrase that `date` already captures. Keep other people's names.
-  - **mine**: true only when the bullet is marked "(me)" or otherwise clearly the speaker's own responsibility.
+  - **mine**: true for bullets under `## Action Items (me)`, false for bullets under `## Action Items (others)`. In a legacy `## Action Items` section, true only when the bullet is marked "(me)" or otherwise clearly the speaker's own responsibility.
   - **date**: The committed/due day as YYYY-MM-DD, only when the bullet states one. Resolve relative phrases ("Friday", "in two weeks") against the meeting date, falling back to today's date above. null when no day is stated, when it can't be resolved to a specific day, or when it is already past.
   - **time**: HH:MM wall-clock, only when the bullet commits to a specific clock time (e.g. "call at 3pm" → "15:00"). null otherwise.

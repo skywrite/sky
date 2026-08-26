@@ -86,7 +86,7 @@ type Result = {
   medium: string | null // Call medium: Zoom, Phone, Google Meet, etc.
   who: string[] // Attendees - people in the meeting
   rel: string[] // Related - people mentioned but not attending
-  actionItems: TranscriptActionItem[] // Structured "## Action Items" bullets (meeting template; [] when none)
+  actionItems: TranscriptActionItem[] // Structured action-item bullets (meeting template; [] when none)
   summary: string
   body: string // Full markdown output
   cleanedText: string // Input transcript (cleaned if from audio pipeline)
