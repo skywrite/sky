@@ -10,12 +10,18 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
-import { DIR_AI_MEMORY, PORT_SERVER } from '#shared/config.ts'
+import { DIR_AI_MEMORY, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { recordExternalFiles } from '#shared/models/Chat/artifactRel.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
+import {
+  chatAutosaveFilename,
+  clearChatAutosave,
+  sweepChatAutosaves,
+  writeChatAutosave,
+} from '#shared/models/Chat/ChatStore/autosave.ts'
 import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { saveChat } from '#shared/models/Chat/ChatStore/save.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
@@ -370,6 +376,9 @@ export default class AiChatTask extends Command {
       'Chats are saved by default to the {day}/actions/ai-chats/ folder —',
       'toggle saving off with Ctrl+S (or /nosave), or start ephemeral with -E.',
       'Day-file logging stays opt-in (Ctrl+L or /log).',
+      'Crash insurance: every completed turn also snapshots the session under',
+      'the state dir (state/ai/chats); every clean exit removes the snapshot,',
+      'so a file left there is a session that died mid-conversation.',
       'Saved chats are searchable in later sessions via the chats GraphQL query.',
       'On save, missing tags: and rel: are chosen automatically from how past chats',
       'were filed (--no-auto-tag / --no-auto-rel to skip); hand-written and resumed',
@@ -431,6 +440,13 @@ export default class AiChatTask extends Command {
     const today = when?.plainDate ?? now.plainDateTime.plainDate
     const startTime = now.plainDateTime
     output.log(colors.dim(`[server] fetchNow: ${(performance.now() - t0).toFixed(0)}ms`))
+
+    // Crash insurance: every completed turn snapshots this session here and
+    // every clean exit clears it, so a leftover file is a session that died
+    // mid-conversation (see ChatStore/autosave.ts). Old leftovers sweep in
+    // the background.
+    const autosavePath = path.join(DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, process.pid))
+    sweepChatAutosaves(DIR_STATE_AI_CHATS, startTime.plainDate).catch(() => {})
 
     // --resume: pick one of the day's saved chats (--when shifts the day)
     // and continue it as if the session never exited: conversation reseeded,
@@ -1055,6 +1071,28 @@ export default class AiChatTask extends Command {
         output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
         await logAIError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
       }
+
+      // Crash insurance: snapshot the session as it now stands — every
+      // session, ephemeral included: -E decides what a clean exit keeps,
+      // not what a crash may lose. Must never break the conversation, so
+      // failures log and move on.
+      try {
+        if (turns.length > 0) {
+          await writeChatAutosave(autosavePath, {
+            turns,
+            contextLog: chatContext.log,
+            resume: resumeSession,
+            startTime,
+            provider: reasoningProfile.provider,
+            model: reasoningProfile.model,
+            externalFiles,
+          })
+        }
+      } catch (err) {
+        const message = (err as Error).message
+        output.log(colors.dim(`Autosave failed: ${message} (logged to ${AI_ERROR_LOG_DISPLAY})`))
+        await logAIError({ source: 'ai:chat', stage: 'autosave', message })
+      }
     }
 
     clearTerminalTitle()
@@ -1082,6 +1120,10 @@ export default class AiChatTask extends Command {
           output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
         },
       })
+
+      // The transcript is durably on disk (saved, or parked as a recovery
+      // copy) — the crash snapshot is superseded.
+      await clearChatAutosave(autosavePath)
 
       if (saved.autoTags) output.log(colors.dim(`Auto-tags: ${saved.autoTags}`))
       if (saved.autoRel) output.log(colors.dim(`Auto-rel: ${saved.autoRel.join('; ')}`))
@@ -1132,6 +1174,10 @@ export default class AiChatTask extends Command {
 
       return CommandResult.success({ saved: saved.path, turns: saved.exchanges })
     }
+
+    // No save wanted — drop the crash snapshot too: an ephemeral exit means
+    // leave nothing behind.
+    await clearChatAutosave(autosavePath)
 
     output.log('')
     if (resumeSession && !hasNewMessages) {
