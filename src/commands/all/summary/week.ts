@@ -56,7 +56,8 @@ export default class SummaryWeekTask extends Command {
     description: 'Generate AI-powered weekly summary - the week at altitude, from its daily summaries',
     descriptionLong: [
       'Creates a summary.md in the week directory by synthesizing the Daily Summaries.',
-      'The arc of the week: What Moved Forward, Decisions, Open Loops, Time, Health Trends, Signals, Learned.',
+      'The arc of the week: Against the Plan (when the week had a week.md), What Moved Forward,',
+      'Decisions, Open Loops, Time, Health Trends, Signals, Learned.',
       "Reads as the week's canonical record and feeds weekly planning.",
       '',
       'By default, errors if any day of the week is missing its summary.md.',
@@ -174,6 +175,18 @@ export default class SummaryWeekTask extends Command {
       output.log(`Previous week (${prevWeek.toString()}): no summary`)
     }
 
+    // 2b. The week's plan and checkin trail — the Against the Plan inputs.
+    // week.md rides in its final state (the plan morphs by hand all week);
+    // checkins.md opens with the original-plan snapshot, so the model can
+    // name the drift between the two. Both optional: an unplanned week just
+    // omits the section.
+    const planPath = path.join(weekDirPath, 'week.md')
+    const plan = (await exists(planPath)) ? await readTextFile(planPath) : undefined
+    const checkinsPath = path.join(weekDirPath, 'checkins.md')
+    const checkins = (await exists(checkinsPath)) ? await readTextFile(checkinsPath) : undefined
+    output.log(plan ? 'Week plan: week.md (final state)' : 'Week plan: none')
+    output.log(checkins ? 'Checkins: checkins.md (incl. original-plan snapshot)' : 'Checkins: none')
+
     // 3. Week-native tracking data: day-keyed health CSVs from the week dir,
     // asset prices filtered to the week.
     const healthCsvs = await gatherWeekHealthData(week.start, timeDir)
@@ -193,7 +206,16 @@ export default class SummaryWeekTask extends Command {
 
     // 5. Prompt
     const promptTemplate = await this.loadPromptTemplate()
-    const userPrompt = this.buildUserPrompt(week, dailies, skipped.missing, previous, healthCsvs, priceCsvs)
+    const userPrompt = this.buildUserPrompt(
+      week,
+      dailies,
+      skipped.missing,
+      previous,
+      plan,
+      checkins,
+      healthCsvs,
+      priceCsvs,
+    )
     const contextTokens = estimateTokens(userPrompt)
 
     output.log(
@@ -272,9 +294,13 @@ export default class SummaryWeekTask extends Command {
         ...(previous
           ? [{ path: relPath(previous.path), tokens: estimateTokens(previous.body), kind: 'background' }]
           : []),
+        ...(plan ? [{ path: relPath(planPath), tokens: estimateTokens(plan), kind: 'plan' }] : []),
+        ...(checkins ? [{ path: relPath(checkinsPath), tokens: estimateTokens(checkins), kind: 'checkins' }] : []),
         ...dailies.map((d) => ({ path: relPath(d.path), tokens: estimateTokens(d.body), kind: 'daily-summary' })),
       ],
       skipped: [
+        ...(plan ? [] : [{ path: relPath(planPath), reason: 'missing' }]),
+        ...(checkins ? [] : [{ path: relPath(checkinsPath), reason: 'missing' }]),
         ...skipped.missing.map((d) => ({
           path: relPath(path.join(timeDir, dayDir(d), 'summary.md')),
           reason: 'missing',
@@ -320,6 +346,8 @@ export default class SummaryWeekTask extends Command {
     dailies: WeekSummaryEntry[],
     missing: PlainDate[],
     previous: { week: Week; body: string } | undefined,
+    plan: string | undefined,
+    checkins: string | undefined,
     healthCsvs: WeekHealthCsv[],
     priceCsvs: WeekPriceCsv[],
   ): string {
@@ -367,6 +395,20 @@ export default class SummaryWeekTask extends Command {
       parts.push(`<!-- START PREVIOUS WEEK: ${previous.week.toString()} (background) -->`)
       parts.push(previous.body.trim())
       parts.push(`<!-- END PREVIOUS WEEK: ${previous.week.toString()} -->`)
+      parts.push('')
+    }
+
+    if (plan) {
+      parts.push('<!-- START WEEK PLAN (final state at week end) -->')
+      parts.push(plan.trim())
+      parts.push('<!-- END WEEK PLAN -->')
+      parts.push('')
+    }
+
+    if (checkins) {
+      parts.push('<!-- START CHECKINS TRAIL -->')
+      parts.push(checkins.trim())
+      parts.push('<!-- END CHECKINS TRAIL -->')
       parts.push('')
     }
 

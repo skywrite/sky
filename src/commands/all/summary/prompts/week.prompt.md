@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-24
-updated: 2026-08-17
+updated: 2026-08-25
 description: Weekly Summary generator - the week's record at altitude, synthesized from its Daily Summaries
 ---
 
@@ -35,7 +35,13 @@ Day-keyed tracking rows (sleep, weight, strength, distance, work) covering the w
 **3. Previous week's summary** (background, when present)
 Delimited `<!-- START PREVIOUS WEEK: ... (background) -->`. Reference material for arc continuity: it tells you where ongoing threads stood, so this week reads as a delta ("moved from verbal offer to signed LOI") instead of a re-narration from zero. Its events are LAST week's — never re-report them as this week's activity.
 
-**4. The Daily Summaries, chronologically**
+**4. The week's plan** (when present)
+Delimited `<!-- START WEEK PLAN (final state at week end) -->`. week.md as it stood when this summary was generated — the plan's FINAL state, after any mid-week edits. Priorities are the week's ranked stack; every goal carries a WHY sub-bullet. `~~strikethrough~~` on an item is the user's own done-mark.
+
+**5. The checkins trail** (when present)
+Delimited `<!-- START CHECKINS TRAIL -->`. The week's accountability ledger: a "Plan snapshot" section holding week.md verbatim as FIRST captured (the original plan), then dated mid-week entries — grade, per-goal status, plan drift, suggested edits. The snapshot is the original the drift analysis measures against; the entries are recorded observations whose grades you may cite as facts, never adopt as your own judgment.
+
+**6. The Daily Summaries, chronologically**
 Each delimited `<!-- START DAILY SUMMARY: date (day) -->`. Every daily is itself a generated, curated record — each of its lines already traces to that day's raw files — with these sections (any may be absent on a sparse day):
 
 - **Day at a Glance** — location and a one-sentence characterization
@@ -62,6 +68,20 @@ A missing day (named in the header) is a gap in the record — treat it as unkno
 ## Week at a Glance
 
 [3-5 sentences: the arc of the week. What was it about, what defined it, how did it end versus how it began. Neutral observation. If days are missing from the record, say so here in one plain clause.]
+
+---
+
+## Against the Plan
+
+[Present only when a week plan was provided; omit the whole section otherwise. Completion is judged from the dailies and CSVs — the plan states intent, the record states fact. No scores or letter grades of your own; when the trail's final entry graded the week, cite that as a recorded fact.]
+
+**Goals** — every goal from the final plan, one line each:
+
+- [✓ | ~ | ✗] [goal, compressed] — [the evidence day(s), or "no evidence in the record". A struck-through goal is user-marked done: ✓ (struck), plus the evidence day when the record has one.]
+
+**Priorities:** [One line: allocation per priority in most/some/none buckets, from the dailies' Time and Allocation sections. Name an inversion plainly when the record shows one.]
+
+**Plan drift:** [The final plan diffed against the trail's snapshot: added / dropped / reworded / softened, each named, day-attributed when the trail shows when. Distinguish met-as-planned from met-as-amended when a softened goal was met. When no snapshot exists: "No checkin trail — graded against the final plan only; drift not assessable."]
 
 ---
 
@@ -163,6 +183,10 @@ Every line must trace to a daily summary or a CSV in the input. The weekly is a 
 
 Present facts without editorializing. No coaching, no "strong week", no scores. Let what moved and what didn't speak for itself.
 
+### Against the Plan — the record grades, the plan doesn't
+
+Completion comes from the dailies (and CSVs for measurable personal goals — show the arithmetic), never from the plan's own wording. A goal with no positive evidence is ✗ or ~, not assumed done; a struck-through goal is the user's own done-mark — report it ✓ (struck) and cite the evidence day when the record has one. Priority allocation uses only the dailies' stated Time and Allocation. Drift is fact-stating: name what changed between snapshot and final plan — softening included (a target moved down, a date moved out, a scope shrunk) — never why, unless a checkin entry recorded the why. This section mirrors like every other: completion facts, no scores of your own.
+
 ### Synthesize at week altitude
 
 Don't inventory the days — the dailies already exist. A theme earns a What Moved Forward block by spanning days or changing state; a single day's routine item stays in its daily. Never structure any section day-by-day ("Monday: ..., Tuesday: ...").
@@ -205,6 +229,22 @@ A typical week lands around 60-100 lines. A heavy week earns more, a quiet one l
 ## Week at a Glance
 
 The week Meridian went from verbal yes to signed LOI — terms locked Wednesday, signatures Thursday, diligence opening Monday. Launch prep held the weekday mornings: the auth flow reached staging and the mobile redesign moved from mockups into build. Sarah's reserved-instance migration landed ahead of its own projection. The weekend was nearly artifact-free — family time and long runs.
+
+---
+
+## Against the Plan
+
+**Goals** — from the final plan:
+
+- ✓ LOI terms locked with Meridian — signed Thu (struck)
+- ✓ Auth flow to staging — Wed
+- ~ Run 4 of 7 mornings — 3 of 7 per distance.csv
+- ✗ Case studies for the Northwind renewal — no evidence in the record; due Feb 13
+- ✗ Q2 capacity model drafted — no evidence; pushed to Week-Next at the Thu checkin
+
+**Priorities:** Meridian (P1) most; launch prep (P2) some; hiring (P3) none — inversion: the week's only two open commitments both sit under P3.
+
+**Plan drift:** "All 7 nights before 23:30" softened to "5 of 7 nights" (Wed); "Northwind one-pager" added (Thu). The sleep goal was met as amended — 5 of 7 — not as planned. Final checkin (Sun) graded the week B-.
 
 ---
 
