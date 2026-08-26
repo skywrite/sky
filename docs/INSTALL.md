@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-17
+updated: 2026-08-26
 ---
 
 # Installing Sky
@@ -23,7 +23,7 @@ Budget about five minutes.
 | Requirement | Why | Check |
 |---|---|---|
 | macOS | Sky is developed and run on macOS | `uname` → `Darwin` |
-| [Bun](https://bun.sh) 1.3+ | Runtime, package manager, test runner | `bun --version` |
+| [Bun](https://bun.sh) 1.4+ | Runtime, package manager, test runner | `bun --version` |
 | git | Sky runs from a clone | `git --version` |
 | An AI provider API key | Journaling questions, `ai:chat`, summaries | see step 5 |
 
@@ -50,8 +50,9 @@ Restart your shell, then verify:
 bun --version
 ```
 
-**Must print** `1.3.0` or higher. If `bun: command not found`, add `~/.bun/bin` to your
-`PATH` and re-check.
+**Must print** `1.4.0` or higher — Sky's date layer is migrating to the standard
+`Temporal` API, which Bun ships enabled from 1.4. If `bun: command not found`, add
+`~/.bun/bin` to your `PATH` and re-check.
 
 ## 2. Clone the repo
 

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-26
 ---
 
 # Dependencies
@@ -18,7 +18,7 @@ Without these, Sky does not run at all. Setup is in [INSTALL.md](INSTALL.md).
 | Requirement | Why | Check |
 |---|---|---|
 | macOS | The service is launchd-based, and several commands call macOS-only tools | `uname` → `Darwin` |
-| [Bun](https://bun.sh) 1.3+ | Runtime, package manager, test runner | `bun --version` |
+| [Bun](https://bun.sh) 1.4+ | Runtime, package manager, test runner | `bun --version` |
 | git | Sky runs from a clone | `git --version` |
 | An AI provider API key | Journaling questions, `ai:chat`, summaries | see INSTALL.md step 5 |
 

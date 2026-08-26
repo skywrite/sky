@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-22
+updated: 2026-08-26
 ---
 
 # Notebook time and the notebook filesystem
@@ -177,6 +177,11 @@ All from `#universal/dates/nbdt/mod.ts`. JS `Date` silently mixes local and UTC 
 by a day at zone boundaries, which in a notebook keyed by date means work filed under the
 wrong day. `bun run dev:lint` fails the build on `new Date()`, `.toISOString()` and
 friends. Convert at the boundary when a third-party library hands you one.
+
+Sky requires Bun 1.4+, which ships the standard `Temporal` API enabled by default.
+Temporal is now a safe dependency, and some nbdt components will migrate onto it over
+time — nbdt's types deliberately mirror Temporal's. Extended hours are the part that
+stays custom: `Temporal.PlainTime` cannot represent `25:30`.
 
 ## How commands accept dates
 

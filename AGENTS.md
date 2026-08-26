@@ -153,6 +153,8 @@ Use `#universal/dates/nbdt/mod.ts` exclusively:
 
 **NEVER use `new Date()`, `Date` type, `.toISOString()`, or any JS Date APIs.** They silently mix local and UTC time, causing dates to shift by a day. When external libraries return JS `Date` objects, convert to nbdt types immediately at the boundary.
 
+As of Bun 1.4 the standard `Temporal` API ships enabled in the runtime, so it is now safe to depend on. nbdt's types were shaped after Temporal's, and some nbdt components will migrate onto it over time. Keep importing from `#universal/dates/nbdt/mod.ts` — migration happens inside nbdt, not at call sites — and extended hours (`25:30`) stay nbdt-only: `Temporal.PlainTime` cannot represent them.
+
 ### File System Operations
 
 ```typescript

@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.0
       - name: Install dependencies
         working-directory: src
         run: bun install --frozen-lockfile
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.0
       - name: Install dependencies
         working-directory: src
         run: bun install --frozen-lockfile
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.0
       - name: Install dependencies
         working-directory: src
         run: bun install --frozen-lockfile
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.0
       - uses: actions/setup-node@v5
         with:
           node-version-file: extensions/vscode/.nvmrc
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.0
       # bun audit reads the lockfile and queries the advisory DB — no install
       # step needed. Fails on any known vulnerability in the locked deps.
       - name: Audit src dependencies
