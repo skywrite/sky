@@ -91,7 +91,7 @@ export default class MessageDocument extends Document {
   }
 
   // Time-ref link to the previous message in a follow chain (e.g. "19/actions/messages/slack_...")
-  // Set by slack:follow:check and slack:follow:new when a follow has prior messages
+  // Set by slack:follow:check and slack:follow:message when a follow has prior messages
   get previous(): string | undefined {
     return this.yaml['previous'] as string | undefined
   }

@@ -27,7 +27,7 @@ export type LaterCaptureOutcome = {
 }
 
 /**
- * Capture later items through slack:follow:new and mark each complete in
+ * Capture later items through slack:follow:message and mark each complete in
  * Slack — the Later list stays the ledger of what remains.
  */
 export async function captureLaterItems(
@@ -46,7 +46,7 @@ export async function captureLaterItems(
     const { link } = row
     output.log('')
     output.log(`Capturing ${link}`)
-    const result = await tasks.run('slack:follow:new', { link, noEditor: true })
+    const result = await tasks.run('slack:follow:message', { link, noEditor: true })
 
     if (!result.ok) {
       // A thread that is already followed or already captured (a saved reply

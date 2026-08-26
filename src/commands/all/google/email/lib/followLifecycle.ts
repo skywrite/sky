@@ -11,7 +11,7 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
 
 // First-time follow creation, shared by follow:new and follow:sync. Mirrors
-// slack:follow:new's decline rule: a thread already quiet past the expiry
+// slack:follow:message's decline rule: a thread already quiet past the expiry
 // window is an archive, not something to watch — its content is captured, but
 // the follow is born closed and the thread leaves the Sky/Follow bucket.
 

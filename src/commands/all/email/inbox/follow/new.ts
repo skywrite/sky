@@ -35,7 +35,7 @@ export default class FollowEmailNewTask extends Command {
     descriptionLong: [
       'Without --when: fetches ALL unsaved threads and creates follows (batch mode).',
       'With --when: shows a chooser for a single thread, collapses all messages',
-      'into one file at the specified date (like slack:follow:new).',
+      'into one file at the specified date (like slack:follow:message).',
     ],
     usage: [
       'sky email:inbox:follow:new --account user@example.com',

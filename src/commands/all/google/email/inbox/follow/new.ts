@@ -39,7 +39,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       'google:auth (requires the Gmail scope).',
       'Without --when: fetches ALL unsaved threads and creates follows (batch mode).',
       'With --when: shows a chooser for a single thread, collapses all messages',
-      'into one file at the specified date (like slack:follow:new).',
+      'into one file at the specified date (like slack:follow:message).',
       'Threads already quiet past the expiry window are captured and closed',
       'instead of followed (--force to follow anyway).',
     ],

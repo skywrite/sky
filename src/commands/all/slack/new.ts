@@ -37,7 +37,7 @@ const params = {
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-thread tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
-  slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:new)', { hidden: true }),
+  slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:message)', { hidden: true }),
   link: Flag.string('Slack permalink identifying the captured message', { hidden: true }),
 }
 

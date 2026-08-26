@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { assert, test } from '#test'
-import { findCapturedThread } from './new.ts'
+import { findCapturedThread } from './message.ts'
 
 // A thread captured from the Later queue: enterprise-spelled root link,
 // thread_ts recorded. Re-captures arrive under other spellings of the same

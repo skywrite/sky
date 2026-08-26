@@ -61,7 +61,7 @@ export default class SlackLaterTask extends Command {
       'the full queue count. Listing is read-only; slack:later:day is the',
       'day-scoped view of the same queue.',
       '',
-      '--capture-batch N captures the N oldest through slack:follow:new: live',
+      '--capture-batch N captures the N oldest through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
       'the follow expiry window archive without a follow. Summary, auto-tags,',
       'and auto-rel apply either way, each item is then marked complete in',

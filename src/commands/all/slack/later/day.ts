@@ -78,7 +78,7 @@ export default class SlackLaterDayTask extends Command {
       'falls on the given notebook day (--saved-on matches the day you saved',
       'them instead). Listing is read-only.',
       '',
-      'With --capture, each picked item runs through slack:follow:new: live',
+      'With --capture, each picked item runs through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
       'the follow expiry window archive without a follow. Summary, auto-tags,',
       'and auto-rel apply either way, the item is then marked complete in',

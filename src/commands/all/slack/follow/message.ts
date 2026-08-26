@@ -53,16 +53,16 @@ type Result = {
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'slack:follow:new': {
+    'slack:follow:message': {
       params: Params
       result: Result
     }
   }
 }
 
-export default class SlackFollowNewTask extends Command {
+export default class SlackFollowMessageTask extends Command {
   static override description: CommandDescription = {
-    name: 'slack:follow:new',
+    name: 'slack:follow:message',
     description: 'Create a new follow from a Slack message link.',
     descriptionLong: [
       'Resolves channel name, message details, and thread info from a Slack link',
@@ -77,11 +77,11 @@ export default class SlackFollowNewTask extends Command {
       'reply link without a thread_ts param only matches by exact link string.',
     ],
     usage: [
-      'sky slack:follow:new "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
-      'sky slack:follow:new "https://..." --interval 4h',
-      'sky slack:follow:new "https://..." --expires 7d',
-      'sky slack:follow:new "https://..." --expires "2026-07-20 09:00"',
-      'sky slack:follow:new "https://..." --check',
+      'sky slack:follow:message "https://workspace.slack.com/archives/C01234ABC/p1234567890123456"',
+      'sky slack:follow:message "https://..." --interval 4h',
+      'sky slack:follow:message "https://..." --expires 7d',
+      'sky slack:follow:message "https://..." --expires "2026-07-20 09:00"',
+      'sky slack:follow:message "https://..." --check',
     ],
     params,
   }
