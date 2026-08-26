@@ -140,6 +140,13 @@ export default class SlackFollowCheckTask extends Command {
           const from = latestReply.userName || latestReply.userId || '-'
           const to = resolveRecipient(data, from)
 
+          // The capture is dated by the newest reply's real time, never the
+          // check time — a reply discovered after midnight (backoff, quiet
+          // hours) must land in the day it was sent, not the day the check
+          // happened to run.
+          const lastActivityAt = latestReply.timeLabel ? await convertToNotebookTimezone(latestReply.timeLabel) : nowDt
+          const activityDayStr = lastActivityAt.plainDate.toString()
+
           // Collect file attachments from new replies
           const newReplyFiles = newReplies.flatMap((r) => r.files ?? [])
 
@@ -155,7 +162,9 @@ export default class SlackFollowCheckTask extends Command {
           // YYYY-MM-DD/subpath). Follow entries are time refs (older follows:
           // paths in any layout); resolveTimeRef reads them all.
           const lastMsg = follow.messages.length > 0 ? follow.messages[follow.messages.length - 1] : undefined
-          const previous = lastMsg ? computePreviousRef(resolveTimeRef(lastMsg.path), nowDt.plainDate) : undefined
+          const previous = lastMsg
+            ? computePreviousRef(resolveTimeRef(lastMsg.path), lastActivityAt.plainDate)
+            : undefined
 
           // Inherit tags and rel from previous message file
           let inheritedTags: string | undefined
@@ -172,17 +181,18 @@ export default class SlackFollowCheckTask extends Command {
             }
           }
 
-          // Check if we already have a message file for today (same-day update)
-          const todayStr = nowDt.plainDate.toString()
-          const todayMessage = follow.messages.find((m) => m.date === todayStr)
+          // Check if we already have a message file for that day (same-day update)
+          const dayMessage = follow.messages.find((m) => m.date === activityDayStr)
 
-          if (todayMessage) {
+          if (dayMessage) {
             // Same-day update: append new replies to existing file, don't touch day entry
-            const fullPath = path.join(DIR_BASE, resolveTimeRef(todayMessage.path))
+            const fullPath = path.join(DIR_BASE, resolveTimeRef(dayMessage.path))
             const oldDoc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
             // Copy any new file attachments and merge with existing
             const newAttachments =
-              newReplyFiles.length > 0 ? await copySlackFilesToAttachments(newReplyFiles, nowDt.plainDate, output) : []
+              newReplyFiles.length > 0
+                ? await copySlackFilesToAttachments(newReplyFiles, lastActivityAt.plainDate, output)
+                : []
             const existingAttachments = oldDoc.attachments
             const mergedAttachments = [...existingAttachments, ...newAttachments]
             const updatedDoc = new MessageDocument(
@@ -200,7 +210,7 @@ export default class SlackFollowCheckTask extends Command {
               from,
               to,
               summary: follow.summary,
-              when: nowDt,
+              when: lastActivityAt,
               markdown,
               follow: fileName,
               previous,
@@ -211,12 +221,12 @@ export default class SlackFollowCheckTask extends Command {
             })
 
             // Append message path to follow
-            const ddfw = new DayDirFileWriter(nowDt.plainDate)
+            const ddfw = new DayDirFileWriter(lastActivityAt.plainDate)
             const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
             if (relPath) {
               const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
               // Stored as a time ref: the follow outlives the layout.
-              follow = follow.addMessage(todayStr, toTimeRef(fullTimePath))
+              follow = follow.addMessage(activityDayStr, toTimeRef(fullTimePath))
 
               // Patch array rel into the created file (slack:new only accepts string params)
               if (Array.isArray(inheritedRel)) {
@@ -235,12 +245,10 @@ export default class SlackFollowCheckTask extends Command {
           withActivity.push({ fileName, newReplies: newReplies.length })
 
           // 4a. Update lastChecked + lastActivity, reset checkInterval —
-          // lastActivity is the newest reply's real time, not the check time:
-          // a stale reply discovered late must not look like fresh activity
+          // lastActivity is the newest reply's real time (the same anchor the
+          // capture is dated by), not the check time: a stale reply discovered
+          // late must not look like fresh activity
           const checkedAt = (await fetchNow()).plainDateTime
-          const lastActivityAt = latestReply.timeLabel
-            ? await convertToNotebookTimezone(latestReply.timeLabel)
-            : checkedAt
           const newInterval = Follow.backoffInterval(checkedAt, lastActivityAt)
           const updated = follow
             .updateLastActivity(lastActivityAt)
