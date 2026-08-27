@@ -64,7 +64,7 @@ const TIME_RE = /^(\d{1,2}):([0-5]\d)$/
 
 export type EveryTrigger = { kind: 'every'; raw: string; intervalMs: number }
 export type AtTime = { raw: string; pattern: string; hour: number; minute: number }
-/** `zone` undefined means notebook time */
+/** `zone` undefined means the local wall clock */
 export type AtTrigger = { kind: 'at'; times: AtTime[]; zone?: string }
 export type Trigger = EveryTrigger | AtTrigger
 
@@ -245,7 +245,8 @@ function dueAtFiring(trigger: AtTrigger, now: PlainDateTime, lastRun: PlainDateT
     // YYYY-MM-DD sorts chronologically, so string comparison orders the days
     let isOwed: boolean
     if (!lastRun || lastRun.date < now.date) isOwed = true
-    else if (lastRun.date > now.date) isOwed = false // ran later than now; leave it alone
+    else if (lastRun.date > now.date)
+      isOwed = false // ran later than now; leave it alone
     // Same calendar date: owed only if the last run predates this firing, which
     // is what lets a run missed while asleep catch up later the same day.
     else isOwed = minutesOf(lastRun.time) < fireMinutes
