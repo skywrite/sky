@@ -1,17 +1,24 @@
 import { Buffer } from 'node:buffer'
 import type { GoogleClient } from './client.ts'
+import { buildMimeMessage } from './mime.ts'
+import type { MimeMessageInput } from './mime.ts'
 import type { StoredTokens } from './tokens.ts'
 
 // Gmail REST primitives for the google:email commands. The message shape
 // mirrors the IMAP pipeline's EmailMessage closely so the notebook-side code
 // ports without churn, but this module stays free of notebook concepts
 // (follows, day files) the same way calendar.ts stays free of notebook time.
+//
+// Writes stop at labels and drafts: nothing here — or anywhere built on it —
+// can send mail. Sending is a separate Gmail endpoint (drafts.send /
+// messages.send) that is deliberately not implemented; the user sends from
+// Gmail after reviewing the draft.
 
 export const GMAIL_API_URL = 'https://gmail.googleapis.com/gmail/v1/users/me'
 
 // gmail.modify is everything except permanent deletion — read, search,
-// label/archive, and (later rungs) drafts and send, so one grant covers the
-// whole google:email ladder without a second re-consent.
+// label/archive, and drafts — so one grant covers the whole google:email
+// ladder without a second re-consent.
 export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.modify'
 
 /** Grants stored before the Gmail scope was added lack it; callers should say: re-run sky google:auth. */
@@ -239,6 +246,58 @@ export async function modifyThread(
   await client.postJson<unknown>(`${GMAIL_API_URL}/threads/${encodeURIComponent(threadId)}/modify`, {
     addLabelIds: options.addLabelIds ?? [],
     removeLabelIds: options.removeLabelIds ?? [],
+  })
+}
+
+export interface GmailDraft {
+  /** Draft id (drafts.* endpoints). */
+  id: string
+  /** The draft's message id — what Gmail's web URLs address. */
+  messageId: string
+  threadId: string
+}
+
+interface DraftWire {
+  id?: string
+  message?: { id?: string; threadId?: string }
+}
+
+/**
+ * File a new message under Drafts. drafts.create stores the message and
+ * nothing more — it cannot send, and no send primitive exists in this
+ * module (see the header comment). The draft is a fresh message, not a
+ * reply: no thread, In-Reply-To, or References.
+ */
+export async function createDraft(client: GoogleClient, input: MimeMessageInput): Promise<GmailDraft> {
+  const raw = Buffer.from(buildMimeMessage(input), 'utf-8').toString('base64url')
+  const wire = await client.postJson<DraftWire>(`${GMAIL_API_URL}/drafts`, { message: { raw } })
+  if (!wire.id || !wire.message?.id) throw new Error('Gmail draft came back without ids')
+  return { id: wire.id, messageId: wire.message.id, threadId: wire.message.threadId ?? wire.message.id }
+}
+
+/**
+ * Gmail web URL opening the draft in compose. authuser picks the account in
+ * a multi-login browser (the /u/N index is per browser, not per account).
+ */
+export function draftUrl(email: string, messageId: string): string {
+  return `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}#drafts?compose=${encodeURIComponent(messageId)}`
+}
+
+const ADDRESS_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/
+
+/**
+ * Recipients as typed — `"Doe, Jane" <jane@example.com>, bob@example.com` —
+ * to addresses; blank input is no recipients. Throws naming the first entry
+ * that carries no usable email address.
+ */
+export function parseRecipients(text: string | undefined): GmailAddress[] {
+  if (!text?.trim()) return []
+  return splitAddressList(text).map((raw) => {
+    const parsed = parseAddress(raw)
+    if (!parsed?.address || !ADDRESS_RE.test(parsed.address)) {
+      throw new Error(`Not an email address: ${raw.trim()}`)
+    }
+    return parsed
   })
 }
 

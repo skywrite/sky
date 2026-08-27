@@ -4,15 +4,19 @@ import { assert, test } from '#test'
 import { GoogleClient } from './client.ts'
 import {
   GMAIL_SCOPE,
+  createDraft,
+  draftUrl,
   getAttachment,
   getThread,
   hasGmailScope,
   listThreads,
   modifyThread,
+  parseRecipients,
   resolveLabelId,
   threadIdFromDecimal,
   threadIdToDecimal,
 } from './gmail.ts'
+import { buildMimeMessage } from './mime.ts'
 import { saveAccountTokens } from './tokens.ts'
 
 type RecordedCall = { url: string; init?: RequestInit }
@@ -250,6 +254,67 @@ test('getAttachment', async () => {
     should: 'fetch the attachment endpoint and decode the raw bytes',
     expected: ['/gmail/v1/users/me/messages/m2/attachments/att1', [0xfb, 0xff, 0xfe]],
     actual: [new URL(calls[0].url).pathname, Array.from(bytes)],
+  })
+})
+
+test('createDraft', async () => {
+  const calls: RecordedCall[] = []
+  const client = await clientWith([{ id: 'r-1', message: { id: 'm1', threadId: 't1', labelIds: ['DRAFT'] } }], calls)
+  const input = {
+    to: [{ name: 'Jane Doe', address: 'jane@example.com' }],
+    subject: 'Atlas kickoff',
+    html: '<p>Hi Jane,</p>\n<p>Thursday?</p>',
+  }
+
+  const draft = await createDraft(client, input)
+
+  const body = JSON.parse(String(calls[0].init?.body)) as { message: { raw: string } }
+  assert({
+    given: 'a new HTML message',
+    should: 'POST it exactly once to drafts.create as base64url raw (no send endpoint) and return the ids',
+    expected: [
+      1,
+      '/gmail/v1/users/me/drafts',
+      'POST',
+      buildMimeMessage(input),
+      { id: 'r-1', messageId: 'm1', threadId: 't1' },
+    ],
+    actual: [
+      calls.length,
+      new URL(calls[0].url).pathname,
+      calls[0].init?.method,
+      Buffer.from(body.message.raw, 'base64url').toString('utf-8'),
+      draft,
+    ],
+  })
+})
+
+test('draftUrl', () => {
+  assert({
+    given: 'an account email and a draft message id',
+    should: 'open the draft in compose for that account',
+    expected: 'https://mail.google.com/mail/?authuser=jane%40example.com#drafts?compose=m1',
+    actual: draftUrl('jane@example.com', 'm1'),
+  })
+})
+
+test('parseRecipients', () => {
+  let rejected = ''
+  try {
+    parseRecipients('jane@example.com, Nobody')
+  } catch (err) {
+    rejected = (err as Error).message
+  }
+
+  assert({
+    given: 'a typed recipient list, blank input, and an entry without an address',
+    should: 'parse names and addresses, treat blank as no recipients, and name the bad entry',
+    expected: [
+      [{ name: 'Doe, Jane', address: 'jane@example.com' }, { address: 'bob@example.com' }],
+      [],
+      'Not an email address: Nobody',
+    ],
+    actual: [parseRecipients('"Doe, Jane" <jane@example.com>, bob@example.com'), parseRecipients('  '), rejected],
   })
 })
 

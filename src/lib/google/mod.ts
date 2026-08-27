@@ -132,6 +132,8 @@ export type { CalendarAttendee, CalendarEvent } from './calendar.ts'
 export {
   GMAIL_API_URL,
   GMAIL_SCOPE,
+  createDraft,
+  draftUrl,
   getAttachment,
   getMessage,
   getThread,
@@ -139,8 +141,11 @@ export {
   listLabels,
   listThreads,
   modifyThread,
+  parseRecipients,
   resolveLabelId,
   threadIdFromDecimal,
   threadIdToDecimal,
 } from './gmail.ts'
-export type { GmailAddress, GmailAttachment, GmailLabel, GmailMessage, GmailThreadRef } from './gmail.ts'
+export type { GmailAddress, GmailAttachment, GmailDraft, GmailLabel, GmailMessage, GmailThreadRef } from './gmail.ts'
+
+export { renderEmailHtml } from './emailHtml.ts'
