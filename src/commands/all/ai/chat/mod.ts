@@ -676,6 +676,14 @@ export default class AiChatTask extends Command {
     let splitViewEnabled = false
     let contextScrollOffset = 0
     let toolsAnnounced = false
+    // The streamed reply leaves the line open between deltas; anything
+    // else printing closes it first.
+    let midLine = false
+    const closeStreamedLine = () => {
+      if (!midLine) return
+      output.write('\n')
+      midLine = false
+    }
 
     // The model turn-runner. Everything interactive about approvals lives
     // in this handler — the engine drives the protocol around it and owns
@@ -734,15 +742,33 @@ export default class AiChatTask extends Command {
         }
         return { approved: true, reason: 'User approved' }
       },
-      onToolCall: (tc) => {
-        if (tc.toolName === 'web_search') {
-          const input = tc.input as { query: string }
+      // The terminal renders the turn's event stream — the same stream a
+      // web client will render — and nothing else: the engine guarantees
+      // every character of the reply arrives as a delta.
+      onEvent: (event) => {
+        if (event.type === 'text-delta') {
+          // A paragraph break landing at a line start (after a tool line)
+          // is one blank line, not two.
+          const text = midLine ? event.text : event.text.replace(/^\n+/, '\n')
+          output.write(text)
+          midLine = !text.endsWith('\n')
+          return
+        }
+        if (event.type === 'turn-complete') {
+          closeStreamedLine()
+          return
+        }
+        if (event.type !== 'tool-call') return
+        // A tool line mid-sentence would land inside the streamed text.
+        closeStreamedLine()
+        if (event.toolName === 'web_search') {
+          const input = event.input as { query: string }
           output.log(colors.dim(`Searching: "${input.query}"...`))
-        } else if (tc.toolName === 'web_fetch') {
-          const input = tc.input as { url: string }
+        } else if (event.toolName === 'web_fetch') {
+          const input = event.input as { url: string }
           output.log(colors.dim(`Reading: ${input.url}`))
         } else {
-          output.log(colors.dim(`Running: ${tc.toolName}...`))
+          output.log(colors.dim(`Running: ${event.toolName}...`))
         }
       },
     })
@@ -1014,6 +1040,8 @@ export default class AiChatTask extends Command {
           output.log(colors.dim(names.length > 0 ? `Tools: ${names.join(', ')}` : 'Tools: none available'))
         }
 
+        // A blank line between the status lines above and the reply.
+        output.log('')
         const result = await chatEngine.runTurn({
           instructions: [baseSystemPrompt, contextPrompt],
           tools: allTools,
@@ -1048,8 +1076,6 @@ export default class AiChatTask extends Command {
           })
         }
 
-        output.log('')
-        output.log(result.text)
         if (uniqueUrls.length > 0) {
           output.log('')
           output.log(colors.dim('Sources:'))
@@ -1062,6 +1088,7 @@ export default class AiChatTask extends Command {
         // A failed turn keeps its tool trail — an executed side-effectful
         // call (a sent post, a created doc) must not vanish from the
         // transcript because the turn later died.
+        closeStreamedLine()
         if (err instanceof TurnError && err.toolRecords.length > 0) {
           chatContext.recordTurnTools(err.toolRecords)
         }

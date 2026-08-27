@@ -2,6 +2,7 @@ import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { assert, test } from '#test'
 import ChatEngine, {
   type ApprovalDecision,
+  type ChatEngineEvent,
   type ModelInvocation,
   type ModelInvoker,
   timeStampLine,
@@ -529,5 +530,164 @@ test('ChatEngine.runTurn - approval-round failure rolls the history back', async
       recovered: 'recovered',
       nextTurnMessages: [{ role: 'user', content: 'post it\n\nretry' }],
     },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The streamed reply
+// ---------------------------------------------------------------------------
+
+/**
+ * Streams scripted pieces through the engine's sink before resolving,
+ * one script per round — the SDK's chunk callbacks, minus the model.
+ * This reaches the real accumulation path: the text the engine returns is
+ * whatever these pieces became, never the response object's own text.
+ */
+function streamingInvoker(rounds: Array<{ pieces: string[]; response: ModelInvocation }>) {
+  let round = 0
+  const invokeModel: ModelInvoker = (args) => {
+    const next = rounds[round++]
+    if (!next) throw new Error(`streaming invoker exhausted after ${rounds.length} rounds`)
+    for (const piece of next.pieces) args.sink.write(piece)
+    return Promise.resolve(next.response)
+  }
+  return invokeModel
+}
+
+function engineWithInvoker(invokeModel: ModelInvoker, decisions: ApprovalDecision[] = []) {
+  const seen: ChatEngineEvent[] = []
+  const { approvalHandler } = scriptedApprover(decisions)
+  const engine = new ChatEngine({
+    model: {} as ConstructorParameters<typeof ChatEngine>[0]['model'],
+    approvalHandler,
+    invokeModel,
+    onEvent: (event) => seen.push(event),
+  })
+  return { engine, seen }
+}
+
+const deltas = (events: ChatEngineEvent[]) => events.flatMap((e) => (e.type === 'text-delta' ? [e.text] : []))
+
+test('ChatEngine.runTurn - the reply is exactly what streamed', async () => {
+  const { engine, seen } = engineWithInvoker(
+    streamingInvoker([
+      { pieces: ['Focus on ', 'the demo ', 'script.'], response: textResult('not the reply: the sink is') },
+    ]),
+  )
+  engine.appendUserMessage('what should I focus on?')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a turn whose model streamed three pieces',
+    should: 'hand each to the host in arrival order',
+    actual: deltas(seen),
+    expected: ['Focus on ', 'the demo ', 'script.'],
+  })
+
+  assert({
+    given: 'the same turn',
+    should: "return the streamed text as the reply, not the response object's text",
+    actual: result.text,
+    expected: 'Focus on the demo script.',
+  })
+})
+
+test('ChatEngine.runTurn - a model path that streams nothing still delivers its text as a delta', async () => {
+  const { invokeModel } = scriptedInvoker([textResult('hello there')])
+  const { engine, seen } = engineWithInvoker(invokeModel)
+  engine.appendUserMessage('hi')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a round whose invoker wrote nothing to the sink',
+    should: 'emit the whole text as one delta and return it — hosts never need a fallback',
+    actual: { deltas: deltas(seen), text: result.text },
+    expected: { deltas: ['hello there'], text: 'hello there' },
+  })
+})
+
+test('ChatEngine.runTurn - text across approval rounds is one reply, paragraph-separated', async () => {
+  const { engine, seen } = engineWithInvoker(
+    streamingInvoker([
+      {
+        pieces: ["I'll post that now."],
+        response: textResult('', { content: [approvalRequest('ap1', 'tc1', 'slack_post', { message: 'hello team' })] }),
+      },
+      { pieces: ['Posted.'], response: textResult('') },
+    ]),
+    [APPROVE],
+  )
+  engine.appendUserMessage('post that for me')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'text before the approval prompt and text after it',
+    should: 'save both as one reply with a paragraph break — what the host showed',
+    actual: result.text,
+    expected: "I'll post that now.\n\nPosted.",
+  })
+
+  assert({
+    given: 'the same turn',
+    should: 'have streamed exactly that, separator included',
+    actual: deltas(seen).join(''),
+    expected: result.text,
+  })
+})
+
+test('ChatEngine.runTurn - a step boundary breaks the paragraph only when text follows', async () => {
+  const invokeModel: ModelInvoker = (args) => {
+    args.sink.write('Let me check.')
+    args.sink.stepEnd()
+    args.sink.write('Nothing new.')
+    args.sink.stepEnd()
+    return Promise.resolve(textResult(''))
+  }
+  const { engine } = engineWithInvoker(invokeModel)
+  engine.appendUserMessage('anything new?')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'text on both sides of a step boundary, and a trailing boundary with nothing after it',
+    should: 'separate the two paragraphs and end cleanly — no dangling separator',
+    actual: result.text,
+    expected: 'Let me check.\n\nNothing new.',
+  })
+})
+
+test('ChatEngine.runTurn - turn-complete arrives last', async () => {
+  const { engine, seen } = engineWithInvoker(
+    streamingInvoker([{ pieces: ['Atlas ', 'ships Friday.'], response: textResult('') }]),
+  )
+  engine.appendUserMessage('when does atlas ship?')
+  await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a turn that streamed text',
+    should: 'close the stream with turn-complete so a host can end its rendering on it',
+    actual: seen.map((e) => e.type),
+    expected: ['text-delta', 'text-delta', 'turn-complete'],
+  })
+})
+
+test('ChatEngine.runTurn - a failed turn emits no terminal event', async () => {
+  const { engine, seen } = engineWithInvoker(() => Promise.reject(new Error('overloaded')))
+  engine.appendUserMessage('hi')
+
+  let threw: unknown
+  try {
+    await engine.runTurn(TURN_OPTS)
+  } catch (err) {
+    threw = err
+  }
+
+  assert({
+    given: 'a turn whose model call failed',
+    should: 'throw TurnError and emit no turn-complete',
+    actual: {
+      isTurnError: threw instanceof TurnError,
+      complete: seen.filter((e) => e.type === 'turn-complete').length,
+    },
+    expected: { isTurnError: true, complete: 0 },
   })
 })

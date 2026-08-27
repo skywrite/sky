@@ -1,4 +1,5 @@
 import colors from 'picocolors'
+import { writeStdout } from '#shared/sys/mod.ts'
 import type { OutputHandler } from './OutputHandler.ts'
 
 /**
@@ -28,6 +29,11 @@ export class ConsoleOutput implements OutputHandler {
 
   log(message: string): void {
     console.log(this.formatIndent() + this.formatPrefix() + message)
+  }
+
+  /** Raw: indent and prefix decorate line starts, which a partial write does not track. */
+  write(text: string): void {
+    writeStdout(text)
   }
 
   error(message: string): void {

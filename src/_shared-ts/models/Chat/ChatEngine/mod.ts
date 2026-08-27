@@ -51,7 +51,20 @@ export type ApprovalHandler = (toolCall: ApprovalRequest) => Promise<ApprovalDec
 // Results
 // -----------------------------------------------------------------------------
 
+/**
+ * Everything a host renders while a turn runs, as one stream rather than
+ * a callback per concern. A terminal writes the deltas as they land, an
+ * SSE endpoint forwards them to a browser, a headless run ignores the
+ * lot. The SDK exposes finer tool lifecycle callbacks (execution start
+ * and end) — they get events when something renders them.
+ */
+export type ChatEngineEvent =
+  | { type: 'text-delta'; text: string }
+  | { type: 'tool-call'; toolName: string; input: unknown }
+  | { type: 'turn-complete'; toolRecords: ToolCallRecord[] }
+
 export interface TurnResult {
+  /** The reply exactly as it streamed: every text delta in order, step and round boundaries as paragraph breaks. */
   text: string
   /** web_search result URLs in call order, duplicates included. */
   sourceUrls: string[]
@@ -105,10 +118,28 @@ export interface ModelInvocation {
   error?: unknown
 }
 
-/** Test seam: one model invocation over the prepared prompt. */
+/**
+ * Where an invocation's reply text goes as it arrives. The engine owns the
+ * sink: every piece written becomes a text-delta event AND part of the
+ * returned text, so what a host rendered and what gets saved are the same
+ * string by construction. A step boundary becomes a paragraph break
+ * between the pieces it separates.
+ */
+export interface TextSink {
+  write(text: string): void
+  /** A model step ended — text that follows starts a new paragraph. */
+  stepEnd(): void
+}
+
+/**
+ * Test seam: one model invocation over the prepared prompt. Production
+ * wires the SDK's streaming callbacks to the sink; a scripted invoker
+ * writes pieces to it, so the streaming path runs without a model.
+ */
 export type ModelInvoker = (args: {
   instructions: SystemModelMessage[]
   messages: Message[]
+  sink: TextSink
 }) => Promise<ModelInvocation>
 
 // -----------------------------------------------------------------------------
@@ -127,8 +158,8 @@ export interface ChatEngineOptions {
   /** Resolved model profile, spread into every invocation. */
   model: ResolvedModel
   approvalHandler: ApprovalHandler
-  /** Fires as the model starts tool calls, for host progress lines. */
-  onToolCall?: (toolCall: { toolName: string; input: unknown }) => void
+  /** The turn's event stream — progress lines, SSE frames, or nothing. */
+  onEvent?: (event: ChatEngineEvent) => void
   maxApprovalRounds?: number
   /** Test seam — production streams via streamText. */
   invokeModel?: ModelInvoker
@@ -182,7 +213,7 @@ function toolInputDigest(input: unknown): string | undefined {
 export default class ChatEngine {
   private readonly model: ResolvedModel
   private readonly approvalHandler: ApprovalHandler
-  private readonly onToolCall?: (toolCall: { toolName: string; input: unknown }) => void
+  private readonly onEvent?: (event: ChatEngineEvent) => void
   private readonly maxApprovalRounds: number
   private readonly invokeModel?: ModelInvoker
 
@@ -192,7 +223,7 @@ export default class ChatEngine {
   constructor(opts: ChatEngineOptions) {
     this.model = opts.model
     this.approvalHandler = opts.approvalHandler
-    this.onToolCall = opts.onToolCall
+    this.onEvent = opts.onEvent
     this.maxApprovalRounds = opts.maxApprovalRounds ?? 3
     this.invokeModel = opts.invokeModel
   }
@@ -244,9 +275,33 @@ export default class ChatEngine {
       turnTools.push({ tool: toolCall.toolName, input: toolInputDigest(toolCall.input), outcome: 'denied' })
     }
 
+    const emit = (event: ChatEngineEvent) => this.onEvent?.(event)
+
+    // The reply, accumulated from exactly what was emitted. A boundary
+    // defers its paragraph break until text actually follows, so a turn
+    // never ends on a dangling separator.
+    let reply = ''
+    let roundPieces = 0
+    let breakPending = false
+    const sink: TextSink = {
+      write: (piece) => {
+        if (!piece) return
+        if (breakPending) {
+          breakPending = false
+          if (!reply.endsWith('\n') && !piece.startsWith('\n')) sink.write('\n\n')
+        }
+        reply += piece
+        roundPieces++
+        emit({ type: 'text-delta', text: piece })
+      },
+      stepEnd: () => {
+        breakPending = reply.length > 0
+      },
+    }
+
     const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
       for (const tc of toolCalls ?? []) {
-        this.onToolCall?.(tc)
+        emit({ type: 'tool-call', toolName: tc.toolName, input: tc.input })
       }
     }
 
@@ -261,7 +316,7 @@ export default class ChatEngine {
     // result so the approval loop and downstream rendering are unchanged.
     const invoke: ModelInvoker =
       this.invokeModel ??
-      (async ({ instructions, messages }) => {
+      (async ({ instructions, messages, sink }) => {
         // The SDK's default onError is console.error — for a message-
         // validation failure that dump embeds the entire message array.
         // Capture instead: once a step has completed, the result promises
@@ -279,6 +334,14 @@ export default class ChatEngine {
           toolApproval: opts.toolApproval,
           stopWhen: isStepCount(5),
           onStepEnd,
+          // Deltas ride a callback rather than a consumed stream: awaiting
+          // the result promises below is what drives this stream, and
+          // iterating it here as well would leave two consumers racing the
+          // same source.
+          onChunk: ({ chunk }) => {
+            if (chunk.type === 'text-delta') sink.write(chunk.text)
+            else if (chunk.type === 'finish-step') sink.stepEnd()
+          },
           onError: ({ error }) => {
             streamError ??= error
           },
@@ -301,9 +364,11 @@ export default class ChatEngine {
         }
       })
     const runRound = async () => {
+      roundPieces = 0
       const result = await invoke({
         instructions: cachedInstructions(opts.instructions),
         messages: withCacheTail(this.messages),
+        sink,
       })
       if (result.error !== undefined) {
         // The partial result still names what executed before the stream
@@ -311,6 +376,11 @@ export default class ChatEngine {
         collectToolActivity(result)
         throw result.error
       }
+      // A round that streamed nothing (a provider without chunk callbacks,
+      // a scripted invoker) still delivers its text through the sink, so
+      // no host needs a whole-text fallback of its own.
+      if (roundPieces === 0) sink.write(result.text)
+      sink.stepEnd()
       return result
     }
 
@@ -440,7 +510,12 @@ export default class ChatEngine {
       // deno-lint-ignore no-explicit-any
       this.messages.push(...(result.responseMessages as any))
 
-      return { text: result.text, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted }
+      // Terminal event as well as a return value — a host consuming only
+      // the stream can close its rendering on this without a second code
+      // path for the turn ending.
+      emit({ type: 'turn-complete', toolRecords: turnTools })
+
+      return { text: reply, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted }
     } catch (err) {
       // Roll back to the turn's start and rethrow clamped — the raw SDK
       // error can embed the entire message array, and hosts print and log

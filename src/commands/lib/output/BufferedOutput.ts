@@ -8,6 +8,8 @@ export class BufferedOutput implements OutputHandler {
   private logs: string[] = []
   private errors: string[] = []
   private tables: any[] = []
+  /** The line in progress: written pieces the next log will complete. */
+  private partial = ''
   private indentLevel: number
 
   constructor(indentLevel = 0) {
@@ -19,7 +21,12 @@ export class BufferedOutput implements OutputHandler {
   }
 
   log(message: string): void {
-    this.logs.push(this.formatIndent() + message)
+    this.logs.push(this.formatIndent() + this.partial + message)
+    this.partial = ''
+  }
+
+  write(text: string): void {
+    this.partial += text
   }
 
   error(message: string): void {
@@ -31,10 +38,10 @@ export class BufferedOutput implements OutputHandler {
   }
 
   /**
-   * Get all logged messages
+   * Get all logged messages, plus the line still in progress if any
    */
   getLogs(): string[] {
-    return [...this.logs]
+    return this.partial ? [...this.logs, this.formatIndent() + this.partial] : [...this.logs]
   }
 
   /**
@@ -59,7 +66,7 @@ export class BufferedOutput implements OutputHandler {
 
     // Note: This doesn't preserve exact ordering between logs and errors,
     // but provides a simple interface for testing
-    for (const message of this.logs) {
+    for (const message of this.getLogs()) {
       all.push({ type: 'log', message })
     }
     for (const message of this.errors) {
@@ -76,6 +83,7 @@ export class BufferedOutput implements OutputHandler {
     this.logs = []
     this.errors = []
     this.tables = []
+    this.partial = ''
   }
 
   /**

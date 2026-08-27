@@ -104,3 +104,33 @@ test('ConsoleOutput is instantiable', () => {
     expected: ['function', 'function'],
   })
 })
+
+test('BufferedOutput.write continues the line the next log completes', () => {
+  const output = new BufferedOutput()
+
+  output.write('Focus on ')
+  output.write('the demo ')
+  output.log('script.')
+  output.log('Done.')
+
+  assert({
+    given: 'two partial writes and then a log',
+    should: 'buffer them as one line, and the following log as its own',
+    actual: output.getLogs(),
+    expected: ['Focus on the demo script.', 'Done.'],
+  })
+})
+
+test('BufferedOutput.getLogs shows a line still in progress', () => {
+  const output = new BufferedOutput()
+
+  output.log('Thinking...')
+  output.write('still streaming')
+
+  assert({
+    given: 'a partial write with no log after it',
+    should: 'show the unfinished line rather than dropping it',
+    actual: output.getLogs(),
+    expected: ['Thinking...', 'still streaming'],
+  })
+})

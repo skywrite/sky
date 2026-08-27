@@ -10,6 +10,12 @@ export interface OutputHandler {
   log(message: string): void
 
   /**
+   * Write text without ending the line — output that arrives in pieces
+   * (a streamed reply). The next log continues the same line.
+   */
+  write(text: string): void
+
+  /**
    * Log an error message (equivalent to console.error)
    */
   error(message: string): void
