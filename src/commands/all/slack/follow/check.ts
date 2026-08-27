@@ -1,5 +1,6 @@
 import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
+import { checkChannelWatches, type ChannelWatchCheckResult } from '#commands/all/slack/lib/checkChannelWatches.ts'
 import { copySlackFilesToAttachments } from '#commands/all/slack/lib/copyToAttachments.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -26,7 +27,14 @@ const params = {
 type Params = InferParams<typeof params>
 
 type CheckSummary = { fileName: string; newReplies: number }
-type Result = { checked: number; expired: string[]; skipped: string[]; errors: string[]; withActivity: CheckSummary[] }
+type Result = {
+  checked: number
+  expired: string[]
+  skipped: string[]
+  errors: string[]
+  withActivity: CheckSummary[]
+  channels: ChannelWatchCheckResult
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -46,6 +54,9 @@ export default class SlackFollowCheckTask extends Command {
       `expires deadline, or inactive longer than ${Follow.DEFAULT_MAX_INACTIVE} when no expires is set.`,
       'Then finds follows past their check interval, polls Slack for new thread',
       'replies, saves new messages, and updates lastChecked.',
+      '',
+      'Channel watches run first: root messages newer than each watch cursor',
+      'are captured via slack:follow:message and the cursor advances.',
     ],
     usage: ['sky slack:follow:check', 'sky slack:follow:check --file slack_dm-with-jp_1771210504_352289'],
     params,
@@ -54,9 +65,16 @@ export default class SlackFollowCheckTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
 
+    // Channel watches run first — they only spawn new follows, and they must
+    // run even when no thread follow exists or is due. --file targets one
+    // thread follow, so it skips the channel pass.
+    const channels: ChannelWatchCheckResult = args.file
+      ? { checked: 0, captured: 0, alreadyCaptured: 0, errors: [] }
+      : await checkChannelWatches({ tasks, output })
+
     if (!(await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE))) {
       output.log('No follow directory found.')
-      return CommandResult.success({ checked: 0, expired: [], skipped: [], errors: [], withActivity: [] })
+      return CommandResult.success({ checked: 0, expired: [], skipped: [], errors: [], withActivity: [], channels })
     }
 
     const now = fetchNowSync()
@@ -96,7 +114,7 @@ export default class SlackFollowCheckTask extends Command {
       : registry.getDue(nowDt).filter((e) => !expiredSet.has(e.fileName))
 
     if (entries.length === 0) {
-      return CommandResult.success({ checked: 0, expired, skipped: [], errors: [], withActivity: [] })
+      return CommandResult.success({ checked: 0, expired, skipped: [], errors: [], withActivity: [], channels })
     }
 
     const withActivity: CheckSummary[] = []
@@ -277,6 +295,6 @@ export default class SlackFollowCheckTask extends Command {
       output.log(`Checked ${entries.length} follow(s), ${withActivity.length} with new activity.`)
     }
 
-    return CommandResult.success({ checked: entries.length, expired, skipped, errors, withActivity })
+    return CommandResult.success({ checked: entries.length, expired, skipped, errors, withActivity, channels })
   }
 }

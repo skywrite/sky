@@ -42,6 +42,7 @@ export const DIR_STATE_FOLLOW_EMAIL_ACTIVE = path.join(DIR_STATE, 'follow', 'ema
 export const DIR_STATE_FOLLOW_EMAIL_ARCHIVE = path.join(DIR_STATE, 'follow', 'email', 'archive')
 export const DIR_STATE_FOLLOW_SLACK_ACTIVE = path.join(DIR_STATE, 'follow', 'slack', 'active')
 export const DIR_STATE_FOLLOW_SLACK_ARCHIVE = path.join(DIR_STATE, 'follow', 'slack', 'archive')
+export const DIR_STATE_FOLLOW_SLACK_CHANNELS = path.join(DIR_STATE, 'follow', 'slack', 'channels')
 export const DIR_TMP_USER = path.join(DIR_USER_DATA, 'tmp')
 
 export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')
