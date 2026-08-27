@@ -1,4 +1,4 @@
-type MarkdownFence = {
+export type MarkdownFence = {
   marker: '`' | '~'
   length: number
 }
@@ -35,6 +35,41 @@ export default function _stripHtmlComments(markdown: string): string {
   }
 
   return output.join('')
+}
+
+/**
+ * The fence still open at the end of the markdown — by the exact semantics
+ * the stripper above uses — or null when every fence is closed. An open
+ * fence makes everything after it ship verbatim, so a writer appending a
+ * trailing HTML comment (the chat context log) must seal the body with the
+ * returned fence first, or the comment survives stripping and renders as
+ * visible code.
+ */
+export function unclosedFence(markdown: string): MarkdownFence | null {
+  let inComment = false
+  let inFence: MarkdownFence | null = null
+  const lines = markdown.match(/[^\n]*(?:\n|$)/g) ?? []
+
+  for (const line of lines) {
+    if (line === '') continue
+
+    if (inFence) {
+      if (isClosingFence(line, inFence)) {
+        inFence = null
+      }
+      continue
+    }
+
+    const fence = !inComment ? fenceForLine(line) : null
+    if (fence) {
+      inFence = fence
+      continue
+    }
+
+    inComment = stripHtmlCommentsFromLine(line, inComment).inComment
+  }
+
+  return inFence
 }
 
 function stripHtmlCommentsFromLine(line: string, startsInComment: boolean): { text: string; inComment: boolean } {
@@ -79,6 +114,9 @@ function fenceForLine(line: string): MarkdownFence | null {
   }
 
   if (length < 3) return null
+  // CommonMark: a backtick fence's info string may not contain a backtick —
+  // a line like ```code``` is an inline code span, not a fence opener.
+  if (marker === '`' && trimmed.includes('`', length)) return null
   return { marker, length }
 }
 
