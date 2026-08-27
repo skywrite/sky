@@ -30,6 +30,7 @@ import {
   saveGlossary,
   touchLastSeen,
 } from './lib/glossary.ts'
+import { isRtf, stampedDurationMinutes, turnStamps } from './lib/plainText.ts'
 import SRT from './lib/SRT/mod.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 
@@ -61,6 +62,12 @@ const params = {
       optional: true,
     },
   ),
+  fromText: Flag.string(
+    'Clean an existing plain-text transcript (skip transcription). Optional path to a .txt of speaker lines, or omit to use the newest .txt on the Desktop.',
+    {
+      optional: true,
+    },
+  ),
   output: Flag.string('Write to specific file path', {
     short: 'o',
     optional: true,
@@ -88,7 +95,7 @@ type Result = {
   audioFilePath: string | null
   /** Transcript file that was read, null when the transcript was pasted in */
   transcriptFilePath: string | null
-  /** Exact length from VTT/SRT cue timestamps, null when the input carried no cues */
+  /** Length from cue timestamps (VTT/SRT, exact) or --from-text turn stamps (last turn's start, rounded up); null when the input carried neither */
   durationMinutes: number | null
 }
 
@@ -180,6 +187,7 @@ export default class AudioTranscriptCleanTask extends Command {
       'sky audio:transcript:clean --file input.txt  # Read from file',
       'sky audio:transcript:clean --from-zoom-vtt   # Clean newest .vtt on Desktop',
       'sky audio:transcript:clean --from-srt        # Clean newest .srt on Desktop',
+      'sky audio:transcript:clean --from-text       # Clean newest .txt on Desktop',
       'sky audio:transcript:clean --title "Meeting" # Set output title',
     ],
     params,
@@ -187,19 +195,21 @@ export default class AudioTranscriptCleanTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, fromAudio, fromZoomVtt, fromSrt, title, output: outputArg, save: saveArg } = args
+    const { file, fromAudio, fromZoomVtt, fromSrt, fromText, title, output: outputArg, save: saveArg } = args
 
     // Handle --from-audio: transcribe first, then clean
     const useAudioPipeline = fromAudio !== undefined
-    // Handle --from-zoom-vtt / --from-srt: clean an existing transcript file (skip
-    // transcription). Each flag owns its format: the bare-flag Desktop search only
-    // matches that extension (a stray .srt can never shadow the meeting .vtt, or
-    // vice versa), and --from-srt refuses non-SRT content outright.
-    if (fromZoomVtt !== undefined && fromSrt !== undefined) {
-      return CommandResult.fail('Use either --from-zoom-vtt or --from-srt, not both')
+    // Handle --from-zoom-vtt / --from-srt / --from-text: clean an existing transcript
+    // file (skip transcription). Each flag owns its format end-to-end: the bare-flag
+    // Desktop search only matches that extension (a stray .srt can never shadow the
+    // meeting .vtt, or vice versa), and --from-srt / --from-text refuse content of
+    // any other format outright.
+    const transcriptSources = [fromZoomVtt, fromSrt, fromText].filter((flag) => flag !== undefined)
+    if (transcriptSources.length > 1) {
+      return CommandResult.fail('Use only one of --from-zoom-vtt, --from-srt or --from-text')
     }
     const audioFilePath = typeof fromAudio === 'string' && fromAudio !== 'true' ? fromAudio : undefined
-    const useTranscriptFile = fromZoomVtt !== undefined || fromSrt !== undefined
+    const useTranscriptFile = transcriptSources.length === 1
 
     // 1. Get transcript input
     let transcript: string
@@ -232,8 +242,9 @@ export default class AudioTranscriptCleanTask extends Command {
       }
     } else if (useTranscriptFile) {
       const wantSrt = fromSrt !== undefined
-      const flagValue = wantSrt ? fromSrt : fromZoomVtt
-      const ext = wantSrt ? '.srt' : '.vtt'
+      const wantText = fromText !== undefined
+      const flagValue = wantSrt ? fromSrt : wantText ? fromText : fromZoomVtt
+      const ext = wantSrt ? '.srt' : wantText ? '.txt' : '.vtt'
       let transcriptPath: string
       if (typeof flagValue === 'string' && flagValue !== 'true') {
         transcriptPath = flagValue
@@ -247,6 +258,14 @@ export default class AudioTranscriptCleanTask extends Command {
         }
         transcriptPath = found[0].path
       }
+      // --from-text owns .txt and nothing else: a transcript that arrived wrapped
+      // (.rtf, .docx — a notetaker paste saved from TextEdit or Word) is refused,
+      // not unwrapped. Converting it is a one-liner on the user's side.
+      if (wantText && path.extname(transcriptPath).toLowerCase() !== '.txt') {
+        return CommandResult.fail(
+          `--from-text requires a .txt file, got: ${path.basename(transcriptPath)} — convert it first: textutil -convert txt "${transcriptPath}"`,
+        )
+      }
       transcriptSourcePath = transcriptPath
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
       try {
@@ -259,6 +278,20 @@ export default class AudioTranscriptCleanTask extends Command {
       if (wantSrt && !SRT.isSrt(transcript)) {
         const why = ZoomVTT.isVtt(transcript) ? 'is a WebVTT file — use --from-zoom-vtt' : 'is not an SRT transcript'
         return CommandResult.fail(`--from-srt: ${path.basename(transcriptPath)} ${why}`)
+      }
+      // --from-text promises speaker lines: cue formats have their own flags, and
+      // RTF renamed to .txt is still RTF.
+      if (wantText) {
+        const why = ZoomVTT.isVtt(transcript)
+          ? 'is a WebVTT file — use --from-zoom-vtt'
+          : SRT.isSrt(transcript)
+            ? 'is an SRT file — use --from-srt'
+            : isRtf(transcript)
+              ? 'is RTF, not plain text — convert it to .txt first (textutil -convert txt)'
+              : null
+        if (why !== null) {
+          return CommandResult.fail(`--from-text: ${path.basename(transcriptPath)} ${why}`)
+        }
       }
     } else if (file) {
       transcriptSourcePath = file
@@ -300,6 +333,12 @@ export default class AudioTranscriptCleanTask extends Command {
       transcript = srt.toTurnText()
       const how = srt.speakers.length > 0 ? `${srt.speakers.length} speakers` : 'no speaker labels — split on pauses'
       output.log(colors.gray(`SRT: ${srt.cues.length} cues → ${turns.length} turns (${how})`))
+    } else if (fromText !== undefined) {
+      // Already the turn text the parsers above produce, so it passes through
+      // untouched; the stamps only give the length.
+      const stamps = turnStamps(transcript)
+      cueDurationMinutes = stampedDurationMinutes(stamps)
+      output.log(colors.gray(`Plain text: ${stamps.length} stamped turns`))
     }
 
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))

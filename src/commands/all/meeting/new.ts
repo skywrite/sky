@@ -22,13 +22,18 @@ import { isTerminal } from '#shared/sys/mod.ts'
 import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  who: Arg.string('Person or group (optional with --from-voice-memo/--from-zoom-vtt)', { optional: true }),
+  who: Arg.string('Person or group (optional with --from-voice-memo/--from-zoom-vtt/--from-text)', {
+    optional: true,
+  }),
   fromVoiceMemo: Flag.string('Path to a voice memo summarizing the meeting, or omit path to search Desktop', {
     short: 'a',
     optional: true,
   }),
   fromZoomVtt: Flag.string('Path to transcript file, or omit to use the newest .vtt on the Desktop', {
     short: 't',
+    optional: true,
+  }),
+  fromText: Flag.string('Path to a .txt transcript of speaker lines, or omit to use the newest .txt on the Desktop', {
     optional: true,
   }),
   when: whenNBTime(),
@@ -59,15 +64,16 @@ export default class MeetingNewTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
-    let { when, medium, who, summary, category, fromVoiceMemo, fromZoomVtt, duration } = args
+    let { when, medium, who, summary, category, fromVoiceMemo, fromZoomVtt, fromText, duration } = args
     let body: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
     let transcriptSourcePath: string | null = null
     let actionItems: TranscriptActionItem[] = []
 
-    if (fromVoiceMemo !== undefined && fromZoomVtt !== undefined) {
-      return CommandResult.fail('Use either --from-voice-memo or --from-zoom-vtt, not both')
+    const sources = [fromVoiceMemo, fromZoomVtt, fromText].filter((flag) => flag !== undefined)
+    if (sources.length > 1) {
+      return CommandResult.fail('Use only one of --from-voice-memo, --from-zoom-vtt or --from-text')
     }
 
     // Check the length here rather than at write time: the transcript pipeline
@@ -80,15 +86,19 @@ export default class MeetingNewTask extends Command {
       }
     }
 
-    // Handle --from-voice-memo / --from-zoom-vtt pipeline via audio:transcript:summary
-    const usePipeline = fromVoiceMemo !== undefined || fromZoomVtt !== undefined
+    // Handle --from-voice-memo / --from-zoom-vtt / --from-text pipeline via audio:transcript:summary
+    const usePipeline = sources.length === 1
 
     if (usePipeline) {
       // Delegate to audio:transcript:summary which handles:
       // (audio: transcribe →) clean → summarize with user corrections
       const summaryResult = await tasks.run(
         'audio:transcript:summary',
-        fromVoiceMemo !== undefined ? { fromAudio: fromVoiceMemo } : { fromZoomVtt },
+        fromVoiceMemo !== undefined
+          ? { fromAudio: fromVoiceMemo }
+          : fromText !== undefined
+            ? { fromText }
+            : { fromZoomVtt },
       )
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
@@ -125,10 +135,10 @@ export default class MeetingNewTask extends Command {
         medium = data.medium
       }
 
-      // Only --from-zoom-vtt hands us a file worth keeping: on the --from-voice-memo
-      // path the .vtt is a generated artifact, and the recording it came from is
-      // the file that matters.
-      if (fromZoomVtt !== undefined) {
+      // --from-zoom-vtt and --from-text hand us a file worth keeping; on the
+      // --from-voice-memo path the .vtt is a generated artifact, and the recording
+      // it came from is the file that matters.
+      if (fromZoomVtt !== undefined || fromText !== undefined) {
         transcriptSourcePath = data.transcriptFilePath
       }
 
@@ -163,7 +173,7 @@ export default class MeetingNewTask extends Command {
 
     // Validate required fields for manual path
     if (!who) {
-      return CommandResult.fail('Missing required argument: who (or use --from-voice-memo/--from-zoom-vtt)')
+      return CommandResult.fail('Missing required argument: who (or use --from-voice-memo/--from-zoom-vtt/--from-text)')
     }
 
     const whenDate = when.plainDate
