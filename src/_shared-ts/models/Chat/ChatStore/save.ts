@@ -20,14 +20,13 @@ import * as path from 'node:path'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
-import { distillPersonFacts } from '#lib/notebook/enrich/distillPersonFacts.ts'
+import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
-import { fetchPeopleIndex, readServiceDocument, serviceDocumentIO } from '#lib/service/documents.ts'
+import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
-import { findPersonSubjects, type PersonSubject } from '#shared/models/Person/subjects.ts'
 import {
   applyPersonFacts,
   type DocumentIO,
@@ -94,32 +93,11 @@ export const corpusEnricher: SaveEnricher = {
   chooseTags: (subject) => autoTagMessage(subject, CHAT_ENRICH),
   chooseRel: (subject) => autoRelMessage(subject, CHAT_ENRICH),
   distillMemories: (transcript, memories) => distillMemories({ transcript, memories, kind: CHAT_ENRICH.kind }),
-  distillPersonFacts: async (transcript, today) => {
-    // Discovery is service-backed: the people index and profile reads come
-    // from the same store every context gather uses, so people/ vs
-    // people-old/ never reaches this side. Service trouble degrades to no
-    // subjects — the distiller still runs for its unlisted lane. The user
-    // is never their own subject.
-    let subjects: PersonSubject[] = []
-    try {
-      subjects = await findPersonSubjects({
-        transcript,
-        index: await fetchPeopleIndex(),
-        readDocument: readServiceDocument,
-        excludeNames: [userSpeakerLabel()],
-      })
-    } catch {
-      subjects = []
-    }
-    const result = await distillPersonFacts({
-      transcript,
-      subjects,
-      today,
-      userLabel: userSpeakerLabel(),
-      kind: CHAT_ENRICH.kind,
-    })
-    return result ? { subjects, facts: result.facts, unlisted: result.unlisted } : undefined
-  },
+  // Discovery + distill live in the lib (shared with meeting:new): subjects
+  // resolve through the service's people index, so people/ vs people-old/
+  // never reaches this side, and the user is never their own subject.
+  distillPersonFacts: (transcript, today) =>
+    distillPersonFactsFromText({ text: transcript, today, userLabel: userSpeakerLabel(), kind: CHAT_ENRICH.kind }),
 }
 
 /**

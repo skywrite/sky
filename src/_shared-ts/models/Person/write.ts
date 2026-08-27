@@ -114,6 +114,27 @@ export interface PersonOpOutcome {
 export const MAX_PEOPLE_PER_SAVE = 4
 export const MAX_OPS_PER_PERSON = 6
 
+/** Verb per op for the hosts' 👤 exit lines. */
+export const PERSON_VERBS: Record<string, string> = {
+  overview: 'profiled',
+  note: 'noted',
+  field: 'filled',
+  site: 'linked',
+  'preferred-name': 'renamed',
+  unknown: 'unlisted',
+}
+
+/**
+ * One exit-summary line per outcome, shared by every host that applies
+ * profile ops (ai:chat, meeting:new) so the 👤 block reads identically
+ * everywhere. Hosts apply their own dim styling to skipped lines.
+ */
+export function formatPersonOpLine(o: PersonOpOutcome): { text: string; dim: boolean } {
+  const verb = (PERSON_VERBS[o.op] ?? o.op).padEnd(10)
+  const base = `👤 ${verb} ${o.person} — ${o.summary}`
+  return o.outcome === 'skipped' ? { text: `${base} — skipped: ${o.reason}`, dim: true } : { text: base, dim: false }
+}
+
 // -----------------------------------------------------------------------------
 // Section surgery — the body as preamble + ## sections
 // -----------------------------------------------------------------------------

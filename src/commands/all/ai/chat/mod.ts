@@ -27,6 +27,7 @@ import { saveChat } from '#shared/models/Chat/ChatStore/save.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
+import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -112,16 +113,6 @@ const MEMORY_VERBS: Record<string, string> = {
   update: 'revised',
   delete: 'forgot',
   propose: 'proposed',
-}
-
-/** Verb per person-profile op for the exit summary's 👤 lines. */
-const PERSON_VERBS: Record<string, string> = {
-  overview: 'profiled',
-  note: 'noted',
-  field: 'filled',
-  site: 'linked',
-  'preferred-name': 'renamed',
-  unknown: 'unlisted',
 }
 
 // -----------------------------------------------------------------------------
@@ -1160,9 +1151,8 @@ export default class AiChatTask extends Command {
       if (saved.personOps && saved.personOps.length > 0) {
         output.log('')
         for (const p of saved.personOps) {
-          const verb = (PERSON_VERBS[p.op] ?? p.op).padEnd(10)
-          const line = `👤 ${verb} ${p.person} — ${p.summary}`
-          output.log(p.outcome === 'skipped' ? colors.dim(`${line} — skipped: ${p.reason}`) : line)
+          const line = formatPersonOpLine(p)
+          output.log(line.dim ? colors.dim(line.text) : line.text)
         }
       }
 

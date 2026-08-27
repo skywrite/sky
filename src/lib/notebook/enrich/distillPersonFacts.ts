@@ -1,8 +1,9 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { fetchPeopleIndex, readServiceDocument } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
-import type { PersonSubject } from '#shared/models/Person/subjects.ts'
+import { findPersonSubjects, type PersonSubject } from '#shared/models/Person/subjects.ts'
 import { APPEND_SECTIONS, FILL_FIELDS, type PersonFacts, type UnlistedPerson } from '#shared/models/Person/write.ts'
 
 // The save-time person-facts distiller: reads the finished conversation
@@ -52,6 +53,41 @@ export type PersonDistillInput = {
 export interface PersonDistillResult {
   facts: PersonFacts[]
   unlisted: UnlistedPerson[]
+}
+
+/** A distillation plus the subjects it saw — what an applier needs, whole. */
+export interface PersonFactsDistillation extends PersonDistillResult {
+  subjects: PersonSubject[]
+}
+
+/**
+ * The full front half of person curation over any finished text — chat
+ * transcript, meeting summary: service-backed subject discovery (the people
+ * index every context gather uses), then the distill call. Service trouble
+ * degrades to no subjects and the distiller still runs for its unlisted
+ * lane; the caller applies the result via applyPersonFacts. The user is
+ * never their own subject.
+ */
+export async function distillPersonFactsFromText(
+  input: { text: string; today: string; userLabel: string; kind: string },
+  role: Role = 'fast',
+): Promise<PersonFactsDistillation | undefined> {
+  let subjects: PersonSubject[] = []
+  try {
+    subjects = await findPersonSubjects({
+      transcript: input.text,
+      index: await fetchPeopleIndex(),
+      readDocument: readServiceDocument,
+      excludeNames: [input.userLabel],
+    })
+  } catch {
+    subjects = []
+  }
+  const result = await distillPersonFacts(
+    { transcript: input.text, subjects, today: input.today, userLabel: input.userLabel, kind: input.kind },
+    role,
+  )
+  return result ? { subjects, ...result } : undefined
 }
 
 function profileBlock(subject: PersonSubject): string {

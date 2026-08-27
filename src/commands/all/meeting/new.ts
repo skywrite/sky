@@ -3,15 +3,20 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import * as p from '@clack/prompts'
 import openEditor from 'open-editor'
+import colors from 'picocolors'
 import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, dayFileExists, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import { parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
+import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
+import { serviceDocumentIO } from '#lib/service/documents.ts'
 import slugify from '#lib/string/slugify.ts'
+import { userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
+import { applyPersonFacts, formatPersonOpLine } from '#shared/models/Person/write.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { isTerminal } from '#shared/sys/mod.ts'
 import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
@@ -235,6 +240,40 @@ export default class MeetingNewTask extends Command {
         await this.acceptActionItems(actionItems, context, tasks)
       } catch (err) {
         output.error(`Action-item routing failed: ${(err as Error).message}`)
+      }
+    }
+
+    // What the meeting taught the CRM (people/ profiles) — the same
+    // distiller every chat save runs, against the summarized body (the
+    // manual path has no content worth distilling). Autonomous: the
+    // never-delete discipline lives in models/Person/write.ts, so no TTY or
+    // category gate. Facts anchor to the meeting's day; updated: stamps the
+    // day the edit actually happened. The meeting file is already on disk,
+    // so a failure degrades to a warning.
+    if (body) {
+      try {
+        const distilled = await distillPersonFactsFromText({
+          text: [who, summary, body].filter(Boolean).join('\n'),
+          today: String(whenDate),
+          userLabel: userSpeakerLabel(),
+          kind: 'meeting summary',
+        })
+        if (distilled && (distilled.facts.length > 0 || distilled.unlisted.length > 0)) {
+          const outcomes = await applyPersonFacts({
+            facts: distilled.facts,
+            unlisted: distilled.unlisted,
+            subjects: distilled.subjects,
+            today: String(context.notebookNow.date),
+            io: serviceDocumentIO(),
+          })
+          if (outcomes.length > 0) output.log('')
+          for (const o of outcomes) {
+            const line = formatPersonOpLine(o)
+            output.log(line.dim ? colors.dim(line.text) : line.text)
+          }
+        }
+      } catch (err) {
+        output.error(`Person-profile curation failed: ${(err as Error).message}`)
       }
     }
 
