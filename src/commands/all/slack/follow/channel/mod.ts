@@ -1,10 +1,11 @@
 import * as path from 'node:path'
+import { parseAuthTest } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
 import type { AgentSlackMessage } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import parseChannelTarget from '#commands/all/slack/lib/parseChannelTarget.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STATE_FOLLOW_SLACK_CHANNELS } from '#config'
+import { DIR_STATE_FOLLOW_SLACK_CHANNELS, SLACK_WORKSPACE } from '#config'
 import slugify from '#lib/string/slugify.ts'
 import { outputFile } from '#shared/fs/mod.ts'
 import ChannelWatch, { ChannelWatchRegistry } from '#shared/models/Follow/ChannelWatch.ts'
@@ -16,7 +17,9 @@ const params = {
     short: 'i',
     default: () => ChannelWatch.DEFAULT_INTERVAL,
   }),
-  workspace: Flag.string('Workspace URL — required when the target is a #name or bare id (a URL target carries it)'),
+  workspace: Flag.string(
+    'Workspace URL or selector for #name/id targets — defaults to slack.workspace from the sky config',
+  ),
 }
 
 type Params = InferParams<typeof params>
@@ -33,6 +36,21 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
       result: Result
     }
   }
+}
+
+/**
+ * The workspace URL for a #name/id target: an explicit --workspace or the
+ * config's slack.workspace. Either may be a substring selector rather than a
+ * URL — agent-slack's auth test resolves it to the canonical workspace URL,
+ * which the watch stores for building archive links.
+ */
+async function resolveWorkspaceUrl(explicit?: string): Promise<string | undefined> {
+  const candidate = explicit?.trim() || SLACK_WORKSPACE
+  if (!candidate) return undefined
+  if (/^https:\/\//.test(candidate)) return candidate.replace(/\/+$/, '')
+  const result = await runAgentSlack(['auth', 'test', '--workspace', candidate])
+  const status = parseAuthTest(result.stdout, result.stderr)
+  return status.ok && status.url ? status.url.replace(/\/+$/, '') : undefined
 }
 
 export default class SlackFollowChannelTask extends Command {
@@ -65,9 +83,11 @@ export default class SlackFollowChannelTask extends Command {
       return CommandResult.fail(`Not a channel target: "${args.target}" (channel URL, #name, or channel id)`)
     }
 
-    const workspaceUrl = parsed.workspaceUrl ?? args.workspace
+    const workspaceUrl = parsed.workspaceUrl ?? (await resolveWorkspaceUrl(args.workspace))
     if (!workspaceUrl) {
-      return CommandResult.fail('Workspace unknown — pass a channel URL, or add --workspace https://…slack.com')
+      return CommandResult.fail(
+        'Workspace unknown — set slack.workspace in the sky config, pass --workspace, or use a channel URL',
+      )
     }
 
     // One history probe: verifies access, resolves #name → channel id, and
