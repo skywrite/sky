@@ -158,3 +158,30 @@ test('resolveContent: strips a label-less mailto link', () => {
     expected: 'email atlas@example.com please',
   })
 })
+
+test('resolveContent: strips a tel link to the number as typed', () => {
+  assert({
+    given: 'a Slack tel link whose label is the formatted number',
+    should: 'keep the label, not the tel: wrapper',
+    actual: resolveContent('call <tel:15555550123|1 555 555 0123> today', new Map(), noChannels),
+    expected: 'call 1 555 555 0123 today',
+  })
+})
+
+test('resolveContent: tel link keeps the label formatting intact', () => {
+  assert({
+    given: 'a tel link whose label carries plus, parens, and dashes',
+    should: 'preserve the label exactly',
+    actual: resolveContent('cell: <tel:+15555550123|+1 (555) 555-0123>', new Map(), noChannels),
+    expected: 'cell: +1 (555) 555-0123',
+  })
+})
+
+test('resolveContent: strips a label-less tel link to the digits', () => {
+  assert({
+    given: 'a tel link with no |label',
+    should: 'keep only the number',
+    actual: resolveContent('call <tel:15555550123> please', new Map(), noChannels),
+    expected: 'call 15555550123 please',
+  })
+})

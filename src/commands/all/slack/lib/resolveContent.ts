@@ -23,5 +23,8 @@ export default function resolveContent(
       })
       // Slack wraps email addresses as <mailto:addr|label>; keep only the address
       .replace(/<mailto:([^|>]+)(?:\|[^>]*)?>/g, (_match, address: string) => address)
+      // Phone numbers arrive as <tel:digits|label>; the label is the number as the
+      // sender typed it (formatting intact), so keep it and fall back to the digits
+      .replace(/<tel:([^|>]+)(?:\|([^>]*))?>/g, (_match, digits: string, label: string | undefined) => label || digits)
   )
 }
