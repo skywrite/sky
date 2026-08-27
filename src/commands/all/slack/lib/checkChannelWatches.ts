@@ -1,5 +1,5 @@
-import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import type { AgentSlackMessage } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
+import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_STATE_FOLLOW_SLACK_CHANNELS } from '#config'

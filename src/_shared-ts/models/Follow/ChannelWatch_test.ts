@@ -21,7 +21,12 @@ test('fromYaml/toYaml round-trips a watch', () => {
   const again = ChannelWatch.fromYaml(watch.toYaml())
 
   assert({ given: 'a parsed watch', should: 'keep the channel', expected: 'C0ATLAS0001', actual: again.channel })
-  assert({ given: 'a parsed watch', should: 'keep the cursor', expected: '1750000000.000100', actual: again.lastSeenTs })
+  assert({
+    given: 'a parsed watch',
+    should: 'keep the cursor',
+    expected: '1750000000.000100',
+    actual: again.lastSeenTs,
+  })
   assert({ given: 'a parsed watch', should: 'keep the label', expected: 'releases', actual: again.label })
 })
 
@@ -72,7 +77,12 @@ test('updateCursor() advances lastSeenTs and lastChecked', () => {
     expected: '2026-02-15 11:00',
     actual: `${updated.lastChecked?.date} ${updated.lastChecked?.time}`,
   })
-  assert({ given: 'immutability', should: 'not mutate the original', expected: '1750000000.000100', actual: watch.lastSeenTs })
+  assert({
+    given: 'immutability',
+    should: 'not mutate the original',
+    expected: '1750000000.000100',
+    actual: watch.lastSeenTs,
+  })
 })
 
 test('ChannelWatchRegistry loads a dir and finds by channel', async () => {
