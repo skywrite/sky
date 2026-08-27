@@ -459,7 +459,9 @@ export async function findCapturedThread(
     const registry = await SlackFollowRegistry.build(dir)
     const match =
       (parsed ? registry.findByThreadRoot(parsed.channelId, parsed.rootTs) : undefined) ??
-      registry.getAll().find((e) => e.follow.ref.link === link)
+      registry
+        .getAll()
+        .find((e) => e.follow.ref.link === link || e.follow.merged.some((anchor) => anchor.link === link))
     if (match) return { fileName: match.fileName, path: match.path, summary: match.follow.summary, ledger }
   }
   return undefined

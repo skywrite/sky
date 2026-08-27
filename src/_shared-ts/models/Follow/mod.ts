@@ -6,6 +6,7 @@ import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 const YAML_KEY_ORDER = [
   'source',
   'ref',
+  'merged',
   'summary',
   'checkInterval',
   'followSince',
@@ -23,6 +24,8 @@ export type FollowMessage = { date: string; path: string }
 interface FollowCreateFields {
   source: MediumMessage
   ref: Record<string, string>
+  /** Additional anchors this follow watches — a merged conversation spans several roots */
+  merged?: Record<string, string>[]
   summary: string
   checkInterval?: string
   followSince?: PlainDateTime
@@ -47,6 +50,7 @@ function formatDateTime(dt: PlainDateTime): string {
 export default class Follow {
   readonly source: MediumMessage
   readonly ref: Record<string, string>
+  readonly merged: Record<string, string>[]
   readonly summary: string
   readonly checkInterval: string
   readonly followSince: PlainDateTime | undefined
@@ -59,6 +63,7 @@ export default class Follow {
   private constructor(fields: {
     source: MediumMessage
     ref: Record<string, string>
+    merged: Record<string, string>[]
     summary: string
     checkInterval: string
     followSince: PlainDateTime | undefined
@@ -70,6 +75,7 @@ export default class Follow {
   }) {
     this.source = fields.source
     this.ref = fields.ref
+    this.merged = fields.merged
     this.summary = fields.summary
     this.checkInterval = fields.checkInterval
     this.followSince = fields.followSince
@@ -86,6 +92,7 @@ export default class Follow {
     return new Follow({
       source: (data['source'] ?? '') as MediumMessage,
       ref: (data['ref'] ?? {}) as Record<string, string>,
+      merged: Array.isArray(data['merged']) ? (data['merged'] as Record<string, string>[]) : [],
       summary: (data['summary'] ?? '') as string,
       checkInterval: (data['checkInterval'] ?? '10m') as string,
       followSince: parseDateTimeField(data['followSince']),
@@ -101,6 +108,7 @@ export default class Follow {
     return new Follow({
       source: fields.source,
       ref: fields.ref,
+      merged: fields.merged ?? [],
       summary: fields.summary,
       checkInterval: fields.checkInterval ?? '10m',
       followSince: fields.followSince,
@@ -116,6 +124,7 @@ export default class Follow {
     const obj: Record<string, unknown> = {
       source: this.source,
       ref: this.ref,
+      merged: this.merged.length > 0 ? this.merged : null,
       summary: this.summary,
       checkInterval: this.checkInterval,
       followSince: this.followSince ? formatDateTime(this.followSince) : null,
@@ -147,6 +156,18 @@ export default class Follow {
 
   updateCheckInterval(interval: string): Follow {
     return new Follow({ ...this.fields(), checkInterval: interval })
+  }
+
+  withRef(ref: Record<string, string>): Follow {
+    return new Follow({ ...this.fields(), ref })
+  }
+
+  withMerged(merged: Record<string, string>[]): Follow {
+    return new Follow({ ...this.fields(), merged })
+  }
+
+  withMessages(messages: FollowMessage[]): Follow {
+    return new Follow({ ...this.fields(), messages })
   }
 
   /** Inactivity window after which a follow with no explicit `expires` auto-expires */
@@ -201,6 +222,7 @@ export default class Follow {
     return {
       source: this.source,
       ref: this.ref,
+      merged: this.merged,
       summary: this.summary,
       checkInterval: this.checkInterval,
       followSince: this.followSince,

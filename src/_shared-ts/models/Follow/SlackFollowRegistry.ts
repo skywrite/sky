@@ -65,17 +65,19 @@ export default class SlackFollowRegistry {
 
   /**
    * Find the follow tracking a thread, identified by channel + root ts —
-   * never by link strings, since one thread wears many URLs. ref.thread_ts is
+   * never by link strings, since one thread wears many URLs. thread_ts is
    * authoritative when present; a follow created before its thread had
-   * replies stores none, so its root is the message ts in ref.link (…/p<ts>).
+   * replies stores none, so its root is the message ts in the link (…/p<ts>).
+   * Merged follows watch several anchors — any of them owns the thread.
    */
   findByThreadRoot(channel: string, rootTs: string): SlackFollowEntry | undefined {
     const rootDigits = rootTs.replace('.', '')
-    return this.getAll().find(({ follow }) => {
-      if (follow.ref.channel !== channel) return false
-      if (follow.ref.thread_ts) return follow.ref.thread_ts === rootTs
-      return follow.ref.link?.match(/\/p(\d{10,})(?:[?#]|$)/)?.[1] === rootDigits
-    })
+    const owns = (anchor: Record<string, string>): boolean => {
+      if (anchor.channel !== channel) return false
+      if (anchor.thread_ts) return anchor.thread_ts === rootTs
+      return anchor.link?.match(/\/p(\d{10,})(?:[?#]|$)/)?.[1] === rootDigits
+    }
+    return this.getAll().find(({ follow }) => owns(follow.ref) || follow.merged.some(owns))
   }
 
   get size(): number {

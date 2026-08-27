@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { assert, test } from '#test'
-import { findCapturedThread } from './message.ts'
+import { findCapturedThread } from './mod.ts'
 
 // A thread captured from the Later queue: enterprise-spelled root link,
 // thread_ts recorded. Re-captures arrive under other spellings of the same
@@ -41,9 +41,56 @@ async function writeYaml(dir: string, name: string, content: string): Promise<vo
   await writeFile(path.join(dir, name), content, 'utf-8')
 }
 
+// A merged conversation: the record owns its ref root AND every merged anchor.
+const MERGED_YAML = `\
+source: Slack
+ref:
+  channel: C0ATLAS0009
+  thread_ts: "1750000001.000001"
+  link: https://atlas.slack.com/archives/C0ATLAS0009/p1750000001000001
+merged:
+  - channel: C0ATLAS0009
+    thread_ts: "1750000002.000002"
+    link: https://atlas.enterprise.slack.com/archives/C0ATLAS0009/p1750000002000002
+summary: Merged widget conversation
+checkInterval: 10m
+followSince: 2026-02-15 09:00
+status: active`
+
 async function find(link: string, dirs: { active: string; archive: string }) {
   return findCapturedThread(link, parseMessageLink(link), dirs)
 }
+
+test('findCapturedThread() matches merged anchors, any spelling', async () => {
+  const dirs = await makeLedgers()
+  await writeYaml(dirs.active, 'merged.yaml', MERGED_YAML)
+
+  assert({
+    given: 'a workspace-spelled root link to a merged anchor',
+    should: 'find the merged record',
+    expected: 'active:merged',
+    actual: label(await find('https://atlas.slack.com/archives/C0ATLAS0009/p1750000002000002', dirs)),
+  })
+  assert({
+    given: 'a reply link naming a merged anchor as its thread root',
+    should: 'find the merged record',
+    expected: 'active:merged',
+    actual: label(
+      await find(
+        'https://atlas.slack.com/archives/C0ATLAS0009/p1750000002999999?thread_ts=1750000002.000002&cid=C0ATLAS0009',
+        dirs,
+      ),
+    ),
+  })
+  assert({
+    given: 'an uncaptured root in the same channel',
+    should: 'find nothing',
+    expected: undefined,
+    actual: label(await find('https://atlas.slack.com/archives/C0ATLAS0009/p1750000009000009', dirs)),
+  })
+
+  await rm(path.dirname(dirs.active), { recursive: true })
+})
 
 test('findCapturedThread() matches a root link regardless of URL spelling', async () => {
   const dirs = await makeLedgers()

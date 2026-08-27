@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { checkChannelWatches, type ChannelWatchCheckResult } from '#commands/all/slack/lib/checkChannelWatches.ts'
 import { copySlackFilesToAttachments } from '#commands/all/slack/lib/copyToAttachments.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
+import type { CommandTypesRegistry } from '#commands/lib/core/CommandTypesRegistry.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
@@ -126,31 +127,46 @@ export default class SlackFollowCheckTask extends Command {
         let { follow } = entry
         const { path: followPath, fileName } = entry
 
-        if (!follow.ref.link) {
+        const anchors = [follow.ref, ...follow.merged].filter((a) => a.link)
+        if (anchors.length === 0) {
           output.log(`[check] ${fileName}: no link in ref, skipping`)
           skipped.push(`${fileName}: no link`)
           continue
         }
 
-        // 1. Poll Slack
-        const exportResult = await tasks.run('slack:cli:export', { link: follow.ref.link })
-        if (!exportResult.ok || !exportResult.data) {
-          output.log(`[check] ${fileName}: export failed — ${exportResult.message}`)
-          skipped.push(`${fileName}: ${exportResult.message}`)
+        // 1. Poll Slack — one export per anchor (a merged follow watches
+        //    several roots and gathers their activity into one stream)
+        const polled: NonNullable<CommandTypesRegistry['slack:cli:export']['result']>[] = []
+        for (const anchor of anchors) {
+          const exportResult = await tasks.run('slack:cli:export', { link: anchor.link })
+          if (!exportResult.ok || !exportResult.data) {
+            output.log(`[check] ${fileName}: export failed (${anchor.link}) — ${exportResult.message}`)
+            continue
+          }
+          polled.push(exportResult.data)
+        }
+        if (polled.length === 0) {
+          skipped.push(`${fileName}: every anchor export failed`)
           continue
         }
+        const data = polled[0]
 
-        const data = exportResult.data
-
-        // 2. Detect new replies since lastChecked
+        // 2. Detect new replies since lastChecked across all anchors
         // Normalize extended hours (e.g. 2026-02-24 31:04 → 2026-02-25 07:04)
         // so the string comparison matches Slack's wall-clock timeLabel format
         const lastCheckedNorm = follow.lastChecked?.normalize()
         const lastCheckedStr = lastCheckedNorm ? `${lastCheckedNorm.date} ${lastCheckedNorm.time}` : ''
 
-        const newReplies = (data.thread?.replies ?? []).filter((r) =>
-          r.timeLabel ? r.timeLabel > lastCheckedStr : false,
-        )
+        const seenTs = new Set<string>()
+        const newReplies = polled
+          .flatMap((d) => d.thread?.replies ?? [])
+          .filter((r) => (r.timeLabel ? r.timeLabel > lastCheckedStr : false))
+          .filter((r) => {
+            if (r.ts && seenTs.has(r.ts)) return false
+            if (r.ts) seenTs.add(r.ts)
+            return true
+          })
+          .sort((a, b) => ((a.timeLabel ?? a.ts ?? '') < (b.timeLabel ?? b.ts ?? '') ? -1 : 1))
 
         // 3. If new replies, create message via slack:new (handles merge, day entry, YAML preservation)
         if (newReplies.length > 0) {
