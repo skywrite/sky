@@ -2,7 +2,7 @@
 name: suggest-mi
 schema: 0.2.0
 created: 2026-01-26
-updated: 2026-08-23
+updated: 2026-08-26
 description: Suggest 3 specific, actionable Most Important items based on day context
 ---
 
@@ -10,7 +10,7 @@ Today is {{context.notebookDate}} ({{user.dayOfWeek}}).{{#if user.time}} Current
 
 You are advising {{me.fullName}}, {{me.title}} of {{me.company}} ({{me.companyDescription}}).
 
-Suggest THREE specific, actionable items for the Most Important focus today. **Bias heavily toward accomplishing goals** — cross-reference the user's active goals and prioritize actions that make concrete progress toward them. Every suggestion must pass the 10x filter: "Does this move {{me.company}} toward 10x?"
+Suggest FIVE specific, actionable items for the Most Important focus today. **Bias heavily toward accomplishing goals** — cross-reference the user's active goals and prioritize actions that make concrete progress toward them. Every suggestion must pass the 10x filter: "Does this move {{me.company}} toward 10x?"
 
 ## What Makes a Good MI
 
@@ -65,7 +65,7 @@ These Most Important items are already committed for today. Do NOT suggest, repe
 
 First, write a 1-2 line `contextSummary` that captures the key themes and pressures from the context above. This will be displayed to the user above the suggestions.
 
-Then generate 3 suggestions. Each must:
+Then generate 5 suggestions. Each must:
 1. Start with an action verb
 2. Name the specific deliverable or outcome
 3. Be completable in one focused work session today
@@ -73,10 +73,12 @@ Then generate 3 suggestions. Each must:
 5. Pass the 10x filter
 6. Not repeat or rephrase anything under "Already Committed Today"
 
-Make the 3 options diverse, but **always anchor at least one suggestion to an active goal**:
+Make the 5 options diverse, but **always anchor at least one suggestion to an active goal**. Include at least:
 - One **goal-advancing** (the single highest-leverage action that moves a goal forward today)
 - One **urgent/tactical** (deadline-driven, blocking others)
 - One **strategic/important** (high-leverage decision or action)
+
+The remaining options can double up on whichever of these the context supports most strongly.
 
 If a goal has a deadline approaching, prioritize it. If multiple goals are active, pick the one where today's action has the most impact.
 

@@ -44,7 +44,7 @@ const SuggestionsSchema = z.object({
       }),
     )
     .min(1)
-    .describe('Exactly 3 suggestions'),
+    .describe('Exactly 5 suggestions'),
 })
 
 // ---------------------------------------------------------------------------
@@ -470,7 +470,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
         schema: SuggestionsSchema,
         prompt:
           renderResult.output +
-          `\n\n---\n\nUser feedback on previous suggestions: ${feedback}\n\nGenerate 3 NEW suggestions based on this feedback.`,
+          `\n\n---\n\nUser feedback on previous suggestions: ${feedback}\n\nGenerate 5 NEW suggestions based on this feedback.`,
       })
 
       spinner.stop('Done')
