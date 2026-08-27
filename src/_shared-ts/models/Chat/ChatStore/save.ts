@@ -25,6 +25,7 @@ import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { unclosedFence } from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import {
@@ -338,8 +339,14 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   // The per-turn context log trails as hidden comments — resume reads it
   // back via splitContextLog, and the format is locked byte for byte by
-  // contextLog_test.ts.
-  const markdown = doc.toMarkdown() + serializeContextLog(logEntries)
+  // contextLog_test.ts. A body ending inside an open code fence (a reply
+  // truncated mid-block, a pasted stray ```) would shield those comments
+  // from stripping and render them as visible code, so the fence is sealed
+  // first. The closer joins the body: splitContextLog hands it back as
+  // conversation text, so resumes carry it and never re-seal.
+  const fence = unclosedFence(doc.markdown)
+  const seal = fence ? `${fence.marker.repeat(fence.length)}\n` : ''
+  const markdown = doc.toMarkdown() + seal + serializeContextLog(logEntries)
 
   const report: SaveChatReport = { path: savePath, exchanges, resumed: resume !== null, summary }
   if (autoTags) report.autoTags = autoTags

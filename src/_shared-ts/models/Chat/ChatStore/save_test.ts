@@ -687,3 +687,81 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     },
   })
 })
+
+test('saveChat - a body ending in an open fence is sealed before the context log', async () => {
+  const turns: ConversationMessage[] = [
+    msg('user', 'Show me the helper?', '2026-01-27 09:30'),
+    msg('assistant', 'Sure:\n\n```ts\nconst x = 1\n// reply truncated mid-block', '2026-01-27 09:31'),
+  ]
+  const contextLog: ContextTurnLog[] = [{ turn: 1, queries: [] }]
+  const { report } = await saveNew({ turns, contextLog })
+
+  const markdown = await readTextFile(report.path)
+  const doc = ChatDocument.fromMarkdown(markdown)
+  const stripped = doc.stripHtmlComments().toMarkdown()
+
+  assert({
+    given: 'a reply truncated inside an open code fence, saved with a context log',
+    should: 'seal the fence so the log still parses, strips, and stays out of the conversation',
+    actual: {
+      logStrips: !stripped.includes('CONTEXT-LOG'),
+      logParses: doc.contextLog.length,
+      truncatedKept: stripped.includes('reply truncated mid-block'),
+      sealJoinsBody: doc.conversation.at(-1)?.content.endsWith('```'),
+    },
+    expected: { logStrips: true, logParses: 1, truncatedKept: true, sealJoinsBody: true },
+  })
+})
+
+test('saveChat - a resumed sealed chat does not grow a second seal', async () => {
+  const turns: ConversationMessage[] = [
+    msg('user', 'Show me the helper?', '2026-01-27 09:30'),
+    msg('assistant', 'Sure:\n\n```ts\nconst x = 1\n// reply truncated mid-block', '2026-01-27 09:31'),
+  ]
+  const { timeDir, report: first } = await saveNew({ turns, contextLog: [{ turn: 1, queries: [] }] })
+
+  const resume = await loadResumeSession(first.path)
+  const report = await saveChat({
+    turns: [
+      ...resume.state.conversation,
+      msg('user', 'Thanks.', '2026-01-27 09:40'),
+      msg('assistant', 'Anytime.', '2026-01-27 09:41'),
+    ],
+    contextLog: [...resume.state.contextLog, { turn: 2, queries: [] }],
+    resume,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: stubEnricher(),
+  })
+
+  const markdown = await readTextFile(report.path)
+  const fenceLines = markdown.split('\n').filter((line) => line.trim() === '```')
+
+  assert({
+    given: 'a resume of a chat whose truncated fence was sealed on the first save',
+    should: 'carry the seal as conversation text and add no second one',
+    actual: { aborted: report.aborted, bareFenceLines: fenceLines.length },
+    expected: { aborted: undefined, bareFenceLines: 1 },
+  })
+})
+
+test('saveChat - balanced bodies save without a seal', async () => {
+  const turns: ConversationMessage[] = [
+    msg('user', 'Show me the helper?', '2026-01-27 09:30'),
+    msg('assistant', 'Sure:\n\n```ts\nconst x = 1\n```\n\nDone.', '2026-01-27 09:31'),
+  ]
+  const { report } = await saveNew({ turns, contextLog: [{ turn: 1, queries: [] }] })
+  const markdown = await readTextFile(report.path)
+  const fenceLines = markdown.split('\n').filter((line) => line.trim() === '```')
+
+  assert({
+    given: 'a chat whose fences all close',
+    should: 'write exactly the fence lines the conversation contains',
+    actual: fenceLines.length,
+    expected: 1,
+  })
+})
