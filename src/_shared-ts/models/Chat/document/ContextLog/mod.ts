@@ -29,7 +29,8 @@
  * sweep-stratified admission added `policy`/`sweep` on stats plus `via` on
  * doc records — recorded because they are tunable and a logged score is
  * only interpretable against the parameters that produced it, and the
- * memory distiller added `memory` on entries (the session's ai/memory ops).
+ * memory distiller added `memory` on entries (the session's ai/memory ops)
+ * and the person-facts distiller added `people` (the session's profile ops).
  * Optional fields never bump the version: the reader tolerates their
  * absence, and a bump would orphan resume for every transcript already on
  * disk.
@@ -37,6 +38,7 @@
 
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
+import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
 
 export const CONTEXT_LOG_VERSION = 2
 
@@ -129,6 +131,11 @@ export interface ContextTurnLog {
    * self-check compares byte-for-byte.
    */
   memory?: MemoryOpOutcome[]
+  /**
+   * Save-time person-profile distillation outcomes (people/ ops, applied
+   * and skipped alike). Rides the same appended final entry as `memory`.
+   */
+  people?: PersonOpOutcome[]
   /** Context-pipeline failures this turn (also in ai-errors.jsonl) */
   errors?: string[]
 }
@@ -148,6 +155,7 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     if (entry.pruned && entry.pruned.length > 0) fields.push(recordArrayField('pruned', entry.pruned))
     if (entry.tools && entry.tools.length > 0) fields.push(recordArrayField('tools', entry.tools))
     if (entry.memory && entry.memory.length > 0) fields.push(recordArrayField('memory', entry.memory))
+    if (entry.people && entry.people.length > 0) fields.push(recordArrayField('people', entry.people))
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')

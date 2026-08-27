@@ -200,14 +200,18 @@ export function createServer(options: ServerOptions): Server {
     return markdownStore
   }
 
+  // The one path scope both write surfaces share: the REST content API and
+  // the saveDocument mutation gate against the same base and allowlist.
+  const markdownBaseDir = findCommonAncestor(markdownDirs.map((dir) => path.dirname(dir)))
+
   // Create Hono app (called after markdownStore is ready)
   function createApp() {
-    const yoga = createYogaInstance(store, markdownStore)
+    const yoga = createYogaInstance(store, markdownStore, { baseDir: markdownBaseDir, dirs: markdownDirs })
     return createHttpApp({
       store,
       yoga,
       markdownStore,
-      markdownBaseDir: findCommonAncestor(markdownDirs.map((dir) => path.dirname(dir))),
+      markdownBaseDir,
       markdownDirs,
       customRoutes,
     })

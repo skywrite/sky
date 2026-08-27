@@ -1,0 +1,481 @@
+/**
+ * The write half of person profiles: applying save-time distiller ops to
+ * people/ files — the notebook's CRM.
+ *
+ * The distiller (lib/notebook/enrich/distillPersonFacts.ts) reads a finished
+ * conversation against the profiles of the people it discussed and returns
+ * ops; this module is the only thing that turns them into edits. Unlike
+ * ai/memory/, people/ is hand-authored space, so the discipline here is
+ * structural rather than a write license: NOTHING IS EVER DELETED. The AI
+ * owns exactly one section — ## Overview, rewritten wholesale — while every
+ * other section only ever gains appended lines, and frontmatter fields fill
+ * only when empty. The one sanctioned mutation beyond that is the name
+ * list, whose order is a notebook-wide convention (index 0 preferred,
+ * index 1 legal): an explicit "goes by" may reorder it. Touching a file
+ * also canonicalizes stray section headings (Family / Relationships →
+ * Family, Contact/Links → Info, About → Background) — a rename-and-merge
+ * that moves content, never drops it.
+ *
+ * All disk I/O goes through an injected DocumentIO — in production the
+ * notebook service's documentContent/saveDocument pair (lib/service/
+ * documents.ts), so no profile path is ever touched from outside the
+ * service. The transport's version handle makes every write conflict-
+ * checked: a hand edit or another session landing mid-save surfaces as a
+ * conflict, and the ops re-apply against the fresh content once before
+ * giving up. Every op, applied or skipped, returns an outcome the host
+ * renders (the 👤 lines) and the transcript's context log records.
+ */
+
+import { normalizeName } from '#shared/models/Store/normalize.ts'
+import PersonDocument from './mod.ts'
+
+// -----------------------------------------------------------------------------
+// Document transport — how profile bytes are read and written
+// -----------------------------------------------------------------------------
+
+export interface DocumentSnapshot {
+  /** Notebook-relative path, the form the service's queries return */
+  path: string
+  content: string
+  /** Content-hash handle for optimistic concurrency */
+  version: number
+}
+
+export type DocumentSaveResult =
+  /** Written; the store's watcher picks the change up from disk */
+  | { saved: true }
+  /** The file changed since the version was read — here is the current state */
+  | { saved: false; current: DocumentSnapshot }
+
+/**
+ * The applier's whole world: read a document, save it back under the
+ * version that was read. Production hands in the notebook service's
+ * GraphQL transport; tests hand in a map.
+ */
+export interface DocumentIO {
+  read(path: string): Promise<DocumentSnapshot | null>
+  save(path: string, content: string, version: number): Promise<DocumentSaveResult>
+}
+
+// -----------------------------------------------------------------------------
+// Ops — what a distillation may ask for
+// -----------------------------------------------------------------------------
+
+/** Sections that accept appended notes. ## Overview is rewritten, never appended. */
+export const APPEND_SECTIONS = ['Background', 'Family', 'Info'] as const
+export type AppendSection = (typeof APPEND_SECTIONS)[number]
+
+/** Frontmatter fields the distiller may fill — when empty, never over a value. */
+export const FILL_FIELDS = ['location', 'title', 'org'] as const
+export type FillField = (typeof FILL_FIELDS)[number]
+
+export type PersonOp =
+  /** Replace (or create, as the first section) ## Overview wholesale */
+  | { op: 'overview'; body: string }
+  /** Append one durable sentence to an append-only section */
+  | { op: 'note'; section: AppendSection; text: string }
+  /** Fill an empty frontmatter field */
+  | { op: 'field'; field: FillField; value: string }
+  /** Add a URL to sites: (deduped) */
+  | { op: 'site'; url: string }
+  /** Reorder the name list so this is index 0 — explicit "goes by" evidence only */
+  | { op: 'preferred-name'; preferred: string }
+
+/** Everything a distillation learned about one person. */
+export interface PersonFacts {
+  /** The profile's canonical name, exactly as the subject list gave it */
+  name: string
+  ops: PersonOp[]
+}
+
+/** A person materially discussed who has no profile — surfaced, never written. */
+export interface UnlistedPerson {
+  name: string
+  /** One line of what the conversation established about them */
+  gist: string
+}
+
+/** One op's fate, for the host's 👤 line and the transcript's context log. */
+export interface PersonOpOutcome {
+  op: PersonOp['op'] | 'unknown'
+  person: string
+  /** One-line human gist of what happened */
+  summary: string
+  outcome: 'applied' | 'skipped'
+  /** Why a skipped op was skipped */
+  reason?: string
+}
+
+/**
+ * Runaway backstops. A conversation genuinely teaching things about more
+ * people than this is vanishingly rare — past the caps it's a model
+ * failure, and the excess is skipped visibly rather than applied.
+ */
+export const MAX_PEOPLE_PER_SAVE = 4
+export const MAX_OPS_PER_PERSON = 6
+
+// -----------------------------------------------------------------------------
+// Section surgery — the body as preamble + ## sections
+// -----------------------------------------------------------------------------
+
+export interface BodySection {
+  heading: string
+  body: string
+}
+
+export interface SplitBody {
+  /** Everything before the first ## heading: the # Name line and any lead prose */
+  preamble: string
+  sections: BodySection[]
+}
+
+/** Exactly h2 — ### subsections stay inside their parent section's body. */
+const H2 = /^##(?!#)\s*(.*?)\s*$/
+
+export function splitBodySections(body: string): SplitBody {
+  const preambleLines: string[] = []
+  const sections: BodySection[] = []
+  let current: { heading: string; lines: string[] } | null = null
+
+  for (const line of body.split('\n')) {
+    const match = line.match(H2)
+    if (match) {
+      if (current) sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
+      current = { heading: match[1], lines: [] }
+    } else if (current) {
+      current.lines.push(line)
+    } else {
+      preambleLines.push(line)
+    }
+  }
+  if (current) sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
+
+  return { preamble: preambleLines.join('\n').trimEnd(), sections }
+}
+
+/** Blank-line spacing is normalized; content passes through verbatim. */
+export function joinBodySections(split: SplitBody): string {
+  const parts: string[] = []
+  if (split.preamble.trim()) parts.push(split.preamble.trimEnd())
+  for (const s of split.sections) parts.push(s.body ? `## ${s.heading}\n\n${s.body}` : `## ${s.heading}`)
+  return parts.join('\n\n') + '\n'
+}
+
+/**
+ * Legacy heading spellings folded into the canonical set. Lowercase keys;
+ * anything unmapped (dated sections, one-off headings) passes through
+ * untouched — folding the ambiguous strays is not this rung's business.
+ */
+const CANONICAL_SECTIONS: Record<string, string> = {
+  'family / relationships': 'Family',
+  'family relationships': 'Family',
+  contact: 'Info',
+  links: 'Info',
+  about: 'Background',
+}
+
+/**
+ * Rename stray headings to their canonical names and merge same-named
+ * sections (the rename can collide with an existing section, and messy
+ * files carry literal duplicates). A merge appends the later section's
+ * content to the earlier one — a move, never a delete.
+ */
+export function canonicalizeSections(split: SplitBody): SplitBody {
+  const sections: BodySection[] = []
+  const byKey = new Map<string, BodySection>()
+
+  for (const s of split.sections) {
+    const heading = CANONICAL_SECTIONS[s.heading.toLowerCase()] ?? s.heading
+    const existing = byKey.get(heading.toLowerCase())
+    if (existing) {
+      existing.body = [existing.body, s.body].filter(Boolean).join('\n\n')
+      continue
+    }
+    const next = { heading, body: s.body }
+    byKey.set(heading.toLowerCase(), next)
+    sections.push(next)
+  }
+
+  return { preamble: split.preamble, sections }
+}
+
+function findSection(split: SplitBody, heading: string): BodySection | undefined {
+  return split.sections.find((s) => s.heading.toLowerCase() === heading.toLowerCase())
+}
+
+// -----------------------------------------------------------------------------
+// The pure core — ops against document text
+// -----------------------------------------------------------------------------
+
+export interface AppliedMarkdown {
+  markdown: string
+  outcomes: PersonOpOutcome[]
+  /** Ops that actually changed the document; 0 means markdown is meaningless */
+  applied: number
+}
+
+/**
+ * Apply one person's ops to their profile text. Pure — same inputs, same
+ * result — which is what lets a version conflict simply re-run it against
+ * the fresh content. Ops that cannot apply (occupied field, duplicate
+ * note, over the op cap) come back skipped; the returned markdown is only
+ * meaningful when `applied > 0`.
+ */
+export function applyOpsToMarkdown(markdown: string, ops: PersonOp[], person: string, today: string): AppliedMarkdown {
+  const doc = PersonDocument.fromMarkdown(markdown)
+  const split = canonicalizeSections(splitBodySections(doc.toMarkdown({ yaml: false })))
+  const outcomes: PersonOpOutcome[] = []
+  let applied = 0
+
+  for (const [i, op] of ops.entries()) {
+    if (i >= MAX_OPS_PER_PERSON) {
+      outcomes.push({
+        op: op.op,
+        person,
+        summary: opGist(op),
+        outcome: 'skipped',
+        reason: 'per-person op cap',
+      })
+      continue
+    }
+    try {
+      const outcome = applyOp(op, doc, split, person)
+      if (outcome.outcome === 'applied') applied += 1
+      outcomes.push(outcome)
+    } catch (err) {
+      outcomes.push({
+        op: op.op,
+        person,
+        summary: opGist(op),
+        outcome: 'skipped',
+        reason: (err as Error).message,
+      })
+    }
+  }
+
+  if (applied === 0) return { markdown, outcomes, applied }
+
+  doc.yaml['updated'] = today
+  // A fresh document re-runs constructor normalization (tags shape) and
+  // serializes frontmatter in the standard field order — the "clean" half
+  // of the mandate, and value-preserving throughout.
+  const next = new PersonDocument(doc.yaml, joinBodySections(split))
+  return { markdown: next.toMarkdown(), outcomes, applied }
+}
+
+// -----------------------------------------------------------------------------
+// Applying — facts against the store, through the transport
+// -----------------------------------------------------------------------------
+
+/** A discovered subject: the profile the distiller was shown. */
+export interface PersonSubjectRef {
+  name: string
+  path: string
+}
+
+export interface ApplyPersonFactsInput {
+  facts: PersonFacts[]
+  unlisted: UnlistedPerson[]
+  /** The subjects the distiller saw — the only names that resolve to files */
+  subjects: PersonSubjectRef[]
+  /** YYYY-MM-DD stamped into updated: on any profile that changed */
+  today: string
+  /** The document transport — the notebook service in production */
+  io: DocumentIO
+}
+
+/**
+ * Apply distilled facts against the profiles. Never throws: an op that
+ * cannot apply — unknown person, occupied field, duplicate note, transport
+ * failure, over a cap — returns a skipped outcome instead, so one bad op
+ * never costs the rest or the save itself.
+ */
+export async function applyPersonFacts(input: ApplyPersonFactsInput): Promise<PersonOpOutcome[]> {
+  const outcomes: PersonOpOutcome[] = []
+  const subjectsByName = new Map(input.subjects.map((s) => [normalizeName(s.name), s]))
+
+  let people = 0
+  for (const facts of input.facts) {
+    if (facts.ops.length === 0) continue
+
+    // A name outside the subject list has no file to edit — surfaced as the
+    // same person:new hint an unlisted person gets, never guessed at a path.
+    const subject = subjectsByName.get(normalizeName(facts.name))
+    if (!subject) {
+      outcomes.push({
+        op: 'unknown',
+        person: facts.name,
+        summary: opGist(facts.ops[0]),
+        outcome: 'skipped',
+        reason: noProfileReason(facts.name),
+      })
+      continue
+    }
+
+    people += 1
+    if (people > MAX_PEOPLE_PER_SAVE) {
+      outcomes.push({
+        op: facts.ops[0].op,
+        person: subject.name,
+        summary: `${facts.ops.length} op${facts.ops.length === 1 ? '' : 's'}`,
+        outcome: 'skipped',
+        reason: 'per-save people cap',
+      })
+      continue
+    }
+
+    outcomes.push(...(await applyToPerson(subject, facts.ops, input.today, input.io)))
+  }
+
+  for (const u of input.unlisted) {
+    outcomes.push({
+      op: 'unknown',
+      person: u.name,
+      summary: u.gist,
+      outcome: 'skipped',
+      reason: noProfileReason(u.name),
+    })
+  }
+
+  return outcomes
+}
+
+function noProfileReason(name: string): string {
+  return `no profile (sky person:new "${name}")`
+}
+
+/** Best short description of an op, for outcomes that never reached a file. */
+function opGist(op: PersonOp): string {
+  switch (op.op) {
+    case 'overview':
+      return truncate(op.body)
+    case 'note':
+      return truncate(op.text)
+    case 'field':
+      return `${op.field}: ${op.value}`
+    case 'site':
+      return op.url
+    case 'preferred-name':
+      return `goes by ${op.preferred}`
+  }
+}
+
+function truncate(text: string, max = 80): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+async function applyToPerson(
+  subject: PersonSubjectRef,
+  ops: PersonOp[],
+  today: string,
+  io: DocumentIO,
+): Promise<PersonOpOutcome[]> {
+  const skippedAll = (reason: string): PersonOpOutcome[] =>
+    ops.map((op) => ({ op: op.op, person: subject.name, summary: opGist(op), outcome: 'skipped', reason }))
+
+  try {
+    const snapshot = await io.read(subject.path)
+    if (!snapshot) return skippedAll('profile not found')
+
+    let attempt = applyOpsToMarkdown(snapshot.content, ops, subject.name, today)
+    if (attempt.applied === 0) return attempt.outcomes
+
+    let result = await io.save(subject.path, attempt.markdown, snapshot.version)
+    if (!result.saved) {
+      // The file moved under us — a hand edit or another session. The ops
+      // are re-runnable (dedupe, fill-empty), so re-apply against the
+      // current content once; a second conflict means real contention and
+      // the save yields rather than fight for the file.
+      attempt = applyOpsToMarkdown(result.current.content, ops, subject.name, today)
+      if (attempt.applied === 0) return attempt.outcomes
+      result = await io.save(subject.path, attempt.markdown, result.current.version)
+      if (!result.saved) return skippedAll('write conflict — the profile is being edited')
+    }
+    return attempt.outcomes
+  } catch (err) {
+    return skippedAll(`service error: ${(err as Error).message}`)
+  }
+}
+
+function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: string): PersonOpOutcome {
+  const skipped = (summary: string, reason: string): PersonOpOutcome => ({
+    op: op.op,
+    person,
+    summary,
+    outcome: 'skipped',
+    reason,
+  })
+  const applied = (summary: string): PersonOpOutcome => ({ op: op.op, person, summary, outcome: 'applied' })
+
+  switch (op.op) {
+    case 'overview': {
+      // Heading markers inside the body would fracture the section split on
+      // the next read — an Overview is prose, so they are stripped, not obeyed.
+      const body = op.body
+        .replace(/\r/g, '')
+        .replace(/^#+\s*/gm, '')
+        .trim()
+      if (!body) return skipped(opGist(op), 'empty overview')
+      const existing = findSection(split, 'Overview')
+      if (existing) existing.body = body
+      else split.sections.unshift({ heading: 'Overview', body })
+      return applied(truncate(body))
+    }
+
+    case 'note': {
+      const text = op.text.replace(/\s+/g, ' ').trim()
+      if (!text) return skipped(opGist(op), 'empty note')
+      const section = findSection(split, op.section)
+      if (section && sectionHasLine(section.body, text)) {
+        return skipped(`${truncate(text)} (${op.section})`, 'already noted')
+      }
+      if (section) section.body = section.body ? `${section.body}\n\n${text}` : text
+      else split.sections.push({ heading: op.section, body: text })
+      return applied(`${truncate(text)} (${op.section})`)
+    }
+
+    case 'field': {
+      const value = op.value.trim()
+      if (!value) return skipped(opGist(op), 'empty value')
+      // org checks the accessor, not the raw key — orgs.current occupies it too.
+      const occupied = op.field === 'org' ? Boolean(doc.org) : hasValue(doc.yaml[op.field])
+      if (occupied) return skipped(opGist(op), `${op.field} already set`)
+      doc.yaml[op.field] = value
+      return applied(`${op.field}: ${value}`)
+    }
+
+    case 'site': {
+      const url = op.url.trim()
+      if (!/^https?:\/\//i.test(url)) return skipped(opGist(op), 'not a URL')
+      if (doc.sites.has(url)) return skipped(url, 'already listed')
+      doc.yaml['sites'] = [...Array.from(doc.sites), url]
+      return applied(url)
+    }
+
+    case 'preferred-name': {
+      const preferred = op.preferred.trim()
+      if (!preferred) return skipped(opGist(op), 'empty name')
+      const names = doc.names
+      if (names.length > 0 && normalizeName(names[0]) === normalizeName(preferred)) {
+        return skipped(opGist(op), 'already preferred')
+      }
+      // An existing entry keeps its hand-written casing when it moves to
+      // the front; a new preferred name joins the list, dropping nothing.
+      const match = names.find((n) => normalizeName(n) === normalizeName(preferred))
+      const front = match ?? preferred
+      doc.yaml['name'] = [front, ...names.filter((n) => n !== front)]
+      return applied(`goes by ${front}`)
+    }
+  }
+}
+
+function sectionHasLine(body: string, text: string): boolean {
+  return body.split('\n').some((line) => line.trim() === text)
+}
+
+function hasValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (Array.isArray(value)) return value.length > 0
+  return String(value).trim() !== ''
+}

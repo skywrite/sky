@@ -42,8 +42,9 @@ const neverCalled: SaveEnricher = {
   summarize: () => Promise.reject(new Error('summarize must not be called')),
   chooseTags: () => Promise.reject(new Error('chooseTags must not be called')),
   chooseRel: () => Promise.reject(new Error('chooseRel must not be called')),
-  // Every save in this file that passes no memoryDir must never distill.
+  // Every save in this file that passes no memoryDir/peopleDirs must never distill.
   distillMemories: () => Promise.reject(new Error('distillMemories must not be called')),
+  distillPersonFacts: () => Promise.reject(new Error('distillPersonFacts must not be called')),
 }
 
 async function tmpNotebook(): Promise<string> {
@@ -479,6 +480,143 @@ test('saveChat - memory ops apply, report their outcomes, and land in the contex
     should: 'record the memory outcomes as a final context-log entry',
     actual: doc.contextLog,
     expected: [{ turn: 0, queries: [], memory: report.memoryOps }],
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Person-profile distillation
+// ---------------------------------------------------------------------------
+
+const seededProfile = [
+  '---',
+  'name: Alex Rivera',
+  'location:',
+  'created: 2026-01-05',
+  'updated: 2026-01-05',
+  'met: 2026-01-05',
+  '---',
+  '',
+  '# Alex Rivera',
+  '',
+  '## Background',
+  '',
+  'Met through the Atlas vendor search.',
+  '',
+].join('\n')
+
+/**
+ * In-memory document transport standing in for the notebook service:
+ * version bumps per accepted save, stale versions conflict — the
+ * saveDocument mutation's contract.
+ */
+function memoryPersonIO(files: Record<string, string>) {
+  const store = new Map(Object.entries(files).map(([p, content]) => [p, { content, version: 1 }]))
+  return {
+    read: async (path: string) => {
+      const entry = store.get(path)
+      return entry ? { path, content: entry.content, version: entry.version } : null
+    },
+    save: async (path: string, content: string, version: number) => {
+      const entry = store.get(path)
+      if (!entry) throw new Error(`Document not found: ${path}`)
+      if (entry.version !== version) return { saved: false as const, current: { path, ...entry } }
+      store.set(path, { content, version: version + 1 })
+      return { saved: true as const }
+    },
+    content: (path: string) => store.get(path)?.content ?? '',
+  }
+}
+
+test('saveChat - person facts curate the profile, report outcomes, and land in the context log', async () => {
+  const timeDir = await tmpNotebook()
+  const profilePath = 'people/2026/al/Alex-Rivera.md'
+  const personIO = memoryPersonIO({ [profilePath]: seededProfile })
+
+  let sawTranscript: string | undefined
+  const report = await saveChat({
+    turns: [
+      msg('user', 'What did Alex Rivera say about the rollout?', '2026-01-27 09:30'),
+      msg('assistant', 'Alex Rivera confirmed the vendor timeline and moved to Lisbon.', '2026-01-27 09:31'),
+    ],
+    contextLog: [],
+    resume: null,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    people: true,
+    personIO,
+    enricher: stubEnricher({
+      distillPersonFacts: async (transcript) => {
+        sawTranscript = transcript
+        return {
+          subjects: [{ name: 'Alex Rivera', path: profilePath }],
+          facts: [
+            {
+              name: 'Alex Rivera',
+              ops: [
+                { op: 'overview', body: 'Vendor lead on the Atlas rollout; based in Lisbon.' },
+                { op: 'field', field: 'location', value: 'Lisbon' },
+              ],
+            },
+          ],
+          unlisted: [{ name: 'Sam Note', gist: 'introduced the vendor' }],
+        }
+      },
+    }),
+  })
+
+  assert({
+    given: 'the distiller inputs',
+    should: 'carry the packed conversation',
+    actual: Boolean(sawTranscript?.includes('Alex Rivera confirmed the vendor timeline')),
+    expected: true,
+  })
+
+  assert({
+    given: 'a distillation with an overview, a field fill, and an unlisted person',
+    should: 'report every outcome, applied and skipped alike',
+    actual: report.personOps,
+    expected: [
+      {
+        op: 'overview',
+        person: 'Alex Rivera',
+        summary: 'Vendor lead on the Atlas rollout; based in Lisbon.',
+        outcome: 'applied',
+      },
+      { op: 'field', person: 'Alex Rivera', summary: 'location: Lisbon', outcome: 'applied' },
+      {
+        op: 'unknown',
+        person: 'Sam Note',
+        summary: 'introduced the vendor',
+        outcome: 'skipped',
+        reason: 'no profile (sky person:new "Sam Note")',
+      },
+    ],
+  })
+
+  const profile = personIO.content(profilePath)
+  assert({
+    given: 'the curated profile',
+    should: 'carry the new Overview first, the filled location, the bumped updated, and the old Background',
+    actual: {
+      overviewFirst: profile.indexOf('## Overview') < profile.indexOf('## Background'),
+      overview: profile.includes('Vendor lead on the Atlas rollout; based in Lisbon.'),
+      location: profile.includes('location: Lisbon'),
+      updated: profile.includes('updated: 2026-01-27'),
+      background: profile.includes('Met through the Atlas vendor search.'),
+    },
+    expected: { overviewFirst: true, overview: true, location: true, updated: true, background: true },
+  })
+
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'the saved transcript',
+    should: 'record the profile outcomes as a final context-log entry',
+    actual: doc.contextLog,
+    expected: [{ turn: 0, queries: [], people: report.personOps }],
   })
 })
 

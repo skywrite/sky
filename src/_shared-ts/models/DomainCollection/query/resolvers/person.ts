@@ -8,7 +8,6 @@ import {
   docBase,
   getField,
   getOptionalStringField,
-  getStringField,
   matchesActivityFilter,
   matchesTagFilter,
   matchesTextFilter,
@@ -47,7 +46,16 @@ function parseOrgArray(value: unknown): string[] {
 }
 
 export function docToPerson(doc: Document, path: string) {
-  const names = getField(doc, 'names')
+  // Person files carry aliases in the name: list itself (index 0 preferred,
+  // index 1 legal) — there is no names: key. Read straight from YAML rather
+  // than through a set type, so a malformed list item is filtered instead of
+  // reaching the schema's [String!]! as a null that nulls the whole response.
+  const nameRaw = getField(doc, 'name')
+  const names = Array.isArray(nameRaw)
+    ? nameRaw.filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+    : typeof nameRaw === 'string' && nameRaw.trim() !== ''
+      ? [nameRaw]
+      : []
   const met = getField(doc, 'met')
 
   // Parse orgs structure: { current: string[], past: string[] }
@@ -61,11 +69,10 @@ export function docToPerson(doc: Document, path: string) {
       : { current: [], past: [] }
 
   return {
-    name: getStringField(doc, 'name'),
-    // Read straight from YAML rather than through a set type, so a malformed
-    // list item would reach the schema's [String!]! as a null and null the
-    // whole response.
-    names: Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string' && n.trim() !== '') : [],
+    // A list-name profile's name is its preferred entry, matching
+    // PersonDocument.name — getStringField would blank every list-name row.
+    name: names[0] ?? '',
+    names,
     org: getOptionalStringField(doc, 'org'),
     orgs,
     title: getOptionalStringField(doc, 'title'),

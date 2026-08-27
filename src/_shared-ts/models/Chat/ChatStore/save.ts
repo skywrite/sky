@@ -20,11 +20,22 @@ import * as path from 'node:path'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
+import { distillPersonFacts } from '#lib/notebook/enrich/distillPersonFacts.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import { fetchPeopleIndex, readServiceDocument, serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
+import { findPersonSubjects, type PersonSubject } from '#shared/models/Person/subjects.ts'
+import {
+  applyPersonFacts,
+  type DocumentIO,
+  type PersonFacts,
+  type PersonOpOutcome,
+  type PersonSubjectRef,
+  type UnlistedPerson,
+} from '#shared/models/Person/write.ts'
 import { dayDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
@@ -61,6 +72,21 @@ export interface SaveEnricher {
    * it, and undefined means abstain — the save proceeds without memory ops.
    */
   distillMemories?(transcript: string, memories: MemoryEntry[]): Promise<MemoryOp[] | undefined>
+  /**
+   * Discover who the conversation discussed and distill durable person
+   * facts (people/ profile ops) for them. Owns its subject discovery so the
+   * save needs no people transport of its own. Optional: a host that does
+   * not opt into `people` never invokes it, and undefined means abstain —
+   * the save proceeds without profile ops.
+   */
+  distillPersonFacts?(transcript: string, today: string): Promise<PersonSaveDistill | undefined>
+}
+
+/** What a person distillation hands the save: who was seen, what was learned. */
+export interface PersonSaveDistill {
+  subjects: PersonSubjectRef[]
+  facts: PersonFacts[]
+  unlisted: UnlistedPerson[]
 }
 
 export const corpusEnricher: SaveEnricher = {
@@ -68,15 +94,41 @@ export const corpusEnricher: SaveEnricher = {
   chooseTags: (subject) => autoTagMessage(subject, CHAT_ENRICH),
   chooseRel: (subject) => autoRelMessage(subject, CHAT_ENRICH),
   distillMemories: (transcript, memories) => distillMemories({ transcript, memories, kind: CHAT_ENRICH.kind }),
+  distillPersonFacts: async (transcript, today) => {
+    // Discovery is service-backed: the people index and profile reads come
+    // from the same store every context gather uses, so people/ vs
+    // people-old/ never reaches this side. Service trouble degrades to no
+    // subjects — the distiller still runs for its unlisted lane. The user
+    // is never their own subject.
+    let subjects: PersonSubject[] = []
+    try {
+      subjects = await findPersonSubjects({
+        transcript,
+        index: await fetchPeopleIndex(),
+        readDocument: readServiceDocument,
+        excludeNames: [userSpeakerLabel()],
+      })
+    } catch {
+      subjects = []
+    }
+    const result = await distillPersonFacts({
+      transcript,
+      subjects,
+      today,
+      userLabel: userSpeakerLabel(),
+      kind: CHAT_ENRICH.kind,
+    })
+    return result ? { subjects, facts: result.facts, unlisted: result.unlisted } : undefined
+  },
 }
 
 /**
- * The distiller reads a wider packing than the 8k classifier budget: a
- * remember-request or correction can sit mid-conversation, exactly where the
- * head+tail clip cuts. Still bounded — the save path must stay a save, not a
- * second context assembly.
+ * The distillers read a wider packing than the 8k classifier budget: a
+ * remember-request, a correction, or the one biographical aside can sit
+ * mid-conversation, exactly where the head+tail clip cuts. Still bounded —
+ * the save path must stay a save, not a second context assembly.
  */
-const MEMORY_TRANSCRIPT_CHARS = 48_000
+const DISTILL_TRANSCRIPT_CHARS = 48_000
 
 // -----------------------------------------------------------------------------
 // Filenames
@@ -138,6 +190,15 @@ export interface SaveChatInput {
    * into memory ops and applies them; absent, no memory work happens.
    */
   memoryDir?: string | null
+  /**
+   * Distill durable person facts and curate the people/ profiles of
+   * whoever the conversation discussed — resolved and written through the
+   * notebook service, never deleting (see models/Person/write.ts). Off by
+   * default; no profile work happens unless set.
+   */
+  people?: boolean
+  /** Test seam: the document transport profile writes go through */
+  personIO?: DocumentIO
   /** Where a refused write-back parks its transcript; defaults beside the AI error log */
   recoveryDir?: string
   onProgress?: (event: SaveProgress) => void
@@ -167,6 +228,8 @@ export interface SaveChatReport {
   autoRel?: string[]
   /** Memory distillation outcomes, applied and skipped alike — the host's 🧠 lines */
   memoryOps?: MemoryOpOutcome[]
+  /** Person-profile distillation outcomes, applied and skipped alike — the host's 👤 lines */
+  personOps?: PersonOpOutcome[]
   /** Present only when logToDay was requested */
   dayLog?: DayLogOutcome
 }
@@ -200,7 +263,10 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const transcript = buildChatTranscript(turns)
   const subject: EnrichSubject = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
   const wantMemory = Boolean(input.memoryDir && enricher.distillMemories)
-  const [autoSummary, autoTags, autoRel, memoryOps] = await Promise.all([
+  const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
+  const distillTranscript =
+    wantMemory || wantPeople ? buildChatTranscript(turns, { maxChars: DISTILL_TRANSCRIPT_CHARS }) : ''
+  const [autoSummary, autoTags, autoRel, memoryOps, personDistill] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel ? enricher.chooseRel(subject) : Promise.resolve(undefined),
@@ -209,13 +275,19 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // model failures before returning undefined).
     wantMemory
       ? loadMemories(input.memoryDir as string)
-          .then((memories) =>
-            enricher.distillMemories!(buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }), memories),
-          )
+          .then((memories) => enricher.distillMemories!(distillTranscript, memories))
           .catch(async (err) => {
             await logAIError({ source: 'ai:chat', stage: 'memory', message: (err as Error).message })
             return undefined
           })
+      : Promise.resolve(undefined),
+    // Same abstain contract for the CRM — the enricher owns its subject
+    // discovery, so this catch is the whole safety net around it.
+    wantPeople
+      ? enricher.distillPersonFacts!(distillTranscript, endTime.plainDate.ymd).catch(async (err) => {
+          await logAIError({ source: 'ai:chat', stage: 'people', message: (err as Error).message })
+          return undefined
+        })
       : Promise.resolve(undefined),
   ])
   const summary = priorSummary ?? autoSummary ?? firstWords
@@ -247,12 +319,13 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     tags: priorTags ?? autoTags?.split('; '),
   })
 
-  // Memory ops apply before the transcript serializes so this save's
-  // context log records them — as a NEW final entry, never a mutation of a
-  // carried-forward one: the resume write-back self-check compares restored
-  // entries byte-for-byte. The memory files themselves are written even if
-  // a resume write-back is later refused — the conversation happened, and
-  // the refusal gate protects the original transcript, not the store.
+  // Memory and profile ops apply before the transcript serializes so this
+  // save's context log records them — as a NEW final entry, never a
+  // mutation of a carried-forward one: the resume write-back self-check
+  // compares restored entries byte-for-byte. The memory and profile files
+  // themselves are written even if a resume write-back is later refused —
+  // the conversation happened, and the refusal gate protects the original
+  // transcript, not the stores.
   let logEntries = contextLog
   let memoryOutcomes: MemoryOpOutcome[] | undefined
   if (input.memoryDir && memoryOps && memoryOps.length > 0) {
@@ -262,7 +335,27 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
       today: endTime.plainDate.ymd,
       source: path.relative(path.dirname(timeDir), savePath),
     })
-    logEntries = [...contextLog, { turn: contextLog.at(-1)?.turn ?? 0, queries: [], memory: memoryOutcomes }]
+  }
+  let personOutcomes: PersonOpOutcome[] | undefined
+  if (personDistill && (personDistill.facts.length > 0 || personDistill.unlisted.length > 0)) {
+    personOutcomes = await applyPersonFacts({
+      facts: personDistill.facts,
+      unlisted: personDistill.unlisted,
+      subjects: personDistill.subjects,
+      today: endTime.plainDate.ymd,
+      io: input.personIO ?? serviceDocumentIO(),
+    })
+  }
+  if ((memoryOutcomes && memoryOutcomes.length > 0) || (personOutcomes && personOutcomes.length > 0)) {
+    logEntries = [
+      ...contextLog,
+      {
+        turn: contextLog.at(-1)?.turn ?? 0,
+        queries: [],
+        ...(memoryOutcomes && memoryOutcomes.length > 0 ? { memory: memoryOutcomes } : {}),
+        ...(personOutcomes && personOutcomes.length > 0 ? { people: personOutcomes } : {}),
+      },
+    ]
   }
 
   // The per-turn context log trails as hidden comments — resume reads it
@@ -274,6 +367,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   if (autoTags) report.autoTags = autoTags
   if (autoRel) report.autoRel = autoRel
   if (memoryOutcomes && memoryOutcomes.length > 0) report.memoryOps = memoryOutcomes
+  if (personOutcomes && personOutcomes.length > 0) report.personOps = personOutcomes
 
   if (resume) {
     const refusal = await refuseWriteBack(resume, markdown)

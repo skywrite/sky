@@ -114,6 +114,16 @@ const MEMORY_VERBS: Record<string, string> = {
   propose: 'proposed',
 }
 
+/** Verb per person-profile op for the exit summary's 👤 lines. */
+const PERSON_VERBS: Record<string, string> = {
+  overview: 'profiled',
+  note: 'noted',
+  field: 'filled',
+  site: 'linked',
+  'preferred-name': 'renamed',
+  unknown: 'unlisted',
+}
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -1114,6 +1124,7 @@ export default class AiChatTask extends Command {
         autoTag: !noAutoTag,
         autoRel: !noAutoRel,
         memoryDir: DIR_AI_MEMORY,
+        people: true,
         logToDay: log ? { category: category || 'Professional' } : null,
         onProgress: (event) => {
           output.log('')
@@ -1140,6 +1151,18 @@ export default class AiChatTask extends Command {
             m.op === 'confirm' && m.uses !== undefined ? ` (uses: ${m.uses})` : m.kind ? ` (${m.kind})` : ''
           const line = `🧠 ${verb} ${m.summary}${detail}`
           output.log(m.outcome === 'skipped' ? colors.dim(`${line} — skipped: ${m.reason}`) : line)
+        }
+      }
+
+      // What the session taught the CRM (people/ profiles). Same law as the
+      // 🧠 block: every autonomous profile edit is shown, and the dim skips
+      // include the person:new hint for someone who has no profile yet.
+      if (saved.personOps && saved.personOps.length > 0) {
+        output.log('')
+        for (const p of saved.personOps) {
+          const verb = (PERSON_VERBS[p.op] ?? p.op).padEnd(10)
+          const line = `👤 ${verb} ${p.person} — ${p.summary}`
+          output.log(p.outcome === 'skipped' ? colors.dim(`${line} — skipped: ${p.reason}`) : line)
         }
       }
 

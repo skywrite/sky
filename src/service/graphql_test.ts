@@ -45,6 +45,19 @@ tags:
   )
 
   await writeFile(
+    path.join(dirs.people, 'bob.md'),
+    `---
+name:
+  - Bob
+  - Robert Chen
+org: Acme Corp
+---
+
+# Bob
+`,
+  )
+
+  await writeFile(
     path.join(dirs.orgs, 'acme.md'),
     `---
 name: Acme Corp
@@ -567,6 +580,184 @@ test('GraphQL subscriptions deliver', async () => {
     const expected: string[] = []
 
     assert({ given, should, actual, expected })
+  } finally {
+    server.stop()
+    await cleanupTestDir()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Document read/write — documentContent + saveDocument
+// ---------------------------------------------------------------------------
+
+/** POST one GraphQL operation and return the parsed body. */
+async function gql(port: number, query: string, variables?: Record<string, unknown>) {
+  const response = await fetch(`http://localhost:${port}/graphql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  })
+  return (await response.json()) as { data?: any; errors?: Array<{ message: string }> }
+}
+
+const READ_DOC = 'query($path: String!) { documentContent(path: $path) { path content version } }'
+const SAVE_DOC = `mutation($path: String!, $content: String!, $version: Float, $force: Boolean) {
+  saveDocument(path: $path, content: $content, version: $version, force: $force) {
+    saved conflict message document { path content version }
+  }
+}`
+
+test('GraphQL documents - read, conflict-checked save, and force share the REST version semantics', async () => {
+  const dirs = await setupTestDir()
+  const server = createServer({
+    port: 0,
+    markdownDirs: [TEST_DIR],
+    paths: dirs,
+    enableFileWatcher: false,
+    markdownStoreConfig: {
+      peopleDirs: [dirs.people],
+      orgDirs: [dirs.orgs],
+    },
+  })
+  await server.start()
+
+  try {
+    // Paths are relative to the common ancestor of the markdown dirs.
+    const alicePath = path.relative(path.dirname(TEST_DIR), path.join(dirs.people, 'alice.md'))
+
+    const read = await gql(server.port, READ_DOC, { path: alicePath })
+    assert({
+      given: 'a documentContent read of an existing profile',
+      should: 'return the file with a version handle',
+      actual: {
+        path: read.data.documentContent.path,
+        hasContent: read.data.documentContent.content.includes('Alice Smith'),
+        versionIsNumber: typeof read.data.documentContent.version === 'number',
+      },
+      expected: { path: alicePath, hasContent: true, versionIsNumber: true },
+    })
+
+    const staleVersion = read.data.documentContent.version
+    const edited = read.data.documentContent.content + '\n## Overview\n\nEngineer at Acme.\n'
+    const save = await gql(server.port, SAVE_DOC, { path: alicePath, content: edited, version: staleVersion })
+    assert({
+      given: 'a save carrying the version it read',
+      should: 'write the file and return the fresh snapshot',
+      actual: {
+        saved: save.data.saveDocument.saved,
+        conflict: save.data.saveDocument.conflict,
+        versionMoved: save.data.saveDocument.document.version !== staleVersion,
+      },
+      expected: { saved: true, conflict: false, versionMoved: true },
+    })
+
+    const conflicted = await gql(server.port, SAVE_DOC, {
+      path: alicePath,
+      content: 'overwrite attempt',
+      version: staleVersion,
+    })
+    assert({
+      given: 'a save carrying a version the previous save invalidated',
+      should: 'refuse as a conflict and hand back the current disk snapshot',
+      actual: {
+        saved: conflicted.data.saveDocument.saved,
+        conflict: conflicted.data.saveDocument.conflict,
+        currentContent: conflicted.data.saveDocument.document.content === edited,
+      },
+      expected: { saved: false, conflict: true, currentContent: true },
+    })
+
+    const forced = await gql(server.port, SAVE_DOC, {
+      path: alicePath,
+      content: edited + '\nForced line.\n',
+      version: staleVersion,
+      force: true,
+    })
+    assert({
+      given: 'the same stale version with force',
+      should: 'overwrite anyway',
+      actual: forced.data.saveDocument.saved,
+      expected: true,
+    })
+  } finally {
+    server.stop()
+    await cleanupTestDir()
+  }
+})
+
+test('GraphQL documents - scope gating and missing files', async () => {
+  const dirs = await setupTestDir()
+  const server = createServer({
+    port: 0,
+    markdownDirs: [TEST_DIR],
+    paths: dirs,
+    enableFileWatcher: false,
+    markdownStoreConfig: {
+      peopleDirs: [dirs.people],
+      orgDirs: [dirs.orgs],
+    },
+  })
+  await server.start()
+
+  try {
+    const escape = await gql(server.port, READ_DOC, { path: '../../etc/hosts.md' })
+    assert({
+      given: 'a path escaping the notebook base directory',
+      should: 'error rather than read',
+      actual: { errored: (escape.errors?.length ?? 0) > 0, data: escape.data?.documentContent ?? null },
+      expected: { errored: true, data: null },
+    })
+
+    const missingPath = path.relative(path.dirname(TEST_DIR), path.join(dirs.people, 'nobody.md'))
+    const missing = await gql(server.port, READ_DOC, { path: missingPath })
+    assert({
+      given: 'a scoped path with no file behind it',
+      should: 'return null, distinct from an error',
+      actual: { doc: missing.data.documentContent, errored: (missing.errors?.length ?? 0) > 0 },
+      expected: { doc: null, errored: false },
+    })
+
+    const create = await gql(server.port, SAVE_DOC, { path: missingPath, content: '# Nobody\n' })
+    assert({
+      given: 'a save aimed at a file that does not exist',
+      should: 'refuse — saveDocument edits, never creates',
+      actual: create.errors?.[0]?.message,
+      expected: `Document not found: ${missingPath}`,
+    })
+  } finally {
+    server.stop()
+    await cleanupTestDir()
+  }
+})
+
+test('GraphQL documents - allPeople carries the name list, preferred entry first', async () => {
+  const dirs = await setupTestDir()
+  const server = createServer({
+    port: 0,
+    markdownDirs: [TEST_DIR],
+    paths: dirs,
+    enableFileWatcher: false,
+    markdownStoreConfig: {
+      peopleDirs: [dirs.people],
+      orgDirs: [dirs.orgs],
+    },
+  })
+  await server.start()
+
+  try {
+    const result = await gql(server.port, '{ allPeople { name names path } }')
+    const people = [...result.data.allPeople].sort((a: { name: string }, b: { name: string }) =>
+      a.name.localeCompare(b.name),
+    )
+    assert({
+      given: 'a scalar-name profile and a list-name profile (preferred first, legal second)',
+      should: 'serialize both with full alias lists — the aliases live in the name: list itself',
+      actual: people.map((p: { name: string; names: string[] }) => ({ name: p.name, names: p.names })),
+      expected: [
+        { name: 'Alice Smith', names: ['Alice Smith'] },
+        { name: 'Bob', names: ['Bob', 'Robert Chen'] },
+      ],
+    })
   } finally {
     server.stop()
     await cleanupTestDir()

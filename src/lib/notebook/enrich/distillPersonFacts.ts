@@ -1,0 +1,134 @@
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { logAIError } from '#shared/ai/errorLog.ts'
+import { aiModel, type Role } from '#shared/ai/models.ts'
+import type { PersonSubject } from '#shared/models/Person/subjects.ts'
+import { APPEND_SECTIONS, FILL_FIELDS, type PersonFacts, type UnlistedPerson } from '#shared/models/Person/write.ts'
+
+// The save-time person-facts distiller: reads the finished conversation
+// against the current profiles of the people it mentions and decides what
+// the CRM should learn. The calibration lives in the prompt's bar — most
+// conversations teach NOTHING about a person, and profiles hold who someone
+// IS, never what merely happened (the meeting/chat/message docs already
+// record that). Applying the ops, the caps, and the never-delete guarantees
+// all live in models/Person/write.ts; this module only asks the model.
+
+// generateObject has no timeout option; an unbounded call can hang forever.
+const AI_TIMEOUT_MS = 60_000
+
+const opSchema = z.discriminatedUnion('op', [
+  z.object({
+    op: z.literal('overview'),
+    body: z
+      .string()
+      .describe('the full replacement ## Overview: 2-6 sentences, preserving every fact the current Overview holds'),
+  }),
+  z.object({
+    op: z.literal('note'),
+    section: z.enum(APPEND_SECTIONS),
+    text: z.string().describe('one short self-contained sentence, appended forever'),
+  }),
+  z.object({ op: z.literal('field'), field: z.enum(FILL_FIELDS), value: z.string() }),
+  z.object({ op: z.literal('site'), url: z.string().describe('a URL that clearly belongs to this person') }),
+  z.object({
+    op: z.literal('preferred-name'),
+    preferred: z.string().describe('only on explicit evidence: "goes by", "call me", a stated correction'),
+  }),
+])
+
+export type PersonDistillInput = {
+  /** The packed conversation transcript */
+  transcript: string
+  /** The discovered people and their current profiles */
+  subjects: PersonSubject[]
+  /** YYYY-MM-DD, anchoring any "currently"/"as of" phrasing */
+  today: string
+  /** The user's speaker label — never a subject or an unlisted entry */
+  userLabel: string
+  /** What is being distilled, in the model's words — e.g. 'AI chat conversation' */
+  kind?: string
+}
+
+export interface PersonDistillResult {
+  facts: PersonFacts[]
+  unlisted: UnlistedPerson[]
+}
+
+function profileBlock(subject: PersonSubject): string {
+  return `<profile name="${subject.name}">\n${subject.markdown.trim()}\n</profile>`
+}
+
+/**
+ * Ask the model what the person profiles should learn from this
+ * conversation. Returns undefined on model error — the save proceeds
+ * without profile ops, mirroring the other enrichers' abstain behavior.
+ */
+export async function distillPersonFacts(
+  input: PersonDistillInput,
+  role: Role = 'fast',
+): Promise<PersonDistillResult | undefined> {
+  if (!input.transcript.trim()) return undefined
+  const kind = input.kind ?? 'conversation'
+  const profiles =
+    input.subjects.length > 0
+      ? input.subjects.map(profileBlock).join('\n\n')
+      : '(no existing profiles matched this conversation)'
+
+  try {
+    const { object } = await generateObject({
+      ...aiModel(role),
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      schema: z.object({
+        people: z
+          .array(
+            z.object({
+              name: z.string().describe('exactly as a listed profile names them'),
+              ops: z.array(opSchema),
+            }),
+          )
+          .describe('empty when the conversation taught nothing durable about anyone'),
+        unlisted: z
+          .array(
+            z.object({
+              name: z.string(),
+              gist: z.string().describe('one line of what the conversation established about them'),
+            }),
+          )
+          .describe('people materially discussed who have no profile listed'),
+      }),
+      prompt: [
+        `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${kind} and the current profiles of the people it mentions. Decide what those profiles should learn and return the operations.`,
+        '',
+        'THE BAR — most conversations teach nothing about a person:',
+        '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
+        "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
+        "- Never invent. Every fact must come from the transcript or from the person's current profile.",
+        '',
+        'Operations (name each person exactly as their profile is listed):',
+        `- overview: the full replacement ## Overview — 2-6 sentences answering "who is this and where do things stand": role and org, how they connect to ${input.userLabel}, the current state of the relationship or engagement, and any candid read worth keeping. It REPLACES the existing Overview, so it must preserve every fact currently there, reworded freely. Write it when the conversation changes the picture; omit it when nothing changed.`,
+        `- note: one durable sentence appended to a section. Background: origin story, how they met ${input.userLabel}, career history. Family: spouse, children, birthdays, anniversaries. Info: lasting miscellany — how a name is pronounced, quirks, standing preferences. Notes are permanent; only facts worth keeping forever.`,
+        '- field: fill an empty frontmatter field (location, title, org) the conversation establishes.',
+        '- site: a URL that clearly belongs to the person (their site, their LinkedIn).',
+        '- preferred-name: ONLY on explicit evidence — "goes by", "call me", a stated correction. Never infer from usage alone.',
+        '',
+        `unlisted: a person the conversation materially discussed who has NO profile below — someone ${input.userLabel} personally knows or dealt with (met, emailed, works with), with a one-line gist. Never ${input.userLabel} themself, never the AI assistant, never public figures merely referenced.`,
+        '',
+        `Today is ${input.today}.`,
+        '',
+        '<profiles>',
+        profiles,
+        '</profiles>',
+        '',
+        '<transcript>',
+        input.transcript,
+        '</transcript>',
+      ].join('\n'),
+    })
+    return { facts: object.people, unlisted: object.unlisted }
+  } catch (err) {
+    // Abstain, but never silently: a chronically failing distiller must be
+    // distinguishable from "nothing worth learning" in ai-errors.jsonl.
+    await logAIError({ source: 'ai:chat', stage: 'people:distill', message: (err as Error).message })
+    return undefined
+  }
+}

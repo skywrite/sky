@@ -85,7 +85,7 @@ export async function distillMemories(input: DistillInput, role: Role = 'fast'):
         '- If the user re-taught or clearly relied on an existing memory, confirm it.',
         '- Never create a near-duplicate of an existing memory — confirm or update the existing slug instead.',
         '- Never touch entries marked locked.',
-        '- If something belongs in the notebook itself (a decision that was made, a real idea, a durable fact for a person or org file), return propose with the flow and a one-line gist — and do NOT also create a memory for it.',
+        '- If something belongs in the notebook itself (a decision that was made, a real idea, a durable fact for an org file), return propose with the flow and a one-line gist — and do NOT also create a memory for it. Person-profile facts are distilled separately at save — never propose or store those.',
         '',
         '<memory-index>',
         index,

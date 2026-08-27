@@ -12,8 +12,27 @@ import { readTextFileSync } from '#shared/fs/mod.ts'
 import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
+import {
+  MarkdownSaveConflictError,
+  readMarkdownContent,
+  saveMarkdownContent,
+} from '../handler/markdown-preview/content.ts'
+import { resolveMarkdownPreviewRequest } from '../handler/markdown-preview/request.ts'
 import type { Store } from '../store.ts'
 import * as resolvers from './resolvers/mod.ts'
+
+/**
+ * The directory scope for the document read/write resolvers — the same
+ * base + allowlist the docs editor's REST content API is gated by, so the
+ * two write paths can never disagree about what is editable. `path` values
+ * are relative to baseDir, which in production is the notebook root: the
+ * exact form every DomainCollection query returns, so a queried document's
+ * path feeds straight back into documentContent/saveDocument.
+ */
+export interface DocumentRoots {
+  baseDir: string
+  dirs: string[]
+}
 
 /**
  * Context passed to resolvers.
@@ -80,6 +99,34 @@ extend type Query {
 
   # Ref resolution (for DocumentLinkProvider Cmd+Click)
   resolveRefs(refs: [String!]!, year: Int, month: Int, sourceFilePath: String): [ResolvedRef!]!
+
+  # Raw document read with the version handle saveDocument's conflict check needs.
+  # Null when no file exists at the path; errors on paths outside the notebook scope.
+  documentContent(path: String!): DocumentContent
+}
+
+# version is an unsigned 32-bit content hash — Float because GraphQL Int is signed 32-bit.
+type DocumentContent {
+  path: String!
+  content: String!
+  version: Float!
+}
+
+type SaveDocumentResult {
+  saved: Boolean!
+  conflict: Boolean!
+  # On save: the new snapshot. On conflict: the current disk snapshot, so the
+  # caller can re-apply its edit and retry with the fresh version.
+  document: DocumentContent!
+  message: String
+}
+
+type Mutation {
+  # Whole-document write with optimistic concurrency: pass the version from
+  # documentContent and the save is refused (conflict: true) if the file
+  # changed meanwhile. Edits existing documents only — creation stays with
+  # the capture flows that own each document type's shape.
+  saveDocument(path: String!, content: String!, version: Float, force: Boolean): SaveDocumentResult!
 }
 
 type ResolvedRef {
@@ -124,7 +171,19 @@ function createScoreLookup(store: Store): (name: string) => number {
 /**
  * Create GraphQL resolvers bound to store instances.
  */
-export function createResolvers(store: Store, markdownStore: MarkdownStore | null) {
+export function createResolvers(
+  store: Store,
+  markdownStore: MarkdownStore | null,
+  docRoots: DocumentRoots | null = null,
+) {
+  /** Gate a document path exactly the way the REST content API does. */
+  const resolveDocPath = (fileParam: string): { filePath: string; relativePath: string } => {
+    if (!docRoots) throw new Error('Document API unavailable: no markdown roots configured')
+    const resolved = resolveMarkdownPreviewRequest(fileParam, undefined, docRoots.baseDir, docRoots.dirs)
+    if (!resolved.ok) throw new Error(resolved.message)
+    return resolved.value
+  }
+
   // DomainCollection resolvers wrap a snapshot (a derived copy) of the
   // MarkdownStore. dcVersion records which store version the copy was built
   // from; liveDc() compares it to the live version on every read and rebuilds
@@ -228,6 +287,60 @@ export function createResolvers(store: Store, markdownStore: MarkdownStore | nul
           }
         })
       },
+
+      // Raw document read — same gate and version semantics as the REST
+      // content API, so a version read here is valid currency for either
+      // write path. Null on a missing file; scope violations throw.
+      documentContent: async (_: unknown, { path: fileParam }: { path: string }) => {
+        const { filePath, relativePath } = resolveDocPath(fileParam)
+        try {
+          const snapshot = await readMarkdownContent(filePath)
+          return { path: relativePath, content: snapshot.content, version: snapshot.version }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null
+          throw err
+        }
+      },
+    },
+
+    Mutation: {
+      // Whole-document save behind the docs editor's conflict check. A
+      // version mismatch is a normal outcome, not an error: the caller gets
+      // the current disk snapshot back to re-apply against and retry.
+      saveDocument: async (
+        _: unknown,
+        args: { path: string; content: string; version?: number | null; force?: boolean | null },
+      ) => {
+        const { filePath, relativePath } = resolveDocPath(args.path)
+        try {
+          const snapshot = await saveMarkdownContent(
+            filePath,
+            args.content,
+            args.version ?? undefined,
+            args.force === true,
+          )
+          return {
+            saved: true,
+            conflict: false,
+            document: { path: relativePath, content: snapshot.content, version: snapshot.version },
+          }
+        } catch (err) {
+          if (err instanceof MarkdownSaveConflictError) {
+            return {
+              saved: false,
+              conflict: true,
+              document: { path: relativePath, content: err.currentContent, version: err.currentVersion },
+              message: err.message,
+            }
+          }
+          // Edits only, by design — a missing file means the caller should be
+          // in a capture flow (person:new, org:new), not writing blind.
+          if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+            throw new Error(`Document not found: ${relativePath}`)
+          }
+          throw err
+        }
+      },
     },
 
     Subscription: {
@@ -325,12 +438,13 @@ const truncationExtensionsPlugin = {
 export function createYogaInstance(
   store: Store,
   markdownStore: MarkdownStore | null = null,
+  docRoots: DocumentRoots | null = null,
 ): YogaServerInstance<object, object> {
   return createYoga({
     graphqlEndpoint: '/graphql',
     schema: createSchema({
       typeDefs,
-      resolvers: createResolvers(store, markdownStore),
+      resolvers: createResolvers(store, markdownStore, docRoots),
     }),
     plugins: [truncationExtensionsPlugin],
     // Localhost single-user service: expose real resolver errors to clients.
