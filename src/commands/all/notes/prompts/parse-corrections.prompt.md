@@ -1,6 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-08-12
+updated: 2026-08-26
 description: Parse freeform user corrections for note metadata extracted from images
 ---
 
@@ -12,6 +13,8 @@ Current metadata:
 - when: {{user.when}}
 - rel: {{user.rel}}
 
+Today's date: {{user.today}}
+
 Field rules:
 
 - `summary` is the note's title, and it names the file. Return it only when the user gives a new one.
@@ -20,6 +23,7 @@ Field rules:
 Time rules:
 
 - `when` is "YYYY-MM-DD HH:MM" if the user changed the date, or just "HH:MM" if only the time changed.
+- A date given without a year resolves to its most recent occurrence on or before today's date. Never invent a year.
 - Hours are NOT capped at 23. Notebook time files late-night work under the day it started, so "25:30" means 01:30 the next morning and is a deliberate, valid value. Copy such times through exactly — never normalize them, never roll the date forward, never substitute a clock-hour equivalent.
 
 User corrections:

@@ -15,7 +15,7 @@ import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import type { JournalType, Question } from '#shared/models/Journal/type.d.ts'
 import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
-import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
+import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
 import { journalFromVideo } from './lib/fromVideo.ts'
@@ -134,13 +134,27 @@ export default class JournalNewTask extends Command {
           output.log(colors.cyan('\nParsing corrections...'))
 
           // An explicitly typed `when:` is read here, not by the model — it
-          // can't then normalize an extended hour or roll the date forward.
-          // Applied before the call so a model failure can't discard it.
-          const typedTime = extractTypedTime(corrections)
+          // can't then normalize an extended hour, roll the date forward, or
+          // pick the year for a partial date. Applied before the call so a
+          // model failure can't discard it. When it declines, say so: the AI
+          // gets the value, and the user should know a guess is coming.
+          const typedTime = extractTypedTime(corrections, context.notebookNow.date)
           if (typedTime) {
             journalWhen = new PlainDateTime(
               typedTime.hasDate ? typedTime.value : `${journalWhen.date} ${typedTime.value}`,
             )
+            if (typedTime.yearInferred) {
+              output.log(colors.gray(`  Typed time "${typedTime.raw}" read as ${typedTime.value}`))
+            }
+          } else {
+            const rawTime = labelledTimeRaw(corrections)
+            if (rawTime) {
+              output.log(
+                colors.yellow(
+                  `  Typed time "${rawTime}" isn't HH:MM, MM-DD HH:MM, or YYYY-MM-DD HH:MM — the AI will interpret it`,
+                ),
+              )
+            }
           }
 
           try {
@@ -152,11 +166,15 @@ Current metadata:
 - when: ${journalWhen.date} ${journalWhen.time}
 - rel: ${JSON.stringify(rel)}
 
+Today's date: ${context.notebookNow.date}
+
 User corrections:
 ${corrections}
 
 Return ONLY a JSON object with the fields that should be updated. Rules:
 - "when" must be in format "YYYY-MM-DD HH:MM" (zero-padded)
+- A date given without a year resolves to its most recent occurrence on or before today's
+  date. Never invent a year.
 - Hours are NOT capped at 23. Notebook time files late-night work under the day it started,
   so "2026-03-31 25:30" means 01:30 the next morning and is a deliberate, valid value. Copy
   such times through exactly — never normalize them, never roll the date forward, never

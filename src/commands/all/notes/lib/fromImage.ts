@@ -11,7 +11,7 @@ import { aiModel } from '#shared/ai/models.ts'
 import { exists, readTextFile, rename } from '#shared/fs/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { extractTypedTime } from '#universal/dates/extractTypedTime.ts'
+import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { findScreenshotsOnDesktop } from '../../message/_lib/findScreenshotOnDesktop.ts'
 import { loadImageForAI } from '../../message/_lib/loadImage.ts'
@@ -158,14 +158,34 @@ export async function notesFromImage(options: NotesFromImageOptions): Promise<Co
     output.log(colors.gray('Parsing corrections...'))
 
     // An explicitly typed `when:` is read here, not by the model — it can't then
-    // normalize an extended hour or roll the date forward. Applied before the
-    // call so a model failure can't discard it.
-    const typedTime = extractTypedTime(corrections)
+    // normalize an extended hour, roll the date forward, or pick the year for a
+    // partial date. Applied before the call so a model failure can't discard
+    // it. When it declines, say so: the AI gets the value, and the user should
+    // know a guess is coming.
+    const typedTime = extractTypedTime(corrections, context.notebookNow.date)
     if (typedTime) {
       when = new PlainDateTime(typedTime.hasDate ? typedTime.value : `${when.plainDate} ${typedTime.value}`)
+      if (typedTime.yearInferred) {
+        output.log(colors.gray(`  Typed time "${typedTime.raw}" read as ${typedTime.value}`))
+      }
+    } else {
+      const rawTime = labelledTimeRaw(corrections)
+      if (rawTime) {
+        output.log(
+          colors.yellow(
+            `  Typed time "${rawTime}" isn't HH:MM, MM-DD HH:MM, or YYYY-MM-DD HH:MM — the AI will interpret it`,
+          ),
+        )
+      }
     }
 
-    const c = await parseNoteCorrections({ summary, when: when.time, rel, corrections })
+    const c = await parseNoteCorrections({
+      summary,
+      when: when.time,
+      today: context.notebookNow.date,
+      rel,
+      corrections,
+    })
 
     if (c.summary) summary = c.summary
     if (c.rel) rel = c.rel
@@ -314,6 +334,8 @@ export async function extractNoteFromImage(
 export interface CorrectionsContext {
   summary: string
   when: string
+  /** The notebook's current date, so year-less dates resolve to the recent past. */
+  today: string
   rel: string[]
   corrections: string
 }
@@ -324,6 +346,7 @@ export async function parseNoteCorrections(ctx: CorrectionsContext): Promise<z.i
     user: {
       summary: ctx.summary,
       when: ctx.when,
+      today: ctx.today,
       rel: ctx.rel.length > 0 ? ctx.rel.join(', ') : '(none)',
       corrections: ctx.corrections,
     },
