@@ -37,6 +37,10 @@ export const DIR_TMP_SYS = os.tmpdir()
 
 export const DIR_ATTACHMENTS = path.join(DIR_USER_DATA, 'attachments')
 export const DIR_STATE = path.join(DIR_USER_DATA, 'state')
+// Run-state for automations, deliberately outside the notebook: a five-minute
+// charter would otherwise rewrite its own frontmatter into notebook git and
+// whatever is syncing the folder, hundreds of times a day.
+export const FILE_AUTOMATIONS_STATE = path.join(DIR_STATE, 'automations.json')
 export const DIR_STATE_AI_CHATS = path.join(DIR_STATE, 'ai', 'chats')
 export const DIR_STATE_FOLLOW_EMAIL_ACTIVE = path.join(DIR_STATE, 'follow', 'email', 'active')
 export const DIR_STATE_FOLLOW_EMAIL_ARCHIVE = path.join(DIR_STATE, 'follow', 'email', 'archive')
@@ -54,6 +58,9 @@ export const DIR_CODE_SERVICES = path.join(DIR_CODE, 'services')
 // unlike the rest of the notebook, which only deliberate capture flows write.
 export const DIR_AI = path.join(DIR_BASE, 'ai')
 export const DIR_AI_MEMORY = path.join(DIR_AI, 'memory')
+
+// Charters for work the system does on its owner's behalf, one file each
+export const DIR_AUTOMATIONS = path.join(DIR_BASE, 'automations')
 
 export const DIR_DATA = path.join(DIR_BASE, 'data')
 export const DIR_DATA_ASSETS = path.join(DIR_DATA, 'assets')

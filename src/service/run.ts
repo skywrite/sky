@@ -2,11 +2,13 @@ import process from 'node:process'
 import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
+import runDueAutomations from '#lib/automations/runDue.ts'
 import { getDarwinIdleMs, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
@@ -24,7 +26,19 @@ configureLogging({ stream: 'service', console: process.stdout.isTTY === true })
 const logServer = logger('server')
 const logTz = logger('timezone')
 const logHeartbeat = logger('heartbeat')
+const logAutomations = logger('automations')
 const logWatcher = logger('watcher')
+
+// A charter that cannot be read is just as unreadable on the next tick, so the
+// same complaint would land 1440 times a day. Report each distinct problem once
+// per process and let a restart re-surface anything still wrong.
+const reportedAutomationProblems = new Set<string>()
+
+function reportAutomationProblemOnce(key: string, report: () => void): void {
+  if (reportedAutomationProblems.has(key)) return
+  reportedAutomationProblems.add(key)
+  report()
+}
 
 // AI SDK warnings from service handlers (e.g. siteHtml) go to the error log
 // with a one-line stderr notice instead of stack traces in the service log.
@@ -278,6 +292,76 @@ export default async function run() {
             message: failed.error,
           })
         }
+      }
+
+      // Declared automations: charters under the notebook's automations/ say
+      // what runs and when. A missing directory is a no-op, so this stays
+      // silent until the first charter exists.
+      //
+      // The clock is safe against the post-wake flip where Intl transiently
+      // reports UTC: TZ is pinned at boot and refreshed above, so the wall
+      // clock and the zone name resolve from the same pinned value. Wake is
+      // exactly when a missed firing catches up, which is why it matters here.
+      const pass = await runDueAutomations({
+        dir: config.DIR_AUTOMATIONS,
+        statePath: config.FILE_AUTOMATIONS_STATE,
+        systemNow: new ZonedDateTime(),
+        invoke: async ({ run, args }) => {
+          const outcome = await commandService.run(run, args)
+          return outcome.status === 'success' ? { outcome: 'acted' } : { outcome: 'failed', message: outcome.message }
+        },
+      })
+
+      tick.set({ automationsConsidered: pass.considered, automationsRan: pass.ran.length })
+
+      for (const ran of pass.ran) {
+        if (ran.outcome === 'failed') {
+          logAutomations.error('{name} failed: {message}', {
+            event: 'automation-failed',
+            name: ran.name,
+            run: ran.run,
+            lateMinutes: ran.lateMinutes,
+            message: ran.message ?? 'no detail given',
+          })
+        } else {
+          logAutomations.info('ran {name} → {outcome}', {
+            event: 'automation-ran',
+            name: ran.name,
+            run: ran.run,
+            outcome: ran.outcome,
+            lateMinutes: ran.lateMinutes,
+          })
+        }
+      }
+
+      for (const problem of pass.charterErrors) {
+        reportAutomationProblemOnce(`charter:${problem.path}:${problem.error}`, () =>
+          logAutomations.error('unreadable charter {path}: {error}', {
+            event: 'automation-charter-error',
+            path: problem.path,
+            error: problem.error,
+          }),
+        )
+      }
+
+      for (const warning of pass.unknownKeys) {
+        reportAutomationProblemOnce(`keys:${warning.name}:${warning.keys.join(',')}`, () =>
+          logAutomations.warn('{name} carries frontmatter nothing reads: {keys}', {
+            event: 'automation-unknown-keys',
+            name: warning.name,
+            keys: warning.keys,
+          }),
+        )
+      }
+
+      if (pass.stateError) {
+        const stateError = pass.stateError
+        reportAutomationProblemOnce(`state:${stateError}`, () =>
+          logAutomations.error('run-state unusable, every charter reads as never run: {error}', {
+            event: 'automation-state-error',
+            error: stateError,
+          }),
+        )
       }
     } catch (err) {
       tick.fail(err)
