@@ -1,3 +1,4 @@
+import { DEFAULT_QUERY_LIMIT } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
@@ -643,5 +644,31 @@ test('service yoga tracks MarkdownStore mutations via version bumps', async () =
     should: 'rebuild the DomainCollection and reflect the change',
     actual: (after.data?.journals ?? []).length,
     expected: 1,
+  })
+})
+
+test('service yoga allPeople lists every profile, past the default query cap', async () => {
+  const many = Array.from({ length: DEFAULT_QUERY_LIMIT + 10 }, (_, i) => ({
+    doc: doc(`---\nname: Person ${i}\n---\n`),
+    path: `/test/people/person-${i}.md`,
+  }))
+  const mdStore = { ...createMockMarkdownStore(), people: createMockCollection(many) } as unknown as MarkdownStore
+  const yoga = createYogaInstance({} as Store, mdStore)
+
+  const all = await runQuery(yoga, '{ allPeople { path } }')
+  const bare = await runQuery(yoga, '{ people { path } }')
+
+  assert({
+    given: `${DEFAULT_QUERY_LIMIT + 10} profiles queried through allPeople`,
+    should: 'return them all — an index, not a search, so the runaway cap does not apply',
+    actual: { returned: all.data?.allPeople.length, truncations: all.extensions?.truncations },
+    expected: { returned: DEFAULT_QUERY_LIMIT + 10, truncations: undefined },
+  })
+
+  assert({
+    given: 'the same profiles through a bare people query',
+    should: 'still cap at the default and report it',
+    actual: { returned: bare.data?.people.length, field: bare.extensions?.truncations?.[0]?.field },
+    expected: { returned: DEFAULT_QUERY_LIMIT, field: 'people' },
   })
 })

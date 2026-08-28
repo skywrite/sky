@@ -266,10 +266,14 @@ export function createResolvers(
         return results[0] ?? null
       },
 
-      // Convenience list-all queries
-      allPeople: () => liveDc()?.people({}) ?? [],
-      allOrgs: () => liveDc()?.orgs({}) ?? [],
-      allProjects: () => liveDc()?.projects({}) ?? [],
+      // Convenience list-all queries. "All" means all: these serve as
+      // indexes (the CLI's people index for profile subject discovery), so
+      // the runaway cap that guards a bare `people {}` query must not apply
+      // — it silently kept the first 500 profiles of a larger notebook and
+      // hid the rest from every consumer, with no truncation reported.
+      allPeople: () => liveDc()?.people({ limit: Infinity }) ?? [],
+      allOrgs: () => liveDc()?.orgs({ limit: Infinity }) ?? [],
+      allProjects: () => liveDc()?.projects({ limit: Infinity }) ?? [],
 
       // Ref resolution
       resolveRefs: (_: unknown, args: { refs: string[]; year?: number; month?: number; sourceFilePath?: string }) => {
