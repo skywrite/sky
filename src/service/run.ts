@@ -3,7 +3,7 @@ import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import runDueAutomations from '#lib/automations/runDue.ts'
-import { getDarwinIdleMs, readSystemTimezone } from '#lib/sys/mod.ts'
+import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
@@ -44,6 +44,26 @@ function reportAutomationProblemOnce(key: string, report: () => void): void {
 // AI SDK warnings from service handlers (e.g. siteHtml) go to the error log
 // with a one-line stderr notice instead of stack traces in the service log.
 routeAISDKWarningsToLog()
+
+// Recycle the process before its descriptor table fills up. Bun 1.4's
+// `--watch` reload re-execs in place and leaves the previous incarnation's
+// watcher directory handles open (oven-sh/bun#40706) — one full set per
+// code save — and once a process holds more than OPEN_MAX (10,240)
+// descriptors, macOS posix_spawn fails with EBADF: every child (agent-slack,
+// ioreg, …) dies instantly while the server itself looks healthy. The 12h
+// interval below cannot catch this, because a reload restarts it too.
+// Measuring the process is immune to reloads; exiting hands launchd
+// (KeepAlive) a clean PID at the same cost as the reload that just happened.
+const FD_RECYCLE_LIMIT = 4096
+const openFds = openFdCount()
+if (openFds !== null && openFds > FD_RECYCLE_LIMIT) {
+  logServer.warn('Recycling: {openFds} open descriptors exceed {limit}', {
+    event: 'recycle',
+    openFds,
+    limit: FD_RECYCLE_LIMIT,
+  })
+  exit(0)
+}
 
 // kill every 12 hours; for some reason the
 // macOS service configuation isn't killing as expected
@@ -122,6 +142,7 @@ export default async function run() {
   // emitting it leaves the tz line as the last record, and the throw itself
   // lands in the /tmp crash-catcher.
   const boot = beginEvent(logServer, 'boot')
+  boot.set({ openFds })
   logServer.info('Notebook server is starting')
 
   const scanStarted = performance.now()
