@@ -61,7 +61,7 @@ test({ name: 'theme assets - Bun-built bundle serves js and css' }, async () => 
     assert({
       given: 'the same bundle',
       should: 'carry the live chat — the client of the /chat routes',
-      actual: jsBody.includes('/messages') && jsBody.includes('sky.chat.thread'),
+      actual: jsBody.includes('/messages') && jsBody.includes('/day'),
       expected: true,
     })
 
