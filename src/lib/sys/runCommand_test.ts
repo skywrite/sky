@@ -144,3 +144,21 @@ test('runCommand - env option does not leak into the parent process', async () =
     expected: undefined,
   })
 })
+
+test('runCommand - a command that never starts reports why', async () => {
+  const result = await runCommand('definitely-missing-binary-xyz', ['--version'])
+
+  assert({
+    given: 'a binary that is not on PATH',
+    should: 'fail',
+    actual: result.success,
+    expected: false,
+  })
+
+  assert({
+    given: 'a binary that is not on PATH',
+    should: 'carry the spawn failure in stderr rather than an empty string',
+    actual: result.stderr.includes('definitely-missing-binary-xyz'),
+    expected: true,
+  })
+})

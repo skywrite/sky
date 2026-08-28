@@ -47,12 +47,16 @@ export async function runCommand(
     }
   } catch (error) {
     // execFile rejects with an error that has code, stdout, stderr on failure
-    const err = error as { code?: number; stdout?: string; stderr?: string; message?: string }
+    const err = error as { code?: number | string; stdout?: string; stderr?: string; message?: string }
+    // A process that never started (ENOENT, EBADF, EACCES…) rejects with a
+    // string errno code and an empty — not absent — stderr, so the message is
+    // its only account of what went wrong.
+    const neverStarted = typeof err.code === 'string'
     return {
       success: false,
       code: typeof err.code === 'number' ? err.code : 1,
       stdout: err.stdout ?? '',
-      stderr: err.stderr ?? err.message ?? 'Unknown error',
+      stderr: neverStarted ? (err.message ?? 'Unknown error') : (err.stderr ?? err.message ?? 'Unknown error'),
     }
   }
 }

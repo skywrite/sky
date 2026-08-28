@@ -30,6 +30,12 @@ type Params = InferParams<typeof params>
 type CheckSummary = { fileName: string; newReplies: number }
 type Result = {
   checked: number
+  /** Follows whose anchors were exported this run (those with a link). */
+  polled: number
+  /** Polled follows where every anchor export failed. */
+  exportFailures: number
+  /** What the first failed export said, or null when none failed. */
+  exportFailure: string | null
   expired: string[]
   skipped: string[]
   errors: string[]
@@ -75,7 +81,17 @@ export default class SlackFollowCheckTask extends Command {
 
     if (!(await exists(DIR_STATE_FOLLOW_SLACK_ACTIVE))) {
       output.log('No follow directory found.')
-      return CommandResult.success({ checked: 0, expired: [], skipped: [], errors: [], withActivity: [], channels })
+      return CommandResult.success({
+        checked: 0,
+        polled: 0,
+        exportFailures: 0,
+        exportFailure: null,
+        expired: [],
+        skipped: [],
+        errors: [],
+        withActivity: [],
+        channels,
+      })
     }
 
     const now = fetchNowSync()
@@ -115,12 +131,25 @@ export default class SlackFollowCheckTask extends Command {
       : registry.getDue(nowDt).filter((e) => !expiredSet.has(e.fileName))
 
     if (entries.length === 0) {
-      return CommandResult.success({ checked: 0, expired, skipped: [], errors: [], withActivity: [], channels })
+      return CommandResult.success({
+        checked: 0,
+        polled: 0,
+        exportFailures: 0,
+        exportFailure: null,
+        expired,
+        skipped: [],
+        errors: [],
+        withActivity: [],
+        channels,
+      })
     }
 
     const withActivity: CheckSummary[] = []
     const skipped: string[] = []
     const errors: string[] = []
+    let polled = 0
+    let exportFailures = 0
+    let exportFailure: string | null = null
 
     for (const entry of entries) {
       try {
@@ -136,20 +165,25 @@ export default class SlackFollowCheckTask extends Command {
 
         // 1. Poll Slack — one export per anchor (a merged follow watches
         //    several roots and gathers their activity into one stream)
-        const polled: NonNullable<CommandTypesRegistry['slack:cli:export']['result']>[] = []
+        polled++
+        const exports: NonNullable<CommandTypesRegistry['slack:cli:export']['result']>[] = []
+        let lastFailure: string | null = null
         for (const anchor of anchors) {
           const exportResult = await tasks.run('slack:cli:export', { link: anchor.link })
           if (!exportResult.ok || !exportResult.data) {
             output.log(`[check] ${fileName}: export failed (${anchor.link}) — ${exportResult.message}`)
+            lastFailure = exportResult.message ?? 'no message'
             continue
           }
-          polled.push(exportResult.data)
+          exports.push(exportResult.data)
         }
-        if (polled.length === 0) {
-          skipped.push(`${fileName}: every anchor export failed`)
+        if (exports.length === 0) {
+          exportFailures++
+          exportFailure ??= lastFailure
+          skipped.push(`${fileName}: every anchor export failed — ${lastFailure}`)
           continue
         }
-        const data = polled[0]
+        const data = exports[0]
 
         // 2. Detect new replies since lastChecked across all anchors
         // Normalize extended hours (e.g. 2026-02-24 31:04 → 2026-02-25 07:04)
@@ -158,7 +192,7 @@ export default class SlackFollowCheckTask extends Command {
         const lastCheckedStr = lastCheckedNorm ? `${lastCheckedNorm.date} ${lastCheckedNorm.time}` : ''
 
         const seenTs = new Set<string>()
-        const newReplies = polled
+        const newReplies = exports
           .flatMap((d) => d.thread?.replies ?? [])
           .filter((r) => (r.timeLabel ? r.timeLabel > lastCheckedStr : false))
           .filter((r) => {
@@ -311,6 +345,16 @@ export default class SlackFollowCheckTask extends Command {
       output.log(`Checked ${entries.length} follow(s), ${withActivity.length} with new activity.`)
     }
 
-    return CommandResult.success({ checked: entries.length, expired, skipped, errors, withActivity, channels })
+    return CommandResult.success({
+      checked: entries.length,
+      polled,
+      exportFailures,
+      exportFailure,
+      expired,
+      skipped,
+      errors,
+      withActivity,
+      channels,
+    })
   }
 }

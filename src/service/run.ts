@@ -230,6 +230,9 @@ export default async function run() {
         const data = result.data as
           | {
               checked: number
+              polled: number
+              exportFailures: number
+              exportFailure: string | null
               expired: string[]
               skipped: string[]
               errors: string[]
@@ -261,6 +264,17 @@ export default async function run() {
             event: 'follows-skipped',
             count: data.skipped.length,
             skipped: data.skipped,
+          })
+        }
+        // Every polled follow failing to export is not follow trouble, it is a
+        // dead spawn path (expired Slack auth, EBADF past the fd cliff) — and
+        // it stays that way until someone acts, so it must not hide at INFO
+        // among the per-follow skips.
+        if (data && data.polled > 0 && data.exportFailures === data.polled) {
+          logHeartbeat.error('Every follow export failed ({count}): {reason}', {
+            event: 'follows-export-failed',
+            count: data.exportFailures,
+            reason: data.exportFailure,
           })
         }
         if (data && data.errors && data.errors.length > 0) {
