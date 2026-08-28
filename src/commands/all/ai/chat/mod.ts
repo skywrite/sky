@@ -2,28 +2,23 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
 import * as p from '@clack/prompts'
-import { generateText, jsonSchema } from 'ai'
+import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
-import { AI_ERROR_LOG_DISPLAY, logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel, getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
+import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { DIR_AI_MEMORY, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { recordExternalFiles } from '#shared/models/Chat/artifactRel.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
-import ChatContext, { type RebuildReport, type TurnContextReport } from '#shared/models/Chat/ChatContext/mod.ts'
-import ChatEngine, { TurnError } from '#shared/models/Chat/ChatEngine/mod.ts'
-import {
-  chatAutosaveFilename,
-  clearChatAutosave,
-  sweepChatAutosaves,
-  writeChatAutosave,
-} from '#shared/models/Chat/ChatStore/autosave.ts'
+import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
+import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
+import { chatAutosaveFilename, sweepChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
-import { saveChat } from '#shared/models/Chat/ChatStore/save.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
@@ -31,7 +26,7 @@ import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { type AIContext, gatherContext } from '../_lib/gatherContext.ts'
+import { gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
@@ -90,8 +85,6 @@ const params = {
 
 type Params = InferParams<typeof params>
 
-import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
-
 type Result = { saved?: string; turns?: number }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -118,88 +111,6 @@ const MEMORY_VERBS: Record<string, string> = {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
-function formatHealthSection(health: AIContext['health']): string {
-  if (health.length === 0) return '(No health data available)'
-
-  const lines: string[] = []
-  for (const { date, data } of health) {
-    const parts: string[] = []
-    if (data.sleep) parts.push(`Sleep: ${data.sleep.range} (${data.sleep.duration} hrs)`)
-    if (data.weight) parts.push(`Weight: ${data.weight} lbs`)
-    if (data.strength) {
-      const sessions = data.strength.map((s) => `${s.lbs} lbs${s.duration ? `, ${s.duration} mins` : ''}`).join('; ')
-      parts.push(`Strength: ${sessions}`)
-    }
-    if (data.work) parts.push(`Work: ${data.work.duration} hrs`)
-    if (parts.length > 0) lines.push(`- **${date}**: ${parts.join(' | ')}`)
-  }
-  return lines.join('\n')
-}
-
-function formatPriceSection(prices: AIContext['prices']): string {
-  if (prices.length === 0) return '(No price data available)'
-
-  const lines: string[] = []
-  for (const { date, data } of prices) {
-    const parts = data.prices.map((p) => {
-      const formatted =
-        p.value >= 1000 ? p.value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : p.value.toFixed(2)
-      return `${p.symbol}: $${formatted}`
-    })
-    if (parts.length > 0) lines.push(`- **${date}**: ${parts.join(' | ')}`)
-  }
-  return lines.join('\n')
-}
-
-interface ContextInput {
-  ctx: AIContext
-  days: number
-  activityMarkdown: string | null
-}
-
-function buildContextPrompt({ ctx, days, activityMarkdown }: ContextInput): string {
-  const parts: string[] = []
-
-  parts.push(`# Context for ${ctx.today.date} (${ctx.today.dayOfWeek})`)
-  parts.push('')
-
-  // 1. Prices
-  parts.push('## Prices')
-  parts.push('')
-  parts.push(formatPriceSection(ctx.prices))
-  parts.push('')
-
-  // 2. Health
-  parts.push('## Health')
-  parts.push('')
-  parts.push(formatHealthSection(ctx.health))
-  parts.push('')
-
-  // 3. Activity (goals, summaries, today's docs, previous days' journals via DomainCollection)
-  parts.push('## Activity')
-  parts.push('')
-  if (activityMarkdown) {
-    parts.push(activityMarkdown)
-  } else {
-    parts.push('(No activity recorded)')
-  }
-
-  return parts.join('\n')
-}
-
-/**
- * Notebook datetime for a turn stamp (`YYYY-MM-DD HH:MM`, extended hours
- * kept). Undefined when now can't be computed — the turn proceeds
- * unstamped rather than failing.
- */
-async function fetchWhen(): Promise<string | undefined> {
-  try {
-    return (await fetchNow()).plainDateTime.toString()
-  } catch {
-    return undefined
-  }
-}
 
 interface OlderChatRow {
   path: string
@@ -259,103 +170,6 @@ async function pickOlderChat(
     return null
   }
   return <string>picked
-}
-
-// -----------------------------------------------------------------------------
-// Web Search Tool (Perplexity Search API)
-// -----------------------------------------------------------------------------
-
-interface SearchResult {
-  title: string
-  url: string
-  snippet: string
-}
-
-/** Strip HTML tags and collapse whitespace to get readable text. */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-const MAX_FETCH_CHARS = 20000
-
-function createWebTools() {
-  return {
-    web_search: {
-      description:
-        'Search the web for current information. Use this when the user asks about recent events, news, facts you are unsure about, or anything that requires up-to-date information beyond the notebook context.',
-      inputSchema: jsonSchema<{ query: string }>({
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'The search query' },
-        },
-        required: ['query'],
-      }),
-      execute: async ({ query }: { query: string }): Promise<SearchResult[]> => {
-        const apiKey = globalThis.process?.env?.PERPLEXITY_API_KEY
-        if (!apiKey) return []
-
-        const resp = await fetch('https://api.perplexity.ai/search', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ query, max_results: 5 }),
-        })
-
-        if (!resp.ok) return []
-
-        const data = await resp.json()
-        const results: SearchResult[] = (data.results ?? []).map(
-          (r: { title?: string; url?: string; snippet?: string }) => ({
-            title: r.title ?? '',
-            url: r.url ?? '',
-            snippet: r.snippet ?? '',
-          }),
-        )
-        return results
-      },
-    },
-    web_fetch: {
-      description:
-        'Fetch the full content of a web page by URL. Use this after web_search to read the full text of a promising result.',
-      inputSchema: jsonSchema<{ url: string }>({
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'The URL to fetch' },
-        },
-        required: ['url'],
-      }),
-      execute: async ({ url }: { url: string }): Promise<string> => {
-        try {
-          const resp = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotebookBot/1.0)' },
-            signal: AbortSignal.timeout(10000),
-          })
-          if (!resp.ok) return `Error: ${resp.status} ${resp.statusText}`
-
-          const contentType = resp.headers.get('content-type') ?? ''
-          const raw = await resp.text()
-
-          const text = contentType.includes('html') ? htmlToText(raw) : raw
-          return truncate(text, MAX_FETCH_CHARS, '\n\n[Content truncated...]')
-        } catch (err) {
-          return `Error fetching URL: ${(err as Error).message}`
-        }
-      },
-    },
-  }
 }
 
 // -----------------------------------------------------------------------------
@@ -426,12 +240,12 @@ export default class AiChatTask extends Command {
 
     const timeDir = <string>config.DIR_TIME
     const dataDir = <string>config.DIR_DATA
+    const baseDir = <string>config.DIR_BASE
 
     // Resolve the chosen reasoning profile (--reasoning) for turns; a fast model for summaries.
     const reasoningProfile = getProfile(reasoningProfileName)
     const reasoning = resolveProfile(reasoningProfile)
-    const fastProfile = getProfile(fastProfileName)
-    const fast = resolveProfile(fastProfile)
+    const fast = resolveProfile(getProfile(fastProfileName))
 
     output.log(`Gathering context from last ${days} days...`)
 
@@ -460,7 +274,7 @@ export default class AiChatTask extends Command {
       let filePath: string
       if (chats.length === 0) {
         output.log(colors.dim(`No saved chats for ${today} — showing older chats.`))
-        const older = await pickOlderChat(String(today), <string>config.DIR_BASE, output)
+        const older = await pickOlderChat(String(today), baseDir, output)
         if (!older) return CommandResult.success({ turns: 0 })
         filePath = older
       } else {
@@ -480,7 +294,7 @@ export default class AiChatTask extends Command {
           return CommandResult.success({ turns: 0 })
         }
         if (picked === OLDER) {
-          const older = await pickOlderChat(String(today), <string>config.DIR_BASE, output)
+          const older = await pickOlderChat(String(today), baseDir, output)
           if (!older) return CommandResult.success({ turns: 0 })
           filePath = older
         } else {
@@ -503,179 +317,15 @@ export default class AiChatTask extends Command {
       }
     }
 
-    // Gather all context (summaries, health, prices)
+    // The ambient day: summaries, health, prices
     t0 = performance.now()
     const ctx = await gatherContext(today, timeDir, dataDir, days)
     output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
 
-    const baseDir = <string>config.DIR_BASE
-
-    // The chat's document context lives in ChatContext: the baseline
-    // universe, query-driven growth across turns, boost/pinning state, and
-    // the per-turn context log. The command wires the producers to the
-    // command pipeline and renders the reports the class returns.
-    const chatContext = new ChatContext({
-      today,
-      days,
-      baseDir,
-      maxTokens: contextTokens,
-      summaryBaseline,
-      ownChatPath: resumeSession?.filePath ?? null,
-      producers: {
-        produceInitialQuery: async (userMessage) => {
-          const r = await tasks.run('ai:context:files', {
-            _: ['ai:context:files', userMessage],
-            server: true,
-          })
-          return r.status === 'success'
-            ? {
-                ok: true,
-                value: {
-                  paths: r.data?.paths ?? [],
-                  query: r.data?.query,
-                  truncations: r.data?.truncations,
-                  since: r.data?.since,
-                  until: r.data?.until,
-                  start: r.data?.start,
-                },
-              }
-            : { ok: false, message: r.message ?? 'ai:context:files failed' }
-        },
-        evolveQueries: async (userMessage, queries, recentConversation) => {
-          const r = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
-            _: ['ai:context:evolve', userMessage],
-            queries: JSON.stringify(queries),
-            conversation: JSON.stringify(recentConversation),
-          })
-          return r.status === 'success'
-            ? { ok: true, value: { queries: r.data?.queries ?? [], changed: r.data?.changed ?? false } }
-            : { ok: false, message: r.message ?? 'ai:context:evolve failed' }
-        },
-        executeQuery: async (query) => {
-          const r = await tasks.run('markdown:sel', { graphql: query, raw: true, server: 'true' })
-          return r.status === 'success'
-            ? { ok: true, value: { paths: r.data?.paths ?? [], truncations: r.data?.truncations } }
-            : { ok: false, message: r.message ?? 'Context query failed' }
-        },
-      },
-      onProgress: (event) => {
-        if (event.type === 'queries-changed') output.log(colors.dim('Context shifting...'))
-        else if (event.type === 'no-new-queries') output.log(colors.dim('Queries unchanged, skipping re-execution.'))
-        else if (event.type === 'truncated') {
-          for (const t of event.items) {
-            const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
-            output.log(
-              colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`),
-            )
-          }
-        }
-      },
-    })
-
-    let peopleEntities: Awaited<ReturnType<typeof gatherPeopleEntities>> = []
-
-    // A resumed chat with a context log restores its recorded universe exactly —
-    // no fresh baseline injection. New documents enter only through the
-    // normal evolve path afterward. (Pre-log transcripts fall through to the
-    // fresh gather below.)
-    const restoring = resumeSession !== null && resumeSession.state.contextLog.length > 0
-    let restored: Awaited<ReturnType<ChatContext['restore']>> | null = null
-
-    if (restoring && resumeSession) {
-      output.log(colors.dim('[resume] Resolving recorded context universe...'))
-      t0 = performance.now()
-      restored = await chatContext.restore(resumeSession.state)
-      peopleEntities = await gatherPeopleEntities(config as Record<string, unknown>)
-
-      const { resolution } = restored
-      const parts = [`${resolution.resolved.length} of ${resumeSession.state.universePaths.length} restored`]
-      if (resolution.remapped > 0) parts.push(`${resolution.remapped} via day-dir remap`)
-      if (resolution.suffixMatched > 0) parts.push(`${resolution.suffixMatched} via basename match`)
-      output.log(colors.dim(`[resume] Universe: ${parts.join(', ')} (${(performance.now() - t0).toFixed(0)}ms)`))
-      if (resolution.unresolved.length > 0) {
-        output.log(colors.yellow(`[resume] ${resolution.unresolved.length} recorded paths could not be resolved:`))
-        for (const u of resolution.unresolved.slice(0, 10)) {
-          output.log(colors.yellow(`  - ${u}`))
-        }
-        if (resolution.unresolved.length > 10) {
-          output.log(colors.yellow(`  … and ${resolution.unresolved.length - 10} more`))
-        }
-      }
-    } else {
-      output.log(colors.dim(`[server] Fetching context from server...`))
-
-      // Parallel: the baseline gather and the interaction-ranked people
-      // list for system prompt grounding
-      const [seed, people] = await Promise.all([
-        chatContext.seedBaseline(),
-        gatherPeopleEntities(config as Record<string, unknown>),
-      ])
-      peopleEntities = people
-      output.log(
-        colors.dim(
-          `[server] POST /context x5: ${seed.fetchMs.toFixed(
-            0,
-          )}ms — today=${seed.counts.today}, prev=${seed.counts.prev}, goals=${seed.counts.goals}, decisions=${seed.counts.decisions}, memory=${seed.counts.memory}`,
-        ),
-      )
-
-      if (inspectInitialContext) {
-        const sorted = chatContext.paths.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
-        for (const f of sorted) {
-          output.log(f)
-        }
-        return CommandResult.success({ turns: 0 })
-      }
-
-      output.log(colors.dim(`[server] DomainCollection: ${seed.collectionMs.toFixed(0)}ms`))
-    }
-
-    output.log(`Found:`)
-    output.log(`  - ${chatContext.paths.length} documents (including summaries)`)
-    output.log(`  - ${peopleEntities.length} active people`)
-    output.log(`  - ${ctx.health.length} days of health data`)
-    output.log(`  - ${ctx.prices.length} days of price data`)
-
-    // The AI's standing memory: preference-kind memories render into a
-    // system-prompt block, frozen here for the whole session so the base
-    // prompt stays byte-identical and prompt-cached. Loaded straight from
-    // disk (not the service) — resumed sessions get it too, and a service
-    // outage costs context documents, never the standing preferences.
-    const memoryBlock = renderPreferenceBlock(await loadMemories(DIR_AI_MEMORY))
-
-    // Load system prompt
-    const promptContent = await readTextFile(PROMPT_FILE)
-    const renderInput: RenderInput = {
-      context: {
-        notebookDate: context.notebookNow.date,
-        notebookTime: context.notebookNow.time,
-        systemDate: context.systemNow.date,
-        systemTime: context.systemNow.time,
-        notebookTimezone: context.notebookNow.timezone,
-        systemTimezone: context.systemNow.timezone,
-      },
-      entities: { block: formatPeopleBlock(peopleEntities) },
-      memory: { block: memoryBlock },
-    }
-    const { output: baseSystemPrompt } = renderPromptFile(promptContent, 'chat.prompt.md', renderInput)
-    // Kept as a separate segment (not concatenated onto the base prompt) so
-    // each gets its own prompt-cache breakpoint: a context change re-writes
-    // only this segment while the base prompt stays cached for the session.
-    let contextPrompt = ''
-
-    // Conversation state
-    const turns: ConversationMessage[] = []
-    // "toolName:key" entries the user approved with "don't ask again this
-    // session" (e.g. google_agent scoped to one file id). Session-lived only.
+    // Session-lived terminal state. "toolName:key" entries the user
+    // approved with "don't ask again this session" (e.g. google_agent
+    // scoped to one file id).
     const sessionApprovals = new Set<string>()
-    // External files the session's tools touched (title by URL) — saved as
-    // "[Title](url)" rel entries so the transcript points at its artifacts.
-    const externalFiles = new Map<string, string>()
-    let isFirstTurn = true
-    let hasNewMessages = false
-    let splitViewEnabled = false
-    let contextScrollOffset = 0
-    let toolsAnnounced = false
     // The streamed reply leaves the line open between deltas; anything
     // else printing closes it first.
     let midLine = false
@@ -684,12 +334,190 @@ export default class AiChatTask extends Command {
       output.write('\n')
       midLine = false
     }
+    let peopleCount = 0
 
-    // The model turn-runner. Everything interactive about approvals lives
-    // in this handler — the engine drives the protocol around it and owns
-    // the model-facing message history.
-    const chatEngine = new ChatEngine({
+    // Render one context rebuild: the stats line and the changelog (for
+    // recorded turns past the first).
+    const renderContextReport = (report: RebuildReport) => {
+      if (report.stats) {
+        const floored = report.stats.floored !== undefined ? `, ${report.stats.floored} floored` : ''
+        output.log(
+          colors.dim(
+            `Context: ${report.stats.kept} kept, ${report.stats.pruned} pruned${floored}, ${report.stats.excluded} excluded, ~${report.stats.docTokens} tokens`,
+          ),
+        )
+      }
+      if (report.recorded && report.turn > 1 && (report.added.length > 0 || report.cut.length > 0)) {
+        output.log(colors.dim('Context changed:'))
+        for (const d of report.added) {
+          const note = d.pinned ? 'pinned' : d.score !== undefined ? `score=${d.score}` : 'unscored'
+          output.log(colors.dim(`  + ${d.path} (${note}, ~${d.tokens} tokens)`))
+        }
+        for (const r of report.cut) {
+          const note = r.cut === 'budget' ? `score=${r.score}` : r.cut
+          output.log(colors.dim(`  - ${r.path} (${note}, ~${r.tokens} tokens)`))
+        }
+      }
+    }
+
+    // The terminal renders the session's event stream — the same stream a
+    // web client will render — and nothing else.
+    const render = (event: ChatSessionEvent) => {
+      switch (event.type) {
+        case 'text-delta': {
+          // A paragraph break landing at a line start (after a tool line)
+          // is one blank line, not two.
+          const text = midLine ? event.text : event.text.replace(/^\n+/, '\n')
+          output.write(text)
+          midLine = !text.endsWith('\n')
+          return
+        }
+        case 'turn-complete':
+          closeStreamedLine()
+          return
+        case 'tool-call':
+          // A tool line mid-sentence would land inside the streamed text.
+          closeStreamedLine()
+          if (event.toolName === 'web_search') {
+            const input = event.input as { query: string }
+            output.log(colors.dim(`Searching: "${input.query}"...`))
+          } else if (event.toolName === 'web_fetch') {
+            const input = event.input as { url: string }
+            output.log(colors.dim(`Reading: ${input.url}`))
+          } else {
+            output.log(colors.dim(`Running: ${event.toolName}...`))
+          }
+          return
+        case 'context-gathering':
+          output.log(colors.dim('Gathering context...'))
+          return
+        case 'context-rebuilt':
+          renderContextReport(event.report)
+          if (event.report.turn === 1 && event.report.recorded) {
+            output.log(colors.dim(`Context loaded (${event.report.collectionSize} documents)`))
+          }
+          return
+        case 'context-errors': {
+          // Surfaced rather than silently answering without that context
+          // (the session already recorded them in the turn log).
+          const noun = event.errors.length === 1 ? 'query' : 'queries'
+          output.log(
+            colors.yellow(
+              `${event.errors.length} context ${noun} failed — answering with incomplete context (logged to ${AI_ERROR_LOG_DISPLAY})`,
+            ),
+          )
+          return
+        }
+        case 'queries-changed':
+          output.log(colors.dim('Context shifting...'))
+          return
+        case 'no-new-queries':
+          output.log(colors.dim('Queries unchanged, skipping re-execution.'))
+          return
+        case 'truncated':
+          for (const t of event.items) {
+            const cap = t.defaulted ? `default cap ${t.limit}` : `limit ${t.limit}`
+            output.log(
+              colors.yellow(`⚠ ${t.field}: ${t.matched} matched, ${t.returned} returned — ${cap} hit, rest dropped`),
+            )
+          }
+          return
+        case 'tools':
+          // An empty or short list is the only visible symptom of a tool
+          // that failed to load (createNotebookTools warns, but that
+          // scrolls past under a long context gather).
+          output.log(colors.dim(event.names.length > 0 ? `Tools: ${event.names.join(', ')}` : 'Tools: none available'))
+          return
+        case 'model-start':
+          output.log(colors.dim('Thinking...'))
+          output.log('')
+          return
+        case 'autosave-failed':
+          output.log(colors.dim(`Autosave failed: ${event.message} (logged to ${AI_ERROR_LOG_DISPLAY})`))
+          return
+        case 'enriching':
+          output.log('')
+          output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
+          return
+      }
+    }
+
+    const session = new ChatSession({
+      today,
+      startTime,
+      days,
+      baseDir,
+      timeDir,
+      contextTokens,
+      summaryBaseline,
+      resume: resumeSession,
       model: reasoning,
+      profile: { provider: reasoningProfile.provider, model: reasoningProfile.model },
+      producers: contextProducers(tasks),
+      ambient: ctx,
+      // The base system prompt, frozen for the whole session so it stays
+      // byte-identical and prompt-cached: the interaction-ranked people
+      // list for grounding, and the standing preference memories — read
+      // straight from disk, not the service, so resumed sessions get them
+      // too and a service outage costs context documents, never the
+      // standing preferences.
+      systemPrompt: async () => {
+        const [people, memories] = await Promise.all([
+          gatherPeopleEntities(config as Record<string, unknown>),
+          loadMemories(DIR_AI_MEMORY),
+        ])
+        peopleCount = people.length
+        const renderInput: RenderInput = {
+          context: {
+            notebookDate: context.notebookNow.date,
+            notebookTime: context.notebookNow.time,
+            systemDate: context.systemNow.date,
+            systemTime: context.systemNow.time,
+            notebookTimezone: context.notebookNow.timezone,
+            systemTimezone: context.systemNow.timezone,
+          },
+          entities: { block: formatPeopleBlock(people) },
+          memory: { block: renderPreferenceBlock(memories) },
+        }
+        return renderPromptFile(await readTextFile(PROMPT_FILE), 'chat.prompt.md', renderInput).output
+      },
+      tools: async ({ onExternalFiles }) => {
+        const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
+        const notebookTools = await createNotebookTools(tasks, {
+          // Native question breakout: settle a tool's openQuestions in-place —
+          // Enter accepts the proposed answer, typing overrides, ESC accepts
+          // all remaining. No chat turns, no context pipeline.
+          onOpenQuestions: async (_toolName, questions) => {
+            output.log('')
+            output.log(
+              colors.bold(`${questions.length} question${questions.length === 1 ? '' : 's'} to settle`) +
+                colors.dim(' — Enter keeps the proposed answer, ESC keeps the rest'),
+            )
+
+            const answers: { question: string; answer: string }[] = []
+            for (let i = 0; i < questions.length; i++) {
+              const q = questions[i]
+              const message = `${q.question}${q.why ? `\n  ${colors.dim(q.why)}` : ''}\n`
+              const res = await p.text({ message, initialValue: q.proposed })
+
+              if (p.isCancel(res)) {
+                for (const rest of questions.slice(i)) {
+                  answers.push({ question: rest.question, answer: rest.proposed })
+                }
+                break
+              }
+
+              answers.push({ question: q.question, answer: (res as string).trim() || q.proposed })
+            }
+
+            return answers
+          },
+          onExternalFiles: (_toolName, files) => onExternalFiles(files),
+        })
+        return { tools: { ...webTools, ...notebookTools }, toolApproval: createToolApprovalConfig() }
+      },
+      // Everything interactive about approvals lives here — the engine
+      // drives the protocol around it.
       approvalHandler: async ({ toolName, input }) => {
         // A tool may scope approval to a stable key (e.g. the targeted
         // file id); a key the user already blessed skips the prompt.
@@ -742,84 +570,76 @@ export default class AiChatTask extends Command {
         }
         return { approved: true, reason: 'User approved' }
       },
-      // The terminal renders the turn's event stream — the same stream a
-      // web client will render — and nothing else: the engine guarantees
-      // every character of the reply arrives as a delta.
-      onEvent: (event) => {
-        if (event.type === 'text-delta') {
-          // A paragraph break landing at a line start (after a tool line)
-          // is one blank line, not two.
-          const text = midLine ? event.text : event.text.replace(/^\n+/, '\n')
-          output.write(text)
-          midLine = !text.endsWith('\n')
-          return
-        }
-        if (event.type === 'turn-complete') {
-          closeStreamedLine()
-          return
-        }
-        if (event.type !== 'tool-call') return
-        // A tool line mid-sentence would land inside the streamed text.
-        closeStreamedLine()
-        if (event.toolName === 'web_search') {
-          const input = event.input as { query: string }
-          output.log(colors.dim(`Searching: "${input.query}"...`))
-        } else if (event.toolName === 'web_fetch') {
-          const input = event.input as { url: string }
-          output.log(colors.dim(`Reading: ${input.url}`))
-        } else {
-          output.log(colors.dim(`Running: ${event.toolName}...`))
-        }
-      },
+      autosavePath,
+      onEvent: render,
     })
 
-    // Render one ChatContext rebuild: the stats line, the changelog (for
-    // recorded turns past the first), and the refreshed context prompt.
-    const renderContextReport = (report: RebuildReport) => {
-      if (report.stats) {
-        const floored = report.stats.floored !== undefined ? `, ${report.stats.floored} floored` : ''
-        output.log(
-          colors.dim(
-            `Context: ${report.stats.kept} kept, ${report.stats.pruned} pruned${floored}, ${report.stats.excluded} excluded, ~${report.stats.docTokens} tokens`,
-          ),
-        )
-      }
-      if (report.recorded && report.turn > 1 && (report.added.length > 0 || report.cut.length > 0)) {
-        output.log(colors.dim('Context changed:'))
-        for (const d of report.added) {
-          const note = d.pinned ? 'pinned' : d.score !== undefined ? `score=${d.score}` : 'unscored'
-          output.log(colors.dim(`  + ${d.path} (${note}, ~${d.tokens} tokens)`))
+    // A resumed chat with a context log restores its recorded universe
+    // exactly; anything else gathers a fresh baseline (the session decides).
+    const restoring = resumeSession !== null && resumeSession.state.contextLog.length > 0
+    output.log(
+      colors.dim(
+        restoring ? '[resume] Resolving recorded context universe...' : '[server] Fetching context from server...',
+      ),
+    )
+    t0 = performance.now()
+    const started = await session.start()
+
+    if (started.restored && resumeSession) {
+      const { resolution } = started.restored
+      const parts = [`${resolution.resolved.length} of ${resumeSession.state.universePaths.length} restored`]
+      if (resolution.remapped > 0) parts.push(`${resolution.remapped} via day-dir remap`)
+      if (resolution.suffixMatched > 0) parts.push(`${resolution.suffixMatched} via basename match`)
+      output.log(colors.dim(`[resume] Universe: ${parts.join(', ')} (${(performance.now() - t0).toFixed(0)}ms)`))
+      if (resolution.unresolved.length > 0) {
+        output.log(colors.yellow(`[resume] ${resolution.unresolved.length} recorded paths could not be resolved:`))
+        for (const u of resolution.unresolved.slice(0, 10)) {
+          output.log(colors.yellow(`  - ${u}`))
         }
-        for (const r of report.cut) {
-          const note = r.cut === 'budget' ? `score=${r.score}` : r.cut
-          output.log(colors.dim(`  - ${r.path} (${note}, ~${r.tokens} tokens)`))
+        if (resolution.unresolved.length > 10) {
+          output.log(colors.yellow(`  … and ${resolution.unresolved.length - 10} more`))
         }
       }
-      contextPrompt = buildContextPrompt({ ctx, days, activityMarkdown: report.activityMarkdown })
+    } else if (started.seeded) {
+      const seed = started.seeded
+      output.log(
+        colors.dim(
+          `[server] POST /context x5: ${seed.fetchMs.toFixed(
+            0,
+          )}ms — today=${seed.counts.today}, prev=${seed.counts.prev}, goals=${seed.counts.goals}, decisions=${seed.counts.decisions}, memory=${seed.counts.memory}`,
+        ),
+      )
+
+      if (inspectInitialContext) {
+        const sorted = session.paths.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
+        for (const f of sorted) {
+          output.log(f)
+        }
+        return CommandResult.success({ turns: 0 })
+      }
+
+      output.log(colors.dim(`[server] DomainCollection: ${seed.collectionMs.toFixed(0)}ms`))
     }
 
-    // Seed a resumed session: conversation, carried context log, query state,
-    // and turn numbering continue exactly where the transcript left off
-    // (the context side happened in chatContext.restore above).
-    if (resumeSession) {
-      const state = resumeSession.state
-      turns.push(...state.conversation)
-      chatEngine.seedConversation(state.conversation)
+    output.log(`Found:`)
+    output.log(`  - ${session.paths.length} documents (including summaries)`)
+    output.log(`  - ${peopleCount} active people`)
+    output.log(`  - ${ctx.health.length} days of health data`)
+    output.log(`  - ${ctx.prices.length} days of price data`)
 
-      if (restoring && restored) {
-        // Context restored — new messages continue through the evolve path.
-        isFirstTurn = false
-        renderContextReport(restored.rebuild)
+    if (resumeSession) {
+      if (started.restored) {
+        renderContextReport(started.restored.rebuild)
       } else {
         output.log(colors.yellow('No context log in this transcript — gathering fresh context for your next message.'))
       }
 
       output.log('')
-      output.log(colors.bold(`Resuming: ${truncate(resumeSession.summary || firstWordsSummary(turns), 80)}`))
+      output.log(colors.bold(`Resuming: ${truncate(resumeSession.summary || firstWordsSummary(session.turns), 80)}`))
       output.log(colors.dim(resumeSession.filePath))
-      const replay = turns.slice(-4)
-      if (turns.length > replay.length) {
-        output.log(colors.dim(`  … ${turns.length - replay.length} earlier messages (Ctrl+B for full history)`))
+      const replay = session.turns.slice(-4)
+      if (session.turns.length > replay.length) {
+        output.log(colors.dim(`  … ${session.turns.length - replay.length} earlier messages (Ctrl+B for full history)`))
       }
       output.log('')
       for (const m of replay) {
@@ -870,6 +690,9 @@ export default class AiChatTask extends Command {
     }
     if (topic) setTerminalTitle(topic)
 
+    let splitViewEnabled = false
+    let contextScrollOffset = 0
+
     // Conversation loop
     while (true) {
       // Get user input
@@ -881,9 +704,7 @@ export default class AiChatTask extends Command {
         output.log(formatUserMsg(userMessage))
         output.log('')
       } else {
-        const contextFiles = chatContext.paths
-          .map((p) => (p.startsWith(baseDir) ? p.slice(baseDir.length + 1) : p))
-          .sort()
+        const contextFiles = session.paths.map((f) => (f.startsWith(baseDir) ? f.slice(baseDir.length + 1) : f)).sort()
 
         const promptResult = await promptWithInk({
           topic: topic || undefined,
@@ -891,7 +712,7 @@ export default class AiChatTask extends Command {
           logToDay: log,
           splitViewEnabled,
           contextScrollOffset,
-          conversation: turns,
+          conversation: session.turns,
           contextFiles,
           summarizePaste: async (text) => {
             const { text: summary } = await generateText({
@@ -937,8 +758,7 @@ export default class AiChatTask extends Command {
         continue
       }
       if (userMessage === '/no-context') {
-        isFirstTurn = false
-        chatContext.clear()
+        session.clearContext()
         contextScrollOffset = 0
         output.log(colors.dim('Context gathering skipped.'))
         continue
@@ -948,212 +768,50 @@ export default class AiChatTask extends Command {
       // the label once the first exchange exists.
       if (!topic) updateTopic(firstWordsSummary([{ role: 'user', content: userMessage }]))
 
-      // Stamp the turn at submit time — the context gather below can take a
-      // while, and the stamp should say when the message was sent, not when
-      // the model was finally invoked.
-      const turnWhen = await fetchWhen()
-
-      // On first turn, gather targeted context via ai:context:files and merge;
-      // subsequent turns evolve the queries if the conversation direction shifted
-      let turnContext: TurnContextReport
-      if (isFirstTurn) {
-        isFirstTurn = false
-        output.log(colors.dim('Gathering context...'))
-        turnContext = await chatContext.firstTurn(userMessage)
-        if (turnContext.rebuilt) renderContextReport(turnContext.rebuilt)
-        output.log(colors.dim(`Context loaded (${turnContext.rebuilt?.collectionSize ?? 0} documents)`))
-      } else {
-        turnContext = await chatContext.evolveTurn(userMessage, turns.slice(-6))
-        if (turnContext.rebuilt) renderContextReport(turnContext.rebuilt)
-      }
-
-      // Surface context failures instead of silently answering without that
-      // context (chatContext already recorded them in the turn log)
-      if (turnContext.errors.length > 0) {
-        const noun = turnContext.errors.length === 1 ? 'query' : 'queries'
-        output.log(
-          colors.yellow(
-            `${turnContext.errors.length} context ${noun} failed — answering with incomplete context (logged to ${AI_ERROR_LOG_DISPLAY})`,
-          ),
-        )
-      }
-
-      // Every turn — add the user's actual message (never the context). A
-      // resumed transcript can end mid-exchange on a user message; merge into
-      // it so roles keep alternating.
-      hasNewMessages = true
-      const priorTurn = turns.at(-1)
-      if (priorTurn?.role === 'user') {
-        priorTurn.content += '\n\n' + userMessage
-      } else {
-        const turn: ConversationMessage = { role: 'user', content: userMessage }
-        if (turnWhen) turn.when = turnWhen
-        turns.push(turn)
-      }
-      chatEngine.appendUserMessage(userMessage, turnWhen)
-
-      // Get AI response
-      output.log(colors.dim('Thinking...'))
-
-      try {
-        const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
-        const notebookTools = await createNotebookTools(tasks, {
-          // Native question breakout: settle a tool's openQuestions in-place —
-          // Enter accepts the proposed answer, typing overrides, ESC accepts
-          // all remaining. No chat turns, no context pipeline.
-          onOpenQuestions: async (_toolName, questions) => {
-            output.log('')
-            output.log(
-              colors.bold(`${questions.length} question${questions.length === 1 ? '' : 's'} to settle`) +
-                colors.dim(' — Enter keeps the proposed answer, ESC keeps the rest'),
-            )
-
-            const answers: { question: string; answer: string }[] = []
-            for (let i = 0; i < questions.length; i++) {
-              const q = questions[i]
-              const message = `${q.question}${q.why ? `\n  ${colors.dim(q.why)}` : ''}\n`
-              const res = await p.text({ message, initialValue: q.proposed })
-
-              if (p.isCancel(res)) {
-                for (const rest of questions.slice(i)) {
-                  answers.push({ question: rest.question, answer: rest.proposed })
-                }
-                break
-              }
-
-              answers.push({ question: q.question, answer: (res as string).trim() || q.proposed })
-            }
-
-            return answers
-          },
-          onExternalFiles: (_toolName, files) => recordExternalFiles(externalFiles, files),
-        })
-        const allTools = { ...webTools, ...notebookTools }
-        const toolApproval = createToolApprovalConfig()
-
-        // Name the tools once per session: an empty or short list is the only
-        // visible symptom of a tool that failed to load (createNotebookTools
-        // warns, but that scrolls past under a long context gather).
-        if (!toolsAnnounced) {
-          toolsAnnounced = true
-          const names = Object.keys(allTools)
-          output.log(colors.dim(names.length > 0 ? `Tools: ${names.join(', ')}` : 'Tools: none available'))
-        }
-
-        // A blank line between the status lines above and the reply.
-        output.log('')
-        const result = await chatEngine.runTurn({
-          instructions: [baseSystemPrompt, contextPrompt],
-          tools: allTools,
-          toolApproval,
-        })
-        if (result.approvalRoundsExhausted) {
-          output.log(colors.dim('Too many approval requests, moving on.'))
-        }
-
-        // Attach tool records to this turn's log entry — creating one when
-        // the turn changed no context and so recorded nothing else.
-        chatContext.recordTurnTools(result.toolRecords)
-
-        // Build assistant content with optional sources
-        let assistantContent = result.text
-        const uniqueUrls = [...new Set(result.sourceUrls)]
-        if (uniqueUrls.length > 0) {
-          assistantContent += '\n\nSources:\n' + uniqueUrls.map((u) => `- ${u}`).join('\n')
-        }
-
-        const assistantTurn: ConversationMessage = { role: 'assistant', content: assistantContent }
-        const assistantWhen = await fetchWhen()
-        if (assistantWhen) assistantTurn.when = assistantWhen
-        turns.push(assistantTurn)
-
-        // One shot over the first exchange: the pinned line and tab title
-        // update when the label lands (save-time titling is independent).
-        if (!resumeSession && !topicTitlerFired && turns.length >= 2) {
-          topicTitlerFired = true
-          summarizeTranscript(buildChatTranscript(turns.slice(0, 2)), { kind: CHAT_ENRICH.kind }).then((t) => {
-            if (t) updateTopic(t)
-          })
-        }
-
-        if (uniqueUrls.length > 0) {
-          output.log('')
-          output.log(colors.dim('Sources:'))
-          for (const url of uniqueUrls) {
-            output.log(colors.dim(`  - ${url}`))
-          }
-        }
-        output.log('')
-      } catch (err) {
-        // A failed turn keeps its tool trail — an executed side-effectful
-        // call (a sent post, a created doc) must not vanish from the
-        // transcript because the turn later died.
-        closeStreamedLine()
-        if (err instanceof TurnError && err.toolRecords.length > 0) {
-          chatContext.recordTurnTools(err.toolRecords)
-        }
-        // TurnError arrives pre-clamped; foreign errors get the same cap —
-        // a validation failure embeds the whole message array in .message.
-        const message = truncate((err as Error).message ?? String(err), 2000)
-        output.log(colors.red(`Error: ${message}`))
+      const turn = await session.send(userMessage)
+      if (turn.error) {
+        output.log(colors.red(`Error: ${turn.error}`))
         output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
-        await logAIError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
+        continue
+      }
+      if (turn.approvalRoundsExhausted) {
+        output.log(colors.dim('Too many approval requests, moving on.'))
       }
 
-      // Crash insurance: snapshot the session as it now stands — every
-      // session, ephemeral included: -E decides what a clean exit keeps,
-      // not what a crash may lose. Must never break the conversation, so
-      // failures log and move on.
-      try {
-        if (turns.length > 0) {
-          await writeChatAutosave(autosavePath, {
-            turns,
-            contextLog: chatContext.log,
-            resume: resumeSession,
-            startTime,
-            provider: reasoningProfile.provider,
-            model: reasoningProfile.model,
-            externalFiles,
-          })
-        }
-      } catch (err) {
-        const message = (err as Error).message
-        output.log(colors.dim(`Autosave failed: ${message} (logged to ${AI_ERROR_LOG_DISPLAY})`))
-        await logAIError({ source: 'ai:chat', stage: 'autosave', message })
+      // One shot over the first exchange: the pinned line and tab title
+      // update when the label lands (save-time titling is independent).
+      if (!resumeSession && !topicTitlerFired && session.turns.length >= 2) {
+        topicTitlerFired = true
+        summarizeTranscript(buildChatTranscript(session.turns.slice(0, 2)), { kind: CHAT_ENRICH.kind }).then((t) => {
+          if (t) updateTopic(t)
+        })
       }
+
+      if (turn.sourceUrls.length > 0) {
+        output.log('')
+        output.log(colors.dim('Sources:'))
+        for (const url of turn.sourceUrls) {
+          output.log(colors.dim(`  - ${url}`))
+        }
+      }
+      output.log('')
     }
 
     clearTerminalTitle()
 
-    // Save conversation if there were any turns (unless --ephemeral). A
-    // resumed session with no new messages leaves its file untouched.
-    if (turns.length > 0 && !ephemeral && (!resumeSession || hasNewMessages)) {
-      const saved = await saveChat({
-        turns,
-        contextLog: chatContext.log,
-        resume: resumeSession,
-        timeDir,
-        day: today,
-        startTime,
-        endTime: (await fetchNow()).plainDateTime,
-        provider: reasoningProfile.provider,
-        model: reasoningProfile.model,
-        externalFiles,
-        autoTag: !noAutoTag,
-        autoRel: !noAutoRel,
-        memoryDir: DIR_AI_MEMORY,
-        people: true,
-        logToDay: log ? { category: category || 'Professional' } : null,
-        onProgress: (event) => {
-          output.log('')
-          output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
-        },
-      })
+    // Save unless --ephemeral. The session knows the other two rules: no
+    // turns means nothing to save, and a resumed chat with no new messages
+    // leaves its file untouched.
+    const saved = await session.end({
+      save: !ephemeral,
+      autoTag: !noAutoTag,
+      autoRel: !noAutoRel,
+      memoryDir: DIR_AI_MEMORY,
+      people: true,
+      logToDay: log ? { category: category || 'Professional' } : null,
+    })
 
-      // The transcript is durably on disk (saved, or parked as a recovery
-      // copy) — the crash snapshot is superseded.
-      await clearChatAutosave(autosavePath)
-
+    if (saved) {
       if (saved.autoTags) output.log(colors.dim(`Auto-tags: ${saved.autoTags}`))
       if (saved.autoRel) output.log(colors.dim(`Auto-rel: ${saved.autoRel.join('; ')}`))
 
@@ -1177,8 +835,8 @@ export default class AiChatTask extends Command {
       // include the person:new hint for someone who has no profile yet.
       if (saved.personOps && saved.personOps.length > 0) {
         output.log('')
-        for (const p of saved.personOps) {
-          const line = formatPersonOpLine(p)
+        for (const op of saved.personOps) {
+          const line = formatPersonOpLine(op)
           output.log(line.dim ? colors.dim(line.text) : line.text)
         }
       }
@@ -1215,18 +873,14 @@ export default class AiChatTask extends Command {
       return CommandResult.success({ saved: saved.path, turns: saved.exchanges })
     }
 
-    // No save wanted — drop the crash snapshot too: an ephemeral exit means
-    // leave nothing behind.
-    await clearChatAutosave(autosavePath)
-
     output.log('')
-    if (resumeSession && !hasNewMessages) {
+    if (resumeSession && !session.hasNewMessages) {
       output.log(colors.dim('No new messages — file left untouched.'))
-    } else if (ephemeral && turns.length > 0) {
-      output.log(colors.dim(`${Math.floor(turns.length / 2)} turns (not saved)`))
+    } else if (ephemeral && session.turns.length > 0) {
+      output.log(colors.dim(`${Math.floor(session.turns.length / 2)} turns (not saved)`))
     } else {
       output.log(colors.dim('No conversation to save.'))
     }
-    return CommandResult.success({ turns: Math.floor(turns.length / 2) })
+    return CommandResult.success({ turns: Math.floor(session.turns.length / 2) })
   }
 }
