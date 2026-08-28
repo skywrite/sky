@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { previousRefOrNone, sameDayCapture } from './fetchUnsavedThreads.ts'
+import { captureSections, previousRefOrNone, sameDayCapture } from './fetchUnsavedThreads.ts'
 
 const CUR = new PlainDate(2026, 8, 14)
 
@@ -61,6 +61,31 @@ test('previousRefOrNone drops a location it cannot read at all', () => {
     should: 'say so, naming the value',
     expected: true,
     actual: lines.some((l) => l.includes('unreadable previous path') && l.includes(damaged)),
+  })
+})
+
+test('captureSections turns a capture file body into per-message context', () => {
+  const body = [
+    '',
+    '## 2026-08-14 09:30 - **Jane Doe**',
+    '',
+    'Kickoff plan attached - agenda below.',
+    '',
+    '## 2026-08-14 11:05 - **Bob Roe**',
+    '',
+    '(empty)',
+    '',
+    '## 2026-08-14 25:30 - **Jane Doe**',
+    '',
+    'Works for me.',
+    '',
+  ].join('\n')
+
+  assert({
+    given: "a body with two real sections, an '(empty)' placeholder, and an extended-hours header",
+    should: 'return each message body on its own and drop the placeholder',
+    expected: ['Kickoff plan attached - agenda below.', 'Works for me.'],
+    actual: captureSections(body),
   })
 })
 

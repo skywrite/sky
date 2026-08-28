@@ -181,7 +181,6 @@ export async function fetchUnsavedThreads(
 
   for (const [threadId, threadMessages] of byThread) {
     const threadEntries: { date: string; path: string }[] = []
-    const priorMarkdown: string[] = []
     const previous = previousByThread.get(threadId)
     const subject = threadMessages[0].subject || '(no subject)'
 
@@ -190,6 +189,12 @@ export async function fetchUnsavedThreads(
     let inheritedSummary: string | undefined
     let inheritedTags: string | undefined
     let inheritedRel: unknown
+    // Conversion context: a reply quotes the thread so far, and the converter
+    // strips what is already captured. Messages captured by earlier runs live
+    // in the thread's last capture file — seed its sections, or a reply
+    // arriving on a later tick keeps the entire quoted history in its
+    // capture. An unreadable file seeds nothing and costs nothing else.
+    const priorMarkdown: string[] = []
     if (previous) {
       try {
         // Follows store time refs (or, older ones, paths in any layout);
@@ -200,6 +205,7 @@ export async function fetchUnsavedThreads(
         inheritedSummary = nonEmpty(prevDoc.yaml['summary'])
         inheritedTags = prevDoc.yaml['tags'] as string | undefined
         inheritedRel = prevDoc.yaml['rel']
+        priorMarkdown.push(...captureSections(prevDoc.markdown))
       } catch {
         /* previous file may not exist */
       }
@@ -487,6 +493,19 @@ async function appendToCapture(
     output.log(`  Warning: failed to append (${(err as Error).message}) — starting a new file`)
     return false
   }
+}
+
+/**
+ * The `## <when> - **<from>**` sections of a capture file's body, one string
+ * per message — the shape emailToMarkdown takes as already-saved thread
+ * context. `(empty)` placeholders and blank sections hold nothing worth
+ * deduplicating against and are dropped.
+ */
+export function captureSections(markdown: string): string[] {
+  return markdown
+    .split(/^## \d{4}-\d{2}-\d{2} \d{2}:\d{2}.*$/m)
+    .map((section) => section.trim())
+    .filter((section) => section !== '' && section !== '(empty)')
 }
 
 /**
