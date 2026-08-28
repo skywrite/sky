@@ -1,3 +1,4 @@
+import { readdir, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import dirnameFilename from '#lib/util/dirnameFilename.ts'
 
@@ -7,9 +8,11 @@ const { __dirname } = dirnameFilename(import.meta.url)
  * The /theme page — the living style guide.
  *
  * The client (React + Mantine) is bundled by Bun itself on first request and
- * served from memory: no build step, no artifacts, no watcher. The service
- * process restarting (which `--watch` already does on source changes) is the
- * cache invalidation.
+ * served from memory: no build step, no artifacts. The client sources under
+ * ./client are build entrypoints read from disk, not imports, so `--watch`
+ * never sees them change — instead their mtimes are checked on each asset
+ * request and the bundle rebuilds when any of them is newer. Editing the
+ * client and reloading the page is enough.
  */
 
 interface ThemeAsset {
@@ -17,7 +20,19 @@ interface ThemeAsset {
   type: string
 }
 
-let assetsPromise: Promise<Map<string, ThemeAsset>> | null = null
+const CLIENT_DIR = path.join(__dirname, 'client')
+
+let built: { sourcesAt: number; assets: Promise<Map<string, ThemeAsset>> } | null = null
+
+/** The newest mtime among the client sources — a handful of stats per request. */
+async function clientSourcesAt(): Promise<number> {
+  let latest = 0
+  for (const name of await readdir(CLIENT_DIR)) {
+    const info = await stat(path.join(CLIENT_DIR, name))
+    latest = Math.max(latest, info.mtimeMs)
+  }
+  return latest
+}
 
 async function buildAssets(): Promise<Map<string, ThemeAsset>> {
   const result = await Bun.build({
@@ -41,11 +56,12 @@ async function buildAssets(): Promise<Map<string, ThemeAsset>> {
 }
 
 export async function getThemeAsset(name: string): Promise<ThemeAsset | undefined> {
-  assetsPromise ??= buildAssets()
+  const sourcesAt = await clientSourcesAt()
+  if (!built || sourcesAt > built.sourcesAt) built = { sourcesAt, assets: buildAssets() }
   try {
-    return (await assetsPromise).get(name)
+    return (await built.assets).get(name)
   } catch (err) {
-    assetsPromise = null
+    built = null
     throw err
   }
 }

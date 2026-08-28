@@ -199,6 +199,15 @@ export default class ChatSession {
     return this.context.paths
   }
 
+  /** How many documents the model actually saw last turn — what "in context" means to a host. Null before any turn. */
+  get kept(): number | null {
+    for (let i = this.context.log.length - 1; i >= 0; i--) {
+      const stats = this.context.log[i].stats
+      if (stats) return stats.kept
+    }
+    return null
+  }
+
   get resume(): ResumeSession | null {
     return this.opts.resume
   }

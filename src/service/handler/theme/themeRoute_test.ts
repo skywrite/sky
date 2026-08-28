@@ -58,6 +58,13 @@ test({ name: 'theme assets - Bun-built bundle serves js and css' }, async () => 
       expected: true,
     })
 
+    assert({
+      given: 'the same bundle',
+      should: 'carry the live chat — the client of the /chat routes',
+      actual: jsBody.includes('/messages') && jsBody.includes('sky.chat.thread'),
+      expected: true,
+    })
+
     const css = await app.request('http://localhost/_assets/main.css')
     const cssBody = await css.text()
 

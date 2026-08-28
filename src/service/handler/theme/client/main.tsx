@@ -3,6 +3,7 @@ import './shell.css'
 import { ActionIcon, Button, Checkbox, MantineProvider, Textarea, useMantineColorScheme } from '@mantine/core'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { ChatMain, useChat } from './chat.tsx'
 import { skyTheme } from './theme.ts'
 
 /**
@@ -42,10 +43,11 @@ function App() {
 }
 
 /**
- * The real app at `/` — deliberately a blank canvas wearing the theme.
- * Surfaces get wired in here one by one; /theme stays the reference.
+ * The real app at `/`. The first surface wired in is the chat itself;
+ * /theme stays the reference for how the rest should look.
  */
 function Canvas() {
+  const chat = useChat()
   return (
     <div className="sky-app">
       <nav className="sky-side">
@@ -53,21 +55,11 @@ function Canvas() {
           <span className="sky-brand">sky</span>
           <SchemeToggle />
         </div>
+        <Button className="sky-newchat" fullWidth justify="flex-start" onClick={chat.saveAndClose}>
+          ＋ New chat
+        </Button>
       </nav>
-      <div className="sky-main">
-        <div className="sky-scroll">
-          <div className="sky-blank">
-            <p>
-              Blank canvas. The theme lives at <a href="/theme">/theme</a> — wiring begins here.
-            </p>
-          </div>
-        </div>
-        <div className="sky-composer-zone">
-          <div className="sky-composer">
-            <div className="sky-input">Message sky — not wired up yet…</div>
-          </div>
-        </div>
-      </div>
+      <ChatMain chat={chat} />
     </div>
   )
 }

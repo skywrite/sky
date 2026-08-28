@@ -53,6 +53,12 @@ body {
   height: 100vh;
 }
 
+/* the app claims the whole root; a sparse thread must not shrink the column */
+.sky-app {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ============ sidebar ============ */
 .sky-side {
   width: 276px;
@@ -145,6 +151,10 @@ body {
 .sky-title {
   font-size: 18px;
   font-weight: 600;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sky-tabs {
@@ -494,8 +504,123 @@ body {
   color: var(--sky-blue-deep);
 }
 
+/* ============ the live chat ============ */
+.sky-input {
+  color: var(--sky-text);
+  align-items: flex-end;
+}
+
+.sky-input:focus-within {
+  box-shadow: 0 0 0 2px var(--sky-blue-soft);
+}
+
+.sky-input-root {
+  flex: 1;
+}
+
+.sky-input-field {
+  font-size: 18px;
+  line-height: 1.5;
+  padding: 0;
+  min-height: 0;
+  color: var(--sky-text);
+}
+
+.sky-input-field::placeholder {
+  color: var(--sky-dim);
+}
+
+.sky-bubble {
+  white-space: pre-wrap;
+}
+
+.sky-para {
+  white-space: pre-wrap;
+}
+
+.sky-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--sky-text-2);
+  animation: sky-blink 1s steps(2, start) infinite;
+}
+
+@keyframes sky-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-caret {
+    animation: none;
+  }
+}
+
+.sky-condensed[data-tone='done'] {
+  color: var(--sky-green);
+}
+
+.sky-condensed[data-tone='failed'] {
+  color: var(--mantine-color-red-7);
+}
+
+/* rendered replies: the reply is a document, so it gets the record's type */
+.sky-rendered ul,
+.sky-rendered ol {
+  margin: 0 0 11px;
+  padding-left: 1.4em;
+  max-width: 72ch;
+}
+
+.sky-rendered li {
+  margin: 2px 0;
+}
+
+.sky-rendered h1,
+.sky-rendered h2,
+.sky-rendered h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
+.sky-rendered blockquote {
+  color: var(--sky-text-2);
+  border-left: 3px solid var(--sky-border-soft);
+  padding-left: 14px;
+  margin: 0 0 11px;
+}
+
+.sky-rendered code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.92em;
+}
+
+.sky-rendered pre {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 15px;
+  background: var(--sky-s2);
+  padding: 12px 16px;
+  border-radius: 11px;
+  overflow-x: auto;
+  margin: 0 0 11px;
+}
+
+.sky-rendered a {
+  color: var(--sky-blue-deep);
+}
+
 @media (max-width: 900px) {
   .sky-side {
+    display: none;
+  }
+
+  /* keyboard hints mean nothing on a phone */
+  .sky-hint {
     display: none;
   }
 

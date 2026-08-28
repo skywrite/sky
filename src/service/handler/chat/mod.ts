@@ -120,7 +120,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const id = c.req.param('id')
     const thread = threads.get(id)
     if (!thread) return c.json({ message: 'no such thread' }, 404)
-    return c.json({ id, turns: thread.session.turns, documents: thread.session.paths.length })
+    return c.json({
+      id,
+      turns: thread.session.turns,
+      documents: thread.session.paths.length,
+      kept: thread.session.kept,
+    })
   })
 
   app.post('/:id/end', async (c) => {
