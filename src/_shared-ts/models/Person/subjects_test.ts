@@ -98,3 +98,93 @@ test('findPersonSubjects - blank transcripts, unreadable profiles, and empty ind
     expected: { blank: [], unreadable: [], empty: [] },
   })
 })
+
+// Namesakes: three profiles share a first name, and a fourth, rarely seen,
+// carries the bare name as an explicit alias.
+const SAMS = [
+  entry(['Sam Rivera'], 'people/2026/sa/Sam-Rivera.md'),
+  entry(['Sam Okafor'], 'people/2025/sa/Sam-Okafor.md'),
+  entry(['Sam Lindqvist'], 'people/2024/sa/Sam-Lindqvist.md'),
+  entry(['Casey Morgan', 'Sam'], 'people/2010/ca/Casey-Morgan.md'),
+]
+const SAM_PROFILES = Object.fromEntries(SAMS.map((e) => [e.path, `---\nname: ${e.name}\n---\n\n# ${e.name}\n`]))
+const SAM_SCORES: Record<string, number> = { 'Sam Rivera': 12, 'Sam Okafor': 5, 'Sam Lindqvist': 1 }
+const samScore = (name: string) => SAM_SCORES[name] ?? 0
+
+test('findPersonSubjects - a bare first name makes every namesake a candidate, top two by score', async () => {
+  const [scored, unscored] = await Promise.all([
+    findPersonSubjects({
+      transcript: 'Sam and compliance should look at the ownership before KYB.',
+      index: SAMS,
+      readDocument: reader(SAM_PROFILES),
+      scoreFor: samScore,
+    }),
+    findPersonSubjects({
+      transcript: 'Sam and compliance should look at the ownership before KYB.',
+      index: SAMS,
+      readDocument: reader(SAM_PROFILES),
+    }),
+  ])
+
+  assert({
+    given: 'a bare "Sam" among three Sams and a profile with "Sam" as an explicit alias',
+    should: 'keep the two highest-scored namesakes — the explicit alias claims no authority',
+    actual: scored.map((s) => s.name),
+    expected: ['Sam Rivera', 'Sam Okafor'],
+  })
+
+  assert({
+    given: 'the same transcript without interaction scores',
+    should: 'still cut to two, deterministically by name',
+    actual: unscored.map((s) => s.name),
+    expected: ['Casey Morgan', 'Sam Lindqvist'],
+  })
+})
+
+test('findPersonSubjects - a full name outranks bare first names and survives the namesake cut', async () => {
+  const subjects = await findPersonSubjects({
+    transcript: 'Sam Lindqvist sent the deck; Sam will follow up on pricing.',
+    index: SAMS,
+    readDocument: reader(SAM_PROFILES),
+    scoreFor: samScore,
+  })
+
+  assert({
+    given: 'the lowest-scored Sam named in full, plus a bare "Sam"',
+    should: 'rank the full name first and still add the two likeliest namesakes for the bare one',
+    actual: subjects.map((s) => s.name),
+    expected: ['Sam Lindqvist', 'Sam Rivera', 'Sam Okafor'],
+  })
+})
+
+test('findPersonSubjects - a handle the transcript also uses in lowercase is prose, not a name', async () => {
+  const index = [...INDEX, entry(['The Market Maker'], 'people/2019/th/The-Market-Maker.md')]
+  const profiles = { ...PROFILES, 'people/2019/th/The-Market-Maker.md': '---\nname: The Market Maker\n---\n' }
+  const [prose, named] = await Promise.all([
+    findPersonSubjects({
+      transcript:
+        'The economics look thin. The floor is fixed, and the growth funds pass through. Will you check? We will.',
+      index,
+      readDocument: reader(profiles),
+    }),
+    findPersonSubjects({
+      transcript: 'Will you check the deck? We will need it. The Market Maker wants numbers by Friday.',
+      index,
+      readDocument: reader(profiles),
+    }),
+  ])
+
+  assert({
+    given: 'sentence-initial "The" and "Will" alongside their lowercase forms',
+    should: 'match nobody — neither the first-name handle nor the explicit alias counts',
+    actual: prose.map((s) => s.name),
+    expected: [],
+  })
+
+  assert({
+    given: 'the same prose words plus the full name',
+    should: 'still match the full name, which needs no capitalization signal',
+    actual: named.map((s) => s.name),
+    expected: ['The Market Maker'],
+  })
+})

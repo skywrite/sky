@@ -5,6 +5,8 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
 import { findPersonSubjects, type PersonSubject } from '#shared/models/Person/subjects.ts'
 import { APPEND_SECTIONS, FILL_FIELDS, type PersonFacts, type UnlistedPerson } from '#shared/models/Person/write.ts'
+import { normalizeEntityName } from './resolve.ts'
+import { fetchEntityScores } from './scores.ts'
 
 // The save-time person-facts distiller: reads the finished conversation
 // against the current profiles of the people it mentions and decides what
@@ -62,11 +64,12 @@ export interface PersonFactsDistillation extends PersonDistillResult {
 
 /**
  * The full front half of person curation over any finished text — chat
- * transcript, meeting summary: service-backed subject discovery (the people
- * index every context gather uses), then the distill call. Service trouble
- * degrades to no subjects and the distiller still runs for its unlisted
- * lane; the caller applies the result via applyPersonFacts. The user is
- * never their own subject.
+ * transcript, meeting summary: service-backed subject discovery (the whole
+ * people index, ranked by the service's interaction scores so a bare first
+ * name surfaces the likely namesakes), then the distill call. Service
+ * trouble degrades to no subjects and the distiller still runs for its
+ * unlisted lane; the caller applies the result via applyPersonFacts. The
+ * user is never their own subject.
  */
 export async function distillPersonFactsFromText(
   input: { text: string; today: string; userLabel: string; kind: string },
@@ -74,11 +77,13 @@ export async function distillPersonFactsFromText(
 ): Promise<PersonFactsDistillation | undefined> {
   let subjects: PersonSubject[] = []
   try {
+    const [index, scores] = await Promise.all([fetchPeopleIndex(), fetchEntityScores()])
     subjects = await findPersonSubjects({
       transcript: input.text,
-      index: await fetchPeopleIndex(),
+      index,
       readDocument: readServiceDocument,
       excludeNames: [input.userLabel],
+      scoreFor: (name) => scores?.get(normalizeEntityName(name)) ?? 0,
     })
   } catch {
     subjects = []
@@ -133,10 +138,11 @@ export async function distillPersonFacts(
           .describe('people materially discussed who have no profile listed'),
       }),
       prompt: [
-        `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${kind} and the current profiles of the people it mentions. Decide what those profiles should learn and return the operations.`,
+        `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${kind} and the current profiles of the people it may mention. Decide what those profiles should learn and return the operations.`,
         '',
         'THE BAR — most conversations teach nothing about a person:',
         '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
+        '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists every profile answering to it, and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
         "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
         "- Never invent. Every fact must come from the transcript or from the person's current profile.",
         '',
