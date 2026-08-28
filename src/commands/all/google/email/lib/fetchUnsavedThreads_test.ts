@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { previousRefOrNone } from './fetchUnsavedThreads.ts'
+import { previousRefOrNone, sameDayCapture } from './fetchUnsavedThreads.ts'
 
 const CUR = new PlainDate(2026, 8, 14)
 
@@ -61,6 +61,58 @@ test('previousRefOrNone drops a location it cannot read at all', () => {
     should: 'say so, naming the value',
     expected: true,
     actual: lines.some((l) => l.includes('unreadable previous path') && l.includes(damaged)),
+  })
+})
+
+test('sameDayCapture continues the day file an earlier run created', () => {
+  const { output, lines } = collector()
+
+  assert({
+    given: 'a follow whose last capture is a time ref on the same day as the new message',
+    should: 'resolve it to the day file the message appends to',
+    expected: {
+      date: '2026-08-14',
+      path: 'time/2026/08/10-16/08-14/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md',
+    },
+    actual: sameDayCapture(
+      { date: '2026-08-14', path: '2026-08-14/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md' },
+      '2026-08-14',
+      output,
+    ),
+  })
+  assert({ given: 'a continued day file', should: 'warn about nothing', expected: 0, actual: lines.length })
+})
+
+test('sameDayCapture starts a new file on a new day or a first capture', () => {
+  const { output } = collector()
+
+  assert({
+    given: 'a last capture from an earlier day, and no capture at all',
+    should: 'continue nothing',
+    expected: [undefined, undefined],
+    actual: [
+      sameDayCapture(
+        { date: '2026-08-13', path: '2026-08-13/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md' },
+        '2026-08-14',
+        output,
+      ),
+      sameDayCapture(undefined, '2026-08-14', output),
+    ],
+  })
+})
+
+test('sameDayCapture starts a new file when the stored location cannot be read', () => {
+  const { output, lines } = collector()
+  const damaged = 'actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md'
+
+  assert({
+    given: 'a same-day entry whose path is neither a ref nor a day path',
+    should: 'continue nothing and say why, naming the value',
+    expected: [undefined, true],
+    actual: [
+      sameDayCapture({ date: '2026-08-14', path: damaged }, '2026-08-14', output),
+      lines.some((l) => l.includes('unreadable previous path') && l.includes(damaged)),
+    ],
   })
 })
 

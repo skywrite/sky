@@ -150,6 +150,17 @@ export async function persistNewFollow(opts: {
   return { fileName, followed: !bornExpired }
 }
 
+/**
+ * Which captured threads leave the inbox after a sync: first captures only.
+ * A reply to a thread already followed is mail the owner has not read yet —
+ * the capture records it, it does not stand in for it — so the thread stays
+ * in the inbox until they archive it themselves. Failed threads stay so the
+ * next sync retries them.
+ */
+export function threadsToArchive(threads: FetchedThread[], firstCaptures: Set<string>): FetchedThread[] {
+  return threads.filter((t) => !t.failed && firstCaptures.has(t.threadId))
+}
+
 export type FollowEntry = { follow: Follow; path: string; fileName: string }
 
 /**

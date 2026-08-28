@@ -2,7 +2,7 @@ import Follow from '#shared/models/Follow/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
-import { planThreadFollow, selectExpiredFollows, uniqueFollowFileName } from './followLifecycle.ts'
+import { planThreadFollow, selectExpiredFollows, threadsToArchive, uniqueFollowFileName } from './followLifecycle.ts'
 import type { FollowEntry } from './followLifecycle.ts'
 
 const NOW = PlainDateTime.fromString('2026-08-12 10:00')
@@ -24,6 +24,19 @@ function thread(overrides: Partial<FetchedThread> = {}): FetchedThread {
 function plan(t: FetchedThread, force = false) {
   return planThreadFollow({ accountEmail: 'user@example.com', label: 'Sky/Follow', thread: t, now: NOW, force })
 }
+
+test('threadsToArchive leaves replies to followed threads in the inbox', () => {
+  const first = thread({ threadId: '1' })
+  const continuation = thread({ threadId: '2' })
+  const failedFirst = thread({ threadId: '3', failed: true })
+
+  assert({
+    given: 'a first capture, a reply to an already-followed thread, and a first capture that failed',
+    should: 'archive only the first capture that succeeded',
+    expected: ['1'],
+    actual: threadsToArchive([first, continuation, failedFirst], new Set(['1', '3'])).map((t) => t.threadId),
+  })
+})
 
 test('planThreadFollow keeps a recently active thread live', () => {
   const { follow, bornExpired, fileName } = plan(thread())

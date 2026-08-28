@@ -13,7 +13,7 @@ import { fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
-import { expireQuietFollows, persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
+import { expireQuietFollows, persistNewFollow, planThreadFollow, threadsToArchive } from '../../lib/followLifecycle.ts'
 import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
@@ -63,7 +63,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       '  - First-time threads: each message lands on its own date, creates follow file;',
       '    threads already quiet past the expiry window are captured and closed instead',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
-      '  - Archives processed threads from inbox',
+      '  - Archives first captures from inbox; replies to followed threads stay in the inbox',
       `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Gmail label removed, follow YAML archived`,
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
     ],
@@ -205,9 +205,13 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
           }
         }
 
-        // ── Phase 4: Archive processed threads from inbox ──────────────────
-        // Failed threads stay in the inbox so the next sync retries them.
-        await this.archiveFromInbox(client, fetchResult.threads, output)
+        // ── Phase 4: Archive first captures from inbox ─────────────────────
+        // Only threads followed for the first time this run. A reply to a
+        // thread already followed is mail the owner has not read yet — on
+        // the heartbeat this ran within minutes of arrival and pulled the
+        // reply out of the inbox before anyone saw it. It stays until they
+        // archive it; failed threads stay so the next sync retries them.
+        await this.archiveFromInbox(client, threadsToArchive(fetchResult.threads, firstCaptures), output)
 
         // A console run is a person catching up: open everything captured.
         // On the heartbeat (Server platform) open only FIRST captures — a new
@@ -313,17 +317,16 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     return selected as string
   }
 
-  /** Remove processed threads from inbox (the Sky/Follow label stays so inbox:view shows them as saved). */
+  /** Remove the given threads from the inbox (the Sky/Follow label stays so inbox:view shows them as saved). */
   private async archiveFromInbox(
     client: GoogleClient,
     threads: FetchedThread[],
     output: { log: (msg: string) => void },
   ): Promise<void> {
-    const toArchive = threads.filter((t) => !t.failed)
-    if (toArchive.length === 0) return
+    if (threads.length === 0) return
 
     let archived = 0
-    for (const thread of toArchive) {
+    for (const thread of threads) {
       try {
         await modifyThread(client, threadIdFromDecimal(thread.threadId), { removeLabelIds: ['INBOX'] })
         archived++

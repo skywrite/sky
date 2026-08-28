@@ -11,6 +11,7 @@ import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
+import type { FollowMessage } from '#shared/models/Follow/mod.ts'
 import { computePreviousRef, convertToNotebookTimezone, fetchNow, resolveTimeRef } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { copyEmailFilesToAttachments } from '../../../email/lib/copyToAttachments.ts'
@@ -35,7 +36,7 @@ export type FetchedThread = {
   summary?: string
   /** Follow file name (extension-free) stamped into this thread's captures — set only when following. */
   followFile?: string
-  /** Day-file entries created; a thread's same-day messages share one, so this is not a message count. */
+  /** Day files written to — created, or an earlier run's same-day file continued. Same-day messages share one, so this is not a message count. */
   messages: { date: string; path: string }[]
   /** Messages actually captured this run — what the closing report counts. */
   captured: number
@@ -162,12 +163,13 @@ export async function fetchUnsavedThreads(
     byThread.set(tid, group)
   }
 
-  // Build previous-path map from follow's saved messages (per thread).
-  const previousByThread = new Map<string, string>()
+  // The thread's last capture on record (from its follow): what a new day's
+  // file points back to, and what a same-day message appends to.
+  const previousByThread = new Map<string, FollowMessage>()
   const followFileByThread = new Map<string, string>()
   for (const thread of threads) {
     const lastSaved = thread.savedMessages.at(-1)
-    if (lastSaved) previousByThread.set(thread.threadId, lastSaved.path)
+    if (lastSaved) previousByThread.set(thread.threadId, lastSaved)
     if (thread.followFile) followFileByThread.set(thread.threadId, thread.followFile)
   }
 
@@ -180,7 +182,7 @@ export async function fetchUnsavedThreads(
   for (const [threadId, threadMessages] of byThread) {
     const threadEntries: { date: string; path: string }[] = []
     const priorMarkdown: string[] = []
-    const previousPath = previousByThread.get(threadId)
+    const previous = previousByThread.get(threadId)
     const subject = threadMessages[0].subject || '(no subject)'
 
     // Inherit summary/tags/rel from previous message file (propagate across
@@ -188,12 +190,12 @@ export async function fetchUnsavedThreads(
     let inheritedSummary: string | undefined
     let inheritedTags: string | undefined
     let inheritedRel: unknown
-    if (previousPath) {
+    if (previous) {
       try {
         // Follows store time refs (or, older ones, paths in any layout);
         // resolveTimeRef turns either into the file's real place today.
         const prevDoc = EmailDocument.fromMarkdown(
-          await readTextFile(path.join(DIR_BASE, resolveTimeRef(previousPath))),
+          await readTextFile(path.join(DIR_BASE, resolveTimeRef(previous.path))),
         )
         inheritedSummary = nonEmpty(prevDoc.yaml['summary'])
         inheritedTags = prevDoc.yaml['tags'] as string | undefined
@@ -221,7 +223,7 @@ export async function fetchUnsavedThreads(
 
     // Enrichment runs on a thread's first capture only — later messages
     // inherit, so one thread never carries two sets of tags.
-    const enriched = previousPath
+    const enriched = previous
       ? {}
       : await enrichThread({ subject, converted, noAutoTag: !!opts.noAutoTag, noAutoRel: !!opts.noAutoRel, output })
 
@@ -248,7 +250,7 @@ export async function fetchUnsavedThreads(
         result = await writeMessage(message, {
           threadId,
           createdEntries,
-          previousPath,
+          previous,
           summary,
           followFile,
           tags,
@@ -361,7 +363,8 @@ async function convertMessage(
 type WriteContext = {
   threadId: string
   createdEntries: Map<string, { date: string; path: string }>
-  previousPath: string | undefined
+  /** The thread's last capture on record — absent on a first capture. */
+  previous: FollowMessage | undefined
   /** Thread-level topic label — inherited from the thread's earlier captures, or freshly summarized. */
   summary: string | undefined
   /** Follow file name to stamp into the capture's frontmatter — absent on unfollowed fetches. */
@@ -377,7 +380,7 @@ async function writeMessage(
   message: ConvertedMessage,
   ctx: WriteContext,
 ): Promise<{ date: string; path: string } | null> {
-  const { threadId, createdEntries, previousPath, summary, followFile, tags, rel, tasks, output } = ctx
+  const { threadId, createdEntries, previous, summary, followFile, tags, rel, tasks, output } = ctx
   const { msg, from, to, cc, msgWhen, when } = message
   const dateStr = when.plainDate.toString()
 
@@ -387,36 +390,24 @@ async function writeMessage(
       ? await copyEmailFilesToAttachments(msg.downloadedAttachments, when.plainDate, output)
       : []
 
-  // Check for same-day entry (from this run)
+  // The day's file for this thread, if there is one: created earlier this
+  // run, or — the heartbeat case — by an earlier run today. Every tick is
+  // its own run, so without the second look a reply hours after the first
+  // capture opened a new file instead of continuing the day's conversation.
   const entryKey = `${threadId}_${dateStr}`
   const localEntry = createdEntries.get(entryKey)
-
-  if (localEntry) {
-    // Same-day: append to existing file
-    const fullPath = path.join(DIR_BASE, localEntry.path)
-    try {
-      const oldDoc = EmailDocument.fromMarkdown(await readTextFile(fullPath))
-      const existingAttachments = oldDoc.attachments
-      const mergedAttachments = [...existingAttachments, ...attachments]
-      const appendPart = `\n\n## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${message.markdown || '(empty)'}\n`
-      const updatedDoc = new EmailDocument(
-        {
-          ...oldDoc.yaml,
-          ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
-        },
-        oldDoc.markdown,
-      )
-      await writeTextFile(fullPath, updatedDoc.toMarkdown() + appendPart)
-      output.log(`  Appended to ${localEntry.path}`)
-    } catch (err) {
-      output.log(`  Warning: failed to append: ${(err as Error).message}`)
-    }
-    return null // same-day append, no new entry
+  const earlierEntry = localEntry ? undefined : sameDayCapture(previous, dateStr, output)
+  const target = localEntry ?? earlierEntry
+  if (target && (await appendToCapture(target, message, attachments, output))) {
+    // An earlier run's file is reported once: it becomes this run's day entry
+    // (later messages append through createdEntries) and a console run opens
+    // it; the follow already lists it, so its message list stays deduped.
+    return earlierEntry ?? null
   }
 
-  // New day: create file + day entry via email:new
+  // New day (or a day file that could not be continued): create file + day entry via email:new
   const markdown = `## ${msgWhen.date} ${msgWhen.time} - **${from}**\n\n${message.markdown || '(empty)'}\n`
-  const previous = previousRefOrNone(previousPath, when.plainDate, output)
+  const previousRef = previousRefOrNone(previous?.path, when.plainDate, output)
 
   const result = await tasks.run('email:new', {
     from,
@@ -427,7 +418,7 @@ async function writeMessage(
     // The subject is the fallback label, and stays in `subject:` either way.
     summary: summary ?? msg.subject ?? '',
     ...(followFile ? { follow: followFile } : {}),
-    ...(previous ? { previous } : {}),
+    ...(previousRef ? { previous: previousRef } : {}),
     ...(tags ? { tags } : {}),
     ...(typeof rel === 'string' ? { rel } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
@@ -466,6 +457,55 @@ async function writeMessage(
   output.log(`  Created ${entryPath}`)
 
   return { date: dateStr, path: entryPath }
+}
+
+type SavedAttachments = Awaited<ReturnType<typeof copyEmailFilesToAttachments>>
+
+/** Continue the day's file with this message; false when it cannot be read or written (the caller starts a new file). */
+async function appendToCapture(
+  entry: { date: string; path: string },
+  message: ConvertedMessage,
+  attachments: SavedAttachments,
+  output: Output,
+): Promise<boolean> {
+  const fullPath = path.join(DIR_BASE, entry.path)
+  try {
+    const oldDoc = EmailDocument.fromMarkdown(await readTextFile(fullPath))
+    const mergedAttachments = [...oldDoc.attachments, ...attachments]
+    const appendPart = `\n\n## ${message.msgWhen.date} ${message.msgWhen.time} - **${message.from}**\n\n${message.markdown || '(empty)'}\n`
+    const updatedDoc = new EmailDocument(
+      {
+        ...oldDoc.yaml,
+        ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
+      },
+      oldDoc.markdown,
+    )
+    await writeTextFile(fullPath, updatedDoc.toMarkdown() + appendPart)
+    output.log(`  Appended to ${entry.path}`)
+    return true
+  } catch (err) {
+    output.log(`  Warning: failed to append (${(err as Error).message}) — starting a new file`)
+    return false
+  }
+}
+
+/**
+ * The thread's last capture when it is on this message's day — the file the
+ * message continues. Follows store time refs (older ones, paths in any
+ * layout); an unreadable location means a fresh file, never a lost message.
+ */
+export function sameDayCapture(
+  previous: FollowMessage | undefined,
+  dateStr: string,
+  output: Output,
+): { date: string; path: string } | undefined {
+  if (!previous || String(previous.date) !== dateStr) return undefined
+  try {
+    return { date: dateStr, path: resolveTimeRef(previous.path) }
+  } catch {
+    output.log(`  Warning: unreadable previous path — starting a new file (${previous.path})`)
+    return undefined
+  }
 }
 
 /**
