@@ -19,7 +19,7 @@ import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ContextAssembler, { type ReserveOptions, type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
-import { withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import { withExcludedPaths, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
@@ -99,6 +99,8 @@ export interface RebuildReport {
   stats?: TurnStats
   /** Docs new to the universe this turn (turn 1 records them in the log's universe instead). */
   added: ContextDocRecord[]
+  /** Docs shipped this rebuild — what the model sees, each with its tokens and how it got in. */
+  kept: ContextDocRecord[]
   /** Docs cut this rebuild: budget-pruned and scorer-excluded alike. */
   cut: ContextDocRecord[]
   turn: number
@@ -229,6 +231,9 @@ export default class ChatContext {
   private provenance = new Map<string, DocProvenance>()
   private topicTerms: string[] = []
   private pinnedPaths: ReadonlySet<string> = new Set()
+  /** Documents the person pinned in or kept out by hand — absolute paths, honored every rebuild. */
+  private userPins = new Set<string>()
+  private userExcludes = new Set<string>()
   /**
    * The user-stated window from turn 1, when the question named one. While
    * set, every rebuild admits with the sweep-stratified policy — evolve
@@ -642,6 +647,42 @@ export default class ChatContext {
   }
 
   // ---------------------------------------------------------------------------
+  // By hand
+  // ---------------------------------------------------------------------------
+
+  /** Pin a document in: it bypasses scoring and the budget, and joins the universe if it wasn't there. */
+  async pin(relPath: string): Promise<void> {
+    const abs = path.join(this.baseDir, relPath)
+    if (!this.collection?.paths.includes(abs)) {
+      // The merge skips what it cannot read; a pin on nothing is an error, not a silent no-op.
+      const merged = await mergePathsIntoCollection([abs], this.collection)
+      if (!merged?.paths.includes(abs)) throw new Error(`no such document: ${relPath}`)
+      this.collection = merged
+    }
+    this.userExcludes.delete(abs)
+    this.userPins.add(abs)
+  }
+
+  /** Keep a document out: cut every rebuild, whatever the scorer says. */
+  exclude(relPath: string): void {
+    const abs = path.join(this.baseDir, relPath)
+    this.userPins.delete(abs)
+    this.userExcludes.add(abs)
+  }
+
+  /** Withdraw a pin or an exclusion; the scorer decides again. */
+  release(relPath: string): void {
+    const abs = path.join(this.baseDir, relPath)
+    this.userPins.delete(abs)
+    this.userExcludes.delete(abs)
+  }
+
+  /** Reassemble now, between turns, after a change by hand. Not a turn: nothing is logged. */
+  reassemble(): RebuildReport {
+    return this.rebuild(undefined, false)
+  }
+
+  // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
 
@@ -762,7 +803,11 @@ export default class ChatContext {
         turn: this.turnNumber,
       })
       const assembler = ContextAssembler.from(this.collection, {
-        scorer: withPinnedPaths(scorer, this.pinnedPaths),
+        scorer: withExcludedPaths(
+          withPinnedPaths(scorer, new Set([...this.pinnedPaths, ...this.userPins])),
+          this.userExcludes,
+          'excluded by you',
+        ),
         maxTokens: this.maxTokens,
         floorFraction: CHAT_SCORE.floorFraction,
         reserve: this.sweepReserve(),
@@ -854,6 +899,7 @@ export default class ChatContext {
       activityMarkdown,
       stats: turnStats,
       added: turnDiff,
+      kept: [...docRecords.values()].filter((r) => r.cut === undefined),
       cut: cutRecords,
       turn: this.turnNumber,
       collectionSize: this.collection?.size ?? 0,

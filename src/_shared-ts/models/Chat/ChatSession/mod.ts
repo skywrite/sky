@@ -252,6 +252,33 @@ export default class ChatSession {
   }
 
   /**
+   * The context by hand: pin a document in (adding it if absent), keep one
+   * out, or let one go — reassembled at once, between turns, and reported
+   * like any rebuild so every host sees the same report.
+   */
+  async pinDocument(relPath: string): Promise<RebuildReport> {
+    await this.context.pin(relPath)
+    return this.reassembled()
+  }
+
+  excludeDocument(relPath: string): RebuildReport {
+    this.context.exclude(relPath)
+    return this.reassembled()
+  }
+
+  releaseDocument(relPath: string): RebuildReport {
+    this.context.release(relPath)
+    return this.reassembled()
+  }
+
+  private reassembled(): RebuildReport {
+    const report = this.context.reassemble()
+    this.contextPrompt = buildContextPrompt(this.opts.ambient, report.activityMarkdown)
+    this.emit({ type: 'context-rebuilt', report })
+    return report
+  }
+
+  /**
    * One conversation turn: settle the context for the message, run the
    * model over it, record what the turn did, and snapshot the session.
    * A failed model turn is reported, never thrown — the conversation goes

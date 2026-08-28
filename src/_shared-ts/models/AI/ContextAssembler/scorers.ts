@@ -5,5 +5,6 @@ export {
   ENTITY_TYPES,
   recencyScore,
   type RecencyTypeScorerOptions,
+  withExcludedPaths,
   withPinnedPaths,
 } from './scorers/mod.ts'

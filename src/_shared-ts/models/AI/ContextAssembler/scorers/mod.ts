@@ -1,4 +1,5 @@
 export { ENTITY_TYPES, recencyScore } from './recencyScore.ts'
 export { withPinnedPaths } from './withPinnedPaths.ts'
+export { withExcludedPaths } from './withExcludedPaths.ts'
 export { createJournalScorer } from './journalScorer.ts'
 export { createRecencyTypeScorer, type RecencyTypeScorerOptions } from './recencyTypeScorer.ts'
