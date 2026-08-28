@@ -1,13 +1,19 @@
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { AccountResolutionError, WORKSPACE_MIME, searchFiles, workspaceKind } from '#lib/google/mod.ts'
+import {
+  AccountResolutionError,
+  WORKSPACE_MIME,
+  searchFiles,
+  uploadedSpreadsheetFormat,
+  workspaceKind,
+} from '#lib/google/mod.ts'
 import type { DriveFile, WorkspaceKind } from '#lib/google/mod.ts'
 import { resolveGoogleClient } from './lib/resolveClient.ts'
 
 const params = {
   query: Arg.string('Text to match against file names and content (omit to list recent files)', { optional: true }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  type: Flag.string('Limit to a kind: doc | sheet | slides', { short: 't' }),
+  type: Flag.string('Limit to a kind: doc | sheet (native and uploaded .xlsx/.csv) | slides', { short: 't' }),
   limit: Flag.string('Maximum results', { default: () => '10' }),
 }
 
@@ -23,7 +29,8 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class GoogleFindTask extends Command {
   static override description: CommandDescription = {
     name: 'google:find',
-    description: 'Find Google Docs/Sheets/Slides in Drive, most recently modified first.',
+    description:
+      'Find Google Docs/Sheets/Slides (and uploaded .xlsx/.csv workbooks) in Drive, most recently modified first.',
     usage: ['sky google:find "quarterly report"', 'sky google:find budget -t sheet', 'sky google:find -a work'],
     params,
   }
@@ -61,7 +68,7 @@ export default class GoogleFindTask extends Command {
       output.log(`No matches in ${client.email}'s Drive.`)
     }
     for (const file of files) {
-      const kindLabel = workspaceKind(file.mimeType) ?? file.mimeType
+      const kindLabel = workspaceKind(file.mimeType) ?? uploadedSpreadsheetFormat(file.mimeType) ?? file.mimeType
       const modified = file.modifiedTime ? `  ${file.modifiedTime.slice(0, 10)}` : ''
       output.log(`${file.name}  [${kindLabel}]${modified}  ${file.webViewLink ?? file.id}`)
     }

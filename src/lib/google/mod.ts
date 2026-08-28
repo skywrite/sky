@@ -40,10 +40,12 @@ export {
   DRIVE_FILES_URL,
   DRIVE_UPLOAD_URL,
   EXPORT_MIME,
+  UPLOADED_SPREADSHEET_FORMATS,
   WORKSPACE_MIME,
   buildBinaryMultipartBody,
   buildFilesQuery,
   buildMultipartBody,
+  conversionTarget,
   copyFile,
   createDocFromMarkdown,
   deleteFile,
@@ -52,14 +54,26 @@ export {
   exportFileBytes,
   getFile,
   importFileAsDoc,
+  listFiles,
   renameFile,
   replaceFileWithMarkdown,
   searchFiles,
   shareFile,
   uploadFile,
+  uploadedSpreadsheetFormat,
   workspaceKind,
 } from './drive.ts'
 export type { DriveFile, ShareRole, WorkspaceKind } from './drive.ts'
+
+export {
+  TWIN_SOURCE_KEY,
+  TWIN_SOURCE_MODIFIED_KEY,
+  ensureConvertedTwin,
+  findConvertedTwin,
+  twinName,
+  twinProperties,
+} from './convertedTwin.ts'
+export type { ConvertedTwin } from './convertedTwin.ts'
 
 export {
   DOCS_ALLOWED_REQUESTS,

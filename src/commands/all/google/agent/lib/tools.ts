@@ -10,6 +10,7 @@ import {
   batchUpdateSlides,
   batchUpdateSpreadsheet,
   compactComments,
+  conversionTarget,
   copyFile,
   createComment,
   createReply,
@@ -24,6 +25,7 @@ import {
   createSpreadsheet,
   csvToValues,
   driveImageUrl,
+  ensureConvertedTwin,
   exportFile,
   exportFileBytes,
   extractChartIds,
@@ -43,7 +45,9 @@ import {
   setValues,
   sniffImageMime,
   spreadsheetUrl,
+  twinProperties,
   uploadFile,
+  uploadedSpreadsheetFormat,
   validateDocsRequests,
   validateSheetsRequests,
   validateSlidesRequests,
@@ -129,7 +133,11 @@ export function paginateRead(full: string, offset = 0): ReadPage | null {
 const MAX_DOC_PDF_BYTES = 15 * 1024 * 1024
 
 function toolError(err: unknown): string {
-  return `Error: ${err instanceof Error ? err.message : String(err)}`
+  const message = err instanceof Error ? err.message : String(err)
+  if (message.includes('must not be an Office file')) {
+    return `Error: ${message} — that id is an uploaded Office file Drive stores as-is; read_file converts it to a native Google twin and returns the twin id — use that id here`
+  }
+  return `Error: ${message}`
 }
 
 /**
@@ -192,7 +200,7 @@ export function createAgentTools(deps: {
   const tools = {
     find_files: {
       description:
-        'Find Google Docs/Sheets/Slides in Drive by name or content, most recently modified first. Omit query to list recent files.',
+        'Find Google Docs/Sheets/Slides — and uploaded Office/csv files (listed with their format as kind; read_file converts them to a native twin) — in Drive by name or content, most recently modified first. Omit query to list recent files.',
       inputSchema: jsonSchema<{ query?: string; kind?: WorkspaceKind; limit?: number }>({
         type: 'object',
         properties: {
@@ -208,7 +216,7 @@ export function createAgentTools(deps: {
           return files.map((f) => ({
             id: f.id,
             name: f.name,
-            kind: workspaceKind(f.mimeType) ?? f.mimeType,
+            kind: workspaceKind(f.mimeType) ?? uploadedSpreadsheetFormat(f.mimeType) ?? f.mimeType,
             modified: f.modifiedTime,
             url: f.webViewLink,
           }))
@@ -220,7 +228,7 @@ export function createAgentTools(deps: {
 
     read_file: {
       description:
-        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
+        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. An uploaded Office/csv/pdf file (.xlsx/.docx/.pptx…, stored as-is by Drive) is read through its native Google twin — converted on first read, reused after — and the result carries the twin id to use for every later call. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
       inputSchema: jsonSchema<{ fileId: string; offset?: number; tabId?: string }>({
         type: 'object',
         properties: {
@@ -232,12 +240,37 @@ export function createAgentTools(deps: {
       }),
       execute: async ({ fileId, offset, tabId }: { fileId: string; offset?: number; tabId?: string }) => {
         try {
-          const file = await getFile(client, fileId)
-          const kind = workspaceKind(file.mimeType)
-          if (!kind) return `Error: "${file.name}" is not a Doc/Sheet/Slides file (${file.mimeType})`
+          const source = await getFile(client, fileId)
+          let file = source
+          let kind = workspaceKind(source.mimeType)
+          let twin: Record<string, unknown> | undefined
+          let twinNote: string | undefined
+          if (!kind) {
+            if (!conversionTarget(source.mimeType)) {
+              return `Error: "${source.name}" is not a Doc/Sheet/Slides file or an upload Drive can convert (${source.mimeType})`
+            }
+            // Drive's "Save as Google Sheets/Docs/Slides", done once and reused — the source itself stays untouched.
+            const converted = await ensureConvertedTwin(client, source)
+            file = converted.twin
+            kind = converted.kind
+            if (converted.created) track(state, 'created', file)
+            log(
+              converted.created
+                ? `Converted "${source.name}" to a native ${kind} — ${file.webViewLink ?? file.id}`
+                : `Reading "${source.name}" through its native ${kind} twin — ${file.webViewLink ?? file.id}`,
+            )
+            twin = { id: file.id, name: file.name, url: file.webViewLink, created: converted.created }
+            twinNote = `"${source.name}" is an uploaded file Drive stores as-is; this content is its native Google ${kind} twin "${file.name}" (${
+              converted.created ? 'converted just now' : 'converted earlier from this same revision, reused'
+            }${
+              converted.superseded
+                ? `; an older twin ${converted.superseded.webViewLink ?? converted.superseded.id} predates the source's latest change and was left in place`
+                : ''
+            }). Use the twin id ${file.id} for every further tool call — get_values, outlines, comments, edits all refuse the original — and report the twin's URL alongside the original.`
+          }
           if (tabId !== undefined) {
             if (kind !== 'doc') return `Error: tabId applies only to Docs — "${file.name}" is a ${kind}`
-            const tabs = await getDocTabTexts(client, fileId)
+            const tabs = await getDocTabTexts(client, file.id)
             const tab = tabs.find((t) => t.tabId === tabId)
             if (!tab) {
               const known = tabs.map((t) => `${t.tabId} ("${t.tabTitle ?? 'untitled'}")`).join(', ')
@@ -250,11 +283,19 @@ export function createAgentTools(deps: {
                 page.start > 0 ? `chars ${page.start}-${page.end} of ` : ''
               }${tab.text.length} chars)`,
             )
-            return { id: file.id, name: file.name, kind, tabId, tabTitle: tab.tabTitle, content: page.content }
+            return {
+              id: file.id,
+              name: file.name,
+              kind,
+              tabId,
+              tabTitle: tab.tabTitle,
+              content: page.content,
+              ...(twin ? { sourceId: source.id, twin, note: twinNote } : {}),
+            }
           }
           const [full, docTabs] = await Promise.all([
             exportFile(client, file.id, EXPORT_MIME[kind]),
-            kind === 'doc' ? listDocTabs(client, fileId) : Promise.resolve([]),
+            kind === 'doc' ? listDocTabs(client, file.id) : Promise.resolve([]),
           ])
           const page = paginateRead(full, offset)
           if (!page) return `Error: offset ${offset} is past the end — "${file.name}" is ${full.length} chars`
@@ -264,9 +305,14 @@ export function createAgentTools(deps: {
               : `Read "${file.name}" (${kind}, ${full.length} chars${page.complete ? '' : `, first ${page.end} returned`})`,
           )
           const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: page.content }
+          if (twin) {
+            result.sourceId = source.id
+            result.twin = twin
+            result.note = twinNote
+          }
           if (docTabs.length > 1) {
             result.tabs = docTabs.map((t) => ({ tabId: t.tabId, title: t.title }))
-            result.note = `This doc has ${docTabs.length} tabs — the export includes all of them, each opening with its tab title as a # heading. Tab-targeted tools need the tabIds listed here.`
+            result.note = `${twinNote ? `${twinNote} ` : ''}This doc has ${docTabs.length} tabs — the export includes all of them, each opening with its tab title as a # heading. Tab-targeted tools need the tabIds listed here.`
           }
           return result
         } catch (err) {
@@ -673,21 +719,43 @@ export function createAgentTools(deps: {
 
     copy_file: {
       description:
-        'Copy an existing file under a new name — e.g. duplicate a branded template deck to populate, or snapshot before heavy edits. Returns the copy (never the original).',
-      inputSchema: jsonSchema<{ fileId: string; title: string }>({
+        'Copy an existing file under a new name — e.g. duplicate a branded template deck to populate, or snapshot before heavy edits. Returns the copy (never the original). convert: true turns an uploaded Office/csv/pdf file into its native Google twin (Sheet/Doc/Slides) under this title, stamped so later read_file calls reuse it; without it an uploaded file copies as-is, still refused by every Docs/Sheets tool. read_file already converts on its own — use this only when the mission wants the twin under a specific name.',
+      inputSchema: jsonSchema<{ fileId: string; title: string; convert?: boolean }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
           title: { type: 'string', description: 'Name for the copy' },
+          convert: {
+            type: 'boolean',
+            description: 'Convert an uploaded .xlsx/.csv/.docx/.pptx/.pdf into its native Google type on the way',
+          },
         },
         required: ['fileId', 'title'],
       }),
-      execute: async ({ fileId, title }: { fileId: string; title: string }) => {
+      execute: async ({ fileId, title, convert }: { fileId: string; title: string; convert?: boolean }) => {
         try {
-          const copy = await copyFile(client, fileId, title)
+          let mimeType: string | undefined
+          let appProperties: Record<string, string> | undefined
+          if (convert) {
+            const source = await getFile(client, fileId)
+            const target = conversionTarget(source.mimeType)
+            if (!target && !workspaceKind(source.mimeType)) {
+              return `Error: Drive has no Google conversion for "${source.name}" (${source.mimeType})`
+            }
+            if (target) {
+              mimeType = WORKSPACE_MIME[target]
+              appProperties = twinProperties(source)
+            }
+          }
+          const copy = await copyFile(client, fileId, title, { mimeType, appProperties })
           track(state, 'created', copy)
-          log(`Copied to "${copy.name ?? title}" — ${copy.webViewLink ?? copy.id}`)
-          return { id: copy.id, name: copy.name, url: copy.webViewLink }
+          log(`${mimeType ? 'Converted' : 'Copied'} to "${copy.name ?? title}" — ${copy.webViewLink ?? copy.id}`)
+          return {
+            id: copy.id,
+            name: copy.name,
+            kind: workspaceKind(copy.mimeType) ?? uploadedSpreadsheetFormat(copy.mimeType) ?? copy.mimeType,
+            url: copy.webViewLink,
+          }
         } catch (err) {
           return toolError(err)
         }

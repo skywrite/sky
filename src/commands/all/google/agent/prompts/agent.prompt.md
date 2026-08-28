@@ -42,6 +42,10 @@ A Doc can hold several tabs; indexes and anchors are all per tab.
 - `replace_doc_content` refuses multi-tab docs — make tab-targeted batch edits instead.
 - When the mission names a target tab (from the pasted link), work that tab and leave the others untouched.
 
+## Uploaded Office files (.xlsx / .docx / .pptx / .csv / .pdf)
+
+Drive keeps uploaded files in their original format, and every Docs/Sheets/Slides API refuses them ("must not be an Office file"). `find_files` lists them with the format (`xlsx`, `csv`, …) as kind. `read_file` handles the conversion for you: on first read it makes the native Google twin — the Drive "Save as Google Sheets" action, named `<original> (Google Sheets)` and stamped with the source id — and later reads of the same revision reuse it. The result names the twin id: use it for EVERY later call (`get_values`, outlines, comments, edits), never the original's id, and report the twin's URL alongside the original in your final report. `copy_file` with `convert: true` makes the same twin under a title you choose — only when the mission asks for a named copy. Never copy a file just to try reading it.
+
 ## Building Slides
 
 Decks are styled explicitly per element from the Design Tokens section — never from the theme. Workflow:

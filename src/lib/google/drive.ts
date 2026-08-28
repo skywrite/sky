@@ -33,12 +33,62 @@ export const EXPORT_MIME: Record<WorkspaceKind, string> = {
   slides: 'text/plain',
 }
 
+/**
+ * Spreadsheet formats Drive keeps as uploaded — never converted — so
+ * files.export and the whole Sheets API refuse them ("must not be an Office
+ * file"). They are read through a native twin (convertedTwin.ts) made by
+ * copyFile with a Workspace target mimeType. Values are the short format
+ * labels callers show in place of a workspace kind.
+ */
+export const UPLOADED_SPREADSHEET_FORMATS: Record<string, string> = {
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel.sheet.macroenabled.12': 'xlsm',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'text/csv': 'csv',
+}
+
+export function uploadedSpreadsheetFormat(mimeType: string): string | undefined {
+  return UPLOADED_SPREADSHEET_FORMATS[mimeType]
+}
+
+const CONVERTS_TO_DOC = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+  'application/vnd.oasis.opendocument.text',
+  'application/rtf',
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/html',
+])
+
+const CONVERTS_TO_SLIDES = new Set([
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.oasis.opendocument.presentation',
+])
+
+/**
+ * The Workspace kind Drive's import conversion turns an uploaded file into
+ * (the target mimeType for copyFile / an upload); undefined for native files
+ * and formats Drive cannot convert.
+ */
+export function conversionTarget(mimeType: string): WorkspaceKind | undefined {
+  if (UPLOADED_SPREADSHEET_FORMATS[mimeType]) return 'sheet'
+  if (CONVERTS_TO_DOC.has(mimeType)) return 'doc'
+  if (CONVERTS_TO_SLIDES.has(mimeType)) return 'slides'
+  return undefined
+}
+
 export interface DriveFile {
   id: string
   name: string
   mimeType: string
   modifiedTime?: string
   webViewLink?: string
+  /** App-private key/values (e.g. the source a converted twin was made from). */
+  appProperties?: Record<string, string>
 }
 
 export function workspaceKind(mimeType: string): WorkspaceKind | undefined {
@@ -50,14 +100,18 @@ export function escapeDriveQueryValue(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")
 }
 
+/** Every mime a kind covers — `sheet` spans native Sheets and uploaded workbooks alike. */
+function mimesForKind(kind: WorkspaceKind): string[] {
+  return kind === 'sheet'
+    ? [WORKSPACE_MIME.sheet, ...Object.keys(UPLOADED_SPREADSHEET_FORMATS)]
+    : [WORKSPACE_MIME[kind]]
+}
+
 export function buildFilesQuery(options: { text?: string; kind?: WorkspaceKind } = {}): string {
   const clauses = ['trashed = false']
-  if (options.kind) {
-    clauses.push(`mimeType = '${WORKSPACE_MIME[options.kind]}'`)
-  } else {
-    const mimes = Object.values(WORKSPACE_MIME).map((mime) => `mimeType = '${mime}'`)
-    clauses.push(`(${mimes.join(' or ')})`)
-  }
+  const kinds = options.kind ? [options.kind] : (Object.keys(WORKSPACE_MIME) as WorkspaceKind[])
+  const mimes = kinds.flatMap(mimesForKind).map((mime) => `mimeType = '${mime}'`)
+  clauses.push(mimes.length === 1 ? mimes[0] : `(${mimes.join(' or ')})`)
   if (options.text) {
     const value = escapeDriveQueryValue(options.text)
     clauses.push(`(name contains '${value}' or fullText contains '${value}')`)
@@ -65,21 +119,29 @@ export function buildFilesQuery(options: { text?: string; kind?: WorkspaceKind }
   return clauses.join(' and ')
 }
 
-const FILE_FIELDS = 'id, name, mimeType, modifiedTime, webViewLink'
+const FILE_FIELDS = 'id, name, mimeType, modifiedTime, webViewLink, appProperties'
+
+/** files.list with a raw Drive query. */
+export async function listFiles(
+  client: GoogleClient,
+  options: { q: string; orderBy?: string; limit?: number },
+): Promise<DriveFile[]> {
+  const url = driveApiUrl(DRIVE_FILES_URL)
+  // Listing needs its own shared-drive opt-in on top of supportsAllDrives.
+  url.searchParams.set('includeItemsFromAllDrives', 'true')
+  url.searchParams.set('q', options.q)
+  url.searchParams.set('orderBy', options.orderBy ?? 'modifiedTime desc')
+  url.searchParams.set('pageSize', String(options.limit ?? 10))
+  url.searchParams.set('fields', `files(${FILE_FIELDS})`)
+  const body = await client.getJson<{ files?: DriveFile[] }>(url.toString())
+  return body.files ?? []
+}
 
 export async function searchFiles(
   client: GoogleClient,
   options: { text?: string; kind?: WorkspaceKind; limit?: number } = {},
 ): Promise<DriveFile[]> {
-  const url = driveApiUrl(DRIVE_FILES_URL)
-  // Listing needs its own shared-drive opt-in on top of supportsAllDrives.
-  url.searchParams.set('includeItemsFromAllDrives', 'true')
-  url.searchParams.set('q', buildFilesQuery(options))
-  url.searchParams.set('orderBy', 'modifiedTime desc')
-  url.searchParams.set('pageSize', String(options.limit ?? 10))
-  url.searchParams.set('fields', `files(${FILE_FIELDS})`)
-  const body = await client.getJson<{ files?: DriveFile[] }>(url.toString())
-  return body.files ?? []
+  return await listFiles(client, { q: buildFilesQuery(options), limit: options.limit })
 }
 
 export async function getFile(client: GoogleClient, fileId: string): Promise<DriveFile> {
@@ -108,11 +170,25 @@ export async function deleteFile(client: GoogleClient, fileId: string): Promise<
   })
 }
 
-/** Copy a file (e.g. a branded template deck) under a new name. */
-export async function copyFile(client: GoogleClient, fileId: string, title: string): Promise<DriveFile> {
+/**
+ * Copy a file (e.g. a branded template deck) under a new name. A Workspace
+ * `mimeType` makes Drive convert on the way — an uploaded .xlsx copies into
+ * a native Sheet; without it an uploaded file copies as-is, still an Office
+ * file every Docs/Sheets API refuses. `appProperties` are stamped on the
+ * copy (how a converted twin remembers its source).
+ */
+export async function copyFile(
+  client: GoogleClient,
+  fileId: string,
+  title: string,
+  options: { mimeType?: string; appProperties?: Record<string, string> } = {},
+): Promise<DriveFile> {
   const url = driveApiUrl(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/copy`)
   url.searchParams.set('fields', FILE_FIELDS)
-  return await client.postJson<DriveFile>(url.toString(), { name: title })
+  const body: Record<string, unknown> = { name: title }
+  if (options.mimeType) body.mimeType = options.mimeType
+  if (options.appProperties) body.appProperties = options.appProperties
+  return await client.postJson<DriveFile>(url.toString(), body)
 }
 
 /** Rename a file in place — e.g. replace a default "Copy of …" title. Nothing else changes. */

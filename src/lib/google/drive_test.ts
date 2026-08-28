@@ -7,6 +7,7 @@ import {
   buildBinaryMultipartBody,
   buildFilesQuery,
   buildMultipartBody,
+  conversionTarget,
   copyFile,
   createDocFromMarkdown,
   deleteFile,
@@ -19,25 +20,46 @@ import {
   searchFiles,
   shareFile,
   uploadFile,
+  uploadedSpreadsheetFormat,
   workspaceKind,
 } from './drive.ts'
 import { saveAccountTokens } from './tokens.ts'
 
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 test('buildFilesQuery', () => {
   assert({
     given: 'no options',
-    should: 'match untrashed files of all three workspace kinds',
+    should: 'match untrashed files of all three workspace kinds, uploaded workbooks among the sheets',
     expected:
       "trashed = false and (mimeType = 'application/vnd.google-apps.document'" +
       " or mimeType = 'application/vnd.google-apps.spreadsheet'" +
+      ` or mimeType = '${XLSX_MIME}'` +
+      " or mimeType = 'application/vnd.ms-excel.sheet.macroenabled.12'" +
+      " or mimeType = 'application/vnd.ms-excel'" +
+      " or mimeType = 'application/vnd.oasis.opendocument.spreadsheet'" +
+      " or mimeType = 'text/csv'" +
       " or mimeType = 'application/vnd.google-apps.presentation')",
     actual: buildFilesQuery(),
   })
 
   assert({
-    given: 'a kind filter',
+    given: 'a doc kind filter',
     should: 'match only that mime type',
-    expected: "trashed = false and mimeType = 'application/vnd.google-apps.spreadsheet'",
+    expected: "trashed = false and mimeType = 'application/vnd.google-apps.document'",
+    actual: buildFilesQuery({ kind: 'doc' }),
+  })
+
+  assert({
+    given: 'the sheet kind filter',
+    should: 'cover native Sheets and every uploaded spreadsheet format',
+    expected:
+      "trashed = false and (mimeType = 'application/vnd.google-apps.spreadsheet'" +
+      ` or mimeType = '${XLSX_MIME}'` +
+      " or mimeType = 'application/vnd.ms-excel.sheet.macroenabled.12'" +
+      " or mimeType = 'application/vnd.ms-excel'" +
+      " or mimeType = 'application/vnd.oasis.opendocument.spreadsheet'" +
+      " or mimeType = 'text/csv')",
     actual: buildFilesQuery({ kind: 'sheet' }),
   })
 
@@ -125,6 +147,71 @@ test('workspace mime maps', () => {
     should: 'export docs as markdown, sheets as csv, slides as text',
     expected: ['text/markdown', 'text/csv', 'text/plain'],
     actual: [EXPORT_MIME.doc, EXPORT_MIME.sheet, EXPORT_MIME.slides],
+  })
+
+  assert({
+    given: 'uploaded spreadsheet mime types',
+    should: 'map to their short format label, native and foreign types to nothing',
+    expected: ['xlsx', 'csv', undefined, undefined],
+    actual: [
+      uploadedSpreadsheetFormat(XLSX_MIME),
+      uploadedSpreadsheetFormat('text/csv'),
+      uploadedSpreadsheetFormat(WORKSPACE_MIME.sheet),
+      uploadedSpreadsheetFormat('application/pdf'),
+    ],
+  })
+
+  assert({
+    given: 'mime types Drive can and cannot convert',
+    should: 'name the workspace kind a conversion produces, undefined for native files and images',
+    expected: ['sheet', 'sheet', 'doc', 'doc', 'slides', undefined, undefined],
+    actual: [
+      conversionTarget(XLSX_MIME),
+      conversionTarget('text/csv'),
+      conversionTarget('application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+      conversionTarget('application/pdf'),
+      conversionTarget('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+      conversionTarget(WORKSPACE_MIME.sheet),
+      conversionTarget('image/png'),
+    ],
+  })
+})
+
+test('copyFile', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, 'jane@example.com', { refreshToken: 'rt', accessToken: 'at', scopes: [] })
+
+  const bodies: string[] = []
+  const fetchFn = (async (_url: unknown, init?: RequestInit) => {
+    bodies.push(String(init?.body))
+    return new Response(JSON.stringify({ id: 'f2', name: 'Atlas Copy', mimeType: WORKSPACE_MIME.sheet }), {
+      status: 200,
+    })
+  }) as typeof fetch
+  const client = new GoogleClient({
+    secrets,
+    email: 'jane@example.com',
+    client: { clientId: 'id', clientSecret: 'sec' },
+    fetchFn,
+    sleep: async () => {},
+  })
+
+  await copyFile(client, 'f1', 'Atlas Copy')
+  await copyFile(client, 'f1', 'Atlas Copy', { mimeType: WORKSPACE_MIME.sheet })
+  await copyFile(client, 'f1', 'Atlas Copy', {
+    mimeType: WORKSPACE_MIME.sheet,
+    appProperties: { skyConvertedFrom: 'f1' },
+  })
+
+  assert({
+    given: 'a plain copy, a converting copy, and a converting copy stamped with app properties',
+    should: 'send only the name for the plain copy, and the conversion target and stamp when given',
+    expected: [
+      '{"name":"Atlas Copy"}',
+      `{"name":"Atlas Copy","mimeType":"${WORKSPACE_MIME.sheet}"}`,
+      `{"name":"Atlas Copy","mimeType":"${WORKSPACE_MIME.sheet}","appProperties":{"skyConvertedFrom":"f1"}}`,
+    ],
+    actual: bodies,
   })
 })
 
