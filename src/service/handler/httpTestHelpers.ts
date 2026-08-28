@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { Store } from '../store.ts'
+import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createHttpApp } from './http.ts'
 
 function createTestYoga(): YogaServerInstance<object, object> {
@@ -14,7 +15,10 @@ function createTestYoga(): YogaServerInstance<object, object> {
   } as unknown as YogaServerInstance<object, object>
 }
 
-export function createTestHttpApp(markdownDirs: string[], options: { markdownStore?: MarkdownStore | null } = {}) {
+export function createTestHttpApp(
+  markdownDirs: string[],
+  options: { markdownStore?: MarkdownStore | null; chat?: ChatRoutesOptions } = {},
+) {
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
   return createHttpApp({
     store: new Store(),
@@ -22,5 +26,6 @@ export function createTestHttpApp(markdownDirs: string[], options: { markdownSto
     markdownStore: options.markdownStore ?? null,
     markdownBaseDir,
     markdownDirs,
+    chat: options.chat,
   })
 }

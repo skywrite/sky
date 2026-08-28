@@ -12,6 +12,7 @@ import {
   getApprovalSessionKey,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -19,7 +20,6 @@ import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { DIR_AI_MEMORY, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -27,13 +27,10 @@ import { chatAutosaveFilename, sweepChatAutosaves } from '#shared/models/Chat/Ch
 import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
-import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
 import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
-import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
-import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 
@@ -101,8 +98,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // -----------------------------------------------------------------------------
 // Constants
 // -----------------------------------------------------------------------------
-
-const PROMPT_FILE = new URL('../../../lib/chat/prompts/chat.prompt.md', import.meta.url).pathname
 
 /** Verb per memory op for the exit summary's 🧠 lines. */
 const MEMORY_VERBS: Record<string, string> = {
@@ -460,20 +455,10 @@ export default class AiChatTask extends Command {
       profile: { provider: reasoningProfile.provider, model: reasoningProfile.model },
       producers: contextProducers(tasks),
       ambient: ctx,
-      // The base system prompt, frozen for the whole session so it stays
-      // byte-identical and prompt-cached: the interaction-ranked people
-      // list for grounding, and the standing preference memories — read
-      // straight from disk, not the service, so resumed sessions get them
-      // too and a service outage costs context documents, never the
-      // standing preferences.
       systemPrompt: async () => {
-        const [people, memories] = await Promise.all([
-          gatherPeopleEntities(config as Record<string, unknown>),
-          loadMemories(DIR_AI_MEMORY),
-        ])
-        peopleCount = people.length
-        const renderInput: RenderInput = {
-          context: {
+        const rendered = await renderChatSystemPrompt({
+          config: config as Record<string, unknown>,
+          clock: {
             notebookDate: context.notebookNow.date,
             notebookTime: context.notebookNow.time,
             systemDate: context.systemNow.date,
@@ -481,10 +466,10 @@ export default class AiChatTask extends Command {
             notebookTimezone: context.notebookNow.timezone,
             systemTimezone: context.systemNow.timezone,
           },
-          entities: { block: formatPeopleBlock(people) },
-          memory: { block: renderPreferenceBlock(memories) },
-        }
-        return renderPromptFile(await readTextFile(PROMPT_FILE), 'chat.prompt.md', renderInput).output
+          memoryDir: DIR_AI_MEMORY,
+        })
+        peopleCount = rendered.peopleCount
+        return rendered.prompt
       },
       tools: async ({ onExternalFiles }) => {
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}

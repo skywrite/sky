@@ -279,6 +279,21 @@ export async function createNotebookTools(
 }
 
 /**
+ * The tool set a host offers when it cannot ask: every discovered tool
+ * that declares it needs no approval, and nothing else. Default-deny — a
+ * tool that ships later without a declaration is excluded, never exposed
+ * to a surface with no approval path.
+ */
+export async function createAutoApprovedTools(
+  tasks: CommandService,
+  options: CreateNotebookToolsOptions = {},
+): Promise<Record<string, unknown>> {
+  const all = await createNotebookTools(tasks, options)
+  const allowed = new Set(discoveredTools.filter((t) => t.needsApproval === false).map((t) => t.toolName))
+  return Object.fromEntries(Object.entries(all).filter(([name]) => allowed.has(name)))
+}
+
+/**
  * Generation-time approval policy for the discovered tools. AI SDK 7 moved
  * approval off the tool definition (tool-level needsApproval is deprecated)
  * onto the streamText/generateText call; the decorator's needsApproval flag

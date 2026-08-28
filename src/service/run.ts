@@ -9,6 +9,7 @@ import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { createChatHost } from './handler/chat/createSession.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
@@ -111,6 +112,7 @@ const server = createServer({
   },
   store,
   customRoutes,
+  chat: createChatHost(config, env.toObject()),
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,
 })

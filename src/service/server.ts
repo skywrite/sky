@@ -30,6 +30,7 @@ import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createYogaInstance } from './graphql/schema.ts'
+import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
@@ -63,6 +64,8 @@ export interface ServerOptions {
   enableFileWatcher?: boolean
   /** Custom route handlers */
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
+  /** The browser's chat host; absent, /chat is not served */
+  chat?: ChatRoutesOptions
   /** Reference date for recency calculations (for deterministic testing) */
   referenceDate?: PlainDate
   /** Configuration for MarkdownStore (enables rich document queries) */
@@ -138,6 +141,7 @@ export function createServer(options: ServerOptions): Server {
     store = new Store(),
     enableFileWatcher = true,
     customRoutes,
+    chat,
     referenceDate,
     markdownStoreConfig,
   } = options
@@ -214,6 +218,7 @@ export function createServer(options: ServerOptions): Server {
       markdownBaseDir,
       markdownDirs,
       customRoutes,
+      chat,
     })
   }
 

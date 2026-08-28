@@ -13,6 +13,7 @@ import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
+import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
@@ -45,13 +46,15 @@ export interface HttpHandlerOptions {
   markdownDirs: string[]
   /** Additional route handlers (e.g., /site-html for production) */
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
+  /** The browser's chat host; absent, /chat is not served */
+  chat?: ChatRoutesOptions
 }
 
 /**
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes } = options
+  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat } = options
 
   const app = new Hono()
 
@@ -75,6 +78,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.all('/graphql', async (c) => {
     return await yoga.handleRequest(c.req.raw, {})
   })
+
+  // Chat over HTTP: a session per thread, each turn streamed as SSE
+  if (chat) app.route('/chat', createChatRoutes(chat))
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
   app.post('/context', async (c) => {

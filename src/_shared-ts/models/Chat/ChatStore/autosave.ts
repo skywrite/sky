@@ -33,9 +33,13 @@ import type { ResumeSession } from './mod.ts'
 /** Snapshots older than this are nobody's lost session anymore. */
 const MAX_AGE_DAYS = 30
 
-/** Leading date + start time + pid: unique per session, lexically chronological. */
-export function chatAutosaveFilename(startTime: PlainDateTime, pid: number): string {
-  return `${startTime.plainDate.ymd}_${startTime.time.replace(':', '-')}_${pid}.md`
+/**
+ * Leading date + start time + a per-session discriminator, lexically
+ * chronological. The terminal passes its pid — one process, one session;
+ * a service hosting many threads passes the thread id.
+ */
+export function chatAutosaveFilename(startTime: PlainDateTime, session: number | string): string {
+  return `${startTime.plainDate.ymd}_${startTime.time.replace(':', '-')}_${session}.md`
 }
 
 export interface ChatAutosaveInput {
