@@ -1,8 +1,8 @@
 import colors from 'picocolors'
+import { discoverAIChatTools } from '#commands/lib/chat/notebookTools.ts'
 import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { discoverAIChatTools } from './_tools.ts'
 
 const params = {
   schema: Flag.bool('Show full JSON Schema for each tool', { default: false }),

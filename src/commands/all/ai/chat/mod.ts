@@ -5,6 +5,12 @@ import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import {
+  createNotebookTools,
+  createToolApprovalConfig,
+  getApprovalFormatter,
+  getApprovalSessionKey,
+} from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -28,7 +34,6 @@ import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
 import { formatPeopleBlock, gatherPeopleEntities } from '../context/_entityContext.ts'
-import { createNotebookTools, createToolApprovalConfig, getApprovalFormatter, getApprovalSessionKey } from './_tools.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 
@@ -97,7 +102,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Constants
 // -----------------------------------------------------------------------------
 
-const PROMPT_FILE = new URL('./prompts/chat.prompt.md', import.meta.url).pathname
+const PROMPT_FILE = new URL('../../../lib/chat/prompts/chat.prompt.md', import.meta.url).pathname
 
 /** Verb per memory op for the exit summary's 🧠 lines. */
 const MEMORY_VERBS: Record<string, string> = {

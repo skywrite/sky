@@ -10,7 +10,7 @@
 import { toolModelMessageSchema } from 'ai'
 import { CommandResult, type CommandService } from '#commands/mod.ts'
 import { assert, test } from '#test'
-import { runToolCommand } from './_tools.ts'
+import { runToolCommand } from './notebookTools.ts'
 
 /**
  * Stand-in for a rich SDK error (APICallError): a class instance whose
