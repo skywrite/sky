@@ -14,6 +14,7 @@ import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
+import { createDayRoutes } from './day/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
@@ -79,8 +80,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return await yoga.handleRequest(c.req.raw, {})
   })
 
-  // Chat over HTTP: a session per thread, each turn streamed as SSE
-  if (chat) app.route('/chat', createChatRoutes(chat))
+  // Chat over HTTP: a session per thread, each turn streamed as SSE — and
+  // the day the threads live in
+  if (chat) {
+    app.route('/chat', createChatRoutes(chat))
+    app.route('/day', createDayRoutes({ markdownBaseDir, timeDir: chat.timeDir, aboutMePath: chat.aboutMePath }))
+  }
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
   app.post('/context', async (c) => {
@@ -434,6 +439,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The app shell (Mantine on the sky theme; client bundled by Bun at first request).
   // `/` is the blank canvas being wired up; `/theme` is the living reference mock.
   app.get('/', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  app.get('/thread/*', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // A day's page is its date — /2026-08-27. Its data lives under /day/….
+  app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}', (c) => {
     return c.html(renderAppHtml('sky'))
   })
 

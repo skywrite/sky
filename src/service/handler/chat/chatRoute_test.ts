@@ -10,7 +10,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
-import type { ChatRoutesOptions, ChatSessionFactory } from './mod.ts'
+import type { ChatRoutesOptions, ChatSessionFactory, ThreadSummary } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -99,7 +99,7 @@ async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<Chat
         logError: () => Promise.resolve(),
       }),
     )
-  return { createSession, endDefaults: { enricher: stubEnricher }, tmp }
+  return { createSession, endDefaults: { enricher: stubEnricher }, timeDir: tmp, tmp }
 }
 
 function appWith(host: ChatRoutesOptions) {
@@ -253,6 +253,63 @@ test({ name: 'chat route - one turn at a time per thread' }, async () => {
   })
 })
 
+test({ name: 'chat route - the day lists its threads with what each is doing' }, async () => {
+  // One gate per model call: the first thread's turn is released at once,
+  // the second's is held so the list sees it mid-turn. Each call also
+  // signals that it was reached, so the test waits on the model, not a timer.
+  const releases: Array<() => void> = []
+  const gates = [0, 1].map(() => new Promise<void>((resolve) => releases.push(resolve)))
+  const reached: Array<() => void> = []
+  const arrivals = [0, 1].map(() => new Promise<void>((resolve) => reached.push(resolve)))
+  let call = 0
+  const gated: ModelInvoker = async (args) => {
+    const n = call++
+    reached[n]()
+    await gates[n]
+    args.sink.write('Focus on the demo.')
+    return EMPTY
+  }
+  const app = appWith(await testHost({ invokeModel: gated }))
+
+  releases[0]()
+  await (await post(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on today?' })).text()
+  const second = await post(app, 'http://localhost/chat/t7/messages', { message: 'And the pricing page?' })
+  await arrivals[1]
+
+  const listed = (await (await app.request('http://localhost/chat')).json()) as { threads: ThreadSummary[] }
+  const byId = Object.fromEntries(listed.threads.map((t) => [t.id, t]))
+  assert({
+    given: 'one finished thread and one still waiting on the model',
+    should: 'summarize each — title from the first message, state, the last line, message count',
+    actual: {
+      t6: {
+        title: byId.t6?.title,
+        state: byId.t6?.state,
+        line: byId.t6?.line,
+        turns: byId.t6?.turns,
+        busy: byId.t6?.busy,
+      },
+      t7: { title: byId.t7?.title, state: byId.t7?.state, busy: byId.t7?.busy },
+      newestFirst: listed.threads[0]?.id,
+    },
+    expected: {
+      t6: { title: 'What should I focus on today?', state: 'done', line: 'Focus on the demo.', turns: 2, busy: false },
+      t7: { title: 'And the pricing page?', state: 'thinking', busy: true },
+      newestFirst: 't7',
+    },
+  })
+
+  releases[1]()
+  await second.text()
+  const after = (await (await app.request('http://localhost/chat')).json()) as { threads: ThreadSummary[] }
+  assert({
+    given: 'the second thread once its turn lands',
+    should: 'read as done with its reply as the line',
+    actual: after.threads.find((t) => t.id === 't7')?.state,
+    expected: 'done',
+  })
+})
+
 test({ name: 'chat route - ending a thread files it or drops it' }, async () => {
   const host = await testHost()
   const app = appWith(host)
@@ -288,5 +345,88 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
     should: 'refuse to end again',
     actual: (await post(app, 'http://localhost/chat/t5/end', {})).status,
     expected: 404,
+  })
+})
+
+interface ContextBody {
+  turn: number
+  documents: number
+  kept: Array<{ path: string; tokens: number; pinned?: true }>
+  cut: Array<{ path: string; tokens: number; cut?: string }>
+}
+
+test({ name: 'chat route - the context can be read, and shaped by hand' }, async () => {
+  const app = appWith(await testHost())
+  const url = 'http://localhost/chat/t6/context'
+  assert({
+    given: 'a thread nobody has messaged',
+    should: 'have no context to show',
+    actual: (await app.request(url)).status,
+    expected: 404,
+  })
+
+  await (await post(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on?' })).text()
+  const before = (await (await app.request(url)).json()) as ContextBody
+  assert({
+    given: 'a thread after one exchange',
+    should: 'list every document the model saw, with its tokens, and nothing cut',
+    actual: {
+      kept: before.kept.map((k) => k.path).sort(),
+      tokens: before.kept.every((k) => k.tokens > 0),
+      cut: before.cut,
+      documents: before.documents,
+    },
+    expected: {
+      kept: ['goals/2026.md', 'projects/Atlas/Roadmap.md', 'time/2026/01/26-01/01-27/day.md'],
+      tokens: true,
+      cut: [],
+      documents: 3,
+    },
+  })
+
+  const excluded = (await (
+    await post(app, url, { action: 'exclude', path: 'projects/Atlas/Roadmap.md' })
+  ).json()) as ContextBody
+  assert({
+    given: 'a document kept out by hand',
+    should: 'be cut with that reason, at once, and leave the rest in',
+    actual: { kept: excluded.kept.map((k) => k.path).sort(), cut: excluded.cut.map((c) => [c.path, c.cut]) },
+    expected: {
+      kept: ['goals/2026.md', 'time/2026/01/26-01/01-27/day.md'],
+      cut: [['projects/Atlas/Roadmap.md', 'excluded by you']],
+    },
+  })
+
+  const pinned = (await (
+    await post(app, url, { action: 'pin', path: 'projects/Atlas/Roadmap.md' })
+  ).json()) as ContextBody
+  assert({
+    given: 'the same document pinned back in',
+    should: 'be kept, marked pinned, with nothing cut',
+    actual: {
+      roadmap: pinned.kept.find((k) => k.path === 'projects/Atlas/Roadmap.md')?.pinned,
+      cut: pinned.cut.length,
+    },
+    expected: { roadmap: true, cut: 0 },
+  })
+
+  const released = (await (
+    await post(app, url, { action: 'release', path: 'projects/Atlas/Roadmap.md' })
+  ).json()) as ContextBody
+  assert({
+    given: 'the pin withdrawn',
+    should: 'leave the scorer to decide again — kept, no longer pinned',
+    actual: released.kept.find((k) => k.path === 'projects/Atlas/Roadmap.md')?.pinned,
+    expected: undefined,
+  })
+
+  assert({
+    given: 'a verb the context does not know, and a file that does not exist',
+    should: 'refuse both as bad requests',
+    actual: [
+      (await post(app, url, { action: 'burn', path: 'goals/2026.md' })).status,
+      (await post(app, url, { action: 'pin', path: 'projects/Nowhere/Missing.md' })).status,
+    ],
+    expected: [400, 400],
   })
 })

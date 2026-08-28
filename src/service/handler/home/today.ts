@@ -72,7 +72,7 @@ export async function buildTodaySection(markdownBaseDir: string): Promise<TodayS
   }
 }
 
-function formatDateLabel(date: PlainDate): string {
+export function formatDateLabel(date: PlainDate): string {
   const weekday = WEEKDAYS[date.toDate().getDay()]
   return `${weekday}, ${MONTHS[date.month - 1]} ${date.day}, ${date.year}`
 }

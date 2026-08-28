@@ -80,5 +80,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
   return {
     createSession,
     endDefaults: { autoTag: true, autoRel: true, memoryDir: config.DIR_AI_MEMORY, people: true },
+    timeDir: config.DIR_TIME,
+    aboutMePath: config.FILE_ABOUT_ME,
   }
 }
