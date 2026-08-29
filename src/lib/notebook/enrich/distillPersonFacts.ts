@@ -3,7 +3,12 @@ import { z } from 'zod'
 import { fetchPeopleIndex, readServiceDocument } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
-import { findPersonSubjects, type PersonSubject } from '#shared/models/Person/subjects.ts'
+import {
+  findPersonSubjects,
+  type PersonIndexEntry,
+  type PersonSubject,
+  screenUnlisted,
+} from '#shared/models/Person/subjects.ts'
 import { APPEND_SECTIONS, FILL_FIELDS, type PersonFacts, type UnlistedPerson } from '#shared/models/Person/write.ts'
 import { normalizeEntityName } from './resolve.ts'
 import { fetchEntityScores } from './scores.ts'
@@ -75,9 +80,11 @@ export async function distillPersonFactsFromText(
   input: { text: string; today: string; userLabel: string; kind: string },
   role: Role = 'fast',
 ): Promise<PersonFactsDistillation | undefined> {
+  let index: PersonIndexEntry[] = []
   let subjects: PersonSubject[] = []
   try {
-    const [index, scores] = await Promise.all([fetchPeopleIndex(), fetchEntityScores()])
+    const [people, scores] = await Promise.all([fetchPeopleIndex(), fetchEntityScores()])
+    index = people
     subjects = await findPersonSubjects({
       transcript: input.text,
       index,
@@ -92,7 +99,10 @@ export async function distillPersonFactsFromText(
     { transcript: input.text, subjects, today: input.today, userLabel: input.userLabel, kind: input.kind },
     role,
   )
-  return result ? { subjects, ...result } : undefined
+  // Screen against the same index discovery ran over. Empty when the service
+  // was unreachable — then nothing can be reported as existing and the lane
+  // falls back to person:new hints, which is all it could ever say blind.
+  return result ? { subjects, facts: result.facts, unlisted: screenUnlisted(result.unlisted, index) } : undefined
 }
 
 function profileBlock(subject: PersonSubject): string {
@@ -131,7 +141,12 @@ export async function distillPersonFacts(
         unlisted: z
           .array(
             z.object({
-              name: z.string(),
+              name: z.string().describe("the person's name alone — no role, org, or qualifier in parentheses"),
+              kind: z
+                .enum(['person', 'organization', 'product', 'other'])
+                .describe(
+                  'person only for a human being; a company, team, product, protocol, project, or place is not a person and is dropped',
+                ),
               gist: z.string().describe('one line of what the conversation established about them'),
             }),
           )
@@ -153,7 +168,7 @@ export async function distillPersonFacts(
         '- site: a URL that clearly belongs to the person (their site, their LinkedIn).',
         '- preferred-name: ONLY on explicit evidence — "goes by", "call me", a stated correction. Never infer from usage alone.',
         '',
-        `unlisted: a person the conversation materially discussed who has NO profile below — someone ${input.userLabel} personally knows or dealt with (met, emailed, works with), with a one-line gist. Never ${input.userLabel} themself, never the AI assistant, never public figures merely referenced.`,
+        `unlisted: a person the conversation materially discussed who has NO profile below — someone ${input.userLabel} personally knows or dealt with (met, emailed, works with), with a one-line gist. People only: a company, product, protocol, team, or place is never a person and never belongs here. Never ${input.userLabel} themself, never the AI assistant, never public figures merely referenced. Give the name alone, with no role or qualifier in parentheses.`,
         '',
         `Today is ${input.today}.`,
         '',
@@ -166,7 +181,12 @@ export async function distillPersonFacts(
         '</transcript>',
       ].join('\n'),
     })
-    return { facts: object.people, unlisted: object.unlisted }
+    // The kind field is the structural guard behind the prompt's "people
+    // only": the model classifies every entry, and only people survive.
+    return {
+      facts: object.people,
+      unlisted: object.unlisted.filter((u) => u.kind === 'person').map(({ name, gist }) => ({ name, gist })),
+    }
   } catch (err) {
     // Abstain, but never silently: a chronically failing distiller must be
     // distinguishable from "nothing worth learning" in ai-errors.jsonl.

@@ -9,6 +9,9 @@
  * a conclusion); this module only decides who is even on the table, so a
  * person it misses can still surface through the distiller's unlisted
  * lane, while a person it can't resolve can never be written to at all.
+ * The unlisted lane is screened back against the same index before any
+ * host renders it, so a profile that exists but never rode the prompt is
+ * reported as existing, never as a person:new to create.
  *
  * Two kinds of evidence, ranked in this order:
  * - a full multi-word name ("Sam Rivera") — unambiguous, always kept;
@@ -31,6 +34,7 @@
  */
 
 import { normalizeName } from '#shared/models/Store/normalize.ts'
+import type { UnlistedPerson } from './write.ts'
 
 /** One profile in the people index — the `allPeople { name names path }` row. */
 export interface PersonIndexEntry {
@@ -56,8 +60,14 @@ export interface PersonSubject {
  */
 const MIN_NAME_CHARS = 3
 
-/** Profiles are small, but each one rides the prompt — keep the table tight. */
-const DEFAULT_LIMIT = 6
+/**
+ * Profiles are small — a few hundred bytes as a rule — but each one rides
+ * the prompt, so the ranked list is still cut. The cut is a runaway backstop
+ * for a text naming dozens of people, never a budget to tune down: a matched
+ * profile left out of the prompt reads to the model as "no profile", and
+ * the person comes back unlisted.
+ */
+const DEFAULT_LIMIT = 32
 
 /**
  * A bare handle shared by several profiles keeps this many of them, by
@@ -176,6 +186,54 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
     }
   }
   return subjects
+}
+
+/**
+ * Every indexed profile answering to a name the model produced: an exact
+ * alias, an alias holding every word of a multi-word name ("Sam Ortiz" →
+ * "Sam Rivera Ortiz"), or — for a single word — an alias it opens or closes
+ * ("Sam" → "Sam Rivera"; "Rivera" → "Sam Rivera"). This is the "does a
+ * profile exist?" check behind the unlisted lane, so it errs toward
+ * matching: a false match costs one person:new hint, a miss suggests
+ * creating a duplicate.
+ */
+export function profilesAnsweringTo(name: string, index: PersonIndexEntry[]): PersonIndexEntry[] {
+  const normalized = normalizeName(name)
+  if (normalized.length < MIN_NAME_CHARS) return []
+  const words = normalized.split(' ')
+  const answers = (alias: string): boolean => {
+    const aliasWords = normalizeName(alias).split(' ')
+    if (words.length === 1) return aliasWords[0] === words[0] || aliasWords[aliasWords.length - 1] === words[0]
+    return words.every((word) => aliasWords.includes(word))
+  }
+  return index.filter((entry) => entry.names.some(answers))
+}
+
+/**
+ * Screen the distiller's unlisted people against the index before any host
+ * renders them: a qualifier the model tacked on is dropped ("Sam Rivera
+ * (Atlas)" → "Sam Rivera"), duplicates collapse to the first, and a name
+ * existing profiles answer to carries them, so the host reports the profile
+ * instead of suggesting a duplicate person:new. Order stays the model's.
+ */
+export function screenUnlisted(unlisted: UnlistedPerson[], index: PersonIndexEntry[]): UnlistedPerson[] {
+  const seen = new Set<string>()
+  const screened: UnlistedPerson[] = []
+  for (const person of unlisted) {
+    const name = stripQualifier(person.name)
+    const key = normalizeName(name)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const existing = profilesAnsweringTo(name, index).map((entry) => entry.name)
+    screened.push(existing.length > 0 ? { name, gist: person.gist, existing } : { name, gist: person.gist })
+  }
+  return screened
+}
+
+/** "Sam Rivera (Atlas)" → "Sam Rivera"; a name that is nothing but a qualifier keeps itself. */
+function stripQualifier(name: string): string {
+  const stripped = name.replace(/\s*\([^)]*\)\s*$/, '').trim()
+  return stripped || name.trim()
 }
 
 /** Whole-phrase mentions of a normalized multi-word name, case-insensitively. */

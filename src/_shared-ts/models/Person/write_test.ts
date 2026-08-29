@@ -8,6 +8,7 @@ import {
   joinBodySections,
   MAX_OPS_PER_PERSON,
   MAX_PEOPLE_PER_SAVE,
+  MAX_UNLISTED_PER_SAVE,
   type PersonFacts,
   type PersonOp,
   splitBodySections,
@@ -345,6 +346,59 @@ test('applyPersonFacts - unknown and unlisted people become person:new hints, ne
       { op: 'unknown', person: 'Sam Note', outcome: 'skipped', reason: 'no profile (sky person:new "Sam Note")' },
       { op: 'unknown', person: 'Riley Voss', outcome: 'skipped', reason: 'no profile (sky person:new "Riley Voss")' },
     ],
+  })
+})
+
+test('applyPersonFacts - an unlisted name existing profiles answer to reports them, never person:new', async () => {
+  const io = memoryIO({ [PATH]: PROFILE })
+  const outcomes = await applyPersonFacts({
+    facts: [],
+    unlisted: [
+      { name: 'Sam', gist: 'ran the demo', existing: ['Sam Rivera', 'Sam Okafor', 'Sam Lindqvist', 'Sam Park'] },
+      { name: 'Riley Voss', gist: 'introduced the vendor', existing: [] },
+    ],
+    subjects: [SUBJECT],
+    today: TODAY,
+    io,
+  })
+
+  assert({
+    given: 'an unlisted name four profiles answer to, and one nobody does',
+    should: 'name the first three profiles and count the rest; hint person:new only for the stranger',
+    actual: { reasons: outcomes.map((o) => o.reason), saves: io.saves },
+    expected: {
+      reasons: [
+        'profile exists: Sam Rivera, Sam Okafor, Sam Lindqvist +1 more',
+        'no profile (sky person:new "Riley Voss")',
+      ],
+      saves: 0,
+    },
+  })
+})
+
+test('applyPersonFacts - unlisted lines past the cap fold into one', async () => {
+  const io = memoryIO({ [PATH]: PROFILE })
+  const unlisted = Array.from({ length: MAX_UNLISTED_PER_SAVE + 2 }, (_, i) => ({
+    name: `Person ${i}`,
+    gist: `gist ${i}`,
+  }))
+  const outcomes = await applyPersonFacts({ facts: [], unlisted, subjects: [SUBJECT], today: TODAY, io })
+
+  assert({
+    given: `${MAX_UNLISTED_PER_SAVE + 2} unlisted people`,
+    should: 'render the first cap-many as lines and the rest as one folded line naming them',
+    actual: { lines: outcomes.length, last: outcomes.at(-1), saves: io.saves },
+    expected: {
+      lines: MAX_UNLISTED_PER_SAVE + 1,
+      last: {
+        op: 'unknown',
+        person: '2 more',
+        summary: `Person ${MAX_UNLISTED_PER_SAVE}, Person ${MAX_UNLISTED_PER_SAVE + 1}`,
+        outcome: 'skipped',
+        reason: 'per-save unlisted cap',
+      },
+      saves: 0,
+    },
   })
 })
 

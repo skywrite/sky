@@ -93,6 +93,12 @@ export interface UnlistedPerson {
   name: string
   /** One line of what the conversation established about them */
   gist: string
+  /**
+   * Canonical names of profiles that already answer to the name — set by the
+   * screen against the people index, and the reason the hint reports them
+   * instead of suggesting a duplicate person:new.
+   */
+  existing?: string[]
 }
 
 /** One op's fate, for the host's 👤 line and the transcript's context log. */
@@ -113,6 +119,8 @@ export interface PersonOpOutcome {
  */
 export const MAX_PEOPLE_PER_SAVE = 4
 export const MAX_OPS_PER_PERSON = 6
+/** Unlisted lines past this fold into one — a hint lane, never a roster. */
+export const MAX_UNLISTED_PER_SAVE = 6
 
 /** Verb per op for the hosts' 👤 exit lines. */
 export const PERSON_VERBS: Record<string, string> = {
@@ -348,13 +356,23 @@ export async function applyPersonFacts(input: ApplyPersonFactsInput): Promise<Pe
     outcomes.push(...(await applyToPerson(subject, facts.ops, input.today, input.io)))
   }
 
-  for (const u of input.unlisted) {
+  for (const u of input.unlisted.slice(0, MAX_UNLISTED_PER_SAVE)) {
     outcomes.push({
       op: 'unknown',
       person: u.name,
       summary: u.gist,
       outcome: 'skipped',
-      reason: noProfileReason(u.name),
+      reason: u.existing && u.existing.length > 0 ? existingProfileReason(u.existing) : noProfileReason(u.name),
+    })
+  }
+  const folded = input.unlisted.slice(MAX_UNLISTED_PER_SAVE)
+  if (folded.length > 0) {
+    outcomes.push({
+      op: 'unknown',
+      person: `${folded.length} more`,
+      summary: folded.map((u) => u.name).join(', '),
+      outcome: 'skipped',
+      reason: 'per-save unlisted cap',
     })
   }
 
@@ -363,6 +381,12 @@ export async function applyPersonFacts(input: ApplyPersonFactsInput): Promise<Pe
 
 function noProfileReason(name: string): string {
   return `no profile (sky person:new "${name}")`
+}
+
+/** The profiles a name already answers to — a few by name, the rest counted. */
+function existingProfileReason(names: string[]): string {
+  const more = names.length - 3
+  return `profile exists: ${names.slice(0, 3).join(', ')}${more > 0 ? ` +${more} more` : ''}`
 }
 
 /** Best short description of an op, for outcomes that never reached a file. */

@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { findPersonSubjects, type PersonIndexEntry } from './subjects.ts'
+import { findPersonSubjects, type PersonIndexEntry, profilesAnsweringTo, screenUnlisted } from './subjects.ts'
 
 function entry(names: string[], path: string): PersonIndexEntry {
   return { name: names[0], names, path }
@@ -186,5 +186,58 @@ test('findPersonSubjects - a handle the transcript also uses in lowercase is pro
     should: 'still match the full name, which needs no capitalization signal',
     actual: named.map((s) => s.name),
     expected: ['The Market Maker'],
+  })
+})
+
+test('profilesAnsweringTo - exact aliases, first names, surnames, and multi-word subsets all answer', () => {
+  const index = [
+    ...INDEX,
+    entry(['Sam Rivera Ortiz', 'Sam'], 'people/2024/sa/Sam-Rivera-Ortiz.md'),
+    entry(['Sam Okafor'], 'people/2023/sa/Sam-Okafor.md'),
+  ]
+  const names = (name: string) => profilesAnsweringTo(name, index).map((e) => e.name)
+
+  assert({
+    given: 'names as the model writes them, from an exact alias down to a bare surname',
+    should: 'return every profile answering to each, and none for a stranger or a two-letter name',
+    actual: {
+      exact: names('jane doe'),
+      subset: names('Sam Ortiz'),
+      first: names('Sam'),
+      surname: names('Okafor'),
+      stranger: names('Riley Voss'),
+      short: names('Sa'),
+    },
+    expected: {
+      exact: ['Jane Doe'],
+      subset: ['Sam Rivera Ortiz'],
+      first: ['Sam Rivera Ortiz', 'Sam Okafor'],
+      surname: ['Sam Okafor'],
+      stranger: [],
+      short: [],
+    },
+  })
+})
+
+test('screenUnlisted - qualifiers stripped, duplicates collapsed, existing profiles attached', () => {
+  const screened = screenUnlisted(
+    [
+      { name: 'Jane Doe (Atlas)', gist: 'runs the Atlas rollout' },
+      { name: 'Jane Doe', gist: 'named again' },
+      { name: 'Riley Voss', gist: 'introduced the vendor' },
+      { name: 'Taylor', gist: 'sent the deck' },
+    ],
+    INDEX,
+  )
+
+  assert({
+    given: 'model names with a parenthetical qualifier, a duplicate, a stranger, and a bare first name',
+    should: 'keep one clean entry each, carrying the profiles that already answer to the name',
+    actual: screened,
+    expected: [
+      { name: 'Jane Doe', gist: 'runs the Atlas rollout', existing: ['Jane Doe'] },
+      { name: 'Riley Voss', gist: 'introduced the vendor' },
+      { name: 'Taylor', gist: 'sent the deck', existing: ['Taylor Quinn'] },
+    ],
   })
 })
