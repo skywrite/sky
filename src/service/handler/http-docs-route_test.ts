@@ -4,364 +4,56 @@ import * as path from 'node:path'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 
-test({ name: 'docs route - renders explorer without a selected file' }, async () => {
-  const testDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-empty-'))
+/** Where a request lands: the redirect's location, or the status when it is no redirect. */
+async function landing(app: ReturnType<typeof createTestHttpApp>, url: string): Promise<string> {
+  const response = await app.request(`http://localhost${url}`, { redirect: 'manual' })
+  return response.status === 302 ? (response.headers.get('location') ?? '') : String(response.status)
+}
+
+test({ name: 'docs route - the file pages of old redirect into the explorer' }, async () => {
+  const testDir = await mkdtemp(path.join(os.tmpdir(), 'http-docs-redirect-'))
   const notesDir = path.join(testDir, 'notes')
   await mkdir(notesDir, { recursive: true })
+  await writeFile(path.join(notesDir, 'foo.md'), '# Foo\n')
 
   try {
     const app = createTestHttpApp([notesDir])
-    const response = await app.request('http://localhost/docs/')
-    const html = await response.text()
-
-    assert({
-      given: 'docs route without a selected file',
-      should: 'return 200',
-      actual: response.status,
-      expected: 200,
-    })
-
-    assert({
-      given: 'docs route without a selected file',
-      should: 'render the empty-state copy',
-      actual: html.includes('Select a markdown file from the explorer to preview it here.'),
-      expected: true,
-    })
-  } finally {
-    await rm(testDir, { recursive: true, force: true })
-  }
-})
-
-test('docs route - redirects query param form to path form', async () => {
-  const testDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-redirect-'))
-  const notesDir = path.join(testDir, 'notes')
-  await mkdir(notesDir, { recursive: true })
-
-  try {
-    const app = createTestHttpApp([notesDir])
-    const response = await app.request('http://localhost/docs?file=notes/foo.md&theme=night', {
-      redirect: 'manual',
-    })
-
-    assert({
-      given: 'docs route with file query param',
-      should: 'redirect to the path-based docs URL',
-      actual: response.headers.get('location'),
-      expected: '/docs/notes/foo.md?theme=night',
-    })
-  } finally {
-    await rm(testDir, { recursive: true, force: true })
-  }
-})
-
-test('legacy markdown preview route - redirects to docs route', async () => {
-  const testDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-legacy-'))
-  const notesDir = path.join(testDir, 'notes')
-  await mkdir(notesDir, { recursive: true })
-
-  try {
-    const app = createTestHttpApp([notesDir])
-    const response = await app.request('http://localhost/markdown/view/notes/foo.md?theme=night', {
-      redirect: 'manual',
-    })
-
-    assert({
-      given: 'legacy markdown preview route',
-      should: 'redirect to the docs route',
-      actual: response.headers.get('location'),
-      expected: '/docs/notes/foo.md?theme=night',
-    })
-  } finally {
-    await rm(testDir, { recursive: true, force: true })
-  }
-})
-
-test('docs route - rejects file outside configured markdown dirs', async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-root-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const outsideFile = path.join(notebookBaseDir, 'outside.md')
-    await mkdir(previewDir, { recursive: true })
-    await writeFile(outsideFile, '# Outside File\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/outside.md')
-    const text = await response.text()
-
-    assert({
-      given: 'docs route with file outside configured roots',
-      should: 'return 403',
-      actual: response.status,
-      expected: 403,
-    })
-
-    assert({
-      given: 'docs route with file outside configured roots',
-      should: 'explain the directory restriction',
-      actual: text,
-      expected: 'Requested file is outside configured markdown directories',
-    })
-  } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
-  }
-})
-
-test({ name: 'docs route - renders markdown in browser' }, async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-render-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const previewFile = path.join(previewDir, 'preview.md')
-    const projectDir = path.join(previewDir, 'projects')
-    const nestedMarkdownFile = path.join(projectDir, 'alpha.md')
-    await mkdir(previewDir, { recursive: true })
-    await mkdir(projectDir, { recursive: true })
-    await writeFile(
-      previewFile,
-      `---
-title: Preview Test
----
-
-# Preview Test
-
-This is **phase 1** browser rendering.
-`,
+    const landings = await Promise.all(
+      [
+        '/docs',
+        '/docs/',
+        '/docs?file=notes/foo.md&theme=night',
+        '/docs/notes/foo.md?mode=edit',
+        '/docs/notes/a%20b/c%26d.md',
+        '/markdown/view?file=notes/foo.md',
+        '/markdown/view/notes/foo.md?theme=night',
+      ].map((url) => landing(app, url)),
     )
-    await writeFile(nestedMarkdownFile, '# Alpha\n')
-    await writeFile(path.join(previewDir, 'todo.txt'), 'ignore me')
-    await writeFile(path.join(previewDir, '.hidden.md'), '# Hidden\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/notes/preview.md?theme=night')
-    const html = await response.text()
 
     assert({
-      given: 'preview route for a markdown file',
-      should: 'return 200',
-      actual: response.status,
-      expected: 200,
+      given:
+        'every form a file page once took — bare, by query, by path, the legacy /markdown/view — with its theme or mode',
+      should: 'redirect to the explorer page for that path, the path re-encoded and the options dropped',
+      actual: landings,
+      expected: [
+        '/explorer',
+        '/explorer',
+        '/explorer/notes/foo.md',
+        '/explorer/notes/foo.md',
+        '/explorer/notes/a%20b/c%26d.md',
+        '/explorer/notes/foo.md',
+        '/explorer/notes/foo.md',
+      ],
     })
 
+    const meta = await app.request('http://localhost/docs/_api/content/notes/foo.md?meta=1')
     assert({
-      given: 'preview route for a markdown file',
-      should: 'render the markdown heading as HTML',
-      actual: html.includes('<h1>Preview Test</h1>'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'show the notebook-relative path',
-      actual: html.includes('notes/preview.md'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file with frontmatter',
-      should: 'include a frontmatter section',
-      actual: html.includes('YAML frontmatter'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route with explorer enabled',
-      should: 'include the explorer shell',
-      actual: html.includes('Browse notebook markdown files and jump between them.'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route with nested markdown files',
-      should: 'include explorer links for nested markdown files',
-      actual: html.includes('/docs/notes/projects/alpha.md?theme=night'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route with the current file selected',
-      should: 'mark the current file in the explorer',
-      actual: html.includes('data-current="true"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'embed preview sync state',
-      actual: html.includes('id="preview-sync-state"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'embed the content api path for preview sync',
-      actual: html.includes('/docs/_api/content/notes/preview.md'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'render font size controls',
-      actual: html.includes('data-font-scale-action="increase"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'render the pdf export button',
-      actual: html.includes('data-pdf-export-path="/docs/_api/export-pdf/notes/preview.md?theme=night"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route for a markdown file',
-      should: 'render the custom context menu shell',
-      actual: html.includes('id="docs-context-menu"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'preview route with non-markdown files',
-      should: 'exclude them from the explorer',
-      actual: html.includes('todo.txt'),
-      expected: false,
-    })
-
-    assert({
-      given: 'preview route with hidden markdown files',
-      should: 'exclude them from the explorer',
-      actual: html.includes('.hidden.md'),
-      expected: false,
+      given: "the file's data API under /docs/_api",
+      should: 'still answer in place — the explorer and the editor read and save through it',
+      actual: [meta.status, ((await meta.json()) as { relativePath: string }).relativePath],
+      expected: [200, 'notes/foo.md'],
     })
   } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
-  }
-})
-
-test({ name: 'docs route - renders raw markdown editor in edit mode' }, async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const previewFile = path.join(previewDir, 'preview.md')
-    await mkdir(previewDir, { recursive: true })
-    await writeFile(previewFile, '# Editable\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/notes/preview.md?mode=edit')
-    const html = await response.text()
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render the block markdown editor',
-      actual: html.includes('id="block-markdown-editor-state"'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render the content API path into the page',
-      actual: html.includes('/docs/_api/content/notes/preview.md'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render the document API path into the page',
-      actual: html.includes('/docs/_api/document/notes/preview.md'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render the block preview API path into the page',
-      actual: html.includes('/docs/_api/render-block'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render the rendered block editor label',
-      actual: html.includes('Rendered Blocks'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'render click-to-edit guidance',
-      actual: html.includes('Click any rendered block to edit it in place.'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode',
-      should: 'show the edit mode toggle as active',
-      actual: html.includes('href="/docs/notes/preview.md?mode=edit"'),
-      expected: true,
-    })
-  } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
-  }
-})
-
-test({ name: 'docs route - renders frontmatter only once in edit mode' }, async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-frontmatter-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const previewFile = path.join(previewDir, 'preview.md')
-    await mkdir(previewDir, { recursive: true })
-    await writeFile(previewFile, '---\ntitle: Preview\n---\n\n# Editable\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/notes/preview.md?mode=edit')
-    const html = await response.text()
-
-    assert({
-      given: 'docs route in edit mode with frontmatter',
-      should: 'render the standalone frontmatter panel',
-      actual: html.includes('YAML frontmatter'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode with frontmatter',
-      should: 'omit the frontmatter block from the editor block list',
-      actual: html.includes('data-cid="frontmatter"'),
-      expected: false,
-    })
-  } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
-  }
-})
-
-test({ name: 'docs route - renders thematic breaks without raw block chrome in edit mode' }, async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-edit-hr-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const previewFile = path.join(previewDir, 'preview.md')
-    await mkdir(previewDir, { recursive: true })
-    await writeFile(previewFile, '# Before\n\n---\n\n# After\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/notes/preview.md?mode=edit')
-    const html = await response.text()
-
-    assert({
-      given: 'docs route in edit mode with a thematic break',
-      should: 'render the horizontal rule preview',
-      actual: html.includes('<hr>'),
-      expected: true,
-    })
-
-    assert({
-      given: 'docs route in edit mode with a thematic break',
-      should: 'omit the raw preserved-block header for the hr block',
-      actual: html.includes('<p class="editable-block-label">Thematic Break</p>'),
-      expected: false,
-    })
-  } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
+    await rm(testDir, { recursive: true, force: true })
   }
 })

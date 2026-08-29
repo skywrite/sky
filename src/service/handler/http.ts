@@ -15,19 +15,15 @@ import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
-import { createExplorerRoutes } from './explorer/mod.ts'
+import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
   buildMarkdownDocumentEditorState,
-  buildMarkdownPreviewPath,
   exportMarkdownPreviewPdf,
   MarkdownSaveConflictError,
   readMarkdownContent,
-  renderMarkdownPreviewDocument,
-  resolveMarkdownPreviewMode,
   resolveMarkdownPreviewRequest,
-  resolveMarkdownPreviewTheme,
   saveMarkdownContent,
 } from './markdown-preview/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
@@ -165,50 +161,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.json(jsend.success({ message: 'Future home for info' }))
   })
 
-  async function handleMarkdownPreview(
-    fileParam: string | undefined,
-    themeParam: string | undefined,
-    modeParam: string | undefined,
-  ): Promise<Response> {
-    if (!fileParam) {
-      const html = await renderMarkdownPreviewDocument(null, {
-        markdownBaseDir,
-        markdownDirs,
-        defaultTheme: resolveMarkdownPreviewTheme(themeParam),
-        mode: resolveMarkdownPreviewMode(modeParam),
-      })
-      return new Response(html, {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=UTF-8' },
-      })
-    }
-
-    const previewRequest = resolveMarkdownPreviewRequest(fileParam, themeParam, markdownBaseDir, markdownDirs)
-    if (!previewRequest.ok) {
-      return new Response(previewRequest.message, { status: previewRequest.status })
-    }
-
-    try {
-      const html = await renderMarkdownPreviewDocument(previewRequest.value, {
-        markdownBaseDir,
-        markdownDirs,
-        mode: resolveMarkdownPreviewMode(modeParam),
-      })
-      return new Response(html, {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=UTF-8' },
-      })
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException
-      if (error?.code === 'ENOENT') {
-        return new Response('Markdown file not found', { status: 404 })
-      }
-
-      const message = err instanceof Error ? err.message : String(err)
-      return new Response(`Failed to render markdown preview: ${message}`, { status: 500 })
-    }
-  }
-
+  // The file's data API. The file pages themselves are the explorer's; see below.
   app.get('/docs/_api/content/*', async (c) => {
     const fileParam = decodeRoutePath(c.req.url, '/docs/_api/content/')
     const previewRequest = resolveMarkdownPreviewRequest(fileParam, undefined, markdownBaseDir, markdownDirs)
@@ -395,46 +348,21 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     }
   })
 
-  app.get('/docs', async (c) => {
-    const fileParam = c.req.query('file')
-    const themeParam = c.req.query('theme')
-    if (fileParam) {
-      return c.redirect(
-        buildMarkdownPreviewPath(fileParam, {
-          theme: themeParam,
-          mode: resolveMarkdownPreviewMode(c.req.query('mode')),
-        }),
-        302,
-      )
-    }
-
-    return await handleMarkdownPreview(undefined, themeParam, c.req.query('mode'))
+  // The file pages of old — /docs/<file>, and /markdown/view before it — live on in the explorer.
+  app.get('/docs', (c) => {
+    return c.redirect(explorerHref(c.req.query('file') ?? ''), 302)
   })
 
-  app.get('/docs/*', async (c) => {
-    const fileParam = decodeRoutePath(c.req.url, '/docs/')
-
-    return await handleMarkdownPreview(fileParam, c.req.query('theme'), c.req.query('mode'))
+  app.get('/docs/*', (c) => {
+    return c.redirect(explorerHref(decodeRoutePath(c.req.url, '/docs/') ?? ''), 302)
   })
 
   app.get('/markdown/view', (c) => {
-    return c.redirect(
-      buildMarkdownPreviewPath(c.req.query('file') ?? '', {
-        theme: c.req.query('theme'),
-        mode: resolveMarkdownPreviewMode(c.req.query('mode')),
-      }),
-      302,
-    )
+    return c.redirect(explorerHref(c.req.query('file') ?? ''), 302)
   })
 
   app.get('/markdown/view/*', (c) => {
-    return c.redirect(
-      buildMarkdownPreviewPath(decodeRoutePath(c.req.url, '/markdown/view/') ?? '', {
-        theme: c.req.query('theme'),
-        mode: resolveMarkdownPreviewMode(c.req.query('mode')),
-      }),
-      302,
-    )
+    return c.redirect(explorerHref(decodeRoutePath(c.req.url, '/markdown/view/') ?? ''), 302)
   })
 
   // The app shell (Mantine on the sky theme; client bundled by Bun at first request).

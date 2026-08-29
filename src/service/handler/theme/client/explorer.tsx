@@ -1,10 +1,17 @@
 import { ActionIcon, Button, Menu } from '@mantine/core'
-import { type CSSProperties, Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, Fragment, type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type BlockEditorHandle,
+  type BlockEditorStatusKind,
+  type EditableBlock,
+  mountBlockEditor,
+} from './blockEditor.ts'
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
  * opened, never the whole notebook at once — and the column is the file
- * open in it, rendered to read. A file's page is its path: /explorer/<path>.
+ * open in it: rendered to read, or, after Edit, as blocks to change in
+ * place. A file's page is its path: /explorer/<path>.
  */
 
 export interface ExplorerEntry {
@@ -223,10 +230,12 @@ const POLL_MS = 4000
  * The file, read once and re-read whenever it changes on disk — a save from
  * the terminal or another session shows up here within seconds, in place.
  */
-function useDoc(file: string): { doc: ExplorerDoc | null; missing: boolean } {
+function useDoc(file: string, paused: boolean): { doc: ExplorerDoc | null; missing: boolean } {
   const [doc, setDoc] = useState<ExplorerDoc | null>(null)
   const [missing, setMissing] = useState(false)
   useEffect(() => {
+    // While the editor has the file it does the watching; when it hands back, this reads afresh.
+    if (paused) return
     setMissing(false)
     if (!file) {
       setDoc(null)
@@ -269,7 +278,7 @@ function useDoc(file: string): { doc: ExplorerDoc | null; missing: boolean } {
       alive = false
       window.clearInterval(timer)
     }
-  }, [file])
+  }, [file, paused])
   return { doc, missing }
 }
 
@@ -317,11 +326,83 @@ function useNote(): [string | null, (text: string | null, holdMs?: number) => vo
   return [note, say]
 }
 
+type EditorStatus = { kind: BlockEditorStatusKind | 'loading'; text: string }
+
+/**
+ * The block editor, mounted into the column for one file: read as blocks
+ * once, then its own DOM until the file changes or editing ends. What it
+ * reports — status, a conflict — goes up to the header through the hooks.
+ */
+function Editor({
+  file,
+  handle,
+  onStatus,
+  onConflict,
+}: {
+  file: string
+  handle: RefObject<BlockEditorHandle | null>
+  onStatus: (status: EditorStatus) => void
+  onConflict: (visible: boolean) => void
+}) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    let alive = true
+    let mounted: BlockEditorHandle | null = null
+    onStatus({ kind: 'loading', text: 'Opening…' })
+    onConflict(false)
+    void (async () => {
+      try {
+        const r = await fetch(`/docs/_api/document/${encodeSegments(file)}`)
+        const body = (await r.json()) as {
+          message?: string
+          content: string
+          version: number
+          frontmatter: string
+          blocks: EditableBlock[]
+        }
+        if (!r.ok) throw new Error(body.message ?? 'Could not open the file to edit')
+        if (!alive) return
+        mounted = mountBlockEditor(
+          root,
+          {
+            apiPath: `/docs/_api/content/${encodeSegments(file)}`,
+            documentApiPath: `/docs/_api/document/${encodeSegments(file)}`,
+            renderBlockApiPath: '/docs/_api/render-block',
+            initialContent: body.content,
+            initialVersion: body.version,
+            frontmatter: body.frontmatter,
+            blocks: body.blocks,
+          },
+          { onStatus: (kind, text) => onStatus({ kind, text }), onConflict },
+        )
+        handle.current = mounted
+      } catch (err) {
+        if (alive)
+          onStatus({ kind: 'error', text: err instanceof Error ? err.message : 'Could not open the file to edit' })
+      }
+    })()
+    return () => {
+      alive = false
+      handle.current = null
+      mounted?.destroy()
+    }
+  }, [file, handle, onStatus, onConflict])
+  return <div className="sky-editor" ref={rootRef} />
+}
+
 export function DocView({ file }: { file: string }) {
-  const { doc, missing } = useDoc(file)
+  // Editing is per file — turning the page ends it.
+  const [editingFile, setEditingFile] = useState<string | null>(null)
+  const editing = file !== '' && editingFile === file
+  const { doc, missing } = useDoc(file, editing)
   const [scale, setScale] = useDocScale()
   const [note, say] = useNote()
   const [exporting, setExporting] = useState(false)
+  const [status, setStatus] = useState<EditorStatus | null>(null)
+  const [conflict, setConflict] = useState(false)
+  const editor = useRef<BlockEditorHandle | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
@@ -375,11 +456,31 @@ export function DocView({ file }: { file: string }) {
         )}
         {file && !missing && (
           <nav className="sky-tabs">
+            {editing && status && (
+              <span className="sky-head-count" data-state={status.kind}>
+                {status.text}
+              </span>
+            )}
             {note && <span className="sky-head-count">{note}</span>}
-            {/* Editing still happens on the block editor's own page, until it moves in here. */}
-            <Button size="sm" component="a" href={`/docs/${encodeSegments(file)}?mode=edit`}>
-              Edit
-            </Button>
+            {editing && conflict && (
+              <>
+                <Button size="sm" variant="light" onClick={() => editor.current?.reload()}>
+                  Reload disk version
+                </Button>
+                <Button size="sm" variant="light" color="red" onClick={() => editor.current?.overwrite()}>
+                  Overwrite disk version
+                </Button>
+              </>
+            )}
+            {editing ? (
+              <Button size="sm" onClick={() => setEditingFile(null)}>
+                Done
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setEditingFile(file)}>
+                Edit
+              </Button>
+            )}
             <Menu position="bottom-end" shadow="md" width={220}>
               <Menu.Target>
                 <ActionIcon size="lg" aria-label="More">
@@ -429,6 +530,10 @@ export function DocView({ file }: { file: string }) {
               There is no file at <code>{file}</code>.
             </p>
           </div>
+        ) : editing ? (
+          <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
+            <Editor file={file} handle={editor} onStatus={setStatus} onConflict={setConflict} />
+          </article>
         ) : doc ? (
           <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
             {doc.frontmatter && (

@@ -159,3 +159,9 @@ export function createExplorerRoutes(options: ExplorerRoutesOptions): Hono {
 
   return app
 }
+
+/** The explorer page for a notebook path: `/explorer`, or `/explorer/<path>` with each segment encoded. */
+export function explorerHref(relativePath: string): string {
+  const trimmed = relativePath.trim().replace(/^\/+/, '').replace(/\/+$/, '')
+  return trimmed ? `/explorer/${trimmed.split('/').map(encodeURIComponent).join('/')}` : '/explorer'
+}

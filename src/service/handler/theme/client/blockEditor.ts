@@ -1,8 +1,19 @@
-import React from 'react'
-import { buildMarkdownPreviewPath } from '../request.ts'
-import type { MarkdownPreviewTheme } from '../types.ts'
+// @ts-nocheck
+// The block editor as it was: the old /docs page's inline script, moved here whole and typed at
+// its seam only. The redo replaces it; until then it reads as the vanilla JS it is.
 
-export interface EditableBlockDescriptor {
+/**
+ * The block editor, in the column. A file is its blocks — paragraphs, headings, lists and
+ * quotes edited in place as rendered text, everything else (fences, tables, raw HTML) as its
+ * markdown in a textarea — and a save rewrites only the edited block's source range. It
+ * autosaves after a second's idle, watches the file for outside changes, and on a conflict
+ * offers the disk version or an overwrite.
+ *
+ * `mountBlockEditor` renders into `root` and owns everything inside it; the page keeps the
+ * chrome — status, the conflict choice, done — and drives it through the handle and hooks.
+ */
+
+export interface EditableBlock {
   cid: string
   type: string
   label: string
@@ -15,30 +26,47 @@ export interface EditableBlockDescriptor {
   listItemCursorMaps?: number[][]
 }
 
-interface BlockMarkdownEditorProps {
-  relativePath: string
-  theme: MarkdownPreviewTheme
+export interface BlockEditorState {
+  /** GET reads the file (`?meta=1` its version alone); PUT saves it */
+  apiPath: string
+  /** GET rebuilds the blocks — after a reload, or a save that changed how many there are */
+  documentApiPath: string
+  /** POST { type, raw } renders one block to HTML */
+  renderBlockApiPath: string
   initialContent: string
   initialVersion: number
-  apiPath: string
-  documentApiPath: string
-  renderBlockApiPath: string
-  blocks: EditableBlockDescriptor[]
+  frontmatter: string
+  blocks: EditableBlock[]
 }
 
-export const EDITOR_SCRIPT = `
-const stateNode = document.getElementById('block-markdown-editor-state')
-const statusNode = document.getElementById('editor-status')
-const reloadDiskButton = document.getElementById('editor-reload-page')
-const overwriteDiskButton = document.getElementById('editor-overwrite-page')
+export type BlockEditorStatusKind = 'saved' | 'dirty' | 'saving' | 'conflict' | 'error'
 
-if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
-  const state = JSON.parse(stateNode.textContent || '{}')
+export interface BlockEditorHooks {
+  /** Where the document stands: saved, unsaved, saving, changed on disk, failed */
+  onStatus(kind: BlockEditorStatusKind, text: string): void
+  /** Whether the reload-or-overwrite choice is on the table */
+  onConflict(visible: boolean): void
+}
+
+export interface BlockEditorHandle {
+  /** Drop what is here and read the disk again */
+  reload(): void
+  /** Save the open block over whatever is on disk */
+  overwrite(): void
+  /** Save an open, changed block on the way out, then let go of the document and its timers */
+  destroy(): void
+}
+
+export function mountBlockEditor(
+  root: HTMLElement,
+  state: BlockEditorState,
+  hooks: BlockEditorHooks,
+): BlockEditorHandle {
   let blockOrder = state.blocks.map((block) => block.cid)
   let blockMap = new Map(state.blocks.map((block) => [block.cid, { ...block }]))
   let currentContent = state.initialContent
   let currentVersion = state.initialVersion
-  let currentFrontmatter = document.getElementById('frontmatter-content')?.textContent || ''
+  let currentFrontmatter = state.frontmatter || ''
   let activeCid = null
   let dirty = false
   let saving = false
@@ -48,28 +76,27 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   const pollIntervalMs = 4000
 
   function setStatus(kind, text) {
-    statusNode.textContent = text
-    statusNode.dataset.state = kind
+    hooks.onStatus(kind, text)
   }
 
   function setOverwriteVisible(visible) {
-    overwriteDiskButton.hidden = !visible
+    hooks.onConflict(visible)
   }
 
   function getBlockList() {
-    return document.getElementById('editable-block-list')
+    return root.querySelector('.editable-block-list')
   }
 
   function getFrontmatterPanel() {
-    return document.getElementById('frontmatter-panel')
+    return root.querySelector('.sky-doc-meta')
   }
 
   function getFrontmatterContent() {
-    return document.getElementById('frontmatter-content')
+    return root.querySelector('.sky-doc-meta pre')
   }
 
   function getBlockShell(cid) {
-    return document.querySelector('.editable-block[data-cid="' + cid + '"]')
+    return root.querySelector('.editable-block[data-cid="' + cid + '"]')
   }
 
   function getTextarea(cid) {
@@ -140,52 +167,55 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     const chromeless = isChromelessBlock(block)
     const interactive = isInteractiveBlock(block)
 
-    return \`
+    return `
       <section
-        id="\${escapeHtml(block.cid)}"
+        id="${escapeHtml(block.cid)}"
         class="editable-block"
-        data-cid="\${escapeHtml(block.cid)}"
+        data-cid="${escapeHtml(block.cid)}"
         data-active="false"
-        data-protected="\${block.protected ? 'true' : 'false'}"
-        data-visual="\${visual ? 'true' : 'false'}"
-        data-chromeless="\${chromeless ? 'true' : 'false'}"
-        data-interactive="\${interactive ? 'true' : 'false'}"
+        data-protected="${block.protected ? 'true' : 'false'}"
+        data-visual="${visual ? 'true' : 'false'}"
+        data-chromeless="${chromeless ? 'true' : 'false'}"
+        data-interactive="${interactive ? 'true' : 'false'}"
       >
-        \${!chromeless
-          ? \`<div class="editable-block-header">
+        ${
+          !chromeless
+            ? `<div class="editable-block-header">
               <div>
-                <p class="editable-block-label">\${escapeHtml(block.label)}</p>
+                <p class="editable-block-label">${escapeHtml(block.label)}</p>
                 <p class="editable-block-meta">Raw-preserved block</p>
               </div>
-            </div>\`
-          : ''}
+            </div>`
+            : ''
+        }
         <div
           class="editable-block-preview-shell"
           data-editing="false"
-          \${interactive ? 'role="button" tabindex="0"' : ''}
+          ${interactive ? 'role="button" tabindex="0"' : ''}
         >
-          <article class="editable-block-preview markdown-body">\${block.previewHtml}</article>
+          <article class="editable-block-preview sky-doc-body">${block.previewHtml}</article>
         </div>
-        \${visual || !interactive
-          ? '<div class="editable-block-form" hidden></div>'
-          : \`<div class="editable-block-form" hidden>
+        ${
+          visual || !interactive
+            ? '<div class="editable-block-form" hidden></div>'
+            : `<div class="editable-block-form" hidden>
               <textarea
                 class="editable-block-textarea"
-                data-cid="\${escapeHtml(block.cid)}"
+                data-cid="${escapeHtml(block.cid)}"
                 spellcheck="false"
-                aria-label="\${escapeHtml(block.label)} markdown"
-              >\${escapeHtml(block.raw)}</textarea>
+                aria-label="${escapeHtml(block.label)} markdown"
+              >${escapeHtml(block.raw)}</textarea>
               <div class="editable-block-actions">
-                <button class="editor-action-button editable-block-save" type="button" data-cid="\${escapeHtml(block.cid)}">
+                <button class="editor-action-button editable-block-save" type="button" data-cid="${escapeHtml(block.cid)}">
                   Save now
                 </button>
-                <button class="editor-action-button editable-block-cancel" type="button" data-cid="\${escapeHtml(block.cid)}">
+                <button class="editor-action-button editable-block-cancel" type="button" data-cid="${escapeHtml(block.cid)}">
                   Revert
                 </button>
-                <button class="editor-action-button editable-block-reload" type="button" data-cid="\${escapeHtml(block.cid)}" hidden>
+                <button class="editor-action-button editable-block-reload" type="button" data-cid="${escapeHtml(block.cid)}" hidden>
                   Reload disk version
                 </button>
-                <button class="editor-action-button editable-block-overwrite" type="button" data-cid="\${escapeHtml(block.cid)}" hidden>
+                <button class="editor-action-button editable-block-overwrite" type="button" data-cid="${escapeHtml(block.cid)}" hidden>
                   Overwrite disk version
                 </button>
               </div>
@@ -193,9 +223,10 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
                 Only this block&apos;s source range is rewritten. Press <kbd>Cmd/Ctrl+S</kbd>
                 to save immediately or <kbd>Esc</kbd> to revert.
               </p>
-            </div>\`}
+            </div>`
+        }
       </section>
-    \`
+    `
   }
 
   function renderBlockListHtml(blocks) {
@@ -214,21 +245,14 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     if (!panel || !content) {
-      const editorShell = document.querySelector('.editor-shell')
-      if (!editorShell || !editorShell.parentNode) {
-        return
-      }
-
       panel = document.createElement('details')
-      panel.id = 'frontmatter-panel'
-      panel.className = 'frontmatter'
+      panel.className = 'sky-doc-meta'
       const summary = document.createElement('summary')
-      summary.textContent = 'YAML frontmatter'
+      summary.textContent = 'Frontmatter'
       content = document.createElement('pre')
-      content.id = 'frontmatter-content'
       panel.appendChild(summary)
       panel.appendChild(content)
-      editorShell.parentNode.insertBefore(panel, editorShell)
+      root.insertBefore(panel, root.firstChild)
     }
 
     content.textContent = frontmatter
@@ -281,12 +305,12 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   }
 
   function preferredCursorOffset(raw) {
-    const trimmedLength = raw.replace(/[\\s\\u00a0]+$/u, '').length
+    const trimmedLength = raw.replace(/[\s\u00a0]+$/u, '').length
     return trimmedLength > 0 ? trimmedLength : 0
   }
 
   function findVisibleTextCursorOffset(raw, textOffset, blockPrefixPattern) {
-    const lines = raw.split('\\n')
+    const lines = raw.split('\n')
     let remaining = textOffset
     let offset = 0
 
@@ -311,20 +335,20 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   }
 
   function findHeadingCursorOffset(raw, textOffset) {
-    const firstLine = raw.split('\\n')[0] || ''
-    const prefixMatch = firstLine.match(/^(\\s*#{1,6}\\s+)/)
+    const firstLine = raw.split('\n')[0] || ''
+    const prefixMatch = firstLine.match(/^(\s*#{1,6}\s+)/)
     const prefixLength = prefixMatch ? prefixMatch[0].length : 0
     return prefixLength + Math.min(textOffset, Math.max(firstLine.length - prefixLength, 0))
   }
 
   function findListItemCursorOffset(raw, listItemIndex, textOffset) {
-    const lines = raw.split('\\n')
+    const lines = raw.split('\n')
     let currentIndex = 0
     let offset = 0
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
       const line = lines[lineIndex]
-      const markerMatch = line.match(/^(\\s*)(?:[-+*]|\\d+[.)])(?:\\s+\\[[ xX]\\])?\\s+/)
+      const markerMatch = line.match(/^(\s*)(?:[-+*]|\d+[.)])(?:\s+\[[ xX]\])?\s+/)
       if (markerMatch) {
         if (currentIndex === listItemIndex) {
           const markerLength = markerMatch[0].length
@@ -376,7 +400,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
         case 'paragraph':
           return findVisibleTextCursorOffset(block.raw, clickContext.textOffset, null)
         case 'blockquote':
-          return findVisibleTextCursorOffset(block.raw, clickContext.textOffset, /^(\\s*>+\\s*)/)
+          return findVisibleTextCursorOffset(block.raw, clickContext.textOffset, /^(\s*>+\s*)/)
       }
     }
 
@@ -435,9 +459,8 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     const textContainer = targetElement.closest('li, p, h1, h2, h3, h4, h5, h6')
-    const textOffset = textContainer && previewArticle.contains(textContainer)
-      ? getTextOffsetWithinElement(textContainer, event)
-      : null
+    const textOffset =
+      textContainer && previewArticle.contains(textContainer) ? getTextOffsetWithinElement(textContainer, event) : null
 
     const listItem = targetElement.closest('li')
     if (listItem && previewArticle.contains(listItem)) {
@@ -745,8 +768,10 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   function isRangeEquivalentToElementContents(range, element) {
     const elementRange = element.ownerDocument.createRange()
     elementRange.selectNodeContents(element)
-    return range.compareBoundaryPoints(Range.START_TO_START, elementRange) === 0 &&
+    return (
+      range.compareBoundaryPoints(Range.START_TO_START, elementRange) === 0 &&
       range.compareBoundaryPoints(Range.END_TO_END, elementRange) === 0
+    )
   }
 
   function hasMeaningfulChildNodes(fragment) {
@@ -1088,7 +1113,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     const prefixText = normalizeText(prefixRange.toString()).trim()
     const suffixText = normalizeText(suffixRange.toString()).trim()
 
-    if (!/^(-{3,}|\\*{3,}|_{3,})$/.test(fullText)) {
+    if (!/^(-{3,}|\*{3,}|_{3,})$/.test(fullText)) {
       return false
     }
 
@@ -1119,7 +1144,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     const fullText = normalizeText(firstElement.textContent || '')
-    const match = fullText.match(/^\\[( |x|X)\\]\\s+([\\s\\S]*)$/)
+    const match = fullText.match(/^\[( |x|X)\]\s+([\s\S]*)$/)
     if (!match) {
       return false
     }
@@ -1174,10 +1199,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
 
   function getDirectCheckboxInput(li) {
     const candidate = li.firstElementChild
-    if (
-      candidate instanceof HTMLInputElement &&
-      candidate.getAttribute('type') === 'checkbox'
-    ) {
+    if (candidate instanceof HTMLInputElement && candidate.getAttribute('type') === 'checkbox') {
       return candidate
     }
 
@@ -1267,7 +1289,9 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     let currentList = list
-    let lastItem = Array.from(currentList.children).filter((child) => child.tagName === 'LI').at(-1)
+    let lastItem = Array.from(currentList.children)
+      .filter((child) => child.tagName === 'LI')
+      .at(-1)
 
     while (lastItem instanceof HTMLElement) {
       const nestedList = Array.from(lastItem.children)
@@ -1279,7 +1303,9 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       }
 
       currentList = nestedList
-      lastItem = Array.from(currentList.children).filter((child) => child.tagName === 'LI').at(-1)
+      lastItem = Array.from(currentList.children)
+        .filter((child) => child.tagName === 'LI')
+        .at(-1)
     }
 
     return null
@@ -1374,7 +1400,9 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       return false
     }
 
-    const nestedLists = Array.from(listItem.children).filter((child) => child.tagName === 'UL' || child.tagName === 'OL')
+    const nestedLists = Array.from(listItem.children).filter(
+      (child) => child.tagName === 'UL' || child.tagName === 'OL',
+    )
     const insertionPoint = listItem.nextSibling
     nestedLists.forEach((nestedList) => {
       Array.from(nestedList.children)
@@ -1838,9 +1866,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   }
 
   function normalizeText(text) {
-    return text
-      .replace(/\\u00a0/g, ' ')
-      .replace(/[\\u200b\\u200c\\u200d\\ufeff]/g, '')
+    return text.replace(/\u00a0/g, ' ').replace(/[\u200b\u200c\u200d\ufeff]/g, '')
   }
 
   function sanitizeUrl(value) {
@@ -1868,7 +1894,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
 
   function createMultilineParagraph(documentRef, text) {
     const paragraph = documentRef.createElement('p')
-    const lines = normalizeText(text).replace(/\\r\\n?/g, '\\n').split('\\n')
+    const lines = normalizeText(text).replace(/\r\n?/g, '\n').split('\n')
 
     lines.forEach((line, index) => {
       if (index > 0) {
@@ -1885,9 +1911,13 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     const rows = Array.from(table.querySelectorAll('tr'))
       .map((row) =>
         Array.from(row.querySelectorAll('th, td'))
-          .map((cell) => normalizeText(cell.textContent || '').replace(/\s+/g, ' ').trim())
+          .map((cell) =>
+            normalizeText(cell.textContent || '')
+              .replace(/\s+/g, ' ')
+              .trim(),
+          )
           .filter((cell) => cell.length > 0)
-          .join(' / ')
+          .join(' / '),
       )
       .filter((rowText) => rowText.length > 0)
 
@@ -1917,15 +1947,15 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
 
     const tag = node.tagName.toLowerCase()
 
-      switch (tag) {
-        case 'strong':
-        case 'b':
-        case 'em':
-        case 'i':
-        case 'u':
-        case 'del':
-        case 's':
-        case 'code':
+    switch (tag) {
+      case 'strong':
+      case 'b':
+      case 'em':
+      case 'i':
+      case 'u':
+      case 'del':
+      case 's':
+      case 'code':
       case 'p':
       case 'div':
       case 'blockquote':
@@ -2016,14 +2046,14 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   }
 
   function plainTextToHtml(text) {
-    const normalized = normalizeText(text).replace(/\\r\\n?/g, '\\n').trimEnd()
+    const normalized = normalizeText(text).replace(/\r\n?/g, '\n').trimEnd()
     if (!normalized) {
       return ''
     }
 
     return normalized
-      .split(/\\n{2,}/)
-      .map((paragraph) => '<p>' + paragraph.split('\\n').map(escapeHtmlForInsert).join('<br>') + '</p>')
+      .split(/\n{2,}/)
+      .map((paragraph) => '<p>' + paragraph.split('\n').map(escapeHtmlForInsert).join('<br>') + '</p>')
       .join('')
   }
 
@@ -2082,9 +2112,9 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   function escapeMarkdownText(text) {
     const tick = String.fromCharCode(96)
     return normalizeText(text)
-      .replace(/\\\\/g, '\\\\\\\\')
-      .replace(new RegExp(tick, 'g'), '\\\\' + tick)
-      .replace(/([*_{}\\[\\]])/g, '\\\\$1')
+      .replace(/\\/g, '\\\\')
+      .replace(new RegExp(tick, 'g'), '\\' + tick)
+      .replace(/([*_{}\[\]])/g, '\\$1')
   }
 
   function serializeCodeText(text) {
@@ -2130,17 +2160,17 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
           return
         case 'a': {
           const href = node.getAttribute('href') || ''
-          output += '[' + serializeInlineNodes(node.childNodes) + '](' + href.replace(/\\)/g, '\\\\)') + ')'
+          output += '[' + serializeInlineNodes(node.childNodes) + '](' + href.replace(/\)/g, '\\)') + ')'
           return
         }
         case 'img': {
           const src = node.getAttribute('src') || ''
           const alt = node.getAttribute('alt') || ''
-          output += '![' + escapeMarkdownText(alt) + '](' + src.replace(/\\)/g, '\\\\)') + ')'
+          output += '![' + escapeMarkdownText(alt) + '](' + src.replace(/\)/g, '\\)') + ')'
           return
         }
         case 'br':
-          output += '\\n'
+          output += '\n'
           return
         case 'input':
           return
@@ -2207,7 +2237,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       parts.push(serialized)
     })
 
-    return parts.join('\\n\\n')
+    return parts.join('\n\n')
   }
 
   function serializeBlockquote(blockquote, depth) {
@@ -2216,7 +2246,10 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       return '>'
     }
 
-    return inner.split('\\n').map((line) => line.length > 0 ? '> ' + line : '>').join('\\n')
+    return inner
+      .split('\n')
+      .map((line) => (line.length > 0 ? '> ' + line : '>'))
+      .join('\n')
   }
 
   function serializeListItem(li, ordered, index, depth) {
@@ -2251,7 +2284,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       }
     })
 
-    return lines.join('\\n')
+    return lines.join('\n')
   }
 
   function serializeList(listElement, depth) {
@@ -2259,35 +2292,33 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     return Array.from(listElement.children)
       .filter((node) => node instanceof HTMLElement && node.tagName === 'LI')
       .map((li, index) => serializeListItem(li, ordered, index, depth))
-      .join('\\n')
+      .join('\n')
   }
 
   function normalizeSerializedMarkdown(markdown) {
     return markdown
-      .replace(/\\r\\n?/g, '\\n')
-      .split('\\n')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
       .map((line) => {
-        if (/^[ \\t]+$/.test(line)) {
+        if (/^[ \t]+$/.test(line)) {
           return ''
         }
-        return line.replace(/[ \\t]+$/g, '')
+        return line.replace(/[ \t]+$/g, '')
       })
-      .join('\\n')
+      .join('\n')
   }
 
   function serializeVisualBlock(block, previewArticle) {
     const markdown = normalizeSerializedMarkdown(serializeBlockChildren(previewArticle, 0)).trimEnd()
-    return markdown.length > 0 ? markdown + '\\n' : '\\n'
+    return markdown.length > 0 ? markdown + '\n' : '\n'
   }
 
   function normalizeVisualSaveRaw(raw) {
-    return raw
-      .replace(/\\r\\n?/g, '\\n')
-      .replace(/\\n[ \\t]+\\n/g, '\\n\\n')
+    return raw.replace(/\r\n?/g, '\n').replace(/\n[ \t]+\n/g, '\n\n')
   }
 
   function normalizeVisualSaveSuffix(suffix) {
-    return suffix.replace(/^[^\\S\\n]+\\n/, '')
+    return suffix.replace(/^[^\S\n]+\n/, '')
   }
 
   function applySavedBlock(block, nextRaw, previewHtml) {
@@ -2309,7 +2340,10 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     const previewArticle = getPreviewArticle(block.cid)
-    if (previewArticle && !(activeCid === block.cid && isVisualBlock(block) && previewArticle.contentEditable === 'true')) {
+    if (
+      previewArticle &&
+      !(activeCid === block.cid && isVisualBlock(block) && previewArticle.contentEditable === 'true')
+    ) {
       previewArticle.innerHTML = previewHtml
     }
   }
@@ -2327,9 +2361,8 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       block.type = normalizeVisualBlockType(previewArticle)
     }
 
-    const shouldRefreshDocument = isVisualBlock(block) && previewArticle
-      ? countTopLevelBlockElements(previewArticle) > 1
-      : false
+    const shouldRefreshDocument =
+      isVisualBlock(block) && previewArticle ? countTopLevelBlockElements(previewArticle) > 1 : false
 
     const visualBlock = isVisualBlock(block) && previewArticle
     const rawFromEditor = visualBlock ? serializeVisualBlock(block, previewArticle) : textarea?.value
@@ -2392,7 +2425,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     } catch (error) {
       pendingCloseCid = null
       const message = error instanceof Error ? error.message : 'Failed to save markdown document'
-      setStatus('error', dirty ? (message + ' Retrying…') : message)
+      setStatus('error', dirty ? message + ' Retrying…' : message)
       if (dirty && activeCid === cid) {
         scheduleSave(2000)
       }
@@ -2403,7 +2436,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
   }
 
   function attachBlockEventHandlers() {
-    document.querySelectorAll('.editable-block-preview-shell').forEach((preview) => {
+    root.querySelectorAll('.editable-block-preview-shell').forEach((preview) => {
       preview.addEventListener('click', (event) => {
         const shell = preview.closest('.editable-block')
         if (!shell) return
@@ -2432,7 +2465,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       })
     })
 
-    document.querySelectorAll('.editable-block-cancel').forEach((button) => {
+    root.querySelectorAll('.editable-block-cancel').forEach((button) => {
       button.addEventListener('click', () => {
         if (dirty && !window.confirm('Discard unsaved changes in this block?')) {
           return
@@ -2447,25 +2480,25 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       })
     })
 
-    document.querySelectorAll('.editable-block-save').forEach((button) => {
+    root.querySelectorAll('.editable-block-save').forEach((button) => {
       button.addEventListener('click', () => {
         void saveActiveBlock(false)
       })
     })
 
-    document.querySelectorAll('.editable-block-reload').forEach((button) => {
+    root.querySelectorAll('.editable-block-reload').forEach((button) => {
       button.addEventListener('click', () => {
         void reloadDocumentState('Reloaded disk version')
       })
     })
 
-    document.querySelectorAll('.editable-block-overwrite').forEach((button) => {
+    root.querySelectorAll('.editable-block-overwrite').forEach((button) => {
       button.addEventListener('click', () => {
         void saveActiveBlock(true)
       })
     })
 
-    document.querySelectorAll('.editable-block-textarea').forEach((textarea) => {
+    root.querySelectorAll('.editable-block-textarea').forEach((textarea) => {
       textarea.addEventListener('input', () => {
         if (activeCid !== textarea.dataset.cid) return
         resizeTextarea(textarea)
@@ -2507,7 +2540,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
       })
     })
 
-    document.querySelectorAll('.editable-block-preview').forEach((article) => {
+    root.querySelectorAll('.editable-block-preview').forEach((article) => {
       article.addEventListener('input', () => {
         const shell = article.closest('.editable-block')
         if (!shell || activeCid !== shell.dataset.cid || shell.dataset.visual !== 'true') return
@@ -2608,8 +2641,8 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
           }
         }
 
-        const wantsUnderline = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey &&
-          event.key.toLowerCase() === 'u'
+        const wantsUnderline =
+          (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'u'
         if (wantsUnderline) {
           event.preventDefault()
           if (applyUnderlineShortcut(article)) {
@@ -2651,7 +2684,7 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
         try {
           const rendered = await renderPreviewHtml(
             'paragraph',
-            markdownInput.endsWith('\\n') ? markdownInput : (markdownInput + '\\n'),
+            markdownInput.endsWith('\n') ? markdownInput : markdownInput + '\n',
           )
           const sanitizedRendered = sanitizePastedHtml(rendered, article.ownerDocument)
           if (sanitizedRendered && insertHtmlAtSelection(article, sanitizedRendered)) {
@@ -2670,25 +2703,23 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     })
   }
 
+  // The first render: the blocks as shells, the frontmatter above them, the handlers on both.
+  const blockList = document.createElement('div')
+  blockList.className = 'editable-block-list'
+  blockList.innerHTML = renderBlockListHtml(state.blocks)
+  root.replaceChildren(blockList)
+  ensureFrontmatterPanel(currentFrontmatter)
   attachBlockEventHandlers()
 
-  reloadDiskButton.addEventListener('click', () => {
-    void reloadDocumentState('Reloaded disk version')
-  })
-
-  overwriteDiskButton.addEventListener('click', () => {
-    void saveActiveBlock(true)
-  })
-
-  document.addEventListener('keydown', (event) => {
+  const onKeydown = (event) => {
     const wantsSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's'
     if (!wantsSave) return
     if (!activeCid) return
     event.preventDefault()
     void saveActiveBlock(false)
-  })
+  }
 
-  document.addEventListener('selectionchange', () => {
+  const onSelectionChange = () => {
     if (!activeCid) {
       return
     }
@@ -2704,152 +2735,31 @@ if (stateNode && statusNode && reloadDiskButton && overwriteDiskButton) {
     }
 
     refreshInlineFocusMarkers(previewArticle)
-  })
+  }
+
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('selectionchange', onSelectionChange)
 
   setStatus('saved', 'Saved')
   setOverwriteVisible(false)
-  window.setInterval(() => {
+  const pollTimer = window.setInterval(() => {
     void pollForExternalChanges()
   }, pollIntervalMs)
-}
-`
 
-export function BlockMarkdownEditor(props: BlockMarkdownEditorProps) {
-  const { relativePath, theme, initialContent, initialVersion, apiPath, documentApiPath, renderBlockApiPath, blocks } =
-    props
-  const editorState = serializeEditorState({
-    apiPath,
-    documentApiPath,
-    renderBlockApiPath,
-    blocks,
-    initialContent,
-    initialVersion,
-  })
-
-  return (
-    <section className="editor-shell">
-      <div className="editor-toolbar">
-        <div className="editor-toolbar-copy">
-          <p className="editor-label">Rendered Blocks</p>
-          <p id="editor-status" className="editor-status" data-state="saved">
-            Saved
-          </p>
-          <p className="editable-block-help">
-            Click any rendered block to edit it in place. Autosaves after about 1 second of idle time.
-          </p>
-        </div>
-        <div className="editor-actions">
-          <a className="editor-action-link" href={buildMarkdownPreviewPath(relativePath, { theme, mode: 'preview' })}>
-            Preview
-          </a>
-          <button id="editor-reload-page" className="editor-action-button" type="button">
-            Reload disk version
-          </button>
-          <button id="editor-overwrite-page" className="editor-action-button" type="button" hidden>
-            Overwrite disk version
-          </button>
-        </div>
-      </div>
-
-      <div id="editable-block-list" className="editable-block-list">
-        {blocks.map((block) => {
-          const isVisual = !block.protected && ['paragraph', 'heading', 'blockquote', 'list'].includes(block.type)
-          const isChromeless =
-            !block.protected && ['paragraph', 'heading', 'blockquote', 'list', 'hr'].includes(block.type)
-          const isInteractive = isVisual || block.protected
-
-          return (
-            <section
-              key={block.cid}
-              id={block.cid}
-              className="editable-block"
-              data-cid={block.cid}
-              data-active="false"
-              data-protected={block.protected ? 'true' : 'false'}
-              data-visual={isVisual ? 'true' : 'false'}
-              data-chromeless={isChromeless ? 'true' : 'false'}
-              data-interactive={isInteractive ? 'true' : 'false'}
-            >
-              {!isChromeless ? (
-                <div className="editable-block-header">
-                  <div>
-                    <p className="editable-block-label">{block.label}</p>
-                    <p className="editable-block-meta">Raw-preserved block</p>
-                  </div>
-                </div>
-              ) : null}
-
-              <div
-                className="editable-block-preview-shell"
-                data-editing="false"
-                role={isInteractive ? 'button' : undefined}
-                tabIndex={isInteractive ? 0 : undefined}
-              >
-                <article
-                  className="editable-block-preview markdown-body"
-                  dangerouslySetInnerHTML={{ __html: block.previewHtml }}
-                />
-              </div>
-
-              {isVisual || !isInteractive ? (
-                <div className="editable-block-form" hidden />
-              ) : (
-                <div className="editable-block-form" hidden>
-                  <textarea
-                    className="editable-block-textarea"
-                    data-cid={block.cid}
-                    defaultValue={block.raw}
-                    spellCheck={false}
-                    aria-label={`${block.label} markdown`}
-                  />
-                  <div className="editable-block-actions">
-                    <button className="editor-action-button editable-block-save" type="button" data-cid={block.cid}>
-                      Save now
-                    </button>
-                    <button className="editor-action-button editable-block-cancel" type="button" data-cid={block.cid}>
-                      Revert
-                    </button>
-                    <button
-                      className="editor-action-button editable-block-reload"
-                      type="button"
-                      data-cid={block.cid}
-                      hidden
-                    >
-                      Reload disk version
-                    </button>
-                    <button
-                      className="editor-action-button editable-block-overwrite"
-                      type="button"
-                      data-cid={block.cid}
-                      hidden
-                    >
-                      Overwrite disk version
-                    </button>
-                  </div>
-                  <p className="editable-block-help">
-                    Only this block&apos;s source range is rewritten. Press <kbd>Cmd/Ctrl+S</kbd> to save immediately or{' '}
-                    <kbd>Esc</kbd> to revert.
-                  </p>
-                </div>
-              )}
-            </section>
-          )
-        })}
-      </div>
-
-      <script
-        id="block-markdown-editor-state"
-        type="application/json"
-        dangerouslySetInnerHTML={{ __html: editorState }}
-      />
-      <script type="module" dangerouslySetInnerHTML={{ __html: EDITOR_SCRIPT }} />
-    </section>
-  )
-}
-
-function serializeEditorState(value: unknown): string {
-  return JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
+  return {
+    reload() {
+      void reloadDocumentState('Reloaded disk version')
+    },
+    overwrite() {
+      void saveActiveBlock(true)
+    },
+    destroy() {
+      // Leaving mid-edit saves the open block, as leaving the block would have.
+      if (dirty && activeCid && !saving) void saveActiveBlock(false)
+      clearSaveTimer()
+      window.clearInterval(pollTimer)
+      document.removeEventListener('keydown', onKeydown)
+      document.removeEventListener('selectionchange', onSelectionChange)
+    },
+  }
 }

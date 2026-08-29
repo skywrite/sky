@@ -1,7 +1,6 @@
-// TODO: E2e tests fail under bun due to JSX runtime mismatch — Hono JSX elements
-// are passed to react-dom's renderToString which expects React elements.
-// Same root cause as http-docs-route_test.ts failures. The e2e tests are excluded
-// from bun test via --path-ignore-patterns. Fix the JSX runtime resolution to re-enable.
+// The block editor's end-to-end suite: a temp notebook, the app served on a free port, Brave
+// headless driving the explorer page. Left out of `dev:test:unit` (a real browser); run it with
+// `bun test service/handler/http-docs-editor-*-e2e_test.ts`.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
@@ -106,7 +105,9 @@ export async function runDocsEditorE2e(
 }
 
 export async function openDocsEditor(page: Page, origin: string) {
-  await page.goto(`${origin}/docs/notes/preview.md?mode=edit`)
+  await page.goto(`${origin}/explorer/notes/preview.md`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.waitForSelector('.editable-block')
 }
 
 export async function activateFirstEditableBlock(page: Page) {

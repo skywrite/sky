@@ -1,9 +1,25 @@
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import { renderBlockPreview } from './blockPreview.ts'
-import type { EditableBlockDescriptor } from './components/BlockMarkdownEditor.tsx'
 import { buildBlockCursorMaps } from './editor-core/cursorMap.ts'
 import type { EditorBlockNode } from './editor-core/model.ts'
 import { parseEditorDocument } from './editor-core/parse.ts'
+
+/**
+ * One block as the browser's block editor takes it: its source range in the
+ * file, its rendering, and where a click in the rendering lands in the markdown.
+ */
+export interface EditableBlockDescriptor {
+  cid: string
+  type: string
+  label: string
+  raw: string
+  previewHtml: string
+  startOffset: number
+  endOffset: number
+  protected: boolean
+  cursorMap?: number[]
+  listItemCursorMaps?: number[][]
+}
 
 export interface MarkdownDocumentEditorState {
   content: string

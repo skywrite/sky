@@ -1,5 +1,6 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { fileHref } from './explorer.tsx'
 
 /**
  * What sky read — the thread's context, by document, and the hand on it.
@@ -104,7 +105,7 @@ function DocRow({
   return (
     <div className="sky-ctx-row" data-cut={Boolean(doc.cut)}>
       <span className="sky-ctx-txt">
-        <a href={`/docs/${doc.path}`}>{name}</a>
+        <a href={fileHref(doc.path)}>{name}</a>
         {dir && <span className="sky-ctx-dir">{dir}</span>}
       </span>
       <span className="sky-ctx-tok">{tokens(doc.tokens)}</span>

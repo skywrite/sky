@@ -1,10 +1,5 @@
 import * as path from 'node:path'
-import {
-  MARKDOWN_PREVIEW_THEMES,
-  type MarkdownPreviewMode,
-  type MarkdownPreviewRequest,
-  type MarkdownPreviewTheme,
-} from './types.ts'
+import { MARKDOWN_PREVIEW_THEMES, type MarkdownPreviewRequest, type MarkdownPreviewTheme } from './types.ts'
 
 export type ResolvedPreviewRequest =
   | { ok: true; value: MarkdownPreviewRequest }
@@ -49,56 +44,8 @@ export function resolveMarkdownPreviewRequest(
   }
 }
 
-export function buildMarkdownPreviewPath(
-  relativePath: string,
-  options?: { theme?: string; mode?: MarkdownPreviewMode },
-): string {
-  const normalizedPath = relativePath.trim()
-  const pathname =
-    normalizedPath.length > 0 ? `/docs/${normalizedPath.split('/').map(encodeURIComponent).join('/')}` : '/docs/'
-
-  const search = new URLSearchParams()
-  if (options?.theme && options.theme !== 'github') {
-    search.set('theme', options.theme)
-  }
-  if (options?.mode && options.mode !== 'preview') {
-    search.set('mode', options.mode)
-  }
-
-  return search.size > 0 ? `${pathname}?${search.toString()}` : pathname
-}
-
-export function buildMarkdownContentApiPath(relativePath: string): string {
-  const normalizedPath = relativePath.trim()
-  return `/docs/_api/content/${normalizedPath.split('/').map(encodeURIComponent).join('/')}`
-}
-
-export function buildMarkdownDocumentApiPath(relativePath: string): string {
-  const normalizedPath = relativePath.trim()
-  return `/docs/_api/document/${normalizedPath.split('/').map(encodeURIComponent).join('/')}`
-}
-
-export function buildMarkdownPdfExportPath(relativePath: string, options?: { theme?: string }): string {
-  const normalizedPath = relativePath.trim()
-  const pathname = `/docs/_api/export-pdf/${normalizedPath.split('/').map(encodeURIComponent).join('/')}`
-  const search = new URLSearchParams()
-  if (options?.theme && options.theme !== 'github') {
-    search.set('theme', options.theme)
-  }
-
-  return search.size > 0 ? `${pathname}?${search.toString()}` : pathname
-}
-
 export function toNotebookRelativePath(markdownBaseDir: string, filePath: string): string {
   return path.relative(markdownBaseDir, filePath).split(path.sep).join('/')
-}
-
-export function resolveMarkdownPreviewTheme(themeParam: string | undefined): MarkdownPreviewTheme {
-  return normalizeTheme(themeParam)
-}
-
-export function resolveMarkdownPreviewMode(modeParam: string | undefined): MarkdownPreviewMode {
-  return modeParam === 'edit' ? 'edit' : 'preview'
 }
 
 function normalizeTheme(themeParam: string | undefined): MarkdownPreviewTheme {

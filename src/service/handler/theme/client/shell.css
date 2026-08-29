@@ -1326,3 +1326,261 @@ a.sky-thread {
     font-size: 1.35em;
   }
 }
+
+/* ============ the editor ============ */
+/* The block editor as it was, in the column: the file as blocks, any one of them editable in
+   place. Its chrome — status, the conflict choice, done — sits on the header line; the blocks
+   wear the reading view's type, and the rest of its furniture takes the shell's. */
+.sky-head-count[data-state='loading'],
+.sky-head-count[data-state='dirty'],
+.sky-head-count[data-state='saving'] {
+  color: var(--sky-text-2);
+}
+
+.sky-head-count[data-state='conflict'],
+.sky-head-count[data-state='error'] {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-editor .editable-block-list {
+  display: grid;
+  gap: 18px;
+}
+
+.sky-editor .editable-block {
+  padding: 16px 18px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 14px;
+  background: var(--sky-side);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.sky-editor .editable-block[data-active='true'] {
+  border-color: var(--sky-blue-deep);
+  background: var(--sky-card);
+  box-shadow: 0 0 0 3px var(--sky-blue-soft);
+}
+
+/* prose blocks and rules carry no chrome — they read as the page does */
+.sky-editor .editable-block[data-visual='true'],
+.sky-editor .editable-block[data-chromeless='true'],
+.sky-editor .editable-block[data-visual='true'][data-active='true'],
+.sky-editor .editable-block[data-chromeless='true'][data-active='true'] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sky-editor .editable-block-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-family: var(--mantine-font-family);
+  transition: opacity 120ms ease;
+}
+
+.sky-editor .editable-block[data-active='true'] .editable-block-header {
+  opacity: 0.72;
+}
+
+.sky-editor .editable-block-label,
+.sky-editor .editable-block-meta,
+.sky-editor .editable-block-help {
+  margin: 0;
+}
+
+.sky-editor .editable-block-label {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-editor .editable-block-meta {
+  margin-top: 3px;
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+.sky-editor .editable-block-preview-shell {
+  padding: 4px 3px 7px;
+  border-radius: 10px;
+  cursor: text;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sky-editor .editable-block[data-visual='true'] .editable-block-preview-shell {
+  padding: 0;
+  border-radius: 6px;
+}
+
+.sky-editor .editable-block[data-interactive='true'] .editable-block-preview-shell:hover,
+.sky-editor .editable-block[data-interactive='true'] .editable-block-preview-shell:focus-visible,
+.sky-editor .editable-block[data-visual='true'][data-active='true'] .editable-block-preview-shell {
+  background: var(--sky-side);
+  box-shadow: inset 0 0 0 1px var(--sky-border-soft);
+}
+
+.sky-editor .editable-block-preview-shell[data-editing='true'] {
+  background: transparent;
+  box-shadow: none;
+}
+
+.sky-editor .editable-block[data-interactive='false'] .editable-block-preview-shell {
+  cursor: default;
+}
+
+.sky-editor .editable-block-preview > :first-child {
+  margin-top: 0;
+}
+
+.sky-editor .editable-block-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.sky-editor .editable-block[data-visual='true'] .editable-block-preview[contenteditable='true'] {
+  min-height: 1.5em;
+  outline: none;
+  caret-color: var(--sky-blue-deep);
+}
+
+.sky-editor .editable-block[data-visual='true'] .editable-block-preview[contenteditable='true'] a {
+  pointer-events: none;
+}
+
+/* while a prose block is open its markdown shows through: the marks around each inline form */
+.sky-editor .editable-block-preview[data-inline-reveal='true'] strong::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] strong::after {
+  content: '**';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] em::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] em::after {
+  content: '*';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] del::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] del::after {
+  content: '~~';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] code::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] code::after {
+  content: '`';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] a::before {
+  content: '[';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] a::after {
+  content: '](' attr(href) ')';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] u::before {
+  content: '<u>';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] u::after {
+  content: '</u>';
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] :is(strong, em, del, code, a, u)::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] :is(strong, em, del, code, a, u)::after {
+  color: var(--sky-dim);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.88em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.sky-editor .editable-block-preview[data-inline-reveal='true'] [data-inline-focus='true']::before,
+.sky-editor .editable-block-preview[data-inline-reveal='true'] [data-inline-focus='true']::after {
+  color: var(--sky-blue-deep);
+}
+
+/* the form under a raw block: its markdown in a textarea, and the buttons */
+.sky-editor .editable-block-form {
+  display: grid;
+  gap: 10px;
+  font-family: var(--mantine-font-family);
+}
+
+.sky-editor .editable-block[data-visual='true'] .editable-block-form {
+  display: none !important;
+}
+
+.sky-editor .editable-block-textarea {
+  width: 100%;
+  min-height: 10rem;
+  resize: vertical;
+  padding: 14px 18px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 11px;
+  outline: none;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.sky-editor .editable-block-textarea:focus {
+  border-color: var(--sky-blue-deep);
+  box-shadow: 0 0 0 3px var(--sky-blue-soft);
+}
+
+.sky-editor .editable-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sky-editor .editor-action-button {
+  padding: 6px 12px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 9px;
+  background: var(--sky-card);
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sky-editor .editor-action-button:hover {
+  background: var(--sky-hover);
+}
+
+.sky-editor .editor-action-button[hidden] {
+  display: none;
+}
+
+.sky-editor .editable-block-help {
+  color: var(--sky-dim);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.sky-editor .editable-block-help kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 6px;
+  border: 1px solid var(--sky-border-soft);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--sky-card);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  text-align: center;
+}
