@@ -24,10 +24,10 @@ const CLIENT_DIR = path.join(__dirname, 'client')
 
 let built: { sourcesAt: number; assets: Promise<Map<string, ThemeAsset>> } | null = null
 
-/** The newest mtime among the client sources — a handful of stats per request. */
+/** The newest mtime among the client sources, subdirectories included — a few dozen stats per request. */
 async function clientSourcesAt(): Promise<number> {
   let latest = 0
-  for (const name of await readdir(CLIENT_DIR)) {
+  for (const name of await readdir(CLIENT_DIR, { recursive: true })) {
     const info = await stat(path.join(CLIENT_DIR, name))
     latest = Math.max(latest, info.mtimeMs)
   }

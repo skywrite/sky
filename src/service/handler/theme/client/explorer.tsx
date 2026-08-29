@@ -5,7 +5,7 @@ import {
   type BlockEditorStatusKind,
   type EditableBlock,
   mountBlockEditor,
-} from './blockEditor.ts'
+} from './editor/mod.ts'
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
