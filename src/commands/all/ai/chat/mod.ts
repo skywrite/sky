@@ -5,6 +5,7 @@ import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import { createFileTools, READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
@@ -19,7 +20,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
-import { DIR_AI_MEMORY, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
+import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -384,6 +385,9 @@ export default class AiChatTask extends Command {
           } else if (event.toolName === 'web_fetch') {
             const input = event.input as { url: string }
             output.log(colors.dim(`Reading: ${input.url}`))
+          } else if (event.toolName === READ_FILE_TOOL) {
+            const input = event.input as { path: string }
+            output.log(colors.dim(`Reading file: ${input.path}`))
           } else {
             output.log(colors.dim(`Running: ${event.toolName}...`))
           }
@@ -471,8 +475,16 @@ export default class AiChatTask extends Command {
         peopleCount = rendered.peopleCount
         return rendered.prompt
       },
-      tools: async ({ onExternalFiles }) => {
+      tools: async ({ onExternalFiles, onAttachments }) => {
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
+        // A file the user points at: read into the conversation, copied
+        // into the chat's day attachments, recorded on the transcript.
+        const fileTools = createFileTools({
+          today,
+          attachmentsRoot: DIR_ATTACHMENTS,
+          cwd: env.SKY_USER_CWD || process.cwd(),
+          onAttachments,
+        })
         const notebookTools = await createNotebookTools(tasks, {
           // Native question breakout: settle a tool's openQuestions in-place —
           // Enter accepts the proposed answer, typing overrides, ESC accepts
@@ -504,7 +516,7 @@ export default class AiChatTask extends Command {
           },
           onExternalFiles: (_toolName, files) => onExternalFiles(files),
         })
-        return { tools: { ...webTools, ...notebookTools }, toolApproval: createToolApprovalConfig() }
+        return { tools: { ...webTools, ...fileTools, ...notebookTools }, toolApproval: createToolApprovalConfig() }
       },
       // Everything interactive about approvals lives here — the engine
       // drives the protocol around it.

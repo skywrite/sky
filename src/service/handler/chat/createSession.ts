@@ -7,6 +7,7 @@
 
 import * as path from 'node:path'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
+import { createFileTools } from '#commands/lib/chat/fileTools.ts'
 import { createAutoApprovedTools } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
@@ -59,9 +60,11 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           })
         ).prompt,
       // Only tools that never ask — the browser has no approval surface yet.
-      tools: async ({ onExternalFiles }) => ({
+      tools: async ({ onExternalFiles, onAttachments }) => ({
         tools: {
           ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
+          // Reads never ask. A browser has no shell directory, so a relative path resolves from home.
+          ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
           ...(await createAutoApprovedTools(tasks, { onExternalFiles: (_toolName, files) => onExternalFiles(files) })),
         },
         toolApproval: {},

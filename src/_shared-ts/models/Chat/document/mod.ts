@@ -1,6 +1,7 @@
 import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
+import { type Attachment, attachmentsToYaml } from '#shared/models/Markdown/Document/attachment.ts'
 import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
 import expand from '#shared/strings/expand.ts'
 import type { ConversationMessage } from '../type.d.ts'
@@ -103,7 +104,17 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  * trailing `(2026-02-08 14:32)` on a plain name instead.
  */
 export default class ChatDocument extends SectionDocument {
-  static override yamlKeyOrder = ['created', 'updated', 'summary', 'provider', 'model', 'turns', 'rel', 'tags']
+  static override yamlKeyOrder = [
+    'created',
+    'updated',
+    'summary',
+    'provider',
+    'model',
+    'turns',
+    'rel',
+    'tags',
+    'attachments',
+  ]
 
   /** Summary from YAML frontmatter */
   get summary(): string {
@@ -192,6 +203,8 @@ export default class ChatDocument extends SectionDocument {
     model: string
     rel?: string[]
     tags?: string[]
+    /** Files in the day's attachments this chat read; the key is absent when there are none */
+    attachments?: Attachment[]
   }): ChatDocument {
     const turnCount = Math.floor(input.messages.length / 2)
     const yaml: Record<string, unknown> = {
@@ -204,6 +217,7 @@ export default class ChatDocument extends SectionDocument {
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
       tags: input.tags && input.tags.length > 0 ? input.tags.join('; ') : null,
     }
+    if (input.attachments && input.attachments.length > 0) yaml.attachments = attachmentsToYaml(input.attachments)
     const markdown = ChatDocument.buildMarkdown(input)
     return new ChatDocument(yaml, markdown)
   }

@@ -138,6 +138,7 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
     summary: 'Atlas Kickoff',
     rel: ['projects/Atlas'],
     tags: ['planning'],
+    attachments: [],
     frontmatterHealthy: true,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
   }
@@ -155,6 +156,37 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
       tags: ['planning'],
       rel: ['projects/Atlas', '[Launch Plan](https://example.com/doc/atlas-plan)'],
     },
+  })
+})
+
+test('writeChatAutosave - files read this session join the resumed file’s attachments once', async () => {
+  const dir = await tmpStateDir()
+  const filePath = path.join(dir, chatAutosaveFilename(START, 4242))
+
+  const resume: ResumeSession = {
+    filePath: '/notebook/time/2026-W04/2026-01-20-tue/actions/ai-chats/10-00_Atlas-Kickoff.md',
+    created: '2026-01-20',
+    summary: 'Atlas Kickoff',
+    rel: [],
+    tags: [],
+    attachments: [{ file: '2026-01-20_Chat_Atlas-Brief.pdf' }],
+    frontmatterHealthy: true,
+    state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+  }
+  await writeChatAutosave(
+    filePath,
+    autosaveInput({
+      resume,
+      attachments: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }, { file: '2026-01-20_Chat_Atlas-Brief.pdf' }],
+    }),
+  )
+  const session = await loadResumeSession(filePath)
+
+  assert({
+    given: 'a snapshot of a resumed session that read a new document and re-read the old one',
+    should: 'list the earlier attachment first and the new one once',
+    actual: session.attachments,
+    expected: [{ file: '2026-01-20_Chat_Atlas-Brief.pdf' }, { file: '2026-01-27_Chat_Atlas-MSA.pdf' }],
   })
 })
 

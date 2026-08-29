@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { DIR_ATTACHMENTS } from '#config'
+import { copyFileDedup } from '#lib/notebook/attachments.ts'
 import slugify from '#lib/string/slugify.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -102,55 +101,6 @@ async function resolveAttachmentName(file: SlackFileRef): Promise<string> {
   }
 
   return originalName
-}
-
-// =============================================================================
-// File copy with SHA256 dedup
-// =============================================================================
-
-async function sha256(filePath: string): Promise<string> {
-  const data = await readFile(filePath)
-  return createHash('sha256').update(data).digest('hex')
-}
-
-/**
- * Copy a file to the attachments directory, deduplicating by SHA256.
- * - If destination exists with same hash → skip copy, reuse filename.
- * - If destination exists with different hash → append _2, _3, etc.
- * Returns the final filename (not full path) or undefined if source doesn't exist.
- */
-async function copyFileDedup(
-  sourcePath: string,
-  attachDir: string,
-  desiredFileName: string,
-): Promise<string | undefined> {
-  if (!existsSync(sourcePath)) return undefined
-
-  const ext = path.extname(desiredFileName)
-  const stem = desiredFileName.slice(0, -ext.length || undefined)
-  let targetName = desiredFileName
-  let targetPath = path.join(attachDir, targetName)
-
-  if (existsSync(targetPath)) {
-    const sourceHash = await sha256(sourcePath)
-    const targetHash = await sha256(targetPath)
-    if (sourceHash === targetHash) return targetName
-
-    // Different content, find a unique name
-    let counter = 2
-    do {
-      targetName = `${stem}_${counter}${ext}`
-      targetPath = path.join(attachDir, targetName)
-      if (existsSync(targetPath)) {
-        const existingHash = await sha256(targetPath)
-        if (existingHash === sourceHash) return targetName
-      }
-      counter++
-    } while (existsSync(targetPath))
-  }
-
-  await copyFile(sourcePath, targetPath)
-  return targetName
 }
 
 // =============================================================================

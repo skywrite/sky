@@ -201,7 +201,7 @@ function toolInputDigest(input: unknown): string | undefined {
   if (input == null) return undefined
   if (typeof input === 'object') {
     const o = input as Record<string, unknown>
-    for (const key of ['query', 'url', 'message', 'text']) {
+    for (const key of ['query', 'url', 'path', 'message', 'text']) {
       if (typeof o[key] === 'string') return truncate(o[key] as string, 120)
     }
   }

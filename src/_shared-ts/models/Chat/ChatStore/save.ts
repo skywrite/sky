@@ -26,6 +26,7 @@ import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { unclosedFence } from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
+import { type Attachment, mergeAttachments } from '#shared/models/Markdown/Document/attachment.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import {
@@ -157,6 +158,8 @@ export interface SaveChatInput {
   model: string
   /** url → title for external artifacts the session's tools touched */
   externalFiles?: ReadonlyMap<string, string>
+  /** Files the session's tools copied into the day's attachments */
+  attachments?: readonly Attachment[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
   /** Choose rel from the entity graph when the chat has none */
@@ -296,6 +299,9 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // records it, deduped against entries already carrying the URL.
     rel: mergeRel(priorRel ?? autoRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
     tags: priorTags ?? autoTags?.split('; '),
+    // Files read into the session join whatever the resumed file already
+    // listed — a document is recorded once however many sessions read it.
+    attachments: mergeAttachments(resume?.attachments, input.attachments),
   })
 
   // Memory and profile ops apply before the transcript serializes so this

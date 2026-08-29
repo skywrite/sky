@@ -17,6 +17,7 @@
 
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -71,6 +72,8 @@ export type ChatSessionEvent =
 export interface ToolHooks {
   /** A tool reported touching external files — the session records them for the transcript's rel. */
   onExternalFiles: (files: ExternalFileRef[]) => void
+  /** A tool copied files into the day's attachments — the session records them for the transcript's attachments. */
+  onAttachments: (files: Attachment[]) => void
 }
 
 /** Builds the turn's tool set. Called every turn; hosts cache discovery themselves. */
@@ -164,6 +167,9 @@ export default class ChatSession {
   // External files the session's tools touched (title by URL) — saved as
   // "[Title](url)" rel entries so the transcript points at its artifacts.
   private readonly externalFiles = new Map<string, string>()
+  // Files the session's tools copied into the day's attachments, by
+  // filename — saved as the transcript's attachments: entries.
+  private readonly attachments = new Map<string, Attachment>()
   private systemPrompt = ''
   private contextPrompt = ''
   private firstTurnPending = true
@@ -321,6 +327,9 @@ export default class ChatSession {
     try {
       const { tools, toolApproval } = await this.opts.tools({
         onExternalFiles: (files) => recordExternalFiles(this.externalFiles, files),
+        onAttachments: (files) => {
+          for (const file of files) this.attachments.set(file.file, file)
+        },
       })
       if (!this.toolsAnnounced) {
         this.toolsAnnounced = true
@@ -388,6 +397,7 @@ export default class ChatSession {
       provider: this.opts.profile.provider,
       model: this.opts.profile.model,
       externalFiles: this.externalFiles,
+      attachments: [...this.attachments.values()],
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,
       memoryDir: opts.memoryDir,
@@ -417,6 +427,7 @@ export default class ChatSession {
         provider: this.opts.profile.provider,
         model: this.opts.profile.model,
         externalFiles: this.externalFiles,
+        attachments: [...this.attachments.values()],
       })
     } catch (err) {
       const message = (err as Error).message

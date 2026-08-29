@@ -23,6 +23,24 @@ export function parseAttachments(raw: unknown): Attachment[] {
     })
 }
 
+/**
+ * Prior attachments first, then additions whose `file` is new — a file
+ * recorded twice (a resumed chat re-reading its document) keeps one entry.
+ */
+export function mergeAttachments(
+  prior: readonly Attachment[] | undefined,
+  added: readonly Attachment[] | undefined,
+): Attachment[] {
+  const merged: Attachment[] = [...(prior ?? [])]
+  const seen = new Set(merged.map((a) => a.file))
+  for (const attachment of added ?? []) {
+    if (seen.has(attachment.file)) continue
+    seen.add(attachment.file)
+    merged.push(attachment)
+  }
+  return merged
+}
+
 export function attachmentsToYaml(attachments: Attachment[]): Record<string, unknown>[] {
   return attachments.map((a) => {
     const entry: Record<string, unknown> = { file: a.file }

@@ -179,6 +179,45 @@ test('saveChat - artifact links join rel as titled entries', async () => {
   })
 })
 
+test('saveChat - files read into the session are recorded as attachments, and a resume keeps them', async () => {
+  const { report: first } = await saveNew({ attachments: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }] })
+
+  const firstDoc = ChatDocument.fromMarkdown(await readTextFile(first.path))
+  assert({
+    given: 'a session whose read_file tool copied a document into the day attachments',
+    should: 'list it under attachments:',
+    actual: firstDoc.attachments,
+    expected: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }],
+  })
+
+  const resume = await loadResumeSession(first.path)
+  const report = await saveChat({
+    turns: [
+      ...TURNS,
+      msg('user', 'And the term sheet?', '2026-01-28 08:12'),
+      msg('assistant', 'Two years, auto-renewing.', '2026-01-28 08:13'),
+    ],
+    contextLog: [],
+    resume,
+    timeDir: 'unused-on-resume',
+    day: DAY,
+    startTime: START,
+    endTime: new PlainDateTime('2026-01-28 08:20'),
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    attachments: [{ file: '2026-01-28_Chat_Atlas-Term-Sheet.pdf' }, { file: '2026-01-27_Chat_Atlas-MSA.pdf' }],
+    enricher: neverCalled,
+  })
+
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'the resumed session read a second document and re-read the first',
+    should: 'keep the earlier attachment first and add the new one once',
+    actual: doc.attachments,
+    expected: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }, { file: '2026-01-28_Chat_Atlas-Term-Sheet.pdf' }],
+  })
+})
+
 test('saveChat - resuming writes back to the same file, keeping created and growing the transcript', async () => {
   const { report: first } = await saveNew()
   const resume = await loadResumeSession(first.path)

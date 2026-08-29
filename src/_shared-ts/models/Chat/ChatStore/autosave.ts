@@ -23,6 +23,7 @@ import { mkdir, rename, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { exists, readDir, writeTextFile } from '#shared/fs/mod.ts'
+import { type Attachment, mergeAttachments } from '#shared/models/Markdown/Document/attachment.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
@@ -55,6 +56,8 @@ export interface ChatAutosaveInput {
   model: string
   /** url → title for external artifacts the session's tools touched */
   externalFiles?: ReadonlyMap<string, string>
+  /** Files the session's tools copied into the day's attachments */
+  attachments?: readonly Attachment[]
 }
 
 /**
@@ -79,6 +82,7 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     model: input.model,
     rel: mergeRel(priorRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
     tags: priorTags,
+    attachments: mergeAttachments(input.resume?.attachments, input.attachments),
   })
   const markdown = doc.toMarkdown() + serializeContextLog(input.contextLog)
 

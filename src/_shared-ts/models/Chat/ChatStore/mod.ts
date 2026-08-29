@@ -14,6 +14,7 @@
 
 import * as path from 'node:path'
 import { exists, readDir, readTextFile } from '#shared/fs/mod.ts'
+import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import ChatDocument from '../document/mod.ts'
 import { reconstructResumeState, type ResumeState } from '../document/resume.ts'
 
@@ -37,6 +38,8 @@ export interface ResumeSession {
   summary: string
   rel: string[]
   tags: string[]
+  /** Files earlier sessions copied into the day's attachments — carried forward verbatim */
+  attachments: Attachment[]
   /** false when yaml turns: swallowed following lines — never overwrite those */
   frontmatterHealthy: boolean
   state: ResumeState
@@ -87,6 +90,7 @@ export async function loadResumeSession(filePath: string): Promise<ResumeSession
     summary: doc.summary,
     rel: Array.from(doc.rel),
     tags: Array.from(doc.tags),
+    attachments: doc.attachments,
     // A malformed `turns:` folds the keys after it into one scalar, so the
     // count parses as a string instead of a number. That reading is the
     // only warning a host gets before a rewrite would drop the swallowed
