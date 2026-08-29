@@ -175,3 +175,38 @@ test('GoogleClient surfaces API errors', async () => {
     ],
   })
 })
+
+test('GoogleClient refuses Gmail send endpoints before any request leaves', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, EMAIL, { refreshToken: 'rt-1', accessToken: 'at-1', scopes: [] })
+
+  const calls: Call[] = []
+  const fetchFn = fakeFetch(calls, () => new Response('{}', { status: 200 }))
+  const client = new GoogleClient({ secrets, email: EMAIL, client: OAUTH_CLIENT, fetchFn, sleep: async () => {} })
+
+  const refused: string[] = []
+  for (const url of [
+    'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+    'https://gmail.googleapis.com/gmail/v1/users/me/drafts/send',
+    'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',
+  ]) {
+    try {
+      await client.postJson(url, {})
+      refused.push('allowed')
+    } catch (err) {
+      refused.push((err as Error).message.includes('Gmail send endpoint') ? 'refused' : (err as Error).message)
+    }
+  }
+  const fetchesAfterSendAttempts = calls.length
+  const allowed = await client.postJson<Record<string, never>>(
+    'https://gmail.googleapis.com/gmail/v1/users/me/drafts',
+    {},
+  )
+
+  assert({
+    given: 'the three Gmail send URLs and a legitimate drafts.create URL',
+    should: 'throw on every send URL with zero fetches made, and pass drafts.create through',
+    expected: [['refused', 'refused', 'refused'], 0, 1, {}],
+    actual: [refused, fetchesAfterSendAttempts, calls.length, allowed],
+  })
+})

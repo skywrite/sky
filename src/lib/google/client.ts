@@ -9,6 +9,30 @@ const MAX_ATTEMPTS = 3
 /** Per-request ceiling: a silently dead socket must error (and retry), never hang a mission. */
 const REQUEST_TIMEOUT_MS = 60_000
 
+// Gmail send endpoints, denied at this chokepoint: sending mail is
+// deliberately impossible through this client — drafts are reviewed and sent
+// by the user in Gmail. Google has no drafts-without-send OAuth scope
+// (modify/compose/full all include send), so the stored grant cannot draw
+// this line; the code draws it here, where every Google request passes.
+// Removing this guard is its own deliberate, reviewable act — never a side
+// effect of adding a feature.
+const GMAIL_SEND_PATH = /\/(messages|drafts)\/send$/
+
+/** Throws before a Gmail send URL leaves the machine; every other URL passes. */
+export function assertNotGmailSend(url: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return // not a URL this client could fetch anyway
+  }
+  if (parsed.hostname === 'gmail.googleapis.com' && GMAIL_SEND_PATH.test(parsed.pathname)) {
+    throw new Error(
+      `Refusing to call a Gmail send endpoint (${parsed.pathname}) — sending is deliberately unimplemented; drafts are sent by hand from Gmail.`,
+    )
+  }
+}
+
 export class GoogleApiError extends Error {
   readonly status: number
   readonly url: string
@@ -89,6 +113,7 @@ export class GoogleClient {
 
   /** Authenticated fetch with one forced-refresh retry on 401 and backoff on transient errors. */
   async request(url: string, init: RequestInit = {}): Promise<Response> {
+    assertNotGmailSend(url)
     let token = await this.accessToken()
     for (let attempt = 1; ; attempt++) {
       let res: Response
