@@ -161,6 +161,8 @@ export interface ChatEngineOptions {
   /** The turn's event stream — progress lines, SSE frames, or nothing. */
   onEvent?: (event: ChatEngineEvent) => void
   maxApprovalRounds?: number
+  /** Model steps (text + tool calls) per invocation round. Default 5; research-style tool loops raise it. */
+  maxSteps?: number
   /** Test seam — production streams via streamText. */
   invokeModel?: ModelInvoker
 }
@@ -215,6 +217,7 @@ export default class ChatEngine {
   private readonly approvalHandler: ApprovalHandler
   private readonly onEvent?: (event: ChatEngineEvent) => void
   private readonly maxApprovalRounds: number
+  private readonly maxSteps: number
   private readonly invokeModel?: ModelInvoker
 
   /** The model-facing conversation history, tool exchanges included. */
@@ -225,6 +228,7 @@ export default class ChatEngine {
     this.approvalHandler = opts.approvalHandler
     this.onEvent = opts.onEvent
     this.maxApprovalRounds = opts.maxApprovalRounds ?? 3
+    this.maxSteps = opts.maxSteps ?? 5
     this.invokeModel = opts.invokeModel
   }
 
@@ -332,7 +336,7 @@ export default class ChatEngine {
           // boundary is where they become a ToolSet.
           tools: opts.tools as ToolSet,
           toolApproval: opts.toolApproval,
-          stopWhen: isStepCount(5),
+          stopWhen: isStepCount(this.maxSteps),
           onStepEnd,
           // Deltas ride a callback rather than a consumed stream: awaiting
           // the result promises below is what drives this stream, and
