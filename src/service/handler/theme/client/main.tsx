@@ -1,10 +1,11 @@
 import '@mantine/core/styles.css'
 import './shell.css'
 import { ActionIcon, Button, Checkbox, MantineProvider, Textarea, useMantineColorScheme } from '@mantine/core'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
+import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { skyTheme } from './theme.ts'
 
 /**
@@ -72,6 +73,8 @@ function Canvas() {
   }
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
+  // '' is the explorer itself, a path is a file open in it, null is any other page.
+  const explorerFile = explorerFileOf(path)
   const day = useDay(dayYmd)
   const threads = useThreads()
   const [notes, setNotes] = useState<Note[]>([])
@@ -91,13 +94,24 @@ function Canvas() {
     navigate('/')
     void saving.then((notes) => setNotes((prev) => [...prev, ...notes]))
   }
+  // A link into the explorer — a row on the day, a link inside a document — turns the page in place.
+  const onLinkClick = (event: MouseEvent) => {
+    if (event.defaultPrevented || event.button !== 0) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const anchor = (event.target as Element).closest('a')
+    if (!anchor?.href) return
+    const url = new URL(anchor.href)
+    if (url.origin !== location.origin || !url.pathname.startsWith('/explorer/')) return
+    event.preventDefault()
+    navigate(url.pathname)
+  }
 
   return (
-    <div className="sky-app">
+    <div className="sky-app" onClick={onLinkClick}>
       <button
         type="button"
         className="sky-menu"
-        aria-label={menu ? 'Close' : 'Days and threads'}
+        aria-label={menu ? 'Close' : explorerFile !== null ? 'Files' : 'Days and threads'}
         aria-expanded={menu}
         onClick={() => setMenu((open) => !open)}
       >
@@ -109,42 +123,63 @@ function Canvas() {
           <span className="sky-brand">sky</span>
           <SchemeToggle />
         </div>
-        <Button className="sky-newchat" fullWidth justify="flex-start" onClick={newChat}>
-          ＋ New chat
-        </Button>
+        {explorerFile !== null ? (
+          <>
+            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+              <span>‹ Today</span>
+            </button>
+            <div className="sky-side-label">Explorer</div>
+            <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
+          </>
+        ) : (
+          <>
+            <Button className="sky-newchat" fullWidth justify="flex-start" onClick={newChat}>
+              ＋ New chat
+            </Button>
 
-        <div className="sky-side-label">Days</div>
-        {(day?.days ?? []).map((d, offset) => (
-          <button
-            key={d.ymd}
-            type="button"
-            className="sky-thread"
-            data-active={threadId === null && (offset === 0 ? isToday : dayYmd === d.ymd)}
-            onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
-          >
-            <span>{d.label}</span>
-            <span className="sky-meta">{d.meta}</span>
-          </button>
-        ))}
+            <div className="sky-side-label">Days</div>
+            {(day?.days ?? []).map((d, offset) => (
+              <button
+                key={d.ymd}
+                type="button"
+                className="sky-thread"
+                data-active={threadId === null && (offset === 0 ? isToday : dayYmd === d.ymd)}
+                onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
+              >
+                <span>{d.label}</span>
+                <span className="sky-meta">{d.meta}</span>
+              </button>
+            ))}
 
-        {others.length > 0 && <div className="sky-side-label">Threads</div>}
-        {others.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className="sky-thread"
-            data-active={t.id === threadId}
-            onClick={() => openThread(t.id)}
-          >
-            <span>{t.title ?? 'New chat'}</span>
-            <span className="sky-meta" data-state={t.state}>
-              {t.state === 'new' ? '' : t.state}
-            </span>
-          </button>
-        ))}
+            {others.length > 0 && <div className="sky-side-label">Threads</div>}
+            {others.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="sky-thread"
+                data-active={t.id === threadId}
+                onClick={() => openThread(t.id)}
+              >
+                <span>{t.title ?? 'New chat'}</span>
+                <span className="sky-meta" data-state={t.state}>
+                  {t.state === 'new' ? '' : t.state}
+                </span>
+              </button>
+            ))}
+
+            {/* The way out of the day and into the files, at the foot of the list. */}
+            <div className="sky-side-foot">
+              <button type="button" className="sky-thread" onClick={() => navigate('/explorer')}>
+                <span>Explorer</span>
+              </button>
+            </div>
+          </>
+        )}
       </nav>
 
-      {threadId ? (
+      {explorerFile !== null ? (
+        <DocView file={explorerFile} />
+      ) : threadId ? (
         <Fragment key={threadId}>
           <ChatMain
             chat={chat}

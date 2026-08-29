@@ -1,6 +1,7 @@
 import { Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type Chat, Composer, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
+import { fileHref, resolvePath } from './explorer.tsx'
 
 /**
  * The day is the page. Its column is the day's own conversation, the
@@ -150,15 +151,15 @@ function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
 }
 
-/** A plan item: dot, text (struck when done), the category it was filed under. */
-function ItemRow({ item }: { item: DayItem }) {
+/** A plan item: dot, text (struck when done), the category it was filed under. `at` is the day's directory — its links are written from there. */
+function ItemRow({ item, at }: { item: DayItem; at: string }) {
   return (
     <div className="sky-todo" data-done={item.done}>
       <span className="sky-run-dot">
         <span className="sky-dot" data-tone={item.done ? 'done' : 'quiet'} />
       </span>
       <span className="sky-todo-label">
-        {item.link ? <a href={`/docs/${item.link.path}`}>{item.text}</a> : item.text}
+        {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
       </span>
       {item.category && <span className="sky-tag">{item.category.toLowerCase()}</span>}
     </div>
@@ -171,7 +172,7 @@ function DocRow({ row, sub, tag }: { row: DayDocRow; sub?: string | null; tag?: 
     <div className="sky-rec-line">
       <span className="sky-rec-at sky-rec-when">{row.when ?? ''}</span>
       <span className="sky-rec-txt">
-        <a href={`/docs/${row.path}`}>{row.title}</a>
+        <a href={fileHref(row.path)}>{row.title}</a>
         {sub && <span className="sky-rec-sub">{sub}</span>}
       </span>
       {tag && <span className="sky-tag">{tag}</span>}
@@ -198,12 +199,12 @@ function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: n
   )
 }
 
-function Items({ head, items }: { head: string; items: DayItem[] }) {
+function Items({ head, items, at }: { head: string; items: DayItem[]; at: string }) {
   if (items.length === 0) return null
   const open = items.filter((i) => !i.done).length
   return (
     <Block head={head} mini={open === items.length ? count(items.length, 'item') : `${open} open of ${items.length}`}>
-      <Fold rows={items} render={(item) => <ItemRow item={item} />} />
+      <Fold rows={items} render={(item) => <ItemRow item={item} at={at} />} />
     </Block>
   )
 }
@@ -248,6 +249,8 @@ export function DayView({
   const running = threads.filter((t) => t.busy).length
   const section = day?.section ?? null
   const record = day?.record ?? null
+  // The day file's directory: the items in it link to files from there.
+  const at = day?.day.dayRelativePath ? day.day.dayRelativePath.split('/').slice(0, -1).join('/') : ''
 
   return (
     <div className="sky-main">
@@ -261,7 +264,7 @@ export function DayView({
             </span>
           )}
           {day?.day.dayRelativePath && (
-            <Button size="sm" component="a" href={`/docs/${day.day.dayRelativePath}`}>
+            <Button size="sm" component="a" href={fileHref(day.day.dayRelativePath)}>
               Day file
             </Button>
           )}
@@ -278,9 +281,9 @@ export function DayView({
 
           {record && (
             <>
-              <Items head="Most important" items={record.mostImportant} />
-              <Items head="Commitments" items={record.commitments} />
-              <Items head="Todos" items={record.todos} />
+              <Items head="Most important" items={record.mostImportant} at={at} />
+              <Items head="Commitments" items={record.commitments} at={at} />
+              <Items head="Todos" items={record.todos} at={at} />
 
               {section && (section.streaks.length > 0 || section.mostImportant.length > 0) && (
                 <Block
@@ -288,7 +291,7 @@ export function DayView({
                   mini={`${section.streaks.filter((s) => s.doneToday).length} of ${section.streaks.length} done`}
                 >
                   {section.mostImportant.map((item) => (
-                    <a key={item.relativePath} className="sky-filed" href={`/docs/${item.relativePath}`}>
+                    <a key={item.relativePath} className="sky-filed" href={fileHref(item.relativePath)}>
                       <span className="sky-rec-at">⌗</span>
                       <span>{item.label}</span>
                     </a>
@@ -332,7 +335,7 @@ export function DayView({
                       <div className="sky-rec-line">
                         <span className="sky-rec-at sky-rec-when">{item.time ?? ''}</span>
                         <span className="sky-rec-txt">
-                          {item.link ? <a href={`/docs/${item.link.path}`}>{item.text}</a> : item.text}
+                          {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
                         </span>
                         {item.category && <span className="sky-tag">{item.category.toLowerCase()}</span>}
                       </div>
@@ -344,7 +347,7 @@ export function DayView({
               {(record.journals.length > 0 || record.notes.length > 0) && (
                 <Block head="Written" mini={count(record.journals.length + record.notes.length, 'file')}>
                   {[...record.journals, ...record.notes].map((row) => (
-                    <a key={row.path} className="sky-filed" href={`/docs/${row.path}`}>
+                    <a key={row.path} className="sky-filed" href={fileHref(row.path)}>
                       <span className="sky-rec-at">{row.when ?? '⌗'}</span>
                       <span>{row.title}</span>
                     </a>
@@ -366,7 +369,7 @@ export function DayView({
           {day && day.chats.length > 0 && (
             <Block head="Filed today" mini={`${day.chats.length} chat${day.chats.length === 1 ? '' : 's'}`}>
               {day.chats.map((c) => (
-                <a key={c.path} className="sky-filed" href={`/docs/${c.path}`}>
+                <a key={c.path} className="sky-filed" href={fileHref(c.path)}>
                   <span className="sky-rec-at">{c.time}</span>
                   <span>{c.summary || c.path}</span>
                   <span className="sky-tag">

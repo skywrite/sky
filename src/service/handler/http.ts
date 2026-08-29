@@ -15,6 +15,7 @@ import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
+import { createExplorerRoutes } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
@@ -443,6 +444,16 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   })
 
   app.get('/thread/*', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // The explorer: the notebook's files as a tree, any one of them open to read.
+  // Its data lives under /explorer/_api/…; the page is /explorer, or /explorer/<file>.
+  app.route('/explorer/_api', createExplorerRoutes({ markdownBaseDir, markdownDirs }))
+  app.get('/explorer', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  app.get('/explorer/*', (c) => {
     return c.html(renderAppHtml('sky'))
   })
 

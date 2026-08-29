@@ -108,7 +108,7 @@ function normalizeTheme(themeParam: string | undefined): MarkdownPreviewTheme {
     : 'github'
 }
 
-function isPathWithinRoots(filePath: string, markdownDirs: string[]): boolean {
+export function isPathWithinRoots(filePath: string, markdownDirs: string[]): boolean {
   const resolvedFile = path.resolve(filePath)
 
   return markdownDirs.some((root) => {
@@ -116,7 +116,7 @@ function isPathWithinRoots(filePath: string, markdownDirs: string[]): boolean {
   })
 }
 
-function isPathWithinRoot(filePath: string, rootDir: string): boolean {
+export function isPathWithinRoot(filePath: string, rootDir: string): boolean {
   const resolvedRoot = path.resolve(rootDir)
   const relative = path.relative(resolvedRoot, filePath)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
