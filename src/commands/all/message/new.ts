@@ -234,7 +234,7 @@ export default class MessageNewTask extends Command {
       ].filter(Boolean)
       const extraction = await extractMessageFromImage(imagePaths, {
         aiContext: hints.length > 0 ? hints.join(' ') : undefined,
-        referenceDate: `${when.plainDate}`,
+        now: `${when}`,
       })
 
       // 3. Apply extracted values (CLI flags override AI)

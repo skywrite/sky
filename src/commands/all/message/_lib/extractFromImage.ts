@@ -19,8 +19,9 @@ const MessageSchema = z.object({
     .nullable()
     .describe(
       'Timestamp for this message as "HH:MM", or "YYYY-MM-DD HH:MM" when it falls on a different day than the ' +
-        'conversation as a whole. Copy the wall clock exactly as displayed and resolve any relative label ' +
-        '("Today", "Yesterday") against the reference date. Null if this message carries no visible timestamp.',
+        'conversation as a whole. Copy an absolute wall clock exactly as displayed; resolve a relative label ' +
+        '("Today", "Yesterday", "Now", "5 min ago") against the filing time given in the prompt. Null if this ' +
+        'message carries no visible timestamp.',
     ),
 })
 
@@ -54,8 +55,10 @@ const ExtractionSchema = z.object({
     .nullable()
     .describe(
       'When the conversation took place, as "YYYY-MM-DD HH:MM". Take the wall clock from the first message\'s ' +
-        'visible timestamp exactly as displayed, and resolve its date from the date separator or relative label ' +
-        '("Today", "Yesterday") against the reference date given in the prompt. Null if no timestamp is visible.',
+        'visible timestamp — an absolute clock exactly as displayed, a relative one ("Now", "Just now", ' +
+        '"5 min ago") resolved against the filing time given in the prompt — and resolve its date from the date ' +
+        'separator or relative label ("Today", "Yesterday") against that same filing time. Null if no timestamp ' +
+        'is visible.',
     ),
   messages: z
     .array(MessageSchema)
@@ -86,12 +89,13 @@ export interface ExtractOptions {
   /** Extra guidance for the model — known participants, user-supplied --ai-context. */
   aiContext?: string
   /**
-   * `YYYY-MM-DD` the screenshots are being filed under, used to resolve "Today"
-   * and "Yesterday". Passed in rather than read from a clock here; for a
-   * screenshot captured on an earlier day those labels resolve to the filing
-   * date, which the corrections prompt can fix.
+   * `YYYY-MM-DD HH:MM` the screenshots are being filed at — the moment the model
+   * resolves relative labels against: "Today"/"Yesterday" for the date, "Now",
+   * "Just now", "5 min ago" for the clock. Passed in rather than read from a
+   * clock here; for a screenshot captured earlier those labels resolve to the
+   * filing time, which the corrections prompt can fix.
    */
-  referenceDate?: string
+  now?: string
 }
 
 export interface SenderRename {
@@ -149,7 +153,7 @@ export function renderDialogue(messages: ExtractedMessage[]): string {
 
 export async function extractMessageFromImage(
   imagePaths: string[],
-  { aiContext, referenceDate }: ExtractOptions = {},
+  { aiContext, now }: ExtractOptions = {},
 ): Promise<ImageExtraction> {
   const imageBlocks = await Promise.all(
     imagePaths.map(async (p) => {
@@ -160,7 +164,7 @@ export async function extractMessageFromImage(
 
   const promptContent = await readTextFile(PROMPT_FILE)
   let { output: prompt } = renderPromptFile(promptContent, 'extract-from-image.prompt.md', {
-    user: { referenceDate: referenceDate ?? '(unknown)' },
+    user: { now: now ?? '(unknown)' },
   })
   if (aiContext) {
     prompt += `\n\nAdditional context: ${aiContext}`

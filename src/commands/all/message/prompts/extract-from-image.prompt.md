@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-02-15
-updated: 2026-08-25
+updated: 2026-08-28
 description: Extract messaging conversation data from one or more screenshots using AI vision
 ---
 
@@ -20,8 +20,8 @@ Direction (`from`/`to`):
 
 Date the conversation:
 
-- These screenshots are being filed under {{user.referenceDate}}. Resolve relative labels against that date — "Today" is {{user.referenceDate}}, "Yesterday" is the day before it.
-- `when` is the first message's timestamp, since that is when the conversation started. Copy its wall clock exactly as shown — only the date is yours to resolve.
+- These screenshots are being filed at {{user.now}}. Resolve relative labels against that moment — "Today" is that date and "Yesterday" the day before it; "Now" or "Just now" is that clock, and "5 min ago" is five minutes before it.
+- `when` is the first message's timestamp, since that is when the conversation started. Copy an absolute wall clock exactly as shown — only the date, and any relative label, are yours to resolve.
 - Each message's own `time` follows the same rules. Messaging apps stamp only some messages in a run — leave the others null rather than inferring one from a neighbour.
 - If no timestamp or date separator is visible anywhere, return null rather than guessing.
 
