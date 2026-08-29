@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { fetchPeopleIndex, readServiceDocument } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
+import { MAX_OVERVIEW_LINES, MAX_WORDS_PER_LINE } from '#shared/models/Person/format.ts'
 import {
   findPersonSubjects,
   type PersonIndexEntry,
@@ -18,23 +19,35 @@ import { fetchEntityScores } from './scores.ts'
 // the CRM should learn. The calibration lives in the prompt's bar — most
 // conversations teach NOTHING about a person, and profiles hold who someone
 // IS, never what merely happened (the meeting/chat/message docs already
-// record that). Applying the ops, the caps, and the never-delete guarantees
-// all live in models/Person/write.ts; this module only asks the model.
+// record that). Applying the ops, the caps, the format law, and the
+// never-delete-unquoted guarantees all live in models/Person/write.ts and
+// format.ts (design: models/Person/docs/README.md); this module only asks
+// the model.
 
 // generateObject has no timeout option; an unbounded call can hang forever.
 const AI_TIMEOUT_MS = 60_000
 
+const LINE_RULE = `one fact, at most ${MAX_WORDS_PER_LINE} words, no semicolons`
+
 const opSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('overview'),
-    body: z
-      .string()
-      .describe('the full replacement ## Overview: 2-6 sentences, preserving every fact the current Overview holds'),
+    lines: z
+      .array(z.string().describe(LINE_RULE))
+      .describe(
+        `the full replacement ## Overview, ${MAX_OVERVIEW_LINES} lines at most, every still-true fact carried over`,
+      ),
   }),
   z.object({
     op: z.literal('note'),
     section: z.enum(APPEND_SECTIONS),
-    text: z.string().describe('one short self-contained sentence, appended forever'),
+    text: z.string().describe(`${LINE_RULE}; a fact that stays true, appended forever`),
+  }),
+  z.object({
+    op: z.literal('replace'),
+    section: z.enum(APPEND_SECTIONS),
+    old: z.string().describe('the existing line, quoted exactly as the profile has it, without its list marker'),
+    text: z.string().describe(`the corrected line: ${LINE_RULE}`),
   }),
   z.object({ op: z.literal('field'), field: z.enum(FILL_FIELDS), value: z.string() }),
   z.object({ op: z.literal('site'), url: z.string().describe('a URL that clearly belongs to this person') }),
@@ -110,6 +123,45 @@ function profileBlock(subject: PersonSubject): string {
 }
 
 /**
+ * The prompt, in the model's words. Format numbers come from format.ts, so
+ * tweaking a cap there changes what the model is asked for and what the
+ * applier accepts in one move.
+ */
+export function personFactsPrompt(input: { kind: string; userLabel: string; today: string; profiles: string }): string {
+  const user = input.userLabel
+  return [
+    `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${input.kind} and the current profiles of the people it may mention. Decide what those profiles should learn and return the operations.`,
+    '',
+    'THE BAR — most conversations teach nothing about a person:',
+    '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
+    '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists the likeliest profile answering to it — two when their standing with the user is close — and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
+    "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
+    "- Never invent. Every fact must come from the transcript or from the person's current profile.",
+    '',
+    'FORMAT — a reader with no patience takes each line in at a glance:',
+    `- One fact per line. At most ${MAX_WORDS_PER_LINE} words. No semicolons. No dashes joining clauses. No lists inside a line.`,
+    '- Plain words. Present tense for what is true now, past tense for history.',
+    '- A line that breaks these rules is refused, so split a long thought into two lines.',
+    '',
+    'Operations (name each person exactly as their profile is listed):',
+    `- overview: the full replacement ## Overview, ${MAX_OVERVIEW_LINES} lines at most. It answers "who is this and where do things stand": role and org, how they connect to ${user}, where the relationship or engagement stands now, a candid read worth keeping. It REPLACES the current Overview, so carry over every fact still true from it, reworded freely, one per line. Recent events and the current state belong here and nowhere else. Omit it when the picture has not changed.`,
+    `- note: one fact that will stay true, appended to a section forever. Background: origin story, how they met ${user}, career history. Family: spouse, children, birthdays, anniversaries. Info: lasting miscellany — how a name is pronounced, quirks, standing preferences. Never a status, a plan, or something that happened; that is overview material.`,
+    '- replace: correct a line in Background, Family, or Info that the conversation shows is wrong or stale. Quote the old line exactly as the profile has it, without its list marker, and give the corrected line. Nothing outside those three sections is editable.',
+    '- field: fill an empty frontmatter field (location, title, org) the conversation establishes. When the overview states a role, org, or location and that field is empty, send this too.',
+    '- site: a URL that clearly belongs to the person (their site, their LinkedIn).',
+    '- preferred-name: ONLY on explicit evidence — "goes by", "call me", a stated correction. Never infer from usage alone.',
+    '',
+    `unlisted: a person the conversation materially discussed who has NO profile below — someone ${user} personally knows or dealt with (met, emailed, works with), with a one-line gist. People only: a company, product, protocol, team, or place is never a person and never belongs here. Never ${user} themself, never the AI assistant, never public figures merely referenced. Give the name alone, with no role or qualifier in parentheses.`,
+    '',
+    `Today is ${input.today}.`,
+    '',
+    '<profiles>',
+    input.profiles,
+    '</profiles>',
+  ].join('\n')
+}
+
+/**
  * Ask the model what the person profiles should learn from this
  * conversation. Returns undefined on model error — the save proceeds
  * without profile ops, mirroring the other enrichers' abstain behavior.
@@ -153,28 +205,7 @@ export async function distillPersonFacts(
           .describe('people materially discussed who have no profile listed'),
       }),
       prompt: [
-        `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${kind} and the current profiles of the people it may mention. Decide what those profiles should learn and return the operations.`,
-        '',
-        'THE BAR — most conversations teach nothing about a person:',
-        '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
-        '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists the likeliest profile answering to it — two when their standing with the user is close — and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
-        "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
-        "- Never invent. Every fact must come from the transcript or from the person's current profile.",
-        '',
-        'Operations (name each person exactly as their profile is listed):',
-        `- overview: the full replacement ## Overview — 2-6 sentences answering "who is this and where do things stand": role and org, how they connect to ${input.userLabel}, the current state of the relationship or engagement, and any candid read worth keeping. It REPLACES the existing Overview, so it must preserve every fact currently there, reworded freely. Write it when the conversation changes the picture; omit it when nothing changed.`,
-        `- note: one durable sentence appended to a section. Background: origin story, how they met ${input.userLabel}, career history. Family: spouse, children, birthdays, anniversaries. Info: lasting miscellany — how a name is pronounced, quirks, standing preferences. Notes are permanent; only facts worth keeping forever.`,
-        '- field: fill an empty frontmatter field (location, title, org) the conversation establishes.',
-        '- site: a URL that clearly belongs to the person (their site, their LinkedIn).',
-        '- preferred-name: ONLY on explicit evidence — "goes by", "call me", a stated correction. Never infer from usage alone.',
-        '',
-        `unlisted: a person the conversation materially discussed who has NO profile below — someone ${input.userLabel} personally knows or dealt with (met, emailed, works with), with a one-line gist. People only: a company, product, protocol, team, or place is never a person and never belongs here. Never ${input.userLabel} themself, never the AI assistant, never public figures merely referenced. Give the name alone, with no role or qualifier in parentheses.`,
-        '',
-        `Today is ${input.today}.`,
-        '',
-        '<profiles>',
-        profiles,
-        '</profiles>',
+        personFactsPrompt({ kind, userLabel: input.userLabel, today: input.today, profiles }),
         '',
         '<transcript>',
         input.transcript,

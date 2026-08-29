@@ -596,7 +596,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
             {
               name: 'Alex Rivera',
               ops: [
-                { op: 'overview', body: 'Vendor lead on the Atlas rollout; based in Lisbon.' },
+                { op: 'overview', lines: ['Vendor lead on the Atlas rollout.', 'Based in Lisbon.'] },
                 { op: 'field', field: 'location', value: 'Lisbon' },
               ],
             },
@@ -622,7 +622,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
       {
         op: 'overview',
         person: 'Alex Rivera',
-        summary: 'Vendor lead on the Atlas rollout; based in Lisbon.',
+        summary: 'Vendor lead on the Atlas rollout. · Based in Lisbon.',
         outcome: 'applied',
       },
       { op: 'field', person: 'Alex Rivera', summary: 'location: Lisbon', outcome: 'applied' },
@@ -642,7 +642,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     should: 'carry the new Overview first, the filled location, the bumped updated, and the old Background',
     actual: {
       overviewFirst: profile.indexOf('## Overview') < profile.indexOf('## Background'),
-      overview: profile.includes('Vendor lead on the Atlas rollout; based in Lisbon.'),
+      overview: profile.includes('- Vendor lead on the Atlas rollout.\n- Based in Lisbon.'),
       location: profile.includes('location: Lisbon'),
       updated: profile.includes('updated: 2026-01-27'),
       background: profile.includes('Met through the Atlas vendor search.'),

@@ -1,20 +1,24 @@
 /**
  * The write half of person profiles: applying save-time distiller ops to
- * people/ files — the notebook's CRM.
+ * people/ files — the notebook's CRM. Design and format law: docs/README.md.
  *
  * The distiller (lib/notebook/enrich/distillPersonFacts.ts) reads a finished
  * conversation against the profiles of the people it discussed and returns
  * ops; this module is the only thing that turns them into edits. Unlike
  * ai/memory/, people/ is hand-authored space, so the discipline here is
- * structural rather than a write license: NOTHING IS EVER DELETED. The AI
- * owns exactly one section — ## Overview, rewritten wholesale — while every
- * other section only ever gains appended lines, and frontmatter fields fill
- * only when empty. The one sanctioned mutation beyond that is the name
- * list, whose order is a notebook-wide convention (index 0 preferred,
- * index 1 legal): an explicit "goes by" may reorder it. Touching a file
- * also canonicalizes stray section headings (Family / Relationships →
- * Family, Contact/Links → Info, About → Background) — a rename-and-merge
- * that moves content, never drops it.
+ * structural rather than a write license: NOTHING IS DELETED UNQUOTED. The
+ * AI owns exactly one section — ## Overview, rewritten wholesale — while
+ * every other section only ever gains appended lines, or has one line
+ * swapped for a corrected one when the distiller quotes it verbatim. Every
+ * line the AI writes obeys the format law in format.ts: one fact per line,
+ * a word cap, bullets. A line over the cap is refused, never trimmed.
+ * Frontmatter fields fill only when empty. The one sanctioned mutation
+ * beyond that is the name list, whose order is a notebook-wide convention
+ * (index 0 preferred, index 1 legal): an explicit "goes by" may reorder it.
+ * Touching a file also canonicalizes stray section headings (Family /
+ * Relationships → Family, Contact/Links → Info, About → Background) — a
+ * rename-and-merge that moves content, never drops it — and drops a body
+ * line that merely echoes its own heading.
  *
  * All disk I/O goes through an injected DocumentIO — in production the
  * notebook service's documentContent/saveDocument pair (lib/service/
@@ -27,6 +31,7 @@
  */
 
 import { normalizeName } from '#shared/models/Store/normalize.ts'
+import { bullet, isBullet, lineKey, MAX_OVERVIEW_LINES, MAX_WORDS_PER_LINE, overCap, toFactLines } from './format.ts'
 import PersonDocument from './mod.ts'
 
 // -----------------------------------------------------------------------------
@@ -61,7 +66,7 @@ export interface DocumentIO {
 // Ops — what a distillation may ask for
 // -----------------------------------------------------------------------------
 
-/** Sections that accept appended notes. ## Overview is rewritten, never appended. */
+/** Sections that accept appended and replaced lines. ## Overview is rewritten, never appended. */
 export const APPEND_SECTIONS = ['Background', 'Family', 'Info'] as const
 export type AppendSection = (typeof APPEND_SECTIONS)[number]
 
@@ -70,10 +75,12 @@ export const FILL_FIELDS = ['location', 'title', 'org'] as const
 export type FillField = (typeof FILL_FIELDS)[number]
 
 export type PersonOp =
-  /** Replace (or create, as the first section) ## Overview wholesale */
-  | { op: 'overview'; body: string }
-  /** Append one durable sentence to an append-only section */
+  /** Replace (or create, as the first section) ## Overview wholesale: one fact per line */
+  | { op: 'overview'; lines: string[] }
+  /** Append one durable fact to an append-only section */
   | { op: 'note'; section: AppendSection; text: string }
+  /** Swap one existing line, quoted verbatim, for a corrected one */
+  | { op: 'replace'; section: AppendSection; old: string; text: string }
   /** Fill an empty frontmatter field */
   | { op: 'field'; field: FillField; value: string }
   /** Add a URL to sites: (deduped) */
@@ -117,10 +124,13 @@ export interface PersonOpOutcome {
  * meeting legitimately teaches something about half a dozen people; a
  * conversation teaching about more than this is vanishingly rare — past the
  * caps it's a model failure, and the excess is skipped visibly rather than
- * applied.
+ * applied. One rich conversation about one person runs to eight ops once
+ * an overview brings its field fills along (a dry run: overview, three
+ * fields, two replaces, a note, a rename), so the per-person cap sits
+ * above that.
  */
 export const MAX_PEOPLE_PER_SAVE = 8
-export const MAX_OPS_PER_PERSON = 6
+export const MAX_OPS_PER_PERSON = 10
 /** Unlisted lines past this fold into one — a hint lane, never a roster. */
 export const MAX_UNLISTED_PER_SAVE = 6
 
@@ -128,6 +138,7 @@ export const MAX_UNLISTED_PER_SAVE = 6
 export const PERSON_VERBS: Record<string, string> = {
   overview: 'profiled',
   note: 'noted',
+  replace: 'revised',
   field: 'filled',
   site: 'linked',
   'preferred-name': 'renamed',
@@ -162,6 +173,8 @@ export interface SplitBody {
 
 /** Exactly h2 — ### subsections stay inside their parent section's body. */
 const H2 = /^##(?!#)\s*(.*?)\s*$/
+/** h3 and deeper, inside a section body. */
+const SUBHEADING = /^\s*#{3,}\s/
 
 export function splitBodySections(body: string): SplitBody {
   const preambleLines: string[] = []
@@ -209,7 +222,9 @@ const CANONICAL_SECTIONS: Record<string, string> = {
  * Rename stray headings to their canonical names and merge same-named
  * sections (the rename can collide with an existing section, and messy
  * files carry literal duplicates). A merge appends the later section's
- * content to the earlier one — a move, never a delete.
+ * content to the earlier one — a move, never a delete. A body whose first
+ * line only repeats its own heading loses that line: it is an echo an
+ * earlier distiller left behind, not a fact.
  */
 export function canonicalizeSections(split: SplitBody): SplitBody {
   const sections: BodySection[] = []
@@ -217,17 +232,25 @@ export function canonicalizeSections(split: SplitBody): SplitBody {
 
   for (const s of split.sections) {
     const heading = CANONICAL_SECTIONS[s.heading.toLowerCase()] ?? s.heading
+    const body = dropHeadingEcho(s.body, heading)
     const existing = byKey.get(heading.toLowerCase())
     if (existing) {
-      existing.body = [existing.body, s.body].filter(Boolean).join('\n\n')
+      existing.body = [existing.body, body].filter(Boolean).join('\n\n')
       continue
     }
-    const next = { heading, body: s.body }
+    const next = { heading, body }
     byKey.set(heading.toLowerCase(), next)
     sections.push(next)
   }
 
   return { preamble: split.preamble, sections }
+}
+
+function dropHeadingEcho(body: string, heading: string): string {
+  const lines = body.split('\n')
+  const first = lines[0]?.trim().replace(/:$/, '').toLowerCase()
+  if (first !== heading.toLowerCase()) return body
+  return lines.slice(1).join('\n').trim()
 }
 
 function findSection(split: SplitBody, heading: string): BodySection | undefined {
@@ -249,8 +272,8 @@ export interface AppliedMarkdown {
  * Apply one person's ops to their profile text. Pure — same inputs, same
  * result — which is what lets a version conflict simply re-run it against
  * the fresh content. Ops that cannot apply (occupied field, duplicate
- * note, over the op cap) come back skipped; the returned markdown is only
- * meaningful when `applied > 0`.
+ * note, a line over the cap, over the op cap) come back skipped; the
+ * returned markdown is only meaningful when `applied > 0`.
  */
 export function applyOpsToMarkdown(markdown: string, ops: PersonOp[], person: string, today: string): AppliedMarkdown {
   const doc = PersonDocument.fromMarkdown(markdown)
@@ -395,9 +418,11 @@ function existingProfileReason(names: string[]): string {
 function opGist(op: PersonOp): string {
   switch (op.op) {
     case 'overview':
-      return truncate(op.body)
+      return truncate(op.lines.join(' · '))
     case 'note':
       return truncate(op.text)
+    case 'replace':
+      return truncate(`${op.text} (was: ${op.old})`)
     case 'field':
       return `${op.field}: ${op.value}`
     case 'site':
@@ -457,29 +482,58 @@ function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: st
 
   switch (op.op) {
     case 'overview': {
-      // Heading markers inside the body would fracture the section split on
-      // the next read — an Overview is prose, so they are stripped, not obeyed.
-      const body = op.body
-        .replace(/\r/g, '')
-        .replace(/^#+\s*/gm, '')
-        .trim()
-      if (!body) return skipped(opGist(op), 'empty overview')
+      // The whole section either becomes a conforming one or stays as it
+      // is: a line over the cap refuses the op, so the current Overview is
+      // never traded for a trimmed or partial one.
+      const lines = toFactLines(op.lines)
+      if (lines.length === 0) return skipped(opGist(op), 'empty overview')
+      const long = overCap(lines)
+      if (long) return skipped(opGist(op), overCapReason(long))
+      if (lines.length > MAX_OVERVIEW_LINES) {
+        return skipped(opGist(op), `${lines.length} lines, cap ${MAX_OVERVIEW_LINES}`)
+      }
+      const body = lines.map(bullet).join('\n')
       const existing = findSection(split, 'Overview')
       if (existing) existing.body = body
       else split.sections.unshift({ heading: 'Overview', body })
-      return applied(truncate(body))
+      return applied(truncate(lines.join(' · ')))
     }
 
     case 'note': {
-      const text = op.text.replace(/\s+/g, ' ').trim()
-      if (!text) return skipped(opGist(op), 'empty note')
+      // A note that chained two facts lands as two bullets; each dedupes
+      // on its own against every line already in the section.
+      const lines = toFactLines(op.text)
+      if (lines.length === 0) return skipped(opGist(op), 'empty note')
+      const long = overCap(lines)
+      if (long) return skipped(opGist(op), overCapReason(long))
       const section = findSection(split, op.section)
-      if (section && sectionHasLine(section.body, text)) {
-        return skipped(`${truncate(text)} (${op.section})`, 'already noted')
-      }
-      if (section) section.body = section.body ? `${section.body}\n\n${text}` : text
-      else split.sections.push({ heading: op.section, body: text })
-      return applied(`${truncate(text)} (${op.section})`)
+      const fresh = section ? lines.filter((line) => !sectionHasLine(section.body, line)) : lines
+      if (fresh.length === 0) return skipped(`${opGist(op)} (${op.section})`, 'already noted')
+      if (section) section.body = appendLines(section.body, fresh)
+      else split.sections.push({ heading: op.section, body: fresh.map(bullet).join('\n') })
+      return applied(`${truncate(fresh.join(' · '))} (${op.section})`)
+    }
+
+    case 'replace': {
+      // No match, no write: the quote must equal a whole existing line
+      // (marker, case, and terminal period aside). Headings are never a
+      // target — a sub-heading swapped for a bullet would delete structure.
+      const lines = toFactLines(op.text)
+      if (lines.length === 0) return skipped(opGist(op), 'empty replacement')
+      const long = overCap(lines)
+      if (long) return skipped(opGist(op), overCapReason(long))
+      const key = lineKey(op.old)
+      if (!key) return skipped(opGist(op), 'empty old line')
+      const section = findSection(split, op.section)
+      if (!section) return skipped(opGist(op), `no ${op.section} section`)
+      const rows = section.body.split('\n')
+      const at = rows.findIndex((row) => lineKey(row) === key)
+      if (at < 0) return skipped(opGist(op), 'old line not found')
+      if (SUBHEADING.test(rows[at])) return skipped(opGist(op), 'old line is a heading')
+      if (lines.length === 1 && lineKey(lines[0]) === key) return skipped(opGist(op), 'unchanged')
+      rows.splice(at, 1, ...lines.map(bullet))
+      section.body = rows.join('\n')
+      return applied(`${truncate(`${lines.join(' · ')} (was: ${op.old})`)} (${op.section})`)
     }
 
     case 'field': {
@@ -494,7 +548,7 @@ function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: st
 
     case 'site': {
       const url = op.url.trim()
-      if (!/^https?:\/\//i.test(url)) return skipped(opGist(op), 'not a URL')
+      if (!/^https?:\/\//i.test(url)) return skipped(url, 'not a URL')
       if (doc.sites.has(url)) return skipped(url, 'already listed')
       doc.yaml['sites'] = [...Array.from(doc.sites), url]
       return applied(url)
@@ -517,8 +571,32 @@ function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: st
   }
 }
 
+function overCapReason(line: string): string {
+  return `over ${MAX_WORDS_PER_LINE} words: "${truncate(line, 40)}"`
+}
+
+/**
+ * New bullets join the section's own body, above any ### sub-heading, so
+ * a Background note never lands under whatever sub-section happens to be
+ * last. Consecutive bullets stay one list; after prose, a blank line
+ * separates.
+ */
+function appendLines(body: string, lines: string[]): string {
+  const rows = body ? body.split('\n') : []
+  const sub = rows.findIndex((row) => SUBHEADING.test(row))
+  const head = sub < 0 ? rows : rows.slice(0, sub)
+  const tail = sub < 0 ? [] : rows.slice(sub)
+  while (head.length > 0 && head[head.length - 1].trim() === '') head.pop()
+  const last = head[head.length - 1]
+  if (last !== undefined && !isBullet(last)) head.push('')
+  head.push(...lines.map(bullet))
+  if (tail.length > 0) head.push('')
+  return [...head, ...tail].join('\n')
+}
+
 function sectionHasLine(body: string, text: string): boolean {
-  return body.split('\n').some((line) => line.trim() === text)
+  const key = lineKey(text)
+  return body.split('\n').some((line) => lineKey(line) === key)
 }
 
 function hasValue(value: unknown): boolean {

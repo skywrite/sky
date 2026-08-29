@@ -1,4 +1,5 @@
 import { assert, test } from '#test'
+import { MAX_OVERVIEW_LINES, MAX_WORDS_PER_LINE } from './format.ts'
 import PersonDocument from './mod.ts'
 import {
   applyPersonFacts,
@@ -90,6 +91,18 @@ async function applyOps(ops: PersonOp[], contents = PROFILE) {
   return { outcomes, after: io.content(PATH), io }
 }
 
+function sectionsOf(markdown: string) {
+  return splitBodySections(PersonDocument.fromMarkdown(markdown).toMarkdown({ yaml: false }))
+}
+
+function sectionBody(markdown: string, heading: string): string | undefined {
+  return sectionsOf(markdown).sections.find((s) => s.heading === heading)?.body
+}
+
+const LONG_LINE = Array.from({ length: MAX_WORDS_PER_LINE + 1 }, (_, i) => `Word${i}`).join(' ')
+/** The applier quotes the first 39 characters of the offending line. */
+const LONG_REASON = `over ${MAX_WORDS_PER_LINE} words: "${LONG_LINE.slice(0, 39)}…"`
+
 // -----------------------------------------------------------------------------
 // Section surgery
 // -----------------------------------------------------------------------------
@@ -128,6 +141,18 @@ test('canonicalizeSections - legacy headings rename and same-named sections merg
   })
 })
 
+test('canonicalizeSections - a body line that only echoes its heading drops', () => {
+  const split = canonicalizeSections(
+    splitBodySections(['# T', '', '## Overview', '', 'Overview', '', 'The old wall of prose.', ''].join('\n')),
+  )
+  assert({
+    given: 'an Overview whose first line is the bare word Overview',
+    should: 'drop the echo and keep the prose',
+    actual: split.sections[0].body,
+    expected: 'The old wall of prose.',
+  })
+})
+
 test('joinBodySections - an empty section keeps its heading', () => {
   const body = joinBodySections({ preamble: '# T', sections: [{ heading: 'Overview', body: '' }] })
   assert({
@@ -142,13 +167,13 @@ test('joinBodySections - an empty section keeps its heading', () => {
 // Ops
 // -----------------------------------------------------------------------------
 
-test('applyPersonFacts - overview lands as the first section and rewrites in place', async () => {
-  const first = await applyOps([{ op: 'overview', body: 'Platform lead at Example Corp; met via Atlas.' }])
+test('applyPersonFacts - overview lands as bullets in the first section and rewrites in place', async () => {
+  const first = await applyOps([{ op: 'overview', lines: ['Platform lead at Example Corp.', 'Met via Atlas.'] }])
   const doc = PersonDocument.fromMarkdown(first.after)
   const split = splitBodySections(doc.toMarkdown({ yaml: false }))
   assert({
     given: 'a profile with no Overview',
-    should: 'create it ahead of every existing section and bump updated',
+    should: 'create it ahead of every existing section, one bullet per line, and bump updated',
     actual: {
       outcome: first.outcomes[0].outcome,
       headings: split.sections.map((s) => s.heading),
@@ -158,48 +183,136 @@ test('applyPersonFacts - overview lands as the first section and rewrites in pla
     expected: {
       outcome: 'applied',
       headings: ['Overview', 'Background', 'Family', 'Info'],
-      overview: 'Platform lead at Example Corp; met via Atlas.',
+      overview: '- Platform lead at Example Corp.\n- Met via Atlas.',
       updated: TODAY,
     },
   })
 
   const second = await applyOps(
-    [{ op: 'overview', body: '## Rewritten\nNow running the vendor program.' }],
+    [{ op: 'overview', lines: ['## Overview', 'Now running the vendor program; reports to the CTO.'] }],
     first.after,
   )
-  const rewritten = splitBodySections(PersonDocument.fromMarkdown(second.after).toMarkdown({ yaml: false }))
+  const rewritten = sectionsOf(second.after)
   assert({
-    given: 'a second overview carrying a stray heading marker',
-    should: 'replace the section wholesale with the markers stripped',
+    given: 'a second overview carrying a heading line and a semicolon chain',
+    should: 'replace the section wholesale, dropping the heading and splitting the chain',
     actual: {
       overview: rewritten.sections[0].body,
       count: rewritten.sections.filter((s) => s.heading === 'Overview').length,
     },
-    expected: { overview: 'Rewritten\nNow running the vendor program.', count: 1 },
+    expected: { overview: '- Now running the vendor program\n- Reports to the CTO.', count: 1 },
   })
 })
 
-test('applyPersonFacts - notes append, dedupe exactly, and create their section at the end', async () => {
+test('applyPersonFacts - an overview breaking the format law is refused whole', async () => {
+  const seeded = await applyOps([{ op: 'overview', lines: ['Platform lead at Example Corp.'] }])
+  const tooLong = await applyOps([{ op: 'overview', lines: ['Met via Atlas.', LONG_LINE] }], seeded.after)
+  const tooMany = await applyOps(
+    [{ op: 'overview', lines: Array.from({ length: MAX_OVERVIEW_LINES + 1 }, (_, i) => `Fact ${i}.`) }],
+    seeded.after,
+  )
+  assert({
+    given: 'one overview with a line over the word cap and one with too many lines',
+    should: 'skip each with the rule named and leave the current Overview untouched',
+    actual: {
+      reasons: [tooLong.outcomes[0].reason, tooMany.outcomes[0].reason],
+      saves: tooLong.io.saves + tooMany.io.saves,
+      overview: sectionBody(tooMany.after, 'Overview'),
+    },
+    expected: {
+      reasons: [LONG_REASON, `${MAX_OVERVIEW_LINES + 1} lines, cap ${MAX_OVERVIEW_LINES}`],
+      saves: 0,
+      overview: '- Platform lead at Example Corp.',
+    },
+  })
+})
+
+test('applyPersonFacts - notes append as bullets, dedupe by key, and create their section at the end', async () => {
   const { outcomes, after } = await applyOps([
-    { op: 'note', section: 'Family', text: 'Partner: Jordan.' },
+    { op: 'note', section: 'Family', text: 'partner: Jordan' },
     { op: 'note', section: 'Family', text: 'Anniversary: June 12.' },
-    { op: 'note', section: 'Background', text: 'Pronounced TAY-lor KWIN.' },
+    { op: 'note', section: 'Family', text: 'Anniversary: June 12.' },
+    { op: 'note', section: 'Info', text: 'Pronounced TAY-lor KWIN.' },
   ])
 
   assert({
-    given: 'a duplicate line, a fresh line, and a line for another section',
-    should: 'skip the duplicate and append the rest',
-    actual: outcomes.map((o) => o.outcome),
-    expected: ['skipped', 'applied', 'applied'],
+    given: 'a duplicate of a hand-written line, a fresh line, its repeat, and a line for another section',
+    should: 'skip both duplicates and append the rest',
+    actual: outcomes.map((o) => [o.outcome, o.reason]),
+    expected: [
+      ['skipped', 'already noted'],
+      ['applied', undefined],
+      ['skipped', 'already noted'],
+      ['applied', undefined],
+    ],
   })
 
-  const split = splitBodySections(PersonDocument.fromMarkdown(after).toMarkdown({ yaml: false }))
-  const family = split.sections.find((s) => s.heading === 'Family')
   assert({
     given: 'the rewritten file',
-    should: 'carry the legacy heading canonicalized, the old line once, and the new line appended',
-    actual: family?.body,
-    expected: 'Partner: Jordan.\n\nAnniversary: June 12.',
+    should: 'keep the hand-written line, add the bullet after a blank line, and extend the Info list',
+    actual: { family: sectionBody(after, 'Family'), info: sectionBody(after, 'Info') },
+    expected: {
+      family: 'Partner: Jordan.\n\n- Anniversary: June 12.',
+      info: '- https://example.com/taylor\n- Pronounced TAY-lor KWIN.',
+    },
+  })
+})
+
+test('applyPersonFacts - a note joins its section above any sub-heading; a chain lands as two bullets', async () => {
+  const { outcomes, after } = await applyOps([
+    { op: 'note', section: 'Background', text: 'Grew up in Lisbon; studied physics at Example University.' },
+    { op: 'note', section: 'Background', text: LONG_LINE },
+  ])
+  assert({
+    given: 'a chained note for a section with a ### sub-section, and a note over the cap',
+    should: 'insert two bullets before the sub-heading and refuse the long one',
+    actual: {
+      outcomes: outcomes.map((o) => o.outcome),
+      reason: outcomes[1].reason,
+      background: sectionBody(after, 'Background'),
+    },
+    expected: {
+      outcomes: ['applied', 'skipped'],
+      reason: LONG_REASON,
+      background: [
+        'Met at the Atlas kickoff.',
+        '',
+        '- Grew up in Lisbon',
+        '- Studied physics at Example University.',
+        '',
+        '### Career',
+        '',
+        'Ten years at Example Corp.',
+      ].join('\n'),
+    },
+  })
+})
+
+test('applyPersonFacts - replace swaps one quoted line and nothing else', async () => {
+  const { outcomes, after } = await applyOps([
+    { op: 'replace', section: 'Background', old: 'ten years at example corp', text: 'Twelve years at Example Corp.' },
+    { op: 'replace', section: 'Background', old: 'Never wrote this.', text: 'Anything.' },
+    { op: 'replace', section: 'Background', old: '### Career', text: 'Career so far.' },
+    { op: 'replace', section: 'Family', old: 'Partner: Jordan.', text: 'Partner: Jordan' },
+    { op: 'replace', section: 'Family', old: 'Partner: Jordan.', text: LONG_LINE },
+  ])
+  assert({
+    given: 'a matching quote in loose form, an unknown quote, a heading, an unchanged line, and a long one',
+    should: 'apply only the first and name why each other one skipped',
+    actual: outcomes.map((o) => [o.outcome, o.reason]),
+    expected: [
+      ['applied', undefined],
+      ['skipped', 'old line not found'],
+      ['skipped', 'old line is a heading'],
+      ['skipped', 'unchanged'],
+      ['skipped', LONG_REASON],
+    ],
+  })
+  assert({
+    given: 'the rewritten file',
+    should: 'carry the corrected line as a bullet where the old one stood',
+    actual: sectionBody(after, 'Background'),
+    expected: 'Met at the Atlas kickoff.\n\n### Career\n\n- Twelve years at Example Corp.',
   })
 })
 
@@ -257,9 +370,9 @@ test('applyPersonFacts - preferred name reorders the list per the index-0 conven
 // Guards
 // -----------------------------------------------------------------------------
 
-test('applyPersonFacts - nothing is ever deleted', async () => {
+test('applyPersonFacts - nothing is deleted unquoted', async () => {
   const { after } = await applyOps([
-    { op: 'overview', body: 'The full current picture.' },
+    { op: 'overview', lines: ['The full current picture.'] },
     { op: 'note', section: 'Info', text: 'Goes by TQ on chat.' },
     { op: 'field', field: 'title', value: 'Platform Lead' },
   ])
@@ -276,6 +389,17 @@ test('applyPersonFacts - nothing is ever deleted', async () => {
       family: after.includes('## Family'),
     },
     expected: { kept: true, missing: [], family: true },
+  })
+})
+
+test('applyPersonFacts - a touched file sheds a heading echo an earlier save left behind', async () => {
+  const stale = PROFILE.replace('## Background', '## Overview\n\nOverview\n\nThe old wall of prose.\n\n## Background')
+  const { after } = await applyOps([{ op: 'field', field: 'location', value: 'Lisbon' }], stale)
+  assert({
+    given: 'an Overview whose first line is the bare word Overview, and an unrelated op',
+    should: 'drop the echo on the way through and keep the prose',
+    actual: sectionBody(after, 'Overview'),
+    expected: 'The old wall of prose.',
   })
 })
 
