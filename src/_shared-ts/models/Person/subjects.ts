@@ -15,15 +15,18 @@
  *
  * Two kinds of evidence, ranked in this order:
  * - a full multi-word name ("Sam Rivera") — unambiguous, always kept;
- * - a bare handle — a first name or a single-word alias ("Sam") — which is
- *   ambiguous, so it makes EVERY profile answering to it a candidate,
- *   ranked by interaction score and cut to the top few per handle. An
- *   explicit single-word alias in a profile's name list is evidence like
- *   any other first name, never authority: a legacy "Sam" alias on a
- *   rarely-seen profile must not claim every Sam in the notebook. A handle
- *   only counts capitalized, and not at all when the same word also occurs
- *   in lowercase in the transcript — then it is prose ("The", "Will",
- *   "Art") wearing a sentence-initial capital, not a name.
+ * - a bare handle — a first name or a single-word alias ("Sam") — which
+ *   the interaction score resolves: every profile answering to it is
+ *   ranked by score, and the leader wins outright when it dominates the
+ *   runner-up (the user's "Sam" is the Sam they deal with every week, not
+ *   one met once years ago). Only when the top scores are close does
+ *   the runner-up ride too, for the model to judge. An explicit
+ *   single-word alias in a profile's name list is evidence like any other
+ *   first name, never authority: a legacy "Sam" alias on a rarely-seen
+ *   profile must not claim every Sam in the notebook. A handle only counts
+ *   capitalized, and not at all when the same word also occurs in
+ *   lowercase in the transcript — then it is prose ("The", "Will", "Art")
+ *   wearing a sentence-initial capital, not a name.
  *
  * Both dependencies are injected — the index and the document reader — so
  * the caller decides the transport (the service in production, fixtures in
@@ -70,11 +73,20 @@ const MIN_NAME_CHARS = 3
 const DEFAULT_LIMIT = 32
 
 /**
- * A bare handle shared by several profiles keeps this many of them, by
- * interaction score — enough for the model to see the likely person and
- * the runner-up, never a page of namesakes.
+ * A bare handle shared by several profiles keeps at most this many of
+ * them, by interaction score — the likely person and one close runner-up,
+ * never a page of namesakes.
  */
 const PER_HANDLE_LIMIT = 2
+
+/**
+ * The leader resolves a bare handle alone once its score is this many
+ * times the runner-up's — the same dominance the rel resolver applies to
+ * an ambiguous mention (enrich/resolve.ts). Below it the scores are close
+ * and the runner-up rides too. Without scores nothing dominates and the
+ * handle stays ambiguous.
+ */
+const SCORE_DOMINANCE = 3
 
 export interface FindPersonSubjectsInput {
   transcript: string
@@ -155,8 +167,9 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
     matched.push({ entry, full, bare, handles: Array.from(handles), score })
   }
 
-  // A handle shared by several profiles keeps only its top few by score;
-  // a profile named in full is never cut.
+  // A handle shared by several profiles resolves by score: the leader
+  // always, a runner-up only while the leader doesn't dominate it. A
+  // profile named in full is never cut.
   const kept = new Set<PersonIndexEntry>()
   for (const candidate of matched) if (candidate.full > 0) kept.add(candidate.entry)
   const byHandle = new Map<string, Candidate[]>()
@@ -169,7 +182,12 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
   }
   for (const group of byHandle.values()) {
     group.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
-    for (const candidate of group.slice(0, PER_HANDLE_LIMIT)) kept.add(candidate.entry)
+    const [leader, ...rest] = group
+    kept.add(leader.entry)
+    for (const candidate of rest.slice(0, PER_HANDLE_LIMIT - 1)) {
+      if (leader.score > 0 && leader.score >= SCORE_DOMINANCE * candidate.score) break
+      kept.add(candidate.entry)
+    }
   }
 
   const ranked = matched

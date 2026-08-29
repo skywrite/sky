@@ -157,6 +157,38 @@ test('findPersonSubjects - a full name outranks bare first names and survives th
   })
 })
 
+test('findPersonSubjects - a dominant score resolves a bare first name to one profile', async () => {
+  const dominant = (name: string) => ({ 'Sam Rivera': 300, 'Sam Okafor': 0.4, 'Sam Lindqvist': 0.2 })[name] ?? 0
+  const [bare, withFull] = await Promise.all([
+    findPersonSubjects({
+      transcript: 'Sam posted the report to the channel today.',
+      index: SAMS,
+      readDocument: reader(SAM_PROFILES),
+      scoreFor: dominant,
+    }),
+    findPersonSubjects({
+      transcript: 'Sam Okafor sent the deck; Sam posted the report today.',
+      index: SAMS,
+      readDocument: reader(SAM_PROFILES),
+      scoreFor: dominant,
+    }),
+  ])
+
+  assert({
+    given: 'a bare "Sam" where one namesake outscores the rest hundreds of times over',
+    should: 'keep only the leader — the score says who is meant',
+    actual: bare.map((s) => s.name),
+    expected: ['Sam Rivera'],
+  })
+
+  assert({
+    given: 'the same bare "Sam" beside a namesake named in full',
+    should: 'keep the full name regardless and still resolve the bare one to the leader alone',
+    actual: withFull.map((s) => s.name),
+    expected: ['Sam Okafor', 'Sam Rivera'],
+  })
+})
+
 test('findPersonSubjects - a handle the transcript also uses in lowercase is prose, not a name', async () => {
   const index = [...INDEX, entry(['The Market Maker'], 'people/2019/th/The-Market-Maker.md')]
   const profiles = { ...PROFILES, 'people/2019/th/The-Market-Maker.md': '---\nname: The Market Maker\n---\n' }

@@ -157,7 +157,7 @@ export async function distillPersonFacts(
         '',
         'THE BAR — most conversations teach nothing about a person:',
         '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
-        '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists every profile answering to it, and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
+        '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists the likeliest profile answering to it — two when their standing with the user is close — and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
         "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
         "- Never invent. Every fact must come from the transcript or from the person's current profile.",
         '',
