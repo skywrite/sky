@@ -1,7 +1,3 @@
-// @ts-nocheck
-// The block editor as it was: the old /docs page's inline script, moved here whole and typed at
-// its seam only. The redo replaces it; until then it reads as the vanilla JS it is.
-
 /**
  * The block editor, in the column. A file is its blocks — paragraphs, headings, lists and
  * quotes edited in place as rendered text, everything else (fences, tables, raw HTML) as its
@@ -48,6 +44,28 @@ export interface BlockEditorHooks {
   onConflict(visible: boolean): void
 }
 
+/** Where a click landed: the point, and the text offset it names inside the block (and which list item). */
+interface ClickContext {
+  clientX: number
+  clientY: number
+  textOffset?: number
+  listItemIndex?: number
+}
+
+/** The document as the document API hands it over: the file, its version, its frontmatter, its blocks. */
+interface DocumentState {
+  content: string
+  version: number
+  frontmatter: string
+  blocks: EditableBlock[]
+}
+
+/** The file's version — and its content, when more than the version was asked for. */
+interface Snapshot {
+  version: number
+  content?: string
+}
+
 export interface BlockEditorHandle {
   /** Drop what is here and read the disk again */
   reload(): void
@@ -67,68 +85,68 @@ export function mountBlockEditor(
   let currentContent = state.initialContent
   let currentVersion = state.initialVersion
   let currentFrontmatter = state.frontmatter || ''
-  let activeCid = null
+  let activeCid: string | null = null
   let dirty = false
   let saving = false
-  let saveTimer = null
-  let pendingCloseCid = null
+  let saveTimer: number | null = null
+  let pendingCloseCid: string | null = null
   let pollFailed = false
   const pollIntervalMs = 4000
 
-  function setStatus(kind, text) {
+  function setStatus(kind: BlockEditorStatusKind, text: string) {
     hooks.onStatus(kind, text)
   }
 
-  function setOverwriteVisible(visible) {
+  function setOverwriteVisible(visible: boolean) {
     hooks.onConflict(visible)
   }
 
-  function getBlockList() {
-    return root.querySelector('.editable-block-list')
+  function getBlockList(): HTMLElement | null {
+    return root.querySelector<HTMLElement>('.editable-block-list')
   }
 
-  function getFrontmatterPanel() {
-    return root.querySelector('.sky-doc-meta')
+  function getFrontmatterPanel(): HTMLDetailsElement | null {
+    return root.querySelector<HTMLDetailsElement>('.sky-doc-meta')
   }
 
-  function getFrontmatterContent() {
-    return root.querySelector('.sky-doc-meta pre')
+  function getFrontmatterContent(): HTMLPreElement | null {
+    return root.querySelector<HTMLPreElement>('.sky-doc-meta pre')
   }
 
-  function getBlockShell(cid) {
-    return root.querySelector('.editable-block[data-cid="' + cid + '"]')
+  function getBlockShell(cid: string): HTMLElement | null {
+    return root.querySelector<HTMLElement>('.editable-block[data-cid="' + cid + '"]')
   }
 
-  function getTextarea(cid) {
+  function getTextarea(cid: string): HTMLTextAreaElement | null {
     const shell = getBlockShell(cid)
-    return shell ? shell.querySelector('.editable-block-textarea') : null
+    return shell ? shell.querySelector<HTMLTextAreaElement>('.editable-block-textarea') : null
   }
 
-  function getPreview(cid) {
+  function getPreview(cid: string): HTMLElement | null {
     const shell = getBlockShell(cid)
-    return shell ? shell.querySelector('.editable-block-preview-shell') : null
+    return shell ? shell.querySelector<HTMLElement>('.editable-block-preview-shell') : null
   }
 
-  function getPreviewArticle(cid) {
+  function getPreviewArticle(cid: string): HTMLElement | null {
     const preview = getPreview(cid)
-    return preview ? preview.querySelector('.editable-block-preview') : null
+    return preview ? preview.querySelector<HTMLElement>('.editable-block-preview') : null
   }
 
-  function getForm(cid) {
+  function getForm(cid: string): HTMLElement | null {
     const shell = getBlockShell(cid)
-    return shell ? shell.querySelector('.editable-block-form') : null
+    return shell ? shell.querySelector<HTMLElement>('.editable-block-form') : null
   }
 
-  function getConflictControls(cid) {
+  function getConflictControls(cid: string): { reload: HTMLButtonElement | null; overwrite: HTMLButtonElement | null } {
     const shell = getBlockShell(cid)
     if (!shell) return { reload: null, overwrite: null }
     return {
-      reload: shell.querySelector('.editable-block-reload'),
-      overwrite: shell.querySelector('.editable-block-overwrite'),
+      reload: shell.querySelector<HTMLButtonElement>('.editable-block-reload'),
+      overwrite: shell.querySelector<HTMLButtonElement>('.editable-block-overwrite'),
     }
   }
 
-  function setConflictVisible(cid, visible) {
+  function setConflictVisible(cid: string, visible: boolean) {
     const controls = getConflictControls(cid)
     if (controls.reload) controls.reload.hidden = !visible
     if (controls.overwrite) controls.overwrite.hidden = !visible
@@ -141,19 +159,19 @@ export function mountBlockEditor(
     }
   }
 
-  function isVisualBlock(block) {
+  function isVisualBlock(block: EditableBlock): boolean {
     return !block.protected && ['paragraph', 'heading', 'blockquote', 'list'].includes(block.type)
   }
 
-  function isChromelessBlock(block) {
+  function isChromelessBlock(block: EditableBlock): boolean {
     return !block.protected && ['paragraph', 'heading', 'blockquote', 'list', 'hr'].includes(block.type)
   }
 
-  function isInteractiveBlock(block) {
+  function isInteractiveBlock(block: EditableBlock): boolean {
     return isVisualBlock(block) || block.protected
   }
 
-  function escapeHtml(value) {
+  function escapeHtml(value: string): string {
     return String(value)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -162,7 +180,7 @@ export function mountBlockEditor(
       .replace(/'/g, '&#39;')
   }
 
-  function renderBlockShellHtml(block) {
+  function renderBlockShellHtml(block: EditableBlock): string {
     const visual = isVisualBlock(block)
     const chromeless = isChromelessBlock(block)
     const interactive = isInteractiveBlock(block)
@@ -229,11 +247,11 @@ export function mountBlockEditor(
     `
   }
 
-  function renderBlockListHtml(blocks) {
+  function renderBlockListHtml(blocks: EditableBlock[]): string {
     return blocks.map((block) => renderBlockShellHtml(block)).join('')
   }
 
-  function ensureFrontmatterPanel(frontmatter) {
+  function ensureFrontmatterPanel(frontmatter: string) {
     let panel = getFrontmatterPanel()
     let content = getFrontmatterContent()
 
@@ -258,7 +276,7 @@ export function mountBlockEditor(
     content.textContent = frontmatter
   }
 
-  async function fetchDocumentState() {
+  async function fetchDocumentState(): Promise<DocumentState> {
     const response = await fetch(state.documentApiPath, {
       headers: { accept: 'application/json' },
     })
@@ -267,10 +285,10 @@ export function mountBlockEditor(
       throw new Error('Failed to rebuild markdown document state')
     }
 
-    return await response.json()
+    return (await response.json()) as DocumentState
   }
 
-  function applyDocumentState(nextState, statusText) {
+  function applyDocumentState(nextState: DocumentState, statusText: string) {
     currentContent = nextState.content
     currentVersion = nextState.version
     currentFrontmatter = nextState.frontmatter || ''
@@ -292,24 +310,24 @@ export function mountBlockEditor(
     setStatus('saved', statusText)
   }
 
-  async function reloadDocumentState(statusText) {
+  async function reloadDocumentState(statusText: string) {
     const nextState = await fetchDocumentState()
     applyDocumentState(nextState, statusText)
   }
 
-  function resizeTextarea(textarea) {
-    const shell = textarea.closest('.editable-block')
+  function resizeTextarea(textarea: HTMLTextAreaElement) {
+    const shell = textarea.closest<HTMLElement>('.editable-block')
     const minHeight = shell && shell.dataset.protected === 'true' ? 120 : 52
     textarea.style.height = '0px'
     textarea.style.height = Math.max(textarea.scrollHeight, minHeight) + 'px'
   }
 
-  function preferredCursorOffset(raw) {
+  function preferredCursorOffset(raw: string): number {
     const trimmedLength = raw.replace(/[\s\u00a0]+$/u, '').length
     return trimmedLength > 0 ? trimmedLength : 0
   }
 
-  function findVisibleTextCursorOffset(raw, textOffset, blockPrefixPattern) {
+  function findVisibleTextCursorOffset(raw: string, textOffset: number, blockPrefixPattern: RegExp | null): number {
     const lines = raw.split('\n')
     let remaining = textOffset
     let offset = 0
@@ -334,14 +352,14 @@ export function mountBlockEditor(
     return preferredCursorOffset(raw)
   }
 
-  function findHeadingCursorOffset(raw, textOffset) {
+  function findHeadingCursorOffset(raw: string, textOffset: number): number {
     const firstLine = raw.split('\n')[0] || ''
     const prefixMatch = firstLine.match(/^(\s*#{1,6}\s+)/)
     const prefixLength = prefixMatch ? prefixMatch[0].length : 0
     return prefixLength + Math.min(textOffset, Math.max(firstLine.length - prefixLength, 0))
   }
 
-  function findListItemCursorOffset(raw, listItemIndex, textOffset) {
+  function findListItemCursorOffset(raw: string, listItemIndex: number, textOffset: number): number {
     const lines = raw.split('\n')
     let currentIndex = 0
     let offset = 0
@@ -367,8 +385,8 @@ export function mountBlockEditor(
     return preferredCursorOffset(raw)
   }
 
-  function resolveCursorOffset(block, clickContext) {
-    function resolveMappedOffset(cursorMap, visibleOffset) {
+  function resolveCursorOffset(block: EditableBlock, clickContext: ClickContext | null) {
+    function resolveMappedOffset(cursorMap: number[] | undefined, visibleOffset: number): number | null {
       if (!Array.isArray(cursorMap) || cursorMap.length === 0) {
         return null
       }
@@ -407,7 +425,7 @@ export function mountBlockEditor(
     return preferredCursorOffset(block.raw)
   }
 
-  function getPointRange(documentRef, clientX, clientY) {
+  function getPointRange(documentRef: Document, clientX: number, clientY: number): Range | null {
     if (typeof documentRef.caretPositionFromPoint === 'function') {
       const caretPosition = documentRef.caretPositionFromPoint(clientX, clientY)
       if (caretPosition) {
@@ -429,7 +447,7 @@ export function mountBlockEditor(
     return null
   }
 
-  function getTextOffsetWithinElement(element, event) {
+  function getTextOffsetWithinElement(element: Element, event: MouseEvent): number | null {
     const documentRef = element.ownerDocument
     const pointRange = getPointRange(documentRef, event.clientX, event.clientY)
     if (!pointRange || !element.contains(pointRange.startContainer)) {
@@ -442,7 +460,7 @@ export function mountBlockEditor(
     return prefixRange.toString().length
   }
 
-  function resolveClickContext(preview, event) {
+  function resolveClickContext(preview: HTMLElement, event: MouseEvent): ClickContext | null {
     const target = event.target
     if (!(target instanceof Node)) {
       return null
@@ -487,14 +505,18 @@ export function mountBlockEditor(
     return null
   }
 
-  function setEditorBusy(cid, busy) {
+  function setEditorBusy(cid: string, busy: boolean) {
     const block = blockMap.get(cid)
     const shell = getBlockShell(cid)
     if (!shell) return
 
-    shell.querySelectorAll('.editable-block-save, .editable-block-cancel, .editable-block-textarea').forEach((node) => {
-      node.disabled = busy
-    })
+    shell
+      .querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
+        '.editable-block-save, .editable-block-cancel, .editable-block-textarea',
+      )
+      .forEach((node) => {
+        node.disabled = busy
+      })
 
     const previewArticle = getPreviewArticle(cid)
     if (previewArticle && block && isVisualBlock(block)) {
@@ -502,13 +524,13 @@ export function mountBlockEditor(
     }
   }
 
-  function setBlockActive(cid, active) {
+  function setBlockActive(cid: string, active: boolean) {
     const shell = getBlockShell(cid)
     if (!shell) return
     shell.dataset.active = active ? 'true' : 'false'
   }
 
-  function closeEditor(cid) {
+  function closeEditor(cid: string) {
     const block = blockMap.get(cid)
     const preview = getPreview(cid)
     const previewArticle = getPreviewArticle(cid)
@@ -540,7 +562,7 @@ export function mountBlockEditor(
     }
   }
 
-  function placeCaretAtPoint(article, clickContext) {
+  function placeCaretAtPoint(article: HTMLElement, clickContext: ClickContext | null) {
     if (!clickContext || typeof clickContext.clientX !== 'number' || typeof clickContext.clientY !== 'number') {
       return false
     }
@@ -560,7 +582,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function placeCaretAtEnd(article) {
+  function placeCaretAtEnd(article: HTMLElement) {
     const selection = article.ownerDocument.getSelection()
     if (!selection) return
     const range = article.ownerDocument.createRange()
@@ -570,7 +592,7 @@ export function mountBlockEditor(
     selection.addRange(range)
   }
 
-  function clearInlineFocusMarkers(article) {
+  function clearInlineFocusMarkers(article: Element) {
     article.querySelectorAll('[data-inline-focus="true"]').forEach((node) => {
       if (node instanceof HTMLElement) {
         node.removeAttribute('data-inline-focus')
@@ -578,7 +600,7 @@ export function mountBlockEditor(
     })
   }
 
-  function setInlineRevealEnabled(article, enabled) {
+  function setInlineRevealEnabled(article: Element, enabled: boolean) {
     if (enabled) {
       article.setAttribute('data-inline-reveal', 'true')
       return
@@ -587,7 +609,7 @@ export function mountBlockEditor(
     article.removeAttribute('data-inline-reveal')
   }
 
-  function findFocusedInlineElement(article, node) {
+  function findFocusedInlineElement(article: Element, node: Node): HTMLElement | null {
     let current = node instanceof HTMLElement ? node : node.parentElement
     while (current && current !== article) {
       if (current.matches('strong, em, del, code, a, u')) {
@@ -598,7 +620,7 @@ export function mountBlockEditor(
     return null
   }
 
-  function refreshInlineFocusMarkers(article) {
+  function refreshInlineFocusMarkers(article: HTMLElement) {
     clearInlineFocusMarkers(article)
     const range = getSelectionRangeWithin(article)
     if (!range) {
@@ -613,7 +635,7 @@ export function mountBlockEditor(
     }
   }
 
-  function openEditor(cid, clickContext) {
+  function openEditor(cid: string, clickContext: ClickContext | null) {
     if (activeCid === cid) return
 
     if (dirty && activeCid && !window.confirm('Discard unsaved changes in the current block?')) {
@@ -672,7 +694,7 @@ export function mountBlockEditor(
     }, delayMs)
   }
 
-  async function fetchSnapshot(metaOnly) {
+  async function fetchSnapshot(metaOnly: boolean): Promise<Snapshot> {
     const url = metaOnly ? state.apiPath + '?meta=1' : state.apiPath
     const response = await fetch(url, {
       headers: { accept: 'application/json' },
@@ -682,7 +704,7 @@ export function mountBlockEditor(
       throw new Error('Failed to read markdown document')
     }
 
-    return await response.json()
+    return (await response.json()) as Snapshot
   }
 
   async function pollForExternalChanges() {
@@ -723,7 +745,7 @@ export function mountBlockEditor(
     scheduleSave()
   }
 
-  function getSelectionRangeWithin(article) {
+  function getSelectionRangeWithin(article: Element): Range | null {
     const selection = article.ownerDocument.getSelection()
     if (!selection || selection.rangeCount === 0) {
       return null
@@ -737,35 +759,35 @@ export function mountBlockEditor(
     return range
   }
 
-  function getClosestElementWithin(root, node, selector) {
+  function getClosestElementWithin(within: Element, node: Node, selector: string): HTMLElement | null {
     const element = node instanceof Element ? node : node.parentElement
     if (!element) {
       return null
     }
 
     const closest = element.closest(selector)
-    if (!(closest instanceof HTMLElement) || !root.contains(closest)) {
+    if (!(closest instanceof HTMLElement) || !within.contains(closest)) {
       return null
     }
 
     return closest
   }
 
-  function isRangeAtStart(container, range) {
+  function isRangeAtStart(container: Element, range: Range): boolean {
     const prefixRange = container.ownerDocument.createRange()
     prefixRange.selectNodeContents(container)
     prefixRange.setEnd(range.startContainer, range.startOffset)
     return prefixRange.toString().length === 0
   }
 
-  function isRangeAtEnd(container, range) {
+  function isRangeAtEnd(container: Element, range: Range): boolean {
     const suffixRange = container.ownerDocument.createRange()
     suffixRange.selectNodeContents(container)
     suffixRange.setStart(range.endContainer, range.endOffset)
     return suffixRange.toString().length === 0
   }
 
-  function isRangeEquivalentToElementContents(range, element) {
+  function isRangeEquivalentToElementContents(range: Range, element: Element): boolean {
     const elementRange = element.ownerDocument.createRange()
     elementRange.selectNodeContents(element)
     return (
@@ -774,7 +796,7 @@ export function mountBlockEditor(
     )
   }
 
-  function hasMeaningfulChildNodes(fragment) {
+  function hasMeaningfulChildNodes(fragment: Node) {
     return Array.from(fragment.childNodes).some((node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         return (node.textContent || '').length > 0
@@ -784,17 +806,17 @@ export function mountBlockEditor(
     })
   }
 
-  function clearNode(element) {
+  function clearNode(element: Node) {
     while (element.firstChild) {
       element.removeChild(element.firstChild)
     }
   }
 
-  function createPlaceholder(doc) {
+  function createPlaceholder(doc: Document): HTMLBRElement {
     return doc.createElement('br')
   }
 
-  function setElementFromFragment(element, fragment) {
+  function setElementFromFragment(element: HTMLElement, fragment: DocumentFragment) {
     clearNode(element)
     if (hasMeaningfulChildNodes(fragment)) {
       element.appendChild(fragment)
@@ -804,7 +826,7 @@ export function mountBlockEditor(
     element.appendChild(createPlaceholder(element.ownerDocument))
   }
 
-  function removePlaceholderIfNeeded(element) {
+  function removePlaceholderIfNeeded(element: Element) {
     if (element.childNodes.length !== 1) {
       return
     }
@@ -815,7 +837,7 @@ export function mountBlockEditor(
     }
   }
 
-  function placeCaretAtElementStart(element) {
+  function placeCaretAtElementStart(element: Element) {
     const selection = element.ownerDocument.getSelection()
     if (!selection) return
 
@@ -826,7 +848,7 @@ export function mountBlockEditor(
     selection.addRange(range)
   }
 
-  function placeCaretAtElementEnd(element) {
+  function placeCaretAtElementEnd(element: Element) {
     const selection = element.ownerDocument.getSelection()
     if (!selection) return
 
@@ -837,7 +859,7 @@ export function mountBlockEditor(
     selection.addRange(range)
   }
 
-  function splitElementAtRange(element, range, nextTagName) {
+  function splitElementAtRange(element: HTMLElement, range: Range, nextTagName: string): HTMLElement {
     const doc = element.ownerDocument
     const beforeRange = doc.createRange()
     beforeRange.selectNodeContents(element)
@@ -862,7 +884,7 @@ export function mountBlockEditor(
     return nextElement
   }
 
-  function replaceElementTag(element, tagName) {
+  function replaceElementTag(element: Element, tagName: string): HTMLElement {
     const replacement = element.ownerDocument.createElement(tagName)
     while (element.firstChild) {
       replacement.appendChild(element.firstChild)
@@ -871,11 +893,11 @@ export function mountBlockEditor(
     return replacement
   }
 
-  function getLeadingBlockElement(article) {
-    return Array.from(article.children).find((node) => node instanceof HTMLElement) || null
+  function getLeadingBlockElement(article: Element): HTMLElement | null {
+    return Array.from(article.children).find((node): node is HTMLElement => node instanceof HTMLElement) ?? null
   }
 
-  function normalizeVisualBlockType(article) {
+  function normalizeVisualBlockType(article: Element): string {
     const firstElement = getLeadingBlockElement(article)
     if (!(firstElement instanceof HTMLElement)) {
       return 'paragraph'
@@ -898,7 +920,7 @@ export function mountBlockEditor(
     return 'paragraph'
   }
 
-  function countTopLevelBlockElements(article) {
+  function countTopLevelBlockElements(article: Element): number {
     return Array.from(article.children).filter((node) => {
       if (!(node instanceof HTMLElement)) {
         return false
@@ -909,7 +931,7 @@ export function mountBlockEditor(
     }).length
   }
 
-  function applyHeadingShortcut(article, block) {
+  function applyHeadingShortcut(article: HTMLElement, block: EditableBlock): boolean {
     const range = getSelectionRangeWithin(article)
     if (!range || !range.collapsed) {
       return false
@@ -953,13 +975,13 @@ export function mountBlockEditor(
     return true
   }
 
-  function createEmptyParagraph(documentRef) {
+  function createEmptyParagraph(documentRef: Document): HTMLParagraphElement {
     const paragraph = documentRef.createElement('p')
     paragraph.appendChild(createPlaceholder(documentRef))
     return paragraph
   }
 
-  function createEmptyListItem(documentRef, checked) {
+  function createEmptyListItem(documentRef: Document, checked?: boolean) {
     const listItem = documentRef.createElement('li')
     if (typeof checked === 'boolean') {
       const checkbox = documentRef.createElement('input')
@@ -975,12 +997,12 @@ export function mountBlockEditor(
     return listItem
   }
 
-  function createContinuationListItem(sourceListItem) {
+  function createContinuationListItem(sourceListItem: HTMLElement): HTMLLIElement {
     const checkbox = getDirectCheckboxInput(sourceListItem)
     return createEmptyListItem(sourceListItem.ownerDocument, checkbox ? false : undefined)
   }
 
-  function createParagraphFromListItem(listItem) {
+  function createParagraphFromListItem(listItem: HTMLElement): HTMLParagraphElement {
     const paragraph = listItem.ownerDocument.createElement('p')
     const childNodes = Array.from(listItem.childNodes)
 
@@ -1003,12 +1025,12 @@ export function mountBlockEditor(
     return paragraph
   }
 
-  function replaceArticleContent(article, rootElement) {
+  function replaceArticleContent(article: HTMLElement, rootElement: HTMLElement) {
     clearNode(article)
     article.appendChild(rootElement)
   }
 
-  function applyParagraphPrefixShortcut(article, block) {
+  function applyParagraphPrefixShortcut(article: HTMLElement, block: EditableBlock): boolean {
     const range = getSelectionRangeWithin(article)
     if (!range || !range.collapsed) {
       return false
@@ -1085,7 +1107,7 @@ export function mountBlockEditor(
     return false
   }
 
-  function applyThematicBreakShortcut(article) {
+  function applyThematicBreakShortcut(article: HTMLElement): boolean {
     const range = getSelectionRangeWithin(article)
     if (!range || !range.collapsed) {
       return false
@@ -1132,7 +1154,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function applyTaskListShortcutFallback(article, block) {
+  function applyTaskListShortcutFallback(article: HTMLElement, block: EditableBlock): boolean {
     const firstElement = getLeadingBlockElement(article)
     if (!(firstElement instanceof HTMLElement)) {
       return false
@@ -1178,7 +1200,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function applyMarkdownShortcuts(article, block) {
+  function applyMarkdownShortcuts(article: HTMLElement, block: EditableBlock): boolean {
     if (applyTaskListShortcutFallback(article, block)) {
       return true
     }
@@ -1186,7 +1208,7 @@ export function mountBlockEditor(
     return false
   }
 
-  function getPreviousElementSibling(element) {
+  function getPreviousElementSibling(element: Node): HTMLElement | null {
     let candidate = element.previousSibling
     while (candidate) {
       if (candidate instanceof HTMLElement) {
@@ -1197,7 +1219,7 @@ export function mountBlockEditor(
     return null
   }
 
-  function getDirectCheckboxInput(li) {
+  function getDirectCheckboxInput(li: Element): HTMLInputElement | null {
     const candidate = li.firstElementChild
     if (candidate instanceof HTMLInputElement && candidate.getAttribute('type') === 'checkbox') {
       return candidate
@@ -1206,8 +1228,8 @@ export function mountBlockEditor(
     return null
   }
 
-  function cloneCheckboxInput(checkbox, checked) {
-    const clone = checkbox.cloneNode(true)
+  function cloneCheckboxInput(checkbox: HTMLInputElement, checked: boolean): HTMLInputElement {
+    const clone = checkbox.cloneNode(true) as HTMLInputElement
     clone.checked = checked
     if (checked) {
       clone.setAttribute('checked', '')
@@ -1217,7 +1239,11 @@ export function mountBlockEditor(
     return clone
   }
 
-  function setListItemFromFragment(element, fragment, checkboxTemplate) {
+  function setListItemFromFragment(
+    element: HTMLElement,
+    fragment: DocumentFragment,
+    checkboxTemplate: HTMLInputElement | null,
+  ) {
     clearNode(element)
     if (checkboxTemplate) {
       element.appendChild(cloneCheckboxInput(checkboxTemplate, false))
@@ -1232,7 +1258,7 @@ export function mountBlockEditor(
     element.appendChild(createPlaceholder(element.ownerDocument))
   }
 
-  function getListItemInlineText(li) {
+  function getListItemInlineText(li: HTMLElement): string {
     const clone = li.cloneNode(true)
     Array.from(clone.childNodes).forEach((node) => {
       if (!(node instanceof HTMLElement)) {
@@ -1252,15 +1278,15 @@ export function mountBlockEditor(
     return normalizeText(clone.textContent || '').trim()
   }
 
-  function hasDirectNestedList(li) {
+  function hasDirectNestedList(li: Element) {
     return Array.from(li.children).some((child) => child.tagName === 'UL' || child.tagName === 'OL')
   }
 
-  function getListItemInsertionPoint(li) {
+  function getListItemInsertionPoint(li: Element): Element | null {
     return Array.from(li.children).find((child) => child.tagName === 'UL' || child.tagName === 'OL') || null
   }
 
-  function insertNodeIntoListItem(li, node) {
+  function insertNodeIntoListItem(li: Element, node: Node) {
     const nestedList = getListItemInsertionPoint(li)
     if (nestedList) {
       li.insertBefore(node, nestedList)
@@ -1270,7 +1296,7 @@ export function mountBlockEditor(
     li.appendChild(node)
   }
 
-  function mergeBlockElements(target, source) {
+  function mergeBlockElements(target: HTMLElement, source: HTMLElement) {
     removePlaceholderIfNeeded(target)
 
     const movingNodes = Array.from(source.childNodes)
@@ -1283,7 +1309,7 @@ export function mountBlockEditor(
     markDirtyState()
   }
 
-  function getDeepestLastListItem(list) {
+  function getDeepestLastListItem(list: Element | null): HTMLElement | null {
     if (!(list instanceof HTMLElement) || (list.tagName !== 'UL' && list.tagName !== 'OL')) {
       return null
     }
@@ -1311,7 +1337,7 @@ export function mountBlockEditor(
     return null
   }
 
-  function mergeParagraphIntoListItem(listItem, paragraph) {
+  function mergeParagraphIntoListItem(listItem: HTMLElement, paragraph: HTMLElement) {
     removePlaceholderIfNeeded(listItem)
     const movingNodes = Array.from(paragraph.childNodes)
     for (const node of movingNodes) {
@@ -1323,7 +1349,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function mergeParagraphWithPrevious(paragraph) {
+  function mergeParagraphWithPrevious(paragraph: HTMLElement): boolean {
     const previous = getPreviousElementSibling(paragraph)
     if (!previous) {
       return false
@@ -1367,7 +1393,7 @@ export function mountBlockEditor(
     return false
   }
 
-  function mergeListItems(target, source) {
+  function mergeListItems(target: HTMLElement, source: HTMLElement) {
     removePlaceholderIfNeeded(target)
 
     const movingNodes = Array.from(source.childNodes)
@@ -1383,7 +1409,7 @@ export function mountBlockEditor(
     markDirtyState()
   }
 
-  function ensureNestedList(parentItem, tagName) {
+  function ensureNestedList(parentItem: HTMLElement, tagName: string): HTMLElement {
     const existing = Array.from(parentItem.children).find((child) => child.tagName === tagName)
     if (existing instanceof HTMLElement) {
       return existing
@@ -1394,7 +1420,7 @@ export function mountBlockEditor(
     return nestedList
   }
 
-  function unwrapListItemToParagraph(listItem) {
+  function unwrapListItemToParagraph(listItem: HTMLElement) {
     const list = listItem.parentElement
     if (!(list instanceof HTMLElement) || (list.tagName !== 'UL' && list.tagName !== 'OL')) {
       return false
@@ -1426,7 +1452,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function isNestedListItem(listItem) {
+  function isNestedListItem(listItem: Element): boolean {
     const list = listItem.parentElement
     if (!(list instanceof HTMLElement) || (list.tagName !== 'UL' && list.tagName !== 'OL')) {
       return false
@@ -1435,7 +1461,7 @@ export function mountBlockEditor(
     return list.parentElement instanceof HTMLElement && list.parentElement.tagName === 'LI'
   }
 
-  function unwrapBlockquoteParagraph(paragraph) {
+  function unwrapBlockquoteParagraph(paragraph: HTMLElement): boolean {
     const blockquote = paragraph.parentElement
     if (!(blockquote instanceof HTMLElement) || blockquote.tagName !== 'BLOCKQUOTE') {
       return false
@@ -1471,7 +1497,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function indentListItem(listItem) {
+  function indentListItem(listItem: HTMLElement): boolean {
     const list = listItem.parentElement
     if (!list || (list.tagName !== 'UL' && list.tagName !== 'OL')) {
       return false
@@ -1489,7 +1515,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function outdentListItem(listItem) {
+  function outdentListItem(listItem: HTMLElement): boolean {
     const list = listItem.parentElement
     if (!list || (list.tagName !== 'UL' && list.tagName !== 'OL')) {
       return false
@@ -1513,7 +1539,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function splitActiveHeading(article, range) {
+  function splitActiveHeading(article: HTMLElement, range: Range): boolean {
     const heading = getClosestElementWithin(article, range.startContainer, 'h1, h2, h3, h4, h5, h6')
     if (!heading) {
       return false
@@ -1539,7 +1565,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function splitActiveParagraph(article, range) {
+  function splitActiveParagraph(article: HTMLElement, range: Range): boolean {
     const paragraph = getClosestElementWithin(article, range.startContainer, 'p')
     if (!paragraph) {
       return false
@@ -1565,7 +1591,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function splitActiveBlockquoteParagraph(article, range) {
+  function splitActiveBlockquoteParagraph(article: HTMLElement, range: Range): boolean {
     const paragraph = getClosestElementWithin(article, range.startContainer, 'p')
     if (!paragraph) {
       return false
@@ -1612,7 +1638,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function splitActiveListItem(article, range) {
+  function splitActiveListItem(article: HTMLElement, range: Range): boolean {
     const listItem = getClosestElementWithin(article, range.startContainer, 'li')
     if (!listItem) {
       return false
@@ -1679,7 +1705,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function handleEnterForVisualBlock(article, event) {
+  function handleEnterForVisualBlock(article: HTMLElement, event: KeyboardEvent): boolean {
     if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
       return false
     }
@@ -1712,7 +1738,7 @@ export function mountBlockEditor(
     return false
   }
 
-  function handleBackspaceForVisualBlock(article) {
+  function handleBackspaceForVisualBlock(article: HTMLElement): boolean {
     const range = getSelectionRangeWithin(article)
     if (!range || !range.collapsed) {
       return false
@@ -1753,7 +1779,7 @@ export function mountBlockEditor(
     return false
   }
 
-  function handleTabForVisualBlock(article, event) {
+  function handleTabForVisualBlock(article: HTMLElement, event: KeyboardEvent): boolean {
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return false
     }
@@ -1771,7 +1797,7 @@ export function mountBlockEditor(
     return event.shiftKey ? outdentListItem(listItem) : indentListItem(listItem)
   }
 
-  function unwrapInlineElement(element) {
+  function unwrapInlineElement(element: Element): boolean {
     const parent = element.parentNode
     if (!parent) {
       return false
@@ -1785,7 +1811,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function applyUnderlineShortcut(article) {
+  function applyUnderlineShortcut(article: HTMLElement): boolean {
     const range = getSelectionRangeWithin(article)
     if (!range || range.collapsed) {
       return false
@@ -1846,7 +1872,7 @@ export function mountBlockEditor(
     return true
   }
 
-  async function renderPreviewHtml(type, raw) {
+  async function renderPreviewHtml(type: string, raw: string): Promise<string> {
     const response = await fetch(state.renderBlockApiPath, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1857,7 +1883,7 @@ export function mountBlockEditor(
       throw new Error('Failed to render updated block preview')
     }
 
-    const payload = await response.json()
+    const payload = (await response.json()) as { html?: unknown } | null
     if (!payload || typeof payload.html !== 'string') {
       throw new Error('Render block API returned an invalid payload')
     }
@@ -1865,11 +1891,11 @@ export function mountBlockEditor(
     return payload.html
   }
 
-  function normalizeText(text) {
+  function normalizeText(text: string): string {
     return text.replace(/\u00a0/g, ' ').replace(/[\u200b\u200c\u200d\ufeff]/g, '')
   }
 
-  function sanitizeUrl(value) {
+  function sanitizeUrl(value: string): string {
     const normalized = value.trim()
     if (!normalized || /^javascript:/i.test(normalized)) {
       return ''
@@ -1878,7 +1904,7 @@ export function mountBlockEditor(
     return normalized
   }
 
-  function appendSanitizedNode(target, node) {
+  function appendSanitizedNode(target: Node, node: Node | null) {
     if (!node) {
       return
     }
@@ -1886,13 +1912,13 @@ export function mountBlockEditor(
     target.appendChild(node)
   }
 
-  function appendSanitizedChildren(source, target, documentRef) {
+  function appendSanitizedChildren(source: Node, target: Node, documentRef: Document) {
     Array.from(source.childNodes).forEach((child) => {
       appendSanitizedNode(target, sanitizePastedNode(child, documentRef))
     })
   }
 
-  function createMultilineParagraph(documentRef, text) {
+  function createMultilineParagraph(documentRef: Document, text: string): HTMLParagraphElement {
     const paragraph = documentRef.createElement('p')
     const lines = normalizeText(text).replace(/\r\n?/g, '\n').split('\n')
 
@@ -1906,7 +1932,7 @@ export function mountBlockEditor(
     return paragraph
   }
 
-  function createTableFragment(table, documentRef) {
+  function createTableFragment(table: HTMLElement, documentRef: Document) {
     const fragment = documentRef.createDocumentFragment()
     const rows = Array.from(table.querySelectorAll('tr'))
       .map((row) =>
@@ -1936,7 +1962,7 @@ export function mountBlockEditor(
     return fragment
   }
 
-  function sanitizePastedNode(node, documentRef) {
+  function sanitizePastedNode(node: Node, documentRef: Document): Node | null {
     if (node.nodeType === Node.TEXT_NODE) {
       return documentRef.createTextNode(normalizeText(node.textContent || ''))
     }
@@ -2028,7 +2054,7 @@ export function mountBlockEditor(
     }
   }
 
-  function sanitizePastedHtml(rawHtml, documentRef) {
+  function sanitizePastedHtml(rawHtml: string, documentRef: Document): string {
     const parser = new DOMParser()
     const parsed = parser.parseFromString(rawHtml, 'text/html')
     const container = documentRef.createElement('div')
@@ -2036,7 +2062,7 @@ export function mountBlockEditor(
     return container.innerHTML
   }
 
-  function escapeHtmlForInsert(text) {
+  function escapeHtmlForInsert(text: string): string {
     return text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -2045,7 +2071,7 @@ export function mountBlockEditor(
       .replace(/'/g, '&#39;')
   }
 
-  function plainTextToHtml(text) {
+  function plainTextToHtml(text: string): string {
     const normalized = normalizeText(text).replace(/\r\n?/g, '\n').trimEnd()
     if (!normalized) {
       return ''
@@ -2057,7 +2083,7 @@ export function mountBlockEditor(
       .join('')
   }
 
-  function insertHtmlAtSelection(article, html) {
+  function insertHtmlAtSelection(article: HTMLElement, html: string): boolean {
     if (!html) {
       return false
     }
@@ -2090,7 +2116,7 @@ export function mountBlockEditor(
     const wrapper = documentRef.createElement('div')
     wrapper.innerHTML = html
     const fragment = documentRef.createDocumentFragment()
-    let lastNode = null
+    let lastNode: Node | null = null
 
     while (wrapper.firstChild) {
       lastNode = fragment.appendChild(wrapper.firstChild)
@@ -2109,7 +2135,7 @@ export function mountBlockEditor(
     return true
   }
 
-  function escapeMarkdownText(text) {
+  function escapeMarkdownText(text: string): string {
     const tick = String.fromCharCode(96)
     return normalizeText(text)
       .replace(/\\/g, '\\\\')
@@ -2117,14 +2143,14 @@ export function mountBlockEditor(
       .replace(/([*_{}\[\]])/g, '\\$1')
   }
 
-  function serializeCodeText(text) {
+  function serializeCodeText(text: string): string {
     const normalized = normalizeText(text)
     const tick = String.fromCharCode(96)
     const marker = normalized.includes(tick) ? tick + tick : tick
     return marker + normalized + marker
   }
 
-  function serializeInlineNodes(nodes) {
+  function serializeInlineNodes(nodes: ArrayLike<Node> | Iterable<Node>): string {
     let output = ''
 
     Array.from(nodes).forEach((node) => {
@@ -2182,11 +2208,11 @@ export function mountBlockEditor(
     return output
   }
 
-  function isWhitespaceNode(node) {
+  function isWhitespaceNode(node: Node): boolean {
     return node.nodeType === Node.TEXT_NODE && (node.textContent || '').trim().length === 0
   }
 
-  function serializeBlockElement(element, depth) {
+  function serializeBlockElement(element: HTMLElement, depth: number): string {
     const tag = element.tagName.toLowerCase()
 
     switch (tag) {
@@ -2213,8 +2239,8 @@ export function mountBlockEditor(
     }
   }
 
-  function serializeBlockChildren(container, depth) {
-    const parts = []
+  function serializeBlockChildren(container: Node, depth: number): string {
+    const parts: string[] = []
     const directNodes = Array.from(container.childNodes).filter((node) => !isWhitespaceNode(node))
 
     directNodes.forEach((node) => {
@@ -2240,7 +2266,7 @@ export function mountBlockEditor(
     return parts.join('\n\n')
   }
 
-  function serializeBlockquote(blockquote, depth) {
+  function serializeBlockquote(blockquote: HTMLElement, depth: number): string {
     const inner = serializeBlockChildren(blockquote, depth).trimEnd()
     if (inner.length === 0) {
       return '>'
@@ -2252,13 +2278,13 @@ export function mountBlockEditor(
       .join('\n')
   }
 
-  function serializeListItem(li, ordered, index, depth) {
+  function serializeListItem(li: HTMLElement, ordered: boolean, index: number, depth: number): string {
     const indent = '  '.repeat(depth)
-    const checkbox = li.querySelector(':scope > input[type="checkbox"]')
+    const checkbox = li.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]')
     const checkboxPrefix = checkbox ? (checkbox.checked ? '[x] ' : '[ ] ') : ''
 
-    const inlineNodes = []
-    const nestedLists = []
+    const inlineNodes: Node[] = []
+    const nestedLists: HTMLElement[] = []
 
     Array.from(li.childNodes).forEach((node) => {
       if (node instanceof HTMLElement && (node.tagName === 'UL' || node.tagName === 'OL')) {
@@ -2287,15 +2313,15 @@ export function mountBlockEditor(
     return lines.join('\n')
   }
 
-  function serializeList(listElement, depth) {
+  function serializeList(listElement: HTMLElement, depth: number): string {
     const ordered = listElement.tagName === 'OL'
     return Array.from(listElement.children)
-      .filter((node) => node instanceof HTMLElement && node.tagName === 'LI')
+      .filter((node): node is HTMLElement => node instanceof HTMLElement && node.tagName === 'LI')
       .map((li, index) => serializeListItem(li, ordered, index, depth))
       .join('\n')
   }
 
-  function normalizeSerializedMarkdown(markdown) {
+  function normalizeSerializedMarkdown(markdown: string): string {
     return markdown
       .replace(/\r\n?/g, '\n')
       .split('\n')
@@ -2308,20 +2334,20 @@ export function mountBlockEditor(
       .join('\n')
   }
 
-  function serializeVisualBlock(block, previewArticle) {
+  function serializeVisualBlock(block: EditableBlock, previewArticle: HTMLElement): string {
     const markdown = normalizeSerializedMarkdown(serializeBlockChildren(previewArticle, 0)).trimEnd()
     return markdown.length > 0 ? markdown + '\n' : '\n'
   }
 
-  function normalizeVisualSaveRaw(raw) {
+  function normalizeVisualSaveRaw(raw: string): string {
     return raw.replace(/\r\n?/g, '\n').replace(/\n[ \t]+\n/g, '\n\n')
   }
 
-  function normalizeVisualSaveSuffix(suffix) {
+  function normalizeVisualSaveSuffix(suffix: string): string {
     return suffix.replace(/^[^\S\n]+\n/, '')
   }
 
-  function applySavedBlock(block, nextRaw, previewHtml) {
+  function applySavedBlock(block: EditableBlock, nextRaw: string, previewHtml: string) {
     const previousLength = block.endOffset - block.startOffset
     const delta = nextRaw.length - previousLength
     const blockIndex = blockOrder.indexOf(block.cid)
@@ -2348,7 +2374,7 @@ export function mountBlockEditor(
     }
   }
 
-  async function saveActiveBlock(force) {
+  async function saveActiveBlock(force: boolean) {
     if (!activeCid || saving) return
 
     const cid = activeCid
@@ -2407,7 +2433,7 @@ export function mountBlockEditor(
         throw new Error('Failed to save markdown document')
       }
 
-      const saved = await response.json()
+      const saved = (await response.json()) as { version: number }
       const previewHtml = await renderPreviewHtml(block.type, nextRaw)
       currentVersion = saved.version
       applySavedBlock(block, nextRaw, previewHtml)
@@ -2436,9 +2462,9 @@ export function mountBlockEditor(
   }
 
   function attachBlockEventHandlers() {
-    root.querySelectorAll('.editable-block-preview-shell').forEach((preview) => {
+    root.querySelectorAll<HTMLElement>('.editable-block-preview-shell').forEach((preview) => {
       preview.addEventListener('click', (event) => {
-        const shell = preview.closest('.editable-block')
+        const shell = preview.closest<HTMLElement>('.editable-block')
         if (!shell) return
         if (shell.dataset.interactive !== 'true') {
           return
@@ -2447,12 +2473,12 @@ export function mountBlockEditor(
           return
         }
         event.preventDefault()
-        openEditor(shell.dataset.cid, resolveClickContext(preview, event))
+        if (shell.dataset.cid) openEditor(shell.dataset.cid, resolveClickContext(preview, event))
       })
 
       preview.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
-        const shell = preview.closest('.editable-block')
+        const shell = preview.closest<HTMLElement>('.editable-block')
         if (!shell) return
         if (shell.dataset.interactive !== 'true') {
           return
@@ -2461,11 +2487,11 @@ export function mountBlockEditor(
           return
         }
         event.preventDefault()
-        openEditor(shell.dataset.cid, null)
+        if (shell.dataset.cid) openEditor(shell.dataset.cid, null)
       })
     })
 
-    root.querySelectorAll('.editable-block-cancel').forEach((button) => {
+    root.querySelectorAll<HTMLButtonElement>('.editable-block-cancel').forEach((button) => {
       button.addEventListener('click', () => {
         if (dirty && !window.confirm('Discard unsaved changes in this block?')) {
           return
@@ -2480,25 +2506,25 @@ export function mountBlockEditor(
       })
     })
 
-    root.querySelectorAll('.editable-block-save').forEach((button) => {
+    root.querySelectorAll<HTMLButtonElement>('.editable-block-save').forEach((button) => {
       button.addEventListener('click', () => {
         void saveActiveBlock(false)
       })
     })
 
-    root.querySelectorAll('.editable-block-reload').forEach((button) => {
+    root.querySelectorAll<HTMLButtonElement>('.editable-block-reload').forEach((button) => {
       button.addEventListener('click', () => {
         void reloadDocumentState('Reloaded disk version')
       })
     })
 
-    root.querySelectorAll('.editable-block-overwrite').forEach((button) => {
+    root.querySelectorAll<HTMLButtonElement>('.editable-block-overwrite').forEach((button) => {
       button.addEventListener('click', () => {
         void saveActiveBlock(true)
       })
     })
 
-    root.querySelectorAll('.editable-block-textarea').forEach((textarea) => {
+    root.querySelectorAll<HTMLTextAreaElement>('.editable-block-textarea').forEach((textarea) => {
       textarea.addEventListener('input', () => {
         if (activeCid !== textarea.dataset.cid) return
         resizeTextarea(textarea)
@@ -2540,9 +2566,9 @@ export function mountBlockEditor(
       })
     })
 
-    root.querySelectorAll('.editable-block-preview').forEach((article) => {
+    root.querySelectorAll<HTMLElement>('.editable-block-preview').forEach((article) => {
       article.addEventListener('input', () => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         if (!shell || activeCid !== shell.dataset.cid || shell.dataset.visual !== 'true') return
         const block = blockMap.get(shell.dataset.cid)
         if (block) {
@@ -2553,26 +2579,26 @@ export function mountBlockEditor(
       })
 
       article.addEventListener('focus', () => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         if (!shell || activeCid !== shell.dataset.cid || shell.dataset.visual !== 'true') return
         setInlineRevealEnabled(article, true)
         refreshInlineFocusMarkers(article)
       })
 
       article.addEventListener('keyup', () => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         if (!shell || activeCid !== shell.dataset.cid || shell.dataset.visual !== 'true') return
         refreshInlineFocusMarkers(article)
       })
 
       article.addEventListener('mouseup', () => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         if (!shell || activeCid !== shell.dataset.cid || shell.dataset.visual !== 'true') return
         refreshInlineFocusMarkers(article)
       })
 
       article.addEventListener('blur', () => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         const cid = shell?.dataset.cid
         if (!cid || activeCid !== cid || shell?.dataset.visual !== 'true') return
 
@@ -2596,7 +2622,7 @@ export function mountBlockEditor(
       })
 
       article.addEventListener('keydown', (event) => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         const cid = shell?.dataset.cid
         if (!cid || activeCid !== cid || shell?.dataset.visual !== 'true') return
 
@@ -2654,7 +2680,7 @@ export function mountBlockEditor(
       })
 
       article.addEventListener('paste', async (event) => {
-        const shell = article.closest('.editable-block')
+        const shell = article.closest<HTMLElement>('.editable-block')
         const cid = shell?.dataset.cid
         if (!cid || activeCid !== cid || shell?.dataset.visual !== 'true') return
 
@@ -2711,7 +2737,7 @@ export function mountBlockEditor(
   ensureFrontmatterPanel(currentFrontmatter)
   attachBlockEventHandlers()
 
-  const onKeydown = (event) => {
+  const onKeydown = (event: KeyboardEvent) => {
     const wantsSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's'
     if (!wantsSave) return
     if (!activeCid) return
