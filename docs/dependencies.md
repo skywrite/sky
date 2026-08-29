@@ -1,6 +1,6 @@
 ---
 created: 2026-08-11
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # Dependencies
@@ -19,8 +19,8 @@ Without these, Sky does not run at all. Setup is in [INSTALL.md](INSTALL.md).
 |---|---|---|
 | macOS | The service is launchd-based, and several commands call macOS-only tools | `uname` → `Darwin` |
 | [Bun](https://bun.sh) 1.4+ | Runtime, package manager, test runner | `bun --version` |
-| git | Sky runs from a clone | `git --version` |
-| An AI provider API key | Journaling questions, `ai:chat`, summaries | see INSTALL.md step 5 |
+| git | Cloning and updating the repo. On macOS it arrives with Apple's Command Line Tools; [INSTALL.md step 2](INSTALL.md#2-install-git) walks through the install dialog | `xcode-select -p` on macOS, then `git --version` |
+| An AI provider API key | Journaling questions, `ai:chat`, summaries | see INSTALL.md step 6 |
 
 An editor is a soft requirement: every `*:new` and `*:open` command hands the file
 to one. Sky resolves it from the `EDITOR` (or `VISUAL`) environment variable, so

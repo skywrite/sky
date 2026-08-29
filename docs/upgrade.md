@@ -1,6 +1,6 @@
 ---
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # Upgrading Sky
@@ -147,7 +147,7 @@ git -C "$SKY_REPO" rev-parse HEAD origin/main
 
 ## 6. Reinstall dependencies — twice
 
-Same shape as [installation step 3](INSTALL.md#3-install-dependencies--twice): `src/` is
+Same shape as [installation step 4](INSTALL.md#4-install-dependencies--twice): `src/` is
 the install that matters, the root is a separate thin workspace. Run both every upgrade —
 they are cheap no-ops when nothing changed:
 
