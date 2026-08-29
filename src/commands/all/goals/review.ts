@@ -39,8 +39,7 @@ function getGoalsPath(category: GoalCategory): string {
   return category === 'Professional' ? config.FILE_GOALS_PROFESSIONAL : config.FILE_GOALS_PERSONAL
 }
 
-function createFileHeader(category: GoalCategory): string {
-  const today = new Date().toISOString().slice(0, 10)
+function createFileHeader(category: GoalCategory, today: string): string {
   return `---
 created: ${today}
 updated: ${today}
@@ -103,7 +102,7 @@ export default class GoalsReviewTask extends Command {
     const result = await coach.discoverGoals()
 
     if (result.success && result.markdown) {
-      const content = createFileHeader(category) + result.markdown
+      const content = createFileHeader(category, context.notebookNow.date) + result.markdown
       await writeTextFile(filePath, content)
       output.log(`\nSaved to ${filePath}`)
       return CommandResult.success({ path: filePath, created: true })

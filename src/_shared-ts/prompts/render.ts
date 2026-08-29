@@ -52,13 +52,14 @@ function buildGlobalDefaults(): GlobalContext {
  */
 function buildContextDefaults(): RuntimeContext {
   const now = new Date()
-  const date = now.toISOString().slice(0, 10)
+  const today = new PlainDate(now)
+  const date = today.ymd
   const time = now.toTimeString().slice(0, 5)
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   return {
     notebookDate: date,
-    notebookDay: new PlainDate(now).dayLong,
+    notebookDay: today.dayLong,
     notebookTime: time,
     systemDate: date,
     systemTime: time,

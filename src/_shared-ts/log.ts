@@ -10,6 +10,7 @@ import {
 } from '@logtape/logtape'
 import type { LogLevel, LogRecord, Logger, Sink, TextFormatter } from '@logtape/logtape'
 import { env } from '#shared/sys/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /**
  * Structured logging for sky's long-running processes.
@@ -78,9 +79,13 @@ export function resolveLevel(raw: string | undefined): LogLevel {
   return DEFAULT_LEVEL
 }
 
-/** The UTC calendar day a record belongs to, and the name of its file. */
-function utcDate(timestampMs: number): string {
-  return new Date(timestampMs).toISOString().slice(0, 10)
+/**
+ * The local calendar day a record belongs to, and the name of its file.
+ * Records keep their UTC `@timestamp`; the file is named for the day the
+ * user lived, so an evening's records never land in tomorrow's file.
+ */
+function localDate(timestampMs: number): string {
+  return new PlainDate(new Date(timestampMs)).ymd
 }
 
 /**
@@ -195,8 +200,8 @@ export function sweepLogs(dir: string, nowMs: number): void {
   } catch {
     return
   }
-  const today = utcDate(nowMs)
-  const cutoff = utcDate(nowMs - RETENTION_DAYS * 86_400_000)
+  const today = localDate(nowMs)
+  const cutoff = localDate(nowMs - RETENTION_DAYS * 86_400_000)
 
   const files: { date: string; filePath: string; size: number }[] = []
   for (const name of names) {
@@ -251,7 +256,7 @@ export function getDailyFileSink(
   let fd: number | null = null
   let openDate: string | null = null
   const sink = (record: LogRecord) => {
-    const date = utcDate(record.timestamp)
+    const date = localDate(record.timestamp)
     if (date !== openDate || fd === null) {
       if (fd !== null) closeSync(fd)
       mkdirSync(dir, { recursive: true })

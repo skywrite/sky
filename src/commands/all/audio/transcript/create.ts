@@ -242,7 +242,7 @@ export default class AudioTranscriptCreateTask extends Command {
     // 5. Build content with frontmatter
     const content = `---
 title: ${title}
-date: ${new Date().toISOString().slice(0, 10)}
+date: ${context.notebookNow.date}
 source_file: ${path.basename(inputFile)}
 duration_seconds: ${durationSeconds ?? 'unknown'}
 language: ${language ?? 'unknown'}

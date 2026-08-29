@@ -181,7 +181,7 @@ test('records below the configured level are dropped', () => {
   })
 })
 
-test('the daily file is named for the stream and the UTC date', () => {
+test('the daily file is named for the stream and the local date', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'sky-log-test-'))
   try {
     resetLogging()
@@ -200,7 +200,32 @@ test('the daily file is named for the stream and the UTC date', () => {
   }
 })
 
-test('the sink rolls to a new file when a record crosses midnight UTC', () => {
+test('the daily file takes the local calendar day, not the UTC one', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'sky-log-test-'))
+  try {
+    // 02:00 UTC — still the previous evening anywhere west of Greenwich.
+    const ts = Date.UTC(2026, 0, 16, 2, 0, 0)
+    const local = new Date(ts)
+    const expectedDate = [
+      local.getFullYear(),
+      String(local.getMonth() + 1).padStart(2, '0'),
+      String(local.getDate()).padStart(2, '0'),
+    ].join('-')
+    const sink = getDailyFileSink(dir, 'service', { formatter: safeJsonLinesFormatter })
+    sink(record({ timestamp: ts }))
+    sink[Symbol.dispose]()
+    assert({
+      given: 'a record two hours past UTC midnight',
+      should: "name the file for the process's local date of that instant",
+      actual: readdirSync(dir),
+      expected: [`service.${expectedDate}.jsonl`],
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the sink rolls to a new file when a record crosses local midnight', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'sky-log-test-'))
   try {
     const sink = getDailyFileSink(dir, 'service', { formatter: safeJsonLinesFormatter })

@@ -590,7 +590,7 @@ export default class AudioTranscriptCleanTask extends Command {
 
     const content = `---
 title: ${title}
-date: ${new Date().toISOString().slice(0, 10)}
+date: ${context.notebookNow.date}
 who: ${whoYaml}
 rel: ${relYaml}
 corrections_applied: ${appliedCount}
