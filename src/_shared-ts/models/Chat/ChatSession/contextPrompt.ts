@@ -1,10 +1,13 @@
 /**
  * The context segment of the system prompt: the ambient day (prices,
- * health) and the activity markdown ChatContext assembles. It is kept as
- * its own prompt segment, never concatenated onto the base prompt, so each
- * gets its own prompt-cache breakpoint — a context change re-writes only
- * this segment while the base prompt stays cached for the session.
+ * health), the activity markdown ChatContext assembles, and the day anchor
+ * that closes it. It is kept as its own prompt segment, never concatenated
+ * onto the base prompt, so each gets its own prompt-cache breakpoint — a
+ * context change re-writes only this segment while the base prompt stays
+ * cached for the session.
  */
+
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /**
  * What the day looks like before any document is retrieved. Structural on
@@ -57,6 +60,28 @@ function formatPriceSection(prices: AmbientContext['prices']): string {
   return lines.join('\n')
 }
 
+/**
+ * The day restated where the model reads it last. The `(TODAY)` labels sit
+ * hundreds of thousands of tokens upstream of the question, and a model
+ * that loses the anchor calls this morning "yesterday" and this evening
+ * "last night". Constant for the session, so it never disturbs the
+ * segment's prompt cache.
+ */
+function formatTodaySection(today: AmbientContext['today']): string {
+  let yesterday = 'the day before'
+  try {
+    const prev = PlainDate.from(today.date).addDays(-1)
+    yesterday = `${prev.dayLong} ${prev.ymd}`
+  } catch {
+    // Malformed date: the label semantics still stand without the second date.
+  }
+  return [
+    '## Today',
+    '',
+    `${today.dayOfWeek} ${today.date} is today, the notebook date. Documents labeled (TODAY) are from today; (yesterday) is ${yesterday}. The newest \`[Time: ...]\` message stamp is the exact current time.`,
+  ].join('\n')
+}
+
 export function buildContextPrompt(ambient: AmbientContext, activityMarkdown: string | null): string {
   return [
     `# Context for ${ambient.today.date} (${ambient.today.dayOfWeek})`,
@@ -72,5 +97,7 @@ export function buildContextPrompt(ambient: AmbientContext, activityMarkdown: st
     '## Activity',
     '',
     activityMarkdown ?? '(No activity recorded)',
+    '',
+    formatTodaySection(ambient.today),
   ].join('\n')
 }
