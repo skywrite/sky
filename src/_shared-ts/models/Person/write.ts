@@ -113,11 +113,13 @@ export interface PersonOpOutcome {
 }
 
 /**
- * Runaway backstops. A conversation genuinely teaching things about more
- * people than this is vanishingly rare — past the caps it's a model
- * failure, and the excess is skipped visibly rather than applied.
+ * Runaway backstops. With up to 32 profiles riding the prompt, a long
+ * meeting legitimately teaches something about half a dozen people; a
+ * conversation teaching about more than this is vanishingly rare — past the
+ * caps it's a model failure, and the excess is skipped visibly rather than
+ * applied.
  */
-export const MAX_PEOPLE_PER_SAVE = 4
+export const MAX_PEOPLE_PER_SAVE = 8
 export const MAX_OPS_PER_PERSON = 6
 /** Unlisted lines past this fold into one — a hint lane, never a roster. */
 export const MAX_UNLISTED_PER_SAVE = 6

@@ -407,7 +407,7 @@ test('applyPersonFacts - the people and per-person op caps skip the excess visib
   const subjects: Array<{ name: string; path: string }> = []
   const facts: PersonFacts[] = []
   for (let i = 0; i < MAX_PEOPLE_PER_SAVE + 1; i++) {
-    const name = `Person ${'ABCDE'[i]}`
+    const name = `Person ${String.fromCharCode(65 + i)}`
     const path = `people/2026/pe/person-${i}.md`
     files[path] = `---\nname: ${name}\n---\n\n# ${name}\n`
     subjects.push({ name, path })
