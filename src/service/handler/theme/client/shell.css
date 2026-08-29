@@ -1130,13 +1130,14 @@ a.sky-thread {
   color: var(--sky-dim);
 }
 
-/* The file itself: pixyll's type a size down — serif prose, sans headings, room to breathe. */
+/* The file itself: pixyll's type a size down — serif prose, sans headings, room to breathe.
+   Everything inside scales from the reader's text size (--sky-doc-scale, set from the ⋯ menu). */
 .sky-doc {
   max-width: 1000px;
   margin: 0 auto;
   padding: 36px 48px 96px;
   font-family: 'Merriweather', 'PT Serif', Georgia, serif;
-  font-size: 18px;
+  font-size: calc(18px * var(--sky-doc-scale, 1));
   line-height: 1.7;
   color: var(--sky-text);
 }
@@ -1196,21 +1197,21 @@ a.sky-thread {
 }
 
 .sky-doc-body h1 {
-  font-size: 34px;
+  font-size: 1.9em;
 }
 
 .sky-doc-body h2 {
-  font-size: 26px;
+  font-size: 1.45em;
 }
 
 .sky-doc-body h3 {
-  font-size: 21px;
+  font-size: 1.17em;
 }
 
 .sky-doc-body h4,
 .sky-doc-body h5,
 .sky-doc-body h6 {
-  font-size: 18px;
+  font-size: 1em;
 }
 
 .sky-doc-body ul,
@@ -1258,7 +1259,7 @@ a.sky-thread {
   border-radius: 11px;
   background: var(--sky-s2);
   font-family: var(--mantine-font-family-monospace);
-  font-size: 14.5px;
+  font-size: 0.8em;
   line-height: 1.5;
   overflow-x: auto;
 }
@@ -1274,7 +1275,7 @@ a.sky-thread {
   max-width: 100%;
   margin: 0 0 1.1em;
   border-collapse: collapse;
-  font-size: 16px;
+  font-size: 0.89em;
   line-height: 1.5;
   overflow-x: auto;
 }
@@ -1314,14 +1315,14 @@ a.sky-thread {
 @media (max-width: 900px) {
   .sky-doc {
     padding: 18px 14px 72px;
-    font-size: 17px;
+    font-size: calc(17px * var(--sky-doc-scale, 1));
   }
 
   .sky-doc-body h1 {
-    font-size: 28px;
+    font-size: 1.65em;
   }
 
   .sky-doc-body h2 {
-    font-size: 23px;
+    font-size: 1.35em;
   }
 }

@@ -1,5 +1,5 @@
-import { Button } from '@mantine/core'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { ActionIcon, Button, Menu } from '@mantine/core'
+import { type CSSProperties, Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
@@ -57,6 +57,10 @@ export function explorerFileOf(pathname: string): string | null {
 function ancestorsOf(file: string): string[] {
   const parts = file.split('/').slice(0, -1)
   return parts.map((_, i) => parts.slice(0, i + 1).join('/'))
+}
+
+function encodeSegments(file: string): string {
+  return file.split('/').map(encodeURIComponent).join('/')
 }
 
 /** What the tree knows about a directory: not yet, on its way, gone, or its entries. */
@@ -213,6 +217,12 @@ function Rows({
 // The file
 // -----------------------------------------------------------------------------
 
+const POLL_MS = 4000
+
+/**
+ * The file, read once and re-read whenever it changes on disk — a save from
+ * the terminal or another session shows up here within seconds, in place.
+ */
 function useDoc(file: string): { doc: ExplorerDoc | null; missing: boolean } {
   const [doc, setDoc] = useState<ExplorerDoc | null>(null)
   const [missing, setMissing] = useState(false)
@@ -223,30 +233,126 @@ function useDoc(file: string): { doc: ExplorerDoc | null; missing: boolean } {
       return
     }
     let alive = true
-    fetch(`/explorer/_api/doc?path=${encodeURIComponent(file)}`)
-      .then(async (r) => (r.ok ? ((await r.json()) as ExplorerDoc) : null))
-      .catch(() => null)
-      .then((body) => {
-        if (!alive) return
-        // The last file stays on screen until this one arrives — no blank in between.
-        if (body) setDoc(body)
-        else setMissing(true)
-      })
+    let version: number | null = null
+    const read = async (): Promise<ExplorerDoc | null> => {
+      try {
+        const r = await fetch(`/explorer/_api/doc?path=${encodeURIComponent(file)}`)
+        return r.ok ? ((await r.json()) as ExplorerDoc) : null
+      } catch {
+        return null
+      }
+    }
+    const show = (body: ExplorerDoc) => {
+      version = body.version
+      setDoc(body)
+      setMissing(false)
+    }
+    void read().then((body) => {
+      if (!alive) return
+      // The last file stays on screen until this one arrives — no blank in between.
+      if (body) show(body)
+      else setMissing(true)
+    })
+    const timer = window.setInterval(async () => {
+      try {
+        const r = await fetch(`/docs/_api/content/${encodeSegments(file)}?meta=1`)
+        if (!r.ok || !alive) return
+        const meta = (await r.json()) as { version: number }
+        if (meta.version === version) return
+        const body = await read()
+        if (alive && body) show(body)
+      } catch {
+        // The next tick tries again.
+      }
+    }, POLL_MS)
     return () => {
       alive = false
+      window.clearInterval(timer)
     }
   }, [file])
   return { doc, missing }
 }
 
+// The reader's text size, kept across files and visits.
+const SCALE_KEY = 'sky-doc-scale'
+const SCALE_MIN = 0.8
+const SCALE_MAX = 1.4
+const SCALE_STEP = 0.1
+
+function clampScale(value: number): number {
+  return Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(value * 10) / 10))
+}
+
+function useDocScale(): [number, (next: number) => void] {
+  const [scale, setScale] = useState(() => {
+    try {
+      const stored = Number.parseFloat(localStorage.getItem(SCALE_KEY) ?? '1')
+      return Number.isFinite(stored) ? clampScale(stored) : 1
+    } catch {
+      return 1
+    }
+  })
+  const set = (next: number) => {
+    const value = clampScale(next)
+    setScale(value)
+    try {
+      localStorage.setItem(SCALE_KEY, String(value))
+    } catch {
+      // Then the size lasts for this visit only.
+    }
+  }
+  return [scale, set]
+}
+
+/** A word in the header about what just happened, gone again after a moment. */
+function useNote(): [string | null, (text: string | null, holdMs?: number) => void] {
+  const [note, setNote] = useState<string | null>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const say = useCallback((text: string | null, holdMs = 4000) => {
+    window.clearTimeout(timer.current)
+    setNote(text)
+    if (text && Number.isFinite(holdMs)) timer.current = window.setTimeout(() => setNote(null), holdMs)
+  }, [])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  return [note, say]
+}
+
 export function DocView({ file }: { file: string }) {
   const { doc, missing } = useDoc(file)
+  const [scale, setScale] = useDocScale()
+  const [note, say] = useNote()
+  const [exporting, setExporting] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
   }, [doc?.path])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
+
+  const exportPdf = async () => {
+    if (exporting) return
+    setExporting(true)
+    say('Exporting PDF…', Number.POSITIVE_INFINITY)
+    try {
+      const r = await fetch(`/docs/_api/export-pdf/${encodeSegments(file)}`, { method: 'POST' })
+      const body = (await r.json()) as { pdfPath?: string; message?: string }
+      if (!r.ok || !body.pdfPath) throw new Error(body.message ?? 'Export failed')
+      say(`PDF saved · ${body.pdfPath.split('/').pop()}`)
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const copyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(file)
+      say('Path copied')
+    } catch {
+      say(file)
+    }
+  }
 
   return (
     <div className="sky-main">
@@ -269,10 +375,45 @@ export function DocView({ file }: { file: string }) {
         )}
         {file && !missing && (
           <nav className="sky-tabs">
+            {note && <span className="sky-head-count">{note}</span>}
             {/* Editing still happens on the block editor's own page, until it moves in here. */}
-            <Button size="sm" component="a" href={`/docs/${segments.map(encodeURIComponent).join('/')}?mode=edit`}>
+            <Button size="sm" component="a" href={`/docs/${encodeSegments(file)}?mode=edit`}>
               Edit
             </Button>
+            <Menu position="bottom-end" shadow="md" width={220}>
+              <Menu.Target>
+                <ActionIcon size="lg" aria-label="More">
+                  ⋯
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Text size · {Math.round(scale * 100)}%</Menu.Label>
+                <Menu.Item
+                  closeMenuOnClick={false}
+                  disabled={scale <= SCALE_MIN}
+                  onClick={() => setScale(scale - SCALE_STEP)}
+                >
+                  Smaller
+                </Menu.Item>
+                <Menu.Item
+                  closeMenuOnClick={false}
+                  disabled={scale >= SCALE_MAX}
+                  onClick={() => setScale(scale + SCALE_STEP)}
+                >
+                  Larger
+                </Menu.Item>
+                {scale !== 1 && (
+                  <Menu.Item closeMenuOnClick={false} onClick={() => setScale(1)}>
+                    Default size
+                  </Menu.Item>
+                )}
+                <Menu.Divider />
+                <Menu.Item disabled={exporting} onClick={() => void exportPdf()}>
+                  Export PDF
+                </Menu.Item>
+                <Menu.Item onClick={() => void copyPath()}>Copy path</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </nav>
         )}
       </header>
@@ -289,7 +430,7 @@ export function DocView({ file }: { file: string }) {
             </p>
           </div>
         ) : doc ? (
-          <article className="sky-doc">
+          <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
             {doc.frontmatter && (
               <details className="sky-doc-meta">
                 <summary>Frontmatter</summary>
