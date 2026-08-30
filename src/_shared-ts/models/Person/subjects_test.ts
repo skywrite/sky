@@ -1,5 +1,11 @@
 import { assert, test } from '#test'
-import { findPersonSubjects, type PersonIndexEntry, profilesAnsweringTo, screenUnlisted } from './subjects.ts'
+import {
+  findPersonSubjects,
+  type PersonIndexEntry,
+  profilesAnsweringTo,
+  profilesPinnedBy,
+  screenUnlisted,
+} from './subjects.ts'
 
 function entry(names: string[], path: string): PersonIndexEntry {
   return { name: names[0], names, path }
@@ -218,6 +224,111 @@ test('findPersonSubjects - a handle the transcript also uses in lowercase is pro
     should: 'still match the full name, which needs no capitalization signal',
     actual: named.map((s) => s.name),
     expected: ['The Market Maker'],
+  })
+})
+
+// Anchored discovery: the host confirmed the who/rel lists, so a bare name
+// is the pipeline's verdict that no contact matched it — the score prior
+// for the user's own bare names is set aside.
+const ANCHOR_INDEX = [...INDEX, ...SAMS]
+const ANCHOR_PROFILES = { ...PROFILES, ...SAM_PROFILES }
+
+test('findPersonSubjects - with anchors a bare first name resolves to nobody, however dominant a namesake', async () => {
+  const dominant = (name: string) => ({ 'Sam Rivera': 300, 'Sam Okafor': 0.4, 'Sam Lindqvist': 0.2 })[name] ?? 0
+  const transcript = 'Taylor Quinn is engaged to Sam; the wedding is next winter.'
+  const [anchored, unanchored] = await Promise.all([
+    findPersonSubjects({
+      transcript,
+      index: ANCHOR_INDEX,
+      readDocument: reader(ANCHOR_PROFILES),
+      scoreFor: dominant,
+      anchors: ['Taylor Quinn', 'Sam'],
+    }),
+    findPersonSubjects({ transcript, index: ANCHOR_INDEX, readDocument: reader(ANCHOR_PROFILES), scoreFor: dominant }),
+  ])
+
+  assert({
+    given:
+      'an attendee confirmed in full and their fiancée as a bare "Sam", beside a namesake scoring hundreds of times higher',
+    should: 'keep the attendee only — the bare name pins no profile',
+    actual: anchored.map((s) => s.name),
+    expected: ['Taylor Quinn'],
+  })
+
+  assert({
+    given: 'the same text with no anchors — an AI chat, where the user is the speaker',
+    should: 'still resolve the bare name to the dominant namesake',
+    actual: unanchored.map((s) => s.name),
+    expected: ['Taylor Quinn', 'Sam Rivera'],
+  })
+})
+
+test('findPersonSubjects - a full-name anchor pins its profile, named by first name in the text or absent from it', async () => {
+  const [byFirstName, absent] = await Promise.all([
+    findPersonSubjects({
+      transcript: 'Sam will send the deck on Monday.',
+      index: ANCHOR_INDEX,
+      readDocument: reader(ANCHOR_PROFILES),
+      scoreFor: samScore,
+      anchors: ['Sam Okafor'],
+    }),
+    findPersonSubjects({
+      transcript: 'The deck arrives Monday.',
+      index: ANCHOR_INDEX,
+      readDocument: reader(ANCHOR_PROFILES),
+      scoreFor: samScore,
+      anchors: ['Sam Okafor', 'Jane Doe'],
+    }),
+  ])
+
+  assert({
+    given: 'rel confirmed as "Sam Okafor" while the text says only "Sam", with a higher-scored Sam in the index',
+    should: 'ride the confirmed profile alone — no namesake joins by score',
+    actual: byFirstName.map((s) => s.name),
+    expected: ['Sam Okafor'],
+  })
+
+  assert({
+    given: 'anchors the text never repeats — a corrected rel list',
+    should: 'still ride, the profiles being the confirmed ones',
+    actual: absent.map((s) => s.name),
+    expected: ['Sam Okafor', 'Jane Doe'],
+  })
+})
+
+test('findPersonSubjects - anchored, a full name in the text still rides and an exact bare alias does not', async () => {
+  const subjects = await findPersonSubjects({
+    transcript: 'Sam Lindqvist joined; Sam and Will were mentioned in passing.',
+    index: ANCHOR_INDEX,
+    readDocument: reader(ANCHOR_PROFILES),
+    scoreFor: samScore,
+    anchors: [],
+  })
+
+  assert({
+    given:
+      'empty anchors, one person named in full, a bare "Sam" that is an explicit alias on a profile, and a bare "Will"',
+    should: "keep only the full name — an alias is evidence for the user's own words, not for the attendee's",
+    actual: subjects.map((s) => s.name),
+    expected: ['Sam Lindqvist'],
+  })
+})
+
+test('profilesPinnedBy - a full name pins exact and subset aliases; a bare name pins nothing, alias or not', () => {
+  const index = [...SAMS, entry(['Sam Rivera Ortiz'], 'people/2023/sa/Sam-Rivera-Ortiz.md')]
+  const names = (pinned: PersonIndexEntry[]) => pinned.map((e) => e.name)
+
+  assert({
+    given: 'an exact full name, a multi-word subset, a bare first name, a bare surname, and a bare explicit alias',
+    should: 'pin by full name only',
+    actual: {
+      exact: names(profilesPinnedBy('Sam Okafor', index)),
+      subset: names(profilesPinnedBy('Sam Ortiz', index)),
+      first: names(profilesPinnedBy('Sam', index)),
+      surname: names(profilesPinnedBy('Okafor', index)),
+      alias: names(profilesPinnedBy('sam', index)),
+    },
+    expected: { exact: ['Sam Okafor'], subset: ['Sam Rivera Ortiz'], first: [], surname: [], alias: [] },
   })
 })
 

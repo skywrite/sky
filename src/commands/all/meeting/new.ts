@@ -70,6 +70,7 @@ export default class MeetingNewTask extends Command {
     let tags: string | undefined
     let transcriptSourcePath: string | null = null
     let actionItems: TranscriptActionItem[] = []
+    let anchors: string[] | undefined
 
     const sources = [fromVoiceMemo, fromZoomVtt, fromText].filter((flag) => flag !== undefined)
     if (sources.length > 1) {
@@ -111,6 +112,12 @@ export default class MeetingNewTask extends Command {
       summary = data.title
       body = data.body
       rel = data.rel.length > 0 ? data.rel : undefined
+
+      // The pipeline's people lists, as confirmed at its corrections prompt,
+      // anchor the profile distiller below: a full name pins its profile, a
+      // bare name pins none. Auto-rel additions stay out — they resolve by
+      // the score prior anchoring sets aside.
+      anchors = [...data.who, ...data.rel]
 
       // The extract call is the primary source of action items — it resolves
       // relative due phrases ("Friday") to dates. The deterministic section
@@ -267,6 +274,7 @@ export default class MeetingNewTask extends Command {
           today: String(whenDate),
           userLabel: userSpeakerLabel(),
           kind: 'meeting summary',
+          anchors,
         })
         if (distilled && (distilled.facts.length > 0 || distilled.unlisted.length > 0)) {
           const outcomes = await applyPersonFacts({

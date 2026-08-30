@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -125,11 +125,49 @@ every op skips writes nothing.
 - Writes go through the service (`DocumentIO`), version-checked. A conflict
   re-applies once against the fresh content, then yields.
 
+## Who rides the prompt
+
+`subjects.ts` decides which profiles the model sees. Two modes.
+
+Chat (`ai:chat`). The user is the speaker.
+
+- A full name in the text pins its profile.
+- A bare first name resolves by interaction score. The leader rides alone
+  when it scores `SCORE_DOMINANCE` (3×) the runner-up. Below that the top
+  `PER_HANDLE_LIMIT` (2) ride and the model judges.
+- A 0-score namesake never rides beside a scored one. A new profile does
+  not change a bare name's resolution until it earns a score.
+- A handle counts only capitalized, and not when the text also uses it in
+  lowercase.
+
+Meeting (`meeting:new`). The transcript pipeline already matched names
+against the contacts list, and the user confirmed the who/rel lists at the
+corrections prompt. Those lists are the anchors.
+
+- A full name in who/rel pins its profile, whether or not the summary
+  repeats it. `profilesPinnedBy` is the rule: two or more words, every
+  word in the alias.
+- A bare name in who/rel pins nothing. Not by score. Not as the only
+  namesake. Not as an explicit alias.
+- A full name in the summary text still rides.
+- The pipeline's metadata box prints `Profiles:` (what will be written to)
+  and `No match:` (bare or unknown names) before the corrections prompt.
+  Retyping the list with a full name pins: `rel: Sam Rivera, Jordan`.
+
+Why the split: the score is a prior on the user's own bare names. In a
+meeting a bare name usually lives in the attendee's world. Ruled
+2026-08-30; the narrative is `2026-08-30-namesake-from-the-other-side.md`.
+
+To tweak: `SCORE_DOMINANCE`, `PER_HANDLE_LIMIT`, `DEFAULT_LIMIT`,
+`MIN_NAME_CHARS` in `subjects.ts`. The pin rule is `profilesPinnedBy`; the
+pipeline's box reads it too, so the two never disagree.
+
 ## Hosts
 
 `ai:chat` (`Chat/ChatStore/save.ts`) and `meeting:new`. Both print the 👤
 lines through `formatPersonOpLine`. The chat's context log records the
-outcomes.
+outcomes. `meeting:new` passes the confirmed who/rel as anchors; the chat
+passes none.
 
 ## Open
 
@@ -139,3 +177,11 @@ outcomes.
   self-heal on the next applied op to that file. A one-off pass over the
   rest is a separate command with its own go.
 - `replace` cannot target the lead prose under `# Name` or a dated section.
+- Chat discovery keeps the score prior. A bare name the user types about
+  someone else's world ("her fiancé Sam") still resolves to the user's
+  top-scored Sam.
+- `who:`/`rel:` corrections parse through the fast model, and a typed line
+  replaces the list. A deterministic lift, as `time:` has, is the next rung.
+- The unlisted lane screens a bare name against every namesake, so a
+  fiancée named Sam reports `profile exists: Sam Rivera` — a dim hint, no
+  write.

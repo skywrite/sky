@@ -28,6 +28,18 @@
  *   lowercase in the transcript — then it is prose ("The", "Will", "Art")
  *   wearing a sentence-initial capital, not a name.
  *
+ * A host that already confirmed who a text concerns — meeting:new, whose
+ * transcript pipeline matched names against the contacts list and showed
+ * the who/rel lists to the user — passes them as anchors, and discovery
+ * changes shape: a full name there pins its profile whether or not the
+ * text repeats it, and a bare handle never resolves on its own — not by
+ * score, not as the only namesake, not as an explicit alias. The pipeline
+ * had the same contacts and left the name bare, and the user accepted
+ * that. The score prior is about the user's own bare names; in a meeting
+ * a bare name is usually someone in the attendee's world (their fiancée,
+ * their co-founder), not the user's top-scored namesake. A full name in
+ * the text still rides unanchored, as it always did.
+ *
  * Both dependencies are injected — the index and the document reader — so
  * the caller decides the transport (the service in production, fixtures in
  * tests) and this module never touches people/ directories itself. One
@@ -102,6 +114,13 @@ export interface FindPersonSubjectsInput {
    * falls back to name order.
    */
   scoreFor?: (name: string) => number
+  /**
+   * Confirmed who/rel names from a host that already resolved the text's
+   * people (meeting:new). When given — even empty — a bare handle never
+   * resolves on its own: a full name here pins its profile, a bare name
+   * pins nothing. See profilesPinnedBy.
+   */
+  anchors?: string[]
   limit?: number
 }
 
@@ -139,9 +158,18 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
     return count
   }
 
+  // Anchored discovery: the host's confirmed full names pin profiles, and
+  // the bare-handle resolution below is switched off.
+  const anchored = input.anchors !== undefined
+  const pinned = new Set<PersonIndexEntry>()
+  for (const anchor of input.anchors ?? []) {
+    for (const entry of profilesPinnedBy(anchor, input.index)) pinned.add(entry)
+  }
+
   const matched: Candidate[] = []
   for (const entry of input.index) {
     if (entry.names.some((n) => excluded.has(normalizeName(n)))) continue
+    const isPinned = pinned.has(entry)
 
     // A person's aliases all count toward the same profile; the strongest
     // alias sets the rank ("Bob" beating "Bob Smith" is the same Bob).
@@ -161,32 +189,37 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
         bare = Math.max(bare, count)
       }
     }
-    if (full === 0 && bare === 0) continue
+    if (full === 0 && bare === 0 && !isPinned) continue
     let score = 0
     for (const name of entry.names) score += scoreFor(name)
-    matched.push({ entry, full, bare, handles: Array.from(handles), score })
+    // A pin is full-name evidence: the host confirmed the name, whether or
+    // not the text repeats it.
+    matched.push({ entry, full: isPinned ? Math.max(full, 1) : full, bare, handles: Array.from(handles), score })
   }
 
-  // A handle shared by several profiles resolves by score: the leader
-  // always, a runner-up only while the leader doesn't dominate it. A
-  // profile named in full is never cut.
+  // A profile named in full is never cut. A handle shared by several
+  // profiles resolves by score: the leader always, a runner-up only while
+  // the leader doesn't dominate it — unless the host anchored discovery,
+  // when a bare handle resolves to nobody.
   const kept = new Set<PersonIndexEntry>()
   for (const candidate of matched) if (candidate.full > 0) kept.add(candidate.entry)
-  const byHandle = new Map<string, Candidate[]>()
-  for (const candidate of matched) {
-    for (const handle of candidate.handles) {
-      const group = byHandle.get(handle)
-      if (group) group.push(candidate)
-      else byHandle.set(handle, [candidate])
+  if (!anchored) {
+    const byHandle = new Map<string, Candidate[]>()
+    for (const candidate of matched) {
+      for (const handle of candidate.handles) {
+        const group = byHandle.get(handle)
+        if (group) group.push(candidate)
+        else byHandle.set(handle, [candidate])
+      }
     }
-  }
-  for (const group of byHandle.values()) {
-    group.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
-    const [leader, ...rest] = group
-    kept.add(leader.entry)
-    for (const candidate of rest.slice(0, PER_HANDLE_LIMIT - 1)) {
-      if (leader.score > 0 && leader.score >= SCORE_DOMINANCE * candidate.score) break
-      kept.add(candidate.entry)
+    for (const group of byHandle.values()) {
+      group.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
+      const [leader, ...rest] = group
+      kept.add(leader.entry)
+      for (const candidate of rest.slice(0, PER_HANDLE_LIMIT - 1)) {
+        if (leader.score > 0 && leader.score >= SCORE_DOMINANCE * candidate.score) break
+        kept.add(candidate.entry)
+      }
     }
   }
 
@@ -225,6 +258,20 @@ export function profilesAnsweringTo(name: string, index: PersonIndexEntry[]): Pe
     return words.every((word) => aliasWords.includes(word))
   }
   return index.filter((entry) => entry.names.some(answers))
+}
+
+/**
+ * The profiles a confirmed who/rel name pins for anchored discovery: a
+ * name of two or more words pins every profile answering to it in full
+ * (profilesAnsweringTo), and a single word — a bare first name — pins
+ * nothing, whatever the scores say and even when a profile carries it as
+ * an explicit alias. Shared with the transcript pipeline's metadata box,
+ * so the Profiles / No match lines it prints are exactly what discovery
+ * will do.
+ */
+export function profilesPinnedBy(name: string, index: PersonIndexEntry[]): PersonIndexEntry[] {
+  if (normalizeName(name).split(' ').length < 2) return []
+  return profilesAnsweringTo(name, index)
 }
 
 /**

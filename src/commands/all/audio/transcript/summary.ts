@@ -9,11 +9,13 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DIR_OUTPUT } from '#config'
 import { normalizeActionItems, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.ts'
+import { fetchPeopleIndex } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
+import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/subjects.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
@@ -152,6 +154,37 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 50)
+}
+
+interface ProfileMatches {
+  /** Canonical names of the profiles the confirmed names pin, in list order, deduped */
+  profiles: string[]
+  /** Confirmed names pinning no profile — bare first names, or full names with no profile */
+  unmatched: string[]
+}
+
+/**
+ * Which profiles the person distiller downstream (meeting:new) will write
+ * to, by the same rule it applies: a full name pins its profile, a bare
+ * name pins none — the analysis step had the contacts list and left it
+ * bare. Printed before the corrections prompt so a full name can be typed
+ * in. Null when the people index is unavailable, and then nothing is claimed.
+ */
+async function matchProfiles(names: string[]): Promise<ProfileMatches | null> {
+  let index: PersonIndexEntry[]
+  try {
+    index = await fetchPeopleIndex()
+  } catch {
+    return null
+  }
+  const profiles: string[] = []
+  const unmatched: string[] = []
+  for (const name of names) {
+    const pinned = profilesPinnedBy(name, index)
+    if (pinned.length === 0) unmatched.push(name)
+    for (const entry of pinned) if (!profiles.includes(entry.name)) profiles.push(entry.name)
+  }
+  return { profiles, unmatched }
 }
 
 // -----------------------------------------------------------------------------
@@ -400,6 +433,10 @@ export default class AudioTranscriptSummaryTask extends Command {
     await writeTextFile(tmpPath, summary)
     output.log(colors.gray(`\nDumped summary to: ${tmpPath}`))
 
+    // The message template's from/to feed no profile distiller; the meeting
+    // template's who/rel do, so say up front which profiles they reach.
+    const matches = isMessageTemplate ? null : await matchProfiles([...finalWho, ...finalRel])
+
     // Show extracted metadata for confirmation
     output.log(colors.cyan('\n─── Extracted Metadata ───'))
     output.log(colors.white(`  Title:    ${finalTitle}`))
@@ -413,11 +450,17 @@ export default class AudioTranscriptSummaryTask extends Command {
       output.log(colors.white(`  Who:      ${finalWho.length > 0 ? finalWho.join(', ') : '(none)'}`))
     }
     output.log(colors.white(`  Rel:      ${finalRel.length > 0 ? finalRel.join(', ') : '(none)'}`))
+    if (matches) {
+      output.log(colors.white(`  Profiles: ${matches.profiles.length > 0 ? matches.profiles.join(', ') : '(none)'}`))
+      if (matches.unmatched.length > 0) {
+        output.log(colors.white(`  No match: ${matches.unmatched.join(', ')}`))
+      }
+    }
     output.log(colors.cyan('──────────────────────────'))
 
     // Ask for corrections when running in a terminal
     if (isTerminal()) {
-      const corrections = await this.askForCorrections(output)
+      const corrections = await this.askForCorrections(output, { unmatched: (matches?.unmatched.length ?? 0) > 0 })
       if (corrections) {
         output.log(colors.cyan('\nParsing corrections...'))
 
@@ -688,9 +731,16 @@ ${summary}
     return fullText
   }
 
-  private async askForCorrections(output: OutputHandler): Promise<string | null> {
+  private async askForCorrections(output: OutputHandler, hints: { unmatched: boolean }): Promise<string | null> {
     output.log(colors.cyan('\nAny corrections? (Enter to accept, or type changes)'))
     output.log(colors.gray('  e.g., "time: 2026-01-20 14:30" or freeform feedback to improve the summary'))
+    if (hints.unmatched) {
+      output.log(
+        colors.gray(
+          '  a name under "No match" reaches no profile — retype its list with the full name, e.g. "rel: Sam Rivera, Jordan"',
+        ),
+      )
+    }
 
     const isTTY = isTerminal()
     const decoder = new TextDecoder()
