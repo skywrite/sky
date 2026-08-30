@@ -5,7 +5,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import TrackingStore from '#shared/models/Store/TrackingStore/mod.ts'
 import type { TrackingColumn, TrackingDocument } from '#shared/models/Tracking/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
+import { currentMoment } from './lib/moment.ts'
 import { isBareScalar, parseEntry, valueColumns } from './lib/parse.ts'
 import { appendRecord, formatRow, hasEntryForDate, recordFilePath } from './lib/records.ts'
 
@@ -43,7 +43,8 @@ export default class TrackAskTask extends Command {
       'Walks the active tracking definitions (tracking/active/) that carry a',
       'question, skips any already answered today, and asks the rest one at a',
       'time. Answers append to the current weekly tracking CSV exactly as a',
-      'hand edit would — same file, same day-letter row format.',
+      'hand edit would — same file, same day-letter row format, keyed to the',
+      "calendar day on the clock (today's row, even before day:start).",
       '',
       'Answers are plain language: a bare value ("180") writes directly, and',
       'anything richer ("3 mile run in the park at 6:30 am")',
@@ -69,11 +70,10 @@ export default class TrackAskTask extends Command {
       return CommandResult.fail('track:ask is interactive — run it in a terminal')
     }
 
-    const now = await fetchNow()
-    const today = now.plainDateTime.plainDate
-    // Hand rows write unpadded hours (`6:05`, `18:00`) — match them exactly.
-    const timeNow = now.plainDateTime.time.replace(/^0(?=\d:)/, '')
     const timeDir = config.DIR_TIME as string
+    // The day a hand edit keys to: the calendar day on the clock — not the
+    // notebook's open day, which stays yesterday until day:start runs.
+    const { date: today, time: timeNow } = await currentMoment(timeDir)
     const dirs = { timeDir, dataTrackingDir: config.DIR_DATA_TRACKING as string }
 
     const store = await TrackingStore.build(config.DIR_TRACKING as string)
