@@ -1,6 +1,6 @@
 import * as marked from 'marked'
+import Document from '#shared/models/Markdown/Document/mod.ts'
 import { fetchLinksFromTokens, type Link } from '#shared/models/Markdown/Link/mod.ts'
-import { Document } from '#shared/models/Markdown/mod.ts'
 
 export interface ItemListProps {
   title: string

@@ -44,4 +44,18 @@ Shortcut references (`[site]` alone) are outside both collectors on purpose;
 neither `fetchLinksFromTokens` nor `extractReferenceLabels` matches a single
 bracket pair.
 
-Narratives: [2026-08-29 — list links keyed by text](2026-08-29-list-links-keyed-by-text.md).
+## Import graph: siblings import each other directly, never the barrel
+
+`Markdown/mod.ts` is the barrel for callers outside the family. It re-exports
+`MarkdownStore`, whose stores reach `Day`, and `DayDocument extends
+ListDocument`. A module inside the family that imports the barrel at runtime
+therefore closes a cycle, and the cycle bites whenever a process enters the
+graph from `ListDocument` — a `bun test` subset, a command whose first
+import is a list document — with "Cannot access 'ListDocument' before
+initialization". `ItemList` and `Store` import `Document/mod.ts` directly
+for that reason; a `type` import of the barrel is erased and is fine.
+`ListDocument/_regressions/import-cycle-tdz_test.ts` loads the failing
+order in its own process.
+
+Narratives: [2026-08-29 — list links keyed by text](2026-08-29-list-links-keyed-by-text.md),
+[2026-08-29 — ListDocument import cycle](2026-08-29-listdocument-import-cycle.md).
