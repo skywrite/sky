@@ -74,7 +74,7 @@ export interface VoiceClock {
 }
 
 export interface VoicePrompts {
-  /** The session's system instructions: persona, voice, the notebook rules. */
+  /** The session's system instructions: persona, voice, the notebook rules, today's calendar. */
   instructions: string
   /** The ask_notebook delegate's system prompt. */
   askPrompt: string
@@ -82,9 +82,20 @@ export interface VoicePrompts {
   greeting: string
 }
 
+export interface VoicePromptInput extends VoiceClock {
+  /**
+   * The day's calendar checked against the notebook's meeting records,
+   * rendered by the host (day:meeting:check's lib) — the one part of the
+   * user's day the persona holds without asking the notebook. Absent when
+   * the host did not check.
+   */
+  calendar?: string
+}
+
 /** Render the persona, the delegate prompt, and a random greeting for one session. */
-export async function renderVoicePrompts(clock: VoiceClock, random?: () => number): Promise<VoicePrompts> {
-  const renderInput: RenderInput = { context: { ...clock } }
+export async function renderVoicePrompts(input: VoicePromptInput, random?: () => number): Promise<VoicePrompts> {
+  const { calendar, ...clock } = input
+  const renderInput: RenderInput = { context: { ...clock }, calendar: { block: calendar ?? '' } }
   const { output: instructions } = renderPromptFile(
     await readTextFile(VOICE_PROMPT_FILE),
     'voice.prompt.md',

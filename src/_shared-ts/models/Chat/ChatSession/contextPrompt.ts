@@ -18,6 +18,13 @@ export interface AmbientContext {
   today: { date: string; dayOfWeek: string }
   health: Array<{ date: string; data: HealthSummary }>
   prices: Array<{ date: string; data: { prices: Array<{ symbol: string; value: number }> } }>
+  /**
+   * The day's calendar checked against the notebook's meeting records,
+   * already rendered: the voice persona carries the same text, so the host
+   * renders it once (day:meeting:check's lib) and the session only places
+   * it. Absent when the host did not check.
+   */
+  calendar?: string
 }
 
 export interface HealthSummary {
@@ -85,6 +92,10 @@ function formatTodaySection(today: AmbientContext['today']): string {
 export function buildContextPrompt(ambient: AmbientContext, activityMarkdown: string | null): string {
   return [
     `# Context for ${ambient.today.date} (${ambient.today.dayOfWeek})`,
+    '',
+    '## Calendar',
+    '',
+    ambient.calendar ?? '(Calendar not checked)',
     '',
     '## Prices',
     '',

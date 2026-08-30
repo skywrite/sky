@@ -318,9 +318,12 @@ export default class AiChatTask extends Command {
       }
     }
 
-    // The ambient day: summaries, health, prices
+    // The ambient day: summaries, health, prices, the calendar checked against the notebook
     t0 = performance.now()
-    const ctx = await gatherContext(today, timeDir, dataDir, days)
+    const ctx = await gatherContext(today, timeDir, dataDir, days, {
+      secrets: context.secrets,
+      now: { date: now.date, time: now.time },
+    })
     output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
 
     // Session-lived terminal state. "toolName:key" entries the user

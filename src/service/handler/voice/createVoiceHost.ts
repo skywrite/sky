@@ -8,6 +8,7 @@
  */
 
 import OpenAI from 'openai'
+import { renderDayCalendar } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import { discoverAIChatTools, runToolCommand } from '#commands/lib/chat/notebookTools.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
@@ -49,7 +50,16 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
   const createThread: VoiceThreadFactory = async () => {
     const context = CommandContext.server(config, env)
     const tasks = new CommandService(context)
-    const prompts = await renderVoicePrompts(clockOf(context))
+    const clock = clockOf(context)
+    // The calendar check is a Google round-trip; it runs beside the tool discovery.
+    const [calendar, entries] = await Promise.all([
+      renderDayCalendar(context.secrets, context.notebookNow.plainDateTime.plainDate, config.DIR_TIME, {
+        date: clock.notebookDate,
+        time: clock.notebookTime,
+      }),
+      discoverAIChatTools(),
+    ])
+    const prompts = await renderVoicePrompts({ ...clock, calendar })
     const delegate = resolveProfile(getProfile(ROLES.reasoning))
 
     const tools = new Map<string, VoiceTool>()
@@ -62,7 +72,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
       },
     })
     // Only tools that never ask — the page has no approval surface yet.
-    for (const entry of await discoverAIChatTools()) {
+    for (const entry of entries) {
       if (entry.needsApproval) continue
       tools.set(entry.toolName, {
         definition: {

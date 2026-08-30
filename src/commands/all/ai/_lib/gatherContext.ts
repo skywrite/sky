@@ -1,4 +1,6 @@
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { type CheckClock, renderDayCalendar } from '../../day/meeting/lib/meetingCheck.ts'
 import { gatherHealthData, type HealthData } from '../../summary/_health.ts'
 import { type DayPriceData, gatherDayPriceData } from '../../summary/_prices.ts'
 
@@ -10,6 +12,14 @@ export interface AIContext {
   today: { date: string; dayOfWeek: string }
   health: Array<{ date: string; data: HealthData }>
   prices: Array<{ date: string; data: DayPriceData }>
+  /** The day's calendar checked against the notebook's meeting records, rendered for the model */
+  calendar: string
+}
+
+/** What the calendar check needs beyond the day: the keychain, and the notebook clock it judges "upcoming" by. */
+export interface CalendarCheck {
+  secrets: SecretsProvider
+  now: CheckClock
 }
 
 // -----------------------------------------------------------------------------
@@ -18,15 +28,20 @@ export interface AIContext {
 
 /**
  * Gather context from the Notebook for AI chat.
- * Collects health and prices for the specified number of days.
+ * Collects health and prices for the specified number of days, and the
+ * day's calendar checked against the notebook (day:meeting:check's check).
  * Summaries, goals, and activity are handled via DomainCollection.
  */
 export async function gatherContext(
   today: PlainDate,
   _timeDir: string,
   dataDir: string,
-  days: number = 7,
+  days: number,
+  calendar: CalendarCheck,
 ): Promise<AIContext> {
+  // A Google round-trip: it runs beside the day-by-day reads.
+  const calendarBlock = renderDayCalendar(calendar.secrets, today, _timeDir, calendar.now)
+
   // Day-by-day data
   const health: AIContext['health'] = []
   const prices: AIContext['prices'] = []
@@ -60,5 +75,6 @@ export async function gatherContext(
     },
     health,
     prices,
+    calendar: await calendarBlock,
   }
 }

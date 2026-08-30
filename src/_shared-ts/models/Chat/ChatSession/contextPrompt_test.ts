@@ -30,6 +30,20 @@ test(buildContextPrompt.name, () => {
     expected: true,
   })
   assert({
+    given: 'no calendar from the host',
+    should: 'say the calendar went unchecked, ahead of the prices',
+    actual: lines.slice(2, 8),
+    expected: ['## Calendar', '', '(Calendar not checked)', '', '## Prices', ''],
+  })
+  assert({
+    given: 'a rendered calendar check',
+    should: 'place it under the calendar heading as given',
+    actual: buildContextPrompt({ ...AMBIENT, calendar: 'No meetings on the calendar for 2026-01-27.' }, null)
+      .split('\n')
+      .slice(2, 5),
+    expected: ['## Calendar', '', 'No meetings on the calendar for 2026-01-27.'],
+  })
+  assert({
     given: 'a malformed ambient date',
     should: 'still close with the anchor, without a second date',
     actual: buildContextPrompt({ ...AMBIENT, today: { date: 'today', dayOfWeek: '?' } }, null).includes(

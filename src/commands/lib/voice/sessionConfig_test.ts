@@ -120,4 +120,27 @@ test({ name: 'voice session config - the prompts render with the clocks and a gr
     actual: prompts.greeting.startsWith('Hey') && prompts.greeting.endsWith(', what would you like to talk about?'),
     expected: true,
   })
+  assert({
+    given: 'no calendar from the host',
+    should: 'render no calendar section',
+    actual: prompts.instructions.includes("## Today's calendar"),
+    expected: false,
+  })
 })
+
+test(
+  { name: 'voice session config - the calendar rides in the session instructions, not the delegate prompt' },
+  async () => {
+    const calendar = 'No meetings on the calendar for 2026-01-27 (Europe/London), as of 2026-01-27 09:30.'
+    const prompts = await renderVoicePrompts({ ...CLOCK, calendar }, () => 0)
+    assert({
+      given: 'a rendered calendar check',
+      should: 'place it under its heading in the instructions only',
+      actual: [
+        prompts.instructions.includes(`## Today's calendar\n\n${calendar}\n`),
+        prompts.askPrompt.includes(calendar),
+      ],
+      expected: [true, false],
+    })
+  },
+)

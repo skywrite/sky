@@ -1,13 +1,36 @@
 ---
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 # Day commands
 
-Design notes for `src/commands/all/day/`. Only the carry-over of unfinished
-items is written up so far. Extend this file as other parts of the group need
-a mental model.
+Design notes for `src/commands/all/day/`. The carry-over of unfinished items
+and the meeting check are written up so far. Extend this file as other parts
+of the group need a mental model.
+
+## The meeting check
+
+`day:meeting:check <day>` cross-references the day's Google Calendar
+meetings against the notebook's meeting records and warns about the ones
+with no record, plus records whose `when:` states no end time. Its rules:
+
+- **Warn, never fail.** The command always succeeds; an unreachable
+  calendar or service degrades to a warning line. Call sites run it bare.
+- **The notebook side is the service** — `meetings(where: {date})` over
+  GraphQL, never a file walk.
+- **A record is a start-time match** within 15 minutes. Notebook meetings
+  the calendar never saw are ignored, not flagged.
+- **Civil-day calendar windows.** The calendar is asked for the civil day
+  in the system zone; the check does no absolute-time math of its own.
+
+The check lives in `meeting/lib/meetingCheck.ts` — a pure comparison over
+already-fetched sources, the fetches, and a model-facing render — and
+surfaces in four places: `day:end` (the ending day), `day:start` (the day
+before), and the ambient context of every chat and voice session, where
+the render also judges each meeting against the notebook clock (upcoming,
+in progress, not logged). See
+[2026-08-30 — the meeting check reaches the chat and the voice](2026-08-30-meeting-check-in-chat-and-voice.md).
 
 ## Carrying unfinished items to another day
 

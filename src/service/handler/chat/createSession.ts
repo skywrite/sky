@@ -50,7 +50,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       model: resolveProfile(profile),
       profile: { provider: profile.provider, model: profile.model },
       producers: contextProducers(tasks),
-      ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, WEB_CHAT.days),
+      ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, WEB_CHAT.days, {
+        secrets: context.secrets,
+        now: { date: clock.notebookDate, time: clock.notebookTime },
+      }),
       systemPrompt: async () =>
         (
           await renderChatSystemPrompt({

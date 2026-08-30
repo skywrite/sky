@@ -17,6 +17,7 @@
 
 import process from 'node:process'
 import colors from 'picocolors'
+import { renderDayCalendar } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
 import {
   DEFAULT_VOICE,
@@ -87,15 +88,24 @@ export default class AiVoiceTask extends Command {
       return CommandResult.fail((err as Error).message)
     }
 
-    // Both prompts carry the session-start clocks; the greeting's name
+    // Both prompts carry the session-start clocks; the persona also holds
+    // today's calendar checked against the notebook. The greeting's name
     // slot fills from the AboutMe profile and folds away without one.
+    const { notebookNow, systemNow } = context
+    const calendar = await renderDayCalendar(
+      context.secrets,
+      notebookNow.plainDateTime.plainDate,
+      <string>context.config.DIR_TIME,
+      { date: notebookNow.date, time: notebookNow.time },
+    )
     const prompts = await renderVoicePrompts({
-      notebookDate: context.notebookNow.date,
-      notebookTime: context.notebookNow.time,
-      notebookTimezone: context.notebookNow.timezone,
-      systemDate: context.systemNow.date,
-      systemTime: context.systemNow.time,
-      systemTimezone: context.systemNow.timezone,
+      notebookDate: notebookNow.date,
+      notebookTime: notebookNow.time,
+      notebookTimezone: notebookNow.timezone,
+      systemDate: systemNow.date,
+      systemTime: systemNow.time,
+      systemTimezone: systemNow.timezone,
+      calendar,
     })
 
     output.log(colors.bold('Voice session'))
