@@ -66,8 +66,10 @@ When Jane says "the big deck" she means the Atlas overview deck.
 - `source` is the teaching chat. A confirm keeps it; an update moves it
   to the correcting chat.
 - `uses` counts distinct sessions that confirmed the memory.
-- `locked: true` is hand-set: neither writer rewrites or deletes the
-  file, and budget eviction skips it. Hand-written seeds are locked.
+- `locked: true` is hand-set: neither writer rewrites, deletes, or
+  confirms the file, and budget eviction skips it — so a locked memory
+  never accumulates `uses`. Hand-written seeds are locked; a seed that
+  should keep earning confirms stays unlocked.
 - Hand edits always win; the dir is plain markdown.
 - Bodies are 1–3 sentences in the third person that still read months
   later — no "tonight", no "the report above".
