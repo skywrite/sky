@@ -293,8 +293,9 @@ sky nbfs:migrate --execute    # actually move
 
 `nbfs:migrate` parses every layout the notebook has ever written — v1's `DD`/`xDD` day
 directories, v1.1 week ranges including year-boundary artifacts, both `W##` variants —
-moves week-level files (`_tracking/`, `week.md`, …) along with the days, cleans up emptied
-directories, and reports any leftover documents no layout claims. It refuses to run if two
+moves every day directory (a day captured into but never started has no `day.md` and is
+still a day), moves week-level files (`_tracking/`, `week.md`, …) along with the days,
+cleans up emptied directories, and reports any leftover documents no layout claims. It refuses to run if two
 sources map to one destination or a destination already exists, so a partial or repeated
 run is safe. Stop the service and pause any file-sync tool watching the notebook while it
 moves files, and commit the result to the notebook's git as a single rename-only commit.

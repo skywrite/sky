@@ -3,9 +3,10 @@ import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { exists, walk } from '#shared/fs/mod.ts'
-import { configured } from '#shared/nbfs/layout/mod.ts'
+import { configured, FILE_DAY } from '#shared/nbfs/layout/mod.ts'
 import { toTimeRef } from '#shared/nbfs/mod.ts'
-import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
+import { Week } from '#universal/dates/nbdt/mod.ts'
+import dayDirDate, { isDayDirName } from './lib/dayDirDate.ts'
 
 const params = {
   execute: Flag.bool('Actually perform the migration (dry-run by default)', {
@@ -65,7 +66,7 @@ export default class NbfsMigrateTask extends Command {
       output.log('EXECUTING MIGRATION — files will be moved.\n')
     }
 
-    // ── Phase 1: Discover all day.md files and plan moves ──────────────
+    // ── Phase 1: Discover every day directory and plan moves ───────────
 
     const moves: DayMove[] = []
     const weekMoves = new Map<string, string>() // old weekDir → configured weekDir
@@ -74,22 +75,31 @@ export default class NbfsMigrateTask extends Command {
     let skipped = 0
 
     for await (const entry of walk(timeDir)) {
-      if (entry.isFile) allFiles.push(entry.path)
-      if (!entry.isFile || entry.name !== 'day.md') continue
-
-      const oldDayDir = path.dirname(entry.path)
-
-      // toTimeRef reads every layout the notebook has ever written — v1.1
-      // week ranges (year-boundary artifacts arbitrated by week range),
-      // legacy DD/xDD day dirs, and both v2 variants.
-      let date: PlainDate
-      try {
-        date = new PlainDate(toTimeRef(entry.path).slice(0, 10))
-      } catch {
-        errors.push(`Cannot parse path: ${entry.path}`)
+      if (entry.isFile) {
+        allFiles.push(entry.path)
+        // A day file no layout can place is data damage to surface, never
+        // to guess around.
+        if (entry.name === FILE_DAY) {
+          try {
+            toTimeRef(entry.path)
+          } catch {
+            errors.push(`Cannot parse path: ${entry.path}`)
+          }
+        }
         continue
       }
 
+      // A day dir is a day dir, with or without a day file. A day captured
+      // into before it was started — a message filed, a meeting saved — has
+      // the shape and the documents but no day.md, and it moves like any
+      // other. dayDirDate reads every layout the notebook has ever written:
+      // v1.1 week ranges (year-boundary artifacts arbitrated by week range),
+      // legacy DD/xDD day dirs, and both v2 variants.
+      if (!entry.isDirectory) continue
+      const date = dayDirDate(entry.path)
+      if (date === null) continue
+
+      const oldDayDir = entry.path
       const newDayDir = path.join(timeDir, configured.dayDir(date))
 
       // Already at correct path
@@ -237,7 +247,7 @@ export default class NbfsMigrateTask extends Command {
       try {
         const entries = await readdir(oldWeekDir)
         // Filter out entries that are now-empty day directories (will be cleaned up)
-        const weekLevelEntries = entries.filter((e) => !isDayDirEntry(e))
+        const weekLevelEntries = entries.filter((e) => !isDayDirName(e))
         if (weekLevelEntries.length > 0) {
           weekDirsWithContent.push({ oldWeekDir, newWeekDir, entries: weekLevelEntries })
         }
@@ -346,9 +356,4 @@ export default class NbfsMigrateTask extends Command {
   private rel(fullPath: string, timeDir: string): string {
     return path.relative(timeDir, fullPath)
   }
-}
-
-/** Day-dir entry in any layout the notebook has written: MM-DD, legacy DD / xDD. */
-function isDayDirEntry(name: string): boolean {
-  return /^x?\d{1,2}$/.test(name) || /^\d{2}-\d{2}$/.test(name)
 }
