@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-29
 ---
 
 # Overview
@@ -139,6 +139,7 @@ timezones, and the date types — is [its own document](nbfs.md).
 ```
 ~/Sky/
   time/                            # every day, filed by year / month / week / day
+  ai/                              # the assistant's own space: memory/ holds its cross-session notes
   data/                            # tracking data, weather, location history
   decisions/                       # decision records
   goals/                           # personal and professional goals

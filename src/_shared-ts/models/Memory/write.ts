@@ -5,11 +5,12 @@
  * finished conversation against the current memory index and returns ops;
  * this module is the only thing that turns them into files. The dir is the
  * one notebook space with a standing write license, so the discipline lives
- * here instead of an approval prompt: ops are capped per save, `locked`
- * memories are never rewritten or deleted, a missing target is skipped
- * rather than invented, and every op — applied or skipped — returns an
- * outcome the host renders (the 🧠 lines) and the transcript's context log
- * records. Deletion is plain removal: notebook git is the archive.
+ * here instead of an approval prompt: ops are capped per save and new files
+ * capped tighter, `locked` memories are never rewritten or deleted, a
+ * missing target is skipped rather than invented, and every op — applied or
+ * skipped — returns an outcome the host renders (the 🧠 lines) and the
+ * transcript's context log records. Deletion is plain removal: notebook git
+ * is the archive.
  */
 
 import { unlink } from 'node:fs/promises'
@@ -32,7 +33,12 @@ export type MemoryOp =
   | { op: 'update'; slug: string; summary?: string; body: string }
   /** The conversation invalidated this memory */
   | { op: 'delete'; slug: string; reason: string }
-  /** Notebook-worthy content: surfaced to the user, never written anywhere */
+  /**
+   * Notebook-worthy content: surfaced to the user, never written anywhere.
+   * Only the consolidator emits this today (an observation confirmed often
+   * enough to graduate). The distiller stopped proposing on 2026-08-29: a
+   * proposal printed once at chat exit had no consumer — see docs/.
+   */
   | { op: 'propose'; flow: string; gist: string }
 
 /** One op's fate, for the host's 🧠 line and the transcript's context log. */
@@ -55,6 +61,16 @@ export interface MemoryOpOutcome {
  * by design, and the excess is skipped visibly rather than applied.
  */
 export const MAX_OPS_PER_SAVE = 8
+
+/**
+ * New files per save. The op cap bounds runaway output; this bounds the
+ * store's growth, which the op cap never did — a rich chat asking for eight
+ * creates was inside the cap and still wrong (docs/2026-08-29-distiller-
+ * harvested-its-own-answers.md). Confirms, updates, and deletes are not
+ * counted: they keep the store honest, not bigger. A create on an existing
+ * slug is an update and is not counted either.
+ */
+export const MAX_CREATES_PER_SAVE = 3
 
 // -----------------------------------------------------------------------------
 // Serialization
@@ -114,6 +130,8 @@ function cleanBody(raw: string): string {
 interface ExistingMemory {
   created?: string
   updated?: string
+  /** The teaching chat — survives confirms, moves on updates */
+  source?: string
   uses: number
   kind?: MemoryKind
   locked: boolean
@@ -125,9 +143,11 @@ async function readExisting(filePath: string): Promise<ExistingMemory | null> {
   if (!(await exists(filePath))) return null
   const doc = Document.fromMarkdown(await readTextFile(filePath))
   const rawKind = String(doc.yaml['kind'] ?? '')
+  const source = String(doc.yaml['source'] ?? '').trim()
   return {
     created: yamlDate(doc.yaml['created']),
     updated: yamlDate(doc.yaml['updated']),
+    ...(source ? { source } : {}),
     uses: Number(doc.yaml['uses'] ?? 0) || 0,
     kind: (MEMORY_KINDS as readonly string[]).includes(rawKind) ? (rawKind as MemoryKind) : undefined,
     locked: doc.yaml['locked'] === true,
@@ -145,6 +165,14 @@ export interface ApplyMemoryOpsInput {
   source: string
   /** Op ceiling override — the consolidator legitimately batches more than a save's cap */
   maxOps?: number
+  /** New-file ceiling override; the consolidator never creates, so it leaves this alone */
+  maxCreates?: number
+}
+
+/** Per-save allowances applyOne draws down as it writes. */
+interface ApplyBudget {
+  /** New files still allowed this save */
+  creates: number
 }
 
 /**
@@ -156,13 +184,14 @@ export interface ApplyMemoryOpsInput {
 export async function applyMemoryOps(input: ApplyMemoryOpsInput): Promise<MemoryOpOutcome[]> {
   const outcomes: MemoryOpOutcome[] = []
   const cap = input.maxOps ?? MAX_OPS_PER_SAVE
+  const budget: ApplyBudget = { creates: input.maxCreates ?? MAX_CREATES_PER_SAVE }
   for (const [i, op] of input.ops.entries()) {
     if (i >= cap) {
       outcomes.push({ op: op.op, summary: opGist(op), outcome: 'skipped', reason: 'per-save op cap' })
       continue
     }
     try {
-      outcomes.push(await applyOne(op, input))
+      outcomes.push(await applyOne(op, input, budget))
     } catch (err) {
       outcomes.push({ op: op.op, summary: opGist(op), outcome: 'skipped', reason: (err as Error).message })
     }
@@ -177,7 +206,7 @@ function opGist(op: MemoryOp): string {
   return op.slug
 }
 
-async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput): Promise<MemoryOpOutcome> {
+async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyBudget): Promise<MemoryOpOutcome> {
   // Proposals are surfaced, never written — capture flows own the notebook.
   if (op.op === 'propose') {
     return { op: 'propose', summary: `${op.gist} → ${op.flow}`, outcome: 'applied' }
@@ -196,6 +225,21 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput): Promise<Memor
     case 'create': {
       const body = cleanBody(op.body)
       if (!body) return { op: 'create', slug, summary: op.summary, outcome: 'skipped', reason: 'empty body' }
+      // Only a create that adds a file draws on the allowance — an existing
+      // slug is an update in truth and is never capped as growth.
+      if (!existing) {
+        if (budget.creates <= 0) {
+          return {
+            op: 'create',
+            slug,
+            kind: op.kind,
+            summary: op.summary,
+            outcome: 'skipped',
+            reason: 'per-save create cap',
+          }
+        }
+        budget.creates -= 1
+      }
       // An existing slug is refined in place — created and uses survive, and
       // the outcome says 'update' so the host's verb stays truthful.
       await outputFile(
@@ -217,6 +261,8 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput): Promise<Memor
       if (!existing) return { op: 'confirm', slug, summary: slug, outcome: 'skipped', reason: 'no such memory' }
       const uses = existing.uses + 1
       // Content is untouched: updated stays put, only lastConfirmed/uses move.
+      // The source stays too — a confirm is evidence the memory holds, not a
+      // re-teaching; only an update moves provenance to the correcting chat.
       await outputFile(
         filePath,
         memoryMarkdown({
@@ -224,7 +270,7 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput): Promise<Memor
           updated: existing.updated ?? input.today,
           kind: existing.kind,
           summary: existing.summary || slug,
-          source: input.source,
+          source: existing.source ?? input.source,
           lastConfirmed: input.today,
           uses,
           body: existing.body,

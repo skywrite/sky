@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { loadMemories } from './mod.ts'
-import { applyMemoryOps, MAX_OPS_PER_SAVE, type MemoryOp, sanitizeSlug } from './write.ts'
+import { applyMemoryOps, MAX_CREATES_PER_SAVE, MAX_OPS_PER_SAVE, type MemoryOp, sanitizeSlug } from './write.ts'
 
 const TODAY = '2026-03-10'
 const SOURCE = 'time/2026/03/09-15/03-10/actions/ai-chats/09-30_Atlas-Launch-Planning.md'
@@ -125,7 +125,7 @@ test('applyMemoryOps - create on an existing slug refines it in place as an upda
   }
 })
 
-test('applyMemoryOps - confirm bumps lastConfirmed and uses, leaving content alone', async () => {
+test('applyMemoryOps - confirm bumps lastConfirmed and uses, leaving content and source alone', async () => {
   const dir = await tmpMemoryDir()
   try {
     await writeFile(path.join(dir, 'deck-shorthand.md'), existingFile({ uses: 2 }))
@@ -133,7 +133,7 @@ test('applyMemoryOps - confirm bumps lastConfirmed and uses, leaving content alo
     const written = await readTextFile(path.join(dir, 'deck-shorthand.md'))
     assert({
       given: 'a confirm op on an existing memory',
-      should: 'bump uses and lastConfirmed, keep created/updated/body',
+      should: 'bump uses and lastConfirmed, keep created/updated/body, and keep the teaching source',
       actual: {
         outcome: outcomes[0],
         created: written.includes('created: 2026-01-05'),
@@ -141,6 +141,7 @@ test('applyMemoryOps - confirm bumps lastConfirmed and uses, leaving content alo
         lastConfirmed: written.includes(`lastConfirmed: ${TODAY}`),
         uses: written.includes('uses: 3'),
         body: written.includes('she means the Atlas overview deck'),
+        source: written.includes('source: hand-seeded'),
       },
       expected: {
         outcome: {
@@ -156,6 +157,7 @@ test('applyMemoryOps - confirm bumps lastConfirmed and uses, leaving content alo
         lastConfirmed: true,
         uses: true,
         body: true,
+        source: true,
       },
     })
   } finally {
@@ -283,12 +285,10 @@ test('applyMemoryOps - missing targets, invalid slugs, empty bodies, and proposa
 test('applyMemoryOps - ops beyond the per-save cap are skipped visibly', async () => {
   const dir = await tmpMemoryDir()
   try {
-    const ops: MemoryOp[] = Array.from({ length: MAX_OPS_PER_SAVE + 2 }, (_, i) => ({
-      op: 'create' as const,
-      kind: 'thread' as const,
-      slug: `runaway-${i}`,
-      summary: `Runaway ${i}`,
-      body: `Body ${i}.`,
+    await writeFile(path.join(dir, 'deck-shorthand.md'), existingFile())
+    const ops: MemoryOp[] = Array.from({ length: MAX_OPS_PER_SAVE + 2 }, () => ({
+      op: 'confirm' as const,
+      slug: 'deck-shorthand',
     }))
     const outcomes = await apply(dir, ops)
     assert({
@@ -308,12 +308,10 @@ test('applyMemoryOps - ops beyond the per-save cap are skipped visibly', async (
 test('applyMemoryOps - maxOps raises the cap for consolidation batches', async () => {
   const dir = await tmpMemoryDir()
   try {
-    const ops: MemoryOp[] = Array.from({ length: MAX_OPS_PER_SAVE + 2 }, (_, i) => ({
-      op: 'create' as const,
-      kind: 'thread' as const,
-      slug: `batch-${i}`,
-      summary: `Batch ${i}`,
-      body: `Body ${i}.`,
+    await writeFile(path.join(dir, 'deck-shorthand.md'), existingFile())
+    const ops: MemoryOp[] = Array.from({ length: MAX_OPS_PER_SAVE + 2 }, () => ({
+      op: 'confirm' as const,
+      slug: 'deck-shorthand',
     }))
     const outcomes = await applyMemoryOps({ memoryDir: dir, ops, today: TODAY, source: SOURCE, maxOps: 64 })
     assert({
@@ -321,6 +319,63 @@ test('applyMemoryOps - maxOps raises the cap for consolidation batches', async (
       should: 'apply every op',
       actual: outcomes.filter((o) => o.outcome === 'applied').length,
       expected: MAX_OPS_PER_SAVE + 2,
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+const newFile = (slug: string): MemoryOp => ({
+  op: 'create',
+  kind: 'thread',
+  slug,
+  summary: `About ${slug}`,
+  body: `${slug} body.`,
+})
+
+test('applyMemoryOps - new files beyond the create cap are skipped; updates and confirms are not counted', async () => {
+  const dir = await tmpMemoryDir()
+  try {
+    await writeFile(path.join(dir, 'deck-shorthand.md'), existingFile())
+    const ops: MemoryOp[] = [
+      ...Array.from({ length: MAX_CREATES_PER_SAVE }, (_, i) => newFile(`new-${i}`)),
+      newFile('deck-shorthand'), // exists → an update in truth, never growth
+      newFile('one-too-many'),
+      { op: 'confirm', slug: 'new-0' },
+    ]
+    const outcomes = await apply(dir, ops)
+    assert({
+      given: `${MAX_CREATES_PER_SAVE} new files, a create on an existing slug, one more new file, and a confirm`,
+      should: 'apply the allowance, the update, and the confirm, skipping only the extra new file',
+      actual: outcomes.map((o) => `${o.op}:${o.outcome}${o.reason ? `:${o.reason}` : ''}`),
+      expected: [
+        ...Array.from({ length: MAX_CREATES_PER_SAVE }, () => 'create:applied'),
+        'update:applied',
+        'create:skipped:per-save create cap',
+        'confirm:applied',
+      ],
+    })
+    assert({
+      given: 'the store afterwards',
+      should: 'hold the allowance plus the pre-existing file and nothing more',
+      actual: (await loadMemories(dir)).length,
+      expected: MAX_CREATES_PER_SAVE + 1,
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('applyMemoryOps - maxCreates raises the new-file allowance', async () => {
+  const dir = await tmpMemoryDir()
+  try {
+    const ops = Array.from({ length: MAX_CREATES_PER_SAVE + 2 }, (_, i) => newFile(`batch-${i}`))
+    const outcomes = await applyMemoryOps({ memoryDir: dir, ops, today: TODAY, source: SOURCE, maxCreates: 64 })
+    assert({
+      given: 'more new files than the save allowance with maxCreates raised',
+      should: 'apply every create',
+      actual: outcomes.filter((o) => o.outcome === 'applied').length,
+      expected: MAX_CREATES_PER_SAVE + 2,
     })
   } finally {
     await rm(dir, { recursive: true, force: true })

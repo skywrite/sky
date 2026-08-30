@@ -3,11 +3,14 @@
  *
  * A memory is one markdown file holding one distilled fact the AI carries
  * across chat sessions: how to answer (preference), what the user's
- * shorthand means (glossary), an informal open loop (thread), an
- * uncaptured stable fact (observation), or retrieval meta-knowledge
+ * shorthand means (glossary), an informal open loop (thread), a stable fact
+ * about the user's own setup that no notebook document records
+ * (observation), or what answering/retrieval strategy works for this user
  * (lesson). The notebook proper remains the long-term record and always
  * wins on conflict — a memory is the residue no capture flow (decisions,
- * ideas, notes) would take, never a substitute for one.
+ * ideas, notes) would take, never a substitute for one. And it holds what
+ * the USER taught, never what the assistant concluded: the assistant's
+ * analysis is already saved with the chat.
  *
  * Read side (this module): memories load straight from disk — the dir is
  * a handful of small files, and prompt assembly must not depend on the
@@ -15,9 +18,10 @@
  * system-prompt block frozen at session start; every memory ALSO rides
  * the chat context universe as a normal scored document (entity type
  * 'memory', fetched via the service like goals), where the s4 scorer
- * surfaces on-topic ones and sheds the rest. Write side (the save-time
- * distiller that creates/updates/expires memories) is a later rung —
- * today the store is hand-maintained.
+ * surfaces on-topic ones and sheds the rest. Write side: the save-time
+ * distiller (lib/notebook/enrich/distillMemories.ts → ./write.ts) and the
+ * weekly consolidator (./consolidate.ts, `sky ai:memory:consolidate`).
+ * Design notes and the first-week post-mortem: ./docs/.
  */
 
 import { readTextFile, walk } from '#shared/fs/mod.ts'
