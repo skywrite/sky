@@ -63,42 +63,59 @@ export function createEntityDetector(paths: PathConfig): EntityDetector {
  * Higher weights for more direct/meaningful interactions.
  * Score formula: weight × recencyMultiplier (see store.calculateRecencyMultiplier)
  *
+ * Action filenames carry their medium as one `_`-separated segment, in any
+ * position — every generation of the naming convention is on disk:
+ *   - `HH-MM_Medium_Who_Title.md`   (current: `09-45_Zoom_Jane-Doe_Sync.md`)
+ *   - `Medium_Who_Title.md`         (legacy: `zoom_Jane-Doe_Sync.md`)
+ *   - `Who_Medium.md`               (legacy: `Jane-Doe_In-Person.md`)
+ * Matching is segment-exact, so a medium word inside a hyphenated title
+ * segment (`…_Zoom-Strategy-Discussion.md`) never classifies a file.
+ *
  * Weights:
- * - Meeting files: 10 points (zoom_, phone_, meeting_, inperson_, call_, ft-audio_, google-meet_)
- * - Email files:    5 points (email_)
- * - Slack/Loom:     3 points (slack_, loom_)
- * - Day mentions:   2 points (day.md rel field)
+ * - Meetings: 10 points (meeting, zoom, phone, in-person/inperson, call,
+ *   ft-audio, google-meet; anything under /events/)
+ * - Email:     5 points (email)
+ * - Messages:  3 points (slack, loom, imessage, whatsapp, signal, and their
+ *   -audio variants)
+ * - Day files: 2 points (day.md — frontmatter rel mentions)
+ *
+ * Deliberately unweighted: gdoc, gslides, video, x — shared artifacts and
+ * posts, not direct interactions.
  */
+const MEETING_TOKENS = new Set(['meeting', 'zoom', 'phone', 'inperson', 'in-person', 'call', 'ft-audio', 'google-meet'])
+const EMAIL_TOKENS = new Set(['email'])
+const MESSAGE_TOKENS = new Set([
+  'slack',
+  'loom',
+  'imessage',
+  'imessage-audio',
+  'whatsapp',
+  'whatsapp-audio',
+  'signal',
+  'signal-audio',
+])
+
 export function getInteractionWeight(filePath: string): number {
   const filename = path.basename(filePath).toLowerCase()
-
-  // Meeting file patterns (including events folder)
-  if (
-    filename.startsWith('meeting_') ||
-    filename.startsWith('zoom_') ||
-    filename.startsWith('phone_') ||
-    filename.startsWith('inperson_') ||
-    filename.startsWith('in-person_') ||
-    filename.startsWith('call_') ||
-    filename.startsWith('ft-audio_') ||
-    filename.startsWith('google-meet_') ||
-    filePath.includes('/events/')
-  ) {
-    return INTERACTION_WEIGHTS.meeting
-  }
-
-  // Email files
-  if (filename.startsWith('email_')) {
-    return INTERACTION_WEIGHTS.email
-  }
 
   // Day files (rel field mentions)
   if (filename === 'day.md') {
     return INTERACTION_WEIGHTS.day
   }
 
-  // Slack/Loom/other communication
-  if (filename.startsWith('slack_') || filename.startsWith('loom_')) {
+  // Events folder counts as meetings regardless of filename
+  if (filePath.includes('/events/')) {
+    return INTERACTION_WEIGHTS.meeting
+  }
+
+  const segments = filename.replace(/\.md$/, '').split('_')
+  if (segments.some((s) => MEETING_TOKENS.has(s))) {
+    return INTERACTION_WEIGHTS.meeting
+  }
+  if (segments.some((s) => EMAIL_TOKENS.has(s))) {
+    return INTERACTION_WEIGHTS.email
+  }
+  if (segments.some((s) => MESSAGE_TOKENS.has(s))) {
     return INTERACTION_WEIGHTS.slack
   }
 
