@@ -1,14 +1,18 @@
 ---
-updated: 2026-07-23
+updated: 2026-08-29
 ---
 
 # VSCode Extension
 
-Notebook helper extension: entity completions (people, projects, tags, organizations, places, day items, notes), day-file handlers (checkbox/reminder/todo gutters), Editor integration (Cmd+T), and Claude-powered summarize commands.
+Notebook helper extension: entity completions (people, projects, tags, organizations, places, day items, notes), day-file handlers (checkbox/reminder/todo gutters), Cmd+T to open the file in the web explorer, an *Open with Editor* command, and Claude-powered summarize commands.
 
 ## No build step
 
 VS Code loads `src/extension.ts` directly: the package is `"type": "module"`, `main` points at the TypeScript entry, and the Node extension host strips types at load (VS Code ≥ 1.100; Node per `.nvmrc`). Edit a file, reload the window, done. `.prompt.md` templates are read at call time via `import.meta.url`, so editing them takes effect without a reload.
+
+## Cmd+T — the web explorer
+
+In a markdown file, Cmd+T opens it in the web explorer: the service's reading view at `http://localhost:<port>/explorer/<path>`, the path relative to the notebook root — `places/misc.md` opens `/explorer/places/misc.md`. The file is saved first, since the explorer renders what is on disk. Port and root come from `~/.sky/config.jsonc` through `#config`, the same values the service runs on. The file tree's context menu has the same entry, for the file it is opened on. A file outside the notebook has no page; the command says so instead of opening one. *Open with Editor* stays in the command palette only, with no key bound.
 
 ## Install
 

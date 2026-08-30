@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { DIR_CODE } from '#config'
 import insertLifts from './commands/insertLifts.ts'
+import openInExplorer from './commands/openInExplorer.ts'
 import openWithEditor from './commands/openWithEditor.ts'
 import summarizeAllAttachments from './commands/summarizeAllAttachments/mod.ts'
 import summarizeAttachment from './commands/summarizeAttachment/mod.ts'
@@ -79,6 +80,9 @@ export function activate(context: vscode.ExtensionContext) {
   // context menu item to treeview
   const disposable5 = vscode.commands.registerCommand('extension.openeditor', openWithEditor)
   context.subscriptions.push(disposable5)
+
+  // Cmd+T: the file in the editor, opened in the web explorer
+  context.subscriptions.push(vscode.commands.registerCommand('explorer.open', openInExplorer))
 
   // AI-powered transcript summary command
   context.subscriptions.push(vscode.commands.registerCommand('transcript.summarize', summarizeTranscript))

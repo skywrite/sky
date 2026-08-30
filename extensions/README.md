@@ -1,6 +1,6 @@
 ---
 created: 2025-11-12
-updated: 2026-07-22
+updated: 2026-08-29
 ---
 
 # Extensions
@@ -20,7 +20,7 @@ extensions/
 
 ## VS Code Extension (`vscode/`)
 
-Completions for notebook entities (people, projects, tags, organizations, places, day items, notes), day-file handlers (checkbox/reminder/todo gutters), Editor integration, and Claude-powered summarize commands.
+Completions for notebook entities (people, projects, tags, organizations, places, day items, notes), day-file handlers (checkbox/reminder/todo gutters), Cmd+T to open the file in the web explorer, an Open with Editor command, and Claude-powered summarize commands.
 
 There is no bundler and no compile step. The package declares `"type": "module"`, `main` points at `src/extension.ts`, and VS Code's Node extension host (VS Code ≥ 1.100) strips the types at load. Shared notebook code is reached through committed symlinks plus the package.json `imports` map. See `vscode/README.md` for the constraints this puts on the import graph.
 

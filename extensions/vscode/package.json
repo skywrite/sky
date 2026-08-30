@@ -28,6 +28,10 @@
         "title": "Open with Editor"
       },
       {
+        "command": "explorer.open",
+        "title": "Open in Web Explorer"
+      },
+      {
         "command": "checkbox.toggleGutter",
         "title": "Toggle Checkbox"
       },
@@ -80,7 +84,7 @@
         "when": "isDevelopment"
       },
       {
-        "command": "extension.openeditor",
+        "command": "explorer.open",
         "key": "cmd+t",
         "when": "resourceLangId == markdown"
       },
@@ -118,7 +122,7 @@
     "menus": {
       "explorer/context": [
         {
-          "command": "extension.openeditor",
+          "command": "explorer.open",
           "when": "resourceLangId == markdown",
           "group": "1_navigation",
           "order": 1
