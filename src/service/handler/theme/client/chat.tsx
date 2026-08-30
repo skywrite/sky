@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { ContextPanel } from './context.tsx'
+import { renderStatic } from './wysiwyg/render.ts'
 
 /**
  * A conversation with sky — a client of the service's /chat routes.
@@ -79,7 +80,7 @@ type Action =
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
   | { type: 'tool'; id: string; name: string }
-  | { type: 'finished'; id: string; text: string; sources: string[] }
+  | { type: 'finished'; id: string; content: string }
   | { type: 'failed'; id: string; message: string }
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
@@ -136,17 +137,17 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     }
     case 'tool':
       return { ...state, turns: withReply(state.turns, (r) => ({ ...r, tools: [...(r.tools ?? []), action.name] })) }
-    case 'finished': {
-      const content = action.sources.length
-        ? `${action.text}\n\nSources:\n${action.sources.map((u) => `- ${u}`).join('\n')}`
-        : action.text
+    case 'finished':
       return {
         ...state,
         phase: 'idle',
         gather: null,
-        turns: withReply(state.turns, (r) => ({ ...r, content, note: r.note ?? state.provenance ?? undefined })),
+        turns: withReply(state.turns, (r) => ({
+          ...r,
+          content: action.content,
+          note: r.note ?? state.provenance ?? undefined,
+        })),
       }
-    }
     case 'failed':
       return {
         ...state,
@@ -197,15 +198,10 @@ async function* frames(response: Response): AsyncGenerator<Frame> {
   }
 }
 
-async function renderMarkdown(raw: string): Promise<string | null> {
+/** A reply's markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
+function renderMarkdown(raw: string): string | null {
   try {
-    const response = await fetch('/docs/_api/render-block', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw, type: 'markdown' }),
-    })
-    if (!response.ok) return null
-    return ((await response.json()) as { html: string }).html
+    return renderStatic(raw)
   } catch {
     return null
   }
@@ -245,15 +241,13 @@ export function useChat(id: string) {
           documents: number
           kept: number | null
         }
-        const turns: Turn[] = body.turns.map((t) => ({ role: t.role, content: t.content, time: t.when?.slice(11) }))
+        const turns: Turn[] = body.turns.map((t) => ({
+          role: t.role,
+          content: t.content,
+          time: t.when?.slice(11),
+          html: t.role === 'assistant' ? (renderMarkdown(t.content) ?? undefined) : undefined,
+        }))
         dispatch({ type: 'loaded', id, turns, documents: body.kept ?? body.documents })
-        turns.forEach((t, index) => {
-          if (t.role === 'assistant') {
-            renderMarkdown(t.content).then(
-              (html) => html && !cancelled && dispatch({ id, type: 'rendered', index, html }),
-            )
-          }
-        })
       })
       .catch(() => {
         if (!cancelled) empty()
@@ -331,8 +325,10 @@ export function useChat(id: string) {
             } else {
               const text = d.text as string
               const sources = (d.sourceUrls as string[]) ?? []
-              dispatch({ id, type: 'finished', text, sources })
-              renderMarkdown(text).then((html) => html && dispatch({ id, type: 'rendered', index: replyIndex, html }))
+              const content = sources.length ? `${text}\n\nSources:\n${sources.map((u) => `- ${u}`).join('\n')}` : text
+              dispatch({ id, type: 'finished', content })
+              const html = renderMarkdown(content)
+              if (html) dispatch({ id, type: 'rendered', index: replyIndex, html })
             }
             break
           }

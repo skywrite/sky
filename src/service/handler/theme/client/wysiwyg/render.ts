@@ -9,13 +9,21 @@ import { highlightCode } from './highlight.ts'
 import { escapeAttr, escapeHtml } from './html.ts'
 import { type LexContext, lexInline } from './lexer.ts'
 import type { MarkdownDocument, Node } from './model.ts'
-import { previewMarker } from './parser.ts'
+import { parseDocument, previewMarker } from './parser.ts'
 
-export interface RenderContext extends DecorateContext, LexContext {}
+export interface RenderContext extends DecorateContext, LexContext {
+  /** The front matter is shown elsewhere (the properties panel): its block renders to nothing. */
+  hideFrontmatter?: boolean
+}
 
-export function contextFor(doc: MarkdownDocument, resolveImage?: (src: string) => string): RenderContext {
+export function contextFor(
+  doc: MarkdownDocument,
+  resolveImage?: (src: string) => string,
+  hideFrontmatter = false,
+): RenderContext {
   return {
     resolveImage,
+    hideFrontmatter,
     findDefinition(label) {
       const definition = doc.findDefinition(label)
       return definition ? { href: definition.href ?? '', title: definition.title ?? null } : null
@@ -109,6 +117,7 @@ export function renderBlock(node: Node, context: RenderContext): string {
     case 'html':
       return `<pre ${attrs} class="end-block verbatim html" spellcheck="false">${renderVerbatimContent(node.text)}</pre>`
     case 'frontmatter':
+      if (context.hideFrontmatter) return ''
       return `<pre ${attrs} class="end-block verbatim frontmatter" spellcheck="false">${renderVerbatimContent(node.text)}</pre>`
     case 'definition':
       return `<pre ${attrs} class="end-block verbatim definition" spellcheck="false">${renderVerbatimContent(node.text)}</pre>`
@@ -150,6 +159,12 @@ export function renderExport(nodes: Node[], context: RenderContext): string {
   return nodes.map((node) => exportBlock(node, context)).join('\n')
 }
 
+/** Markdown source → export HTML with raw regions shown as text — read-only views (chat replies) that inject the result. */
+export function renderStatic(source: string): string {
+  const doc = parseDocument(source)
+  return renderExport(doc.blocks, { ...contextFor(doc), rawAsText: true })
+}
+
 function exportInline(node: Node, context: RenderContext): string {
   return renderInline(lexInline(node.text, context), 'export', context)
 }
@@ -181,8 +196,9 @@ function exportBlock(node: Node, context: RenderContext): string {
     case 'fence':
       return `<pre><code${node.lang ? ` class="language-${escapeAttr(node.lang.split(/\s/)[0] ?? '')}"` : ''}>${escapeHtml(node.text)}</code></pre>`
     case 'html':
-      return node.text
+      return context.rawAsText ? `<pre>${escapeHtml(node.text)}</pre>` : node.text
     case 'frontmatter':
+      return context.rawAsText ? `<pre>${escapeHtml(node.text)}</pre>` : ''
     case 'definition':
       return ''
     case 'hr':

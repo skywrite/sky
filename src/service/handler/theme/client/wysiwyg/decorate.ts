@@ -12,6 +12,8 @@ export type DecorateMode = 'editing' | 'export'
 export interface DecorateContext {
   /** Turns an image source as written into the URL the browser loads. */
   resolveImage?: (src: string) => string
+  /** Raw HTML becomes visible text — for read-only views that inject the export into the live page. */
+  rawAsText?: boolean
 }
 
 export function renderInline(nodes: InlineNode[], mode: DecorateMode, context: DecorateContext = {}): string {
@@ -118,7 +120,7 @@ function exported(node: InlineNode, context: DecorateContext): string {
     case 'autolink':
       return `<a href="${escapeAttr(node.href)}">${escapeHtml(node.text)}</a>`
     case 'html':
-      return node.text
+      return context.rawAsText ? escapeHtml(node.text) : node.text
     case 'underline':
       return `<u>${renderInline(node.children, 'export', context)}</u>`
     case 'hardbreak':
