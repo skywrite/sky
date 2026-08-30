@@ -12,6 +12,8 @@
 
 import process from 'node:process'
 import colors from 'picocolors'
+import { pickGreeting } from '#commands/lib/voice/greetings.ts'
+import { ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
@@ -20,8 +22,6 @@ import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prom
 import truncate from '#shared/strings/truncate.ts'
 import { env } from '#shared/sys/mod.ts'
 import { DuplexAudio, ensureAudioHelper, FfmpegAudio } from './lib/audio.ts'
-import { pickGreeting } from './lib/greetings.ts'
-import { ASK_NOTEBOOK_TOOL, askNotebook } from './lib/notebookAgent.ts'
 import { VoiceSession } from './lib/session.ts'
 
 const REALTIME_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const
@@ -58,8 +58,8 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-const VOICE_PROMPT_FILE = new URL('./prompts/voice.prompt.md', import.meta.url).pathname
-const ASK_PROMPT_FILE = new URL('./prompts/ask-notebook.prompt.md', import.meta.url).pathname
+const VOICE_PROMPT_FILE = new URL('../../../lib/voice/prompts/voice.prompt.md', import.meta.url).pathname
+const ASK_PROMPT_FILE = new URL('../../../lib/voice/prompts/ask-notebook.prompt.md', import.meta.url).pathname
 
 export default class AiVoiceTask extends Command {
   static override description: CommandDescription = {
