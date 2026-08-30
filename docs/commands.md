@@ -160,6 +160,10 @@ sky slack:unread                 # unread across channels and DMs
 sky slack:follow:new             # track a thread until it resolves
 sky slack:follow:check           # poll tracked threads for new activity
 sky slack:auth                   # check and repair agent-slack credentials
+sky slack:draft:list             # drafts waiting in Slack, most recently edited first
+sky slack:draft:clear            # delete every draft (scheduled sends are kept)
+sky slack:draft:reply <link> "…" # draft a thread reply in Slack, never sent
+sky slack:draft:new <conv> "…"   # draft a message in a DM or channel composer, never sent
 sky email:inbox:fetch            # download unsaved email into day files
 sky email:inbox:follow:sync      # create follows for new threads, fetch new messages
 sky telegram:inbox:fetch         # poll a Telegram bot for messages and photos

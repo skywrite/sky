@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { oneLine, parseSelection } from './pick.ts'
+import { parseSelection } from './pick.ts'
 
 test('parseSelection: all, indexes, and rejects', () => {
   assert({ given: 'all', should: 'pass through', actual: parseSelection('ALL', 5), expected: 'all' })
@@ -11,14 +11,4 @@ test('parseSelection: all, indexes, and rejects', () => {
   })
   assert({ given: 'an out-of-range index', should: 'reject', actual: parseSelection('6', 5), expected: undefined })
   assert({ given: 'garbage', should: 'reject', actual: parseSelection('x,y', 5), expected: undefined })
-})
-
-test('oneLine collapses and caps', () => {
-  assert({
-    given: 'a multi-line body',
-    should: 'collapse whitespace',
-    actual: oneLine('a\n  b\tc', 20),
-    expected: 'a b c',
-  })
-  assert({ given: 'a long line', should: 'cap with ellipsis', actual: oneLine('abcdefghij', 5), expected: 'abcd…' })
 })

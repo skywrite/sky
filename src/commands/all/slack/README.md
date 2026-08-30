@@ -1,6 +1,6 @@
 ---
 created: 2026-01-18
-updated: 2026-02-12
+updated: 2026-08-27
 ---
 
 # Slack Tasks
@@ -85,3 +85,26 @@ For `slack:unread` to work, your Slack app needs these User Token Scopes:
 - [Slack Changelog 2017](https://api.slack.com/changelog/2017-04-start-using-rtm-connect-and-stop-using-rtm-start) - When unread counts were removed
 - [Wey Slack Client](https://github.com/yue/wey) - OSS client using RTM
 - [Unread Buddy Article](https://medium.com/@taylorhughes/get-gpt-3-to-read-your-slack-so-you-dont-have-to-2482fd2f8fdf) - Uses embedded browser approach
+
+## Drafts
+
+`slack:draft:list`, `:clear`, `:reply`, and `:new` wrap `agent-slack message draft
+list | delete | create` — Slack-native drafts through the undocumented `drafts.*`
+client endpoints, in agent-slack since its July 2026 source (a February build
+predates them; run the checkout from source). What sky adds: readable rows with
+Grid-correct names and links, a clear-all that keeps scheduled sends, and the
+two ai:chat tools with approval cards. Facts the wrappers lean on:
+
+- Drafts are organization-scoped on Enterprise Grid: a team URL answers
+  `team_is_restricted`, so sky passes `slack.workspace` (the enterprise URL) as
+  `--workspace`.
+- `drafts.list` caps at 100 with no cursor, and agent-slack has no paging either;
+  `clear` re-lists after each page until nothing new comes back.
+- A thread reply is a draft whose destination carries `thread_ts`; `create` takes
+  `--thread-ts`. A delete must echo the draft's `last_updated_ts`; sky passes it
+  from the list so the CLI needn't re-list to find it.
+- `create` options go first and `--` closes them, so a body starting with a dash
+  (a list) is never read as a flag.
+- Draft `text` keeps mentions in wire form (`<@U…>`, `<#C…>`, `<!subteam^S…>`,
+  `<!here>`); `channel_name` on a destination is best-effort (channel name, DM
+  partner's display name, or an mpdm slug).

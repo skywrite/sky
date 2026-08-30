@@ -7,6 +7,7 @@ import type {
   AgentSlackMessage,
 } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
+import { oneLine } from '#commands/all/slack/lib/mod.ts'
 import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import resolveContent from '#commands/all/slack/lib/resolveContent.ts'
 import {
@@ -17,7 +18,7 @@ import {
   resolveUsergroupNames,
   resolveUserNames,
 } from '#commands/all/slack/lib/resolveNames.ts'
-import { oneLine } from './pick.ts'
+import hyperlink from '#lib/terminal/hyperlink.ts'
 
 /** Fetch and parse the in-progress items from Slack's Later list. */
 export async function fetchInProgressLater(limit: number): Promise<{ list: AgentSlackLaterList } | { error: string }> {
@@ -74,11 +75,6 @@ const KIND_COLOR: Record<LaterConversationKind, (label: string) => string> = {
   dm: colors.magenta,
   group: colors.magenta,
   unknown: colors.red,
-}
-
-/** OSC-8 terminal hyperlink. */
-function linkify(text: string, url: string): string {
-  return `\u001B]8;;${url}\u0007${text}\u001B]8;;\u0007`
 }
 
 /** What a dead conversation id resolved to, inferred from timestamp twins in the same fetch. */
@@ -326,7 +322,7 @@ export function renderLaterRow(
   const snippet = body === '' ? colors.dim(placeholder) : body
 
   const lines = [
-    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? linkify(timeLabel, link) : timeLabel)}  ${label}${threadBadge}${replyBadge}`,
+    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, link) : timeLabel)}  ${label}${threadBadge}${replyBadge}`,
     `      ${snippet}`,
   ]
   if (!hyperlinks) lines.push(`      ${link}`)

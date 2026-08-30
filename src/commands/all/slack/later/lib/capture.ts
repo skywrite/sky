@@ -2,12 +2,12 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
+import { oneLine } from '#commands/all/slack/lib/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import { runCommand } from '#lib/sys/mod.ts'
 import { type LaterRowContext, renderLaterRow } from './list.ts'
-import { oneLine } from './pick.ts'
 
 /** One queue row as the capture and open flows consume it */
 export type LaterCaptureRow = { item: AgentSlackLaterItem; timeLabel: string; link: string }
