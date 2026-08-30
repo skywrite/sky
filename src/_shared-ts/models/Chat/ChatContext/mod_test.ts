@@ -16,21 +16,21 @@ const TODAY = new PlainDate('2026-01-27')
 const abs = (rel: string) => path.join(BASE_DIR, rel)
 
 const FIX = {
-  day: abs('time/2026/01/26-01/01-27/day.md'),
-  journal: abs('time/2026/01/19-25/01-20/journal/10_Morning_Reflection.md'),
-  summary: abs('time/2026/01/19-25/01-20/summary.md'),
-  meeting: abs('time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'),
-  prevDay: abs('time/2026/01/26-01/01-26/day.md'),
-  prevSummary: abs('time/2026/01/26-01/01-26/summary.md'),
-  prevMeeting: abs('time/2026/01/26-01/01-26/actions/meetings/14-00_Atlas_Review.md'),
-  oldDay: abs('time/2026/01/19-25/01-22/day.md'),
-  oldMessage: abs('time/2026/01/19-25/01-22/actions/messages/slack_Ops-to-atlas-general_Standup-Notes.md'),
+  day: abs('time/2026/W05/01-27/day.md'),
+  journal: abs('time/2026/W04/01-20/journal/10_Morning_Reflection.md'),
+  summary: abs('time/2026/W04/01-20/summary.md'),
+  meeting: abs('time/2026/W04/01-20/actions/meetings/11-00_Atlas_Sync.md'),
+  prevDay: abs('time/2026/W05/01-26/day.md'),
+  prevSummary: abs('time/2026/W05/01-26/summary.md'),
+  prevMeeting: abs('time/2026/W05/01-26/actions/meetings/14-00_Atlas_Review.md'),
+  oldDay: abs('time/2026/W04/01-22/day.md'),
+  oldMessage: abs('time/2026/W04/01-22/actions/messages/slack_Ops-to-atlas-general_Standup-Notes.md'),
   goal: abs('goals/2026.md'),
   decision: abs('decisions/2026-01_Atlas-Tooling.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
   person: abs('people/Jane-Doe.md'),
-  ownChat: abs('time/2026/01/26-01/01-27/actions/ai-chats/09-00_Prior-Session.md'),
-  weekPlan: abs('time/2026/01/26-01/week.md'),
+  ownChat: abs('time/2026/W05/01-27/actions/ai-chats/09-00_Prior-Session.md'),
+  weekPlan: abs('time/2026/W05/week.md'),
   memory: abs('ai/memory/atlas-terms.md'),
 }
 
@@ -199,7 +199,7 @@ test('ChatContext.seedBaseline - week-level docs seed whole and the week plan pi
     should: 'seed the plan whole, exempt from the per-day policy, and pin it',
     actual: {
       paths: [...context.paths].sort(),
-      planPinned: entry.universe?.find((r) => r.path === 'time/2026/01/26-01/week.md')?.pinned,
+      planPinned: entry.universe?.find((r) => r.path === 'time/2026/W05/week.md')?.pinned,
     },
     expected: {
       paths: [FIX.day, FIX.weekPlan, FIX.summary, FIX.journal, FIX.goal].sort(),
@@ -244,7 +244,7 @@ test('ChatContext.firstTurn', async () => {
     expected: {
       turn: 1,
       queries: ['{ people { path } }'],
-      universePaths: ['goals/2026.md', 'people/Jane-Doe.md', 'time/2026/01/26-01/01-27/day.md'],
+      universePaths: ['goals/2026.md', 'people/Jane-Doe.md', 'time/2026/W05/01-27/day.md'],
       goalPinned: true,
       kept: 2,
       dayCut: 'floor',
@@ -446,7 +446,7 @@ test('ChatContext.evolveTurn - a failed evolve stays distinguishable from a quie
 test('ChatContext.restore - distinct recorded executions accumulate the multi-hit bonus', async () => {
   const state: ResumeState = {
     conversation: [],
-    universePaths: ['people/Jane-Doe.md', 'time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'],
+    universePaths: ['people/Jane-Doe.md', 'time/2026/W04/01-20/actions/meetings/11-00_Atlas_Sync.md'],
     queries: ['q1'],
     lastTurn: 3,
     contextLog: [
@@ -727,7 +727,7 @@ test('ChatContext.restore - turn numbering continues', async () => {
 })
 
 test('ChatContext.restore - retrieval evidence survives budget pressure', async () => {
-  const meetingRel = 'time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'
+  const meetingRel = 'time/2026/W04/01-20/actions/meetings/11-00_Atlas_Sync.md'
   const state: ResumeState = {
     conversation: [],
     universePaths: ['people/Jane-Doe.md', meetingRel],
@@ -810,10 +810,10 @@ test('ChatContext.firstTurn - a stated window switches admission to sweep-strati
       // 01-20 and 01-22 lie inside [today−14d, 01-25] — their month slice
       // reserves them; 01-26/27 are past the stated end and compete by rank.
       inWindowReserved: [
-        viaOf('time/2026/01/19-25/01-20/journal/10_Morning_Reflection.md'),
-        viaOf('time/2026/01/19-25/01-22/day.md'),
+        viaOf('time/2026/W04/01-20/journal/10_Morning_Reflection.md'),
+        viaOf('time/2026/W04/01-22/day.md'),
       ],
-      outsideWindow: [viaOf('time/2026/01/26-01/01-26/day.md'), viaOf('time/2026/01/26-01/01-27/day.md')],
+      outsideWindow: [viaOf('time/2026/W05/01-26/day.md'), viaOf('time/2026/W05/01-27/day.md')],
     },
     expected: {
       policy: 'sweep-stratified',

@@ -98,11 +98,9 @@ function itemByPath(collection: DomainCollection, suffix: string) {
 
 test('depth - root document gets depth 0', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
   const item = itemByPath(collection, 'Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
@@ -121,11 +119,9 @@ test('depth - root document gets depth 0', async () => {
 
 test('depth - direct who ref gets depth 1', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   // Meeting who: Chen Wei -> person at depth 1
   const collection = DomainCollection.fromDocument(doc, path, store)
@@ -141,11 +137,9 @@ test('depth - direct who ref gets depth 1', async () => {
 
 test('depth - direct rel ref gets depth 1', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   // Meeting rel: [projects/Product-Launch-Q1, Acme Corp] -> depth 1
   const collection = DomainCollection.fromDocument(doc, path, store)
@@ -174,10 +168,10 @@ test('depth - direct rel ref gets depth 1', async () => {
 test('depth - person -> org chain gets depth 2', async () => {
   const { store } = await loadFixtureStore()
   const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
+    'time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
 
   // depth: 1 only -> Marcus (who) + Northwind (rel) + Series-B (rel)
   // Marcus has org: Acme Corp in his yaml, but depth 1 won't follow it
@@ -205,11 +199,9 @@ test('depth - person -> org chain gets depth 2', async () => {
 
 test('depth - project -> person chain gets depth 2', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   // Meeting -> Product-Launch-Q1 (depth 1) -> rel: Maria Santos (depth 2)
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 2 })
@@ -230,10 +222,10 @@ test('depth - project -> person chain gets depth 2', async () => {
 test('depth - full depth-2 graph from Marcus meeting', async () => {
   const { store } = await loadFixtureStore()
   const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
+    'time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 2 })
 
@@ -248,7 +240,7 @@ test('depth - full depth-2 graph from Marcus meeting', async () => {
   assert({
     given: 'Marcus meeting at depth 2',
     should: 'have meeting at depth 0',
-    actual: depthMap.get('time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md'),
+    actual: depthMap.get('time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md'),
     expected: 0,
   })
 
@@ -299,11 +291,9 @@ test('depth - full depth-2 graph from Marcus meeting', async () => {
 
 test('depth - duplicate entity keeps lower depth', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   // Acme Corp is referenced directly by the meeting (rel -> depth 1)
   // AND by Chen Wei's org field (who -> person -> org -> depth 2)
@@ -327,20 +317,20 @@ test('depth - fromDocuments marks all root docs as depth 0', async () => {
   const { store } = await loadFixtureStore()
 
   const meeting1Content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meeting2Content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
+    'time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md',
   )
 
   const docs = [
     {
       doc: Document.fromMarkdown(meeting1Content),
-      path: `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`,
+      path: `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`,
     },
     {
       doc: Document.fromMarkdown(meeting2Content),
-      path: `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`,
+      path: `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md`,
     },
   ]
 
@@ -373,10 +363,10 @@ test('depth - merge keeps lower depth from either collection', async () => {
 
   // Collection A: meeting at depth 0 -> Chen Wei at depth 1 -> Acme Corp at depth 2
   const meetingContent = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
+    'time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
   )
   const meetingDoc = Document.fromMarkdown(meetingContent)
-  const meetingPath = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const meetingPath = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
   const collectionA = DomainCollection.fromDocument(meetingDoc, meetingPath, store, { depth: 2 })
 
   // Collection B: Acme Corp directly as root (depth 0)
@@ -421,11 +411,9 @@ test('depth - merge keeps lower depth from either collection', async () => {
 
 test('depth - allItems returns items with depth metadata', async () => {
   const { store } = await loadFixtureStore()
-  const content = await loadFixture(
-    'time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md',
-  )
+  const content = await loadFixture('time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md')
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
+  const path = `${FIXTURES_DIR}time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 1 })
   const items = collection.allItems

@@ -113,7 +113,7 @@ test('resolveTimeRef places a ref in the current layout', () => {
   assert({
     given: 'a ref',
     should: "return today's real path for that date",
-    expected: 'time/2026/05/25-31/05-31/actions/messages/email_Jane-Doe_Atlas.md',
+    expected: 'time/2026/W22/05-31/actions/messages/email_Jane-Doe_Atlas.md',
     actual: resolveTimeRef('2026-05-31/actions/messages/email_Jane-Doe_Atlas.md'),
   })
 })
@@ -122,7 +122,7 @@ test('resolveTimeRef repairs a legacy path to the dir that exists now', () => {
   assert({
     given: 'a stored path in the retired DD layout',
     should: 'resolve to the MM-DD dir the notebook actually uses — the recorded dir never has to exist',
-    expected: 'time/2026/05/25-31/05-31/actions/messages/email_Jane-Doe_Atlas.md',
+    expected: 'time/2026/W22/05-31/actions/messages/email_Jane-Doe_Atlas.md',
     actual: resolveTimeRef('time/2026/05/25-31/31/actions/messages/email_Jane-Doe_Atlas.md'),
   })
 })
@@ -131,13 +131,13 @@ test('resolveTimeRef repairs an x-marked spillover path', () => {
   assert({
     given: 'a legacy xDD path for a July day filed under a June week',
     should: "resolve to the day's real dir in the week it belongs to",
-    expected: 'time/2026/06/29-05/07-01/actions/messages/slack_Jane_topic.md',
+    expected: 'time/2026/W27/07-01/actions/messages/slack_Jane_topic.md',
     actual: resolveTimeRef('time/2026/06/29-05/x01/actions/messages/slack_Jane_topic.md'),
   })
 })
 
 test('resolveTimeRef passes a current-layout path through itself', () => {
-  const current = 'time/2026/08/10-16/08-10/actions/messages/email_Jane-Doe_Atlas.md'
+  const current = 'time/2026/W33/08-10/actions/messages/email_Jane-Doe_Atlas.md'
 
   assert({
     given: 'a path already in the current layout',

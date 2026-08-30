@@ -3,10 +3,11 @@ import v1_1 from './v1_1/mod.ts'
 import { v2, v2Months } from './v2.ts'
 
 /**
- * The default follows what existing notebooks speak today. It flips to v2
- * (YYYY/W##/MM-DD, the ruled end state) when the migration ships.
+ * The default describes what a notebook's tree IS: v2, YYYY/W##/MM-DD, since
+ * 2026-08-30. A notebook still in v1.1 selects it in config (nbfs.layout) or
+ * moves with nbfs:migrate.
  */
-export const DEFAULT_LAYOUT_PATTERN = v1_1.pattern
+export const DEFAULT_LAYOUT_PATTERN = v2.pattern
 
 /**
  * Every selectable layout, current generation first. Parse-anything

@@ -372,7 +372,7 @@ Modernize cloud infrastructure to improve reliability and reduce costs. Includes
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md -->
+<!-- time/2026/W04/01-23/actions/messages/slack_Sarah-Mitchell_Infrastructure-Budget-Discussion.md -->
 ---
 from: Sarah Mitchell
 to: Sam
@@ -410,7 +410,7 @@ Approved the reserved instance purchase. Asked Sarah to present full cost optimi
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md -->
+<!-- time/2026/W04/01-23/actions/meetings/Zoom_Chen-Wei_Q1-Product-Roadmap-Review.md -->
 ---
 who: Chen Wei
 when: 2026-01-23 09:00 60m
@@ -455,7 +455,7 @@ Chen Wei and I reviewed the Q1 product roadmap, focusing on feature prioritizati
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md -->
+<!-- time/2026/W04/01-23/actions/meetings/FaceTime-Audio_Maria-Santos_Mobile-App-Redesign-Discussion.md -->
 ---
 who: Maria Santos
 when: 2026-01-23 14:00 45m
@@ -500,7 +500,7 @@ Discussed Maria's design proposal for the mobile app redesign. She presented thr
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md -->
+<!-- time/2026/W04/01-23/actions/meetings/Zoom_Marcus-Johnson_Investor-Relations-Update.md -->
 ---
 who: Marcus Johnson
 when: 2026-01-23 16:30 30m
@@ -545,7 +545,7 @@ Marcus provided an update on investor relations activities. We discussed the Q4 
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/journal/01_health.md -->
+<!-- time/2026/W04/01-23/journal/01_health.md -->
 ---
 rel:
   - projects/Fitness-Goals
@@ -575,7 +575,7 @@ Stick to healthy lunch, skip the afternoon snacks.
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/journal/04_mood.md -->
+<!-- time/2026/W04/01-23/journal/04_mood.md -->
 ---
 rel:
 tags: Journal/Mood; Mood/Positive; Mood/Focused
@@ -605,7 +605,7 @@ Slight concern about the investor follow-ups, but I have a clear plan to address
 <!-- END FILE -->
 
 <!-- START FILE -->
-<!-- time/2026/01/20-26/01-23/day.md -->
+<!-- time/2026/W04/01-23/day.md -->
 ---
 started: 06:30
 ended: 1d 1.5h

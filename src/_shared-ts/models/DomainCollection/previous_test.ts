@@ -16,7 +16,7 @@ import DomainCollection from './mod.ts'
 // ---------------------------------------------------------------------------
 
 const FIXTURES_DIR = new URL('./fixtures/', import.meta.url).pathname
-const WEEK_DIR = 'time/2026/01/19-25'
+const WEEK_DIR = 'time/2026/W04'
 
 async function loadFixture(relativePath: string): Promise<string> {
   return readTextFile(`${FIXTURES_DIR}${relativePath}`)
@@ -110,7 +110,7 @@ async function loadStore() {
     { rel: `${WEEK_DIR}/01-21/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-1.md` },
     { rel: `${WEEK_DIR}/01-22/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-2.md` },
     { rel: `${WEEK_DIR}/01-23/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-3.md` },
-    { rel: 'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md' },
+    { rel: 'time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md' },
   ]
   for (const { rel } of msgFixtures) {
     const content = await loadFixture(rel)
@@ -261,10 +261,10 @@ test('previous chain - works alongside rel traversal', async () => {
 test('previous chain - previousHops bounds how far back a chain is followed', async () => {
   const { store } = await loadStore()
   const content = await loadFixture(
-    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+    'time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+  const path = `${FIXTURES_DIR}time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0, previousHops: 1 })
 
@@ -307,10 +307,10 @@ test('previous chain - previousHops 0 disables chain following', async () => {
 test('previous chain - fromDocuments honors previousHops', async () => {
   const { store } = await loadStore()
   const content = await loadFixture(
-    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+    'time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+  const path = `${FIXTURES_DIR}time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
 
   const collection = DomainCollection.fromDocuments([{ doc, path }], store, { depth: 0, previousHops: 2 })
 
@@ -330,10 +330,10 @@ test('previous chain - follows MM-DD/subpath across month boundaries', async () 
   const { store } = await loadStore()
   // message-4 is in Feb, its previous uses 01-23/subpath to reach Jan message-3
   const content = await loadFixture(
-    'time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
+    'time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md',
   )
   const doc = Document.fromMarkdown(content)
-  const path = `${FIXTURES_DIR}time/2026/02/02-08/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
+  const path = `${FIXTURES_DIR}time/2026/W06/02-02/actions/messages/slack_Chen-Wei-to-eng_API-migration-update-4.md`
 
   const collection = DomainCollection.fromDocument(doc, path, store, { depth: 0 })
 

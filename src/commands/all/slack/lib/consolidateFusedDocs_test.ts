@@ -56,7 +56,7 @@ const output = { log: () => {} } as unknown as Parameters<typeof consolidateFuse
 
 test('consolidateFusedDocs() combines same-day fragments into one doc', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'consolidate-test-'))
-  const dayDir = path.join(base, 'time/2026/02/09-15/02-15')
+  const dayDir = path.join(base, 'time/2026/W07/02-15')
   await mkdir(path.join(dayDir, 'actions/messages'), { recursive: true })
   const askRel = 'actions/messages/07-10_slack_Jane-to-John_Widget-check-in-request.md'
   const replyRel = 'actions/messages/07-19_slack_John-to-Jane_Widget-check-in-acceptance.md'
@@ -136,7 +136,7 @@ test('consolidateFusedDocs() combines same-day fragments into one doc', async ()
 
 test('consolidateFusedDocs() leaves single-doc days alone apart from identity', async () => {
   const base = await mkdtemp(path.join(tmpdir(), 'consolidate-single-'))
-  const dayDir = path.join(base, 'time/2026/02/09-15/02-15')
+  const dayDir = path.join(base, 'time/2026/W07/02-15')
   await mkdir(path.join(dayDir, 'actions/messages'), { recursive: true })
   const askRel = 'actions/messages/07-10_slack_Jane-to-John_Widget-check-in-request.md'
   await writeFile(path.join(dayDir, askRel), ASK_DOC, 'utf-8')

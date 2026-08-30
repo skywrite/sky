@@ -65,8 +65,8 @@ test('weekDir accepts PlainDate and YMD string', () => {
 
   assert({
     given: 'weekDir with PlainDate in August 2025',
-    should: 'include year and month in path',
-    actual: resultPlainDate.includes('2025/08'),
+    should: 'build the year and a week number',
+    actual: /^2025\/W\d{2}$/.test(resultPlainDate),
     expected: true,
   })
 })
@@ -79,7 +79,7 @@ test('nbfs functions handle month boundary correctly', () => {
     given: 'PlainDate that spills into next month (March 1, 2025)',
     should: 'carry its own month in the MM-DD day dir',
     actual: dayDir(plainDate),
-    expected: path.join('2025', '02', '24-02', '03-01'),
+    expected: path.join('2025', 'W09', '03-01'),
   })
 })
 
@@ -91,6 +91,6 @@ test('nbfs functions handle pre-2020 dates', () => {
     given: 'PlainDate before 2020',
     should: 'build a plain year path like any other date',
     actual: weekDirResult,
-    expected: path.join('2019', '08', '26-01'),
+    expected: path.join('2019', 'W35'),
   })
 })

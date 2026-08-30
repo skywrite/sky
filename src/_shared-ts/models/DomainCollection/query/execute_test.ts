@@ -76,7 +76,7 @@ How should we plan the widget launch?
 ## AI Assistant
 
 Start with a small beta group.`),
-      path: '/test/time/2026/02/02-08/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+      path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -86,7 +86,7 @@ medium: Slack
 summary: Widget launch sync
 ---
 Alice to Bob about the widget launch.`),
-      path: '/test/time/2026/02/02-08/02-04/actions/messages/slack_Alice-to-Bob_Widget-launch-sync.md',
+      path: '/test/time/2026/W06/02-04/actions/messages/slack_Alice-to-Bob_Widget-launch-sync.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -96,7 +96,7 @@ medium: Slack
 summary: Funnel metrics request
 ---
 Posted in the next-data channel.`),
-      path: '/test/time/2026/02/02-08/02-05/actions/messages/slack_Carol-to-next-data_Funnel-metrics-request.md',
+      path: '/test/time/2026/W06/02-05/actions/messages/slack_Carol-to-next-data_Funnel-metrics-request.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -107,7 +107,7 @@ summary: Finance Weekly Update
 tags: [Finance]
 ---
 Weekly finance video.`),
-      path: '/test/time/2026/02/02-08/02-05/actions/videos/Loom_Jane_Finance-Weekly-Update.md',
+      path: '/test/time/2026/W06/02-05/actions/videos/Loom_Jane_Finance-Weekly-Update.md',
     },
   ]
 

@@ -1,12 +1,30 @@
 ---
-status: proposed
+status: ratified
 created: 2026-08-07
+updated: 2026-08-30
 ---
 
 # The week directory is the last level that isn't self-describing
 
-Nothing here is implemented. This is the reasoning behind a layout decision, written
-down so parking it costs nothing.
+## Outcome (2026-08-30)
+
+Shipped as `time/YYYY/W##/MM-DD/`, the default layout since 2026-08-30, after two more
+rungs than this document walked:
+
+| Rung | Why it moved on |
+|---|---|
+| `YYYY/W##-MM/MM-DD` (chosen below) | The month suffix trails the number, so a year listing still sorts by week and the label buys little at a glance. |
+| `YYYY/MM-W##/MM-DD` | Month first, so a year listing groups by month — but the label is derived data on every path. |
+| **`YYYY/W##/MM-DD`** | Chosen. Zero redundancy. The month-labeled form stays available. |
+| Configurable patterns | The layout became a config value, `nbfs.layout`, whose value is the pattern string itself. v1.1 stays selectable, every layout stays parseable through `toTimeRef`, and a later relabel is one config line plus `nbfs:migrate`. |
+
+The open questions below resolved in the build: a split week's `_tracking/` and other
+week-level files live in the week's first in-year bucket (`week:new` writes there;
+`week:plan`, `week:checkin`, and `summary:week` read there), and the year clip already
+held at `week:new` time. `nbfs:migrate` keys on day directories rather than day files —
+see `src/commands/all/nbfs/docs/`. The reference notebook moved in one rename-only commit.
+
+The rest of this document is the reasoning as written on 2026-08-07.
 
 **Decision:** the next layout is `time/YYYY/W##-MM/MM-DD/`. The month directory goes
 away, the week directory becomes an ISO week number suffixed with the month its first

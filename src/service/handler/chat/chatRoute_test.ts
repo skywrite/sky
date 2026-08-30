@@ -32,7 +32,7 @@ const TODAY = new PlainDate('2026-01-27')
 const START = new PlainDateTime('2026-01-27 09:30')
 const STAMP = new PlainDateTime('2026-01-27 09:31')
 const FIX = {
-  day: path.join(BASE_DIR, 'time/2026/01/26-01/01-27/day.md'),
+  day: path.join(BASE_DIR, 'time/2026/W05/01-27/day.md'),
   goal: path.join(BASE_DIR, 'goals/2026.md'),
   roadmap: path.join(BASE_DIR, 'projects/Atlas/Roadmap.md'),
 }
@@ -377,7 +377,7 @@ test({ name: 'chat route - the context can be read, and shaped by hand' }, async
       documents: before.documents,
     },
     expected: {
-      kept: ['goals/2026.md', 'projects/Atlas/Roadmap.md', 'time/2026/01/26-01/01-27/day.md'],
+      kept: ['goals/2026.md', 'projects/Atlas/Roadmap.md', 'time/2026/W05/01-27/day.md'],
       tokens: true,
       cut: [],
       documents: 3,
@@ -392,7 +392,7 @@ test({ name: 'chat route - the context can be read, and shaped by hand' }, async
     should: 'be cut with that reason, at once, and leave the rest in',
     actual: { kept: excluded.kept.map((k) => k.path).sort(), cut: excluded.cut.map((c) => [c.path, c.cut]) },
     expected: {
-      kept: ['goals/2026.md', 'time/2026/01/26-01/01-27/day.md'],
+      kept: ['goals/2026.md', 'time/2026/W05/01-27/day.md'],
       cut: [['projects/Atlas/Roadmap.md', 'excluded by you']],
     },
   })

@@ -25,53 +25,53 @@ function createMockStore(): MarkdownStore {
   const meetingsData = [
     {
       doc: Document.fromMarkdown(`---\nwho: Alice\nmedium: Zoom\ndate: "2025-03-10"\nsummary: Old meeting\n---\nOld.`),
-      path: '/test/time/2025/03/10-16/03-10/actions/meetings/old1.md',
+      path: '/test/time/2025/W11/03-10/actions/meetings/old1.md',
     },
     {
       doc: Document.fromMarkdown(`---\nwho: Bob\nmedium: Phone\ndate: "2025-06-15"\nsummary: Mid meeting\n---\nMid.`),
-      path: '/test/time/2025/06/09-15/06-15/actions/meetings/mid1.md',
+      path: '/test/time/2025/W24/06-15/actions/meetings/mid1.md',
     },
     {
       doc: Document.fromMarkdown(
         `---\nwho: Charlie\nmedium: Zoom\ndate: "2026-01-20"\nsummary: Recent meeting\n---\nRecent.`,
       ),
-      path: '/test/time/2026/01/19-25/01-20/actions/meetings/recent1.md',
+      path: '/test/time/2026/W04/01-20/actions/meetings/recent1.md',
     },
     {
       doc: Document.fromMarkdown(
         `---\nwho: Dana\nmedium: Zoom\ndate: "2026-02-06"\nsummary: Latest meeting\n---\nLatest.`,
       ),
-      path: '/test/time/2026/02/02-08/02-06/actions/meetings/latest1.md',
+      path: '/test/time/2026/W06/02-06/actions/meetings/latest1.md',
     },
   ]
 
   const daysData = [
     {
       doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\nstarted: "08:00"\n---\nOld day.`),
-      path: '/test/time/2025/03/10-16/03-10/day.md',
+      path: '/test/time/2025/W11/03-10/day.md',
     },
     {
       doc: Document.fromMarkdown(`---\ndate: "2025-06-15"\nstarted: "09:00"\n---\nMid day.`),
-      path: '/test/time/2025/06/09-15/06-15/day.md',
+      path: '/test/time/2025/W24/06-15/day.md',
     },
     {
       doc: Document.fromMarkdown(`---\ndate: "2026-01-20"\nstarted: "07:30"\n---\nRecent day.`),
-      path: '/test/time/2026/01/19-25/01-20/day.md',
+      path: '/test/time/2026/W04/01-20/day.md',
     },
     {
       doc: Document.fromMarkdown(`---\ndate: "2026-02-06"\nstarted: "08:15"\n---\nLatest day.`),
-      path: '/test/time/2026/02/02-08/02-06/day.md',
+      path: '/test/time/2026/W06/02-06/day.md',
     },
   ]
 
   const journalsData = [
     {
       doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\ntime: "21:00"\ntags: Journal\n---\nOld journal.`),
-      path: '/test/time/2025/03/10-16/03-10/actions/journal/reflection.md',
+      path: '/test/time/2025/W11/03-10/actions/journal/reflection.md',
     },
     {
       doc: Document.fromMarkdown(`---\ndate: "2026-02-06"\ntime: "22:00"\ntags: Journal\n---\nLatest journal.`),
-      path: '/test/time/2026/02/02-08/02-06/actions/journal/reflection.md',
+      path: '/test/time/2026/W06/02-06/actions/journal/reflection.md',
     },
   ]
 

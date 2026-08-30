@@ -8,9 +8,9 @@ import createDayLabeler from './dayLabel.ts'
 
 const BASE = '/Users/test/Notebook'
 
-/** Build a day-tree path the way the notebook lays them out. */
-function dayPath(year: number, month: string, week: string, day: string, file = 'day.md'): string {
-  return `${BASE}/time/${year}/${month}/${week}/${day}/${file}`
+/** Build a day-tree path the way the notebook lays them out: time/YYYY/W##/MM-DD. */
+function dayPath(year: number, week: string, day: string, file = 'day.md'): string {
+  return `${BASE}/time/${year}/${week}/${day}/${file}`
 }
 
 const TODAY = new PlainDate(2026, 5, 14)
@@ -23,11 +23,11 @@ test(createDayLabeler.name, () => {
   const label = createDayLabeler(TODAY)
 
   const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
-    { path: dayPath(2026, '05', '11-17', '05-14'), expected: '2026-05-14 Thu (TODAY)', given: "today's day file" },
-    { path: dayPath(2026, '05', '11-17', '05-13'), expected: '2026-05-13 Wed (yesterday)', given: "yesterday's" },
-    { path: dayPath(2026, '05', '11-17', '05-12'), expected: '2026-05-12 Tue (2 days ago)', given: 'two days back' },
-    { path: dayPath(2026, '05', '04-10', '05-09'), expected: '2026-05-09 Sat (5 days ago)', given: 'five days back' },
-    { path: dayPath(2026, '05', '04-10', '05-08'), expected: '2026-05-08 Fri (6 days ago)', given: 'six days back' },
+    { path: dayPath(2026, 'W20', '05-14'), expected: '2026-05-14 Thu (TODAY)', given: "today's day file" },
+    { path: dayPath(2026, 'W20', '05-13'), expected: '2026-05-13 Wed (yesterday)', given: "yesterday's" },
+    { path: dayPath(2026, 'W20', '05-12'), expected: '2026-05-12 Tue (2 days ago)', given: 'two days back' },
+    { path: dayPath(2026, 'W19', '05-09'), expected: '2026-05-09 Sat (5 days ago)', given: 'five days back' },
+    { path: dayPath(2026, 'W19', '05-08'), expected: '2026-05-08 Fri (6 days ago)', given: 'six days back' },
   ]
 
   for (const fixture of FIXTURES) {
@@ -48,8 +48,8 @@ test('createDayLabeler — drops the relative suffix once a week out', () => {
   const label = createDayLabeler(TODAY)
 
   const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
-    { path: dayPath(2026, '05', '04-10', '05-07'), expected: '2026-05-07 Thu', given: 'exactly seven days back' },
-    { path: dayPath(2024, '06', '03-09', '06-03'), expected: '2024-06-03 Mon', given: 'a day from a prior year' },
+    { path: dayPath(2026, 'W19', '05-07'), expected: '2026-05-07 Thu', given: 'exactly seven days back' },
+    { path: dayPath(2024, 'W23', '06-03'), expected: '2024-06-03 Mon', given: 'a day from a prior year' },
   ]
 
   for (const fixture of FIXTURES) {
@@ -72,7 +72,7 @@ test('createDayLabeler — marks days ahead rather than reporting negatives', ()
   assert({
     given: 'a day after today',
     should: 'label it as future',
-    actual: label(dayPath(2026, '05', '11-17', '05-15')),
+    actual: label(dayPath(2026, 'W20', '05-15')),
     expected: '2026-05-15 Fri (future)',
   })
 })
@@ -107,7 +107,7 @@ test('createDayLabeler — labels documents nested under a day dir', () => {
   assert({
     given: "a meeting nested under today's day dir",
     should: 'label it as today',
-    actual: label(dayPath(2026, '05', '11-17', '05-14', 'actions/meetings/Zoom_Jane-Doe_Atlas-Review.md')),
+    actual: label(dayPath(2026, 'W20', '05-14', 'actions/meetings/Zoom_Jane-Doe_Atlas-Review.md')),
     expected: '2026-05-14 Thu (TODAY)',
   })
 })
@@ -123,13 +123,13 @@ test('createDayLabeler — counts whole days across a DST boundary', () => {
 
   const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
     {
-      path: dayPath(2026, '11', '02-08', '11-02'),
+      path: dayPath(2026, 'W45', '11-02'),
       expected: '2026-11-02 Mon (TODAY)',
       given: 'the day after the shift',
     },
-    { path: dayPath(2026, '10', '26-01', '11-01'), expected: '2026-11-01 Sun (yesterday)', given: 'the 25-hour day' },
+    { path: dayPath(2026, 'W44', '11-01'), expected: '2026-11-01 Sun (yesterday)', given: 'the 25-hour day' },
     {
-      path: dayPath(2026, '10', '26-01', '10-31'),
+      path: dayPath(2026, 'W44', '10-31'),
       expected: '2026-10-31 Sat (2 days ago)',
       given: 'the day before it',
     },
@@ -154,22 +154,22 @@ test('createDayLabeler — stamps week-level documents with their span', () => {
 
   const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
     {
-      path: `${BASE}/time/2026/05/11-17/week.md`,
+      path: `${BASE}/time/2026/W20/week.md`,
       expected: 'week 2026-05-11 - 2026-05-17 (THIS WEEK)',
       given: "the current week's plan",
     },
     {
-      path: `${BASE}/time/2026/05/04-10/week.md`,
+      path: `${BASE}/time/2026/W19/week.md`,
       expected: 'week 2026-05-04 - 2026-05-10 (last week)',
       given: "the previous week's plan",
     },
     {
-      path: `${BASE}/time/2026/04/20-26/summary.md`,
+      path: `${BASE}/time/2026/W17/summary.md`,
       expected: 'week 2026-04-20 - 2026-04-26',
       given: 'a week summary from weeks back',
     },
     {
-      path: `${BASE}/time/2026/05/18-24/week.md`,
+      path: `${BASE}/time/2026/W21/week.md`,
       expected: 'week 2026-05-18 - 2026-05-24 (future)',
       given: "next week's plan",
     },
@@ -193,8 +193,8 @@ test('createDayLabeler — resolves cross-month days from the day dir', () => {
   const label = createDayLabeler(new PlainDate(2026, 4, 2))
 
   const FIXTURES: Array<{ path: string; expected: string; given: string }> = [
-    { path: dayPath(2026, '03', '28-03', '04-02'), expected: '2026-04-02 Thu (TODAY)', given: 'the April side' },
-    { path: dayPath(2026, '03', '28-03', '03-31'), expected: '2026-03-31 Tue (2 days ago)', given: 'the March side' },
+    { path: dayPath(2026, 'W14', '04-02'), expected: '2026-04-02 Thu (TODAY)', given: 'the April side' },
+    { path: dayPath(2026, 'W14', '03-31'), expected: '2026-03-31 Tue (2 days ago)', given: 'the March side' },
   ]
 
   for (const fixture of FIXTURES) {

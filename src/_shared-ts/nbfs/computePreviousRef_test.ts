@@ -5,12 +5,12 @@ import computePreviousRef from './computePreviousRef.ts'
 test('computePreviousRef - same month returns DD/subpath', () => {
   const FIXTURES = [
     {
-      prev: 'time/2026/03/16-22/03-21/actions/messages/email_Foo_Bar.md',
+      prev: 'time/2026/W12/03-21/actions/messages/email_Foo_Bar.md',
       cur: '2026-03-23',
       expected: '21/actions/messages/email_Foo_Bar',
     },
     {
-      prev: 'time/2026/03/16-22/03-16/comm/email/From-Name_Subject.md',
+      prev: 'time/2026/W12/03-16/comm/email/From-Name_Subject.md',
       cur: '2026-03-18',
       expected: '16/comm/email/From-Name_Subject',
     },
@@ -29,12 +29,12 @@ test('computePreviousRef - same month returns DD/subpath', () => {
 test('computePreviousRef - different month same year returns MM-DD/subpath', () => {
   const FIXTURES = [
     {
-      prev: 'time/2026/02/23-01/02-28/actions/messages/slack_Channel_Thread.md',
+      prev: 'time/2026/W09/02-28/actions/messages/slack_Channel_Thread.md',
       cur: '2026-03-05',
       expected: '02-28/actions/messages/slack_Channel_Thread',
     },
     {
-      prev: 'time/2026/01/01-01/01-01/comm/email/Alice_Hello.md',
+      prev: 'time/2026/W01/01-01/comm/email/Alice_Hello.md',
       cur: '2026-06-15',
       expected: '01-01/comm/email/Alice_Hello',
     },
@@ -51,7 +51,7 @@ test('computePreviousRef - different month same year returns MM-DD/subpath', () 
 })
 
 test('computePreviousRef - different year returns YYYY-MM-DD/subpath', () => {
-  const prev = 'time/2025/12/29-04/12-31/actions/messages/email_Bob_Recap.md'
+  const prev = 'time/2025/W53/12-31/actions/messages/email_Bob_Recap.md'
   const cur = '2026-01-05'
 
   assert({
@@ -64,7 +64,7 @@ test('computePreviousRef - different year returns YYYY-MM-DD/subpath', () => {
 
 test('computePreviousRef - cross-month week spillover day', () => {
   // March 30-05 week, 04-02 = April 2nd
-  const prev = 'time/2026/03/30-05/04-02/comm/email/Carlos_Update.md'
+  const prev = 'time/2026/W14/04-02/comm/email/Carlos_Update.md'
   const cur = '2026-04-05'
 
   assert({
@@ -76,7 +76,7 @@ test('computePreviousRef - cross-month week spillover day', () => {
 })
 
 test('computePreviousRef - strips .md extension', () => {
-  const prev = 'time/2026/03/16-22/03-20/notes/meeting.md'
+  const prev = 'time/2026/W12/03-20/notes/meeting.md'
   const cur = '2026-03-22'
 
   assert({
@@ -88,7 +88,7 @@ test('computePreviousRef - strips .md extension', () => {
 })
 
 test('computePreviousRef - nested subpaths preserved', () => {
-  const prev = 'time/2026/03/16-22/03-18/actions/messages/email_From-Name_Subject-Line.md'
+  const prev = 'time/2026/W12/03-18/actions/messages/email_From-Name_Subject-Line.md'
   const cur = '2026-03-20'
 
   assert({
@@ -104,7 +104,7 @@ test('computePreviousRef - nested subpaths preserved', () => {
 // HH-MM_ prefix, whose hyphen must not be mistaken for the MM-DD date segment
 // — that lives before the first slash, and the prefix is inside the subpath.
 test('computePreviousRef - HH-MM message prefix survives in the subpath', () => {
-  const prev = 'time/2026/03/16-22/03-18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing.md'
+  const prev = 'time/2026/W12/03-18/actions/messages/10-27_slack_Jane-to-atlas-gtm_Onramp-pricing.md'
 
   assert({
     given: 'a time-prefixed message path, same month',

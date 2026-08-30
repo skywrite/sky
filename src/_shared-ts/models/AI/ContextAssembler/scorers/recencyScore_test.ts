@@ -12,15 +12,15 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-// Wednesday inside the 2026/02/23-01 week (Feb 23 – Mar 1)
+// Wednesday inside the 2026/W09 week (Feb 23 – Mar 1)
 const TODAY_MS = new PlainDate(2026, 2, 25).toDate().getTime()
 const HORIZON = 30
 
 test(`${recencyScore.name} - day docs decay from their day`, () => {
   const FIXTURES = [
-    { path: '/Notebook/time/2026/02/23-01/02-25/day.md', expected: 5, given: "today's day file" },
-    { path: '/Notebook/time/2026/02/16-22/02-22/day.md', expected: 4.5, given: 'a 3-day-old day file' },
-    { path: '/Notebook/time/2026/01/12-18/01-14/day.md', expected: 0, given: 'a day file past the horizon' },
+    { path: '/Notebook/time/2026/W09/02-25/day.md', expected: 5, given: "today's day file" },
+    { path: '/Notebook/time/2026/W08/02-22/day.md', expected: 4.5, given: 'a 3-day-old day file' },
+    { path: '/Notebook/time/2026/W03/01-14/day.md', expected: 0, given: 'a day file past the horizon' },
   ]
 
   for (const fixture of FIXTURES) {
@@ -36,12 +36,12 @@ test(`${recencyScore.name} - day docs decay from their day`, () => {
 test(`${recencyScore.name} - span docs age from the end of their span`, () => {
   const FIXTURES = [
     {
-      path: '/Notebook/time/2026/02/23-01/week.md',
+      path: '/Notebook/time/2026/W09/week.md',
       expected: 5,
       given: "the current week's plan, mid-week",
     },
     {
-      path: '/Notebook/time/2026/02/16-22/week.md',
+      path: '/Notebook/time/2026/W08/week.md',
       expected: 4.5,
       given: 'a week plan whose week ended 3 days ago',
     },

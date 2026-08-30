@@ -33,7 +33,7 @@ summary: Project kickoff
 tags: [Work]
 ---
 Meeting notes here.`),
-      path: '/test/time/2026/01/26-01/01-01/actions/meetings/meeting1.md',
+      path: '/test/time/2026/W01/01-01/actions/meetings/meeting1.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -45,7 +45,7 @@ summary: Quick sync
 tags: [Personal]
 ---
 Phone call notes.`),
-      path: '/test/time/2026/01/26-01/01-28/actions/meetings/meeting2.md',
+      path: '/test/time/2026/W05/01-28/actions/meetings/meeting2.md',
     },
   ]
 
@@ -61,7 +61,7 @@ summary: M&A candidate
 created: 2026-02-18
 ---
 Old message saved later.`),
-      path: '/test/time/2026/02/02-08/02-05/actions/messages/old-message.md',
+      path: '/test/time/2026/W06/02-05/actions/messages/old-message.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -73,7 +73,7 @@ summary: Status update
 created: 2026-02-17
 ---
 Recent message.`),
-      path: '/test/time/2026/02/16-22/02-17/actions/messages/recent-message.md',
+      path: '/test/time/2026/W08/02-17/actions/messages/recent-message.md',
     },
   ]
 
@@ -182,7 +182,7 @@ How should we plan the widget launch?
 ## AI Assistant
 
 Start with a small beta group.`),
-      path: '/test/time/2026/02/02-08/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+      path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -203,7 +203,7 @@ Give me marketing ideas.
 ## AI Assistant
 
 Here are three angles to consider.`),
-      path: '/test/time/2026/01/26-01/01-27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
+      path: '/test/time/2026/W05/01-27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
     },
   ]
 
@@ -222,7 +222,7 @@ tags: Sample/Captures
 # Payment flow sketch
 
 Sketched the checkout flow on the whiteboard.`),
-      path: '/test/time/2026/02/02-08/02-04/actions/notes/payment-flow-sketch.md',
+      path: '/test/time/2026/W06/02-04/actions/notes/payment-flow-sketch.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -237,7 +237,7 @@ tags:
 # Onboarding thoughts
 
 Rough notes on the signup funnel.`),
-      path: '/test/time/2026/01/26-01/01-29/actions/notes/onboarding-thoughts.md',
+      path: '/test/time/2026/W05/01-29/actions/notes/onboarding-thoughts.md',
     },
   ]
 
@@ -1182,7 +1182,7 @@ video:
   url: https://example.com/v/abc123
 ---
 Transcript mentions the Atlas rollout.`),
-      path: '/test/time/2026/02/02-08/02-03/actions/videos/update.md',
+      path: '/test/time/2026/W06/02-03/actions/videos/update.md',
     },
     {
       doc: Document.fromMarkdown(`---
@@ -1193,7 +1193,7 @@ medium: YouTube
 summary: Conference talk
 ---
 Talk notes.`),
-      path: '/test/time/2026/02/02-08/02-04/actions/videos/talk.md',
+      path: '/test/time/2026/W06/02-04/actions/videos/talk.md',
     },
   ]
 
@@ -1251,7 +1251,7 @@ test('resolvers - videos filters by exact from', () => {
     given: 'an exact from filter',
     should: 'return only that presenter',
     actual: resolvers.videos({ where: { from: 'Jane Doe' } }).map((v) => v.path),
-    expected: ['/test/time/2026/02/02-08/02-03/actions/videos/update.md'],
+    expected: ['/test/time/2026/W06/02-03/actions/videos/update.md'],
   })
 
   assert({
@@ -1337,15 +1337,15 @@ test('resolvers - documents sorts newest-first before applying limit', () => {
     createTimeStore([
       {
         doc: Document.fromMarkdown('# Old video\n'),
-        path: '/test/time/2022/03/07-13/03-09/actions/videos/old-video.md',
+        path: '/test/time/2022/W10/03-09/actions/videos/old-video.md',
       },
       {
         doc: Document.fromMarkdown('# Mid note\n'),
-        path: '/test/time/2025/05/05-11/05-07/actions/notes/mid-note.md',
+        path: '/test/time/2025/W19/05-07/actions/notes/mid-note.md',
       },
       {
         doc: Document.fromMarkdown('# New script\n'),
-        path: '/test/time/2026/03/09-15/03-11/actions/notes/new-script.md',
+        path: '/test/time/2026/W11/03-11/actions/notes/new-script.md',
       },
     ]),
   )
@@ -1355,8 +1355,8 @@ test('resolvers - documents sorts newest-first before applying limit', () => {
     should: 'keep the two newest, not the first two in store order',
     actual: resolvers.documents({ limit: 2 }).map((d) => d.path),
     expected: [
-      '/test/time/2026/03/09-15/03-11/actions/notes/new-script.md',
-      '/test/time/2025/05/05-11/05-07/actions/notes/mid-note.md',
+      '/test/time/2026/W11/03-11/actions/notes/new-script.md',
+      '/test/time/2025/W19/05-07/actions/notes/mid-note.md',
     ],
   })
 })
@@ -1367,7 +1367,7 @@ test('resolvers - documents sinks undated files below dated ones', () => {
       { doc: Document.fromMarkdown('# Undated\n'), path: '/test/notes/reference.md' },
       {
         doc: Document.fromMarkdown('# Dated\n'),
-        path: '/test/time/2026/01/05-11/01-05/actions/notes/dated.md',
+        path: '/test/time/2026/W02/01-05/actions/notes/dated.md',
       },
     ]),
   )
@@ -1376,14 +1376,14 @@ test('resolvers - documents sinks undated files below dated ones', () => {
     given: 'a dated and an undated document',
     should: 'order the dated one first',
     actual: resolvers.documents({}).map((d) => d.path),
-    expected: ['/test/time/2026/01/05-11/01-05/actions/notes/dated.md', '/test/notes/reference.md'],
+    expected: ['/test/time/2026/W02/01-05/actions/notes/dated.md', '/test/notes/reference.md'],
   })
 })
 
 test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () => {
   const many = Array.from({ length: DEFAULT_QUERY_LIMIT + 10 }, (_, i) => ({
     doc: Document.fromMarkdown(`# Note ${i}\n`),
-    path: `/test/time/2026/01/05-11/01-05/actions/notes/note-${i}.md`,
+    path: `/test/time/2026/W02/01-05/actions/notes/note-${i}.md`,
   }))
   const resolvers = createDomainResolvers(createTimeStore(many))
 
@@ -1407,7 +1407,7 @@ test('resolvers - a query without limit is capped at DEFAULT_QUERY_LIMIT', () =>
 test('resolvers - a date-bounded query is exempt from the default cap', () => {
   const many = Array.from({ length: DEFAULT_QUERY_LIMIT + 10 }, (_, i) => ({
     doc: Document.fromMarkdown(`---\ndate: "2025-03-10"\n---\nNote ${i}.`),
-    path: `/test/time/2025/03/10-16/03-10/actions/notes/note-${i}.md`,
+    path: `/test/time/2025/W11/03-10/actions/notes/note-${i}.md`,
   }))
   const resolvers = createDomainResolvers(createTimeStore(many))
 
@@ -1534,19 +1534,19 @@ test('resolvers - journals selects by tag across media, not by path', () => {
   const entries = [
     {
       doc: Document.fromMarkdown(`---\ntags: Journal/Gratitude\n---\nProse entry.`),
-      path: '/test/time/2026/02/02-08/02-03/journal/morning.md',
+      path: '/test/time/2026/W06/02-03/journal/morning.md',
     },
     {
       doc: Document.fromMarkdown(`---\ntags: Journal\n---\nOld-layout entry.`),
-      path: '/test/time/2021/01/04-10/01-05/_journal.md',
+      path: '/test/time/2021/W01/01-05/_journal.md',
     },
     {
       doc: Document.fromMarkdown(`---\ntags: Video; Journal/Video\n---\nRecorded entry.`),
-      path: '/test/time/2026/02/02-08/02-04/actions/videos/Video_Jane_Entry.md',
+      path: '/test/time/2026/W06/02-04/actions/videos/Video_Jane_Entry.md',
     },
     {
       doc: Document.fromMarkdown(`---\ntags: Atlas\n---\nNot a journal.`),
-      path: '/test/time/2026/02/02-08/02-05/journal/stray-note.md',
+      path: '/test/time/2026/W06/02-05/journal/stray-note.md',
     },
   ]
   const resolvers = createDomainResolvers(createTimeStore(entries))
@@ -1577,7 +1577,7 @@ test('resolvers - journals selects by tag across media, not by path', () => {
 // The when: mapping had no coverage at all: getWhenField swallows a value it
 // cannot read and returns null, so a broken mapping would have looked like a
 // passing suite rather than a failure.
-const MEETING_PATH = '/test/time/2026/02/02-08/02-01/actions/meetings/x.md'
+const MEETING_PATH = '/test/time/2026/W05/02-01/actions/meetings/x.md'
 
 test('docToMeeting maps when to its structured shape', () => {
   const doc = Document.fromMarkdown(`---

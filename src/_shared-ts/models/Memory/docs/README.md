@@ -54,7 +54,7 @@ created: 2026-03-10
 updated: 2026-03-10
 kind: glossary
 summary: The big deck means the Atlas overview deck
-source: time/2026/03/09-15/03-10/actions/ai-chats/09-30_Atlas-Launch-Planning.md
+source: time/2026/W11/03-10/actions/ai-chats/09-30_Atlas-Launch-Planning.md
 lastConfirmed: 2026-03-12
 uses: 2
 locked: true

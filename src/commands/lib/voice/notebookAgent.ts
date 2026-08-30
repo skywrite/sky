@@ -109,7 +109,7 @@ const KIND_LABELS: Record<string, string> = {
  * Human-readable heading for a notebook document, derived from its path:
  * kind and calendar date instead of cryptic path segments. The delegate
  * model attributes facts to dates far more reliably when every document
- * announces its own — raw paths like `time/2026/08/03-09/08-05/...` got
+ * announces its own — raw paths like `time/2026/W32/08-05/...` got
  * separate days fused into one misdated narrative.
  */
 export function describeNotebookPath(path: string): string {

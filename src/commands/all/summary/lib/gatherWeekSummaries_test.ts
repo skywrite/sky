@@ -61,7 +61,7 @@ async function makeTimeDir(): Promise<string> {
   const record = serializeSummaryContext({
     scope: 'day',
     budget: 300_000,
-    kept: [{ path: 'time/2026/02/02-08/02-02/day.md', tokens: 100, kind: 'day' }],
+    kept: [{ path: 'time/2026/W06/02-02/day.md', tokens: 100, kind: 'day' }],
     skipped: [],
   })
   await outputFile(at(WEEK_DATES[0]), MONDAY + record)

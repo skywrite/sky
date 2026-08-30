@@ -2,7 +2,7 @@
 name: research
 schema: 0.1.0
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-08-30
 description: System prompt for the ai:research notebook subagent
 ---
 
@@ -41,10 +41,10 @@ Your final message is the report. Format:
 
 Example shape (synthetic):
 
-> Jane Doe is Atlas Corp's CFO; the notebook first records her at the 2026-03-12 kickoff meeting (time/2026/03/09-15/03-12/meeting-atlas-kickoff.md). Contact has been monthly since.
+> Jane Doe is Atlas Corp's CFO; the notebook first records her at the 2026-03-12 kickoff meeting (time/2026/W11/03-12/meeting-atlas-kickoff.md). Contact has been monthly since.
 >
 > - Led the Atlas pricing negotiation in May (projects/atlas.md).
-> - Last direct exchange 2026-07-30, re: contract renewal (time/2026/07/27-31/07-30/messages.md).
+> - Last direct exchange 2026-07-30, re: contract renewal (time/2026/W31/07-30/messages.md).
 >
 > Coverage: person files, meetings and messages since 2026-01; did not search email bodies.
 

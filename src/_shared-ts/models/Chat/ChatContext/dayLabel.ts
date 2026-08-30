@@ -8,8 +8,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
  *
  * Context renders in type order, so a block of meetings spanning eight days
  * arrives with no chronological structure. The only date cue is the day dir
- * buried in the path (`time/2026/05/11-17/05-14/`, where the week-range
- * segment invites a misread) plus a `created:` field that journals omit
+ * buried in the path (`time/2026/W20/05-14/`; in the older `YYYY/MM/DD-DD`
+ * layout the week-range segment even invited a misread) plus a `created:` field that journals omit
  * entirely and entity docs use for file edits rather than events. That left
  * the model inferring a document's day from its neighbours, which misdates
  * today's lone document when it sits in a run of yesterday's.

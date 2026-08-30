@@ -16,7 +16,7 @@ test('previousRefOrNone computes a ref from a well-formed day path', () => {
     given: 'a previous capture under an MM-DD day dir, in the current month',
     should: 'reference it by day alone',
     expected: '10/actions/messages/email_Jane-Doe_Atlas-kickoff',
-    actual: previousRefOrNone('time/2026/08/10-16/08-10/actions/messages/email_Jane-Doe_Atlas-kickoff.md', CUR, output),
+    actual: previousRefOrNone('time/2026/W33/08-10/actions/messages/email_Jane-Doe_Atlas-kickoff.md', CUR, output),
   })
 })
 
@@ -24,7 +24,7 @@ test('previousRefOrNone recovers a legacy day path', () => {
   const { output, lines } = collector()
   // A day-dir of DD alone: the layout older follow files recorded, pointing
   // at a directory that no longer exists — the date survives via toTimeRef.
-  const legacy = 'time/2026/05/25-31/31/actions/messages/email_Jane-Doe_Atlas-kickoff.md'
+  const legacy = 'time/2026/W22/05-31/actions/messages/email_Jane-Doe_Atlas-kickoff.md'
 
   assert({
     given: 'a follow carrying a path in the retired DD layout',
@@ -97,7 +97,7 @@ test('sameDayCapture continues the day file an earlier run created', () => {
     should: 'resolve it to the day file the message appends to',
     expected: {
       date: '2026-08-14',
-      path: 'time/2026/08/10-16/08-14/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md',
+      path: 'time/2026/W33/08-14/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md',
     },
     actual: sameDayCapture(
       { date: '2026-08-14', path: '2026-08-14/actions/messages/09-30_email_Jane-Doe_Atlas-kickoff.md' },

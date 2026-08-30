@@ -24,14 +24,14 @@ const abs = (rel: string) => path.join(BASE_DIR, rel)
 
 const FIX = {
   person: abs('people/Jane-Doe.md'),
-  meeting: abs('time/2026/01/19-25/01-20/actions/meetings/11-00_Atlas_Sync.md'),
+  meeting: abs('time/2026/W04/01-20/actions/meetings/11-00_Atlas_Sync.md'),
   goal: abs('goals/2026.md'),
-  day: abs('time/2026/01/26-01/01-27/day.md'),
-  digest: abs('time/2026/01/26-01/01-27/actions/messages/slack_Atlas-Bot-to-atlas-general_Weekly-Digest.md'),
-  deal: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Contract-Countersigned.md'),
-  vendor: abs('time/2026/01/26-01/01-27/actions/notes/Vendor-Landscape.md'),
+  day: abs('time/2026/W05/01-27/day.md'),
+  digest: abs('time/2026/W05/01-27/actions/messages/slack_Atlas-Bot-to-atlas-general_Weekly-Digest.md'),
+  deal: abs('time/2026/W05/01-27/actions/messages/slack_Ops-to-atlas-deals_Contract-Countersigned.md'),
+  vendor: abs('time/2026/W05/01-27/actions/notes/Vendor-Landscape.md'),
   glossary: abs('reference/Atlas-Glossary.md'),
-  escrow: abs('time/2026/01/26-01/01-27/actions/messages/slack_Ops-to-atlas-deals_Escrow-Timeline.md'),
+  escrow: abs('time/2026/W05/01-27/actions/messages/slack_Ops-to-atlas-deals_Escrow-Timeline.md'),
   accented: abs('people/Zoë-Núñez.md'),
 }
 

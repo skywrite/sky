@@ -24,7 +24,7 @@ const STAMP = new PlainDateTime('2026-01-27 09:31')
 
 const abs = (rel: string) => path.join(BASE_DIR, rel)
 const FIX = {
-  day: abs('time/2026/01/26-01/01-27/day.md'),
+  day: abs('time/2026/W05/01-27/day.md'),
   goal: abs('goals/2026.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
 }

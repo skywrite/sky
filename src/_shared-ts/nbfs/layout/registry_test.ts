@@ -1,6 +1,7 @@
 import { assert, test } from '#test'
 import { ALL_LAYOUTS, DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from './registry.ts'
 import v1_1 from './v1_1/mod.ts'
+import { v2 } from './v2.ts'
 
 test('registry - patterns and default', () => {
   assert({
@@ -11,9 +12,9 @@ test('registry - patterns and default', () => {
   })
   assert({
     given: 'the default',
-    should: 'match what existing notebooks speak (flips to v2 with the migration)',
+    should: 'be v2 - what a notebook tree is since the 2026-08-30 migration',
     actual: DEFAULT_LAYOUT_PATTERN,
-    expected: v1_1.pattern,
+    expected: v2.pattern,
   })
   for (const layout of ALL_LAYOUTS) {
     assert({

@@ -58,7 +58,7 @@ you from typing them by hand.
 Your day is one markdown file that Sky manages:
 
 ```
-~/Sky/time/2026/03/30-05/03-31/day.md
+~/Sky/time/2026/W14/03-31/day.md
 ```
 
 ```markdown
@@ -158,7 +158,7 @@ day, nested inside the week it belongs to, holding the day file and everything t
 produced.
 
 ```
-~/Sky/time/2026/03/30-05/03-31/day.md
+~/Sky/time/2026/W14/03-31/day.md
 ```
 
 That layout — and the reasoning behind it — is covered in

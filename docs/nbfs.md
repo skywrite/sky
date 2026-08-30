@@ -20,30 +20,30 @@ Two claims to hold onto, because everything below follows from them:
 ## Path anatomy
 
 How the tree nests below `time/` is configurable — see [Layouts](#layouts). This is the
-anatomy of the **default** layout, `YYYY/MM/DD-DD/MM-DD`:
+anatomy of the **default** layout, `YYYY/W##/MM-DD`:
 
 ```
-~/Sky/time/2026/03/30-05/03-31/day.md
-           │    │  │     │
-           │    │  │     └─ day directory, MM-DD
-           │    │  └─ week directory, first and last day numbers
-           │    └─ month of the week's first day
+~/Sky/time/2026/W14/03-31/day.md
+           │    │   │
+           │    │   └─ day directory, MM-DD
+           │    └─ week directory, the week number
            └─ year
 ```
 
-Weeks run **Monday through Sunday** and are named by their first and last day numbers:
-`30-05` is Mon Mar 30 through Sun Apr 5. The week directory is filed under the month its
-**first day** falls in, so that week lives under `03/` even though most of it is April.
+Weeks run **Monday through Sunday** and are numbered: `W14` is Mon Mar 30 through Sun
+Apr 5. Numbers are sky weeks — ISO mid-year, with the year as the outer boundary; see
+[Layouts](#layouts) for what happens at New Year. There is no month level: a week is the
+only container between the year and the day.
 
-Day directories are named `MM-DD`, carrying their own month. That's what makes cross-month
-spillover self-describing:
+Day directories are named `MM-DD`, carrying their own month. That's what makes a week that
+crosses a month self-describing:
 
 ```
-time/2026/03/30-05/
+time/2026/W14/
   _tracking/          # week-level tracking CSVs
   03-30/  day.md      # Mon
   03-31/  day.md      # Tue
-  04-01/  day.md      # Wed — April, still in March's week directory
+  04-01/  day.md      # Wed — April, same week directory
   04-02/  day.md
   04-03/  day.md
   04-04/  day.md
@@ -216,9 +216,9 @@ layout — the examples show the default:
 
 | Function | Returns |
 |---|---|
-| `weekDir(date)` | `2026/03/30-05` |
-| `dayDir(date)` | `2026/03/30-05/03-31` |
-| `dayFile(date)` | `2026/03/30-05/03-31/day.md` |
+| `weekDir(date)` | `2026/W14` |
+| `dayDir(date)` | `2026/W14/03-31` |
+| `dayFile(date)` | `2026/W14/03-31/day.md` |
 | `dayAttachmentsDir(date)` | `2026/03/31` |
 | `parseDateFromDayPath(path)` | `PlainDate` — the inverse of `dayFile` |
 | `parseTimePath(path)` | The year, week, or day span a time-tree path covers, or `null` |
@@ -245,12 +245,12 @@ The config value is the path shape itself:
 
 | `nbfs.layout` | Day path | Notes |
 |---|---|---|
-| `YYYY/MM/DD-DD/MM-DD` | `2026/03/30-05/03-31/` | **The default.** Weeks under month directories, named by first and last day numbers |
-| `YYYY/W##/MM-DD` | `2026/W14/03-31/` | No month level — numbered weeks are the only container |
+| `YYYY/W##/MM-DD` | `2026/W14/03-31/` | **The default.** No month level — numbered weeks are the only container |
 | `YYYY/MM-W##/MM-DD` | `2026/03-W14/03-31/` | The same tree with the week's month as a scannable prefix |
+| `YYYY/MM/DD-DD/MM-DD` | `2026/03/30-05/03-31/` | The previous default (v1.1): weeks under month directories, named by first and last day numbers |
 
-The `W##` layouts exist because the default's month level has to lie at month boundaries —
-a week files under its first day's month even when most of it belongs to the next month —
+The `W##` layouts replaced v1.1 because its month level had to lie at month boundaries — a
+week filed under its first day's month even when most of it belonged to the next month —
 and because a `DD-DD` week range reads like an `MM-DD` day directory. Dropping the month
 container and giving weeks shape-distinct names fixes both.
 
@@ -273,7 +273,7 @@ In `~/.sky/config.jsonc`:
 ```jsonc
 {
   "nbfs": {
-    "layout": "YYYY/W##/MM-DD"
+    "layout": "YYYY/MM-W##/MM-DD"
   }
 }
 ```
@@ -306,6 +306,13 @@ v1 named day directories with a bare `DD` and marked cross-month spillover with 
 prefix (`x01`). The marker sorted correctly but wasn't self-describing — you needed the
 week directory to know what month `x01` meant — so v1.1 replaced both with `MM-DD`. v1 is
 no longer selectable, but `nbfs:migrate` and `toTimeRef()` still read it.
+
+v2 (2026-08-30) dropped the month directory and named weeks by number: `YYYY/W##/MM-DD`.
+The month level was a container nothing read, and it misfiled every week that straddled a
+month; the `DD-DD` range shared a shape with the `MM-DD` day directory. It became the
+default the day the reference notebook moved — one `nbfs:migrate` run, one rename-only
+commit. v1.1 stays selectable for a notebook that hasn't moved yet, and the `MM-W##`
+variant keeps a month label on the week directory for scannable year listings.
 
 ## See also
 
