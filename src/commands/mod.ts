@@ -12,6 +12,7 @@ export type { InferParams, InferParamsInput, ParamDef, ParamOptions, ParamsRecor
 // Standard params for common patterns
 export {
   category,
+  categoryCommitment,
   categoryComplete,
   categoryTodo,
   dayArg,

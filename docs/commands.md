@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-29
 ---
 
 # Commands
@@ -28,6 +28,7 @@ sky day:open                     # open today's day file in your editor
 sky day:todo:add "Ship Atlas v1" # add a todo
 sky day:todo:pull                # pull the next item off your Next list
 sky day:todo:move-next           # push unfinished todos to tomorrow
+sky day:commitments:move-next    # push unfinished commitments to tomorrow
 sky day:reminders:add "Renew passport"
 sky day:location                 # set location from the device, or a phone via QR code
 sky day:not-ended                # find days you forgot to close
@@ -39,6 +40,9 @@ Defaults are `day:sr:update`, `prices:all:fetch`, `util:weather` on start and
 `day:todo:incomplete` on end; change them under `commands.day` in your config. Anything in
 that list that doesn't resolve is warned about and skipped, not fatal — which is why a
 fresh install mentions `prices:all:fetch` once and moves on.
+
+`day:commitments:incomplete` is the same sweep for the Commitments lists. Add it next to
+`day:todo:incomplete` in that list to close out both at day's end.
 
 `day:sr:update` is itself a composite of `day:recurring:update`, `day:schedule:update` and
 `day:reminders:update` — the three that populate today from your recurring patterns,

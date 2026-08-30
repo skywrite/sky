@@ -119,7 +119,7 @@ export function categoryTodo() {
  * doubled suffix. Unknown categories pass through untouched.
  */
 function normalizeCategory(val: string): string {
-  const base = val.trim().replace(/\s+(?:Complete|Todos)$/i, '')
+  const base = val.trim().replace(/\s+(?:Complete|Todos|Commitments)$/i, '')
   const known = ['Personal', 'Professional'].find((k) => k.toLowerCase() === base.toLowerCase())
   return known ?? base
 }
@@ -138,6 +138,18 @@ export function categoryComplete(opts?: CategoryCompleteOptions) {
     short: 'c',
     parse: (val: string) => `${normalizeCategory(val)} Complete`,
     default: () => `${opts?.defaultCategory ?? 'Professional'} Complete`,
+  })
+}
+
+/**
+ * Category flag for commitment operations. Defaults to 'Professional Commitments'.
+ * Use this with APIs that expect the full list name (e.g., writeDayItems).
+ */
+export function categoryCommitment() {
+  return Flag.string('Category: "Personal" or "Professional"', {
+    short: 'c',
+    parse: (val: string) => `${normalizeCategory(val)} Commitments`,
+    default: () => 'Professional Commitments',
   })
 }
 
