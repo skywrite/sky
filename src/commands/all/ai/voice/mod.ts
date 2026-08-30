@@ -20,6 +20,7 @@ import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prom
 import truncate from '#shared/strings/truncate.ts'
 import { env } from '#shared/sys/mod.ts'
 import { DuplexAudio, ensureAudioHelper, FfmpegAudio } from './lib/audio.ts'
+import { pickGreeting } from './lib/greetings.ts'
 import { ASK_NOTEBOOK_TOOL, askNotebook } from './lib/notebookAgent.ts'
 import { VoiceSession } from './lib/session.ts'
 
@@ -30,9 +31,10 @@ const params = {
   model: Flag.string('Realtime voice model (gpt-realtime-2.1, or gpt-realtime-2.1-mini for cheaper sessions)', {
     default: () => 'gpt-realtime-2.1',
   }),
-  voice: Flag.string('Voice for spoken replies (ballad is the British male; also cedar, marin, alloy, ash, ...)', {
-    default: () => 'ballad',
-  }),
+  voice: Flag.string(
+    'Voice for spoken replies (marin: feminine, steered British by the persona; ballad: native British male; also sage, coral, cedar, ...)',
+    { default: () => 'marin' },
+  ),
   reasoning: Flag.string('Model profile for the ask_notebook delegate (e.g. default-opus-5)', {
     short: 'r',
     default: () => ROLES.reasoning,
@@ -105,12 +107,9 @@ export default class AiVoiceTask extends Command {
       'ask-notebook.prompt.md',
       renderInput,
     )
-    // The me namespace comes from the AboutMe profile; the #if guard keeps
-    // the line well-formed when no profile exists.
-    const { output: greeting } = renderTemplate(
-      'Hello{{#if me.firstName}} {{me.firstName}}{{/if}}. What would you like to talk about?',
-      renderInput,
-    )
+    // A random opening line; its name slot fills from the AboutMe profile
+    // through the me namespace and folds away when no profile exists.
+    const { output: greeting } = renderTemplate(pickGreeting(), renderInput)
 
     output.log(colors.bold('Voice session'))
     output.log(colors.dim(`  ${args.model} · voice ${args.voice} · delegate ${args.reasoning}`))

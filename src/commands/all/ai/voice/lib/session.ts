@@ -123,7 +123,14 @@ export class VoiceSession {
           : 'Listening — echo-cancelled duplex audio; interrupt whenever you like.',
       )
       // The scripted greeting proves the whole audio path immediately.
-      this.requestResponse(`Say exactly this, and nothing else: "${this.opts.greeting}"`)
+      // Per-response instructions are that response's whole system message
+      // — they stand in for the session's — so the persona must ride along,
+      // or the first utterance, which anchors voice and accent for the rest
+      // of the session, is spoken with no direction at all.
+      this.requestResponse(
+        `${this.opts.instructions}\n\n## Opening line\n\nThe session has just started. ` +
+          `Say exactly this, and nothing else, in your voice and accent: "${this.opts.greeting}"`,
+      )
     })
 
     this.socket.on('response.created', () => {
