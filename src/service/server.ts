@@ -7,6 +7,12 @@
  * - Multiple server instances on different ports
  * - Deterministic scoring tests
  *
+ * ## Network surface
+ *
+ * The listener binds 127.0.0.1 only; every in-repo client addresses it as
+ * `localhost`. Remote access is always a proxy on this host (`tailscale serve`),
+ * never a wider bind.
+ *
  * ## Scoring Limitation
  *
  * Person/org scores are computed at scan time using the current date (or
@@ -264,12 +270,15 @@ export function createServer(options: ServerOptions): Server {
       const wsHandler = createWebSocketHandler(store)
 
       await new Promise<void>((resolve) => {
-        httpServer = serve({ fetch: app.fetch, port }, () => {
+        // Loopback only. Nothing off this machine talks to the service directly:
+        // remote access (phone, tailnet) goes through `tailscale serve`, which
+        // proxies from tailscaled on this host to 127.0.0.1.
+        httpServer = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, () => {
           const addr = httpServer?.address()
           if (addr && typeof addr === 'object') {
             actualPort = addr.port
           }
-          logServer.info('Server running at http://localhost:{port}/', { port: actualPort })
+          logServer.info('Server running at http://127.0.0.1:{port}/', { port: actualPort })
           resolve()
         })
         httpServer.on('upgrade', wsHandler.handleUpgrade)
