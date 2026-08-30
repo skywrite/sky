@@ -2,13 +2,16 @@ import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import { assert, test } from '#test'
 
-// Collapsed reference links [label][] lose their definitions when moved between
-// sections via removeItem + addItem. This is because replaceList's link cleanup
-// deletes the document-level link when the ItemList-level link key matches.
-// Full reference links [text][label] survive by accident (key mismatch).
+// Reference links lose their definitions when moved between sections via
+// removeItem + addItem: replaceList's link cleanup deletes the document-level
+// definition once no item in the list references it, and addItem cannot
+// restore an href it was never given.
 //
-// Fix: extract links via Document.referenceLinks() before removeItem,
-// then pass them to addItem via opts.links.
+// The contract: extract links via Document.referenceLinks() before removeItem,
+// then pass them to addItem via opts.links. This holds for both forms. Full
+// reference links [text][label] used to survive by accident, because the
+// list-level map was keyed by the link text and the cleanup missed them; since
+// 2026-08-29 both maps key by label (see ../../docs/README.md).
 
 const markdownCollapsedRef = `---
 tags: Test
@@ -107,11 +110,7 @@ test('collapsed ref: new section via empty addList + addItem WITH links preserve
   })
 })
 
-test('full ref: removeItem + addItem preserves link without explicit links', function () {
-  // Full reference links [text][label] survive by accident (key mismatch between
-  // ItemList._links and Document._links), so no explicit link passing needed.
-  // This test documents the current behavior.
-  const markdownFullRef = `---
+const markdownFullRef = `---
 tags: Test
 ---
 
@@ -129,6 +128,8 @@ tags: Test
 
 [design_doc]: https://docs.example.com/design
 `
+
+test('full ref: removeItem + addItem WITHOUT links loses reference definition, same as collapsed', function () {
   const doc = ListDocument.fromMarkdown(markdownFullRef)
 
   const newDoc = doc
@@ -137,8 +138,33 @@ tags: Test
 
   assert({
     given: 'full ref [text][label] moved without explicit links',
-    should: 'preserve reference definition (survives due to key mismatch)',
-    expected: true,
+    should: 'lose the reference link definition, like a collapsed ref',
+    expected: false,
     actual: newDoc.toMarkdown().includes('[design_doc]: https://docs.example.com/design'),
+  })
+})
+
+test('full ref: removeItem + addItem WITH referenceLinks preserves definition', function () {
+  const doc = ListDocument.fromMarkdown(markdownFullRef)
+
+  const itemLinks = doc.referenceLinks('Review [design doc][design_doc]')
+
+  const newDoc = doc
+    .removeItem('Professional Todos', 0)
+    .addItem('Professional Dropped', 'Review [design doc][design_doc]', { links: itemLinks })
+
+  const output = newDoc.toMarkdown()
+
+  assert({
+    given: 'full ref moved with referenceLinks',
+    should: 'preserve the reference link definition',
+    expected: true,
+    actual: output.includes('[design_doc]: https://docs.example.com/design'),
+  })
+  assert({
+    given: 'full ref moved with referenceLinks',
+    should: 'have the item in the target list',
+    expected: true,
+    actual: output.includes('- Review [design doc][design_doc]'),
   })
 })

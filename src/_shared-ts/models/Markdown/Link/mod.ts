@@ -1,5 +1,7 @@
 import type { Links, Tokens, TokensList } from 'marked'
 
+// Design: src/_shared-ts/models/Markdown/docs/README.md
+
 export type Link = {
   label: string
   href: string
@@ -27,9 +29,13 @@ export function fetchLinksFromTokens(tokens: Tokens.Generic[], referenceLinks?: 
 
   for (const token of tokens) {
     if (token.type === 'link') {
-      // Updated regex to properly match reference labels
-      const regex = /\[(?<label>[^\]]+)\](?:\[\]|\[[^\]]*\])$/
-      const label = regex.exec(token.raw)?.groups?.label?.trim()
+      // A reference link has a text and a label. `[the deck][deck]` files
+      // under `deck`, the key its definition line uses and the key
+      // `Document.extractReferenceLabels` reads off the item — so a list's
+      // links resolve for either form. `[deck][]` is its own label.
+      const regex = /\[(?<text>[^\]]+)\]\[(?<ref>[^\]]*)\]$/
+      const groups = regex.exec(token.raw)?.groups
+      const label = (groups?.ref || groups?.text)?.trim()
       if (label) {
         const href = token.href
         const title = token.title

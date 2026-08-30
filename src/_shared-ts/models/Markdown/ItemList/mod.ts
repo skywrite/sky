@@ -118,7 +118,9 @@ export default class ItemList implements ItemListProps {
         newItems.push(item)
         const refLabels = Document.extractReferenceLabels(item)
         refLabels.forEach((label) => {
-          newLinkMap.set(label, this.links.get(label) as Link)
+          // A label with no definition (a dangling reference) has no link to keep
+          const link = this.links.get(label)
+          if (link) newLinkMap.set(label, link)
         })
       }
     })
@@ -164,7 +166,8 @@ export default class ItemList implements ItemListProps {
       const links = new Map<string, Link>()
       if (refLabels.length > 0) {
         refLabels.forEach((refLabel) => {
-          links.set(refLabel, this.links.get(refLabel) as Link)
+          const link = this.links.get(refLabel)
+          if (link) links.set(refLabel, link)
           newList._links.delete(refLabel)
         })
         resObject.links = links
