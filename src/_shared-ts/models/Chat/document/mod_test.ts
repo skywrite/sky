@@ -212,9 +212,9 @@ test('ChatDocument.create - produces valid document', () => {
 
   assert({
     given: 'created ChatDocument',
-    should: 'have AI Assistant as second speaker',
+    should: 'have Sky as second speaker',
     actual: doc.turns[1].speaker,
-    expected: 'AI Assistant',
+    expected: 'Sky',
   })
 })
 
@@ -468,7 +468,7 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
     should: 'write message-file headings — leading stamp, bold speaker',
     actual: [
       markdown.includes('## 2026-02-08 09:12 - **Jane**'),
-      markdown.includes('## 2026-02-08 09:13 - **AI Assistant**'),
+      markdown.includes('## 2026-02-08 09:13 - **Sky**'),
       markdown.includes('## 2026-02-08 25:30 - **Jane**'),
     ],
     expected: [true, true, true],
@@ -578,6 +578,58 @@ test('ChatDocument - legacy trailing-paren stamps still parse', () => {
       { role: 'user', content: 'Old-format question.', when: '2026-02-08 14:32' },
       { role: 'assistant', content: 'Old-format answer.', when: '2026-02-08 14:33' },
     ],
+  })
+})
+
+test('ChatDocument - the legacy AI Assistant label still reads as the assistant and writes back as Sky', () => {
+  // A transcript saved before the assistant was Sky, resumed after: the old
+  // headings stay in the file until the next save rebuilds it.
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Renamed Assistant',
+      '',
+      '## 2026-02-08 14:32 - **Jane**',
+      '',
+      'Old question.',
+      '',
+      '## 2026-02-08 14:33 - **AI Assistant**',
+      '',
+      'Old answer.',
+      '',
+      '## 2026-02-08 14:40 - **Jane**',
+      '',
+      'New question.',
+      '',
+      '## 2026-02-08 14:41 - **Sky**',
+      '',
+      'New answer.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'a transcript mixing the legacy and current assistant labels',
+    should: 'map both to the assistant role',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'Old question.', when: '2026-02-08 14:32' },
+      { role: 'assistant', content: 'Old answer.', when: '2026-02-08 14:33' },
+      { role: 'user', content: 'New question.', when: '2026-02-08 14:40' },
+      { role: 'assistant', content: 'New answer.', when: '2026-02-08 14:41' },
+    ],
+  })
+
+  const rebuilt = ChatDocument.create({
+    summary: 'Renamed Assistant',
+    messages: doc.conversation,
+    created: '2026-02-08',
+    updated: '2026-02-08',
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+  }).toMarkdown()
+  assert({
+    given: 'the conversation rebuilt for save',
+    should: 'write every assistant heading as Sky, none as AI Assistant',
+    actual: [rebuilt.includes('**AI Assistant**'), rebuilt.includes('## 2026-02-08 14:33 - **Sky**')],
+    expected: [false, true],
   })
 })
 

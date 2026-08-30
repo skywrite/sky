@@ -11,13 +11,27 @@ import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
  * A turn extracted from a chat document.
  */
 export interface ChatTurn {
-  /** Speaker name from H2 heading (e.g. "Jane" or "AI Assistant") */
+  /** Speaker name from H2 heading (e.g. "Jane" or "Sky") */
   speaker: string
   /** Full content of the turn, including any child sections rendered as markdown */
   content: string
 }
 
-const ASSISTANT_LABEL = 'AI Assistant'
+/**
+ * The assistant's speaker label — Sky, the same name as the product. Every
+ * assistant heading written today carries it.
+ */
+const ASSISTANT_LABEL = 'Sky'
+
+/**
+ * Labels the assistant wrote under before it was Sky. Transcripts already
+ * in the notebook keep them, so they still parse as assistant turns — but
+ * they are never written again: a resumed transcript is rebuilt from its
+ * conversation on save, and its old headings come back as Sky.
+ */
+const LEGACY_ASSISTANT_LABELS = ['AI Assistant']
+
+const ASSISTANT_LABELS = new Set([ASSISTANT_LABEL, ...LEGACY_ASSISTANT_LABELS])
 
 let cachedUserLabel: string | undefined
 let cachedPattern: RegExp | undefined
@@ -63,7 +77,7 @@ const STAMP = String.raw`\d{4}-\d{2}-\d{2} \d{1,3}:\d{2}`
 // not a speaker heading and folds back like any assistant-emitted H2.
 function speakerPattern(): RegExp {
   if (!cachedPattern) {
-    const names = `${escapeRegExp(userSpeakerLabel())}|${ASSISTANT_LABEL}`
+    const names = [userSpeakerLabel(), ...ASSISTANT_LABELS].map(escapeRegExp).join('|')
     cachedPattern = new RegExp(`^(?:(${STAMP}) - \\*\\*(${names})\\*\\*|(${names})(?: \\((${STAMP})\\))?)$`)
   }
   return cachedPattern
@@ -73,7 +87,7 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
   const match = heading.match(speakerPattern())
   if (!match) return null
   const name = match[2] ?? match[3]
-  return { role: name === ASSISTANT_LABEL ? 'assistant' : 'user', when: match[1] ?? match[4] }
+  return { role: ASSISTANT_LABELS.has(name) ? 'assistant' : 'user', when: match[1] ?? match[4] }
 }
 
 /**
@@ -94,14 +108,16 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  * ## 2026-02-08 14:32 - **Jane**
  * User message.
  *
- * ## 2026-02-08 14:33 - **AI Assistant**
+ * ## 2026-02-08 14:33 - **Sky**
  * AI response.
  * ```
  *
- * The user's heading label comes from their profile (see userSpeakerLabel).
- * The stamp is optional — transcripts from before turn stamps have bare
- * `## Jane` / `## AI Assistant` headings, and early stamped ones carry a
- * trailing `(2026-02-08 14:32)` on a plain name instead.
+ * The user's heading label comes from their profile (see userSpeakerLabel);
+ * the assistant's is Sky, with `AI Assistant` still read from older
+ * transcripts (see LEGACY_ASSISTANT_LABELS). The stamp is optional —
+ * transcripts from before turn stamps have bare `## Jane` / `## Sky`
+ * headings, and early stamped ones carry a trailing `(2026-02-08 14:32)`
+ * on a plain name instead.
  */
 export default class ChatDocument extends SectionDocument {
   static override yamlKeyOrder = [
