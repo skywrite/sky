@@ -11,6 +11,7 @@ import { env, exit } from '#shared/sys/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
+import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
 import { createJsonResponse } from './response.ts'
@@ -133,6 +134,7 @@ const server = createServer({
   store,
   customRoutes,
   chat: createChatHost(config, env.toObject()),
+  voice: createVoiceHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,

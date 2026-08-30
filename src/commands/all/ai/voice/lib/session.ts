@@ -21,6 +21,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import OpenAI from 'openai'
 import { OpenAIRealtimeWebSocket } from 'openai/realtime/websocket'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
+import { openingInstructions, type RealtimeEffort, voiceSessionConfig } from '#commands/lib/voice/sessionConfig.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { type AudioEngine, type EngineCallbacks, isExpectedExit, PCM_SAMPLE_RATE } from './audio.ts'
 
@@ -54,7 +55,7 @@ export interface VoiceSessionOptions {
   /** Spoken verbatim as the session's opening line. */
   greeting: string
   /** Realtime reasoning effort — omitted means the server default. */
-  effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  effort?: RealtimeEffort
   /** Builds the audio engine around the session's capture callbacks. */
   createEngine: (callbacks: EngineCallbacks) => AudioEngine
   tools: RealtimeFunctionTool[]
@@ -123,14 +124,7 @@ export class VoiceSession {
           : 'Listening — echo-cancelled duplex audio; interrupt whenever you like.',
       )
       // The scripted greeting proves the whole audio path immediately.
-      // Per-response instructions are that response's whole system message
-      // — they stand in for the session's — so the persona must ride along,
-      // or the first utterance, which anchors voice and accent for the rest
-      // of the session, is spoken with no direction at all.
-      this.requestResponse(
-        `${this.opts.instructions}\n\n## Opening line\n\nThe session has just started. ` +
-          `Say exactly this, and nothing else, in your voice and accent: "${this.opts.greeting}"`,
-      )
+      this.requestResponse(openingInstructions(this.opts.instructions, this.opts.greeting))
     })
 
     this.socket.on('response.created', () => {
@@ -188,29 +182,10 @@ export class VoiceSession {
     })
   }
 
+  /** The shared session shape, with PCM declared: this transport streams the audio itself. */
   private sessionConfig(): RealtimeSessionCreateRequest {
     const { model, voice, instructions, effort, tools } = this.opts
-    return {
-      type: 'realtime',
-      model,
-      output_modalities: ['audio'],
-      instructions,
-      audio: {
-        input: {
-          format: { type: 'audio/pcm', rate: PCM_SAMPLE_RATE },
-          // Server-side noise filtering helps VAD regardless of engine.
-          noise_reduction: { type: 'near_field' },
-          transcription: { model: 'gpt-live-transcribe' },
-          turn_detection: { type: 'semantic_vad' },
-        },
-        output: { format: { type: 'audio/pcm', rate: PCM_SAMPLE_RATE }, voice },
-      },
-      tools,
-      tool_choice: 'auto',
-      // Notebook content must not land in OpenAI's traces dashboard.
-      tracing: null,
-      ...(effort ? { reasoning: { effort } } : {}),
-    }
+    return voiceSessionConfig({ model, voice, instructions, tools, effort, pcmRate: PCM_SAMPLE_RATE })
   }
 
   /** Execute every function call from one response, then ask for the follow-up. */

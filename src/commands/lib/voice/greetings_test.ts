@@ -1,54 +1,42 @@
 import { renderTemplate } from '#shared/prompts/mod.ts'
 import { assert, test } from '#test'
-import { GREETINGS, greetingTemplate, pickGreeting } from './greetings.ts'
+import { greetingTemplate, PHRASES, pickGreeting } from './greetings.ts'
 
 // An explicit me namespace stops renderTemplate from reading the real AboutMe profile.
 const withName = { me: { firstName: 'Jane' } }
 const noName = { me: {} }
 
-test('greetingTemplate folds the name slot in and out', () => {
+test('greetingTemplate says hey, the name when there is one, then the phrase', () => {
   assert({
-    given: 'a comma-led name slot and a known first name',
+    given: 'a phrase and a known first name',
     should: 'address the user by name',
-    expected: 'Hello, Jane. Ready when you are.',
-    actual: renderTemplate(greetingTemplate('Hello, {name}. Ready when you are.'), withName).output,
+    expected: 'Hey Jane, ready when you are.',
+    actual: renderTemplate(greetingTemplate('ready when you are.'), withName).output,
   })
 
   assert({
-    given: 'a comma-led name slot and no profile',
-    should: 'drop the slot together with its comma',
-    expected: 'Hello. Ready when you are.',
-    actual: renderTemplate(greetingTemplate('Hello, {name}. Ready when you are.'), noName).output,
-  })
-
-  assert({
-    given: 'a space-led name slot and no profile',
-    should: 'drop the slot together with its space',
-    expected: 'Yes? Go ahead.',
-    actual: renderTemplate(greetingTemplate('Yes {name}? Go ahead.'), noName).output,
-  })
-
-  assert({
-    given: 'a line without a slot',
-    should: 'pass through untouched',
-    expected: 'Fire away.',
-    actual: renderTemplate(greetingTemplate('Fire away.'), withName).output,
+    given: 'a phrase and no profile',
+    should: 'drop the name and keep the comma',
+    expected: 'Hey, ready when you are.',
+    actual: renderTemplate(greetingTemplate('ready when you are.'), noName).output,
   })
 })
 
-test('every greeting is unique, spoken-safe, and renders cleanly', () => {
+test('every phrase is unique, spoken-safe, and follows the comma cleanly', () => {
   assert({
-    given: 'the greeting list',
-    should: 'hold at least a hundred distinct lines',
+    given: 'the phrase pool',
+    should: 'hold at least a hundred distinct phrases',
     expected: true,
-    actual: GREETINGS.length >= 100 && new Set(GREETINGS).size === GREETINGS.length,
+    actual: PHRASES.length >= 100 && new Set(PHRASES).size === PHRASES.length,
   })
 
-  const problems = GREETINGS.filter((line) => {
-    const rendered = renderTemplate(greetingTemplate(line), noName).output
+  const problems = PHRASES.filter((phrase) => {
+    const rendered = renderTemplate(greetingTemplate(phrase), noName).output
     return (
-      line.includes('"') || // spoken inside a quoted instruction
-      rendered.includes('{') || // a slot the template regex did not recognise
+      phrase.includes('"') || // spoken inside a quoted instruction
+      phrase.includes('{') || // a slot: the name is the template's, not the phrase's
+      /^(hello|hi|hey)\b/i.test(phrase) || // the hello is the template's too
+      !/^(?:[a-z]|I\b|I'|Sky\b)/.test(phrase) || // follows "Hey Jane, "
       rendered.includes(' .') ||
       rendered.includes(' ?') ||
       rendered.includes(',,') ||
@@ -57,46 +45,46 @@ test('every greeting is unique, spoken-safe, and renders cleanly', () => {
     )
   })
   assert({
-    given: 'each line rendered without a profile',
-    should: 'leave no stray slot, quote, or dangling punctuation',
+    given: 'each phrase rendered without a profile',
+    should: 'leave no stray slot, quote, hello, or dangling punctuation',
     expected: [],
     actual: problems,
   })
 })
 
-test('every greeting stands on its own as the first thing said', () => {
+test('every phrase stands on its own as the first thing said', () => {
   // Phrases that answer, continue, or presume something the user has not said yet.
   const presumes =
-    /\b(again|go on|go ahead then|over to you|the plan|the question|the story|the brief|the puzzle|say the word|point me|let's hear it|there you are|where to look)\b/i
+    /\b(again|go on|go ahead then|over to you|the plan|the question|the story|the brief|the puzzle|this time|say the word|point me|let's hear it|there you are|where to look)\b/i
   assert({
-    given: 'the greeting list',
-    should: 'contain no line that presumes an earlier exchange',
+    given: 'the phrase pool',
+    should: 'contain no phrase that presumes an earlier exchange',
     expected: [],
-    actual: GREETINGS.filter((line) => presumes.test(line)),
+    actual: PHRASES.filter((phrase) => presumes.test(phrase)),
   })
 })
 
-test('pickGreeting draws from the whole list', () => {
+test('pickGreeting draws from the whole pool', () => {
   assert({
     given: 'random returning 0',
-    should: 'pick the first line',
-    expected: greetingTemplate(GREETINGS[0] as string),
+    should: 'pick the first phrase',
+    expected: greetingTemplate(PHRASES[0] as string),
     actual: pickGreeting(() => 0),
   })
 
   assert({
     given: 'random returning just under 1',
-    should: 'pick the last line',
-    expected: greetingTemplate(GREETINGS[GREETINGS.length - 1] as string),
+    should: 'pick the last phrase',
+    expected: greetingTemplate(PHRASES[PHRASES.length - 1] as string),
     actual: pickGreeting(() => 0.999999),
   })
 
   assert({
     given: 'a hundred real draws',
-    should: 'never fall outside the list',
+    should: 'never fall outside the pool',
     expected: true,
     actual: Array.from({ length: 100 }, () => pickGreeting()).every((g) =>
-      GREETINGS.some((line) => greetingTemplate(line) === g),
+      PHRASES.some((phrase) => greetingTemplate(phrase) === g),
     ),
   })
 })

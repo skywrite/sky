@@ -2,39 +2,43 @@
  * ai:voice — talk to the notebook.
  *
  * A realtime speech session (OpenAI Realtime API over a server WebSocket,
- * PCM audio through ffmpeg) fronting the notebook. The session itself
- * stays lean — a voice persona and one tool — because realtime models
- * re-bill the growing conversation on every response; the heavy lifting
- * happens behind ask_notebook, where the reasoning model reads documents
- * selected by ai:context:files. The voice model narrates while that runs,
- * so the notebook's search latency never freezes the conversation.
+ * PCM audio through the echo-cancelling helper or ffmpeg) fronting the
+ * notebook. The session itself stays lean — a voice persona and one tool
+ * — because realtime models re-bill the growing conversation on every
+ * response; the heavy lifting happens behind ask_notebook, where the
+ * reasoning model reads documents selected by ai:context:files. The voice
+ * model narrates while that runs, so the notebook's search latency never
+ * freezes the conversation.
+ *
+ * What the session IS — persona, opening line, delegate, configuration —
+ * lives in commands/lib/voice, shared with the web page that holds the
+ * same conversation over WebRTC. This command is the terminal transport.
  */
 
 import process from 'node:process'
 import colors from 'picocolors'
-import { pickGreeting } from '#commands/lib/voice/greetings.ts'
-import { ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
+import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
+import {
+  DEFAULT_VOICE,
+  DEFAULT_VOICE_MODEL,
+  REALTIME_EFFORTS,
+  type RealtimeEffort,
+  renderVoicePrompts,
+  VOICES,
+} from '#commands/lib/voice/sessionConfig.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
-import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { env } from '#shared/sys/mod.ts'
 import { DuplexAudio, ensureAudioHelper, FfmpegAudio } from './lib/audio.ts'
 import { VoiceSession } from './lib/session.ts'
 
-const REALTIME_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const
-type RealtimeEffort = (typeof REALTIME_EFFORTS)[number]
-
 const params = {
   model: Flag.string('Realtime voice model (gpt-realtime-2.1, or gpt-realtime-2.1-mini for cheaper sessions)', {
-    default: () => 'gpt-realtime-2.1',
+    default: () => DEFAULT_VOICE_MODEL,
   }),
-  voice: Flag.string(
-    'Voice for spoken replies (marin: feminine, steered British by the persona; ballad: native British male; also sage, coral, cedar, ...)',
-    { default: () => 'marin' },
-  ),
+  voice: Flag.string(`Voice for spoken replies: ${VOICES.join(', ')}`, { default: () => DEFAULT_VOICE }),
   reasoning: Flag.string('Model profile for the ask_notebook delegate (e.g. default-opus-5)', {
     short: 'r',
     default: () => ROLES.reasoning,
@@ -57,9 +61,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
     'ai:voice': { params: Params; result: Result }
   }
 }
-
-const VOICE_PROMPT_FILE = new URL('../../../lib/voice/prompts/voice.prompt.md', import.meta.url).pathname
-const ASK_PROMPT_FILE = new URL('../../../lib/voice/prompts/ask-notebook.prompt.md', import.meta.url).pathname
 
 export default class AiVoiceTask extends Command {
   static override description: CommandDescription = {
@@ -86,34 +87,20 @@ export default class AiVoiceTask extends Command {
       return CommandResult.fail((err as Error).message)
     }
 
-    // Both prompts carry the session-start clocks.
-    const renderInput: RenderInput = {
-      context: {
-        notebookDate: context.notebookNow.date,
-        notebookTime: context.notebookNow.time,
-        notebookTimezone: context.notebookNow.timezone,
-        systemDate: context.systemNow.date,
-        systemTime: context.systemNow.time,
-        systemTimezone: context.systemNow.timezone,
-      },
-    }
-    const { output: sessionInstructions } = renderPromptFile(
-      await readTextFile(VOICE_PROMPT_FILE),
-      'voice.prompt.md',
-      renderInput,
-    )
-    const { output: askPrompt } = renderPromptFile(
-      await readTextFile(ASK_PROMPT_FILE),
-      'ask-notebook.prompt.md',
-      renderInput,
-    )
-    // A random opening line; its name slot fills from the AboutMe profile
-    // through the me namespace and folds away when no profile exists.
-    const { output: greeting } = renderTemplate(pickGreeting(), renderInput)
+    // Both prompts carry the session-start clocks; the greeting's name
+    // slot fills from the AboutMe profile and folds away without one.
+    const prompts = await renderVoicePrompts({
+      notebookDate: context.notebookNow.date,
+      notebookTime: context.notebookNow.time,
+      notebookTimezone: context.notebookNow.timezone,
+      systemDate: context.systemNow.date,
+      systemTime: context.systemNow.time,
+      systemTimezone: context.systemNow.timezone,
+    })
 
     output.log(colors.bold('Voice session'))
     output.log(colors.dim(`  ${args.model} · voice ${args.voice} · delegate ${args.reasoning}`))
-    output.log(colors.dim('  Tool: ask_notebook · Ctrl+C to end'))
+    output.log(colors.dim(`  Tool: ${ASK_NOTEBOOK} · Ctrl+C to end`))
 
     // Pick the audio engine: the echo-cancelled Swift helper when available,
     // raw ffmpeg otherwise (or when a specific device was requested).
@@ -137,19 +124,19 @@ export default class AiVoiceTask extends Command {
       apiKey,
       model: args.model,
       voice: args.voice,
-      instructions: sessionInstructions,
-      greeting,
+      instructions: prompts.instructions,
+      greeting: prompts.greeting,
       effort: args.effort as RealtimeEffort | undefined,
       createEngine: (callbacks) =>
         helperBinary ? new DuplexAudio(helperBinary, callbacks) : new FfmpegAudio(micDevice, callbacks),
       tools: [ASK_NOTEBOOK_TOOL],
       executeTool: async (name, input) => {
-        if (name !== 'ask_notebook') return `Unknown tool: ${name}`
+        if (name !== ASK_NOTEBOOK) return `Unknown tool: ${name}`
         const question = typeof input.question === 'string' ? input.question.trim() : ''
-        if (!question) return 'ask_notebook needs a question.'
-        output.log(colors.dim(`ask_notebook: "${truncate(question, 100)}"`))
+        if (!question) return `${ASK_NOTEBOOK} needs a question.`
+        output.log(colors.dim(`${ASK_NOTEBOOK}: "${truncate(question, 100)}"`))
         const t0 = performance.now()
-        const result = await askNotebook(tasks, delegateModel, askPrompt, question)
+        const result = await askNotebook(tasks, delegateModel, prompts.askPrompt, question)
         output.log(colors.dim(`  ${result.paths.length} docs · ${((performance.now() - t0) / 1000).toFixed(1)}s`))
         return result.answer
       },

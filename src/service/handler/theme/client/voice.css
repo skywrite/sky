@@ -1,0 +1,126 @@
+/* ============ talk — the voice page ============ */
+
+/* The empty page before a call: an invitation, then the button. */
+.sky-voice-hello {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  max-width: 44ch;
+}
+
+.sky-voice-hello p {
+  margin: 0;
+}
+
+/* The bar where the composer would be: what the call is doing, and which devices carry it. */
+.sky-voice-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 19px;
+  border-radius: 18px;
+  background: var(--sky-s2);
+  font-size: 16px;
+  color: var(--sky-text-2);
+}
+
+.sky-voice-bar[data-phase='live'] {
+  color: var(--sky-text);
+}
+
+.sky-voice-bar[data-phase='failed'] {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-voice-status {
+  font-weight: 600;
+}
+
+.sky-voice-warn {
+  color: var(--mantine-color-red-7);
+  font-size: 14px;
+}
+
+.sky-voice-devices {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sky-voice-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--sky-dim);
+  flex: none;
+}
+
+.sky-voice-dot[data-activity='listening'] {
+  background: var(--sky-green);
+  animation: sky-voice-pulse 1.8s ease-in-out infinite;
+}
+
+.sky-voice-dot[data-activity='speaking'] {
+  background: var(--sky-blue-deep);
+}
+
+.sky-voice-dot[data-activity='checking'] {
+  background: var(--mantine-color-yellow-7);
+  animation: sky-voice-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes sky-voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.75);
+  }
+}
+
+@media (max-width: 900px) {
+  .sky-voice-devices {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* ============ the audition ============ */
+.sky-audition {
+  gap: 22px;
+}
+
+.sky-audition-lead {
+  margin: 0;
+  color: var(--sky-text-2);
+}
+
+.sky-audition-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sky-audition-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 4px;
+}
+
+.sky-audition-head .sky-side-label {
+  padding-left: 0;
+}
+
+.sky-run[data-playing='true'] {
+  background: var(--sky-s2);
+  border-radius: 12px;
+}
+
+.sky-audition .sky-tag {
+  margin-left: 8px;
+}

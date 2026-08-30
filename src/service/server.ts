@@ -33,6 +33,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createYogaInstance } from './graphql/schema.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import { createHttpApp } from './handler/http.ts'
+import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
 import { createScanners } from './scanner/scan.ts'
@@ -67,6 +68,8 @@ export interface ServerOptions {
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
   /** The browser's chat host; absent, /chat is not served */
   chat?: ChatRoutesOptions
+  /** The browser's voice host; absent, /voice is not served */
+  voice?: VoiceRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
   userDataDir?: string
   /** Reference date for recency calculations (for deterministic testing) */
@@ -145,6 +148,7 @@ export function createServer(options: ServerOptions): Server {
     enableFileWatcher = true,
     customRoutes,
     chat,
+    voice,
     referenceDate,
     markdownStoreConfig,
   } = options
@@ -222,6 +226,7 @@ export function createServer(options: ServerOptions): Server {
       markdownDirs,
       customRoutes,
       chat,
+      voice,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })
   }

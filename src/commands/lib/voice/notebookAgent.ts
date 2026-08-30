@@ -1,9 +1,11 @@
 /**
- * The ask_notebook delegate behind ai:voice — a headless, stateless slice
- * of ai:chat's pipeline: select documents for one question through the
- * tuned ai:context:files producer, read them under a byte budget, and
- * answer with the reasoning model. The realtime voice model narrates the
- * wait, so this call is allowed to take its time.
+ * The ask_notebook delegate behind a voice session — a headless,
+ * stateless slice of ai:chat's pipeline: select documents for one
+ * question through the tuned ai:context:files producer, read them under a
+ * byte budget, and answer with the reasoning model. The realtime voice
+ * model narrates the wait, so this call is allowed to take its time. Both
+ * voice transports run it: ai:voice in its own process, the web page
+ * through the service.
  */
 
 import { generateText } from 'ai'
@@ -30,9 +32,11 @@ export interface NotebookAnswer {
  * voice model's operating manual: it carries the narration guidance the
  * Realtime API expects tool descriptions to include.
  */
+export const ASK_NOTEBOOK = 'ask_notebook'
+
 export const ASK_NOTEBOOK_TOOL: RealtimeFunctionTool = {
   type: 'function',
-  name: 'ask_notebook',
+  name: ASK_NOTEBOOK,
   description:
     "Research the user's personal notebook and answer one question. Use it for ANY question touching " +
     "the user's life, work, people, meetings, plans, journal, decisions, or history — never answer those " +

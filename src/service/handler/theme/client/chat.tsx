@@ -211,7 +211,7 @@ async function renderMarkdown(raw: string): Promise<string | null> {
   }
 }
 
-function humanize(toolName: string): string {
+export function humanize(toolName: string): string {
   return toolName.replaceAll('_', ' ')
 }
 

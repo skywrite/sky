@@ -30,6 +30,7 @@ import {
   isPathWithinRoots,
 } from './markdown-preview/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
+import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
 
 /**
  * Options for creating the HTTP app.
@@ -49,6 +50,8 @@ export interface HttpHandlerOptions {
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
   /** The browser's chat host; absent, /chat is not served */
   chat?: ChatRoutesOptions
+  /** The browser's voice host; absent, /voice is not served */
+  voice?: VoiceRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
   userDataDir: string
 }
@@ -57,7 +60,7 @@ export interface HttpHandlerOptions {
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, userDataDir } = options
+  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, voice, userDataDir } = options
 
   const app = new Hono()
 
@@ -87,6 +90,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (chat) {
     app.route('/chat', createChatRoutes(chat))
     app.route('/day', createDayRoutes({ markdownBaseDir, timeDir: chat.timeDir, aboutMePath: chat.aboutMePath }))
+  }
+
+  // Voice over the web: the browser holds the call; the service mints its
+  // secret and runs its tools. The page itself is /voice, below.
+  if (voice) {
+    app.route('/voice', createVoiceRoutes(voice))
   }
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
@@ -375,6 +384,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   app.get('/thread/*', (c) => {
     return c.html(renderAppHtml('sky'))
+  })
+
+  app.get('/voice', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // The audition — every voice saying one passage. Reached by ai:voice:audition, not the sidebar.
+  app.get('/voice/audition', (c) => {
+    return c.html(renderAppHtml('sky · audition'))
   })
 
   // The explorer: the notebook's files as a tree, any one of them open to read.

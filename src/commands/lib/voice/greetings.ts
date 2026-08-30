@@ -1,138 +1,146 @@
 /**
- * Opening lines for ai:voice. One is drawn at random when the session
- * starts, so no two sessions open the same way — the scripted greeting
- * doubles as the audio-path check, and hearing the identical sentence
- * every time made it feel like a test tone rather than a hello.
+ * Opening lines for a voice session. Every greeting is "Hey {name}, " and
+ * then one phrase drawn at random from this pool, so no two sessions open
+ * the same way — the scripted greeting doubles as the audio-path check,
+ * and hearing the identical sentence every time made it feel like a test
+ * tone rather than a hello. The name comes from the AboutMe profile and
+ * simply drops when there is none: "Hey, what's on your mind?"
  *
- * Every line is the first thing said, before the user has spoken, so it
- * must stand on its own: a hello and an open invitation. Nothing that
- * answers, continues, or presumes — no "go on", no "over to you", no
- * "what's the plan" (there is no plan yet). The test enforces the
- * obvious offenders.
+ * Every phrase is the first thing said, before the user has spoken, so it
+ * must stand on its own: an open invitation. Nothing that answers,
+ * continues, or presumes — no "go on", no "over to you", no "what's the
+ * plan" (there is no plan yet). The test enforces the obvious offenders.
  *
- * Lines are written for the session persona: a confident British woman,
- * short and spoken, never chirpy. `{name}` marks where the user's first
- * name goes; it must follow a word (", {name}" or " {name}") so the line
- * still reads cleanly when no AboutMe profile exists. Time-of-day
- * greetings are deliberately absent — the list knows nothing about the
- * clock.
+ * Phrases follow the comma after the name, so they start lowercase unless
+ * they start with I or Sky, and they carry no hello of their own. Written
+ * for the session persona — confident, composed — short and spoken, never
+ * chirpy. Time-of-day greetings are deliberately absent — the pool knows
+ * nothing about the clock.
  */
 
-export const GREETINGS: readonly string[] = [
-  'Hello, {name}. What would you like to talk about?',
-  "Hi, {name}. What's on your mind?",
-  'Right then, {name}. Where shall we start?',
+export const PHRASES: readonly string[] = [
+  'what would you like to talk about?',
+  "what's on your mind?",
+  'where shall we start?',
   "I'm listening. What's on your mind?",
-  'Hello, {name}. Where shall we begin?',
-  'Ask me anything, or just think out loud.',
-  'Sky here, {name}. What do you need?',
-  "Hi, {name}. I'm listening.",
-  'Hello, {name}. Ready when you are.',
-  'What can I find for you?',
-  'Hello. What would you like to know?',
-  "Hi, {name}. Something on your mind, or shall I check what's coming up?",
-  'Where would you like to begin?',
-  "Hello, {name}. What's on your mind today?",
-  "Hello, {name}. Tell me what you're after.",
-  "Good to hear you, {name}. What's first?",
+  'where shall we begin?',
+  'ask me anything, or just think out loud.',
+  'what do you need?',
+  "I'm listening.",
+  'what can I find for you?',
+  'what would you like to know?',
+  "something on your mind, or shall I check what's coming up?",
+  'where would you like to begin?',
+  "what's on your mind today?",
+  "tell me what you're after.",
+  "what's first?",
   "I'm here. Talk to me.",
-  'Hi. What would you like to talk about?',
-  'Hi, {name}. What are we sorting out today?',
-  "Hello, {name}. I'm all ears.",
-  'Hello, {name}. Shall we get straight to it?',
-  'Fire away.',
-  "Sky here. What's on your mind?",
-  "Hi there, {name}. Whenever you're ready.",
-  "Right, let's begin. What do you need?",
-  'Hello, {name}. What can I do for you?',
+  'what are we sorting out today?',
+  "I'm all ears.",
+  'shall we get straight to it?',
+  'fire away.',
+  "whenever you're ready.",
+  "let's begin. What do you need?",
+  'what can I do for you?',
   "I'm listening. Take your time.",
-  "Now then, {name}. What's the first thing?",
-  'Hi, {name}. What would you like to look into?',
-  "Hello. What's worth talking through?",
-  "Hi, {name}. Anything you'd like me to look up?",
-  "Hello. I'm ready when you are.",
-  'Hello, {name}. What shall we make sense of?',
-  'Hello, {name}. Ask me anything.',
-  "Ready when you are, {name}. What's on?",
-  'Where do you want to start?',
-  "Hi, {name}. What's the first thing on your mind?",
-  'Hi, {name}. What do you need from the notebook?',
-  "Just say what you're wondering about.",
-  'Hello. What shall we look at first?',
-  'Hello, {name}. Start anywhere.',
-  'Hello, {name}. Good to hear your voice. What would you like to talk about?',
-  'Ask away.',
-  'Hello, {name}. What would be useful right now?',
-  'Hi, {name}. Where would you like to start?',
-  "What's first on your mind?",
-  'Hello. Sky here. What do you need?',
-  'Hello. What would you like to get done?',
-  "Hello, {name}. What's worth a look today?",
-  'Hello, {name}. What needs an answer?',
-  "Where's your head at?",
-  'Hi. Tell me what you need.',
-  "Hello, {name}. What's been on your mind lately?",
-  'What can I help you think through?',
-  'Hello, {name}. What would you like from the notebook?',
+  "what's the first thing?",
+  'what would you like to look into?',
+  "what's worth talking through?",
+  "anything you'd like me to look up?",
+  "I'm ready when you are.",
+  'what shall we make sense of?',
+  'ask me anything.',
+  "what's on?",
+  'where do you want to start?',
+  "what's the first thing on your mind?",
+  'what do you need from the notebook?',
+  "just say what you're wondering about.",
+  'what shall we look at first?',
+  'start anywhere.',
+  'good to hear your voice. What would you like to talk about?',
+  'ask away.',
+  'what would be useful right now?',
+  'where would you like to start?',
+  "what's first on your mind?",
+  'what would you like to get done?',
+  "what's worth a look today?",
+  'what needs an answer?',
+  "where's your head at?",
+  'tell me what you need.',
+  "what's been on your mind lately?",
+  'what can I help you think through?',
+  'what would you like from the notebook?',
   "I'm all yours. What's first?",
-  "Hi, {name}. Let's make this useful. What do you need?",
-  "Hi, {name}. What's on today?",
-  "What's the thing you keep coming back to?",
-  'Hello. What do you want to look at?',
-  'Hello. Start wherever you like.',
-  'What shall I check for you?',
-  "Hello, {name}. What's the first thing you'd like to know?",
-  "Hello, {name}. I'm listening. Go ahead.",
-  'Hi, {name}. Anything I can find for you?',
-  'Hello, {name}. Where do we start?',
-  'Something specific, or a wander through the notebook?',
-  "Hello. Sky here. What's on your mind?",
-  "Hello, {name}. What's worth knowing today?",
-  'Tell me what you need.',
-  'Hello, {name}. Shall we make a start?',
-  'Hello, {name}. What can I dig up for you?',
-  'Hi. What can I look up for you?',
-  "Hi, {name}. What's first?",
-  'Start wherever you like.',
-  'Hello, {name}. What would you like to think through?',
-  'What would help most right now?',
-  'Hello. Something on your mind?',
-  "Speak whenever you're ready.",
-  'Hi, {name}. What would you like to sort out?',
-  'What have you got for me?',
-  "Hello, {name}. Let's not waste a minute. What do you need?",
-  'Hello, {name}. What are you curious about?',
+  "let's make this useful. What do you need?",
+  "what's on today?",
+  "what's the thing you keep coming back to?",
+  'what do you want to look at?',
+  'start wherever you like.',
+  'what shall I check for you?',
+  "what's the first thing you'd like to know?",
+  "I'm listening. Go ahead.",
+  'anything I can find for you?',
+  'where do we start?',
+  'something specific, or a wander through the notebook?',
+  "what's worth knowing today?",
+  'shall we make a start?',
+  'what can I dig up for you?',
+  'what can I look up for you?',
+  'what would you like to think through?',
+  'what would help most right now?',
+  'something on your mind?',
+  "speak whenever you're ready.",
+  'what would you like to sort out?',
+  'what have you got for me?',
+  "let's not waste a minute. What do you need?",
+  'what are you curious about?',
   "I'm listening. What's going on?",
-  "Hi, {name}. What's the one thing to sort out?",
-  'Hi. What would you like to look at?',
-  'Sky here. What shall we look into?',
-  'Hello, {name}. What would you like to talk through?',
-  "Hello, {name}. I'm listening. What's on your mind?",
-  "Well then. What's happening?",
-  'Hello, {name}. Ask me something.',
-  "Hello. What's on today?",
-  "Hello. What's the first thing you'd like to look at?",
-  "Hi, {name}. What's rattling around in your head?",
-  'Right then. What do you want to know?',
-  "Hello, {name}. What's the first order of business?",
-  "Hello, {name}. Whatever needs finding, I'll find it.",
-  'Shall we begin?',
-  'Hi, {name}. What do you want to get straight?',
-  'Ready when you are.',
+  "what's the one thing to sort out?",
+  'what would you like to look at?',
+  'what shall we look into?',
+  'what would you like to talk through?',
+  "what's happening?",
+  'ask me something.',
+  "what's the first thing you'd like to look at?",
+  "what's rattling around in your head?",
+  'what do you want to know?',
+  "what's the first order of business?",
+  "whatever needs finding, I'll find it.",
+  'shall we begin?',
+  'what do you want to get straight?',
+  "I've got your notebook right here. Ask me anything.",
+  "the notebook's open. Where shall we start?",
+  "your notebook's right here. What do you need?",
+  "I've got the notebook up. What's first?",
+  'what are we looking at?',
+  'what would you like to get into?',
+  "take your time. I'm listening.",
+  'ready when you are.',
+  'what shall we start with?',
+  "what's worth looking into?",
+  'what would you like to find out?',
+  "anything you'd like to look at?",
+  "I'm here. What do you need?",
+  'what would you like to check?',
+  'what are we digging into?',
+  'where would you like to start today?',
+  'what do you want to talk through?',
+  'what can I get you?',
+  'whenever you like.',
+  "what's up?",
 ]
 
 /**
- * Turn a greeting line into a Handlebars template for renderTemplate,
- * whose `me` namespace carries the AboutMe profile. The `{name}` slot —
- * with the comma or space before it — appears only when a first name is
- * known, so "Hello, {name}. Ready?" becomes "Hello. Ready?" without one.
+ * The greeting as a Handlebars template for renderTemplate, whose `me`
+ * namespace carries the AboutMe profile: "Hey Jane, <phrase>" with a first
+ * name, "Hey, <phrase>" without one.
  */
-export function greetingTemplate(line: string): string {
-  return line.replaceAll(/(,? ){name}/g, '{{#if me.firstName}}$1{{me.firstName}}{{/if}}')
+export function greetingTemplate(phrase: string): string {
+  return `Hey{{#if me.firstName}} {{me.firstName}}{{/if}}, ${phrase}`
 }
 
 /** A random opening line, ready for renderTemplate. `random` is injectable for tests. */
 export function pickGreeting(random: () => number = Math.random): string {
-  const index = Math.min(GREETINGS.length - 1, Math.floor(random() * GREETINGS.length))
-  return greetingTemplate(GREETINGS[index] as string)
+  const index = Math.min(PHRASES.length - 1, Math.floor(random() * PHRASES.length))
+  return greetingTemplate(PHRASES[index] as string)
 }

@@ -3,10 +3,12 @@ import './shell.css'
 import { ActionIcon, Button, Checkbox, MantineProvider, Textarea, useMantineColorScheme } from '@mantine/core'
 import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { AuditionMain } from './audition.tsx'
 import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { skyTheme } from './theme.ts'
+import { VoiceMain } from './voice.tsx'
 
 /**
  * /theme — the living style guide.
@@ -73,6 +75,8 @@ function Canvas() {
   }
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
+  const isVoice = path === '/voice'
+  const isAudition = path === '/voice/audition'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const day = useDay(dayYmd)
@@ -136,6 +140,11 @@ function Canvas() {
             <Button className="sky-newchat" fullWidth justify="flex-start" onClick={newChat}>
               ＋ New chat
             </Button>
+            {/* A voice session is its own page, off the day like a thread. */}
+            <button type="button" className="sky-thread" data-active={isVoice} onClick={() => navigate('/voice')}>
+              <span>Talk</span>
+              <span className="sky-meta">voice</span>
+            </button>
 
             <div className="sky-side-label">Days</div>
             {(day?.days ?? []).map((d, offset) => (
@@ -143,7 +152,7 @@ function Canvas() {
                 key={d.ymd}
                 type="button"
                 className="sky-thread"
-                data-active={threadId === null && (offset === 0 ? isToday : dayYmd === d.ymd)}
+                data-active={threadId === null && !isVoice && (offset === 0 ? isToday : dayYmd === d.ymd)}
                 onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
               >
                 <span>{d.label}</span>
@@ -179,6 +188,10 @@ function Canvas() {
 
       {explorerFile !== null ? (
         <DocView file={explorerFile} />
+      ) : isAudition ? (
+        <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
+      ) : isVoice ? (
+        <VoiceMain back={{ label: 'Today', onClick: () => navigate('/') }} />
       ) : threadId ? (
         <Fragment key={threadId}>
           <ChatMain
