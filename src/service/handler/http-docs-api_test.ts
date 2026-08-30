@@ -4,33 +4,6 @@ import * as path from 'node:path'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 
-test('docs render block api - returns rendered html for a block', async () => {
-  const app = createTestHttpApp(['/tmp'])
-  const response = await app.request('http://localhost/docs/_api/render-block', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'paragraph',
-      raw: '## Hello block',
-    }),
-  })
-  const payload = await response.json()
-
-  assert({
-    given: 'docs render block api',
-    should: 'return 200',
-    actual: response.status,
-    expected: 200,
-  })
-
-  assert({
-    given: 'docs render block api',
-    should: 'return rendered html for the supplied block',
-    actual: payload.html,
-    expected: '<h2>Hello block</h2>\n',
-  })
-})
-
 test('docs export pdf api - returns 404 when the markdown file is missing', async () => {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-api-export-missing-'))
 
@@ -94,51 +67,6 @@ test('docs content api - reads markdown content and metadata', async () => {
       should: 'return a numeric version',
       actual: typeof payload.version,
       expected: 'number',
-    })
-  } finally {
-    await rm(notebookBaseDir, { recursive: true, force: true })
-  }
-})
-
-test('docs document api - reads canonical block state for edit mode', async () => {
-  const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), 'http-preview-api-document-'))
-
-  try {
-    const previewDir = path.join(notebookBaseDir, 'notes')
-    const previewFile = path.join(previewDir, 'preview.md')
-    await mkdir(previewDir, { recursive: true })
-    await writeFile(previewFile, '---\ntitle: Preview\n---\n\n# Heading\n\nParagraph\n')
-
-    const app = createTestHttpApp([previewDir])
-    const response = await app.request('http://localhost/docs/_api/document/notes/preview.md')
-    const payload = await response.json()
-
-    assert({
-      given: 'docs document api',
-      should: 'return 200 for a valid markdown file',
-      actual: response.status,
-      expected: 200,
-    })
-
-    assert({
-      given: 'docs document api',
-      should: 'return the current markdown content',
-      actual: payload.content,
-      expected: '---\ntitle: Preview\n---\n\n# Heading\n\nParagraph\n',
-    })
-
-    assert({
-      given: 'docs document api',
-      should: 'return frontmatter separately',
-      actual: payload.frontmatter,
-      expected: 'title: Preview',
-    })
-
-    assert({
-      given: 'docs document api',
-      should: 'return parsed editable blocks',
-      actual: Array.isArray(payload.blocks) && payload.blocks.length > 0,
-      expected: true,
     })
   } finally {
     await rm(notebookBaseDir, { recursive: true, force: true })

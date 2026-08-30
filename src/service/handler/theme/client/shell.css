@@ -15,9 +15,21 @@
   --sky-hover: var(--mantine-color-gray-2);
   --sky-card: #ffffff;
   --sky-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --sky-code-keyword: var(--mantine-color-grape-8);
+  --sky-code-string: var(--mantine-color-green-8);
+  --sky-code-number: var(--mantine-color-orange-8);
+  --sky-code-title: var(--mantine-color-blue-8);
+  --sky-code-type: var(--mantine-color-teal-8);
+  --sky-code-deletion: var(--mantine-color-red-8);
 }
 
 [data-mantine-color-scheme='dark'] {
+  --sky-code-keyword: var(--mantine-color-grape-3);
+  --sky-code-string: var(--mantine-color-green-4);
+  --sky-code-number: var(--mantine-color-orange-4);
+  --sky-code-title: var(--mantine-color-blue-3);
+  --sky-code-type: var(--mantine-color-teal-3);
+  --sky-code-deletion: var(--mantine-color-red-4);
   --sky-side: var(--mantine-color-dark-8);
   --sky-s2: var(--mantine-color-dark-5);
   --sky-border-soft: var(--mantine-color-dark-4);
@@ -1328,9 +1340,10 @@ a.sky-thread {
 }
 
 /* ============ the editor ============ */
-/* The block editor as it was, in the column: the file as blocks, any one of them editable in
-   place. Its chrome — status, the conflict choice, done — sits on the header line; the blocks
-   wear the reading view's type, and the rest of its furniture takes the shell's. */
+/* The document in one editable root: every block is its element, every syntax character is in the
+   DOM inside a hidden span, and the construct under the caret shows its markdown. Its chrome —
+   status, the conflict choice, done — sits on the header line; the blocks wear the reading view's
+   type. */
 .sky-head-count[data-state='loading'],
 .sky-head-count[data-state='dirty'],
 .sky-head-count[data-state='saving'] {
@@ -1342,245 +1355,281 @@ a.sky-thread {
   color: var(--mantine-color-red-7);
 }
 
-.sky-editor .editable-block-list {
-  display: grid;
-  gap: 18px;
+.sky-wysiwyg {
+  /* room below the last block, so a click under the document lands on the editor (NAV-13) */
+  padding-bottom: 30vh;
+  outline: none;
+  caret-color: var(--sky-blue-deep);
 }
 
-.sky-editor .editable-block {
-  padding: 16px 18px;
-  border: 1px solid var(--sky-border-soft);
-  border-radius: 14px;
-  background: var(--sky-side);
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    background 120ms ease;
+.sky-wysiwyg .end-block {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
-.sky-editor .editable-block[data-active='true'] {
-  border-color: var(--sky-blue-deep);
-  background: var(--sky-card);
-  box-shadow: 0 0 0 3px var(--sky-blue-soft);
+/* a construct's syntax and its url or title: hidden, until the caret is inside the construct */
+.sky-wysiwyg .syntax,
+.sky-wysiwyg .content {
+  display: none;
 }
 
-/* prose blocks and rules carry no chrome — they read as the page does */
-.sky-editor .editable-block[data-visual='true'],
-.sky-editor .editable-block[data-chromeless='true'],
-.sky-editor .editable-block[data-visual='true'][data-active='true'],
-.sky-editor .editable-block[data-chromeless='true'][data-active='true'] {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.sky-editor .editable-block-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  font-family: var(--mantine-font-family);
-  transition: opacity 120ms ease;
-}
-
-.sky-editor .editable-block[data-active='true'] .editable-block-header {
-  opacity: 0.72;
-}
-
-.sky-editor .editable-block-label,
-.sky-editor .editable-block-meta,
-.sky-editor .editable-block-help {
-  margin: 0;
-}
-
-.sky-editor .editable-block-label {
+.sky-wysiwyg .expanded .syntax,
+.sky-wysiwyg .expanded .content {
+  display: inline;
   font-family: var(--mantine-font-family-monospace);
+  font-size: 0.88em;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg .expanded .content {
+  color: var(--sky-blue-deep);
+}
+
+/* a hard break shows where it is; raw html reads as code */
+.sky-wysiwyg [data-inline='hardbreak']::before {
+  content: '↵';
+  font-size: 0.8em;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg [data-inline='html'] {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.86em;
+  color: var(--sky-text-2);
+}
+
+.sky-wysiwyg [data-inline='html'].comment {
+  color: var(--sky-dim);
+}
+
+/* a paragraph previewing a block: its marker muted, a heading already set in the heading's type */
+.sky-wysiwyg .block-syntax {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.88em;
+  font-style: italic;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg p[data-looks-like^='h'] {
+  font-family: 'Lato', 'Helvetica Neue', Helvetica, sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sky-wysiwyg p[data-looks-like='h1'] {
+  font-size: 1.9em;
+}
+
+.sky-wysiwyg p[data-looks-like='h2'] {
+  font-size: 1.45em;
+}
+
+.sky-wysiwyg p[data-looks-like='h3'] {
+  font-size: 1.17em;
+}
+
+/* an image is an island: its source shows while the caret is on it */
+.sky-wysiwyg [data-inline='image'] {
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* verbatim blocks: fences, raw html, front matter, definitions */
+.sky-wysiwyg pre.verbatim {
+  white-space: pre-wrap;
+}
+
+.sky-wysiwyg pre.fence {
+  position: relative;
+  padding-right: 84px;
+}
+
+/* the fence's language box: chrome in the block's corner, typed into on its own */
+.sky-wysiwyg .fence-lang {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  user-select: text;
+}
+
+.sky-wysiwyg .fence-lang > span {
+  display: inline-block;
+  min-width: 3em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  outline: none;
+}
+
+.sky-wysiwyg .fence-lang > span:focus {
+  background: var(--sky-card);
+  box-shadow: 0 0 0 1px var(--sky-border-soft);
+  color: var(--sky-text);
+}
+
+.sky-wysiwyg .fence-lang > span:empty::before {
+  content: 'language';
+  opacity: 0.6;
+}
+
+/* code tokens (FEN-1), in the editor's fences and a document's code blocks alike: the theme's own colors, quietly */
+.sky-doc-body .hljs-comment,
+.sky-doc-body .hljs-quote {
+  color: var(--sky-dim);
+  font-style: italic;
+}
+
+.sky-doc-body .hljs-keyword,
+.sky-doc-body .hljs-selector-tag,
+.sky-doc-body .hljs-doctag,
+.sky-doc-body .hljs-meta,
+.sky-doc-body .hljs-meta-keyword,
+.sky-doc-body .hljs-template-tag {
+  color: var(--sky-code-keyword);
+}
+
+.sky-doc-body .hljs-string,
+.sky-doc-body .hljs-meta-string,
+.sky-doc-body .hljs-regexp,
+.sky-doc-body .hljs-addition,
+.sky-doc-body .hljs-link {
+  color: var(--sky-code-string);
+}
+
+.sky-doc-body .hljs-number,
+.sky-doc-body .hljs-literal,
+.sky-doc-body .hljs-symbol,
+.sky-doc-body .hljs-bullet {
+  color: var(--sky-code-number);
+}
+
+.sky-doc-body .hljs-title,
+.sky-doc-body .hljs-section,
+.sky-doc-body .hljs-name,
+.sky-doc-body .hljs-selector-id,
+.sky-doc-body .hljs-selector-class {
+  color: var(--sky-code-title);
+}
+
+.sky-doc-body .hljs-built_in,
+.sky-doc-body .hljs-builtin-name,
+.sky-doc-body .hljs-type,
+.sky-doc-body .hljs-attr,
+.sky-doc-body .hljs-attribute,
+.sky-doc-body .hljs-variable,
+.sky-doc-body .hljs-template-variable,
+.sky-doc-body .hljs-selector-attr,
+.sky-doc-body .hljs-selector-pseudo {
+  color: var(--sky-code-type);
+}
+
+.sky-doc-body .hljs-deletion {
+  color: var(--sky-code-deletion);
+}
+
+.sky-doc-body .hljs-emphasis {
+  font-style: italic;
+}
+
+.sky-doc-body .hljs-strong {
+  font-weight: 600;
+}
+
+/* an image written as an html tag shows as one */
+.sky-wysiwyg [data-inline='html'].img {
+  display: inline-block;
+  max-width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.sky-wysiwyg pre.frontmatter {
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+
+.sky-wysiwyg pre.frontmatter::before {
+  content: 'Frontmatter';
+  display: block;
+  margin-bottom: 6px;
   font-size: 12.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--sky-dim);
 }
 
-.sky-editor .editable-block-meta {
-  margin-top: 3px;
-  font-size: 13.5px;
-  color: var(--sky-dim);
+.sky-wysiwyg pre.definition,
+.sky-wysiwyg pre.html {
+  color: var(--sky-text-2);
 }
 
-.sky-editor .editable-block-preview-shell {
-  padding: 4px 3px 7px;
-  border-radius: 10px;
-  cursor: text;
-  transition:
-    background 120ms ease,
-    box-shadow 120ms ease;
+/* task items: the box sits in the margin */
+.sky-wysiwyg li.task {
+  position: relative;
+  list-style: none;
 }
 
-.sky-editor .editable-block[data-visual='true'] .editable-block-preview-shell {
-  padding: 0;
-  border-radius: 6px;
+.sky-wysiwyg li.task > input {
+  position: absolute;
+  top: 0.45em;
+  left: -1.5em;
+  margin: 0;
 }
 
-.sky-editor .editable-block[data-interactive='true'] .editable-block-preview-shell:hover,
-.sky-editor .editable-block[data-interactive='true'] .editable-block-preview-shell:focus-visible,
-.sky-editor .editable-block[data-visual='true'][data-active='true'] .editable-block-preview-shell {
-  background: var(--sky-side);
-  box-shadow: inset 0 0 0 1px var(--sky-border-soft);
-}
-
-.sky-editor .editable-block-preview-shell[data-editing='true'] {
-  background: transparent;
-  box-shadow: none;
-}
-
-.sky-editor .editable-block[data-interactive='false'] .editable-block-preview-shell {
-  cursor: default;
-}
-
-.sky-editor .editable-block-preview > :first-child {
-  margin-top: 0;
-}
-
-.sky-editor .editable-block-preview > :last-child {
-  margin-bottom: 0;
-}
-
-.sky-editor .editable-block[data-visual='true'] .editable-block-preview[contenteditable='true'] {
-  min-height: 1.5em;
-  outline: none;
-  caret-color: var(--sky-blue-deep);
-}
-
-.sky-editor .editable-block[data-visual='true'] .editable-block-preview[contenteditable='true'] a {
-  pointer-events: none;
-}
-
-/* while a prose block is open its markdown shows through: the marks around each inline form */
-.sky-editor .editable-block-preview[data-inline-reveal='true'] strong::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] strong::after {
-  content: '**';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] em::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] em::after {
-  content: '*';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] del::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] del::after {
-  content: '~~';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] code::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] code::after {
-  content: '`';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] a::before {
-  content: '[';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] a::after {
-  content: '](' attr(href) ')';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] u::before {
-  content: '<u>';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] u::after {
-  content: '</u>';
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] :is(strong, em, del, code, a, u)::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] :is(strong, em, del, code, a, u)::after {
-  color: var(--sky-dim);
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 0.88em;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-.sky-editor .editable-block-preview[data-inline-reveal='true'] [data-inline-focus='true']::before,
-.sky-editor .editable-block-preview[data-inline-reveal='true'] [data-inline-focus='true']::after {
-  color: var(--sky-blue-deep);
-}
-
-/* the form under a raw block: its markdown in a textarea, and the buttons */
-.sky-editor .editable-block-form {
-  display: grid;
-  gap: 10px;
-  font-family: var(--mantine-font-family);
-}
-
-.sky-editor .editable-block[data-visual='true'] .editable-block-form {
-  display: none !important;
-}
-
-.sky-editor .editable-block-textarea {
-  width: 100%;
-  min-height: 10rem;
-  resize: vertical;
-  padding: 14px 18px;
-  border: 1px solid var(--sky-border-soft);
-  border-radius: 11px;
-  outline: none;
-  background: var(--sky-s2);
-  color: var(--sky-text);
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 15px;
-  line-height: 1.55;
-}
-
-.sky-editor .editable-block-textarea:focus {
-  border-color: var(--sky-blue-deep);
+/* a rule selected as a whole */
+.sky-wysiwyg .atom.selected hr {
+  border-top-color: var(--sky-blue-deep);
   box-shadow: 0 0 0 3px var(--sky-blue-soft);
 }
 
-.sky-editor .editable-block-actions {
+/* tables: each cell is its own editable; the focused table wears its tools above it */
+.sky-wysiwyg figure {
+  position: relative;
+  margin: 0 0 1.1em;
+}
+
+.sky-wysiwyg .table-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-family: var(--mantine-font-family);
+  font-size: 12.5px;
+  color: var(--sky-dim);
+  user-select: none;
+}
+
+.sky-wysiwyg .table-tools span {
+  display: inline-flex;
+  gap: 2px;
   align-items: center;
 }
 
-.sky-editor .editor-action-button {
-  padding: 6px 12px;
+.sky-wysiwyg .table-tools button {
+  padding: 2px 7px;
   border: 1px solid var(--sky-border-soft);
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--sky-card);
   color: var(--sky-text);
   font: inherit;
-  font-size: 14px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 
-.sky-editor .editor-action-button:hover {
+.sky-wysiwyg .table-tools button:hover {
   background: var(--sky-hover);
 }
 
-.sky-editor .editor-action-button[hidden] {
-  display: none;
-}
-
-.sky-editor .editable-block-help {
-  color: var(--sky-dim);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.sky-editor .editable-block-help kbd {
-  display: inline-block;
-  min-width: 1.6em;
-  padding: 1px 6px;
-  border: 1px solid var(--sky-border-soft);
-  border-bottom-width: 2px;
-  border-radius: 6px;
-  background: var(--sky-card);
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 12.5px;
-  text-align: center;
+.sky-wysiwyg td > .end-block,
+.sky-wysiwyg th > .end-block {
+  display: block;
+  min-height: 1.4em;
+  outline: none;
 }

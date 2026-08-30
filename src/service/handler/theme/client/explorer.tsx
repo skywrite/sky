@@ -1,11 +1,16 @@
 import { ActionIcon, Button, Menu } from '@mantine/core'
-import { type CSSProperties, Fragment, type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  type BlockEditorHandle,
-  type BlockEditorStatusKind,
-  type EditableBlock,
-  mountBlockEditor,
-} from './editor/mod.ts'
+  type CSSProperties,
+  Fragment,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import { highlightCodeBlocks } from './wysiwyg/highlight.ts'
+import { type EditorHandle, type EditorStatusKind, mountEditor } from './wysiwyg/mod.ts'
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
@@ -326,12 +331,32 @@ function useNote(): [string | null, (text: string | null, holdMs?: number) => vo
   return [note, say]
 }
 
-type EditorStatus = { kind: BlockEditorStatusKind | 'loading'; text: string }
+type EditorStatus = { kind: EditorStatusKind | 'loading'; text: string }
+
+/** An image source as written in a file → the URL that serves it: notebook-relative paths go through the file API. */
+function resolveImageSrc(file: string, src: string): string {
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)) return src
+  const parts = file.split('/').slice(0, -1)
+  for (const part of src.split('/')) {
+    if (part === '..') parts.pop()
+    else if (part !== '.' && part !== '') parts.push(decodeSegment(part))
+  }
+  return `/docs/_api/file/${parts.map(encodeURIComponent).join('/')}`
+}
+
+/** A path segment as written in markdown — percent-encoded or not — as the name on disk. */
+function decodeSegment(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
 
 /**
- * The block editor, mounted into the column for one file: read as blocks
- * once, then its own DOM until the file changes or editing ends. What it
- * reports — status, a conflict — goes up to the header through the hooks.
+ * The editor, mounted into the column for one file: the file read once, then
+ * its own DOM until the file changes or editing ends. What it reports — status,
+ * a conflict — goes up to the header through the hooks.
  */
 function Editor({
   file,
@@ -340,7 +365,7 @@ function Editor({
   onConflict,
 }: {
   file: string
-  handle: RefObject<BlockEditorHandle | null>
+  handle: RefObject<EditorHandle | null>
   onStatus: (status: EditorStatus) => void
   onConflict: (visible: boolean) => void
 }) {
@@ -349,31 +374,24 @@ function Editor({
     const root = rootRef.current
     if (!root) return
     let alive = true
-    let mounted: BlockEditorHandle | null = null
+    let mounted: EditorHandle | null = null
     onStatus({ kind: 'loading', text: 'Opening…' })
     onConflict(false)
     void (async () => {
       try {
-        const r = await fetch(`/docs/_api/document/${encodeSegments(file)}`)
-        const body = (await r.json()) as {
-          message?: string
-          content: string
-          version: number
-          frontmatter: string
-          blocks: EditableBlock[]
-        }
+        const apiPath = `/docs/_api/content/${encodeSegments(file)}`
+        const r = await fetch(apiPath)
+        const body = (await r.json()) as { message?: string; content: string; version: number }
         if (!r.ok) throw new Error(body.message ?? 'Could not open the file to edit')
         if (!alive) return
-        mounted = mountBlockEditor(
+        mounted = mountEditor(
           root,
           {
-            apiPath: `/docs/_api/content/${encodeSegments(file)}`,
-            documentApiPath: `/docs/_api/document/${encodeSegments(file)}`,
-            renderBlockApiPath: '/docs/_api/render-block',
-            initialContent: body.content,
-            initialVersion: body.version,
-            frontmatter: body.frontmatter,
-            blocks: body.blocks,
+            apiPath,
+            attachPath: `/docs/_api/attach/${encodeSegments(file)}`,
+            content: body.content,
+            version: body.version,
+            resolveImage: (src) => resolveImageSrc(file, src),
           },
           { onStatus: (kind, text) => onStatus({ kind, text }), onConflict },
         )
@@ -389,7 +407,23 @@ function Editor({
       mounted?.destroy()
     }
   }, [file, handle, onStatus, onConflict])
-  return <div className="sky-editor" ref={rootRef} />
+  return <div className="sky-doc-body sky-wysiwyg" ref={rootRef} />
+}
+
+/**
+ * The rendered body of a file, its code blocks colored the way the editor colors them (FEN-1).
+ * The HTML goes in by hand, once per change: React re-applies `dangerouslySetInnerHTML` on every
+ * render of the page, which would strip the coloring again.
+ */
+function RenderedBody({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = ref.current
+    if (!root) return
+    root.innerHTML = html
+    highlightCodeBlocks(root)
+  }, [html])
+  return <div className="sky-doc-body" ref={ref} />
 }
 
 export function DocView({ file }: { file: string }) {
@@ -402,7 +436,7 @@ export function DocView({ file }: { file: string }) {
   const [exporting, setExporting] = useState(false)
   const [status, setStatus] = useState<EditorStatus | null>(null)
   const [conflict, setConflict] = useState(false)
-  const editor = useRef<BlockEditorHandle | null>(null)
+  const editor = useRef<EditorHandle | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
@@ -542,11 +576,7 @@ export function DocView({ file }: { file: string }) {
                 <pre>{doc.frontmatter}</pre>
               </details>
             )}
-            {doc.html ? (
-              <div className="sky-doc-body" dangerouslySetInnerHTML={{ __html: doc.html }} />
-            ) : (
-              <p className="sky-doc-empty">This file is empty.</p>
-            )}
+            {doc.html ? <RenderedBody html={doc.html} /> : <p className="sky-doc-empty">This file is empty.</p>}
           </article>
         ) : null}
       </div>

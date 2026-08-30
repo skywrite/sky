@@ -25,6 +25,7 @@
 import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
+import { DIR_USER_DATA } from '#config'
 import { beginEvent, logger } from '#shared/log.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -66,6 +67,8 @@ export interface ServerOptions {
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
   /** The browser's chat host; absent, /chat is not served */
   chat?: ChatRoutesOptions
+  /** The user-data directory: day attachments and the media mirror of the notebook's directories */
+  userDataDir?: string
   /** Reference date for recency calculations (for deterministic testing) */
   referenceDate?: PlainDate
   /** Configuration for MarkdownStore (enables rich document queries) */
@@ -219,6 +222,7 @@ export function createServer(options: ServerOptions): Server {
       markdownDirs,
       customRoutes,
       chat,
+      userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })
   }
 

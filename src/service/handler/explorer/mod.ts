@@ -123,7 +123,7 @@ async function readDoc(
       doc: {
         path: request.value.relativePath,
         frontmatter: yaml,
-        html: body.length > 0 ? await marked.parse(body) : '',
+        html: body.length > 0 ? resolveImageSources(await marked.parse(body), request.value.relativePath) : '',
         version: snapshot.version,
       },
     }
@@ -164,4 +164,33 @@ export function createExplorerRoutes(options: ExplorerRoutesOptions): Hono {
 export function explorerHref(relativePath: string): string {
   const trimmed = relativePath.trim().replace(/^\/+/, '').replace(/\/+$/, '')
   return trimmed ? `/explorer/${trimmed.split('/').map(encodeURIComponent).join('/')}` : '/explorer'
+}
+
+/**
+ * Relative sources in rendered HTML — an image's, or a link's to a file beside the document — point
+ * at the file API (IMG-1 and CLP-16 in the reading view). Links to other documents stay as written.
+ */
+export function resolveImageSources(html: string, relativePath: string): string {
+  const dir = relativePath.split('/').slice(0, -1)
+  return html.replace(
+    /(<(?:img|a)\b[^>]*\s(?:src|href)=")([^"]*)(")/gi,
+    (whole, before: string, src: string, after: string) => {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src) || /\.md$/i.test(src)) return whole
+      const parts = [...dir]
+      for (const part of src.split('/')) {
+        if (part === '..') parts.pop()
+        else if (part !== '.' && part !== '') parts.push(decodeSegment(part))
+      }
+      return `${before}/docs/_api/file/${parts.map(encodeURIComponent).join('/')}${after}`
+    },
+  )
+}
+
+/** A path segment as written in markdown — percent-encoded or not — as the name on disk. */
+function decodeSegment(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
 }

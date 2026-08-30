@@ -17,7 +17,7 @@ function createTestYoga(): YogaServerInstance<object, object> {
 
 export function createTestHttpApp(
   markdownDirs: string[],
-  options: { markdownStore?: MarkdownStore | null; chat?: ChatRoutesOptions } = {},
+  options: { markdownStore?: MarkdownStore | null; chat?: ChatRoutesOptions; userDataDir?: string } = {},
 ) {
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
   return createHttpApp({
@@ -27,5 +27,7 @@ export function createTestHttpApp(
     markdownBaseDir,
     markdownDirs,
     chat: options.chat,
+    // Never the real user-data directory: what a test stores stays in its temp notebook.
+    userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),
   })
 }

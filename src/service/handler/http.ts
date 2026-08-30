@@ -4,6 +4,8 @@
  * Used by both run.ts (production) and server.ts (testing).
  */
 
+import { readFile } from 'node:fs/promises'
+import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -13,18 +15,19 @@ import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
+import { attachmentCandidates, storeAttachment } from './attachments/mod.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
-import { renderBlockPreview } from './markdown-preview/blockPreview.ts'
 import {
-  buildMarkdownDocumentEditorState,
   exportMarkdownPreviewPdf,
   MarkdownSaveConflictError,
   readMarkdownContent,
   resolveMarkdownPreviewRequest,
   saveMarkdownContent,
+  isPathWithinRoot,
+  isPathWithinRoots,
 } from './markdown-preview/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 
@@ -46,13 +49,15 @@ export interface HttpHandlerOptions {
   customRoutes?: Map<string, (req: Request) => Promise<Response>>
   /** The browser's chat host; absent, /chat is not served */
   chat?: ChatRoutesOptions
+  /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
+  userDataDir: string
 }
 
 /**
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat } = options
+  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, userDataDir } = options
 
   const app = new Hono()
 
@@ -194,29 +199,50 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     }
   })
 
-  app.get('/docs/_api/document/*', async (c) => {
-    const fileParam = decodeRoutePath(c.req.url, '/docs/_api/document/')
-    const previewRequest = resolveMarkdownPreviewRequest(fileParam, undefined, markdownBaseDir, markdownDirs)
-    if (!previewRequest.ok) {
-      return c.json({ message: previewRequest.message }, previewRequest.status)
+  // A file beside a document — in the notebook, in the media mirror of the document's directory,
+  // or, for a day document, in the day's attachments (IMG-1, CLP-16).
+  app.get('/docs/_api/file/*', async (c) => {
+    const fileParam = decodeRoutePath(c.req.url, '/docs/_api/file/')
+    if (!fileParam || path.isAbsolute(fileParam)) return c.json({ message: 'Missing file path' }, 400)
+    const base = path.resolve(markdownBaseDir)
+    const relativePath = path.normalize(fileParam)
+    const filePath = path.resolve(base, relativePath)
+    if (!isPathWithinRoot(filePath, base) || !isPathWithinRoots(filePath, markdownDirs)) {
+      return c.json({ message: 'Requested file is outside the notebook' }, 403)
     }
-
-    try {
-      const snapshot = await readMarkdownContent(previewRequest.value.filePath)
-      const documentState = await buildMarkdownDocumentEditorState(snapshot.content, snapshot.version)
-
-      return c.json({
-        relativePath: previewRequest.value.relativePath,
-        ...documentState,
-      })
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException
-      if (error?.code === 'ENOENT') {
-        return c.json({ message: 'Markdown file not found' }, 404)
+    const media = path.resolve(userDataDir)
+    const candidates = [
+      filePath,
+      ...attachmentCandidates(relativePath, media).filter((candidate) => isPathWithinRoot(candidate, media)),
+    ]
+    for (const candidate of candidates) {
+      try {
+        const data = await readFile(candidate)
+        return c.body(data, 200, { 'content-type': contentTypeOf(candidate), 'cache-control': 'no-cache' })
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code
+        if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR') continue
+        return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
       }
+    }
+    return c.json({ message: 'File not found' }, 404)
+  })
 
-      const message = err instanceof Error ? err.message : String(err)
-      return c.json({ message }, 500)
+  // A file pasted or dropped into a document (CLP-16): the bytes are stored beside the document —
+  // a day document's in the day's attachments — and the name the copy carries comes back.
+  app.put('/docs/_api/attach/*', async (c) => {
+    const fileParam = decodeRoutePath(c.req.url, '/docs/_api/attach/')
+    const previewRequest = resolveMarkdownPreviewRequest(fileParam, undefined, markdownBaseDir, markdownDirs)
+    if (!previewRequest.ok) return c.json({ message: previewRequest.message }, previewRequest.status)
+    const name = c.req.query('name')?.trim()
+    if (!name) return c.json({ message: 'Missing file name' }, 400)
+    const data = new Uint8Array(await c.req.arrayBuffer())
+    if (data.byteLength === 0) return c.json({ message: 'Empty file' }, 400)
+    try {
+      const stored = await storeAttachment({ userDataDir, relativePath: previewRequest.value.relativePath, name, data })
+      return c.json(stored)
+    } catch (err) {
+      return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
     }
   })
 
@@ -298,30 +324,6 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         orgScores: store.scoring.orgScores,
       }),
     })
-  })
-
-  app.post('/docs/_api/render-block', async (c) => {
-    try {
-      const payload = await c.req.json<{
-        raw?: unknown
-        type?: unknown
-      }>()
-
-      if (typeof payload.raw !== 'string') {
-        return c.json({ message: 'Missing required field: raw' }, 400)
-      }
-
-      if (typeof payload.type !== 'string') {
-        return c.json({ message: 'Missing required field: type' }, 400)
-      }
-
-      return c.json({
-        html: await renderBlockPreview(payload.type, payload.raw),
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      return c.json({ message }, 400)
-    }
   })
 
   app.post('/docs/_api/export-pdf/*', async (c) => {
@@ -419,4 +421,21 @@ function decodeRoutePath(url: string, prefix: string): string | undefined {
   const pathname = new URL(url).pathname
   const routePath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : ''
   return routePath.length > 0 ? routePath.split('/').map(decodeURIComponent).join('/') : undefined
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.avif': 'image/avif',
+  '.pdf': 'application/pdf',
+  '.md': 'text/markdown; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+}
+
+function contentTypeOf(filePath: string): string {
+  return CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
 }

@@ -133,6 +133,7 @@ const server = createServer({
   store,
   customRoutes,
   chat: createChatHost(config, env.toObject()),
+  userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,
 })
