@@ -1633,3 +1633,14 @@ a.sky-thread {
   min-height: 1.4em;
   outline: none;
 }
+
+/* Sized to its content, not the rail input, so full tag paths stay readable. */
+.sky-props-dropdown {
+  min-width: 200px;
+  max-width: min(440px, calc(100vw - 24px));
+}
+
+.sky-prop-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
