@@ -3,6 +3,7 @@ import type { YogaServerInstance } from 'graphql-yoga'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { Store } from '../store.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
+import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
@@ -22,6 +23,7 @@ export function createTestHttpApp(
     markdownStore?: MarkdownStore | null
     chat?: ChatRoutesOptions
     voice?: VoiceRoutesOptions
+    clock?: ClockRoutesOptions
     userDataDir?: string
   } = {},
 ) {
@@ -34,6 +36,7 @@ export function createTestHttpApp(
     markdownDirs,
     chat: options.chat,
     voice: options.voice,
+    clock: options.clock,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),
   })

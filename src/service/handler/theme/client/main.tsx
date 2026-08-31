@@ -5,6 +5,7 @@ import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'rea
 import { createRoot } from 'react-dom/client'
 import { AuditionMain } from './audition.tsx'
 import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
+import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { skyTheme } from './theme.ts'
@@ -77,9 +78,11 @@ function Canvas() {
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   const isVoice = path === '/voice'
   const isAudition = path === '/voice/audition'
+  const isClock = path === '/clock'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const day = useDay(dayYmd)
+  const clock = useClockNow()
   const threads = useThreads()
   const [notes, setNotes] = useState<Note[]>([])
 
@@ -127,6 +130,7 @@ function Canvas() {
           <span className="sky-brand">sky</span>
           <SchemeToggle />
         </div>
+        <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
         {explorerFile !== null ? (
           <>
             <button type="button" className="sky-thread" onClick={() => navigate('/')}>
@@ -152,7 +156,7 @@ function Canvas() {
                 key={d.ymd}
                 type="button"
                 className="sky-thread"
-                data-active={threadId === null && !isVoice && (offset === 0 ? isToday : dayYmd === d.ymd)}
+                data-active={threadId === null && !isVoice && !isClock && (offset === 0 ? isToday : dayYmd === d.ymd)}
                 onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
               >
                 <span>{d.label}</span>
@@ -188,6 +192,8 @@ function Canvas() {
 
       {explorerFile !== null ? (
         <DocView file={explorerFile} />
+      ) : isClock ? (
+        <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
       ) : isAudition ? (
         <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
       ) : isVoice ? (

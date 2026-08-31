@@ -17,6 +17,7 @@ import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
 import { attachmentCandidates, storeAttachment } from './attachments/mod.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
+import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
@@ -52,6 +53,8 @@ export interface HttpHandlerOptions {
   chat?: ChatRoutesOptions
   /** The browser's voice host; absent, /voice is not served */
   voice?: VoiceRoutesOptions
+  /** The clock page's host; absent, /clock/_api is not served */
+  clock?: ClockRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
   userDataDir: string
 }
@@ -60,7 +63,8 @@ export interface HttpHandlerOptions {
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, voice, userDataDir } = options
+  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, voice, clock, userDataDir } =
+    options
 
   const app = new Hono()
 
@@ -96,6 +100,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // secret and runs its tools. The page itself is /voice, below.
   if (voice) {
     app.route('/voice', createVoiceRoutes(voice))
+  }
+
+  // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
+  if (clock) {
+    app.route('/clock/_api', createClockRoutes(clock))
   }
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
@@ -393,6 +402,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The audition — every voice saying one passage. Reached by ai:voice:audition, not the sidebar.
   app.get('/voice/audition', (c) => {
     return c.html(renderAppHtml('sky · audition'))
+  })
+
+  // The clock: notebook time against the world's. Its data lives under /clock/_api/….
+  app.get('/clock', (c) => {
+    return c.html(renderAppHtml('sky'))
   })
 
   // The explorer: the notebook's files as a tree, any one of them open to read.
