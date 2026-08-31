@@ -74,6 +74,8 @@ export interface EditorState {
   content: string
   version: number
   resolveImage?: (src: string) => string
+  /** The front matter belongs to the properties panel: its block is not rendered, its text goes through the handle. */
+  hideFrontmatter?: boolean
 }
 
 export type EditorStatusKind = 'saved' | 'dirty' | 'saving' | 'conflict' | 'error'
@@ -81,6 +83,10 @@ export type EditorStatusKind = 'saved' | 'dirty' | 'saving' | 'conflict' | 'erro
 export interface EditorHooks {
   onStatus(kind: EditorStatusKind, text: string): void
   onConflict(visible: boolean): void
+  /** The front matter text changed by any path but the handle — undo, a reload, typing `---`; null when the block is gone. */
+  onFrontmatter?(text: string | null): void
+  /** The caret tried to leave the document upward — Up or Left at its start — and there is nothing above but the panel. */
+  onReachTop?(): void
 }
 
 export interface EditorHandle {
@@ -88,6 +94,12 @@ export interface EditorHandle {
   reload(): void
   /** Save over a file that changed on disk. */
   overwrite(): void
+  /** The front matter body (between the `---` lines), or null when the document has none. */
+  frontmatter(): string | null
+  /** Sets the front matter body as one undo step; null removes the block. */
+  setFrontmatter(text: string | null): void
+  /** Puts the caret at the start of the first block the panel does not own. */
+  focusStart(): void
   destroy(): void
 }
 
@@ -107,6 +119,9 @@ export function mountEditor(root: HTMLElement, state: EditorState, hooks: Editor
   return {
     reload: () => void editor.reloadFromDisk('Reloaded disk version'),
     overwrite: () => void editor.save(true),
+    frontmatter: () => editor.frontmatterText(),
+    setFrontmatter: (text) => editor.setFrontmatter(text),
+    focusStart: () => editor.focusStart(),
     destroy: () => editor.destroy(),
   }
 }
@@ -150,6 +165,8 @@ function escapeLinkText(name: string): string {
 class Editor {
   private readonly doc: MarkdownDocument
   private context: RenderContext
+  /** What the panel was last told the front matter is */
+  private lastFrontmatter: string | null | undefined
   private version: number
   private dirty = false
   private saving = false
@@ -188,7 +205,7 @@ class Editor {
     private readonly hooks: EditorHooks,
   ) {
     this.doc = parseDocument(state.content)
-    this.context = contextFor(this.doc, state.resolveImage)
+    this.context = contextFor(this.doc, state.resolveImage, state.hideFrontmatter === true)
     this.version = state.version
     this.ensureBlock()
     root.innerHTML = renderDocument(this.doc, this.context)
@@ -692,8 +709,11 @@ class Editor {
     let at = offset + direction
     if ((direction === 1 && offset >= length) || (direction === -1 && offset <= 0)) {
       const node = this.doc.getNode(leaf.dataset.node)
-      const neighbor = direction === 1 ? node?.nextLeaf() : node?.previousLeaf()
-      if (!neighbor) return true
+      const neighbor = this.reachable(direction === 1 ? node?.nextLeaf() : node?.previousLeaf())
+      if (!neighbor) {
+        if (direction === -1) this.hooks.onReachTop?.()
+        return true
+      }
       if (neighbor.type === 'hr') {
         if (!extend) this.selectAtom(neighbor.id)
         return true
@@ -721,6 +741,10 @@ class Editor {
     if (!node) return false
     const target = this.verticalTarget(node, direction)
     if (!target) {
+      // Up at the very start of the document goes on to the panel; elsewhere on the first line the caret stays (NAV-4).
+      if (direction === -1 && !extend && offsetIn(leaf, selection.focusNode, selection.focusOffset) === 0) {
+        this.hooks.onReachTop?.()
+      }
       if (direction === 1 && !extend) {
         const last = this.doc.root.lastChild
         if (last) this.landBelow(last)
@@ -747,9 +771,9 @@ class Editor {
       const nextRow = direction === 1 ? row.after : row.before
       if (nextRow) return nextRow.children[Math.min(node.index, nextRow.childCount - 1)] ?? null
       const table = row.parent!
-      return direction === 1 ? table.nextLeaf() : table.previousLeaf()
+      return this.reachable(direction === 1 ? table.nextLeaf() : table.previousLeaf())
     }
-    const neighbor = direction === 1 ? node.nextLeaf() : node.previousLeaf()
+    const neighbor = this.reachable(direction === 1 ? node.nextLeaf() : node.previousLeaf())
     if (neighbor?.type === 'table_cell' && neighbor.parent?.parent) {
       const table = neighbor.parent.parent
       const edgeRow = direction === 1 ? table.firstChild : table.lastChild
@@ -838,7 +862,7 @@ class Editor {
     if (key === 'ArrowLeft' || key === 'ArrowUp' || key === 'ArrowRight' || key === 'ArrowDown') {
       event.preventDefault()
       const forward = key === 'ArrowRight' || key === 'ArrowDown'
-      const neighbor = forward ? node.nextLeaf() : node.previousLeaf()
+      const neighbor = this.reachable(forward ? node.nextLeaf() : node.previousLeaf())
       this.clearAtom()
       if (neighbor?.type === 'hr') this.selectAtom(neighbor.id)
       else if (neighbor) this.place(neighbor.id, forward ? 0 : neighbor.text.length)
@@ -848,8 +872,9 @@ class Editor {
     }
     if (key === 'Backspace' || key === 'Delete') {
       event.preventDefault()
-      const neighbor =
-        key === 'Backspace' ? (node.previousLeaf() ?? node.nextLeaf()) : (node.nextLeaf() ?? node.previousLeaf())
+      const neighbor = this.reachable(
+        key === 'Backspace' ? (node.previousLeaf() ?? node.nextLeaf()) : (node.nextLeaf() ?? node.previousLeaf()),
+      )
       this.clearAtom()
       const anchors = anchorsAround(node)
       this.transact(anchors, null, () => {
@@ -959,6 +984,12 @@ class Editor {
 
   /** Puts the caret at an offset in a leaf and makes that leaf the focused block. */
   private place(id: string, offset: number, end = offset) {
+    // The panel's front matter takes the caret through the panel, not the document.
+    const node = this.doc.getNode(id)
+    if (node && !this.reachable(node)) {
+      this.hooks.onReachTop?.()
+      return
+    }
     this.focusedId = id
     this.armed = null
     this.restore({ blockId: id, start: offset, end })
@@ -994,7 +1025,73 @@ class Editor {
     if (outcome.caret) this.place(outcome.caret.blockId, outcome.caret.start, outcome.caret.end)
     this.history.push({ kind: 'range', anchors, before, after, cursorBefore, cursorAfter: outcome.caret })
     this.markDirty()
+    this.noteFrontmatter()
     return true
+  }
+
+  // --- the front matter, when the properties panel owns it ---------------------------------------
+
+  /** The front matter node, when the document has one — always the first block. */
+  private frontmatterNode(): Node | null {
+    const first = this.doc.root.firstChild
+    return first?.type === 'frontmatter' ? first : null
+  }
+
+  frontmatterText(): string | null {
+    this.flushAll()
+    return this.frontmatterNode()?.text ?? null
+  }
+
+  /** Tells the panel when the front matter changed under it — an undo, a reload, `---` typed. */
+  private noteFrontmatter() {
+    const text = this.frontmatterNode()?.text ?? null
+    if (text === this.lastFrontmatter) return
+    this.lastFrontmatter = text
+    this.hooks.onFrontmatter?.(text)
+  }
+
+  /** A leaf the caret may go to: the front matter is off limits while the panel shows it. */
+  private reachable(leaf: Node | null | undefined): Node | null {
+    if (!leaf) return null
+    return leaf.type === 'frontmatter' && this.state.hideFrontmatter ? null : leaf
+  }
+
+  /** The caret at the start of the first block that is not the panel's front matter. */
+  focusStart() {
+    this.flushAll()
+    let leaf: Node | null = this.doc.root.firstLeaf()
+    while (leaf && !this.reachable(leaf)) leaf = leaf.nextLeaf()
+    if (!leaf) return
+    this.root.focus({ preventScroll: true })
+    this.place(leaf.id, 0)
+  }
+
+  /** Sets the front matter body from the panel: one undo step, the block created or removed as needed. */
+  setFrontmatter(text: string | null) {
+    this.flushAll()
+    const node = this.frontmatterNode()
+    if ((node?.text ?? null) === text) return
+    const first = this.doc.root.firstChild
+    const anchors: Anchors = { before: null, after: (node ? node.after?.id : first?.id) ?? null }
+    this.lastFrontmatter = text
+    this.transact(anchors, null, () => {
+      if (text === null) {
+        if (node) this.doc.removeNode(node)
+        this.ensureBlock()
+        return { caret: null }
+      }
+      if (node) {
+        node.text = text
+        node.empty = text.length === 0
+        return { caret: null }
+      }
+      const created = this.doc.createNode('frontmatter', { text, pattern: '---', patternEnd: '---' })
+      created.ahead = 0
+      created.empty = text.length === 0
+      if (first && (first.ahead ?? 0) === 0) first.ahead = 1
+      this.doc.root.prependChild(created)
+      return { caret: null }
+    })
   }
 
   private enter(shift: boolean, modifier: boolean) {
@@ -1059,6 +1156,8 @@ class Editor {
     const current = this.current()
     if (!current) return
     const previous = current.node.previousLeaf()
+    // The panel's front matter is not a block to join into.
+    if (previous && !this.reachable(previous)) return
     const anchors = anchorsAround(...(previous ? [previous, current.node] : [current.node]))
     this.transact(anchors, current.bookmark, () => {
       const landing = backspaceAtStart(this.doc, current.node)
@@ -1232,6 +1331,11 @@ class Editor {
   }
 
   private applyCommand(command: Command, side: 'before' | 'after') {
+    this.applyCommandInner(command, side)
+    this.noteFrontmatter()
+  }
+
+  private applyCommandInner(command: Command, side: 'before' | 'after') {
     this.flushAll()
     if (command.kind === 'text') {
       const node = this.doc.getNode(command.id)
@@ -2125,6 +2229,7 @@ class Editor {
     this.ensureBlock()
     this.root.innerHTML = renderDocument(this.doc, this.context)
     this.applyBusyMode()
+    this.noteFrontmatter()
     let cursor: Bookmark | null = null
     if (bookmark && index >= 0) {
       const leaves = this.root.querySelectorAll<HTMLElement>('.end-block[data-node]')

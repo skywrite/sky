@@ -9,6 +9,10 @@ import {
   useRef,
   useState,
 } from 'react'
+import { IdentityLine } from './frontmatter/Identity.tsx'
+import { useOutline } from './frontmatter/outline.ts'
+import { DocumentRail } from './frontmatter/Rail.tsx'
+import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { highlightCodeBlocks } from './wysiwyg/highlight.ts'
 import { type EditorHandle, type EditorStatusKind, mountEditor } from './wysiwyg/mod.ts'
 
@@ -353,6 +357,38 @@ function decodeSegment(part: string): string {
   }
 }
 
+/** The caret leaves the document upward: the identity line's last field takes it. */
+function focusIdentityInput() {
+  const inputs = document.querySelectorAll<HTMLElement>(
+    '.sky-identity:not([data-readonly]) input, .sky-identity:not([data-readonly]) textarea',
+  )
+  inputs[inputs.length - 1]?.focus()
+}
+
+const RAIL_KEY = 'sky-rail'
+const NARROW = '(max-width: 1180px)'
+
+/** Whether the window is too narrow for a third column — then the rail is an overlay. */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
+  useEffect(() => {
+    const query = window.matchMedia(NARROW)
+    const update = () => setNarrow(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return narrow
+}
+
+/** The rail's wide-screen preference: shown unless closed once. */
+function railRemembered(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) !== 'closed'
+  } catch {
+    return true
+  }
+}
+
 /**
  * The editor, mounted into the column for one file: the file read once, then
  * its own DOM until the file changes or editing ends. What it reports — status,
@@ -363,11 +399,14 @@ function Editor({
   handle,
   onStatus,
   onConflict,
+  onFrontmatter,
 }: {
   file: string
   handle: RefObject<EditorHandle | null>
   onStatus: (status: EditorStatus) => void
   onConflict: (visible: boolean) => void
+  /** The front matter as the editor holds it — on open, and after undo, reload or `---` */
+  onFrontmatter: (text: string | null) => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -377,6 +416,7 @@ function Editor({
     let mounted: EditorHandle | null = null
     onStatus({ kind: 'loading', text: 'Opening…' })
     onConflict(false)
+    onFrontmatter(null)
     void (async () => {
       try {
         const apiPath = `/docs/_api/content/${encodeSegments(file)}`
@@ -392,10 +432,17 @@ function Editor({
             content: body.content,
             version: body.version,
             resolveImage: (src) => resolveImageSrc(file, src),
+            hideFrontmatter: true,
           },
-          { onStatus: (kind, text) => onStatus({ kind, text }), onConflict },
+          {
+            onStatus: (kind, text) => onStatus({ kind, text }),
+            onConflict,
+            onFrontmatter,
+            onReachTop: focusIdentityInput,
+          },
         )
         handle.current = mounted
+        onFrontmatter(mounted.frontmatter())
       } catch (err) {
         if (alive)
           onStatus({ kind: 'error', text: err instanceof Error ? err.message : 'Could not open the file to edit' })
@@ -406,7 +453,7 @@ function Editor({
       handle.current = null
       mounted?.destroy()
     }
-  }, [file, handle, onStatus, onConflict])
+  }, [file, handle, onStatus, onConflict, onFrontmatter])
   return <div className="sky-doc-body sky-wysiwyg" ref={rootRef} />
 }
 
@@ -441,6 +488,48 @@ export function DocView({ file }: { file: string }) {
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
   }, [doc?.path])
+  // The front matter the editor holds while editing; the read document's otherwise.
+  const [editFrontmatter, setEditFrontmatter] = useState<string | null>(null)
+  const frontmatterText = editing ? editFrontmatter : doc?.frontmatter ? doc.frontmatter : null
+  const frontmatter = useFrontmatter(
+    frontmatterText,
+    file,
+    editing
+      ? (text) => {
+          editor.current?.setFrontmatter(text)
+          setEditFrontmatter(text)
+        }
+      : undefined,
+  )
+  const narrow = useNarrow()
+  const [railWide, setRailWide] = useState(railRemembered)
+  const [railOverlay, setRailOverlay] = useState(false)
+  const railOpen = narrow ? railOverlay : railWide
+  const toggleRail = () => {
+    if (narrow) setRailOverlay((open) => !open)
+    else {
+      setRailWide((open) => {
+        try {
+          localStorage.setItem(RAIL_KEY, open ? 'closed' : 'open')
+        } catch {
+          // Then the choice lasts for this visit only.
+        }
+        return !open
+      })
+    }
+  }
+  useEffect(() => {
+    if (!narrow || !railOverlay) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRailOverlay(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [narrow, railOverlay])
+  useEffect(() => {
+    setRailOverlay(false)
+  }, [file])
+  const outline = useOutline(scrollRef, [doc?.path, doc?.html, editing])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
 
@@ -470,116 +559,137 @@ export function DocView({ file }: { file: string }) {
   }
 
   return (
-    <div className="sky-main">
-      <header className="sky-head">
-        {file ? (
-          <span className="sky-title sky-crumbs">
-            {/* When the path is too long, the directories give way first; the name stays. */}
-            <span className="sky-crumb-dirs">
-              {segments.slice(0, -1).map((segment, i) => (
-                <Fragment key={i}>
-                  <span className="sky-crumb">{segment}</span>
-                  <span className="sky-crumb-sep">/</span>
-                </Fragment>
-              ))}
-            </span>
-            <span className="sky-crumb-name">{name}</span>
-          </span>
-        ) : (
-          <span className="sky-title">Explorer</span>
-        )}
-        {file && !missing && (
-          <nav className="sky-tabs">
-            {editing && status && (
-              <span className="sky-head-count" data-state={status.kind}>
-                {status.text}
+    <div className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
+      <div className="sky-doc-column">
+        <header className="sky-head">
+          {file ? (
+            <span className="sky-title sky-crumbs">
+              {/* When the path is too long, the directories give way first; the name stays. */}
+              <span className="sky-crumb-dirs">
+                {segments.slice(0, -1).map((segment, i) => (
+                  <Fragment key={i}>
+                    <span className="sky-crumb">{segment}</span>
+                    <span className="sky-crumb-sep">/</span>
+                  </Fragment>
+                ))}
               </span>
-            )}
-            {note && <span className="sky-head-count">{note}</span>}
-            {editing && conflict && (
-              <>
-                <Button size="sm" variant="light" onClick={() => editor.current?.reload()}>
-                  Reload disk version
+              <span className="sky-crumb-name">{name}</span>
+            </span>
+          ) : (
+            <span className="sky-title">Explorer</span>
+          )}
+          {file && !missing && (
+            <nav className="sky-tabs">
+              {editing && status && (
+                <span className="sky-head-count" data-state={status.kind}>
+                  {status.text}
+                </span>
+              )}
+              {note && <span className="sky-head-count">{note}</span>}
+              {editing && conflict && (
+                <>
+                  <Button size="sm" variant="light" onClick={() => editor.current?.reload()}>
+                    Reload disk version
+                  </Button>
+                  <Button size="sm" variant="light" color="red" onClick={() => editor.current?.overwrite()}>
+                    Overwrite disk version
+                  </Button>
+                </>
+              )}
+              {editing ? (
+                <Button size="sm" onClick={() => setEditingFile(null)}>
+                  Done
                 </Button>
-                <Button size="sm" variant="light" color="red" onClick={() => editor.current?.overwrite()}>
-                  Overwrite disk version
+              ) : (
+                <Button size="sm" onClick={() => setEditingFile(file)}>
+                  Edit
                 </Button>
-              </>
-            )}
-            {editing ? (
-              <Button size="sm" onClick={() => setEditingFile(null)}>
-                Done
+              )}
+              <Button
+                size="sm"
+                variant={railOpen ? 'light' : 'subtle'}
+                onClick={toggleRail}
+                data-active={railOpen}
+                aria-pressed={railOpen}
+              >
+                Details
               </Button>
-            ) : (
-              <Button size="sm" onClick={() => setEditingFile(file)}>
-                Edit
-              </Button>
-            )}
-            <Menu position="bottom-end" shadow="md" width={220}>
-              <Menu.Target>
-                <ActionIcon size="lg" aria-label="More">
-                  ⋯
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Text size · {Math.round(scale * 100)}%</Menu.Label>
-                <Menu.Item
-                  closeMenuOnClick={false}
-                  disabled={scale <= SCALE_MIN}
-                  onClick={() => setScale(scale - SCALE_STEP)}
-                >
-                  Smaller
-                </Menu.Item>
-                <Menu.Item
-                  closeMenuOnClick={false}
-                  disabled={scale >= SCALE_MAX}
-                  onClick={() => setScale(scale + SCALE_STEP)}
-                >
-                  Larger
-                </Menu.Item>
-                {scale !== 1 && (
-                  <Menu.Item closeMenuOnClick={false} onClick={() => setScale(1)}>
-                    Default size
+              <Menu position="bottom-end" shadow="md" width={220}>
+                <Menu.Target>
+                  <ActionIcon size="lg" aria-label="More">
+                    ⋯
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Text size · {Math.round(scale * 100)}%</Menu.Label>
+                  <Menu.Item
+                    closeMenuOnClick={false}
+                    disabled={scale <= SCALE_MIN}
+                    onClick={() => setScale(scale - SCALE_STEP)}
+                  >
+                    Smaller
                   </Menu.Item>
-                )}
-                <Menu.Divider />
-                <Menu.Item disabled={exporting} onClick={() => void exportPdf()}>
-                  Export PDF
-                </Menu.Item>
-                <Menu.Item onClick={() => void copyPath()}>Copy path</Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          </nav>
-        )}
-      </header>
+                  <Menu.Item
+                    closeMenuOnClick={false}
+                    disabled={scale >= SCALE_MAX}
+                    onClick={() => setScale(scale + SCALE_STEP)}
+                  >
+                    Larger
+                  </Menu.Item>
+                  {scale !== 1 && (
+                    <Menu.Item closeMenuOnClick={false} onClick={() => setScale(1)}>
+                      Default size
+                    </Menu.Item>
+                  )}
+                  <Menu.Divider />
+                  <Menu.Item disabled={exporting} onClick={() => void exportPdf()}>
+                    Export PDF
+                  </Menu.Item>
+                  <Menu.Item onClick={() => void copyPath()}>Copy path</Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </nav>
+          )}
+        </header>
 
-      <div className="sky-scroll" ref={scrollRef}>
-        {!file ? (
-          <div className="sky-blank">
-            <p>Pick a file to read it here.</p>
-          </div>
-        ) : missing ? (
-          <div className="sky-blank">
-            <p>
-              There is no file at <code>{file}</code>.
-            </p>
-          </div>
-        ) : editing ? (
-          <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
-            <Editor file={file} handle={editor} onStatus={setStatus} onConflict={setConflict} />
-          </article>
-        ) : doc ? (
-          <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
-            {doc.frontmatter && (
-              <details className="sky-doc-meta">
-                <summary>Frontmatter</summary>
-                <pre>{doc.frontmatter}</pre>
-              </details>
-            )}
-            {doc.html ? <RenderedBody html={doc.html} /> : <p className="sky-doc-empty">This file is empty.</p>}
-          </article>
-        ) : null}
+        <div className="sky-scroll" ref={scrollRef}>
+          {!file ? (
+            <div className="sky-blank">
+              <p>Pick a file to read it here.</p>
+            </div>
+          ) : missing ? (
+            <div className="sky-blank">
+              <p>
+                There is no file at <code>{file}</code>.
+              </p>
+            </div>
+          ) : editing ? (
+            <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
+              <IdentityLine state={frontmatter} file={file} onLeave={() => editor.current?.focusStart()} />
+              <Editor
+                file={file}
+                handle={editor}
+                onStatus={setStatus}
+                onConflict={setConflict}
+                onFrontmatter={setEditFrontmatter}
+              />
+            </article>
+          ) : doc ? (
+            <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
+              <IdentityLine state={frontmatter} file={doc.path} />
+              {doc.html ? <RenderedBody html={doc.html} /> : <p className="sky-doc-empty">This file is empty.</p>}
+            </article>
+          ) : null}
+        </div>
       </div>
+      {file && !missing && railOpen ? (
+        <DocumentRail
+          state={frontmatter}
+          file={file}
+          outline={outline}
+          onClose={narrow ? () => setRailOverlay(false) : undefined}
+        />
+      ) : null}
     </div>
   )
 }

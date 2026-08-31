@@ -80,7 +80,10 @@ test(
         await waitForSettle(page)
         await page.keyboard.type('---')
         await page.keyboard.press('Enter')
-        await page.keyboard.type('title: x')
+        // The new front matter belongs to the properties panel: its YAML face takes the line.
+        await page.click('.sky-props-faces button[data-face="yaml"]')
+        await page.locator('.sky-props-yaml-input textarea').fill('title: x')
+        await page.click('.sky-props-faces button[data-face="properties"]')
         await placeCaret(page, `${ROOT} > p.end-block`, 0)
         await page.keyboard.type('    ')
         await waitForSettle(page)

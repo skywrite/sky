@@ -31,6 +31,15 @@ import {
   isPathWithinRoots,
 } from './markdown-preview/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
+import {
+  backlinksOf,
+  COMPLETION_KINDS,
+  complete,
+  type CompletionKind,
+  resolveNames,
+  scoresFrom,
+  vocabularyOf,
+} from './vocabulary/mod.ts'
 import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
 
 /**
@@ -215,6 +224,51 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       const message = err instanceof Error ? err.message : String(err)
       return c.json({ message }, 500)
     }
+  })
+
+  // What the front matter panel completes from: people, orgs, projects, places and documents by
+  // name, tags with counts, and — per top-level directory — the keys in use and a key's values.
+  app.get('/docs/_api/complete', (c) => {
+    if (!markdownStore) return c.json({ items: [] })
+    const kind = c.req.query('kind') ?? ''
+    if (!COMPLETION_KINDS.has(kind)) return c.json({ message: 'Unknown completion kind' }, 400)
+    const limit = Number.parseInt(c.req.query('limit') ?? '', 10)
+    const items = complete(
+      vocabularyOf(markdownStore, path.resolve(markdownBaseDir)),
+      {
+        kind: kind as CompletionKind,
+        query: c.req.query('q') ?? '',
+        key: c.req.query('key'),
+        dir: c.req.query('dir'),
+        limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : undefined,
+      },
+      scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), store.getTagsWithScores()),
+      fetchNowSync().plainDateTime.plainDate.toString(),
+    )
+    return c.json({ items })
+  })
+
+  // What points at a document (rel, who, from, to, cc, org, where), newest first.
+  app.get('/docs/_api/backlinks', (c) => {
+    if (!markdownStore) return c.json({ items: [], total: 0 })
+    const target = c.req.query('path') ?? ''
+    if (!target || path.isAbsolute(target) || target.includes('..')) return c.json({ message: 'Missing path' }, 400)
+    const items = backlinksOf(markdownStore, path.resolve(markdownBaseDir), path.normalize(target))
+    const limit = Number.parseInt(c.req.query('limit') ?? '', 10)
+    return c.json({ items: Number.isFinite(limit) && limit > 0 ? items.slice(0, limit) : items, total: items.length })
+  })
+
+  // Where the names in a document's front matter point — its chips become links.
+  app.post('/docs/_api/resolve', async (c) => {
+    if (!markdownStore) return c.json({ resolved: {} })
+    const body = (await c.req.json().catch(() => null)) as { names?: unknown; path?: unknown } | null
+    const names = Array.isArray(body?.names)
+      ? body.names.filter((name): name is string => typeof name === 'string').slice(0, 500)
+      : []
+    const base = path.resolve(markdownBaseDir)
+    const source =
+      typeof body?.path === 'string' && !path.isAbsolute(body.path) ? path.resolve(base, body.path) : undefined
+    return c.json({ resolved: resolveNames(markdownStore, base, names, source) })
   })
 
   // A file beside a document — in the notebook, in the media mirror of the document's directory,

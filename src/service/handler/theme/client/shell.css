@@ -1634,13 +1634,932 @@ a.sky-thread {
   outline: none;
 }
 
+/* front matter rows: chips with completion, text, the YAML face, add-property */
+
+.sky-props-faces {
+  display: inline-flex;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.sky-props-faces button {
+  padding: 2px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sky-props-faces button[aria-pressed='true'] {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-weight: 500;
+}
+
+.sky-props-faces button:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: -2px;
+}
+
+.sky-prop {
+  display: grid;
+  grid-template-columns: 112px 1fr 24px;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail-sec > .sky-prop:last-child {
+  border-bottom: 0;
+}
+
+.sky-prop.sub {
+  padding-left: 34px;
+  border-bottom: 0;
+}
+
+.sky-prop.sub .sky-prop-key::before {
+  content: '└ ';
+  color: var(--sky-border-soft);
+}
+
+.sky-prop-children {
+  grid-column: 1 / -1;
+  margin: 2px 0 0 -14px;
+}
+
+.sky-prop-key {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+  padding-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.sky-prop-value {
+  min-width: 0;
+  min-height: 26px;
+}
+
+.sky-prop-remove {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.sky-prop:hover .sky-prop-remove,
+.sky-prop:focus-within .sky-prop-remove,
+.sky-prop-remove:focus-visible {
+  opacity: 1;
+}
+
+.sky-prop-remove:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-prop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.sky-prop-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sky-prop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.sky-prop-chip.link {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-prop-chip.link:hover {
+  text-decoration: underline;
+}
+
+.sky-prop-chip.new {
+  border-color: var(--mantine-color-orange-6);
+}
+
+.sky-prop-chip.new .sky-prop-mark {
+  color: var(--mantine-color-orange-7);
+}
+
+.sky-prop-mark {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 10.5px;
+  color: var(--sky-dim);
+}
+
+.sky-prop-chip-remove {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  margin-left: -4px;
+  padding: 2px 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sky-prop-chip-remove:hover {
+  color: var(--sky-text);
+  background: var(--sky-hover);
+}
+
+.sky-prop-text,
+.sky-prop-long {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-prop-text.auto {
+  color: var(--sky-dim);
+}
+
+.sky-prop-long {
+  display: inline;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+
+.sky-prop-more {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sky-prop-empty {
+  color: var(--sky-dim);
+}
+
+.sky-prop-hint {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-prop-hint.bad {
+  color: var(--mantine-color-orange-7);
+}
+
+.sky-prop-text-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.sky-prop-text-wrap .sky-prop-input {
+  flex: 1 1 200px;
+}
+
+.sky-prop-input .mantine-Input-input,
+.sky-prop-tags .mantine-PillsInput-input,
+.sky-props-add-input .mantine-Input-input,
+.sky-props-yaml-input .mantine-Input-input {
+  font-size: 14.5px;
+  min-height: 26px;
+  color: var(--sky-text);
+}
+
+.sky-prop-tags .mantine-Pill-root {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-size: 13.5px;
+  height: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
 /* Sized to its content, not the rail input, so full tag paths stay readable. */
 .sky-props-dropdown {
   min-width: 200px;
   max-width: min(440px, calc(100vw - 24px));
 }
 
+.sky-prop-option {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.sky-prop-option .sky-prop-mark {
+  text-align: center;
+}
+
 .sky-prop-option-label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.sky-prop-option-hint {
+  font-size: 12px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
+.sky-props-add {
+  padding: 4px 14px;
+  color: var(--sky-dim);
+}
+
+.sky-props-add-input .mantine-Input-input {
+  color: var(--sky-blue-deep);
+}
+
+.sky-props-add-input .mantine-Input-input::placeholder {
+  color: var(--sky-blue-deep);
+  opacity: 0.9;
+}
+
+.sky-props-yaml,
+.sky-props-yaml-input .mantine-Input-input {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+  white-space: pre-wrap;
+}
+
+.sky-props-error {
+  margin: 0;
+  padding: 0 14px 8px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--mantine-color-orange-7);
+}
+
+@media (max-width: 640px) {
+  .sky-prop {
+    grid-template-columns: 1fr 24px;
+  }
+
+  .sky-prop-key {
+    grid-column: 1 / -1;
+  }
+}
+
+/* the document column and the rail beside it */
+.sky-main-rail {
+  flex-direction: row;
+  position: relative;
+}
+
+.sky-doc-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sky-rail {
+  width: 320px;
+  flex: none;
+  overflow-y: auto;
+  padding: 12px 18px 28px;
+  border-left: 1px solid var(--sky-border-soft);
+  background: var(--sky-bg);
+  font-family: var(--mantine-font-family);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--sky-text);
+}
+
+@media (max-width: 1180px) {
+  .sky-rail {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    width: min(400px, 100%);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.sky-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.sky-rail-title {
+  flex: 1;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-rail-close {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sky-rail-close:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-rail-sec {
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail-sec:first-of-type {
+  border-top: 0;
+}
+
+.sky-rail-sec-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-rail-count {
+  font-size: 11px;
+  color: var(--sky-dim);
+}
+
+.sky-rail-sec-h .sky-props-faces {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sky-rail-empty {
+  margin: 0;
+  color: var(--sky-dim);
+  font-size: 13px;
+}
+
+/* rows in the rail: the key above the value, the remove button beside */
+.sky-rail .sky-prop {
+  grid-template-columns: 1fr 24px;
+  gap: 2px 8px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail .sky-prop-key {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+
+.sky-rail .sky-rail-sec[data-section='tags'] .sky-prop-key,
+.sky-rail .sky-rail-sec[data-section='links'] .sky-prop-key,
+.sky-rail .sky-rail-sec[data-section='files'] .sky-prop-key {
+  display: none;
+}
+
+.sky-rail .sky-prop.sub {
+  padding-left: 14px;
+}
+
+.sky-rail-more {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.sky-backlinks,
+.sky-outline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sky-backlink {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 0;
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+
+.sky-backlink:hover .sky-backlink-label {
+  text-decoration: underline;
+}
+
+.sky-backlink-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-backlink-date {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  color: var(--sky-dim);
+}
+
+.sky-outline li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--sky-text-2);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-outline li.l2 button {
+  padding-left: 12px;
+}
+
+.sky-outline li.l3 button,
+.sky-outline li.l4 button {
+  padding-left: 24px;
+}
+
+.sky-outline li.on button {
+  color: var(--sky-blue-deep);
+}
+
+/* the identity line under the title */
+.sky-identity {
+  margin: 0 0 18px;
+  font-family: var(--mantine-font-family);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--sky-text);
+}
+
+.sky-identity-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: baseline;
+}
+
+.sky-identity-facts .sky-prop {
+  display: inline-grid;
+  grid-template-columns: auto auto 20px;
+  gap: 0 8px;
+  padding: 2px 0;
+  border-bottom: 0;
+  align-items: baseline;
+}
+
+.sky-identity-facts .sky-prop-key {
+  padding-top: 0;
+}
+
+.sky-identity-facts .sky-prop-value {
+  min-height: 0;
+}
+
+.sky-identity-facts .sky-prop-input .mantine-Input-input {
+  min-width: 120px;
+}
+
+.sky-identity-below .sky-prop {
+  grid-template-columns: 1fr 24px;
+  padding: 4px 0;
+  border-bottom: 0;
+}
+
+.sky-identity-below .sky-prop-key {
+  display: none;
+}
+
+.sky-identity[data-readonly] .sky-identity-facts .sky-prop {
+  grid-template-columns: auto auto;
+}
+
+@media (max-width: 640px) {
+  .sky-identity-facts .sky-prop {
+    display: grid;
+    grid-template-columns: 1fr 20px;
+  }
+
+  .sky-identity-facts .sky-prop-key {
+    grid-column: 1 / -1;
+  }
+
+  .sky-rail {
+    width: 100%;
+  }
+}
+
+/* ============ the day, cleaned ============ */
+/* Plain type everywhere: sans counters, sentence-case labels, no monospace. */
+
+:root {
+  --sky-amber: var(--mantine-color-orange-8);
+}
+
+[data-mantine-color-scheme='dark'] {
+  --sky-amber: var(--mantine-color-orange-4);
+}
+
+.sky-day {
+  position: relative;
+}
+
+.sky-sect {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-bottom: -12px;
+}
+
+/* the cleaned card head: a shade darker than the old dim mono head */
+.sky-bhead {
+  font-size: 15.5px;
+  color: var(--sky-text-2);
+}
+
+.sky-count {
+  font-weight: 400;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-prow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 18px;
+  max-height: 64px;
+  overflow: hidden;
+  transition:
+    max-height 0.35s ease,
+    opacity 0.3s ease,
+    padding 0.35s ease;
+}
+
+.sky-prow[data-phase='gone'] {
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+}
+
+.sky-prow[data-soft] {
+  font-size: 17px;
+}
+
+.sky-check {
+  border: 0;
+  background: none;
+  padding: 6px;
+  margin: -6px 0 -6px -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-check-box {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1.5px solid var(--mantine-color-gray-4);
+  background: var(--sky-card);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sky-check:hover .sky-check-box {
+  border-color: var(--sky-dim);
+}
+
+.sky-check-box[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+}
+
+[data-mantine-color-scheme='dark'] .sky-check-box {
+  border-color: var(--mantine-color-dark-3);
+  background: transparent;
+}
+
+[data-mantine-color-scheme='dark'] .sky-check-box[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+  color: var(--mantine-color-dark-8);
+}
+
+.sky-scheck {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--mantine-color-gray-4);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex: none;
+}
+
+.sky-scheck[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+}
+
+[data-mantine-color-scheme='dark'] .sky-scheck {
+  border-color: var(--mantine-color-dark-3);
+}
+
+[data-mantine-color-scheme='dark'] .sky-scheck[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+  color: var(--mantine-color-dark-8);
+}
+
+.sky-when {
+  width: 52px;
+  flex: none;
+  font-size: 15px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-when[data-tone='next'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+
+.sky-when[data-tone='late'] {
+  color: var(--sky-amber);
+  font-weight: 600;
+}
+
+.sky-late {
+  flex: none;
+  font-size: 13.5px;
+  color: var(--sky-amber);
+}
+
+.sky-ptext {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-ptext[data-done='true'] {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-ptext[data-dim] {
+  color: var(--sky-dim);
+}
+
+.sky-ptext a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-ptext a:hover {
+  text-decoration: underline;
+}
+
+.sky-pchip {
+  flex: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-igroup {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sky-text-2);
+  padding: 14px 0 3px;
+}
+
+.sky-alldone {
+  padding: 8px 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+/* the day-so-far gutter: same column, plain type */
+.sky-dat {
+  width: 116px;
+  flex: none;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-medium {
+  margin-left: auto;
+  flex: none;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-done-text {
+  color: var(--sky-text-2);
+}
+
+.sky-fold-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 0;
+  font-size: 18px;
+  color: var(--sky-text-2);
+}
+
+.sky-fold-line span:first-child {
+  flex: 1;
+}
+
+.sky-showlink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-showlink:hover {
+  text-decoration: underline;
+}
+
+.sky-undo {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 118px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--sky-card);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 12px 18px 14px;
+  max-width: 620px;
+  overflow: hidden;
+}
+
+[data-mantine-color-scheme='dark'] .sky-undo {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+}
+
+.sky-undo-tick {
+  flex: none;
+  display: flex;
+  color: var(--sky-green);
+}
+
+.sky-undo-text {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-undo-btn {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-undo-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--sky-blue-soft);
+}
+
+.sky-undo-fill {
+  display: block;
+  height: 3px;
+  background: var(--sky-blue-deep);
+  animation: sky-undo-drain 8s linear forwards;
+}
+
+@keyframes sky-undo-drain {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@media (max-width: 900px) {
+  .sky-rec-line .sky-dat {
+    width: 100%;
+  }
+
+  .sky-undo {
+    left: 14px;
+    right: 14px;
+    transform: none;
+    max-width: none;
+  }
+}
+
+/* Done today: a bare tick is the day's own record; a boxed tick can be put back */
+.sky-done-tick {
+  width: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  color: var(--sky-green);
+}
+
+.sky-check:hover .sky-check-box[data-on='true'] {
+  opacity: 0.7;
 }

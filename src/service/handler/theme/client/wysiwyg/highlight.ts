@@ -63,7 +63,13 @@ const LANGUAGES: Record<string, LanguageFn> = {
   yaml,
 }
 
-for (const [name, language] of Object.entries(LANGUAGES)) hljs.registerLanguage(name, language)
+/** The names highlight.js colors by here: the languages above and their own aliases. */
+const ACCEPTED = new Map<string, string>()
+for (const [name, language] of Object.entries(LANGUAGES)) {
+  hljs.registerLanguage(name, language)
+  ACCEPTED.set(name, name)
+  for (const alias of language(hljs).aliases ?? []) ACCEPTED.set(alias.toLowerCase(), alias)
+}
 
 /** Info strings the notebook writes that highlight.js knows under another name — or not at all. */
 const ALIASES: Record<string, string> = {
@@ -90,7 +96,7 @@ export function highlightLanguage(info: string | undefined): string | null {
       ?.toLowerCase() ?? ''
   if (word.length === 0 || PLAIN.has(word)) return null
   const name = ALIASES[word] ?? word
-  return hljs.getLanguage(name) ? name : null
+  return ACCEPTED.get(name) ?? null
 }
 
 /** The code as HTML with spans around its tokens, or null when it is not colored. */

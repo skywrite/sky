@@ -10,6 +10,7 @@ import process from 'node:process'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
+import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 
@@ -75,7 +76,15 @@ function startAppServer(app: { fetch: (request: Request) => Response | Promise<R
 
 export async function runWysiwygE2e(
   t: TestContext,
-  options: { initialMarkdown: string; tempPrefix: string; file?: string },
+  options: {
+    initialMarkdown: string
+    tempPrefix: string
+    file?: string
+    /** More notebook files, by notebook-relative path — people, orgs, other documents */
+    files?: Record<string, string>
+    /** Build the notebook's store too, so completion and name resolution answer */
+    store?: boolean
+  },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,
 ) {
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), options.tempPrefix))
@@ -83,12 +92,33 @@ export async function runWysiwygE2e(
   let server: RunningServer | undefined
   try {
     const relativePath = options.file ?? 'notes/preview.md'
-    const rootDir = path.join(notebookBaseDir, relativePath.split('/')[0]!)
     const file = path.join(notebookBaseDir, relativePath)
     const userDataDir = path.join(notebookBaseDir, 'user-data')
     await mkdir(path.dirname(file), { recursive: true })
     await writeFile(file, options.initialMarkdown)
-    const app = createTestHttpApp([rootDir], { userDataDir })
+    const roots = new Set([relativePath.split('/')[0]!])
+    for (const [extra, content] of Object.entries(options.files ?? {})) {
+      const target = path.join(notebookBaseDir, extra)
+      await mkdir(path.dirname(target), { recursive: true })
+      await writeFile(target, content)
+      roots.add(extra.split('/')[0]!)
+    }
+    let markdownStore: MarkdownStore | null = null
+    if (options.store) {
+      for (const dir of ['people', 'orgs', 'time']) await mkdir(path.join(notebookBaseDir, dir), { recursive: true })
+      markdownStore = await MarkdownStore.build({
+        peopleDirs: [path.join(notebookBaseDir, 'people')],
+        orgDirs: [path.join(notebookBaseDir, 'orgs')],
+        timeDirs: [path.join(notebookBaseDir, 'time')],
+        libraryDir: path.join(notebookBaseDir, 'library'),
+        placesDir: path.join(notebookBaseDir, 'places'),
+        projectsDir: path.join(notebookBaseDir, 'projects'),
+      })
+    }
+    const app = createTestHttpApp(
+      [...roots].map((root) => path.join(notebookBaseDir, root)),
+      { userDataDir, markdownStore },
+    )
     browser = await launchChromiumOrSkip(t)
     server = startAppServer(app)
     const page = await browser.newPage()

@@ -146,22 +146,21 @@ test({ name: 'ENT-20 ENT-21 Enter in verbatim blocks', timeout: 30000 }, async (
     { tempPrefix: 'wysiwyg-ent-20-', initialMarkdown: '---\ntitle: x\n---\n\n[ref]: https://example.com\n' },
     async ({ page, origin, file }) => {
       await openEditor(page, origin)
-      await placeCaret(page, `${ROOT} pre.frontmatter`, 8)
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('tags: a')
-      await page.keyboard.press('Enter')
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('first paragraph')
+      // The front matter belongs to the properties panel: a line goes in through its YAML face.
+      await page.click('.sky-props-faces button[data-face="yaml"]')
+      const textarea = page.locator('.sky-props-yaml-input textarea')
+      await textarea.fill(`${await textarea.inputValue()}\ntags: a`)
+      await page.click('.sky-props-faces button[data-face="properties"]')
       await placeCaret(page, `${ROOT} pre.definition`, 26)
       await page.keyboard.press('Enter')
       await page.keyboard.type('after definition')
       await waitForSettle(page)
       await waitForAutosave(page)
       assert({
-        given: 'Enter inside front matter, then twice at its end; Enter at the end of a definition',
-        should: 'add a YAML line, leave the block into a new paragraph, and add a paragraph after the definition',
+        given: 'a YAML line typed into the front matter face; Enter at the end of a definition',
+        should: 'add the YAML line, and add a paragraph after the definition',
         actual: await readMarkdownFromDisk(file),
-        expected: '---\ntitle: x\ntags: a\n---\n\nfirst paragraph\n\n[ref]: https://example.com\n\nafter definition\n',
+        expected: '---\ntitle: x\ntags: a\n---\n\n[ref]: https://example.com\n\nafter definition\n',
       })
     },
   )
