@@ -40,6 +40,7 @@ import { createYogaInstance } from './graphql/schema.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
+import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
@@ -77,6 +78,8 @@ export interface ServerOptions {
   chat?: ChatRoutesOptions
   /** The browser's voice host; absent, /voice is not served */
   voice?: VoiceRoutesOptions
+  /** The settings page's host; absent, /settings/_api is not served */
+  settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
@@ -158,6 +161,7 @@ export function createServer(options: ServerOptions): Server {
     customRoutes,
     chat,
     voice,
+    settings,
     clock,
     referenceDate,
     markdownStoreConfig,
@@ -237,6 +241,7 @@ export function createServer(options: ServerOptions): Server {
       customRoutes,
       chat,
       voice,
+      settings,
       clock,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })

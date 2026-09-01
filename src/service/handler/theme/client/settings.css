@@ -1,0 +1,298 @@
+/* ============ settings — the preferences, one section per page ============ */
+
+/* blocks sit closer than the day's turns do */
+.sky-col.sky-set {
+  gap: 22px;
+}
+
+.sky-set-lead {
+  margin: 0;
+  font-size: 17px;
+  color: var(--sky-text-2);
+  max-width: 66ch;
+}
+
+.sky-set-lead code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 15px;
+}
+
+.sky-set-note {
+  margin: 6px 0 2px;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+/* a preference row: what it is on the left, the control on the right */
+.sky-set-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 18px;
+}
+
+.sky-set-row[data-last='true'] {
+  border-bottom: 0;
+}
+
+.sky-set-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-set-sub {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 2px;
+}
+
+.sky-set-ctl {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sky-set-value {
+  font-size: 16px;
+  color: var(--sky-text-2);
+}
+
+.sky-set-mono {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 15px;
+}
+
+.sky-set-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--sky-green);
+}
+
+.sky-set-status::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--sky-green);
+}
+
+.sky-set-warn {
+  margin: 8px 0 0;
+  font-size: 14.5px;
+  color: var(--mantine-color-red-7);
+}
+
+.sky-set-foot {
+  padding-top: 10px;
+}
+
+/* ── the voice list: two columns of rows, one per voice ── */
+.sky-set-voices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+}
+
+.sky-set-voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-set-voice:last-child {
+  border-bottom: 0;
+}
+
+.sky-set-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--sky-text);
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.sky-set-voice-name {
+  text-transform: capitalize;
+  font-size: 17px;
+}
+
+.sky-set-radio {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default);
+  flex: none;
+}
+
+/* picked: blue with a white center dot */
+.sky-set-radio[data-on='true'] {
+  border: 0;
+  background: radial-gradient(circle, #ffffff 0 4px, var(--mantine-color-blue-6) 4.5px);
+}
+
+.sky-set-voice .sky-tag {
+  font-size: 13px;
+}
+
+/* ── the advanced pane: the file's rows, compact ── */
+.sky-set-adv-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  padding: 16px 0 2px;
+}
+
+.sky-set-adv-row {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: 4px 18px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-set-adv-key {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  overflow-wrap: anywhere;
+}
+
+.sky-set-adv-value {
+  min-width: 0;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.sky-set-adv-value ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sky-set-unset {
+  font-family: var(--mantine-font-family);
+  color: var(--sky-dim);
+}
+
+.sky-set-adv-source {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
+.sky-set-adv-row[data-source='env'] .sky-set-adv-source {
+  color: var(--sky-blue-deep);
+}
+
+/* ── squeezed: rows stack, the voice list goes single-column ── */
+@media (max-width: 900px) {
+  .sky-set-row {
+    flex-wrap: wrap;
+    gap: 8px 24px;
+  }
+
+  .sky-set-voices {
+    grid-template-columns: 1fr;
+  }
+
+  .sky-set-adv-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sky-set-adv-key {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── model configurations: a row per profile, a small form to define one ── */
+.sky-set-prof {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-set-prof:last-of-type {
+  border-bottom: 0;
+}
+
+.sky-set-prof-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-set-prof-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sky-set-prof-name .sky-set-mono {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sky-set-prof-name .sky-tag {
+  margin-left: 0;
+}
+
+.sky-set-role {
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: var(--sky-blue-deep);
+  background: var(--sky-blue-soft);
+}
+
+.sky-set-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-set-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+
+.sky-set-mono-input {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+}
+
+.sky-set-form-foot {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .sky-set-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

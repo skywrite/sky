@@ -5,6 +5,7 @@ import { Store } from '../store.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
 import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
+import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
 function createTestYoga(): YogaServerInstance<object, object> {
@@ -23,6 +24,7 @@ export function createTestHttpApp(
     markdownStore?: MarkdownStore | null
     chat?: ChatRoutesOptions
     voice?: VoiceRoutesOptions
+    settings?: SettingsRoutesOptions
     clock?: ClockRoutesOptions
     userDataDir?: string
   } = {},
@@ -36,6 +38,7 @@ export function createTestHttpApp(
     markdownDirs,
     chat: options.chat,
     voice: options.voice,
+    settings: options.settings,
     clock: options.clock,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),

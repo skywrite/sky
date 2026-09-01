@@ -8,6 +8,14 @@ import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
+import {
+  SETTINGS_SECTIONS,
+  settingsHref,
+  SettingsMain,
+  saveSetting,
+  settingsSectionOf,
+  useAppearanceBoot,
+} from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
 
@@ -69,6 +77,8 @@ function useRoute(): [string, (to: string) => void] {
 function Canvas() {
   const [path, go] = useRoute()
   const [menu, setMenu] = useState(false)
+  // The saved appearance — theme and text size — lands once, at start.
+  useAppearanceBoot()
   // On a phone the sidebar is a drawer; any navigation closes it.
   const navigate = (to: string) => {
     setMenu(false)
@@ -78,6 +88,8 @@ function Canvas() {
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   const isVoice = path === '/voice'
   const isAudition = path === '/voice/audition'
+  const settingsSection = settingsSectionOf(path)
+  const isSettings = settingsSection !== null
   const isClock = path === '/clock'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
@@ -128,7 +140,7 @@ function Canvas() {
       <nav className="sky-side" data-open={menu}>
         <div className="sky-side-top">
           <span className="sky-brand">sky</span>
-          <SchemeToggle />
+          <SchemeToggle persist />
         </div>
         <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
         {explorerFile !== null ? (
@@ -138,6 +150,24 @@ function Canvas() {
             </button>
             <div className="sky-side-label">Explorer</div>
             <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
+          </>
+        ) : settingsSection ? (
+          <>
+            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+              <span>‹ Today</span>
+            </button>
+            <div className="sky-side-label">Settings</div>
+            {SETTINGS_SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="sky-thread"
+                data-active={s.id === settingsSection}
+                onClick={() => navigate(settingsHref(s.id))}
+              >
+                <span>{s.label}</span>
+              </button>
+            ))}
           </>
         ) : (
           <>
@@ -156,7 +186,13 @@ function Canvas() {
                 key={d.ymd}
                 type="button"
                 className="sky-thread"
-                data-active={threadId === null && !isVoice && !isClock && (offset === 0 ? isToday : dayYmd === d.ymd)}
+                data-active={
+                  threadId === null &&
+                  !isVoice &&
+                  !isSettings &&
+                  !isClock &&
+                  (offset === 0 ? isToday : dayYmd === d.ymd)
+                }
                 onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
               >
                 <span>{d.label}</span>
@@ -185,6 +221,14 @@ function Canvas() {
               <button type="button" className="sky-thread" onClick={() => navigate('/explorer')}>
                 <span>Explorer</span>
               </button>
+              <button
+                type="button"
+                className="sky-thread"
+                data-active={isSettings}
+                onClick={() => navigate('/settings')}
+              >
+                <span>Settings</span>
+              </button>
             </div>
           </>
         )}
@@ -194,6 +238,8 @@ function Canvas() {
         <DocView file={explorerFile} />
       ) : isClock ? (
         <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
+      ) : settingsSection ? (
+        <SettingsMain section={settingsSection} back={{ label: 'Today', onClick: () => navigate('/') }} />
       ) : isAudition ? (
         <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
       ) : isVoice ? (
@@ -282,11 +328,19 @@ function Sidebar({ view, onNavigate }: { view: View; onNavigate: (view: View) =>
   )
 }
 
-function SchemeToggle() {
+function SchemeToggle({ persist }: { persist?: boolean }) {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
+  const next = colorScheme === 'dark' ? 'light' : 'dark'
   return (
-    <Button size="compact-sm" onClick={toggleColorScheme}>
-      {colorScheme === 'dark' ? 'light' : 'dark'}
+    <Button
+      size="compact-sm"
+      onClick={() => {
+        toggleColorScheme()
+        // In the app the toggle is a real preference; the reference /theme page stays local.
+        if (persist) void saveSetting('web.theme', next)
+      }}
+    >
+      {next}
     </Button>
   )
 }

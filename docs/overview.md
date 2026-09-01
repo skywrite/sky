@@ -261,6 +261,10 @@ notebook without touching your real one.
 | `SKY_INPUT_DIR` | `inputDir` |
 | `SKY_OUTPUT_DIR` | `outputDir` |
 
+The service's settings pages live at `/settings` — appearance, voice, AI, notebook. Its
+Advanced section shows this file resolved: every value, and whether it came from the file,
+a default, or one of these variables.
+
 ## Where to go next
 
 - [Notebook time and NBFS](nbfs.md) — the file layout and time model in depth

@@ -17,8 +17,8 @@ import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voic
 import {
   AUDITION_PASSAGE,
   auditionSessionConfig,
-  DEFAULT_VOICE,
   DEFAULT_VOICE_MODEL,
+  preferredVoice,
   openingInstructions,
   renderVoicePrompts,
   type Voice,
@@ -88,7 +88,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
     return {
       session: voiceSessionConfig({
         model: DEFAULT_VOICE_MODEL,
-        voice: DEFAULT_VOICE,
+        voice: preferredVoice(),
         instructions: prompts.instructions,
         tools: [...tools.values()].map((tool) => tool.definition),
       }),
@@ -113,7 +113,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
       Promise.resolve({
         passage: renderTemplate(AUDITION_PASSAGE).output,
         groups: VOICE_GROUPS,
-        current: DEFAULT_VOICE,
+        current: preferredVoice(),
         model: DEFAULT_VOICE_MODEL,
       }),
     prepare: async (voice, passage) => {

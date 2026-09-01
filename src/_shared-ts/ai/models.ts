@@ -201,7 +201,10 @@ export function aiModelId(role: Role): string {
  */
 export { generateText, streamText } from 'ai'
 
-const PROVIDERS = new Set<string>(['anthropic', 'openai', 'ollama', 'lm-studio'])
+/** Every provider the registry can build, as a list — the settings page offers these. */
+export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'ollama', 'lm-studio']
+
+const PROVIDERS = new Set<string>(KNOWN_PROVIDERS)
 
 let configProfilesCache: Record<string, ModelProfile> | null = null
 

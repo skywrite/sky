@@ -11,6 +11,7 @@
  */
 
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
+import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prompts/mod.ts'
 import { pickGreeting } from './greetings.ts'
@@ -26,6 +27,15 @@ export type Voice = (typeof VOICES)[number]
  * longer tells it how to sound.
  */
 export const DEFAULT_VOICE: Voice = 'ash'
+
+/**
+ * The voice sessions actually use: `voice.voice` from ~/.sky/config.jsonc
+ * when it names a real voice, else the default. Read per session, so a
+ * change from the settings page applies to the next call, no restart.
+ */
+export function preferredVoice(configured: string | undefined = loadSkyConfig().voice.voice): Voice {
+  return (VOICES as readonly string[]).includes(configured ?? '') ? (configured as Voice) : DEFAULT_VOICE
+}
 
 /** By ear — OpenAI does not label them. Alloy is neutral and sits with the women. */
 export const VOICE_GROUPS: Readonly<Record<'male' | 'female', readonly Voice[]>> = {

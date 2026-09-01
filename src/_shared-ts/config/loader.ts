@@ -9,6 +9,18 @@ import type { SkyConfig } from './types.ts'
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
 
+/** The environment variables that outrank the file, and the key each one sets. */
+export const ENV_OVERRIDES: ReadonlyArray<{
+  env: string
+  key: 'dir' | 'userDataDir' | 'codeDir' | 'inputDir' | 'outputDir'
+}> = [
+  { env: 'SKY_DIR', key: 'dir' },
+  { env: 'SKY_DATA_DIR', key: 'userDataDir' },
+  { env: 'SKY_CODE_DIR', key: 'codeDir' },
+  { env: 'SKY_INPUT_DIR', key: 'inputDir' },
+  { env: 'SKY_OUTPUT_DIR', key: 'outputDir' },
+]
+
 function detectCodeDir(): string {
   // Walk up from this file: config/ → _shared-ts/ → src/ → sky/
   // Use realpathSync to canonicalize case (macOS is case-insensitive but
@@ -74,6 +86,8 @@ function defaults(): SkyConfig {
     },
     bins: {},
     slack: {},
+    web: {},
+    voice: {},
     ai: {
       models: {
         strong: 'anthropic/claude-sonnet-5',
@@ -87,12 +101,19 @@ function defaults(): SkyConfig {
   }
 }
 
+/** The file as written — its text and what it parses to; null when there is none. */
+export function readSkyConfigFile(configPath = SKY_CONFIG_PATH): { text: string; parsed: Partial<SkyConfig> } | null {
+  if (!existsSync(configPath)) return null
+  const text = readFileSync(configPath, 'utf-8')
+  return { text, parsed: parse(text) as Partial<SkyConfig> }
+}
+
 export function loadSkyConfig(): SkyConfig {
   const config = defaults()
 
-  if (existsSync(SKY_CONFIG_PATH)) {
-    const text = readFileSync(SKY_CONFIG_PATH, 'utf-8')
-    const parsed = parse(text) as Partial<SkyConfig>
+  const file = readSkyConfigFile()
+  if (file) {
+    const { parsed } = file
 
     if (parsed.version && parsed.version > 1) {
       console.warn(
@@ -112,6 +133,11 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
     if (parsed.slack?.workspace) config.slack.workspace = parsed.slack.workspace
+    if (parsed.web?.theme && ['system', 'light', 'dark'].includes(parsed.web.theme)) config.web.theme = parsed.web.theme
+    if (parsed.web?.textSize && ['default', 'large'].includes(parsed.web.textSize)) {
+      config.web.textSize = parsed.web.textSize
+    }
+    if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.server?.port) config.server.port = parsed.server.port
@@ -127,11 +153,10 @@ export function loadSkyConfig(): SkyConfig {
   }
 
   // Env var overrides (highest precedence)
-  if (process.env.SKY_DIR) config.dir = process.env.SKY_DIR
-  if (process.env.SKY_DATA_DIR) config.userDataDir = process.env.SKY_DATA_DIR
-  if (process.env.SKY_CODE_DIR) config.codeDir = process.env.SKY_CODE_DIR
-  if (process.env.SKY_INPUT_DIR) config.inputDir = process.env.SKY_INPUT_DIR
-  if (process.env.SKY_OUTPUT_DIR) config.outputDir = process.env.SKY_OUTPUT_DIR
+  for (const { env, key } of ENV_OVERRIDES) {
+    const value = process.env[env]
+    if (value) config[key] = value
+  }
 
   // Canonicalize path case (macOS is case-insensitive but Bun's module
   // cache keys on exact strings — mismatched case breaks instanceof)

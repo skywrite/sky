@@ -20,8 +20,8 @@ import colors from 'picocolors'
 import { renderDayCalendar } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
 import {
-  DEFAULT_VOICE,
   DEFAULT_VOICE_MODEL,
+  preferredVoice,
   REALTIME_EFFORTS,
   type RealtimeEffort,
   renderVoicePrompts,
@@ -39,7 +39,7 @@ const params = {
   model: Flag.string('Realtime voice model (gpt-realtime-2.1, or gpt-realtime-2.1-mini for cheaper sessions)', {
     default: () => DEFAULT_VOICE_MODEL,
   }),
-  voice: Flag.string(`Voice for spoken replies: ${VOICES.join(', ')}`, { default: () => DEFAULT_VOICE }),
+  voice: Flag.string(`Voice for spoken replies: ${VOICES.join(', ')}`, { default: () => preferredVoice() }),
   reasoning: Flag.string('Model profile for the ask_notebook delegate (e.g. default-opus-5)', {
     short: 'r',
     default: () => ROLES.reasoning,

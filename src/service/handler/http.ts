@@ -30,6 +30,7 @@ import {
   isPathWithinRoot,
   isPathWithinRoots,
 } from './markdown-preview/mod.ts'
+import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 import {
   backlinksOf,
@@ -62,6 +63,8 @@ export interface HttpHandlerOptions {
   chat?: ChatRoutesOptions
   /** The browser's voice host; absent, /voice is not served */
   voice?: VoiceRoutesOptions
+  /** The settings page's host; absent, /settings/_api is not served */
+  settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
@@ -72,8 +75,19 @@ export interface HttpHandlerOptions {
  * Create a Hono app with all service routes.
  */
 export function createHttpApp(options: HttpHandlerOptions): Hono {
-  const { store, yoga, markdownStore, markdownBaseDir, markdownDirs, customRoutes, chat, voice, clock, userDataDir } =
-    options
+  const {
+    store,
+    yoga,
+    markdownStore,
+    markdownBaseDir,
+    markdownDirs,
+    customRoutes,
+    chat,
+    voice,
+    settings,
+    clock,
+    userDataDir,
+  } = options
 
   const app = new Hono()
 
@@ -109,6 +123,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // secret and runs its tools. The page itself is /voice, below.
   if (voice) {
     app.route('/voice', createVoiceRoutes(voice))
+  }
+
+  // The settings page's data: the configuration as the service reads it.
+  // The page itself is /settings, below.
+  if (settings) {
+    app.route('/settings/_api', createSettingsRoutes(settings))
   }
 
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
@@ -456,6 +476,17 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The audition — every voice saying one passage. Reached by ai:voice:audition, not the sidebar.
   app.get('/voice/audition', (c) => {
     return c.html(renderAppHtml('sky · audition'))
+  })
+
+  // Settings: the app's preferences, one section per page — /settings/voice, /settings/appearance, ….
+  // Its data lives under /settings/_api/….
+  app.get('/settings', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  app.get('/settings/*', (c) => {
+    // A data path with no settings host stays a 404, not a page.
+    if (c.req.path.startsWith('/settings/_api/')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
+    return c.html(renderAppHtml('sky'))
   })
 
   // The clock: notebook time against the world's. Its data lives under /clock/_api/….
