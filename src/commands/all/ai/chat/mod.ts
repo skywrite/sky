@@ -56,8 +56,15 @@ const params = {
     short: 'd',
     default: () => 7,
   }),
-  contextTokens: Flag.number('Token budget ceiling for the assembled document context', {
+  maxContext: Flag.number('Token ceiling for the assembled document context — commas allowed (e.g. 150,000)', {
     default: () => 300_000,
+    parse: (raw) => {
+      const n = Number(String(raw).replace(/,/g, ''))
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`--max-context needs a positive token count, got "${raw}"`)
+      }
+      return n
+    },
   }),
   summaryBaseline: Flag.bool(
     'Seed days before yesterday from summary.md (else day.md alone) instead of every raw file',
@@ -213,6 +220,7 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
+      'sky ai:chat --max-context 150,000        # Cap assembled context (commas ok)',
       'sky ai:chat --no-summary-baseline        # Every raw file for all days (old flood)',
       'sky ai:chat -E                           # Ephemeral: exit without saving',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
@@ -226,7 +234,7 @@ export default class AiChatTask extends Command {
       reasoning: reasoningProfileName,
       fast: fastProfileName,
       days,
-      contextTokens,
+      maxContext,
       summaryBaseline,
       inspectInitialContext,
       category,
@@ -455,7 +463,7 @@ export default class AiChatTask extends Command {
       days,
       baseDir,
       timeDir,
-      contextTokens,
+      contextTokens: maxContext,
       summaryBaseline,
       resume: resumeSession,
       model: reasoning,
