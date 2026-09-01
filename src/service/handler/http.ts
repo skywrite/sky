@@ -253,6 +253,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     const kind = c.req.query('kind') ?? ''
     if (!COMPLETION_KINDS.has(kind)) return c.json({ message: 'Unknown completion kind' }, 400)
     const limit = Number.parseInt(c.req.query('limit') ?? '', 10)
+    // A notebook with no started day yet (fresh install, a test's temp tree)
+    // cannot compute notebook-now — complete without the recency anchor
+    // rather than failing the whole panel.
+    let today: string | undefined
+    try {
+      today = fetchNowSync().plainDateTime.plainDate.toString()
+    } catch {
+      today = undefined
+    }
     const items = complete(
       vocabularyOf(markdownStore, path.resolve(markdownBaseDir)),
       {
@@ -263,7 +272,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : undefined,
       },
       scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), store.getTagsWithScores()),
-      fetchNowSync().plainDateTime.plainDate.toString(),
+      today,
     )
     return c.json({ items })
   })
