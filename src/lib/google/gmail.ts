@@ -155,13 +155,18 @@ export async function listLabels(client: GoogleClient): Promise<GmailLabel[]> {
   )
 }
 
-/** Resolve a label display name ("Sky/Follow") to its API id; exact match first, then case-insensitive. */
-export async function resolveLabelId(client: GoogleClient, name: string): Promise<string | undefined> {
+/** Resolve a label display name ("Sky/Follow", "INBOX") to the label; exact match first, then case-insensitive. */
+export async function resolveLabel(client: GoogleClient, name: string): Promise<GmailLabel | undefined> {
   const labels = await listLabels(client)
   const exact = labels.find((l) => l.name === name)
-  if (exact) return exact.id
+  if (exact) return exact
   const lower = name.toLowerCase()
-  return labels.find((l) => l.name.toLowerCase() === lower)?.id
+  return labels.find((l) => l.name.toLowerCase() === lower)
+}
+
+/** Resolve a label display name ("Sky/Follow") to its API id; exact match first, then case-insensitive. */
+export async function resolveLabelId(client: GoogleClient, name: string): Promise<string | undefined> {
+  return (await resolveLabel(client, name))?.id
 }
 
 /**

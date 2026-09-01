@@ -156,6 +156,7 @@ export {
   listThreads,
   modifyThread,
   parseRecipients,
+  resolveLabel,
   resolveLabelId,
   threadIdFromDecimal,
   threadIdToDecimal,
