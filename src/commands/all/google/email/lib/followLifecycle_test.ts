@@ -2,7 +2,13 @@ import Follow from '#shared/models/Follow/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
-import { planThreadFollow, selectExpiredFollows, threadsToArchive, uniqueFollowFileName } from './followLifecycle.ts'
+import {
+  planThreadFollow,
+  selectExpiredFollows,
+  selectNowLabelSwaps,
+  threadsToArchive,
+  uniqueFollowFileName,
+} from './followLifecycle.ts'
 import type { FollowEntry } from './followLifecycle.ts'
 
 const NOW = PlainDateTime.fromString('2026-08-12 10:00')
@@ -35,6 +41,28 @@ test('threadsToArchive leaves replies to followed threads in the inbox', () => {
     should: 'archive only the first capture that succeeded',
     expected: ['1'],
     actual: threadsToArchive([first, continuation, failedFirst], new Set(['1', '3'])).map((t) => t.threadId),
+  })
+})
+
+test('selectNowLabelSwaps swaps captures and lingering labels, keeps retries', () => {
+  const first = thread({ threadId: '1' })
+  const continuation = thread({ threadId: '2' })
+  const failedFirst = thread({ threadId: '3', failed: true })
+  const nothingWritten = thread({ threadId: '4', messages: [], captured: 0 })
+  const listed = [
+    { threadId: '1', saved: true }, // fetched this run — its listed state is not consulted
+    { threadId: '5', saved: true }, // Now label lingering on an already-tracked thread
+    { threadId: '6', saved: false }, // unsaved backlog beyond this run's fetch limit
+  ]
+
+  const swaps = selectNowLabelSwaps(listed, [first, continuation, failedFirst, nothingWritten], new Set(['1', '3']))
+
+  assert({
+    given:
+      'a first capture, a continuation, a failed thread, a write-less fetch, a lingering label, and an unfetched backlog thread',
+    should: 'swap the captures (archiving only the first) and heal the lingerer; leave failures and backlog for retry',
+    expected: '1:archive, 2:keep-inbox, 5:keep-inbox',
+    actual: swaps.map((s) => `${s.threadId}:${s.archive ? 'archive' : 'keep-inbox'}`).join(', '),
   })
 })
 
@@ -106,6 +134,23 @@ test('planThreadFollow --force follows a quiet thread anyway', () => {
 
   assert({ given: 'force', should: 'not be born expired', expected: false, actual: bornExpired })
   assert({ given: 'force', should: 'stay active', expected: 'active', actual: follow.status })
+})
+
+test('a forced follow with its capture collapsed to today survives the expiry sweep', () => {
+  const t = thread({
+    messages: [
+      { date: '2026-08-12', path: 'time/2026/08/10-16/08-12/actions/messages/10-00_email_Jane-Doe_Atlas-kickoff.md' },
+    ],
+    lastMessageAt: '2026-07-20 09:00',
+  })
+  const { follow } = plan(t, true)
+
+  assert({
+    given: 'a long-quiet thread followed through the Now door (forced, capture dated today)',
+    should: 'anchor inactivity on the collapsed capture date and stay unexpired',
+    expected: false,
+    actual: follow.isExpired(NOW),
+  })
 })
 
 test('planThreadFollow falls back to now when no message time is known', () => {

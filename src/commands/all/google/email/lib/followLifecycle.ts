@@ -10,10 +10,12 @@ import { toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
 
-// First-time follow creation, shared by follow:new and follow:sync. Mirrors
-// slack:follow:message's decline rule: a thread already quiet past the expiry
-// window is an archive, not something to watch — its content is captured, but
-// the follow is born closed and the thread leaves the Sky/Follow bucket.
+// First-time follow creation, shared by follow:new and follow:sync, and the
+// Gmail label lifecycle around a follow (first-capture archiving, the Now
+// door's entry-label swap, expiry). Mirrors slack:follow:message's decline
+// rule: a thread already quiet past the expiry window is an archive, not
+// something to watch — its content is captured, but the follow is born closed
+// and the thread leaves the Sky/Follow bucket.
 
 export type PlannedFollow = {
   follow: Follow
@@ -159,6 +161,66 @@ export async function persistNewFollow(opts: {
  */
 export function threadsToArchive(threads: FetchedThread[], firstCaptures: Set<string>): FetchedThread[] {
   return threads.filter((t) => !t.failed && firstCaptures.has(t.threadId))
+}
+
+export type NowLabelSwap = { threadId: string; archive: boolean }
+
+/**
+ * Which Now-door threads trade their entry label for the bucket label this
+ * run. A first capture swaps and leaves the inbox in one call; a continuation
+ * swaps only — its reply is unread mail (threadsToArchive's rule). A listed
+ * thread that is saved but was not fetched swaps too: a Now label lingering
+ * on a tracked thread (a hand-labeled bump, or a swap an earlier Gmail call
+ * lost) must heal, or it outlives its follow and the whole thread re-captures
+ * after close-out. Failed and still-unsaved threads keep the entry label so
+ * the next sync retries them.
+ */
+export function selectNowLabelSwaps(
+  listed: { threadId: string; saved: boolean }[],
+  fetched: FetchedThread[],
+  firstCaptures: Set<string>,
+): NowLabelSwap[] {
+  const swaps: NowLabelSwap[] = []
+  const fetchedIds = new Set<string>()
+  for (const thread of fetched) {
+    fetchedIds.add(thread.threadId)
+    if (thread.failed || thread.messages.length === 0) continue
+    swaps.push({ threadId: thread.threadId, archive: firstCaptures.has(thread.threadId) })
+  }
+  for (const thread of listed) {
+    if (fetchedIds.has(thread.threadId) || !thread.saved) continue
+    swaps.push({ threadId: thread.threadId, archive: false })
+  }
+  return swaps
+}
+
+/**
+ * Apply planned Now-door swaps in Gmail: add the bucket label, drop the entry
+ * label — and INBOX with it on first captures. One thread's failure is logged
+ * and left alone; it stays saved (the follow exists), and the next sync's
+ * lingering-label sweep retries the swap.
+ */
+export async function applyNowLabelSwaps(opts: {
+  client: GoogleClient
+  swaps: NowLabelSwap[]
+  addLabelId: string
+  removeLabelId: string
+  output: { log: (msg: string) => void }
+}): Promise<number> {
+  const { client, swaps, addLabelId, removeLabelId, output } = opts
+  let swapped = 0
+  for (const swap of swaps) {
+    try {
+      await modifyThread(client, threadIdFromDecimal(swap.threadId), {
+        addLabelIds: [addLabelId],
+        removeLabelIds: swap.archive ? [removeLabelId, 'INBOX'] : [removeLabelId],
+      })
+      swapped++
+    } catch (err) {
+      output.log(`  Warning: label swap failed (${(err as Error).message}) — the next sync retries it`)
+    }
+  }
+  return swapped
 }
 
 export type FollowEntry = { follow: Follow; path: string; fileName: string }

@@ -3,26 +3,40 @@ import * as p from '@clack/prompts'
 import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
-import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
+import { AccountResolutionError, modifyThread, resolveLabel, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import { fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
+import { fetchNow, toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
-import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
-import { expireQuietFollows, persistNewFollow, planThreadFollow, threadsToArchive } from '../../lib/followLifecycle.ts'
+import type { FetchedThread, FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
+import {
+  applyNowLabelSwaps,
+  expireQuietFollows,
+  persistNewFollow,
+  planThreadFollow,
+  selectNowLabelSwaps,
+  threadsToArchive,
+} from '../../lib/followLifecycle.ts'
 import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
 import { formatSyncReport } from '../../lib/syncReport.ts'
 import type { ClosedThread, SyncedThread } from '../../lib/syncReport.ts'
 
+/**
+ * Sub-label of the bucket that files a thread on the day it is picked up, not
+ * the days its mail carries. Optional: an account without the label in Gmail
+ * simply has no Now door.
+ */
+const NOW_SUBLABEL = 'Now'
+
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  label: Flag.string('Gmail label to sync', { default: () => 'Sky/Follow' }),
+  label: Flag.string('Gmail label to sync (its /Now sub-label is scanned too)', { default: () => 'Sky/Follow' }),
   limit: Flag.number('Max unsaved threads to capture per run', { default: () => 250 }),
   pick: Flag.bool('Interactively pick a single tagged thread to sync (for testing/triage)', {
     default: false,
@@ -52,6 +66,19 @@ const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpir
 /** Most entries a console run opens for review — past this, the closing report is the review surface. */
 const MAX_EDITOR_OPENS = 10
 
+type PickedThread = { threadId: string; door: 'now' | 'bucket' }
+
+/** One entry door's phase-3 outcome, merged with the other door's for the run report. */
+type DoorOutcome = {
+  newFollows: number
+  updatedFollows: number
+  bornExpired: number
+  synced: SyncedThread[]
+  closed: ClosedThread[]
+  /** Threads whose follow was created this run — what gets archived/swapped, and opened for tag review. */
+  firstCaptures: Set<string>
+}
+
 export default class GoogleEmailInboxFollowSyncTask extends Command {
   static override description: CommandDescription = {
     name: 'google:email:inbox:follow:sync',
@@ -59,9 +86,14 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     descriptionLong: [
       'Gmail-API twin of email:inbox:follow:sync, using the OAuth grant from',
       'google:auth (requires the Gmail scope).',
-      'Runs the google:email:inbox:fetch core to download unsaved messages, then:',
-      '  - First-time threads: each message lands on its own date, creates follow file;',
-      '    threads already quiet past the expiry window are captured and closed instead',
+      'Two entry labels feed one bucket (default Sky/Follow):',
+      '  - The bucket label itself: each message lands on its own date; a thread',
+      '    already quiet past the expiry window is captured and closed on the spot',
+      '  - Its /Now sub-label: the whole thread lands as one entry on the day it is',
+      '    picked up and the watch starts there, however old the mail. After first',
+      '    capture the sub-label is swapped for the bucket label, so the bare label',
+      '    always reads "being tracked".',
+      'Either way:',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
       '  - Archives first captures from inbox; replies to followed threads stay in the inbox',
       `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Gmail label removed, follow YAML archived`,
@@ -74,6 +106,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<SyncResult>> {
     const { output, secrets } = context
     const { account, label, limit, pick, noAutoTag, noAutoRel, noEditor } = args
+    const nowLabel = `${label}/${NOW_SUBLABEL}`
 
     // ── Phase 1: Load follow registry ────────────────────────────────────
     const registry = await EmailFollowRegistry.build()
@@ -87,157 +120,158 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     }
 
     try {
-      // ── Optional: interactive single-thread pick (testing/triage) ─────────
-      let pickedThreadId: string | undefined
-      let inbox: InboxThreadsResult | undefined
-      if (pick) {
+      const now = await fetchNow()
+
+      // ── Phase 2a: List both entry labels ─────────────────────────────────
+      // Deep listings: captured threads keep the bucket label, so the
+      // newest-first listing tops out with saved threads over time and a bound
+      // applied here would starve unsaved ones (see LISTING_DEPTH).
+      let nowInbox: InboxThreadsResult | undefined
+      if (await resolveLabel(client, nowLabel)) {
         try {
-          // Deep listing: the picker must offer every unsaved thread, not the
-          // N newest bucket entries (which go stale-saved over time).
-          inbox = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
+          nowInbox = await getInboxThreads(client, nowLabel, { limit: LISTING_DEPTH })
         } catch (err) {
-          output.log(`  Warning: could not list threads: ${(err as Error).message}`)
-          return CommandResult.success(NOTHING_SYNCED)
+          output.log(`  Warning: could not list ${nowLabel} (${(err as Error).message}) — skipping the Now door`)
         }
-        pickedThreadId = await this.promptForThread(inbox.threads, output)
-        if (!pickedThreadId) {
+      }
+      const bucketListing = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
+      // A thread wearing both labels is the Now door's: the sub-label is the
+      // explicit act, and two doors capturing one thread would double it.
+      const nowThreadIds = new Set((nowInbox?.threads ?? []).map((t) => t.threadId))
+      const bucketInbox = {
+        ...bucketListing,
+        threads: bucketListing.threads.filter((t) => !nowThreadIds.has(t.threadId)),
+      }
+
+      // ── Optional: interactive single-thread pick (testing/triage) ─────────
+      let picked: PickedThread | undefined
+      if (pick) {
+        picked = await this.promptForThread(nowInbox?.threads ?? [], bucketInbox.threads, output)
+        if (!picked) {
           return CommandResult.success(NOTHING_SYNCED)
         }
       }
 
-      // ── Phase 2: Fetch unsaved messages (google:email:inbox:fetch core) ───
-      // The pick's thread listing is passed through so the label scan isn't redone.
-      const fetchResult = await fetchUnsavedThreads(
+      // ── Phase 2b: Fetch unsaved messages (google:email:inbox:fetch core) ──
+      // The listings above are passed through so the label scans aren't redone.
+      const nothing: FetchUnsavedResult = { fetched: 0, threads: [], labelId: '' }
+      const runNowDoor = !!nowInbox && nowInbox.threads.some((t) => !t.saved) && (!picked || picked.door === 'now')
+      const nowFetch =
+        runNowDoor && nowInbox
+          ? await fetchUnsavedThreads(
+              client,
+              {
+                label: nowLabel,
+                limit,
+                // The Now door's point: the capture lands on the pickup day,
+                // not the days the mail carries.
+                when: now.plainDateTime,
+                follow: true,
+                inbox: nowInbox,
+                noAutoTag,
+                noAutoRel,
+                ...(picked ? { threadId: picked.threadId } : {}),
+              },
+              { tasks, output },
+            )
+          : nothing
+      const bucketFetch =
+        !picked || picked.door === 'bucket'
+          ? await fetchUnsavedThreads(
+              client,
+              {
+                label,
+                limit,
+                follow: true,
+                inbox: bucketInbox,
+                noAutoTag,
+                noAutoRel,
+                ...(picked ? { threadId: picked.threadId } : {}),
+              },
+              { tasks, output },
+            )
+          : nothing
+
+      // ── Phase 3: Create/update follow files ────────────────────────────
+      // Both doors write the bucket label into ref: — a Now thread wears it
+      // after the swap below, and expiry must remove what is worn.
+      const nowDoor = await this.trackFetchedThreads({
+        registry,
         client,
-        {
-          label,
-          limit,
-          follow: true,
-          noAutoTag,
-          noAutoRel,
-          ...(pickedThreadId ? { threadId: pickedThreadId } : {}),
-          ...(inbox ? { inbox } : {}),
-        },
-        { tasks, output },
-      )
+        fetchResult: nowFetch,
+        label,
+        now: now.plainDateTime,
+        force: true,
+        output,
+      })
+      const bucketDoor = await this.trackFetchedThreads({
+        registry,
+        client,
+        fetchResult: bucketFetch,
+        label,
+        now: now.plainDateTime,
+        force: false,
+        output,
+      })
 
-      const now = fetchNowSync()
-      let newFollows = 0
-      let updatedFollows = 0
-      let bornExpired = 0
-      const synced: SyncedThread[] = []
-      const closed: ClosedThread[] = []
-      // Threads whose follow was created this run — the captures a person
-      // wants in front of them to check the fresh tagging.
-      const firstCaptures = new Set<string>()
-
-      if (fetchResult.fetched === 0) {
+      if (nowFetch.fetched + bucketFetch.fetched === 0) {
         output.log('  All threads synced.')
-      } else {
-        // ── Phase 3: Create/update follow files ────────────────────────────
-        for (const thread of fetchResult.threads) {
-          if (thread.messages.length === 0) continue
+      }
 
-          const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
-          const existingFollow = registry.findByThreadId(thread.threadId)
+      const synced = [...nowDoor.synced, ...bucketDoor.synced]
+      const closed = [...nowDoor.closed, ...bucketDoor.closed]
 
-          if (existingFollow) {
-            let follow = existingFollow.follow
-            // New entries are stored as time refs; old follows may hold paths
-            // in any layout (or damaged ones). Dedupe on the canonical form,
-            // falling back to the raw string where canonicalizing fails —
-            // a duplicate follow entry is cheaper than a lost sync.
-            const canon = (p: string): string => {
-              try {
-                return toTimeRef(p)
-              } catch {
-                return p
-              }
-            }
-            const existingPaths = new Set(follow.messages.map((m) => canon(m.path)))
-            for (const msg of thread.messages) {
-              if (existingPaths.has(canon(msg.path))) continue
-              follow = follow.addMessage(msg.date, toTimeRef(msg.path))
-            }
-            // lastActivity is the newest message's real time, not the sync time —
-            // a reply discovered late must not look like fresh activity
-            if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
-            follow = follow.updateLastChecked(now.plainDateTime)
+      // ── Phase 4: Retire entry labels ───────────────────────────────────
+      // Bucket door: only threads followed for the first time this run leave
+      // the inbox. A reply to a thread already followed is mail the owner has
+      // not read yet — on the heartbeat this ran within minutes of arrival
+      // and pulled the reply out of the inbox before anyone saw it. It stays
+      // until they archive it; failed threads stay so the next sync retries.
+      await this.archiveFromInbox(client, threadsToArchive(bucketFetch.threads, bucketDoor.firstCaptures), output)
 
-            await writeTextFile(existingFollow.path, follow.toYaml())
-            output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
-            updatedFollows++
-            // A continuation is not summarized again, so the follow's own label
-            // is what names it — the same one its earlier captures carry.
-            synced.push({
-              from: thread.from,
-              label: follow.summary || thread.subject,
-              messages: thread.captured,
-              state: 'updated',
-            })
-          } else {
-            const planned = planThreadFollow({
-              accountEmail: client.email,
-              label,
-              thread,
-              now: now.plainDateTime,
-            })
-            const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
-            firstCaptures.add(thread.threadId)
-            const topic = thread.summary || thread.subject
-            synced.push({
-              from: thread.from,
-              label: topic,
-              messages: thread.captured,
-              state: 'new',
-              ...(persisted.followed ? {} : { closed: true }),
-            })
-            if (persisted.followed) newFollows++
-            else {
-              bornExpired++
-              // Captured and retired in one run: it belongs in both lists.
-              closed.push({
-                label: topic,
-                reason: `already quiet past ${Follow.DEFAULT_MAX_INACTIVE} when first seen`,
-                captured: thread.captured,
-              })
-            }
-          }
+      // Now door: captured threads trade the sub-label for the bucket label
+      // (first captures leave the inbox in the same call). A --pick run swaps
+      // only what it captured — triage must not sweep lingering labels.
+      if (nowInbox) {
+        const swaps = selectNowLabelSwaps(pick ? [] : nowInbox.threads, nowFetch.threads, nowDoor.firstCaptures)
+        if (swaps.length > 0) {
+          const swapped = await applyNowLabelSwaps({
+            client,
+            swaps,
+            addLabelId: bucketListing.labelId,
+            removeLabelId: nowInbox.labelId,
+            output,
+          })
+          if (swapped > 0) output.log(`  Swapped ${swapped} thread(s) ${nowLabel} → ${label}.`)
         }
+      }
 
-        // ── Phase 4: Archive first captures from inbox ─────────────────────
-        // Only threads followed for the first time this run. A reply to a
-        // thread already followed is mail the owner has not read yet — on
-        // the heartbeat this ran within minutes of arrival and pulled the
-        // reply out of the inbox before anyone saw it. It stays until they
-        // archive it; failed threads stay so the next sync retries them.
-        await this.archiveFromInbox(client, threadsToArchive(fetchResult.threads, firstCaptures), output)
-
-        // A console run is a person catching up: open everything captured.
-        // On the heartbeat (Server platform) open only FIRST captures — a new
-        // follow means fresh AI tagging worth a human glance, while
-        // continuations inherit already-reviewed fields. Capped — a backlog
-        // drain creates dozens of files, and a wall of tabs reviews worse
-        // than the report below.
-        const created = fetchResult.threads.flatMap((t) => t.messages)
-        const reviewable =
-          context.platform === CommandPlatform.Console
-            ? created
-            : context.platform === CommandPlatform.Server
-              ? fetchResult.threads.filter((t) => firstCaptures.has(t.threadId)).flatMap((t) => t.messages)
-              : []
-        if (!noEditor && reviewable.length > 0) {
-          const toOpen = reviewable.slice(0, MAX_EDITOR_OPENS)
-          const rest = reviewable.length - toOpen.length
-          output.log(
-            `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
-          )
-          try {
-            await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
-          } catch (err) {
-            // A heartbeat must never fail over an editor that couldn't spawn.
-            output.log(`  Warning: could not open editor (${(err as Error).message})`)
-          }
+      // A console run is a person catching up: open everything captured.
+      // On the heartbeat (Server platform) open only FIRST captures — a new
+      // follow means fresh AI tagging worth a human glance, while
+      // continuations inherit already-reviewed fields. Capped — a backlog
+      // drain creates dozens of files, and a wall of tabs reviews worse
+      // than the report below.
+      const allThreads = [...nowFetch.threads, ...bucketFetch.threads]
+      const allFirstCaptures = new Set([...nowDoor.firstCaptures, ...bucketDoor.firstCaptures])
+      const created = allThreads.flatMap((t) => t.messages)
+      const reviewable =
+        context.platform === CommandPlatform.Console
+          ? created
+          : context.platform === CommandPlatform.Server
+            ? allThreads.filter((t) => allFirstCaptures.has(t.threadId)).flatMap((t) => t.messages)
+            : []
+      if (!noEditor && reviewable.length > 0) {
+        const toOpen = reviewable.slice(0, MAX_EDITOR_OPENS)
+        const rest = reviewable.length - toOpen.length
+        output.log(
+          `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
+        )
+        try {
+          await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
+        } catch (err) {
+          // A heartbeat must never fail over an editor that couldn't spawn.
+          output.log(`  Warning: could not open editor (${(err as Error).message})`)
         }
       }
 
@@ -261,7 +295,10 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         for (const e of sweep.expired) closed.push({ label: e.summary, reason: e.reason })
       }
 
-      const fetched = fetchResult.fetched
+      const newFollows = nowDoor.newFollows + bucketDoor.newFollows
+      const updatedFollows = nowDoor.updatedFollows + bucketDoor.updatedFollows
+      const bornExpired = nowDoor.bornExpired + bucketDoor.bornExpired
+      const fetched = nowFetch.fetched + bucketFetch.fetched
       const closedNote = bornExpired > 0 ? `, ${bornExpired} captured and closed` : ''
       const expiredNote = expired.length > 0 ? `, ${expired.length} expired` : ''
       for (const line of formatSyncReport(synced, closed)) output.log(line)
@@ -274,14 +311,121 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     }
   }
 
-  /** Let the user pick one unsaved tagged thread. Returns its threadId, or undefined. */
+  /**
+   * Phase 3 for one entry door: create a follow per first-time thread, append
+   * to the follow of each already-tracked one. `force` marks the Now door —
+   * follow however quiet the thread is, because the follow-up starts at
+   * pickup and its capture (collapsed to the pickup day) anchors the
+   * inactivity clock there.
+   */
+  private async trackFetchedThreads(opts: {
+    registry: EmailFollowRegistry
+    client: GoogleClient
+    fetchResult: FetchUnsavedResult
+    label: string
+    now: PlainDateTime
+    force: boolean
+    output: { log: (msg: string) => void }
+  }): Promise<DoorOutcome> {
+    const { registry, client, fetchResult, label, now, force, output } = opts
+    const outcome: DoorOutcome = {
+      newFollows: 0,
+      updatedFollows: 0,
+      bornExpired: 0,
+      synced: [],
+      closed: [],
+      firstCaptures: new Set(),
+    }
+
+    for (const thread of fetchResult.threads) {
+      if (thread.messages.length === 0) continue
+
+      const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
+      const existingFollow = registry.findByThreadId(thread.threadId)
+
+      if (existingFollow) {
+        let follow = existingFollow.follow
+        // New entries are stored as time refs; old follows may hold paths
+        // in any layout (or damaged ones). Dedupe on the canonical form,
+        // falling back to the raw string where canonicalizing fails —
+        // a duplicate follow entry is cheaper than a lost sync.
+        const canon = (p: string): string => {
+          try {
+            return toTimeRef(p)
+          } catch {
+            return p
+          }
+        }
+        const existingPaths = new Set(follow.messages.map((m) => canon(m.path)))
+        for (const msg of thread.messages) {
+          if (existingPaths.has(canon(msg.path))) continue
+          follow = follow.addMessage(msg.date, toTimeRef(msg.path))
+        }
+        // lastActivity is the newest message's real time, not the sync time —
+        // a reply discovered late must not look like fresh activity
+        if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
+        follow = follow.updateLastChecked(now)
+
+        await writeTextFile(existingFollow.path, follow.toYaml())
+        output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
+        outcome.updatedFollows++
+        // A continuation is not summarized again, so the follow's own label
+        // is what names it — the same one its earlier captures carry.
+        outcome.synced.push({
+          from: thread.from,
+          label: follow.summary || thread.subject,
+          messages: thread.captured,
+          state: 'updated',
+        })
+      } else {
+        const planned = planThreadFollow({
+          accountEmail: client.email,
+          label,
+          thread,
+          now,
+          force,
+        })
+        const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+        outcome.firstCaptures.add(thread.threadId)
+        const topic = thread.summary || thread.subject
+        outcome.synced.push({
+          from: thread.from,
+          label: topic,
+          messages: thread.captured,
+          state: 'new',
+          ...(persisted.followed ? {} : { closed: true }),
+        })
+        if (persisted.followed) outcome.newFollows++
+        else {
+          outcome.bornExpired++
+          // Captured and retired in one run: it belongs in both lists.
+          outcome.closed.push({
+            label: topic,
+            reason: `already quiet past ${Follow.DEFAULT_MAX_INACTIVE} when first seen`,
+            captured: thread.captured,
+          })
+        }
+      }
+    }
+
+    return outcome
+  }
+
+  /** Let the user pick one unsaved tagged thread from either door. Returns its threadId + door, or undefined. */
   private async promptForThread(
-    threads: InboxThread[],
+    nowThreads: InboxThread[],
+    bucketThreads: InboxThread[],
     output: { log: (msg: string) => void },
-  ): Promise<string | undefined> {
-    const unsaved = threads
-      .filter((t) => !t.saved)
-      .map((t) => {
+  ): Promise<PickedThread | undefined> {
+    const rows = [
+      ...nowThreads.map((t) => ({ t, door: 'now' as const })),
+      ...bucketThreads.map((t) => ({ t, door: 'bucket' as const })),
+    ]
+    const doorByThread = new Map<string, 'now' | 'bucket'>()
+    const unsaved = rows
+      .filter(({ t }) => !t.saved)
+      .map(({ t, door }) => {
+        doorByThread.set(t.threadId, door)
         const first = t.messages[0]
         // Messages are sorted oldest-first, so the last one is the most recent
         const latest = t.messages.at(-1)
@@ -292,6 +436,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
           date: latest?.date ? PlainDate.from(latest.date).toString() : undefined,
           count: t.messages.length,
           followed: t.savedMessages.length > 0,
+          door,
         }
       })
 
@@ -305,7 +450,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       options: unsaved.map((t) => ({
         value: t.threadId,
         label: t.date ? `[${t.date}] ${t.subject}` : t.subject,
-        hint: `${t.from} · ${t.count} msg${t.count === 1 ? '' : 's'} · ${t.followed ? 'new replies' : 'new'}`,
+        hint: `${t.from} · ${t.count} msg${t.count === 1 ? '' : 's'} · ${t.followed ? 'new replies' : 'new'}${t.door === 'now' ? ' · Now' : ''}`,
       })),
     })
 
@@ -314,7 +459,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       return undefined
     }
 
-    return selected as string
+    const threadId = selected as string
+    return { threadId, door: doorByThread.get(threadId) ?? 'bucket' }
   }
 
   /** Remove the given threads from the inbox (the Sky/Follow label stays so inbox:view shows them as saved). */
