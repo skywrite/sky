@@ -1,0 +1,14 @@
+diff --git a/index.js b/index.js
+index d45e67d91d38c91d05e68e8b338e4bc2de591dcc..cb009e8b218661f7b837ae84dcaea952ffaa24e7 100644
+--- a/index.js
++++ b/index.js
+@@ -1,6 +1,8 @@
+ 'use strict';
+ const strictUriEncode = require('strict-uri-encode');
+-const decodeComponent = require('decode-uri-component');
++const decodeComponentModule = require('decode-uri-component');
++// decode-uri-component >=0.5 is ESM-only (security override); unwrap its default export.
++const decodeComponent = decodeComponentModule.default ?? decodeComponentModule;
+ const splitOnFirst = require('split-on-first');
+ const filterObject = require('filter-obj');
+ 
