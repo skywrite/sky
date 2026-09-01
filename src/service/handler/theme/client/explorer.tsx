@@ -18,9 +18,10 @@ import { type EditorHandle, type EditorStatusKind, mountEditor } from './wysiwyg
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
- * opened, never the whole notebook at once — and the column is the file
- * open in it: rendered to read, or, after Edit, as blocks to change in
- * place. A file's page is its path: /explorer/<path>.
+ * opened, never the whole notebook at once — and the column is the page
+ * open in it: a file rendered to read (or, after Edit, as blocks to change
+ * in place), a directory as the files it holds. A page is its path:
+ * /explorer/<path>; /explorer itself lists the roots.
  */
 
 export interface ExplorerEntry {
@@ -191,6 +192,7 @@ function Rows({
               className="sky-tree-row"
               data-kind="dir"
               data-open={open.has(entry.path)}
+              data-active={entry.path === file}
               data-branch={file.startsWith(`${entry.path}/`)}
               style={indent}
               onClick={() => toggle(entry.path)}
@@ -236,22 +238,22 @@ function Rows({
 const POLL_MS = 4000
 
 /**
- * The file, read once and re-read whenever it changes on disk — a save from
- * the terminal or another session shows up here within seconds, in place.
+ * What the path names — a file rendered, or a directory listed — read once
+ * and re-read whenever it changes on disk: a save or a new capture from the
+ * terminal or another session shows up here within seconds, in place.
  */
-function useDoc(file: string, paused: boolean): { doc: ExplorerDoc | null; missing: boolean } {
+function useDoc(file: string, paused: boolean): { doc: ExplorerDoc | null; listing: Listing | null; missing: boolean } {
   const [doc, setDoc] = useState<ExplorerDoc | null>(null)
+  const [listing, setListing] = useState<Listing | null>(null)
   const [missing, setMissing] = useState(false)
   useEffect(() => {
     // While the editor has the file it does the watching; when it hands back, this reads afresh.
     if (paused) return
     setMissing(false)
-    if (!file) {
-      setDoc(null)
-      return
-    }
     let alive = true
+    let shown: 'doc' | 'dir' | null = null
     let version: number | null = null
+    let listed = ''
     const read = async (): Promise<ExplorerDoc | null> => {
       try {
         const r = await fetch(`/explorer/_api/doc?path=${encodeURIComponent(file)}`)
@@ -260,27 +262,58 @@ function useDoc(file: string, paused: boolean): { doc: ExplorerDoc | null; missi
         return null
       }
     }
-    const show = (body: ExplorerDoc) => {
+    const list = async (): Promise<Listing | null> => {
+      try {
+        const r = await fetch(`/explorer/_api/dir${file ? `?path=${encodeURIComponent(file)}` : ''}`)
+        return r.ok ? ((await r.json()) as Listing) : null
+      } catch {
+        return null
+      }
+    }
+    const showDoc = (body: ExplorerDoc) => {
+      shown = 'doc'
       version = body.version
       setDoc(body)
+      setListing(null)
       setMissing(false)
     }
-    void read().then((body) => {
+    const showDir = (body: Listing) => {
+      shown = 'dir'
+      listed = JSON.stringify(body.entries)
+      setListing(body)
+      setDoc(null)
+      setMissing(false)
+    }
+    // A path is tried as a file first, then as a directory; '' is the roots.
+    // The last page stays on screen until this one arrives — no blank in between.
+    const resolve = async () => {
+      const body = file ? await read() : null
       if (!alive) return
-      // The last file stays on screen until this one arrives — no blank in between.
-      if (body) show(body)
-      else setMissing(true)
-    })
+      if (body) return showDoc(body)
+      const dir = await list()
+      if (!alive) return
+      if (dir) showDir(dir)
+      else if (file) setMissing(true)
+    }
+    void resolve()
     const timer = window.setInterval(async () => {
-      try {
-        const r = await fetch(`/docs/_api/content/${encodeSegments(file)}?meta=1`)
-        if (!r.ok || !alive) return
-        const meta = (await r.json()) as { version: number }
-        if (meta.version === version) return
-        const body = await read()
-        if (alive && body) show(body)
-      } catch {
-        // The next tick tries again.
+      if (shown === 'doc') {
+        try {
+          const r = await fetch(`/docs/_api/content/${encodeSegments(file)}?meta=1`)
+          if (!r.ok || !alive) return
+          const meta = (await r.json()) as { version: number }
+          if (meta.version === version) return
+          const body = await read()
+          if (alive && body) showDoc(body)
+        } catch {
+          // The next tick tries again.
+        }
+      } else if (shown === 'dir') {
+        const dir = await list()
+        if (alive && dir && JSON.stringify(dir.entries) !== listed) showDir(dir)
+      } else {
+        // Nothing there yet — it may appear.
+        await resolve()
       }
     }, POLL_MS)
     return () => {
@@ -288,7 +321,7 @@ function useDoc(file: string, paused: boolean): { doc: ExplorerDoc | null; missi
       window.clearInterval(timer)
     }
   }, [file, paused])
-  return { doc, missing }
+  return { doc, listing, missing }
 }
 
 // The reader's text size, kept across files and visits.
@@ -473,11 +506,36 @@ function RenderedBody({ html }: { html: string }) {
   return <div className="sky-doc-body" ref={ref} />
 }
 
+/**
+ * A directory in the column: the files it holds, one row per entry, each a
+ * page. Plain links, so the app's link handling turns the page in place and
+ * a middle click still opens a tab.
+ */
+function DirListing({ entries }: { entries: ExplorerEntry[] }) {
+  if (entries.length === 0) {
+    return (
+      <div className="sky-blank">
+        <p>This directory is empty.</p>
+      </div>
+    )
+  }
+  return (
+    <nav className="sky-dir" aria-label="Files">
+      {entries.map((entry) => (
+        <a key={entry.path} className="sky-dir-row" data-kind={entry.kind} href={fileHref(entry.path)}>
+          <span className="sky-dir-chev">{entry.kind === 'dir' ? '▸' : ''}</span>
+          <span className="sky-dir-name">{entry.kind === 'file' ? entry.name.replace(/\.md$/i, '') : entry.name}</span>
+        </a>
+      ))}
+    </nav>
+  )
+}
+
 export function DocView({ file }: { file: string }) {
   // Editing is per file — turning the page ends it.
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const editing = file !== '' && editingFile === file
-  const { doc, missing } = useDoc(file, editing)
+  const { doc, listing, missing } = useDoc(file, editing)
   const [scale, setScale] = useDocScale()
   const [note, say] = useNote()
   const [exporting, setExporting] = useState(false)
@@ -487,7 +545,7 @@ export function DocView({ file }: { file: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
-  }, [doc?.path])
+  }, [doc?.path, listing?.path])
   // The front matter the editor holds while editing; the read document's otherwise.
   const [editFrontmatter, setEditFrontmatter] = useState<string | null>(null)
   const frontmatterText = editing ? editFrontmatter : doc?.frontmatter ? doc.frontmatter : null
@@ -578,7 +636,8 @@ export function DocView({ file }: { file: string }) {
           ) : (
             <span className="sky-title">Explorer</span>
           )}
-          {file && !missing && (
+          {/* The buttons belong to a file; a directory's page has none. */}
+          {file && !missing && (editing || doc) && (
             <nav className="sky-tabs">
               {editing && status && (
                 <span className="sky-head-count" data-state={status.kind}>
@@ -653,11 +712,7 @@ export function DocView({ file }: { file: string }) {
         </header>
 
         <div className="sky-scroll" ref={scrollRef}>
-          {!file ? (
-            <div className="sky-blank">
-              <p>Pick a file to read it here.</p>
-            </div>
-          ) : missing ? (
+          {missing ? (
             <div className="sky-blank">
               <p>
                 There is no file at <code>{file}</code>.
@@ -674,6 +729,8 @@ export function DocView({ file }: { file: string }) {
                 onFrontmatter={setEditFrontmatter}
               />
             </article>
+          ) : listing ? (
+            <DirListing entries={listing.entries} />
           ) : doc ? (
             <article className="sky-doc" style={{ '--sky-doc-scale': scale } as CSSProperties}>
               <IdentityLine state={frontmatter} file={doc.path} />
@@ -682,7 +739,7 @@ export function DocView({ file }: { file: string }) {
           ) : null}
         </div>
       </div>
-      {file && !missing && railOpen ? (
+      {file && !missing && railOpen && (editing || doc) ? (
         <DocumentRail
           state={frontmatter}
           file={file}

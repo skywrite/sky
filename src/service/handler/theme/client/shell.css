@@ -1108,6 +1108,52 @@ a.sky-thread {
   color: var(--sky-dim);
 }
 
+/* A directory's page: the files it holds, one row per entry, in the reading column. */
+.sky-dir {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 28px 48px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sky-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--sky-text-2);
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.sky-dir-row:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+/* directories read a shade stronger than the files beside them */
+.sky-dir-row[data-kind='dir'] {
+  color: var(--sky-text);
+  font-weight: 550;
+}
+
+.sky-dir-chev {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-dir-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The file's path as its title: directories dim, the name strong. Squeezed, the directories shrink first. */
 .sky-crumbs {
   display: inline-flex;
@@ -1328,6 +1374,10 @@ a.sky-thread {
   .sky-doc {
     padding: 18px 14px 72px;
     font-size: calc(17px * var(--sky-doc-scale, 1));
+  }
+
+  .sky-dir {
+    padding: 14px 8px 72px;
   }
 
   .sky-doc-body h1 {
