@@ -25,6 +25,10 @@ export interface DayItem {
   time: string | null
   /** The document the item points at, when it is a link */
   link: { title: string; path: string } | null
+  /** The exact list heading the item lives under — the write-back address */
+  list: string
+  /** The item exactly as stored, strike marks included — the write-back address */
+  raw: string
 }
 
 /** A document filed under the day, as a row. */
@@ -51,6 +55,7 @@ export interface DayRecord {
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
+  reminders: DayItem[]
   done: DayItem[]
   meetings: MeetingRow[]
   messages: {
@@ -91,7 +96,7 @@ const TIMED = /^(\d{1,2}:\d{2})\s*>?\s*(.*)$/
 const LINK = /\[([^\]]+)\]\(([^)]+)\)/
 const STRUCK = /^~~(.*)~~$/
 
-function parseItem(raw: string, category: string | null): DayItem {
+function parseItem(raw: string, category: string | null, list: string): DayItem {
   const done = DayDocument.isItemDone(raw)
   let text = raw.replace(STRUCK, '$1')
   let time: string | null = null
@@ -105,16 +110,19 @@ function parseItem(raw: string, category: string | null): DayItem {
   const linked = text.match(LINK)
   const link = linked ? { title: linked[1], path: linked[2] } : null
   if (linked) text = text.replace(linked[0], linked[1]).trim()
-  return { text, done, category, time, link }
+  return { text, done, category, time, link, list, raw }
 }
 
 /**
- * A capture log — `HH:MM > Someone to #channel Slack -> [Title](actions/…)` —
- * is the day file noting that a file was filed. The file itself is listed
- * as a meeting, a message, or a chat; the log line is not a thing done.
+ * A capture log — `HH:MM > Someone to #channel Slack -> [Title](actions/…)`,
+ * or a routine's own record like `HH:MM > Notebook -> 2026-01-26 End` — is
+ * the day file noting that something was filed or ran. The file itself is
+ * listed as a meeting, a message, or a chat; the log line is not a thing
+ * done. The arrow is the tell — but only inside Complete lists, where this
+ * filter runs: a commitment may promise `… Slack -> weekly update`.
  */
 function isCaptureLog(item: DayItem): boolean {
-  return item.link?.path.startsWith('actions/') ?? false
+  return /\s->\s/.test(item.text) || (item.link?.path.startsWith('actions/') ?? false)
 }
 
 function categoryOf(heading: string): string | null {
@@ -156,6 +164,16 @@ function rowOf(doc: Document, filePath: string, base: string): DayDocRow {
   }
 }
 
+/** `Focus: 2026-01-27 - Tue - 13:30` — a journal named by its file stamp, not by a person. */
+const JOURNAL_STAMP = /^(.+?):\s*\d{4}-\d{2}-\d{2}(?:\s*-\s*[A-Za-z]+)?(?:\s*-\s*(\d{1,2}:\d{2}))?\s*$/
+
+/** The stamp carries the time and the rest is noise: `Focus` at `13:30`. */
+function journalRow(row: DayDocRow): DayDocRow {
+  const stamped = row.title.match(JOURNAL_STAMP)
+  if (!stamped) return row
+  return { ...row, title: stamped[1].trim(), when: row.when ?? stamped[2] ?? null }
+}
+
 // --- the record --------------------------------------------------------------------
 
 export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> {
@@ -163,6 +181,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     mostImportant: [],
     commitments: [],
     todos: [],
+    reminders: [],
     done: [],
     meetings: [],
     messages: { involved: [], archive: [] },
@@ -177,10 +196,15 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     for (const list of dayDoc.lists) {
       const heading = list.title.trim()
       const category = categoryOf(heading)
-      const items = list.items.map((raw) => parseItem(raw.trim(), category))
+      // A bare `-` is an empty slot a template or sweep left behind, not an item.
+      const items = list.items
+        .map((raw) => raw.trim())
+        .filter(Boolean)
+        .map((raw) => parseItem(raw, category, heading))
       if (/^most important$/i.test(heading)) record.mostImportant.push(...items)
       else if (/commitments$/i.test(heading)) record.commitments.push(...items)
       else if (/(todos|incomplete)$/i.test(heading)) record.todos.push(...items)
+      else if (/^reminders$/i.test(heading)) record.reminders.push(...items)
       else if (/(?<!in)complete$/i.test(heading)) record.done.push(...items.filter((item) => !isCaptureLog(item)))
     }
   } catch {
@@ -192,7 +216,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
   record.skipped = skipped.tiny.length + skipped.yamlError.length + skipped.unreadable.length
   for (const entry of docs) {
     const row = rowOf(entry.doc, entry.path, input.markdownBaseDir)
-    if (entry.kind === 'journal') record.journals.push(row)
+    if (entry.kind === 'journal') record.journals.push(journalRow(row))
     else if (entry.path.includes('/actions/meetings/')) {
       record.meetings.push({ ...row, who: text(entry.doc.yaml['who']) })
     } else if (entry.path.includes('/actions/messages/')) {

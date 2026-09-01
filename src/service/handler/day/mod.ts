@@ -7,12 +7,13 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
-import { exists } from '#shared/fs/mod.ts'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/today.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
+import { toggleDayItem } from './toggle.ts'
 
 export interface DayRoutesOptions {
   /** The notebook root that saved-chat paths are shown relative to */
@@ -119,6 +120,22 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
   app.get('/:ymd', async (c) => {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+    return c.json(await buildDayView(options, ymd))
+  })
+  // The day view's checkbox: mark one list item done (strike) or not (un-strike),
+  // then answer with the fresh view so the client renders what the file now says.
+  app.post('/:ymd/item', async (c) => {
+    const ymd = c.req.param('ymd')
+    if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+    const body = (await c.req.json().catch(() => null)) as { list?: unknown; raw?: unknown; done?: unknown } | null
+    if (!body || typeof body.list !== 'string' || typeof body.raw !== 'string' || typeof body.done !== 'boolean') {
+      return c.json({ error: 'expected {list, raw, done}' }, 400)
+    }
+    const file = path.join(options.timeDir, dayFile(new PlainDate(ymd)))
+    if (!(await exists(file))) return c.json({ error: `no day file for ${ymd}` }, 404)
+    const result = toggleDayItem(await readTextFile(file), body.list, body.raw, body.done)
+    if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
+    if (result.kind === 'written') await writeTextFile(file, result.content)
     return c.json(await buildDayView(options, ymd))
   })
   return app
