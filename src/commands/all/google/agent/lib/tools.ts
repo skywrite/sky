@@ -55,6 +55,7 @@ import {
 } from '#lib/google/mod.ts'
 import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
+import { paginateRead } from '../../lib/readWorkspaceFile.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
 import { suggestDocsEdit } from './browserSuggestions.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
@@ -96,37 +97,6 @@ function track(
   const tracked: MissionFile = { id: file.id, title: file.name ?? file.id, url: file.webViewLink, kind, action }
   state.files.push(tracked)
   state.onFileTracked?.(tracked)
-}
-
-export const READ_LIMIT_CHARS = 40_000
-
-export interface ReadPage {
-  content: string
-  /** Clamped offset the page actually starts at. */
-  start: number
-  /** One past the last content char returned (the next page's offset). */
-  end: number
-  /** True when the page reaches the end of the file. */
-  complete: boolean
-}
-
-/**
- * Slice one read_file page out of an export. A truncated page carries a
- * self-directing continuation marker so the model knows there is more and
- * exactly how to get it. Returns null for an offset past the end.
- */
-export function paginateRead(full: string, offset = 0): ReadPage | null {
-  const start = Math.max(0, Math.floor(offset))
-  if (start > 0 && start >= full.length) return null
-  const end = Math.min(full.length, start + READ_LIMIT_CHARS)
-  const complete = end >= full.length
-  const body = full.slice(start, end)
-  return {
-    content: complete ? body : `${body}\n\n[Truncated — ${full.length} chars total; continue with offset: ${end}]`,
-    start,
-    end,
-    complete,
-  }
 }
 
 /** Ceiling for a doc's rendered PDF sent to the vision reviewer (Anthropic's request cap is 32MB). */
