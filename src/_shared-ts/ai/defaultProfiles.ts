@@ -10,10 +10,18 @@ import { defineProfile, type ModelProfile } from './models.ts'
  *
  * Model ids stay in their canonical API form (claude-opus-5, gpt-5.5); the profile
  * key is just a label. Sampling params (temperature/topP) belong only on profiles
- * whose model accepts them — thinking/reasoning models (Fable 5, Opus 5, Opus 4.7/4.8,
+ * whose model accepts them — thinking/reasoning models (Fable 5/5.1, Opus 5, Opus 4.7/4.8,
  * Sonnet 5, GPT-5.x) 400 on them, so those carry effort/thinking instead.
  */
 export const PROFILES = {
+  // Fable 5.1 thinks unconditionally (no `disabled`, no budget) and rejects forced tool
+  // choice; nothing in the registry's callers forces one, so the profile keeps Fable 5's
+  // shape — effort steers the depth, `thinking` keeps resolveProfile's sampling guard armed.
+  'default-fable-5.1': defineProfile({
+    provider: 'anthropic',
+    model: 'claude-fable-5-1',
+    options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
+  }),
   'default-fable-5': defineProfile({
     provider: 'anthropic',
     model: 'claude-fable-5',

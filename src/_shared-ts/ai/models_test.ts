@@ -179,6 +179,28 @@ test('default-fable-5 profile resolves to fable 5 with effort/thinking options',
   })
 })
 
+test('default-fable-5.1 profile resolves to fable 5.1 with effort/thinking options', () => {
+  const resolved = aiModelByProfile('default-fable-5.1')
+  assert({
+    given: 'the default-fable-5.1 profile',
+    should: 'resolve to claude-fable-5-1',
+    actual: modelId(resolved.model),
+    expected: 'claude-fable-5-1',
+  })
+  assert({
+    given: 'its effort option',
+    should: 'land under providerOptions.anthropic',
+    actual: resolved.providerOptions?.['anthropic']?.['effort'],
+    expected: 'xhigh',
+  })
+  assert({
+    given: 'its thinking option',
+    should: 'land under providerOptions.anthropic as adaptive',
+    actual: resolved.providerOptions?.['anthropic']?.['thinking'],
+    expected: { type: 'adaptive' },
+  })
+})
+
 test('default-gpt-5.5 routes openai options under providerOptions.openai', () => {
   const resolved = aiModelByProfile('default-gpt-5.5')
   assert({
