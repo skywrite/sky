@@ -19,6 +19,7 @@ import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/s
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { extractTypedNameLists } from './lib/typedNameLists.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -486,6 +487,23 @@ export default class AudioTranscriptSummaryTask extends Command {
           }
         }
 
+        // Typed who:/rel: lists are read here for the same reason as time:
+        // — the names land verbatim, the model cannot respell or drop them,
+        // and a parse failure cannot discard them. A typed list replaces the
+        // whole field (the hint says "retype its list"); the AI still sees
+        // the full correction text for everything else. Echoed so the exact
+        // list about to be written is on screen. The message template keeps
+        // its from:/to: contract, so who: stays with the model there.
+        const typedLists = extractTypedNameLists(corrections)
+        if (typedLists.who && !isMessageTemplate) {
+          finalWho = typedLists.who
+          output.log(colors.gray(`  Typed who read as: ${finalWho.join(', ') || '(none)'}`))
+        }
+        if (typedLists.rel) {
+          finalRel = typedLists.rel
+          output.log(colors.gray(`  Typed rel read as: ${finalRel.join(', ') || '(none)'}`))
+        }
+
         // Use AI to parse corrections - handles any format including comma-separated fields
         // Hoisted so the failure warn can carry the payload that failed to parse.
         let jsonText = ''
@@ -549,9 +567,9 @@ Example output: {"time": "2026-03-31 25:30"}`,
             if (parsed.from) extractedFrom = parsed.from
             if (parsed.to) extractedTo = parsed.to
           } else {
-            if (Array.isArray(parsed.who)) finalWho = parsed.who
+            if (!typedLists.who && Array.isArray(parsed.who)) finalWho = parsed.who
           }
-          if (Array.isArray(parsed.rel)) finalRel = parsed.rel
+          if (!typedLists.rel && Array.isArray(parsed.rel)) finalRel = parsed.rel
 
           // Corrections can move a person into who (or re-add a party to rel);
           // the party rule holds over whatever the lists now say.

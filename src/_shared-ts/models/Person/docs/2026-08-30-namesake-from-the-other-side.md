@@ -91,8 +91,9 @@ stands.
 
 - The chat keeps the prior. "Her fiancé Sam" in a chat still resolves to
   the user's top Sam.
-- `rel:` corrections parse through the fast model and replace the list.
-  A deterministic lift like `time:` is the next rung.
+- `rel:` corrections parsed through the fast model when this was written.
+  The verbatim lift landed 2026-08-31 (`lib/typedNameLists.ts`); a typed
+  list still replaces the whole field.
 - The unlisted lane reports `profile exists: Sam Rivera` for the fiancée.
   A dim hint, no write.
 - The profiles this run touched are repaired by hand, not by code. The

@@ -152,7 +152,9 @@ corrections prompt. Those lists are the anchors.
 - A full name in the summary text still rides.
 - The pipeline's metadata box prints `Profiles:` (what will be written to)
   and `No match:` (bare or unknown names) before the corrections prompt.
-  Retyping the list with a full name pins: `rel: Sam Rivera, Jordan`.
+  Retyping the list with a full name pins: `rel: Sam Rivera, Jordan` —
+  read verbatim in code (`audio/transcript/lib/typedNameLists.ts`, since
+  2026-08-31), never through the model.
 
 Why the split: the score is a prior on the user's own bare names. In a
 meeting a bare name usually lives in the attendee's world. Ruled
@@ -180,8 +182,8 @@ passes none.
 - Chat discovery keeps the score prior. A bare name the user types about
   someone else's world ("her fiancé Sam") still resolves to the user's
   top-scored Sam.
-- `who:`/`rel:` corrections parse through the fast model, and a typed line
-  replaces the list. A deterministic lift, as `time:` has, is the next rung.
+- A typed `who:`/`rel:` line replaces the whole list — deliberate, and the
+  hint says so. There is no add-or-remove-one syntax.
 - The unlisted lane screens a bare name against every namesake, so a
   fiancée named Sam reports `profile exists: Sam Rivera` — a dim hint, no
   write.
