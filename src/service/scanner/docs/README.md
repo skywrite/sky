@@ -35,6 +35,13 @@ unweighted — shared artifacts and posts, not direct interactions.
 
 `ScoringStore` applies recency decay on top; see `../scoring/ScoringStore.ts`.
 
+Each interaction is recorded with the file it came from. The watcher hands a
+saved file to `processFileUpdate` whole, so the file's earlier share is taken
+back first (`forgetFile` → `ScoringStore.forgetSource`): scores and counts
+come down by what the file gave, a last date is found again among what
+remains, and an entry with nothing left goes. A removed file is forgotten the
+same way; the rosters, which only ever grow, follow with a rebuild from disk.
+
 ## One person, many spellings
 
 A file may name a person any way it likes — `Jane Doe`, `jane doe`, the
@@ -56,3 +63,6 @@ finds the person.
 - `2026-09-01-one-score-per-person.md` — a person's score and last interaction
   were split by the spelling and casing each file used; reported as one person
   now, across the names the profile lists.
+- `2026-09-01-a-save-counted-twice.md` — every save of a file re-recorded
+  its interactions on top of the last ones, so scores grew with edits until
+  the next boot; a file's share is now taken back before it is read again.

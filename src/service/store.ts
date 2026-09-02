@@ -180,8 +180,16 @@ export class Store extends EventEmitter {
    *
    * @param today - Reference date for recency calculation (defaults to today, pass fixed date for testing)
    */
-  recordInteraction(name: string, dateStr: string, weight: number, today?: PlainDate): void {
-    this._scoring.recordPersonInteraction(name, dateStr, weight, today)
+  recordInteraction(name: string, dateStr: string, weight: number, today?: PlainDate, source?: string): void {
+    this._scoring.recordPersonInteraction(name, dateStr, weight, today, source)
+  }
+
+  /**
+   * Take back what a file contributed to the scores, before it is read again
+   * or after it is gone. Returns whether the file had contributed.
+   */
+  forgetFile(file: string): boolean {
+    return this._scoring.forgetSource(file)
   }
 
   /**
@@ -218,8 +226,8 @@ export class Store extends EventEmitter {
    *
    * @param today - Reference date for recency calculation (defaults to today, pass fixed date for testing)
    */
-  recordOrgInteraction(name: string, dateStr: string, weight: number, today?: PlainDate): void {
-    this._scoring.recordOrgInteraction(name, dateStr, weight, today)
+  recordOrgInteraction(name: string, dateStr: string, weight: number, today?: PlainDate, source?: string): void {
+    this._scoring.recordOrgInteraction(name, dateStr, weight, today, source)
   }
 
   /**
@@ -234,8 +242,8 @@ export class Store extends EventEmitter {
    *
    * @param today - Reference date for recency calculation (defaults to today, pass fixed date for testing)
    */
-  recordTagInteraction(name: string, dateStr: string, today?: PlainDate): void {
-    this._scoring.recordTagInteraction(name, dateStr, today)
+  recordTagInteraction(name: string, dateStr: string, today?: PlainDate, source?: string): void {
+    this._scoring.recordTagInteraction(name, dateStr, today, source)
   }
 
   /**

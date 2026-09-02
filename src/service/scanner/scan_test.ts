@@ -1,7 +1,9 @@
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { Store } from '../store.ts'
+import type { EntityDetector } from './entities.ts'
 import { createScanners, type EntityChecker } from './scan.ts'
+import { processFileUpdate } from './walkDirs.ts'
 
 const entityChecker: EntityChecker = {
   isTimeFile: () => true,
@@ -88,5 +90,53 @@ test('readFileAndUpdatePeople: the names a person file lists score as one person
       [13, '2026-01-31'],
       [13, '2026-01-31'],
     ],
+  })
+})
+
+test('forgetFile: a time file read again after a save counts once', () => {
+  const store = new Store()
+  const referenceDate = new PlainDate('2026-02-01')
+  const { trackPersonInteractions, forgetFile } = createScanners(store, entityChecker, { referenceDate })
+  const file = '/nb/time/2026/W05/01-30/actions/meetings/09-00_Zoom_Jane-Doe_Sync.md'
+  trackPersonInteractions('---\nwho: Jane Doe\n---\n', file)
+  forgetFile(file)
+  trackPersonInteractions('---\nwho: Jane Doe, Sam Park\n---\n', file)
+  store.update('people', new Set(['Jane Doe', 'Sam Park']))
+
+  assert({
+    given: 'the same meeting file read twice, forgotten between, a second attendee added',
+    should: 'score each attendee for one meeting',
+    actual: store.getPeopleWithScores().map((p) => [p.name, p.score, p.interactionCount]),
+    expected: [
+      ['Jane Doe', 10, 1],
+      ['Sam Park', 10, 1],
+    ],
+  })
+})
+
+test('processFileUpdate: every save of a file scores it once', () => {
+  const store = new Store()
+  const referenceDate = new PlainDate('2026-02-01')
+  const scanners = createScanners(store, entityChecker, { referenceDate })
+  const detector: EntityDetector = {
+    isPerson: (file) => file.includes('/people/'),
+    isOrganization: () => false,
+    isProject: () => false,
+    isPlace: () => false,
+    isTimeFile: (file) => file.includes('/time/'),
+  }
+  const file = '/nb/time/2026/W05/01-30/actions/meetings/09-00_Zoom_Jane-Doe_Sync.md'
+  const contents = '---\nwho: Jane Doe\ntags: atlas\n---\n'
+  for (let save = 0; save < 3; save++) processFileUpdate(contents, file, detector, scanners)
+  store.update('people', new Set(['Jane Doe']))
+
+  assert({
+    given: 'one meeting file saved three times',
+    should: 'score the attendee for one meeting and the tag for one file',
+    actual: [
+      store.getPeopleWithScores().map((p) => [p.name, p.score, p.interactionCount]),
+      store.scoring.tagScores.get('atlas')?.fileCount,
+    ],
+    expected: [[['Jane Doe', 10, 1]], 1],
   })
 })

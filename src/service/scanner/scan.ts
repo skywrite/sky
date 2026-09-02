@@ -76,7 +76,7 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     if (!dateStr) return
 
     for (const tag of filteredTags) {
-      store.recordTagInteraction(tag, dateStr, referenceDate)
+      store.recordTagInteraction(tag, dateStr, referenceDate, filePath)
     }
   }
 
@@ -105,13 +105,13 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     const metDate = md.yaml.met
     if (typeof metDate === 'string' && REGEX_YMD_EXACT.test(metDate) && persons.length > 0) {
       for (const name of persons) {
-        store.recordInteraction(name, metDate, INTERACTION_WEIGHTS.personMet, referenceDate)
+        store.recordInteraction(name, metDate, INTERACTION_WEIGHTS.personMet, referenceDate, file)
       }
 
       // Also track org interaction if person has an org
       const personOrg = md.yaml.org ?? (md.yaml.orgs as Record<string, unknown>)?.current
       if (typeof personOrg === 'string' && personOrg.trim()) {
-        store.recordOrgInteraction(personOrg.trim(), metDate, INTERACTION_WEIGHTS.personMet, referenceDate)
+        store.recordOrgInteraction(personOrg.trim(), metDate, INTERACTION_WEIGHTS.personMet, referenceDate, file)
       }
     }
   }
@@ -172,9 +172,9 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
 
       // Check if this is an org reference - if so, track org interaction
       if (store.organizations.has(person)) {
-        store.recordOrgInteraction(person, dateStr, weight, referenceDate)
+        store.recordOrgInteraction(person, dateStr, weight, referenceDate, filePath)
       } else {
-        store.recordInteraction(person, dateStr, weight, referenceDate)
+        store.recordInteraction(person, dateStr, weight, referenceDate, filePath)
       }
     }
   }
@@ -183,7 +183,7 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
    * Track org interactions from a project file.
    * Projects often reference orgs in their `rel` field.
    */
-  function trackOrgInteractionsFromProject(contents: string): void {
+  function trackOrgInteractionsFromProject(contents: string, filePath?: string): void {
     const md = MarkdownDoc.fromMarkdown(contents)
 
     // Use project created date, or fall back to the reference date (today in
@@ -201,9 +201,17 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
 
       // Only track if it's a known org
       if (store.organizations.has(item)) {
-        store.recordOrgInteraction(item, dateStr, INTERACTION_WEIGHTS.project, referenceDate)
+        store.recordOrgInteraction(item, dateStr, INTERACTION_WEIGHTS.project, referenceDate, filePath)
       }
     }
+  }
+
+  /**
+   * Take back what a file contributed before it is read again — a save must
+   * not count twice — or after it is gone.
+   */
+  function forgetFile(filePath: string): boolean {
+    return store.forgetFile(filePath)
   }
 
   return {
@@ -212,5 +220,6 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     readFileAndUpdateOrganizations,
     trackPersonInteractions,
     trackOrgInteractionsFromProject,
+    forgetFile,
   }
 }

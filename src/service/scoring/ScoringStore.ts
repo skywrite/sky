@@ -92,6 +92,14 @@ export interface ScoringStoreEvents {
  * const topOrgs = scoring.getOrgsWithScores(allOrgNames)
  * ```
  */
+/** One file's share of a score — what forgetting the file takes back. */
+interface Contribution {
+  kind: 'person' | 'org' | 'tag'
+  name: string
+  dateStr: string
+  points: number
+}
+
 /** The entries of one person as one: scores and counts added, the latest interaction kept. */
 function asOnePerson(name: string, entries: Iterable<PersonScore>): PersonScore {
   const one: PersonScore = { name, score: 0, lastInteraction: null, interactionCount: 0 }
@@ -109,6 +117,8 @@ export class ScoringStore extends EventEmitter {
   private _personScores = new Map<string, PersonScore>()
   private _orgScores = new Map<string, OrgScore>()
   private _tagScores = new Map<string, TagScore>()
+  /** What each source — a file — contributed, so it can be taken back before the file is read again */
+  private _bySource = new Map<string, Contribution[]>()
 
   get personScores(): Map<string, PersonScore> {
     return this._personScores
@@ -131,6 +141,7 @@ export class ScoringStore extends EventEmitter {
     this._personScores = new Map(other._personScores)
     this._orgScores = new Map(other._orgScores)
     this._tagScores = new Map(other._tagScores)
+    this._bySource = new Map([...other._bySource].map(([source, list]) => [source, [...list]]))
   }
 
   /**
@@ -140,8 +151,15 @@ export class ScoringStore extends EventEmitter {
    * @param dateStr - ISO date string (YYYY-MM-DD)
    * @param weight - Interaction weight (use INTERACTION_WEIGHTS constants)
    * @param referenceDate - Reference date for recency calculation (defaults to today)
+   * @param source - The file this was read from, so `forgetSource` can take it back
    */
-  recordPersonInteraction(name: string, dateStr: string, weight: number, referenceDate?: PlainDate): void {
+  recordPersonInteraction(
+    name: string,
+    dateStr: string,
+    weight: number,
+    referenceDate?: PlainDate,
+    source?: string,
+  ): void {
     const existing = this._personScores.get(name)
     const recencyMultiplier = this.calculateRecencyMultiplier(dateStr, referenceDate)
     const points = weight * recencyMultiplier
@@ -161,6 +179,7 @@ export class ScoringStore extends EventEmitter {
         interactionCount: 1,
       })
     }
+    if (source) this.contribute(source, { kind: 'person', name, dateStr, points })
   }
 
   /**
@@ -170,8 +189,15 @@ export class ScoringStore extends EventEmitter {
    * @param dateStr - ISO date string (YYYY-MM-DD)
    * @param weight - Interaction weight (use INTERACTION_WEIGHTS constants)
    * @param referenceDate - Reference date for recency calculation (defaults to today)
+   * @param source - The file this was read from, so `forgetSource` can take it back
    */
-  recordOrgInteraction(name: string, dateStr: string, weight: number, referenceDate?: PlainDate): void {
+  recordOrgInteraction(
+    name: string,
+    dateStr: string,
+    weight: number,
+    referenceDate?: PlainDate,
+    source?: string,
+  ): void {
     const existing = this._orgScores.get(name)
     const recencyMultiplier = this.calculateRecencyMultiplier(dateStr, referenceDate)
     const points = weight * recencyMultiplier
@@ -191,6 +217,7 @@ export class ScoringStore extends EventEmitter {
         interactionCount: 1,
       })
     }
+    if (source) this.contribute(source, { kind: 'org', name, dateStr, points })
   }
 
   /**
@@ -199,8 +226,9 @@ export class ScoringStore extends EventEmitter {
    * @param name - Tag name
    * @param dateStr - ISO date string (YYYY-MM-DD) of the file containing the tag
    * @param referenceDate - Reference date for recency calculation (defaults to today)
+   * @param source - The file this was read from, so `forgetSource` can take it back
    */
-  recordTagInteraction(name: string, dateStr: string, referenceDate?: PlainDate): void {
+  recordTagInteraction(name: string, dateStr: string, referenceDate?: PlainDate, source?: string): void {
     const existing = this._tagScores.get(name)
     const recencyMultiplier = this.calculateRecencyMultiplier(dateStr, referenceDate)
     const points = recencyMultiplier // weight = 1 per file occurrence
@@ -219,6 +247,70 @@ export class ScoringStore extends EventEmitter {
         fileCount: 1,
       })
     }
+    if (source) this.contribute(source, { kind: 'tag', name, dateStr, points })
+  }
+
+  private contribute(source: string, contribution: Contribution): void {
+    const list = this._bySource.get(source) ?? []
+    list.push(contribution)
+    this._bySource.set(source, list)
+  }
+
+  /**
+   * Take back everything a source — a file — contributed, so the file can be
+   * read again without counting twice. Scores and counts come down by the
+   * file's share, a last date is found again among what remains, and an
+   * entry with nothing left goes. Returns whether the source had contributed.
+   */
+  forgetSource(source: string): boolean {
+    const contributions = this._bySource.get(source)
+    if (!contributions) return false
+    this._bySource.delete(source)
+
+    const affected = new Map<string, Contribution['kind']>()
+    for (const { kind, name, points } of contributions) {
+      affected.set(`${kind}\n${name}`, kind)
+      if (kind === 'tag') {
+        const entry = this._tagScores.get(name)
+        if (entry) {
+          entry.score -= points
+          entry.fileCount -= 1
+        }
+      } else {
+        const entry = (kind === 'person' ? this._personScores : this._orgScores).get(name)
+        if (entry) {
+          entry.score -= points
+          entry.interactionCount -= 1
+        }
+      }
+    }
+
+    const latest = new Map<string, string>()
+    for (const list of this._bySource.values()) {
+      for (const { kind, name, dateStr } of list) {
+        const key = `${kind}\n${name}`
+        if (!affected.has(key)) continue
+        const known = latest.get(key)
+        if (!known || dateStr > known) latest.set(key, dateStr)
+      }
+    }
+
+    for (const [key, kind] of affected) {
+      const name = key.slice(kind.length + 1)
+      if (kind === 'tag') {
+        const entry = this._tagScores.get(name)
+        if (!entry) continue
+        if (entry.fileCount <= 0) this._tagScores.delete(name)
+        else entry.lastSeen = latest.get(key) ?? entry.lastSeen
+      } else {
+        const map = kind === 'person' ? this._personScores : this._orgScores
+        const entry = map.get(name)
+        if (!entry) continue
+        if (entry.interactionCount <= 0) map.delete(name)
+        else entry.lastInteraction = latest.get(key) ?? entry.lastInteraction
+      }
+    }
+    return true
   }
 
   /**

@@ -494,9 +494,15 @@ async function watchFiles() {
       }
     }
 
-    // Removed files never reach processFileUpdate (no contents), so their
-    // entities/scores would linger — rebuild the entity stores from disk.
+    // Removed files never reach processFileUpdate (no contents): their share
+    // of the scores goes now; the rosters, which only ever grow, follow with
+    // a rebuild from disk.
     if (ret.event === 'remove') {
+      if (store.forgetFile(ret.file)) {
+        store.emitPersonScoresUpdated()
+        store.emitOrgScoresUpdated()
+        store.emitTagScoresUpdated()
+      }
       scheduleEntityRebuild()
     }
 

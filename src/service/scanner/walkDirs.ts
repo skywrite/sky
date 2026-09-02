@@ -17,7 +17,9 @@ export interface Scanners {
   readFileAndUpdatePeople(contents: string, file: string): void
   readFileAndUpdateOrganizations(contents: string, file: string): void
   trackPersonInteractions(contents: string, filePath: string): void
-  trackOrgInteractionsFromProject(contents: string): void
+  trackOrgInteractionsFromProject(contents: string, filePath?: string): void
+  /** Takes back what the file contributed; true when it had */
+  forgetFile(filePath: string): boolean
 }
 
 /**
@@ -83,7 +85,7 @@ export async function scanFiles(options: ScanOptions): Promise<void> {
       }
 
       if (isProject(file)) {
-        trackOrgInteractionsFromProject(contents)
+        trackOrgInteractionsFromProject(contents, file)
       }
     } catch (err) {
       console.error(`FILE: ${file}`)
@@ -137,11 +139,14 @@ export function processFileUpdate(
     readFileAndUpdateOrganizations,
     trackPersonInteractions,
     trackOrgInteractionsFromProject,
+    forgetFile,
   } = scanners
 
   let personScoresUpdated = false
   let orgScoresUpdated = false
 
+  // A save reaches here with the whole file again: its earlier share goes first
+  forgetFile(filePath)
   readFileAndUpdateTags(contents, filePath)
 
   if (isPerson(filePath)) {
@@ -162,7 +167,7 @@ export function processFileUpdate(
   }
 
   if (isProject(filePath)) {
-    trackOrgInteractionsFromProject(contents)
+    trackOrgInteractionsFromProject(contents, filePath)
     orgScoresUpdated = true
   }
 

@@ -360,3 +360,40 @@ test('ScoringStore - a person scores as one across spellings and case', () => {
     expected: [['Jane Doe', 15]],
   })
 })
+
+test('ScoringStore - a source read again counts once, and a forgotten source gives back its share', () => {
+  const scoring = new ScoringStore()
+  const read = (source: string, name: string, dateStr: string, weight: number) =>
+    scoring.recordPersonInteraction(name, dateStr, weight, referenceDate, source)
+  read('/nb/a.md', 'Jane Doe', '2026-01-30', INTERACTION_WEIGHTS.meeting)
+  read('/nb/b.md', 'Jane Doe', '2026-02-01', INTERACTION_WEIGHTS.email)
+  scoring.recordTagInteraction('atlas', '2026-02-01', referenceDate, '/nb/b.md')
+  scoring.recordOrgInteraction('Atlas', '2026-02-01', INTERACTION_WEIGHTS.project, referenceDate, '/nb/b.md')
+
+  scoring.forgetSource('/nb/a.md')
+  read('/nb/a.md', 'Jane Doe', '2026-01-30', INTERACTION_WEIGHTS.meeting)
+  const afterReread = scoring.personScores.get('Jane Doe')
+  assert({
+    given: 'a file forgotten and read again',
+    should: 'leave the score and count as after the first read',
+    actual: [afterReread?.score, afterReread?.interactionCount, afterReread?.lastInteraction],
+    expected: [15, 2, '2026-02-01'],
+  })
+
+  const forgot = scoring.forgetSource('/nb/b.md')
+  const afterForget = scoring.personScores.get('Jane Doe')
+  assert({
+    given: 'the file with the latest interaction forgotten',
+    should: 'take back its share, find the last date among what remains, and drop what it alone carried',
+    actual: [
+      forgot,
+      afterForget?.score,
+      afterForget?.interactionCount,
+      afterForget?.lastInteraction,
+      scoring.tagScores.has('atlas'),
+      scoring.orgScores.has('Atlas'),
+      scoring.forgetSource('/nb/b.md'),
+    ],
+    expected: [true, 10, 1, '2026-01-30', false, false, false],
+  })
+})
