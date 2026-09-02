@@ -34,6 +34,17 @@ runs `create`. The doors — `meeting:new`, `journal:new`, `notes:new`,
 `message:new`, `event:new`, `video:new` — run one of the three and file what
 comes back.
 
+## What counts as a transcript file
+
+`lib/ZoomVTT/` reads `.vtt`, `lib/SRT/` reads `.srt`, `lib/plainText.ts`
+reads a notetaker's `.txt`. The sniff is on the content, not the name. A
+VTT announces itself with a `WEBVTT` header, or by opening on a cue's times:
+some live captioners save their transcript that way, with no header, no cue
+numbers, whole seconds, and the time of day in place of an offset from zero.
+Such a file's length runs from its first cue, not from zero, and that cue
+is also when the meeting began, which the web import proposes as the start.
+A numbered cue with no header is an SRT.
+
 ## Picking up a run
 
 A run of the pipeline costs minutes of model time and, for a recording, a
@@ -82,3 +93,6 @@ Start runs the same command, which finds the record on its own.
 
 - `2026-09-02-picking-up-a-run.md` — why the record exists, what it keys
   on, and the cases that shaped it.
+- `2026-09-02-a-transcript-without-a-header.md` — the captioner dialect
+  the sniff refused, and where a clock-stamped file's length is measured
+  from.

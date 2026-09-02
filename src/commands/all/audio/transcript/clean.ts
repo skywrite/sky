@@ -369,8 +369,9 @@ export default class AudioTranscriptCleanTask extends Command {
     // timestamp overhead (25-30% of a VTT, over half of an SRT) and merges related
     // cues. Duration comes from cue timestamps exactly.
     //
-    // VTT is checked first because it announces itself with a header; SRT has none,
-    // so its sniff is structural and deliberately declines anything WEBVTT-headed.
+    // VTT is checked first because it announces itself: a header, or a first line
+    // that is a bare timestamp, which SRT (every cue numbered) never opens on. The
+    // SRT sniff is structural and deliberately declines anything WEBVTT-headed.
     let cueDurationMinutes: number | null = null
     if (ZoomVTT.isVtt(transcript)) {
       const vtt = ZoomVTT.parse(transcript)
@@ -379,7 +380,8 @@ export default class AudioTranscriptCleanTask extends Command {
       }
       cueDurationMinutes = vtt.durationMinutes
       transcript = vtt.toTurnText()
-      output.log(colors.gray(`Zoom VTT: ${vtt.cues.length} cues → ${vtt.turns.length} speaker turns`))
+      const dialect = vtt.hasHeader ? 'Zoom VTT' : 'VTT without a header'
+      output.log(colors.gray(`${dialect}: ${vtt.cues.length} cues → ${vtt.turns.length} speaker turns`))
     } else if (SRT.isSrt(transcript)) {
       const srt = SRT.parse(transcript)
       const turns = srt.turns()

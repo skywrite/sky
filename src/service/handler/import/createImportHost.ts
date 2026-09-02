@@ -33,6 +33,7 @@ import {
   readUnknown,
   sourceOf,
 } from './readback.ts'
+import { startOnSavedDay } from './startOnSavedDay.ts'
 
 /** How long a recording sky listens to before guessing what it is. */
 const LISTEN_SECONDS = 45
@@ -83,9 +84,8 @@ function minutesOf(hhmm: string): number {
   return h * 60 + m
 }
 
-/** The notebook's spelling of the instant a file's clock names. */
-function notebookWhen(epochMs: number, timeDir: string): string {
-  const instant = new ZonedDateTime(new Date(epochMs))
+/** The notebook's spelling of an instant. */
+function notebookWhen(instant: ZonedDateTime, timeDir: string): string {
   try {
     return fetchNowSync({ timeDir, now: instant }).plainDateTime.toString()
   } catch {
@@ -116,11 +116,15 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   }
 
   // A transcript's clock is its end; a recording's is when it stopped. Either
-  // way the start is that less the length, spelled in notebook time.
+  // way the start is that less the length, spelled in notebook time. A
+  // transcript whose cues stamp the time of day says itself when it began.
   const suggestWhen = (file: StagedFile, readback: ReadBack): string => {
     const end = file.lastModified ?? Date.now()
+    if (readback.clockStartSeconds !== null) {
+      return notebookWhen(startOnSavedDay(end, readback.clockStartSeconds), config.DIR_TIME)
+    }
     const start = readback.durationMinutes ? end - Math.round(readback.durationMinutes * 60_000) : end
-    return notebookWhen(start, config.DIR_TIME)
+    return notebookWhen(new ZonedDateTime(new Date(start)), config.DIR_TIME)
   }
 
   const listen = async (filePath: string, jobDir: string): Promise<Listen | null> => {

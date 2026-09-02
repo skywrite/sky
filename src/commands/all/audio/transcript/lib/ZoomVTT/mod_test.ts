@@ -204,3 +204,85 @@ with a second payload line
     expected: 'survives with a second payload line',
   })
 })
+
+const HEADERLESS = `09:00:00 --> 09:00:02
+Jane Doe: Morning.
+
+09:00:02 --> 09:00:05
+Alex Chen: Morning. Shall we start?
+
+09:00:04 --> 09:00:06
+Jane Doe: Yes.
+
+09:41:10 --> 09:41:12
+Alex Chen: Thanks, everyone.
+`
+
+test('ZoomVTT headerless dialect', () => {
+  assert({
+    given: "a captioner's file with no WEBVTT line, no cue numbers and whole-second times",
+    should: 'sniff as a VTT, since only a VTT opens on a bare timestamp line',
+    actual: ZoomVTT.isVtt(HEADERLESS),
+    expected: true,
+  })
+
+  assert({
+    given: 'a headerless file whose cues are numbered',
+    should: 'leave it to the SRT reader',
+    actual: ZoomVTT.isVtt('1\n00:00:01,000 --> 00:00:02,000\nHello\n'),
+    expected: false,
+  })
+
+  const vtt = ZoomVTT.parse(HEADERLESS)
+
+  assert({
+    given: 'whole-second cue times',
+    should: 'parse every cue',
+    actual: vtt.cues.length,
+    expected: 4,
+  })
+
+  assert({
+    given: 'a file with no header',
+    should: 'say so',
+    actual: [vtt.hasHeader, ZoomVTT.parse(FIXTURE).hasHeader],
+    expected: [false, true],
+  })
+
+  assert({
+    given: 'the first cue',
+    should: 'read the clock time as seconds and the speaker',
+    actual: [vtt.cues[0].startSeconds, vtt.cues[0].speaker, vtt.cues[0].index],
+    expected: [32400, 'Jane Doe', null],
+  })
+
+  assert({
+    given: 'times of day from 09:00:00 to 09:41:12',
+    should: 'measure the length from the first cue, not from midnight',
+    actual: vtt.durationMinutes,
+    expected: 41,
+  })
+
+  assert({
+    given: 'clock times',
+    should: 'stamp the turns with the clock',
+    actual: vtt.toTurnText().split('\n\n')[0],
+    expected: '[09:00:00] Jane Doe: Morning.',
+  })
+
+  assert({
+    given: 'a headered file with a whole-second cue',
+    should: 'parse the cue and still count the length from zero',
+    actual: ZoomVTT.parse('WEBVTT\n\n00:03:30 --> 00:03:32\nJane Doe: Hi\n').durationMinutes,
+    expected: 4,
+  })
+})
+
+test('ZoomVTT.startSeconds', () => {
+  assert({
+    given: 'a headerless file whose first cue is at 09:00:00, and a file with no cues',
+    should: 'report the earliest cue start in seconds, and null without cues',
+    actual: [ZoomVTT.parse(HEADERLESS).startSeconds, ZoomVTT.parse('WEBVTT\n').startSeconds],
+    expected: [32400, null],
+  })
+})

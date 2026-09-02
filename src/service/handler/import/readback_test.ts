@@ -42,6 +42,7 @@ test('readTranscript', () => {
       summary: back.summary,
       detail: back.detail,
       minutes: back.durationMinutes,
+      clock: back.clockStartSeconds,
       kinds: back.kinds,
       refusal: back.refusal,
     },
@@ -49,6 +50,7 @@ test('readTranscript', () => {
       summary: 'Zoom transcript · 47 minutes · 3 turns',
       detail: 'Jane Doe, Alex Chen',
       minutes: 47,
+      clock: null,
       kinds: ['meeting'],
       refusal: null,
     },
@@ -116,5 +118,31 @@ test('lengthLabel and readUnknown', () => {
     should: 'say so and name what it does take',
     actual: readUnknown('deck.pdf').refusal,
     expected: "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, or a notetaker's .txt.",
+  })
+})
+
+const HEADERLESS = `09:00:00 --> 09:00:02
+Jane Doe: Morning.
+
+09:00:02 --> 09:00:05
+Alex Chen: Morning. Shall we start?
+
+09:41:10 --> 09:41:12
+Jane Doe: Thanks, everyone.
+`
+
+test('readTranscript, a transcript without a header', () => {
+  const back = readTranscript(HEADERLESS, 'atlas-sync.vtt')
+  assert({
+    given: "a captioner's .vtt with no WEBVTT line and clock times",
+    should: 'read it as a transcript, its length and its start from the first cue, and not call it Zoom',
+    actual: [back.summary, back.detail, back.durationMinutes, back.clockStartSeconds, back.kinds, back.refusal],
+    expected: ['Transcript · 41 minutes · 3 turns', 'Jane Doe, Alex Chen', 41, 32400, ['meeting'], null],
+  })
+  assert({
+    given: 'the same body in a .txt',
+    should: 'send it to the transcript door, as a headered one is',
+    actual: readText(HEADERLESS, 'notes.txt').refusal,
+    expected: 'notes.txt is a WebVTT transcript — save it as .vtt.',
   })
 })

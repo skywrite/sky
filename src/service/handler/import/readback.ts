@@ -32,6 +32,8 @@ export interface ReadBack {
   /** A second line when there is one: the speakers */
   detail: string | null
   durationMinutes: number | null
+  /** The time of day the transcript began, in seconds since midnight, when its cues stamp the clock; null when they count from zero */
+  clockStartSeconds: number | null
   speakers: string[]
   /** Why the file cannot be imported, in a sentence; null when it can */
   refusal: string | null
@@ -57,10 +59,19 @@ export function lengthLabel(seconds: number | null): string | null {
 }
 
 function refused(source: ImportSource, refusal: string): ReadBack {
-  return { source, kinds: [], summary: '', detail: null, durationMinutes: null, speakers: [], refusal }
+  return {
+    source,
+    kinds: [],
+    summary: '',
+    detail: null,
+    durationMinutes: null,
+    clockStartSeconds: null,
+    speakers: [],
+    refusal,
+  }
 }
 
-/** A .vtt: Zoom's transcript, read for what the confirm dialog says back. */
+/** A .vtt: Zoom's transcript, or a captioner's headerless one, read for what the confirm dialog says back. */
 export function readTranscript(text: string, name: string): ReadBack {
   if (!ZoomVTT.isVtt(text)) {
     const why = SRT.isSrt(text) ? 'is an SRT file, which sky does not take yet' : 'is not a WebVTT transcript'
@@ -70,13 +81,15 @@ export function readTranscript(text: string, name: string): ReadBack {
   const minutes = vtt.durationMinutes
   const speakers = vtt.speakers
   const length = minutes === null ? null : lengthLabel(minutes * 60)
-  const parts = [vtt.looksLikeZoomDialect ? 'Zoom transcript' : 'Transcript', length, `${vtt.turns.length} turns`]
+  const zoom = vtt.hasHeader && vtt.looksLikeZoomDialect
+  const parts = [zoom ? 'Zoom transcript' : 'Transcript', length, `${vtt.turns.length} turns`]
   return {
     source: 'transcript',
     kinds: ['meeting'],
     summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
     detail: speakers.length > 0 ? speakers.join(', ') : null,
     durationMinutes: minutes,
+    clockStartSeconds: vtt.hasHeader ? null : vtt.startSeconds,
     speakers,
     refusal: null,
   }
@@ -98,6 +111,7 @@ export function readText(text: string, name: string): ReadBack {
     summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
     durationMinutes: minutes,
+    clockStartSeconds: null,
     speakers: [],
     refusal: null,
   }
@@ -116,6 +130,7 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null): Re
     summary: ['Voice memo', length].filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
     durationMinutes: durationSeconds === null ? null : Math.round((durationSeconds / 60) * 10) / 10,
+    clockStartSeconds: null,
     speakers: [],
     refusal: null,
   }

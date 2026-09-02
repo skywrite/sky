@@ -1,9 +1,13 @@
 /**
- * Parser for Zoom meeting-transcript VTT files — the only VTT dialect this
- * notebook ingests. Zoom writes numbered cues with `Display Name: text`
- * payloads and no styling/voice markup. If transcripts from another tool
- * (Teams uses `<v Name>` voice tags) ever show up, revisit the scope — see
- * `looksLikeZoomDialect`, which callers use to warn at runtime.
+ * Parser for meeting-transcript VTT files. Zoom's is the dialect this
+ * notebook was built on: a `WEBVTT` header, numbered cues with
+ * `Display Name: text` payloads, times counted from zero, no styling or
+ * voice markup. Two departures are read as well. Teams-style `<v Name>`
+ * voice tags are stripped — see `looksLikeZoomDialect`, which callers use
+ * to warn at runtime. And the headerless dialect some live captioners save:
+ * no `WEBVTT` line, no cue numbers, whole-second times that are the time of
+ * day rather than an offset from the start — see `hasHeader`, which decides
+ * where the length is measured from.
  *
  * Parsing is lenient: unrecognized blocks and malformed cues are skipped,
  * never thrown on — a bad cue must not sink the transcript pipeline.
@@ -26,7 +30,14 @@ export interface ZoomVTTTurn {
   text: string
 }
 
-const TIMESTAMP_RE = /^(\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{1,3}\s+-->\s+(\d{1,2}:)?\d{1,2}:\d{2}[.,]\d{1,3}/
+// The fraction of a second is optional: Zoom writes it, the headerless dialect does not.
+const TIMESTAMP_RE = /^(\d{1,2}:)?\d{1,2}:\d{2}([.,]\d{1,3})?\s+-->\s+(\d{1,2}:)?\d{1,2}:\d{2}([.,]\d{1,3})?/
+const BOM_RE = /^\uFEFF/
+
+/** The text as the sniff sees it: no byte-order mark, no leading blank lines. */
+function opening(raw: string): string {
+  return raw.replace(BOM_RE, '').trimStart()
+}
 const SPEAKER_RE = /^([^:]{1,64}?):\s+(.*)$/s
 
 function timeToSeconds(t: string): number {
@@ -48,19 +59,28 @@ export default class ZoomVTT {
   readonly cues: ZoomVTTCue[]
   /** False when Teams-style voice tags were seen — speaker detection is then unreliable */
   readonly looksLikeZoomDialect: boolean
+  /** False for the headerless dialect, whose cue times are the time of day rather than an offset from zero */
+  readonly hasHeader: boolean
 
-  private constructor(cues: ZoomVTTCue[], looksLikeZoomDialect: boolean) {
+  private constructor(cues: ZoomVTTCue[], looksLikeZoomDialect: boolean, hasHeader: boolean) {
     this.cues = cues
     this.looksLikeZoomDialect = looksLikeZoomDialect
+    this.hasHeader = hasHeader
   }
 
-  /** Cheap sniff: is this text a WebVTT file at all? */
+  /**
+   * Cheap sniff: is this text a WebVTT file at all? The header says so. So
+   * does opening on a cue's times: SRT numbers every cue, so a file whose
+   * first line is a bare timestamp line can only be a headerless VTT.
+   */
   static isVtt(raw: string): boolean {
-    return raw.replace(/^﻿/, '').trimStart().startsWith('WEBVTT')
+    const text = opening(raw)
+    return text.startsWith('WEBVTT') || TIMESTAMP_RE.test(text)
   }
 
   static parse(raw: string): ZoomVTT {
-    const lines = raw.replace(/^﻿/, '').split(/\r?\n/)
+    const hasHeader = opening(raw).startsWith('WEBVTT')
+    const lines = raw.replace(BOM_RE, '').split(/\r?\n/)
     const cues: ZoomVTTCue[] = []
     let hasVoiceTags = false
 
@@ -115,7 +135,7 @@ export default class ZoomVTT {
       }
     }
 
-    return new ZoomVTT(cues, !hasVoiceTags)
+    return new ZoomVTT(cues, !hasVoiceTags, hasHeader)
   }
 
   /** Unique speakers in order of first appearance */
@@ -145,11 +165,23 @@ export default class ZoomVTT {
     return turns
   }
 
-  /** Meeting length from the latest cue end time, rounded to whole minutes */
+  /** The earliest cue start: near zero in a Zoom file, the time of day the transcript began in the headerless dialect; null without cues */
+  get startSeconds(): number | null {
+    if (this.cues.length === 0) return null
+    return this.cues.reduce((min, c) => Math.min(min, c.startSeconds), Infinity)
+  }
+
+  /**
+   * Meeting length, rounded to whole minutes. A file with a header counts
+   * from zero, the recording's start, so the latest cue end is the length.
+   * The headerless dialect stamps the time of day, so its length runs from
+   * the first cue instead — a call from 9:00 to 9:41 is 41 minutes, not 581.
+   */
   get durationMinutes(): number | null {
     if (this.cues.length === 0) return null
     const end = this.cues.reduce((max, c) => Math.max(max, c.endSeconds), 0)
-    return Math.round(end / 60)
+    const start = this.hasHeader ? 0 : (this.startSeconds ?? 0)
+    return Math.round((end - start) / 60)
   }
 
   /**
