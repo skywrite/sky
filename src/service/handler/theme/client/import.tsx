@@ -14,6 +14,7 @@ import {
   useState,
 } from 'react'
 import { fileHref } from './explorer.tsx'
+import { sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -279,11 +280,25 @@ export function useImportFeed(id: string | null): ImportFeed {
 // The drop and the picker
 // -----------------------------------------------------------------------------
 
+const RECORDING_EXTS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
+/** The transcriber takes at most this much per request: the read-back's cap, so the sentence below is its sentence. */
+const TRANSCRIBE_CAP = 25 * 1024 * 1024
+
 export function acceptsImports(): string {
-  return '.vtt,.txt,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm,.mp4,.caf,audio/*'
+  return ['.vtt', '.txt', ...RECORDING_EXTS, 'audio/*'].join(',')
 }
 
-/** Drag-and-drop over a whole page: true while files are held over it. */
+/** A recording over the cap is refused before its bytes go up, in the read-back's words. */
+function refusedBeforeUpload(file: File): string | null {
+  const dot = file.name.lastIndexOf('.')
+  const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : ''
+  const recording = RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
+  if (!recording || file.size <= TRANSCRIBE_CAP) return null
+  const mb = (file.size / 1024 / 1024).toFixed(0)
+  return `The recording is ${mb} MB, over the 25 MB limit. Trim it, or record shorter parts.`
+}
+
+/** Drag-and-drop over a whole page: true while files are held over it. The Files pad handles its own drops. */
 export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) {
   const [dragging, setDragging] = useState(false)
   const depth = useRef(0)
@@ -308,6 +323,8 @@ export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) 
     event.preventDefault()
     depth.current = 0
     setDragging(false)
+    // A drop on the Files pad is the pad's: it moves the file in on its own.
+    if (event.target instanceof Element && event.target.closest('[data-drop-pad]')) return
     const list = event.dataTransfer?.files
     const files: File[] = list ? Array.from(list) : []
     if (files.length > 0) onFiles(files)
@@ -336,8 +353,11 @@ export function DropOverlay() {
             />
           </svg>
         </div>
-        <div className="sky-drop-title">Drop to file it</div>
-        <div className="sky-drop-sub">A Zoom transcript (.vtt), a voice memo (.m4a), or a notetaker's text (.txt)</div>
+        <div className="sky-drop-title">Drop it on the day</div>
+        <div className="sky-drop-sub">
+          On the Files pad it moves into the day as it is. Anywhere else sky files it: a transcript (.vtt), a voice
+          memo, or a notetaker's text (.txt).
+        </div>
       </div>
     </div>
   )
@@ -348,6 +368,7 @@ export function DropOverlay() {
 // -----------------------------------------------------------------------------
 
 interface Pending {
+  key: string
   file: File
   fraction: number
   job: ImportJob | null
@@ -364,17 +385,21 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
 
+  /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
   const take = (files: File[]) => setQueue((q) => [...q, ...files])
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
     const [file, ...rest] = queue
     setQueue(rest)
-    const next: Pending = { file, fraction: 0, job: null, options: null, error: null }
-    setPending(next)
-    uploadImport(file, (fraction) => setPending((p) => (p && p.file === file ? { ...p, fraction } : p)))
-      .then(({ job, options }) => setPending((p) => (p && p.file === file ? { ...p, fraction: 1, job, options } : p)))
-      .catch((err: Error) => setPending((p) => (p && p.file === file ? { ...p, error: err.message } : p)))
+    const key = crypto.randomUUID()
+    const refusal = refusedBeforeUpload(file)
+    setPending({ key, file, fraction: 0, job: null, options: null, error: refusal })
+    if (refusal) return
+    const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
+    uploadImport(file, (fraction) => patch((p) => ({ ...p, fraction })))
+      .then(({ job, options }) => patch((p) => ({ ...p, fraction: 1, job, options })))
+      .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
 
   const close = () => {
@@ -444,12 +469,6 @@ function Pills<T extends string>({
       {pills}
     </div>
   )
-}
-
-/** "3.9 MB", "12 KB" */
-function sizeLabel(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
 /** `2026-09-01 09:31` reads as `Today 9:31` on today, else the date and time. */
@@ -693,16 +712,19 @@ export function ImportDialog({
   const started = () => {
     if (job) onStarted(job)
   }
+  // Keyed by the file: the next one up starts with its own fields.
   const body = (
-    <ConfirmBody
-      pending={pending}
-      job={job}
-      options={options ?? againOptions}
-      todayYmd={todayYmd}
-      onStart={started}
-      onCancel={cancel}
-      phone={phone}
-    />
+    <Fragment key={pending?.key ?? again?.id ?? 'none'}>
+      <ConfirmBody
+        pending={pending}
+        job={job}
+        options={options ?? againOptions}
+        todayYmd={todayYmd}
+        onStart={started}
+        onCancel={cancel}
+        phone={phone}
+      />
+    </Fragment>
   )
 
   if (phone) {
@@ -715,6 +737,10 @@ export function ImportDialog({
         withCloseButton={false}
         padding={20}
         radius="lg"
+        styles={{
+          inner: { alignItems: 'flex-end' },
+          content: { height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
+        }}
       >
         {body}
       </Drawer>

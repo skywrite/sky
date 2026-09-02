@@ -120,7 +120,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // the day the threads live in
   if (chat) {
     app.route('/chat', createChatRoutes(chat))
-    app.route('/day', createDayRoutes({ markdownBaseDir, timeDir: chat.timeDir, aboutMePath: chat.aboutMePath }))
+    app.route(
+      '/day',
+      createDayRoutes({
+        markdownBaseDir,
+        timeDir: chat.timeDir,
+        aboutMePath: chat.aboutMePath,
+        files: { userDataDir },
+      }),
+    )
   }
 
   // Voice over the web: the browser holds the call; the service mints its

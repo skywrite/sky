@@ -2,6 +2,7 @@ import { Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
+import { FilesPanel, type Kept, KeptToast, useDayFiles } from './files.tsx'
 import { DropOverlay, type ImportJob, ImportRow } from './import.tsx'
 
 /**
@@ -613,6 +614,11 @@ export function DayView({
   onOpenImport = () => {},
   dragging = false,
   attach,
+  filesGeneration = 0,
+  kept = [],
+  onKept = () => {},
+  onUndoKept = () => {},
+  onDismissKept = () => {},
 }: {
   chat: Chat
   day: DayData | null
@@ -625,6 +631,14 @@ export function DayView({
   /** Files are held over the page */
   dragging?: boolean
   attach?: ComposerAttach
+  /** Moves when the day's files changed outside the block — a keep, an undo, an import that attached its files */
+  filesGeneration?: number
+  /** Files just kept: the toast holds Undo for a moment */
+  kept?: Kept[]
+  /** The Files pad moved or copied these */
+  onKept?: (kept: Kept[]) => void
+  onUndoKept?: () => void
+  onDismissKept?: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // The record reads top-down; the column follows only once a conversation is running in it.
@@ -634,6 +648,15 @@ export function DayView({
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView)
+  const dayFiles = useDayFiles(view?.day.ymd ?? null, filesGeneration)
+  // The Files panel: opened from the header, and by itself while files are dragged over the page.
+  const [filesOpen, setFilesOpen] = useState(false)
+  const filesRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!dragging) return
+    setFilesOpen(true)
+    filesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [dragging])
 
   const running =
     threads.filter((t) => t.busy).length +
@@ -683,6 +706,11 @@ export function DayView({
               {running > 0 ? ` · ${running} running` : ''}
             </span>
           )}
+          {view && (
+            <Button size="sm" variant={filesOpen ? 'light' : 'default'} onClick={() => setFilesOpen((o) => !o)}>
+              Files{dayFiles.files.length > 0 ? ` · ${dayFiles.files.length}` : ''}
+            </Button>
+          )}
           {view?.day.dayRelativePath && (
             <Button size="sm" component="a" href={fileHref(view.day.dayRelativePath)}>
               Day file
@@ -693,6 +721,11 @@ export function DayView({
 
       <div className="sky-scroll" ref={scrollRef}>
         <div className="sky-col">
+          {view && filesOpen && (
+            <div ref={filesRef} className="sky-files-anchor">
+              <FilesPanel ymd={view.day.ymd} files={dayFiles.files} onChanged={dayFiles.refresh} onKept={onKept} />
+            </div>
+          )}
           {notes.map((note, i) => (
             <Fragment key={i}>
               <NoteLine note={note} />
@@ -868,6 +901,10 @@ export function DayView({
             <span className="sky-undo-fill" />
           </span>
         </div>
+      )}
+
+      {kept.length > 0 && !checkOff.undo && (
+        <KeptToast kept={kept} todayYmd={view?.today.ymd ?? null} onUndo={onUndoKept} onDone={onDismissKept} />
       )}
 
       <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} attach={attach} />

@@ -119,3 +119,12 @@ the command's own plan.
 
 - `2026-09-01-meeting-from-a-file.md` — the design, the seams, what changed
   in the pipeline commands.
+
+## A drop is an import
+
+Every file dropped on the day, and every file the composer's paperclip
+takes, comes through this dialog: a door takes it, or the read-back says
+why not and the file leaves with Remove. A recording over the transcription
+cap is refused before its bytes go up, in the read-back's own sentence.
+Keeping a file with the day as it is — a PDF, a Zoom video, anything — is
+the Files pad's job, never this dialog's: `../../day/docs/README.md`.

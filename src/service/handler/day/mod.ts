@@ -12,6 +12,8 @@ import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/today.ts'
+import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
+import isDay from './isDay.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
 import { toggleDayItem } from './toggle.ts'
 
@@ -26,6 +28,8 @@ export interface DayRoutesOptions {
   today?: () => PlainDate
   /** Test seam — production reads about-me.md */
   ownerNames?: string[]
+  /** The day's files live under the user-data directory; without it the files routes stay off */
+  files?: DayFilesOptions
 }
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
@@ -102,18 +106,6 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section, chats, record }
 }
 
-const YMD = /^\d{4}-\d{2}-\d{2}$/
-
-/** A real calendar day in `YYYY-MM-DD` form — `2026-13-45` is not one. */
-function isDay(ymd: string): boolean {
-  if (!YMD.test(ymd)) return false
-  try {
-    return new PlainDate(ymd).ymd === ymd
-  } catch {
-    return false
-  }
-}
-
 export function createDayRoutes(options: DayRoutesOptions): Hono {
   const app = new Hono()
   app.get('/', async (c) => c.json(await buildDayView(options)))
@@ -138,5 +130,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     if (result.kind === 'written') await writeTextFile(file, result.content)
     return c.json(await buildDayView(options, ymd))
   })
+  // The day's files: listed, served, kept from a drop, put back, removed.
+  if (options.files) app.route('/', createDayFilesRoutes(options.files))
   return app
 }

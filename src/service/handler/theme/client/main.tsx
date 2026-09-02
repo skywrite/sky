@@ -8,6 +8,7 @@ import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
+import { type Kept, undoKeep } from './files.tsx'
 import {
   acceptsImports,
   ImportDialog,
@@ -120,8 +121,24 @@ function Canvas() {
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
   const openImport = (id: string) => navigate(`/import/${id}`)
+  // A file the pad kept with the day: the toast holds Undo, and the Files block re-reads the directory.
+  const [kept, setKept] = useState<Kept[]>([])
+  const [filesGeneration, setFilesGeneration] = useState(0)
+  const bumpFiles = useCallback(() => setFilesGeneration((g) => g + 1), [])
   const queue = useImportQueue((job) => openImport(job.id))
   const drop = useFileDrop(onDayPage, queue.take)
+  // An import that finished attached its files to the day.
+  const doneImports = imports.filter((j) => j.state === 'done').length
+  useEffect(() => bumpFiles(), [doneImports, bumpFiles])
+  const undoKept = () => {
+    const held = kept
+    setKept([])
+    if (held.length > 0)
+      void undoKeep(held)
+        .then(bumpFiles)
+        .catch(() => {})
+  }
+  const dismissKept = useCallback(() => setKept([]), [])
   const newChat = () => openThread(crypto.randomUUID())
   // Back to the day at once. The save — enrichment included — finishes behind
   // the Running block, and its note lands in the day when it does.
@@ -303,6 +320,14 @@ function Canvas() {
           onOpenImport={openImport}
           dragging={drop.dragging}
           attach={{ accept: acceptsImports(), onFiles: queue.take }}
+          filesGeneration={filesGeneration}
+          kept={kept}
+          onKept={(list) => {
+            setKept(list)
+            bumpFiles()
+          }}
+          onUndoKept={undoKept}
+          onDismissKept={dismissKept}
         />
       )}
       <ImportDialog
