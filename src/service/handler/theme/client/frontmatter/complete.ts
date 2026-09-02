@@ -119,3 +119,14 @@ export async function fetchBacklinks(path: string, limit = 50): Promise<{ items:
     return { items: [], total: 0 }
   }
 }
+
+/**
+ * Whether an earlier answer still serves a search: it answered this search, or one this search
+ * extends or shortens. A wider question's answer — everyone by score, for the empty search —
+ * would pass for the first letters' matches, so it does not.
+ */
+export function serves(answered: string, search: string): boolean {
+  if (answered === search) return true
+  if (answered.length === 0 || search.length === 0) return false
+  return search.startsWith(answered) || answered.startsWith(search)
+}

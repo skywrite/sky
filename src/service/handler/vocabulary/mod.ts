@@ -129,7 +129,52 @@ function asStrings(value: unknown): string[] {
   return []
 }
 
-/** Every document the store holds, with its notebook-relative path and top-level directory. */
+/** A document with every name the store answers to for it. */
+interface Profile {
+  /** Absolute path */
+  path: string
+  doc: Document
+  /** As indexed: lowercased and trimmed */
+  names: string[]
+}
+
+/**
+ * Each document once, with every name the store indexes for it. The stores key by name, so a
+ * person with an `alt:` — or a `name:` list — is found under each of them; the panel wants the
+ * person once, answering to all of them.
+ */
+function profilesOf(s: {
+  names: string[]
+  find(name: string): { value: Document; path: string } | undefined
+}): Profile[] {
+  const byPath = new Map<string, Profile>()
+  for (const name of s.names) {
+    const hit = s.find(name)
+    if (!hit) continue
+    const profile = byPath.get(hit.path)
+    if (profile) profile.names.push(name)
+    else byPath.set(hit.path, { path: hit.path, doc: hit.value, names: [name] })
+  }
+  return [...byPath.values()]
+}
+
+/**
+ * The other names a document answers to — `alt:` and `names:` as written, then whatever else
+ * the store indexes — each once, the display name left out.
+ */
+function aliasesOf(display: string, doc: Document, indexed: string[]): string[] {
+  const seen = new Set([plain(display)])
+  const aliases: string[] = []
+  for (const alias of [...asStrings(doc.yaml['alt']), ...asStrings(doc.yaml['names']), ...indexed]) {
+    const key = plain(alias)
+    if (key.length === 0 || seen.has(key)) continue
+    seen.add(key)
+    aliases.push(alias)
+  }
+  return aliases
+}
+
+/** Every document the store holds, once, with its notebook-relative path and top-level directory. */
 function documentsOf(store: MarkdownStore, base: string): Array<{ path: string; dir: string; doc: Document }> {
   const out: Array<{ path: string; dir: string; doc: Document }> = []
   const add = (absolute: string, doc: Document | undefined) => {
@@ -137,21 +182,8 @@ function documentsOf(store: MarkdownStore, base: string): Array<{ path: string; 
     const path = toNotebookRelativePath(base, absolute)
     out.push({ path, dir: path.split('/')[0] ?? '', doc })
   }
-  for (const name of store.people.names) {
-    const hit = store.people.find(name)
-    if (hit) add(hit.path, hit.value)
-  }
-  for (const name of store.orgs.names) {
-    const hit = store.orgs.find(name)
-    if (hit) add(hit.path, hit.value)
-  }
-  for (const name of store.projects.names) {
-    const hit = store.projects.find(name)
-    if (hit) add(hit.path, hit.value)
-  }
-  for (const name of store.places.names) {
-    const hit = store.places.find(name)
-    if (hit) add(hit.path, hit.value)
+  for (const s of [store.people, store.orgs, store.projects, store.places]) {
+    for (const { path, doc } of profilesOf(s)) add(path, doc)
   }
   for (const s of [store.library, store.time, store.ai]) {
     for (const absolute of s.paths) add(absolute, s.findByPath(absolute))
@@ -208,32 +240,18 @@ export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary 
   const values = new Map<string, Map<string, number>>()
   const count = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1)
 
-  for (const name of store.people.names) {
-    const hit = store.people.find(name)
-    if (!hit) continue
-    const display = displayName(hit.value, name)
-    const aliases = [...asStrings(hit.value.yaml['alt']), ...asStrings(hit.value.yaml['names'])].filter(
-      (alias) => alias !== display,
-    )
-    entities.push(entityOf('person', display, toNotebookRelativePath(base, hit.path), hit.value, aliases))
+  const named = (type: EntityType, { path, doc, names }: Profile): Entity => {
+    const display = displayName(doc, names[0] ?? stem(path))
+    return entityOf(type, display, toNotebookRelativePath(base, path), doc, aliasesOf(display, doc, names))
   }
-  for (const name of store.orgs.names) {
-    const hit = store.orgs.find(name)
-    if (hit)
-      entities.push(entityOf('org', displayName(hit.value, name), toNotebookRelativePath(base, hit.path), hit.value))
-  }
-  for (const name of store.projects.names) {
-    const hit = store.projects.find(name)
-    if (!hit) continue
-    const entity = entityOf('project', displayName(hit.value, name), toNotebookRelativePath(base, hit.path), hit.value)
-    entity.open = !CLOSED_STATUSES.has((asString(hit.value.yaml['status']) ?? '').toLowerCase())
+  for (const profile of profilesOf(store.people)) entities.push(named('person', profile))
+  for (const profile of profilesOf(store.orgs)) entities.push(named('org', profile))
+  for (const profile of profilesOf(store.projects)) {
+    const entity = named('project', profile)
+    entity.open = !CLOSED_STATUSES.has((asString(profile.doc.yaml['status']) ?? '').toLowerCase())
     entities.push(entity)
   }
-  for (const name of store.places.names) {
-    const hit = store.places.find(name)
-    if (hit)
-      entities.push(entityOf('place', displayName(hit.value, name), toNotebookRelativePath(base, hit.path), hit.value))
-  }
+  for (const profile of profilesOf(store.places)) entities.push(named('place', profile))
   for (const [type, s] of [
     ['library', store.library],
     ['day', store.time],

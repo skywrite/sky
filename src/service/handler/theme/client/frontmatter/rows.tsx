@@ -7,7 +7,7 @@ import { Autocomplete, Textarea, TextInput } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { When } from '#universal/dates/nbdt/mod.ts'
 import { ChipsInput } from './ChipsInput.tsx'
-import { type Completion, fetchCompletions, type Resolved, timeZones } from './complete.ts'
+import { type Completion, fetchCompletions, type Resolved, serves, timeZones } from './complete.ts'
 import { CHIP_KINDS, ENTITY_KINDS, type RowKind, suggestedKeys, TYPE_MARKS } from './kinds.ts'
 import { readFrontmatter, removeKey, type Row, writeChildValue, writeValue } from './model.ts'
 
@@ -51,20 +51,25 @@ function whenHint(value: string): { text: string; ok: boolean } | null {
   return parts.length > 0 ? { text: parts.join(' · '), ok: true } : null
 }
 
-/** Completions for a search, a moment after it settles. */
+const NO_COMPLETIONS: Completion[] = []
+
+/**
+ * Completions for a search, a moment after it settles. While the next answer is on its way the
+ * last one stays, when it answers what is typed so far; a different question's does not.
+ */
 export function useCompletions(
   kind: Parameters<typeof fetchCompletions>[0] | null,
   search: string,
   options: { key?: string; dir?: string },
 ): Completion[] {
-  const [items, setItems] = useState<Completion[]>([])
+  const [answer, setAnswer] = useState<{ search: string; items: Completion[] }>({ search: '', items: [] })
   const { key, dir } = options
   useEffect(() => {
     if (!kind) return
     let alive = true
     const timer = window.setTimeout(() => {
       void fetchCompletions(kind, search, { key, dir }).then((found) => {
-        if (alive) setItems(found)
+        if (alive) setAnswer({ search, items: found })
       })
     }, SEARCH_DEBOUNCE_MS)
     return () => {
@@ -72,7 +77,7 @@ export function useCompletions(
       window.clearTimeout(timer)
     }
   }, [kind, search, key, dir])
-  return items
+  return serves(answer.search, search) ? answer.items : NO_COMPLETIONS
 }
 
 export function Mark({ type }: { type: string | undefined }) {

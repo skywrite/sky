@@ -6,7 +6,7 @@
  */
 
 import { Combobox, Pill, PillsInput, useCombobox } from '@mantine/core'
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 
 export interface ChipOption {
   value: string
@@ -14,6 +14,8 @@ export interface ChipOption {
   type?: string
   hint?: string
   count?: number
+  /** The document this option is, for options that are one */
+  path?: string
 }
 
 export interface ChipsInputProps {
@@ -46,9 +48,22 @@ export function ChipsInput({
 }: ChipsInputProps) {
   const combobox = useCombobox({ onDropdownClose: () => combobox.resetSelectedOption() })
   const inputRef = useRef<HTMLInputElement>(null)
-  const optionsKey = options.map((option) => option.value).join('\n')
+  // Each option once, keyed by what it is. Two rows with one key would make React keep a row
+  // of an earlier answer when the list changes — rows would pile up as the search went on.
+  const rows = useMemo(() => {
+    const seen = new Set<string>()
+    const out: Array<{ key: string; option: ChipOption }> = []
+    for (const option of options) {
+      const key = `${option.path ?? ''}\n${option.value}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ key, option })
+    }
+    return out
+  }, [options])
+  const optionsKey = rows.map((row) => row.key).join('\n')
   useEffect(() => {
-    if (search.length > 0 && options.length > 0) {
+    if (search.length > 0 && rows.length > 0) {
       combobox.openDropdown()
       combobox.selectFirstOption()
     } else {
@@ -119,8 +134,8 @@ export function ChipsInput({
       </Combobox.DropdownTarget>
       <Combobox.Dropdown className="sky-props-dropdown">
         <Combobox.Options>
-          {options.map((option) => (
-            <Combobox.Option value={option.value} key={option.value}>
+          {rows.map(({ key, option }) => (
+            <Combobox.Option value={option.value} key={key}>
               {renderOption(option)}
             </Combobox.Option>
           ))}

@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -169,4 +172,35 @@ test({ name: 'vocabulary - the notebook score orders a tie, and the hint says ho
     ),
     expected: ['today', 'yesterday', '10 days ago', '4 weeks ago', '6 months ago', '3 years ago'],
   })
+})
+
+test({ name: 'vocabulary - a person with several names completes once, under any of them' }, async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'vocabulary-aliases-'))
+  try {
+    for (const dir of ['people', 'orgs', 'projects', 'time']) await mkdir(path.join(base, dir), { recursive: true })
+    await writeFile(
+      path.join(base, 'people/Jane-Doe.md'),
+      '---\nname:\n  - Jane Doe\n  - Janie\nalt: JD\norg: Atlas\ntags: atlas\n---\n',
+    )
+    const store = await MarkdownStore.build({
+      peopleDirs: [`${base}/people`],
+      orgDirs: [`${base}/orgs`],
+      projectsDir: `${base}/projects`,
+      timeDirs: [`${base}/time`],
+    })
+    const vocabulary = vocabularyOf(store, base)
+    assert({
+      given: 'one person file listing three names, searched by each of them',
+      should: 'complete as one row every time, and count her tag once',
+      actual: [
+        ['jane', 'janie', 'jd'].map((query) =>
+          complete(vocabulary, { kind: 'people', query }).map((item) => item.value),
+        ),
+        vocabulary.tags.get('atlas'),
+      ],
+      expected: [[['Jane Doe'], ['Jane Doe'], ['Jane Doe']], 1],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
 })
