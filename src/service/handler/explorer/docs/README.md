@@ -51,3 +51,8 @@ vocabulary, rows keyed by document, and only an answer to the search so far
 shown — see `2026-09-01-ghost-rows-in-the-who-field.md`. Unit tests, then a
 headless run against the live service with writes blocked: the dropdown holds
 exactly the server's rows and React logs no key warning.
+
+2026-09-01: the panel remembered every completion and name resolution for the
+page's life, so a hint could name a state the notebook had left long ago. An
+answer now stands in for ten seconds — a burst of typing — and is asked again
+after; see `2026-09-01-completion-answers-expire.md`.

@@ -1,6 +1,7 @@
 /**
  * The panel's completions and name resolution, from the service: small requests, answered from a
- * cache when the same question was asked a moment ago.
+ * cache when the same question was asked within the last few seconds — a burst of typing, not
+ * the page's life, so what the notebook learns reaches the panel.
  */
 
 export type EntityType = 'person' | 'org' | 'project' | 'place' | 'library' | 'day'
@@ -22,15 +23,33 @@ export interface Resolved {
 }
 
 const CACHE_LIMIT = 300
-const completions = new Map<string, Promise<Completion[]>>()
-const resolutions = new Map<string, Resolved | null>()
+/** How long an answer stands in for asking again */
+const CACHE_MS = 10_000
 
-function remember<T>(cache: Map<string, T>, key: string, value: T) {
+interface Cached<T> {
+  at: number
+  value: T
+}
+
+const completions = new Map<string, Cached<Promise<Completion[]>>>()
+const resolutions = new Map<string, Cached<Resolved | null>>()
+
+function recall<T>(cache: Map<string, Cached<T>>, key: string): T | undefined {
+  const hit = cache.get(key)
+  if (!hit) return undefined
+  if (Date.now() - hit.at > CACHE_MS) {
+    cache.delete(key)
+    return undefined
+  }
+  return hit.value
+}
+
+function remember<T>(cache: Map<string, Cached<T>>, key: string, value: T) {
   if (cache.size >= CACHE_LIMIT) {
     const oldest = cache.keys().next().value
     if (oldest !== undefined) cache.delete(oldest)
   }
-  cache.set(key, value)
+  cache.set(key, { at: Date.now(), value })
 }
 
 export async function fetchCompletions(
@@ -43,7 +62,7 @@ export async function fetchCompletions(
   if (options.dir) params.set('dir', options.dir)
   if (options.limit) params.set('limit', String(options.limit))
   const url = `/docs/_api/complete?${params.toString()}`
-  const cached = completions.get(url)
+  const cached = recall(completions, url)
   if (cached) return cached
   const request = fetch(url)
     .then(async (r) => {
@@ -61,7 +80,7 @@ export async function resolveNames(names: string[], file: string): Promise<Recor
   const out: Record<string, Resolved | null> = {}
   const missing: string[] = []
   for (const name of names) {
-    const known = resolutions.get(name)
+    const known = recall(resolutions, name)
     if (known !== undefined) out[name] = known
     else missing.push(name)
   }
@@ -83,12 +102,6 @@ export async function resolveNames(names: string[], file: string): Promise<Recor
     }
   }
   return out
-}
-
-/** Forgets what was resolved — after the notebook changed under the panel. */
-export function forgetResolutions() {
-  resolutions.clear()
-  completions.clear()
 }
 
 /** The time zones this browser knows, for the `tz` picker. */
