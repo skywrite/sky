@@ -36,6 +36,7 @@ import ChatEngine, {
   type ApprovalHandler,
   type ChatEngineEvent,
   type ModelInvoker,
+  type ToolApprovalConfig,
   TurnError,
 } from '../ChatEngine/mod.ts'
 import { clearChatAutosave, writeChatAutosave } from '../ChatStore/autosave.ts'
@@ -80,7 +81,7 @@ export interface ToolHooks {
 /** Builds the turn's tool set. Called every turn; hosts cache discovery themselves. */
 export type ToolFactory = (
   hooks: ToolHooks,
-) => Promise<{ tools: Record<string, unknown>; toolApproval: Record<string, 'user-approval'> }>
+) => Promise<{ tools: Record<string, unknown>; toolApproval: ToolApprovalConfig }>
 
 export interface ChatSessionOptions {
   today: PlainDate
@@ -106,6 +107,8 @@ export interface ChatSessionOptions {
   systemPrompt: () => Promise<string>
   tools: ToolFactory
   approvalHandler: ApprovalHandler
+  /** The durable approval keys the host holds — snapshotted and saved with the transcript */
+  approvals?: () => readonly string[]
   /** Crash snapshot written after every turn; null for none */
   autosavePath: string | null
   onEvent?: (event: ChatSessionEvent) => void
@@ -436,6 +439,7 @@ export default class ChatSession {
       model: this.profile.model,
       externalFiles: this.externalFiles,
       attachments: [...this.attachments.values()],
+      approvals: this.opts.approvals?.(),
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,
       memoryDir: opts.memoryDir,
@@ -466,6 +470,7 @@ export default class ChatSession {
         model: this.profile.model,
         externalFiles: this.externalFiles,
         attachments: [...this.attachments.values()],
+        approvals: this.opts.approvals?.(),
       })
     } catch (err) {
       const message = (err as Error).message

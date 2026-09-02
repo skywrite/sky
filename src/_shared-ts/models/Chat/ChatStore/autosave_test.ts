@@ -139,6 +139,7 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
     rel: ['projects/Atlas'],
     tags: ['planning'],
     attachments: [],
+    approvals: [],
     frontmatterHealthy: true,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
   }
@@ -170,6 +171,7 @@ test('writeChatAutosave - files read this session join the resumed file’s atta
     rel: [],
     tags: [],
     attachments: [{ file: '2026-01-20_Chat_Atlas-Brief.pdf' }],
+    approvals: [],
     frontmatterHealthy: true,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
   }

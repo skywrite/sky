@@ -58,6 +58,8 @@ export interface ChatAutosaveInput {
   externalFiles?: ReadonlyMap<string, string>
   /** Files the session's tools copied into the day's attachments */
   attachments?: readonly Attachment[]
+  /** Durable approval keys the session holds (already seeded from any resume) */
+  approvals?: readonly string[]
 }
 
 /**
@@ -83,6 +85,9 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     rel: mergeRel(priorRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
     tags: priorTags,
     attachments: mergeAttachments(input.resume?.attachments, input.attachments),
+    // Union with the file's own keys so a host that never wires approvals
+    // snapshots a resumed session without erasing what the file recorded.
+    approvals: [...new Set([...(input.resume?.approvals ?? []), ...(input.approvals ?? [])])],
   })
   const markdown = doc.toMarkdown() + serializeContextLog(input.contextLog)
 

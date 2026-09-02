@@ -15,6 +15,7 @@ import type { ApprovalSessionKeyFn, FormatApprovalFn } from '#commands/lib/AICha
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
+import type { ToolApprovalConfig } from '#shared/models/Chat/ChatEngine/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 
 // -----------------------------------------------------------------------------
@@ -69,6 +70,10 @@ export type OnOpenQuestions = (
 export interface ExternalFileRef {
   title: string
   url: string
+  /** The provider's file id, when the tool reports one (a Google fileId today). */
+  id?: string
+  /** What the tool did to it, when reported: 'created' | 'updated' | 'read'. */
+  action?: string
 }
 
 export interface CreateNotebookToolsOptions {
@@ -119,7 +124,10 @@ export function extractExternalFiles(payload: Record<string, unknown>): External
     const f = item as Record<string, unknown>
     if (typeof f.title !== 'string' || !f.title.trim()) continue
     if (typeof f.url !== 'string' || !f.url.trim()) continue
-    files.push({ title: f.title, url: f.url })
+    const ref: ExternalFileRef = { title: f.title, url: f.url }
+    if (typeof f.id === 'string' && f.id.trim()) ref.id = f.id
+    if (typeof f.action === 'string' && f.action.trim()) ref.action = f.action
+    files.push(ref)
   }
   return files
 }
@@ -293,6 +301,17 @@ export async function createAutoApprovedTools(
   return Object.fromEntries(Object.entries(all).filter(([name]) => allowed.has(name)))
 }
 
+export interface ToolApprovalConfigOptions {
+  /**
+   * Session blessing check for a call's stable key (see approvalSessionKey).
+   * A blessed call returns 'approved' and executes inline — no prompt, no
+   * approval round. Absent, every gated tool statically prompts.
+   */
+  isBlessed?: (toolName: string, sessionKey: string) => boolean
+  /** Fired when a blessed call auto-approves — the host's one status line. */
+  onAutoApproved?: (toolName: string, sessionKey: string) => void
+}
+
 /**
  * Generation-time approval policy for the discovered tools. AI SDK 7 moved
  * approval off the tool definition (tool-level needsApproval is deprecated)
@@ -300,12 +319,34 @@ export async function createAutoApprovedTools(
  * remains the source of truth and is translated here. Call after
  * createNotebookTools(), which populates the registry.
  */
-export function createToolApprovalConfig(): Record<string, 'user-approval'> {
-  const config: Record<string, 'user-approval'> = {}
+export function createToolApprovalConfig(options: ToolApprovalConfigOptions = {}): ToolApprovalConfig {
+  const { isBlessed, onAutoApproved } = options
+  const config: ToolApprovalConfig = {}
   for (const entry of discoveredTools) {
-    if (entry.needsApproval) config[entry.toolName] = 'user-approval'
+    if (!entry.needsApproval) continue
+    const sessionKey = entry.commandClass.approvalSessionKey as ApprovalSessionKeyFn | undefined
+    if (!isBlessed || !sessionKey) {
+      config[entry.toolName] = 'user-approval'
+      continue
+    }
+    const toolName = entry.toolName
+    config[toolName] = (input) => {
+      const key = sessionKey(input)
+      if (key !== undefined && isBlessed(toolName, key)) {
+        onAutoApproved?.(toolName, key)
+        return 'approved'
+      }
+      return 'user-approval'
+    }
   }
   return config
+}
+
+/** Tools whose approval scopes to a stable per-file key — the ones session blessings can cover. */
+export function sessionKeyToolNames(): string[] {
+  return discoveredTools
+    .filter((t) => t.needsApproval && Boolean(t.commandClass.approvalSessionKey))
+    .map((t) => t.toolName)
 }
 
 /**

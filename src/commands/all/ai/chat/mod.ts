@@ -11,6 +11,7 @@ import {
   createToolApprovalConfig,
   getApprovalFormatter,
   getApprovalSessionKey,
+  sessionKeyToolNames,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
@@ -32,6 +33,7 @@ import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
+import { SessionBlessings, harvestFileRefs } from './lib/approvals.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
 import { promptWithInk } from './ui/promptWithInk.tsx'
 
@@ -334,10 +336,13 @@ export default class AiChatTask extends Command {
     })
     output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
 
-    // Session-lived terminal state. "toolName:key" entries the user
-    // approved with "don't ask again this session" (e.g. google_agent
-    // scoped to one file id).
-    const sessionApprovals = new Set<string>()
+    // Which (tool, file) pairs run without asking: "always" answers and
+    // files this session creates persist with the transcript (and return
+    // on --resume); pasted file refs bless for this process only. The
+    // toolApproval config consults this per call — a blessed call
+    // executes inline with no prompt and no approval round.
+    const blessings = new SessionBlessings()
+    if (resumeSession) blessings.restoreDurable(resumeSession.approvals)
     // The streamed reply leaves the line open between deltas; anything
     // else printing closes it first.
     let midLine = false
@@ -525,17 +530,36 @@ export default class AiChatTask extends Command {
 
             return answers
           },
-          onExternalFiles: (_toolName, files) => onExternalFiles(files),
+          onExternalFiles: (_toolName, files) => {
+            // A file this session created is durably blessed: editing it
+            // again is the same intent that created it.
+            for (const file of files) {
+              if (file.action !== 'created' || !file.id) continue
+              for (const tool of sessionKeyToolNames()) blessings.blessDurably(tool, file.id)
+            }
+            onExternalFiles(files)
+          },
         })
-        return { tools: { ...webTools, ...fileTools, ...notebookTools }, toolApproval: createToolApprovalConfig() }
+        return {
+          tools: { ...webTools, ...fileTools, ...notebookTools },
+          toolApproval: createToolApprovalConfig({
+            isBlessed: (toolName, key) => blessings.has(toolName, key),
+            onAutoApproved: (toolName, key) => {
+              closeStreamedLine()
+              output.log(colors.dim(`◦ ${toolName} auto-approved — blessed file ${key}`))
+            },
+          }),
+        }
       },
       // Everything interactive about approvals lives here — the engine
       // drives the protocol around it.
       approvalHandler: async ({ toolName, input }) => {
         // A tool may scope approval to a stable key (e.g. the targeted
         // file id); a key the user already blessed skips the prompt.
+        // Blessed keys normally never reach here — the toolApproval config
+        // auto-approves them inline — so this check is a belt for hosts or
+        // paths that still route through the handler.
         const sessionKey = getApprovalSessionKey(toolName)?.(input as Record<string, unknown>)
-        const sessionEntry = sessionKey ? `${toolName}:${sessionKey}` : undefined
 
         // Use task-specific formatter if available, generic fallback otherwise
         const formatter = getApprovalFormatter(toolName)
@@ -554,22 +578,22 @@ export default class AiChatTask extends Command {
           }
         }
 
-        if (sessionEntry && sessionApprovals.has(sessionEntry)) {
-          output.log(colors.dim('Auto-approved — you allowed this file for the rest of the session.'))
-          return { approved: true, reason: 'Auto-approved: the user allowed this file for the session' }
+        if (sessionKey && blessings.has(toolName, sessionKey)) {
+          output.log(colors.dim('Auto-approved — you allowed this file already.'))
+          return { approved: true, reason: 'Auto-approved: the user allowed this file' }
         }
 
         let approved: boolean | symbol
-        if (sessionEntry) {
+        if (sessionKey) {
           const choice = await p.select({
             message: 'Approve?',
             options: [
               { value: 'yes', label: 'Yes' },
-              { value: 'always', label: "Yes — don't ask again for this file this session" },
+              { value: 'always', label: "Yes — don't ask again for this file (kept with this chat)" },
               { value: 'no', label: 'No' },
             ],
           })
-          if (!p.isCancel(choice) && choice === 'always') sessionApprovals.add(sessionEntry)
+          if (!p.isCancel(choice) && choice === 'always') blessings.blessDurably(toolName, sessionKey)
           approved = p.isCancel(choice) ? choice : choice !== 'no'
         } else {
           approved = await p.confirm({ message: 'Approve?' })
@@ -583,6 +607,7 @@ export default class AiChatTask extends Command {
         }
         return { approved: true, reason: 'User approved' }
       },
+      approvals: () => blessings.serializeDurable(),
       autosavePath,
       onEvent: render,
     })
@@ -780,6 +805,10 @@ export default class AiChatTask extends Command {
       // The first real message names the tab right away; the titler refines
       // the label once the first exchange exists.
       if (!topic) updateTopic(firstWordsSummary([{ role: 'user', content: userMessage }]))
+
+      // A pasted Google file ref is permission to work on that file —
+      // bless it for this process (a paste is not a standing grant).
+      for (const fileId of harvestFileRefs(userMessage)) blessings.blessMention(fileId)
 
       const turn = await session.send(userMessage)
       if (turn.error) {

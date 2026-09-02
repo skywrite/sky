@@ -10,7 +10,7 @@
 import { toolModelMessageSchema } from 'ai'
 import { CommandResult, type CommandService } from '#commands/mod.ts'
 import { assert, test } from '#test'
-import { runToolCommand } from './notebookTools.ts'
+import { extractExternalFiles, runToolCommand } from './notebookTools.ts'
 
 /**
  * Stand-in for a rich SDK error (APICallError): a class instance whose
@@ -172,12 +172,14 @@ test('runToolCommand reports external files to the host', async () => {
 
   assert({
     given: 'a tool result whose files mix URL-bearing, URL-less, and malformed entries',
-    should: 'deliver only well-formed title+url pairs, labeled with the tool name',
+    should: 'deliver only well-formed entries, id and action riding along, labeled with the tool name',
     actual: seen,
     expected: [
       {
         toolName: 'fake_tool',
-        files: [{ title: 'Atlas Revenue Model', url: 'https://docs.google.com/spreadsheets/d/f1' }],
+        files: [
+          { title: 'Atlas Revenue Model', url: 'https://docs.google.com/spreadsheets/d/f1', id: 'f1', action: 'read' },
+        ],
       },
     ],
   })
@@ -196,5 +198,25 @@ test('runToolCommand reports external files to the host', async () => {
     should: 'not invoke the handler at all',
     expected: 0,
     actual: silent.length,
+  })
+})
+
+test('extractExternalFiles - lifts id and action when a tool reports them', () => {
+  const files = extractExternalFiles({
+    files: [
+      { title: 'Atlas Plan', url: 'https://docs.google.com/document/d/f1/edit', id: 'f1', action: 'created' },
+      { title: 'Atlas Notes', url: 'https://docs.google.com/document/d/f2/edit' },
+      { title: '', url: 'https://docs.google.com/document/d/f3/edit', id: 'f3' },
+    ],
+  })
+
+  assert({
+    given: 'tool files with and without id/action, plus one with no title',
+    should: 'lift the optional fields and keep the title/url contract',
+    actual: files,
+    expected: [
+      { title: 'Atlas Plan', url: 'https://docs.google.com/document/d/f1/edit', id: 'f1', action: 'created' },
+      { title: 'Atlas Notes', url: 'https://docs.google.com/document/d/f2/edit' },
+    ],
   })
 })

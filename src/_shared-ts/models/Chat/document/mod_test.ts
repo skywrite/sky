@@ -710,3 +710,43 @@ test('ChatDocument - a legacy TURN-log transcript keeps a clean conversation, no
     expected: [],
   })
 })
+
+test('ChatDocument.create - approvals round-trip and default to empty', () => {
+  const doc = ChatDocument.create({
+    summary: 'Approvals Test',
+    messages: [
+      { role: 'user', content: 'Edit the plan doc.' },
+      { role: 'assistant', content: 'Done.' },
+    ],
+    created: '2026-09-01',
+    updated: '2026-09-01',
+    provider: 'claude',
+    model: 'claude-opus-5',
+    approvals: ['google_agent:f123abc'],
+  })
+
+  const reparsed = ChatDocument.fromMarkdown(doc.toMarkdown())
+
+  assert({
+    given: 'a document created with durable approval keys',
+    should: 'read them back after a markdown round-trip',
+    actual: reparsed.approvals,
+    expected: ['google_agent:f123abc'],
+  })
+
+  const bare = ChatDocument.create({
+    summary: 'No Approvals',
+    messages: [{ role: 'user', content: 'hi' }],
+    created: '2026-09-01',
+    updated: '2026-09-01',
+    provider: 'claude',
+    model: 'claude-opus-5',
+  })
+
+  assert({
+    given: 'a document created without approvals',
+    should: 'omit the key and read back an empty list',
+    actual: { yamlHasKey: 'approvals' in bare.yaml, approvals: ChatDocument.fromMarkdown(bare.toMarkdown()).approvals },
+    expected: { yamlHasKey: false, approvals: [] },
+  })
+})

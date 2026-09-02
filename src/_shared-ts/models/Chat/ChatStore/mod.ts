@@ -40,6 +40,8 @@ export interface ResumeSession {
   tags: string[]
   /** Files earlier sessions copied into the day's attachments — carried forward verbatim */
   attachments: Attachment[]
+  /** Durable approval keys (`tool:fileId`) earlier sessions blessed — created files and "always" answers */
+  approvals: string[]
   /** false when yaml turns: swallowed following lines — never overwrite those */
   frontmatterHealthy: boolean
   state: ResumeState
@@ -91,6 +93,7 @@ export async function loadResumeSession(filePath: string): Promise<ResumeSession
     rel: Array.from(doc.rel),
     tags: Array.from(doc.tags),
     attachments: doc.attachments,
+    approvals: doc.approvals,
     // A malformed `turns:` folds the keys after it into one scalar, so the
     // count parses as a string instead of a number. That reading is the
     // only warning a host gets before a rewrite would drop the swallowed

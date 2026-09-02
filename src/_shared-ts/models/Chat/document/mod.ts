@@ -130,6 +130,7 @@ export default class ChatDocument extends SectionDocument {
     'rel',
     'tags',
     'attachments',
+    'approvals',
   ]
 
   /** Summary from YAML frontmatter */
@@ -150,6 +151,12 @@ export default class ChatDocument extends SectionDocument {
   /** Number of turns from YAML */
   get turnCount(): number {
     return (this.yaml['turns'] as number) ?? 0
+  }
+
+  /** Approval keys (`tool:fileId`) the user blessed durably — created files and "always" answers. */
+  get approvals(): string[] {
+    const raw = this.yaml['approvals']
+    return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : []
   }
 
   /** Conversation turns extracted from H2 sections */
@@ -221,6 +228,8 @@ export default class ChatDocument extends SectionDocument {
     tags?: string[]
     /** Files in the day's attachments this chat read; the key is absent when there are none */
     attachments?: Attachment[]
+    /** Durable approval keys; the key is absent when there are none */
+    approvals?: string[]
   }): ChatDocument {
     const turnCount = Math.floor(input.messages.length / 2)
     const yaml: Record<string, unknown> = {
@@ -234,6 +243,7 @@ export default class ChatDocument extends SectionDocument {
       tags: input.tags && input.tags.length > 0 ? input.tags.join('; ') : null,
     }
     if (input.attachments && input.attachments.length > 0) yaml.attachments = attachmentsToYaml(input.attachments)
+    if (input.approvals && input.approvals.length > 0) yaml.approvals = [...input.approvals]
     const markdown = ChatDocument.buildMarkdown(input)
     return new ChatDocument(yaml, markdown)
   }

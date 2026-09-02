@@ -691,3 +691,36 @@ test('ChatEngine.runTurn - a failed turn emits no terminal event', async () => {
     expected: { isTurnError: true, complete: 0 },
   })
 })
+
+test('ChatEngine.runTurn - an inline-approved call (request+response pair) starts no approval round', async () => {
+  const { engine, calls, asked } = makeEngine([
+    textResult('edited it', {
+      content: [
+        approvalRequest('ap1', 'tc1', 'google_agent', { mission: 'edit', file: 'f1' }),
+        { type: 'tool-approval-response', approvalId: 'ap1', approved: true },
+      ],
+      steps: [
+        { toolResults: [toolResult('google_agent', 'tc1', { mission: 'edit', file: 'f1' }, { report: 'done' })] },
+      ],
+    }),
+  ])
+  engine.appendUserMessage('edit the doc')
+  const result = await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'a turn whose only approval request was answered inline by the toolApproval policy',
+    should: 'finish in one invocation, ask the handler nothing, and record the executed call',
+    actual: {
+      text: result.text,
+      invocations: calls.length,
+      asked: asked.length,
+      tools: result.toolRecords.map((r) => ({ tool: r.tool, outcome: r.outcome })),
+    },
+    expected: {
+      text: 'edited it',
+      invocations: 1,
+      asked: 0,
+      tools: [{ tool: 'google_agent', outcome: 'ok' }],
+    },
+  })
+})

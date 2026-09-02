@@ -146,12 +146,22 @@ export type ModelInvoker = (args: {
 // Options
 // -----------------------------------------------------------------------------
 
+/**
+ * Per-tool approval policy: the static gate, or a per-call decision.
+ * A function returning 'approved' executes the call inline in the same
+ * generation — no prompt, no approval round — so hosts use it to skip
+ * asking for inputs the user already blessed this session.
+ */
+export type ToolApprovalPolicy = 'user-approval' | ((input: Record<string, unknown>) => 'approved' | 'user-approval')
+
+export type ToolApprovalConfig = Record<string, ToolApprovalPolicy>
+
 export interface RunTurnOptions {
   /** Prompt-cache segments — each gets its own breakpoint (base system prompt, context prompt). */
   instructions: string[]
   /** Tool set for this turn — hosts may rebuild it every turn (the CLI does). */
   tools: Record<string, unknown>
-  toolApproval: Record<string, 'user-approval'>
+  toolApproval: ToolApprovalConfig
 }
 
 export interface ChatEngineOptions {
@@ -449,12 +459,27 @@ export default class ChatEngine {
     try {
       let result = await runRound()
 
-      // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval)
+      // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval).
+      // A policy function that answered 'approved' leaves a request+response PAIR
+      // inline and the call already executed — only requests without a response
+      // are pending and pause the turn.
+      // deno-lint-ignore no-explicit-any
+      const pendingApprovals = (content: any[] | undefined) => {
+        // deno-lint-ignore no-explicit-any
+        const answered = new Set(
+          (content ?? [])
+            .filter((part: any) => part.type === 'tool-approval-response')
+            .map((part: any) => part.approvalId),
+        )
+        // deno-lint-ignore no-explicit-any
+        return (content ?? []).filter(
+          (part: any) => part.type === 'tool-approval-request' && !answered.has(part.approvalId),
+        )
+      }
       const deniedTools = new Set<string>()
       let approvalRound = 0
       let approvalRoundsExhausted = false
-      // deno-lint-ignore no-explicit-any
-      while (result.content?.some((part: any) => part.type === 'tool-approval-request')) {
+      while (pendingApprovals(result.content).length > 0) {
         if (++approvalRound > this.maxApprovalRounds) {
           approvalRoundsExhausted = true
           break
@@ -463,8 +488,7 @@ export default class ChatEngine {
         // deno-lint-ignore no-explicit-any
         this.messages.push(...(result.responseMessages as any))
 
-        // deno-lint-ignore no-explicit-any
-        const approvalRequests = result.content.filter((part: any) => part.type === 'tool-approval-request')
+        const approvalRequests = pendingApprovals(result.content)
         const approvals: Array<{
           type: 'tool-approval-response'
           approvalId: string

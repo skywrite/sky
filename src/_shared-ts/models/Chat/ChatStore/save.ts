@@ -160,6 +160,8 @@ export interface SaveChatInput {
   externalFiles?: ReadonlyMap<string, string>
   /** Files the session's tools copied into the day's attachments */
   attachments?: readonly Attachment[]
+  /** Durable approval keys the session holds (already seeded from any resume) */
+  approvals?: readonly string[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
   /** Choose rel from the entity graph when the chat has none */
@@ -302,6 +304,9 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // Files read into the session join whatever the resumed file already
     // listed — a document is recorded once however many sessions read it.
     attachments: mergeAttachments(resume?.attachments, input.attachments),
+    // Union with the file's own keys so a host that never wires approvals
+    // writes a resumed session back without erasing what the file recorded.
+    approvals: [...new Set([...(resume?.approvals ?? []), ...(input.approvals ?? [])])],
   })
 
   // Memory and profile ops apply before the transcript serializes so this
