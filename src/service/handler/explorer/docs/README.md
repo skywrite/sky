@@ -56,3 +56,8 @@ exactly the server's rows and React logs no key warning.
 page's life, so a hint could name a state the notebook had left long ago. An
 answer now stands in for ten seconds — a burst of typing — and is asked again
 after; see `2026-09-01-completion-answers-expire.md`.
+
+2026-09-01: every `when` row read "not a date or a range" in a browser
+without `Temporal` — Safari, Firefox, an older Chromium — because the date
+helper behind the hint reached for it even for a full date; see
+`2026-09-01-when-row-without-temporal.md`.

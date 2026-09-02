@@ -80,3 +80,22 @@ test(`${expandToYMD.name} treats the reference date as a calendar day, not an in
     expected: '2026-08-27',
   })
 })
+
+test(`${expandToYMD.name} needs nothing beyond the language for a full date`, () => {
+  // The front matter panel runs this in the browser, where Temporal may not exist.
+  const scope = globalThis as { Temporal?: unknown }
+  const temporal = scope.Temporal
+  delete scope.Temporal
+  let expanded: string
+  try {
+    expanded = expandToYMD('2026-08-30')
+  } finally {
+    if (temporal !== undefined) scope.Temporal = temporal
+  }
+  assert({
+    given: 'a full date with no Temporal in the global scope',
+    should: 'pass through',
+    actual: [expanded, expandToYMD('2024-02-29', REF_DATE), expandToYMD('29', { year: 2024, month: 2 })],
+    expected: ['2026-08-30', '2024-02-29', '2024-02-29'],
+  })
+})
