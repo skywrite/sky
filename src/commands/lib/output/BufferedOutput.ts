@@ -1,4 +1,4 @@
-import type { OutputHandler } from './OutputHandler.ts'
+import type { OutputHandler, PlanStep } from './OutputHandler.ts'
 
 /**
  * Output handler that buffers messages in memory.
@@ -8,6 +8,9 @@ export class BufferedOutput implements OutputHandler {
   private logs: string[] = []
   private errors: string[] = []
   private tables: any[] = []
+  private plans: PlanStep[][] = []
+  private stages: { id: string; label: string; detail: string | null }[] = []
+  private ticks: { done: number; total: number | null; unit: string | null }[] = []
   /** The line in progress: written pieces the next log will complete. */
   private partial = ''
   private indentLevel: number
@@ -35,6 +38,32 @@ export class BufferedOutput implements OutputHandler {
 
   table(data: any): void {
     this.tables.push(data)
+  }
+
+  plan(steps: PlanStep[]): void {
+    this.plans.push(steps)
+  }
+
+  stage(id: string, label: string, detail?: string): void {
+    this.stages.push({ id, label, detail: detail ?? null })
+  }
+
+  tick(done: number, total: number | null, unit?: string): void {
+    this.ticks.push({ done, total, unit: unit ?? null })
+  }
+
+  /** The plans announced, in order */
+  getPlans(): PlanStep[][] {
+    return this.plans.map((p) => [...p])
+  }
+
+  /** The steps reported, in order — what a test asserts a run walked through */
+  getStages(): { id: string; label: string; detail: string | null }[] {
+    return [...this.stages]
+  }
+
+  getTicks(): { done: number; total: number | null; unit: string | null }[] {
+    return [...this.ticks]
   }
 
   /**
@@ -83,6 +112,9 @@ export class BufferedOutput implements OutputHandler {
     this.logs = []
     this.errors = []
     this.tables = []
+    this.plans = []
+    this.stages = []
+    this.ticks = []
     this.partial = ''
   }
 

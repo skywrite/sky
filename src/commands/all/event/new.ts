@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
-import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -96,7 +96,9 @@ export default class EventNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write day item')
     }
 
-    openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
+    if (context.platform === CommandPlatform.Console) {
+      openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
+    }
     await delay(500)
 
     output.log(`\n  Successfully created event ${file}.\n`)

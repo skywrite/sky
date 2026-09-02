@@ -21,6 +21,7 @@ import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
+import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
 import {
   exportMarkdownPreviewPdf,
   MarkdownSaveConflictError,
@@ -67,6 +68,8 @@ export interface HttpHandlerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
+  imports?: ImportRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
   userDataDir: string
 }
@@ -86,6 +89,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     voice,
     settings,
     clock,
+    imports,
     userDataDir,
   } = options
 
@@ -134,6 +138,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
   if (clock) {
     app.route('/clock/_api', createClockRoutes(clock))
+  }
+
+  // A file dropped on the day: the upload, its read-back, the run, its questions.
+  // The page for one import is /import/<id>, below.
+  if (imports) {
+    app.route('/import', createImportRoutes(imports))
   }
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
@@ -475,6 +485,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   })
 
   app.get('/thread/*', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // One import's page: what it read, the work as it happens, the questions it asks.
+  app.get('/import/:id{[0-9a-f-]+}', (c) => {
     return c.html(renderAppHtml('sky'))
   })
 

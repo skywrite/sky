@@ -1,0 +1,478 @@
+/* ============ meeting from a file ============ */
+
+/* the drop overlay over the day */
+.sky-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: color-mix(in srgb, var(--sky-blue-soft) 94%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.sky-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 0 48px;
+  max-width: 640px;
+}
+
+.sky-drop-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--sky-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sky-blue-deep);
+}
+
+.sky-drop-title {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.sky-drop-sub {
+  font-size: 17px;
+  color: var(--sky-text-2);
+  line-height: 1.5;
+}
+
+/* the confirm: dialog on a desk, sheet on a phone — same body */
+.sky-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sky-confirm-title {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.sky-confirm-file {
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  margin-top: -6px;
+  overflow-wrap: anywhere;
+}
+
+.sky-confirm-read {
+  font-size: 18px;
+}
+
+.sky-confirm-opening {
+  font-size: 17px;
+  font-style: italic;
+  color: var(--sky-text-2);
+  max-width: 72ch;
+}
+
+.sky-confirm-guess {
+  font-size: 16px;
+  color: var(--sky-text-2);
+}
+
+.sky-confirm-next {
+  font-size: 16px;
+  color: var(--sky-dim);
+  max-width: 72ch;
+}
+
+.sky-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.sky-sheet .sky-confirm-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.sky-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sky-border-soft);
+  margin: 0 auto 8px;
+}
+
+/* labelled rows of pills */
+.sky-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sky-choice-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sky-choice-label {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-right: 6px;
+}
+
+.sky-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sky-pill {
+  border: 0;
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1.5;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  cursor: pointer;
+}
+
+.sky-pill:hover {
+  background: var(--sky-hover);
+}
+
+.sky-pill[data-on='true'] {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+  font-weight: 600;
+}
+
+.sky-pill:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: 2px;
+}
+
+.sky-when-input {
+  font: inherit;
+  font-size: 15.5px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  width: 190px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-when-input:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+}
+
+.sky-when-note {
+  font-size: 14.5px;
+  color: var(--sky-dim);
+}
+
+.sky-when-cal {
+  font-size: 15px;
+  color: var(--sky-text-2);
+  margin-top: -2px;
+}
+
+/* the import page */
+.sky-ladder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  align-items: center;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+.sky-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.sky-step[data-state='done'] {
+  color: var(--sky-text-2);
+}
+
+.sky-step[data-state='live'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+
+.sky-step[data-state='need'] {
+  color: var(--sky-amber);
+  font-weight: 600;
+}
+
+.sky-step .sky-dot[data-tone='next'] {
+  background: var(--sky-border-soft);
+}
+
+.sky-step .sky-dot[data-tone='need'] {
+  background: var(--sky-amber);
+}
+
+.sky-dot[data-tone='need'] {
+  background: var(--sky-amber);
+}
+
+.sky-run-line[data-tone='need'] {
+  color: var(--sky-amber);
+}
+
+.sky-run-line[data-tone='failed'] {
+  color: var(--mantine-color-red-7);
+  white-space: normal;
+}
+
+.sky-live {
+  font-size: 18px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-width: 72ch;
+}
+
+.sky-caret {
+  display: inline-block;
+  width: 2px;
+  height: 22px;
+  background: var(--sky-blue-deep);
+  vertical-align: -5px;
+  margin-left: 3px;
+}
+
+.sky-lead {
+  font-size: 17px;
+  color: var(--sky-text-2);
+  max-width: 72ch;
+}
+
+.sky-dim {
+  font-size: 16px;
+  color: var(--sky-dim);
+  max-width: 72ch;
+}
+
+.sky-log {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* the review of names and terms */
+.sky-issue {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-issue:last-of-type {
+  border-bottom: 0;
+}
+
+.sky-issue-kind {
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  margin-bottom: 5px;
+}
+
+.sky-issue-ctxs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sky-issue-ctx {
+  font-size: 17px;
+  color: var(--sky-text-2);
+  max-width: 72ch;
+}
+
+.sky-issue-ctx mark {
+  background: color-mix(in srgb, var(--sky-amber) 14%, transparent);
+  color: var(--sky-text);
+  font-weight: 600;
+  padding: 0 3px;
+  border-radius: 4px;
+}
+
+.sky-issue-custom {
+  font: inherit;
+  font-size: 15.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  min-width: 180px;
+}
+
+.sky-form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 18px;
+}
+
+.sky-form-foot .sky-dim {
+  margin-left: auto;
+  font-size: 15px;
+}
+
+/* the write-up check: fields and the exchange */
+.sky-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.sky-field {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 15.5px;
+}
+
+.sky-field:last-child {
+  border-bottom: 0;
+}
+
+.sky-field-key {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+  padding-top: 3px;
+}
+
+.sky-say {
+  font-size: 18px;
+  max-width: 72ch;
+}
+
+.sky-say-who {
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin-bottom: 6px;
+}
+
+.sky-say-ex {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-say-user {
+  align-self: flex-end;
+  max-width: 70%;
+  background: var(--sky-s2);
+  border-radius: 18px;
+  padding: 12px 18px;
+  font-size: 18px;
+}
+
+.sky-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sky-exchange-input {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.sky-exchange-input .sky-input {
+  padding: 12px 19px;
+}
+
+/* the action items */
+.sky-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 18px;
+}
+
+.sky-action-dest {
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  flex: none;
+  margin-left: auto;
+}
+
+.sky-action-me {
+  flex: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+/* the filed document and its rail */
+.sky-filed-doc {
+  padding: 6px 4px 0;
+}
+
+.sky-import .sky-rail {
+  position: static;
+  width: auto;
+  max-width: none;
+  border: 0;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .sky-drop-title {
+    font-size: 24px;
+  }
+
+  .sky-field {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .sky-say-user {
+    max-width: 92%;
+  }
+}
+
+/* the day carries the drop overlay */
+.sky-day {
+  position: relative;
+}
+
+.sky-thread .sky-meta[data-state='needs-you'] {
+  color: var(--sky-amber);
+}
+
+.sky-thread .sky-meta[data-state='failed'] {
+  color: var(--mantine-color-red-7);
+}

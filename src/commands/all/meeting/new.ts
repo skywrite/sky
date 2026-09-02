@@ -1,10 +1,9 @@
 import { copyFile, mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import * as p from '@clack/prompts'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { Arg, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, dayFileExists, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import { parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
@@ -18,7 +17,6 @@ import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MeetingDocument from '#shared/models/Meeting/mod.ts'
 import { applyPersonFacts, formatPersonOpLine } from '#shared/models/Person/write.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { isTerminal } from '#shared/sys/mod.ts'
 import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -62,15 +60,19 @@ export default class MeetingNewTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
     let { when, medium, who, summary, category, fromVoiceMemo, fromZoomVtt, fromText, duration } = args
     let body: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
-    let transcriptSourcePath: string | null = null
+    /** Files the notebook takes ownership of: the transcript, or the recording and its transcript */
+    let importFiles: string[] = []
     let actionItems: TranscriptActionItem[] = []
     let anchors: string[] | undefined
+    // A when the caller stated outright — typed, or chosen in a dialog — is
+    // theirs; only the default gives way to a time the transcript mentions.
+    const whenStated = rawArgs.when !== undefined
 
     const sources = [fromVoiceMemo, fromZoomVtt, fromText].filter((flag) => flag !== undefined)
     if (sources.length > 1) {
@@ -89,8 +91,19 @@ export default class MeetingNewTask extends Command {
 
     // Handle --from-voice-memo / --from-zoom-vtt / --from-text pipeline via audio:transcript:summary
     const usePipeline = sources.length === 1
+    const willRouteActions = !args.noActions && category.startsWith('Professional')
 
     if (usePipeline) {
+      // The steps ahead, in the words a person reads; the transcript pipeline
+      // reports the first three by the same ids as it reaches them.
+      output.plan([
+        ...(fromVoiceMemo !== undefined ? [{ id: 'transcribe', label: 'Transcribing' }] : []),
+        { id: 'names', label: 'Checking names' },
+        { id: 'writeup', label: 'Writing it up' },
+        { id: 'file', label: 'Filing' },
+        ...(willRouteActions ? [{ id: 'actions', label: 'Action items' }] : []),
+      ])
+
       // Delegate to audio:transcript:summary which handles:
       // (audio: transcribe →) clean → summarize with user corrections
       const summaryResult = await tasks.run(
@@ -104,6 +117,7 @@ export default class MeetingNewTask extends Command {
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
       }
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       const data = summaryResult.data
 
@@ -125,8 +139,8 @@ export default class MeetingNewTask extends Command {
       // carry no dates and so route to the Next list.
       actionItems = data.actionItems.length > 0 ? data.actionItems : parseActionItemsSection(data.body)
 
-      // Parse time from summary if available
-      if (data.time) {
+      // Parse time from summary if available, unless the caller already said when
+      if (data.time && !whenStated) {
         when = new PlainDateTime(data.time)
       }
 
@@ -142,11 +156,13 @@ export default class MeetingNewTask extends Command {
         medium = data.medium
       }
 
-      // --from-zoom-vtt and --from-text hand us a file worth keeping; on the
-      // --from-voice-memo path the .vtt is a generated artifact, and the recording
-      // it came from is the file that matters.
+      // --from-zoom-vtt and --from-text hand us a file worth keeping. On the
+      // --from-voice-memo path the recording is the file that matters, and the
+      // transcript written beside it comes along.
       if (fromZoomVtt !== undefined || fromText !== undefined) {
-        transcriptSourcePath = data.transcriptFilePath
+        importFiles = data.transcriptFilePath ? [data.transcriptFilePath] : []
+      } else if (fromVoiceMemo !== undefined) {
+        importFiles = [data.audioFilePath, data.transcriptFilePath].filter((f): f is string => Boolean(f))
       }
 
       output.log(
@@ -183,6 +199,8 @@ export default class MeetingNewTask extends Command {
       return CommandResult.fail('Missing required argument: who (or use --from-voice-memo/--from-zoom-vtt/--from-text)')
     }
 
+    if (usePipeline) output.stage('file', 'Filing')
+
     const whenDate = when.plainDate
     const entryWhen = when.time
     const whoSlug = slugify(who, { preserveCase: true, suggestedLength: 30 })
@@ -197,12 +215,11 @@ export default class MeetingNewTask extends Command {
 
     const fileName = meetingFileName(when, fileSlug)
 
-    // Move the source transcript into the day's attachments so the notebook owns it,
-    // then point the meeting file at it. A failure here must not lose the summary the
-    // AI pipeline just produced, so it degrades to a warning.
+    // Move the source files into the day's attachments so the notebook owns them,
+    // then point the meeting file at them. A failure here must not lose the summary
+    // the AI pipeline just produced, so it degrades to a warning.
     let attachments: Attachment[] | undefined
-    if (transcriptSourcePath) {
-      const sourcePath = transcriptSourcePath
+    for (const sourcePath of importFiles) {
       const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(whenDate))
       const attachmentFile = `${whenDate}_${fileSlug}${path.extname(sourcePath)}`
       const destPath = path.join(attachDir, attachmentFile)
@@ -212,12 +229,13 @@ export default class MeetingNewTask extends Command {
         await rename(sourcePath, destPath).catch(async () => {
           await copyFile(sourcePath, destPath)
         })
-        attachments = [{ file: attachmentFile }]
-        output.log(`  Imported transcript to ${destPath}\n`)
+        attachments = [...(attachments ?? []), { file: attachmentFile }]
+        output.log(`  Imported ${path.basename(sourcePath)} to ${destPath}`)
       } catch (err) {
-        output.error(`Failed to import transcript ${sourcePath}: ${(err as Error).message}`)
+        output.error(`Failed to import ${sourcePath}: ${(err as Error).message}`)
       }
     }
+    if (importFiles.length > 0) output.log('')
 
     const ddfw = new DayDirFileWriter(whenDate)
     const meeting = new MeetingDocument({
@@ -252,7 +270,8 @@ export default class MeetingNewTask extends Command {
     // on disk so a cancel or crash here can't lose them, and before openEditor
     // so the prompt isn't buried by the editor stealing focus. Professional
     // meetings only — the category default.
-    if (actionItems.length > 0 && !args.noActions && category.startsWith('Professional') && isTerminal()) {
+    if (actionItems.length > 0 && willRouteActions && context.prompt.interactive && !context.signal?.aborted) {
+      output.stage('actions', 'Action items', `${actionItems.length} to accept`)
       try {
         await this.acceptActionItems(actionItems, context, tasks)
       } catch (err) {
@@ -295,8 +314,11 @@ export default class MeetingNewTask extends Command {
       }
     }
 
-    openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
-    await delay(500)
+    // The terminal opens the file to read; any other host has its own way to show it.
+    if (context.platform === CommandPlatform.Console) {
+      openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
+      await delay(500)
+    }
 
     output.log(`\n  Successfully created meeting ${file}.\n`)
 
@@ -318,31 +340,30 @@ export default class MeetingNewTask extends Command {
     const routes = await Promise.all(items.map((item) => planActionItemRoute(item, today)))
 
     const indexes = items.map((_, i) => i)
-    const selected = await p.multiselect({
+    const selected = await context.prompt.multiselect({
       message: 'Accept action items (space toggles, enter confirms)',
       options: indexes.map((i) => ({
-        value: i,
+        value: String(i),
         label: items[i].text,
         hint: [items[i].mine ? 'me' : null, `→ ${routes[i].destination}`].filter(Boolean).join(' · '),
       })),
-      initialValues: indexes.filter((i) => items[i].mine),
-      required: false,
+      initial: indexes.filter((i) => items[i].mine).map(String),
     })
 
-    if (p.isCancel(selected)) {
+    if (selected === null) {
       output.log('  Action items skipped.')
       return
     }
 
     // Meeting order, not toggle order
-    const accepted = [...selected].sort((a, b) => a - b)
+    const accepted = selected.map(Number).sort((a, b) => a - b)
     if (accepted.length === 0) {
       output.log('  No action items accepted.')
       return
     }
 
     let routed = 0
-    for (const i of accepted) {
+    for (const [n, i] of accepted.entries()) {
       try {
         await executeActionItemRoute(routes[i], tasks)
         routed++
@@ -350,6 +371,7 @@ export default class MeetingNewTask extends Command {
       } catch (err) {
         output.error(`  ✗ ${items[i].text} — ${(err as Error).message}`)
       }
+      output.tick(n + 1, accepted.length, 'action items')
     }
     const declined = items.length - accepted.length
     output.log(`  Routed ${routed} of ${accepted.length} accepted action items (${declined} declined).`)

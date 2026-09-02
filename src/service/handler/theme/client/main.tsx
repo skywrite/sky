@@ -8,6 +8,15 @@ import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
+import {
+  acceptsImports,
+  ImportDialog,
+  ImportMain,
+  importStateWord,
+  useFileDrop,
+  useImportQueue,
+  useImports,
+} from './import.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
@@ -78,6 +87,7 @@ function Canvas() {
     go(to)
   }
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
+  const importId = path.match(/^\/import\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   const isVoice = path === '/voice'
   const isAudition = path === '/voice/audition'
@@ -90,14 +100,28 @@ function Canvas() {
   const clock = useClockNow()
   const threads = useThreads()
   const [notes, setNotes] = useState<Note[]>([])
+  // Files dropped on the day: each one uploaded, confirmed, started — then its own page.
+  const imports = useImports()
+  const importRows = imports.filter((j) => j.state !== 'cancelled')
 
   // A day's own conversation is a thread whose id is the day; those stay off the Threads list.
   const dayThreadId = day ? `day-${day.day.ymd}` : ''
   const chat = useChat(threadId ?? dayThreadId)
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
+  const onDayPage =
+    threadId === null &&
+    importId === null &&
+    !isVoice &&
+    !isAudition &&
+    !isSettings &&
+    !isClock &&
+    explorerFile === null
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
+  const openImport = (id: string) => navigate(`/import/${id}`)
+  const queue = useImportQueue((job) => openImport(job.id))
+  const drop = useFileDrop(onDayPage, queue.take)
   const newChat = () => openThread(crypto.randomUUID())
   // Back to the day at once. The save — enrichment included — finishes behind
   // the Running block, and its note lands in the day when it does.
@@ -119,7 +143,7 @@ function Canvas() {
   }
 
   return (
-    <div className="sky-app" onClick={onLinkClick}>
+    <div className="sky-app" onClick={onLinkClick} {...drop.handlers}>
       <button
         type="button"
         className="sky-menu"
@@ -180,6 +204,7 @@ function Canvas() {
                 className="sky-thread"
                 data-active={
                   threadId === null &&
+                  importId === null &&
                   !isVoice &&
                   !isSettings &&
                   !isClock &&
@@ -192,7 +217,21 @@ function Canvas() {
               </button>
             ))}
 
-            {others.length > 0 && <div className="sky-side-label">Threads</div>}
+            {others.length + importRows.length > 0 && <div className="sky-side-label">Threads</div>}
+            {importRows.map((j) => (
+              <button
+                key={j.id}
+                type="button"
+                className="sky-thread"
+                data-active={j.id === importId}
+                onClick={() => openImport(j.id)}
+              >
+                <span>{j.title}</span>
+                <span className="sky-meta" data-state={j.state}>
+                  {importStateWord(j)}
+                </span>
+              </button>
+            ))}
             {others.map((t) => (
               <button
                 key={t.id}
@@ -236,6 +275,14 @@ function Canvas() {
         <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
       ) : isVoice ? (
         <VoiceMain back={{ label: 'Today', onClick: () => navigate('/') }} />
+      ) : importId ? (
+        <Fragment key={importId}>
+          <ImportMain
+            id={importId}
+            back={{ label: 'Today', onClick: () => navigate('/') }}
+            onStartAgain={queue.startAgain}
+          />
+        </Fragment>
       ) : threadId ? (
         <Fragment key={threadId}>
           <ChatMain
@@ -246,8 +293,25 @@ function Canvas() {
           />
         </Fragment>
       ) : (
-        <DayView chat={chat} day={day} threads={isToday ? others : []} notes={notes} onOpen={openThread} />
+        <DayView
+          chat={chat}
+          day={day}
+          threads={isToday ? others : []}
+          imports={isToday ? importRows : []}
+          notes={notes}
+          onOpen={openThread}
+          onOpenImport={openImport}
+          dragging={drop.dragging}
+          attach={{ accept: acceptsImports(), onFiles: queue.take }}
+        />
       )}
+      <ImportDialog
+        pending={queue.pending}
+        again={queue.again}
+        todayYmd={day?.today.ymd ?? null}
+        onStarted={queue.onStarted}
+        onDismiss={queue.onDismiss}
+      />
     </div>
   )
 }

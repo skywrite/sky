@@ -3,7 +3,15 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import {
+  ArgOrFlag,
+  categoryComplete,
+  Command,
+  CommandPlatform,
+  CommandResult,
+  Flag,
+  whenNBTime,
+} from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
@@ -197,7 +205,9 @@ export default class NotesNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write day item')
     }
 
-    openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+    if (context.platform === CommandPlatform.Console) {
+      openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+    }
     await delay(500)
 
     output.log(`\n  Successfully created ${filePath}.\n`)

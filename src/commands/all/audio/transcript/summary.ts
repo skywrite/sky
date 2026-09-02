@@ -4,6 +4,7 @@ import { generateText, streamText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import type { Prompter } from '#commands/lib/prompt/Prompter.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_OUTPUT } from '#config'
@@ -17,7 +18,7 @@ import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/subjects.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
-import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
+import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { extractTypedNameLists } from './lib/typedNameLists.ts'
 
@@ -309,7 +310,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     const { output: summaryPrompt } = renderPromptFile(promptContent, 'transcript-summary.prompt.md', renderInput)
 
     // 3. Generate summary with AI
-    output.log(colors.cyan('\nGenerating summary...'))
+    output.stage('writeup', 'Writing it up')
 
     let summary: string
     // Streamed for the same reason as the analysis call (see clean.ts): a long
@@ -319,14 +320,23 @@ export default class AudioTranscriptSummaryTask extends Command {
     try {
       const stream = streamText({
         ...aiModelByProfile(SUMMARY_MODEL),
+        abortSignal: context.signal,
         prompt: summaryPrompt,
         timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
         onError: ({ error }) => {
           streamError ??= error
         },
       })
-      summary = await stream.text
+      // The write-up appears as it is written — the only progress a model
+      // call offers, and the words the person is about to check.
+      let streamed = ''
+      for await (const delta of stream.textStream) {
+        streamed += delta
+        output.write(delta)
+      }
       if (streamError !== undefined) throw streamError
+      output.write('\n')
+      summary = streamed
     } catch (err) {
       const error = (streamError ?? err) as Error
       output.error(`AI Error: ${error.message}`)
@@ -376,6 +386,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     try {
       const result = await generateText({
         ...aiModel('balanced'),
+        abortSignal: context.signal,
         prompt: extractPrompt,
         timeout: 20 * 60 * 1000, // 20 min
       })
@@ -436,33 +447,44 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     // The message template's from/to feed no profile distiller; the meeting
     // template's who/rel do, so say up front which profiles they reach.
-    const matches = isMessageTemplate ? null : await matchProfiles([...finalWho, ...finalRel])
+    let matches = isMessageTemplate ? null : await matchProfiles([...finalWho, ...finalRel])
 
-    // Show extracted metadata for confirmation
-    output.log(colors.cyan('\n─── Extracted Metadata ───'))
-    output.log(colors.white(`  Title:    ${finalTitle}`))
-    output.log(colors.white(`  Time:     ${extractedTime ?? '(not detected)'}`))
-    output.log(colors.white(`  Duration: ${extractedDuration ? `${extractedDuration} min` : '(not detected)'}`))
-    output.log(colors.white(`  Medium:   ${extractedMedium ?? '(not detected)'}`))
-    if (isMessageTemplate) {
-      output.log(colors.white(`  From:     ${extractedFrom ?? '(not detected)'}`))
-      output.log(colors.white(`  To:       ${extractedTo ?? '(not detected)'}`))
-    } else {
-      output.log(colors.white(`  Who:      ${finalWho.length > 0 ? finalWho.join(', ') : '(none)'}`))
-    }
-    output.log(colors.white(`  Rel:      ${finalRel.length > 0 ? finalRel.join(', ') : '(none)'}`))
-    if (matches) {
-      output.log(colors.white(`  Profiles: ${matches.profiles.length > 0 ? matches.profiles.join(', ') : '(none)'}`))
-      if (matches.unmatched.length > 0) {
-        output.log(colors.white(`  No match: ${matches.unmatched.join(', ')}`))
+    // Show extracted metadata for confirmation — and again after each
+    // round of corrections, so what is about to be written is on screen.
+    const showMetadata = () => {
+      output.log(colors.cyan('\n─── Extracted Metadata ───'))
+      output.log(colors.white(`  Title:    ${extractedTitle === 'Untitled' ? finalTitle : extractedTitle}`))
+      output.log(colors.white(`  Time:     ${extractedTime ?? '(not detected)'}`))
+      output.log(colors.white(`  Duration: ${extractedDuration ? `${extractedDuration} min` : '(not detected)'}`))
+      output.log(colors.white(`  Medium:   ${extractedMedium ?? '(not detected)'}`))
+      if (isMessageTemplate) {
+        output.log(colors.white(`  From:     ${extractedFrom ?? '(not detected)'}`))
+        output.log(colors.white(`  To:       ${extractedTo ?? '(not detected)'}`))
+      } else {
+        output.log(colors.white(`  Who:      ${finalWho.length > 0 ? finalWho.join(', ') : '(none)'}`))
       }
+      output.log(colors.white(`  Rel:      ${finalRel.length > 0 ? finalRel.join(', ') : '(none)'}`))
+      if (matches) {
+        output.log(colors.white(`  Profiles: ${matches.profiles.length > 0 ? matches.profiles.join(', ') : '(none)'}`))
+        if (matches.unmatched.length > 0) {
+          output.log(colors.white(`  No match: ${matches.unmatched.join(', ')}`))
+        }
+      }
+      output.log(colors.cyan('──────────────────────────'))
     }
-    output.log(colors.cyan('──────────────────────────'))
+    showMetadata()
 
-    // Ask for corrections when running in a terminal
-    if (isTerminal()) {
-      const corrections = await this.askForCorrections(output, { unmatched: (matches?.unmatched.length ?? 0) > 0 })
-      if (corrections) {
+    // Ask for corrections when someone is there to answer, and ask again
+    // after each round: a second thought is one more line, not a re-run.
+    let rounds = 0
+    while (context.prompt.interactive) {
+      const corrections = await this.askForCorrections(context.prompt, output, {
+        unmatched: (matches?.unmatched.length ?? 0) > 0,
+        again: rounds > 0,
+      })
+      if (!corrections) break
+      rounds++
+      {
         output.log(colors.cyan('\nParsing corrections...'))
 
         // An explicitly typed `time:` is read here, not by the model — it can't
@@ -518,6 +540,7 @@ export default class AudioTranscriptSummaryTask extends Command {
 
           const parseResult = await generateText({
             ...aiModel('fast'),
+            abortSignal: context.signal,
             prompt: `Parse these user corrections for metadata. Extract any fields the user is updating.
 
 Current metadata:
@@ -585,6 +608,8 @@ Example output: {"time": "2026-03-31 25:30"}`,
             message: `${(err as Error).message}${jsonText ? ` — raw head: ${jsonText.slice(0, 200)}` : ''}`,
           })
         }
+        if (!isMessageTemplate) matches = await matchProfiles([...finalWho, ...finalRel])
+        showMetadata()
       }
     }
 
@@ -749,68 +774,27 @@ ${summary}
     return fullText
   }
 
-  private async askForCorrections(output: OutputHandler, hints: { unmatched: boolean }): Promise<string | null> {
-    output.log(colors.cyan('\nAny corrections? (Enter to accept, or type changes)'))
-    output.log(colors.gray('  e.g., "time: 2026-01-20 14:30" or freeform feedback to improve the summary'))
+  /**
+   * The corrections line: a typed field, a sentence about what is wrong, or
+   * nothing. Null when there is nothing — Enter, or a cancel.
+   */
+  private async askForCorrections(
+    prompt: Prompter,
+    output: OutputHandler,
+    hints: { unmatched: boolean; again: boolean },
+  ): Promise<string | null> {
+    const hint = ['e.g., "time: 2026-01-20 14:30" or freeform feedback to improve the summary']
     if (hints.unmatched) {
-      output.log(
-        colors.gray(
-          '  a name under "No match" reaches no profile — retype its list with the full name, e.g. "rel: Sam Rivera, Jordan"',
-        ),
+      hint.push(
+        'a name under "No match" reaches no profile — retype its list with the full name, e.g. "rel: Sam Rivera, Jordan"',
       )
     }
-
-    const isTTY = isTerminal()
-    const decoder = new TextDecoder()
-    const chunks: string[] = []
-
-    // Write prompt without newline
-    writeStdout(colors.cyan('> '))
-
-    if (isTTY) {
-      setRaw(true)
-    }
-
-    try {
-      while (true) {
-        const buf = new Uint8Array(1)
-        const n = await readStdin(buf)
-        if (n === null) break
-
-        const byte = buf[0]
-
-        // Enter key (CR or LF)
-        if (byte === 13 || byte === 10) {
-          writeStdout('\n')
-          break
-        }
-
-        // Ctrl+C
-        if (byte === 3) {
-          writeStdout('\n')
-          return null
-        }
-
-        // Backspace
-        if (byte === 127 || byte === 8) {
-          if (chunks.length > 0) {
-            chunks.pop()
-            writeStdout('\b \b')
-          }
-          continue
-        }
-
-        const char = decoder.decode(buf.subarray(0, 1))
-        chunks.push(char)
-        writeStdout(buf) // Echo character without newline
-      }
-    } finally {
-      if (isTTY) {
-        setRaw(false)
-      }
-    }
-
-    const input = chunks.join('').trim()
-    return input || null
+    output.log('')
+    const answer = await prompt.text({
+      message: hints.again ? 'Anything else? (Enter to accept)' : 'Any corrections? (Enter to accept, or type changes)',
+      hint,
+      placeholder: 'time: …, who: …, rel: …, or what to change',
+    })
+    return answer ? answer : null
   }
 }

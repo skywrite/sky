@@ -239,7 +239,19 @@ export default class CommandService {
     const commandInstance = new (TaskClass as any)() // Cast to any to handle abstract class
 
     const commandArgs = await this.forkChild(commandName, TaskClass.description, argsOverride)
-    return (await commandInstance.run(commandArgs)) as CommandResult<T>
+    // The child's output handler hears where its command starts and ends, so
+    // a host rendering the output sees the composition tree as stages.
+    const output = commandArgs.context.output
+    output.commandStart?.()
+    let result: CommandResult<T>
+    try {
+      result = (await commandInstance.run(commandArgs)) as CommandResult<T>
+    } catch (err) {
+      output.commandEnd?.('error')
+      throw err
+    }
+    output.commandEnd?.(result?.status ?? 'success')
+    return result
   }
 
   /**

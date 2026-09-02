@@ -1,3 +1,8 @@
+export interface PlanStep {
+  id: string
+  label: string
+}
+
 /**
  * OutputHandler interface for abstracting console output in tasks.
  * This allows tasks to output through different handlers for testing,
@@ -19,6 +24,26 @@ export interface OutputHandler {
    * Log an error message (equivalent to console.error)
    */
   error(message: string): void
+
+  /**
+   * Announce the steps of this run, in the words a person reads, once the
+   * command knows its inputs. A host can draw the whole ladder before any
+   * step has run. Steps are named by id so `stage()` can point at them.
+   */
+  plan(steps: PlanStep[]): void
+
+  /**
+   * The step running now. An id from the plan advances the ladder; an id
+   * the plan never named is a step of its own, shown by its label. Calling
+   * it again with the same id updates the detail.
+   */
+  stage(id: string, label: string, detail?: string): void
+
+  /**
+   * A count that is real — parts of a recording, files in a sweep. Never
+   * an estimate; a host draws a bar only from these.
+   */
+  tick(done: number, total: number | null, unit?: string): void
 
   /**
    * Display data in a table format (equivalent to console.table)

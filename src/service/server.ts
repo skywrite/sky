@@ -38,6 +38,7 @@ import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createYogaInstance } from './graphql/schema.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
+import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
@@ -82,6 +83,8 @@ export interface ServerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The file-import host; absent, /import is not served */
+  imports?: ImportRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
   userDataDir?: string
   /** Reference date for recency calculations (for deterministic testing) */
@@ -243,6 +246,7 @@ export function createServer(options: ServerOptions): Server {
       voice,
       settings,
       clock,
+      imports: options.imports,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })
   }

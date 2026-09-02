@@ -1,7 +1,8 @@
 import { Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
-import { type Chat, Composer, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
+import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
+import { DropOverlay, type ImportJob, ImportRow } from './import.tsx'
 
 /**
  * The day is the page. Its column is what needs to get done — with
@@ -606,14 +607,24 @@ export function DayView({
   chat,
   day,
   threads,
+  imports = [],
   notes,
   onOpen,
+  onOpenImport = () => {},
+  dragging = false,
+  attach,
 }: {
   chat: Chat
   day: DayData | null
   threads: ThreadSummary[]
+  /** Files dropped on the day, running or done — rows beside the threads */
+  imports?: ImportJob[]
   notes: Note[]
   onOpen: (id: string) => void
+  onOpenImport?: (id: string) => void
+  /** Files are held over the page */
+  dragging?: boolean
+  attach?: ComposerAttach
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // The record reads top-down; the column follows only once a conversation is running in it.
@@ -624,7 +635,9 @@ export function DayView({
   useEffect(() => setView(day), [day])
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView)
 
-  const running = threads.filter((t) => t.busy).length
+  const running =
+    threads.filter((t) => t.busy).length +
+    imports.filter((j) => j.state === 'running' || j.state === 'needs-you').length
   const section = view?.section ?? null
   const record = view?.record ?? null
   const isToday = view ? view.day.ymd === view.today.ymd : false
@@ -815,8 +828,13 @@ export function DayView({
             </>
           )}
 
-          {threads.length > 0 && (
+          {threads.length + imports.length > 0 && (
             <Block head="Running" mini={running > 0 ? `${running} on sky` : 'all quiet'}>
+              {imports.map((j) => (
+                <Fragment key={j.id}>
+                  <ImportRow job={j} onOpen={onOpenImport} />
+                </Fragment>
+              ))}
               {threads.map((t) => (
                 <Fragment key={t.id}>
                   <RunningRow thread={t} onOpen={onOpen} />
@@ -827,7 +845,7 @@ export function DayView({
 
           <ThreadColumn chat={chat} />
 
-          {chat.state.turns.length === 0 && !chat.state.gather && threads.length === 0 && (
+          {chat.state.turns.length === 0 && !chat.state.gather && threads.length === 0 && imports.length === 0 && (
             <div className="sky-blank" style={{ height: 'auto', padding: '24px 0' }}>
               <p>Ask the day anything, or start a chat — answers come from your files.</p>
             </div>
@@ -852,7 +870,8 @@ export function DayView({
         </div>
       )}
 
-      <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} />
+      <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} attach={attach} />
+      {dragging && <DropOverlay />}
     </div>
   )
 }

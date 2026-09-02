@@ -10,6 +10,7 @@ import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
+import { createImportHost } from './handler/import/createImportHost.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
@@ -139,6 +140,7 @@ const server = createServer({
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
   clock: createClockHost(config, env.toObject()),
+  imports: createImportHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,

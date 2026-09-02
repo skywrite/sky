@@ -2,6 +2,7 @@ import { Command, type CommandArgs, type CommandDescription, CommandResult } fro
 import * as config from '#config'
 import { assert, test } from '#test'
 import { BufferedOutput } from '../output/BufferedOutput.ts'
+import { EventOutput, type OutputEvent } from '../output/EventOutput.ts'
 import CommandContext, { CommandPlatform } from './CommandContext.ts'
 import CommandService from './CommandService.ts'
 
@@ -225,5 +226,27 @@ test('CommandService without currentTaskName passes undefined parentTaskName', a
     should: 'pass undefined as parentTaskName to child',
     actual: result.data?.parentTaskName,
     expected: undefined,
+  })
+})
+
+test("CommandService.run() marks the child command's boundaries on its output", async () => {
+  const events: OutputEvent[] = []
+  const context = CommandContext.test(config).fork({ output: new EventOutput((event) => events.push(event)) })
+  const service = new CommandService(context)
+
+  const result = await service.run('test:context')
+
+  const boundaries = events.filter((e) => e.type === 'command-start' || e.type === 'command-end')
+  assert({
+    given: 'a composed run under an event output',
+    should: 'start and end the child command around its lines',
+    actual: [result.status, boundaries],
+    expected: [
+      'success',
+      [
+        { type: 'command-start', command: 'test:context', depth: 1 },
+        { type: 'command-end', command: 'test:context', depth: 1, status: 'success' },
+      ],
+    ],
   })
 })

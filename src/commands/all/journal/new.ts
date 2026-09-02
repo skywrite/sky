@@ -3,7 +3,7 @@ import { generateText } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import { Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { Args, CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -62,7 +62,7 @@ type Params = InferParams<typeof params>
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'journal:new': { params: Params; result: undefined }
+    'journal:new': { params: Params; result: { files: string[] } | undefined }
   }
 }
 
@@ -217,7 +217,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
       const fullPath = path.join(ddfw.fullDir, filePath)
 
       output.log(`\n  Successfully created ${filePath}.\n`)
-      openEditor([{ file: fullPath, line: 1, column: 0 }])
+      if (context.platform === CommandPlatform.Console) openEditor([{ file: fullPath, line: 1, column: 0 }])
 
       return CommandResult.success()
     }
@@ -364,9 +364,10 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
     // we want the tab order to match the file system order
     files.sort((a, b) => a.file.localeCompare(b.file))
 
-    openEditor(files)
+    if (context.platform === CommandPlatform.Console) openEditor(files)
 
-    return CommandResult.success()
+    // The paths as the day directory holds them — a host that shows what was filed needs them.
+    return CommandResult.success({ files: files.map((f) => path.relative(ddfw.fullDir, f.file)) })
   }
 }
 

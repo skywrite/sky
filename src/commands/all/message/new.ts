@@ -3,7 +3,15 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
-import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import {
+  ArgOrFlag,
+  categoryComplete,
+  Command,
+  CommandPlatform,
+  CommandResult,
+  Flag,
+  whenNBTime,
+} from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -451,10 +459,12 @@ export default class MessageNewTask extends Command {
     const dayItem = `${entryWhen} > ${commEntry} -> [${summary || ''}](${filePath})`
     await writeDayItems(date, category, dayItem)
 
-    await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+    if (context.platform === CommandPlatform.Console) {
+      await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+    }
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 
-    return CommandResult.success()
+    return CommandResult.success({ filePath })
   }
 }

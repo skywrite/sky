@@ -1,3 +1,6 @@
+import { ClackPrompter } from '#commands/lib/prompt/ClackPrompter.ts'
+import type { Prompter } from '#commands/lib/prompt/Prompter.ts'
+import { UnattendedPrompter } from '#commands/lib/prompt/UnattendedPrompter.ts'
 import type * as ConfigModule from '#config'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -64,6 +67,18 @@ export interface CommandContextOptions {
    * Use this instead of storing sensitive credentials in .env files.
    */
   secrets?: SecretsProvider
+  /**
+   * Who answers a command's questions. The terminal answers with prompts;
+   * a headless run answers nothing (the default), and says so through
+   * `prompt.interactive` so commands take their defaults instead of waiting.
+   */
+  prompt?: Prompter
+  /**
+   * Set when the host may cancel the run. Commands pass it to what they
+   * await and check it between steps; a headless run without one runs to
+   * the end.
+   */
+  signal?: AbortSignal
 }
 
 /**
@@ -138,6 +153,14 @@ export default class CommandContext {
    * Provider for accessing secrets stored in the OS keychain.
    */
   readonly secrets: SecretsProvider
+  /**
+   * Who answers a command's questions — the way back in, as `output` is the way out.
+   */
+  readonly prompt: Prompter
+  /**
+   * The host's cancel, when it has one.
+   */
+  readonly signal?: AbortSignal
 
   constructor(options: CommandContextOptions) {
     this.platform = options.platform
@@ -150,6 +173,8 @@ export default class CommandContext {
     this.compositionDepth = options.compositionDepth ?? 0
     this.parentTaskName = options.parentTaskName
     this.secrets = options.secrets ?? new TestSecretsProvider()
+    this.prompt = options.prompt ?? new UnattendedPrompter()
+    this.signal = options.signal
   }
 
   /**
@@ -174,6 +199,8 @@ export default class CommandContext {
       compositionDepth: overrides.compositionDepth ?? this.compositionDepth,
       parentTaskName: overrides.parentTaskName ?? this.parentTaskName,
       secrets: overrides.secrets ?? this.secrets,
+      prompt: overrides.prompt ?? this.prompt,
+      signal: overrides.signal ?? this.signal,
     })
   }
 
@@ -208,6 +235,7 @@ export default class CommandContext {
       notebookNowProvider: options?.notebookNowProvider ?? (() => fetchNowSync({ now: systemNow })),
       systemNow,
       secrets: new KeychainSecretsProvider(),
+      prompt: new ClackPrompter(),
     })
   }
 

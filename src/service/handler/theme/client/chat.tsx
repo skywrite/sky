@@ -786,9 +786,27 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
   )
 }
 
-export function Composer({ chat, placeholder, hints }: { chat: Chat; placeholder: string; hints: ReactNode }) {
+export interface ComposerAttach {
+  /** The file kinds the picker offers */
+  accept: string
+  onFiles: (files: File[]) => void
+}
+
+export function Composer({
+  chat,
+  placeholder,
+  hints,
+  attach,
+}: {
+  chat: Chat
+  placeholder: string
+  hints: ReactNode
+  /** A + before the input that picks files — the door for people who don't drag */
+  attach?: ComposerAttach
+}) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const busy = state.phase !== 'idle'
 
   const submit = () => {
@@ -809,6 +827,26 @@ export function Composer({ chat, placeholder, hints }: { chat: Chat; placeholder
   return (
     <div className="sky-composer-zone">
       <div className="sky-composer">
+        {attach && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              hidden
+              multiple
+              accept={attach.accept}
+              onChange={(event) => {
+                const list = event.target.files
+                const files: File[] = list ? Array.from(list) : []
+                event.target.value = ''
+                if (files.length > 0) attach.onFiles(files)
+              }}
+            />
+            <ActionIcon aria-label="Add a file" onClick={() => fileRef.current?.click()}>
+              ＋
+            </ActionIcon>
+          </>
+        )}
         <div className="sky-input">
           <Textarea
             ref={inputRef}

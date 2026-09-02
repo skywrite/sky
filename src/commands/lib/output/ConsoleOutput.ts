@@ -1,6 +1,6 @@
 import colors from 'picocolors'
 import { writeStdout } from '#shared/sys/mod.ts'
-import type { OutputHandler } from './OutputHandler.ts'
+import type { OutputHandler, PlanStep } from './OutputHandler.ts'
 
 /**
  * Default output handler that passes through to console.
@@ -45,6 +45,26 @@ export class ConsoleOutput implements OutputHandler {
   table(data: any): void {
     // For table output, we don't add the prefix since console.table handles its own formatting
     console.table(data)
+  }
+
+  /** The terminal shows steps as they come; the list up front would only repeat them. */
+  plan(_steps: PlanStep[]): void {}
+
+  /** One line per step, the way the phases have always read here. */
+  stage(_id: string, label: string, detail?: string): void {
+    const suffix = detail ? colors.dim(` · ${detail}`) : ''
+    console.log(`\n${this.formatIndent()}${this.formatPrefix()}${colors.cyan(label)}${suffix}`)
+  }
+
+  /** In place while a terminal is watching; one closing line otherwise. */
+  tick(done: number, total: number | null, unit?: string): void {
+    const count = total === null ? `${done}` : `${done} of ${total}`
+    const text = `${this.formatIndent()}  ${count}${unit ? ` ${unit}` : ''}`
+    if (process.stdout.isTTY) {
+      writeStdout(`\r${text}${total !== null && done >= total ? '\n' : ''}`)
+    } else if (total === null || done >= total) {
+      console.log(text)
+    }
   }
 
   commandStart(): void {

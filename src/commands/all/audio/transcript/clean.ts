@@ -1,11 +1,11 @@
 import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import * as p from '@clack/prompts'
 import { streamText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { z } from 'zod'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
+import type { Prompter } from '#commands/lib/prompt/Prompter.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_OUTPUT } from '#config'
@@ -164,6 +164,30 @@ interface UserCorrection {
   /** Instances behind this entry — the correction phase must hit them all. */
   occurrences: number
   action: 'accept' | 'custom' | 'skip'
+}
+
+/** What kind of problem an issue is, in plain words. */
+function issueTypeLabel(type: TranscriptIssue['type']): string {
+  switch (type) {
+    case 'unclear':
+      return 'Unclear word'
+    case 'technical':
+      return 'Technical term'
+    case 'name':
+      return 'Name spelling'
+    case 'inaudible':
+      return 'Inaudible'
+    case 'crosstalk':
+      return 'Crosstalk'
+    case 'filler':
+      return 'Filler'
+    case 'stutter':
+      return 'Stutter'
+    case 'false_start':
+      return 'False start'
+    default:
+      return String(type)
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -417,7 +441,7 @@ export default class AudioTranscriptCleanTask extends Command {
     )
 
     // 4. AI Analysis
-    output.log(colors.cyan('\nAnalyzing transcript...'))
+    output.stage('names', 'Checking names')
 
     let analysis: z.infer<typeof TranscriptIssueSchema>
     // Streamed because a long analysis is minutes of silence as a non-streaming
@@ -432,6 +456,7 @@ export default class AudioTranscriptCleanTask extends Command {
       const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
       const stream = streamText({
         ...aiModelByProfile(TRANSCRIPT_MODEL),
+        abortSignal: context.signal,
         prompt: jsonPrompt,
         timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
         onError: ({ error }) => {
@@ -492,8 +517,11 @@ export default class AudioTranscriptCleanTask extends Command {
       output.log(colors.green('No issues found! Transcript looks clean.'))
     }
 
-    // 5. Interactive Q&A loop (only for medium/low confidence issues)
-    const reviewCorrections = await this.interactiveCorrection(output, reviewIssues)
+    // 5. Review of the medium/low confidence issues, by whoever is there
+    if (reviewIssues.length > 0 && context.prompt.interactive) {
+      output.stage('names', 'Checking names', `${reviewIssues.length} to check`)
+    }
+    const reviewCorrections = await this.reviewIssues(context.prompt, reviewIssues)
 
     // Persist the user's rulings, plus lastSeen touches from this transcript,
     // so future runs stop asking about settled terms.
@@ -728,189 +756,43 @@ ${cleanedTranscript}
     return fullText
   }
 
-  private async interactiveCorrection(output: OutputHandler, issues: TranscriptIssue[]): Promise<UserCorrection[]> {
+  /**
+   * The issues the analysis was unsure about, put to whoever is there as one
+   * review. A headless run gets no review: the high-confidence fixes still
+   * apply, and nothing else changes.
+   */
+  private async reviewIssues(prompt: Prompter, issues: TranscriptIssue[]): Promise<UserCorrection[]> {
+    if (issues.length === 0 || !prompt.interactive) return []
+
+    const answers = await prompt.form({
+      title: 'Interactive Review',
+      intro: 'Pick the right spelling for each one. Your answers are remembered.',
+      items: issues.map((issue, i) => ({
+        id: String(i),
+        label: issueTypeLabel(issue.type),
+        problem: issue.originalText,
+        contexts: issue.contexts,
+        occurrences: issue.occurrences,
+        suggestion: issue.suggestedFix ?? undefined,
+        alternatives: issue.options ?? [],
+      })),
+    })
+    if (!answers) return []
+
+    // An item without an answer was never reached — the review was quit early.
     const corrections: UserCorrection[] = []
-
-    if (issues.length === 0) {
-      return corrections
-    }
-
-    p.intro(colors.bold('Interactive Review'))
-
     for (let i = 0; i < issues.length; i++) {
+      const answer = answers[String(i)]
+      if (!answer) continue
       const issue = issues[i]
-
-      // Build context display
-      const issueLabel = this.getIssueTypeLabel(issue.type)
-      const contextLines = ['', colors.dim(`─── Issue ${i + 1} of ${issues.length} ───`), '', `${issueLabel}`]
-
-      if (issue.contexts.length > 0) {
-        contextLines.push('', colors.dim(issue.contexts.length > 1 ? 'Contexts:' : 'Context:'))
-        for (const context of issue.contexts) {
-          contextLines.push(`  ${context}`)
-        }
-      }
-
-      contextLines.push(
-        '',
-        colors.dim('Problem:'),
-        `  ${colors.red(issue.originalText)}${issue.occurrences > 1 ? colors.dim(` ×${issue.occurrences}`) : ''}`,
-      )
-
-      if (issue.suggestedFix) {
-        contextLines.push('')
-        contextLines.push(colors.dim('AI Suggestion:'))
-        contextLines.push(`  ${colors.green(issue.suggestedFix)}`)
-      }
-
-      // Log context
-      output.log(contextLines.join('\n'))
-
-      // Build options for select
-      const options: { value: string; label: string; hint?: string }[] = []
-
-      // Add suggestion as first option if available
-      if (issue.suggestedFix) {
-        options.push({
-          value: `__accept__:${issue.suggestedFix}`,
-          label: issue.suggestedFix,
-          hint: 'AI suggestion',
-        })
-      }
-
-      // Add alternative options
-      if (issue.options && issue.options.length > 0) {
-        for (const opt of issue.options) {
-          if (opt !== issue.suggestedFix) {
-            options.push({
-              value: `__option__:${opt}`,
-              label: opt,
-              hint: 'alternative',
-            })
-          }
-        }
-      }
-
-      // Always add custom and skip options
-      options.push({
-        value: '__custom__',
-        label: 'Enter custom text...',
-        hint: 'type your own',
-      })
-
-      options.push({
-        value: '__skip__',
-        label: 'Skip this issue',
-        hint: 'leave unchanged',
-      })
-
-      options.push({
-        value: '__quit__',
-        label: 'Quit review',
-        hint: 'stop reviewing',
-      })
-
-      const selection = await p.select({
-        message: 'Select correction:',
-        options,
-      })
-
-      // Handle cancellation
-      if (p.isCancel(selection)) {
-        p.cancel('Review cancelled')
-        break
-      }
-
-      const selectionStr = selection as string
-
-      // Handle quit
-      if (selectionStr === '__quit__') {
-        p.log.warn('Quitting review early...')
-        break
-      }
-
-      // Handle skip
-      if (selectionStr === '__skip__') {
-        corrections.push({
-          issueIndex: i,
-          originalText: issue.originalText,
-          correction: '',
-          occurrences: issue.occurrences,
-          action: 'skip',
-        })
-        p.log.info(colors.dim('Skipped'))
-        continue
-      }
-
-      // Handle custom input
-      if (selectionStr === '__custom__') {
-        const customInput = await p.text({
-          message: 'Enter your correction:',
-          placeholder: issue.suggestedFix || issue.originalText,
-        })
-
-        if (p.isCancel(customInput) || !customInput) {
-          corrections.push({
-            issueIndex: i,
-            originalText: issue.originalText,
-            correction: '',
-            occurrences: issue.occurrences,
-            action: 'skip',
-          })
-          p.log.info(colors.dim('Skipped'))
-        } else {
-          corrections.push({
-            issueIndex: i,
-            originalText: issue.originalText,
-            correction: customInput as string,
-            occurrences: issue.occurrences,
-            action: 'custom',
-          })
-          p.log.success(`Custom: ${customInput}`)
-        }
-        continue
-      }
-
-      // Handle accepted option (suggestion or alternative)
-      const correctionText = selectionStr.replace(/^__(accept|option)__:/, '')
       corrections.push({
         issueIndex: i,
         originalText: issue.originalText,
-        correction: correctionText,
+        correction: answer.action === 'skip' ? '' : answer.value,
         occurrences: issue.occurrences,
-        action: 'accept',
+        action: answer.action,
       })
-      p.log.success(`Accepted: ${correctionText}`)
     }
-
-    // Summary
-    const applied = corrections.filter((c) => c.action !== 'skip').length
-    const skipped = corrections.filter((c) => c.action === 'skip').length
-    p.outro(`Review complete: ${applied} applied, ${skipped} skipped`)
-
     return corrections
-  }
-
-  private getIssueTypeLabel(type: string): string {
-    switch (type) {
-      case 'unclear':
-        return colors.bold(colors.yellow('❓ UNCLEAR WORD'))
-      case 'technical':
-        return colors.bold(colors.cyan('📚 TECHNICAL TERM'))
-      case 'name':
-        return colors.bold(colors.blue('👤 NAME SPELLING'))
-      case 'inaudible':
-        return colors.bold(colors.red('🔇 INAUDIBLE'))
-      case 'crosstalk':
-        return colors.bold(colors.magenta('🗣️  CROSSTALK'))
-      case 'filler':
-        return colors.bold(colors.gray('🗑️  FILLER'))
-      case 'stutter':
-        return colors.bold(colors.gray('🔁 STUTTER'))
-      case 'false_start':
-        return colors.bold(colors.gray('⏮️  FALSE START'))
-      default:
-        return colors.bold(type.toUpperCase())
-    }
   }
 }

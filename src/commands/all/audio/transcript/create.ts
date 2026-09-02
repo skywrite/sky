@@ -1,14 +1,15 @@
 import { readFile, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
-import OpenAI, { toFile } from 'openai'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { probeMedia } from '#lib/media/ffmpeg/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { glossaryKeywords, loadGlossary } from './lib/glossary.ts'
+import { transcribeWithOpenAI } from './lib/transcribe.ts'
 
 // -----------------------------------------------------------------------------
 // Provider Types
@@ -193,7 +194,7 @@ export default class AudioTranscriptCreateTask extends Command {
 
     // 4. Transcribe using selected provider
     const providerName = provider === 'mistral' ? 'Mistral Voxtral' : 'OpenAI'
-    output.log(colors.cyan(`\nTranscribing with ${providerName}...`))
+    output.stage('transcribe', 'Transcribing', providerName)
 
     let transcriptText: string
     let durationSeconds: number | undefined
@@ -214,10 +215,20 @@ export default class AudioTranscriptCreateTask extends Command {
           if (glossary) keywords = glossaryKeywords(glossary)
           if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
         }
-        const result = await this.transcribeWithOpenAI(audioData, path.basename(transcribeFile), keywords)
+        // Streamed only when the transcript is going to a file: on stdout the
+        // text is the deliverable and a piped reader must get it exactly once.
+        const streaming = Boolean(outputPath || save)
+        const result = await transcribeWithOpenAI(audioData, path.basename(transcribeFile), {
+          keywords,
+          onDelta: streaming ? (text) => output.write(text) : undefined,
+          signal: context.signal,
+        })
+        if (streaming) output.write('\n')
         transcriptText = result.text
-        durationSeconds = result.durationSeconds
         language = result.language
+        // A streamed transcription reports no length; the file knows its own.
+        durationSeconds =
+          result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
       }
     } catch (err) {
       const error = err as Error
@@ -291,28 +302,6 @@ ${transcriptText}
   // ---------------------------------------------------------------------------
   // Provider Implementations
   // ---------------------------------------------------------------------------
-
-  private async transcribeWithOpenAI(
-    audioData: Uint8Array,
-    fileName: string,
-    keywords: string[],
-  ): Promise<{ text: string; durationSeconds?: number; language?: string }> {
-    const client = new OpenAI()
-    const audioFile = await toFile(audioData, fileName)
-
-    const result = await client.audio.transcriptions.create({
-      file: audioFile,
-      model: 'gpt-transcribe',
-      response_format: 'json',
-      ...(keywords.length > 0 && { keywords }),
-    })
-
-    return {
-      text: result.text,
-      durationSeconds: result.usage?.type === 'duration' ? result.usage.seconds : undefined,
-      language: result.languages?.map((l) => l.code).join(', ') || undefined,
-    }
-  }
 
   private async transcribeWithMistral(
     audioData: Uint8Array,
