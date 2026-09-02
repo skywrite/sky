@@ -1,14 +1,19 @@
 /**
- * The service's wiring of a chat session: the same producers, prompt, and
- * filing policy as ai:chat, built from an in-process CommandService. What
- * differs from the terminal is only what a browser cannot do yet — ask for
- * approval — so v1 offers exactly the tools that never ask.
+ * The service's wiring of a chat session: the same producers, prompt,
+ * tools, and filing policy as ai:chat, built from an in-process
+ * CommandService. A tool call that needs the person's go is put to the
+ * page as a card, through the routes, and the turn waits for the answer —
+ * the same protocol the terminal runs with a prompt.
  */
 
 import * as path from 'node:path'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { createFileTools } from '#commands/lib/chat/fileTools.ts'
-import { createAutoApprovedTools } from '#commands/lib/chat/notebookTools.ts'
+import {
+  createNotebookTools,
+  createToolApprovalConfig,
+  getApprovalFormatter,
+} from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
@@ -19,6 +24,7 @@ import type * as ConfigModule from '#shared/config.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
+import { approvalCard } from './approvalCard.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ModelChoice } from './mod.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
@@ -54,7 +60,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
 }
 
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
-  const createSession: ChatSessionFactory = async (id, onEvent, prefs) => {
+  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask) => {
     const context = CommandContext.server(config, env)
     const tasks = new CommandService(context)
     const startTime = context.notebookNow.plainDateTime
@@ -92,22 +98,20 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             memoryDir: config.DIR_AI_MEMORY,
           })
         ).prompt,
-      // Only tools that never ask — the browser has no approval surface yet.
+      // Every tool the terminal offers, gated the same way: the decorator's
+      // needsApproval is the source of truth for what asks.
       tools: async ({ onExternalFiles, onAttachments }) => ({
         tools: {
           ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
-          // Reads never ask. A browser has no shell directory, so a relative path resolves from home.
+          // A browser has no shell directory, so a relative path resolves from home.
           ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
-          ...(await createAutoApprovedTools(tasks, { onExternalFiles: (_toolName, files) => onExternalFiles(files) })),
+          ...(await createNotebookTools(tasks, { onExternalFiles: (_toolName, files) => onExternalFiles(files) })),
         },
-        toolApproval: {},
+        toolApproval: createToolApprovalConfig(),
       }),
-      // Default-deny behind the filter: nothing above should ask, and anything that does is refused.
-      approvalHandler: () =>
-        Promise.resolve({
-          approved: false,
-          reason: 'This tool needs approval, which the web chat cannot ask for yet. Do not request it again.',
-        }),
+      // The card is the tool's own description of the call; the answer is the person's, from the page.
+      approvalHandler: ({ toolName, input }) =>
+        ask({ toolName, lines: approvalCard(toolName, input, getApprovalFormatter(toolName)) }),
       autosavePath: path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id)),
       onEvent,
     })

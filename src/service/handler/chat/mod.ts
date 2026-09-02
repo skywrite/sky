@@ -14,6 +14,7 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
+import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
@@ -27,11 +28,36 @@ export interface ThreadPrefs {
   contextTokens?: number
 }
 
+/** A tool call awaiting the person's go, as the page shows it. */
+export interface ApprovalCard {
+  toolName: string
+  /** The call as the tool describes it — its own formatter's lines, or the input's fields */
+  lines: string[]
+}
+
+export interface PendingApproval extends ApprovalCard {
+  id: string
+}
+
+/** A call the person answered — kept with the thread so the page can show what was allowed, and where. */
+export interface AnsweredApproval extends PendingApproval {
+  approved: boolean
+  /** The thread's turn count when answered — the card sits before the reply at that index */
+  at: number
+}
+
+/**
+ * Puts a tool call to the person and resolves with their answer — the
+ * routes' half of the session's approval handler. The turn waits on it.
+ */
+export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision>
+
 /** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
 export type ChatSessionFactory = (
   id: string,
   onEvent: (event: ChatSessionEvent) => void,
   prefs: ThreadPrefs,
+  ask: AskApproval,
 ) => Promise<ChatSession>
 
 /** One model a thread may think with, as the picker lists it. */
@@ -80,9 +106,10 @@ export interface ChatRoutesOptions {
 /**
  * What a thread is doing, as the day view shows it. `reading` covers the
  * whole gather; `thinking` is the gap before the first token, which is the
- * longest silence a turn has; `done` and `failed` describe the last turn.
+ * longest silence a turn has; `waiting` is a tool call held for the
+ * person's go; `done` and `failed` describe the last turn.
  */
-export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'done' | 'failed' | 'saving'
+export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'waiting' | 'done' | 'failed' | 'saving'
 
 /** A thread as the day lists it: enough to show a row, never the transcript. */
 export interface ThreadSummary {
@@ -98,13 +125,23 @@ export interface ThreadSummary {
   busy: boolean
 }
 
+/** What travels the turn's stream: the session's events, and the approvals the routes add around them. */
+type WireEvent =
+  | ChatSessionEvent
+  | { type: 'approval-request'; approval: PendingApproval }
+  | { type: 'approval-answered'; id: string; approved: boolean; at: number }
+
 interface Thread {
   session: ChatSession
   started: boolean
   /** One turn at a time: a second message while one runs is refused, not queued */
   busy: boolean
   /** Where the running turn's events go; null between turns */
-  sink: ((event: ChatSessionEvent) => void) | null
+  sink: ((event: WireEvent) => void) | null
+  /** Tool calls held for the person's go, by approval id */
+  pending: Map<string, PendingApproval & { resolve: (decision: ApprovalDecision) => void }>
+  /** The calls answered so far, oldest first */
+  answered: AnsweredApproval[]
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -152,6 +189,7 @@ function summarize(id: string, thread: Thread): ThreadSummary {
   const lastReply = [...session.turns].reverse().find((t) => t.role === 'assistant')
   let line: string | null = null
   if (state === 'streaming') line = head(thread.partial)
+  else if (state === 'waiting') line = 'needs your go'
   else if (state === 'done' && lastReply) line = head(lastReply.content)
   else if (state === 'failed') line = thread.partial || null
   return {
@@ -172,7 +210,7 @@ function summarize(id: string, thread: Thread): ThreadSummary {
  * turn — the counts are what a client shows, so the counts are what
  * travel. The records join the wire when a client renders a changelog.
  */
-function wireEvent(event: ChatSessionEvent): unknown {
+function wireEvent(event: WireEvent): unknown {
   if (event.type !== 'context-rebuilt') return event
   const { turn, recorded, collectionSize, stats } = event.report
   return { type: event.type, report: { turn, recorded, collectionSize, stats } }
@@ -202,6 +240,22 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     let building = opening.get(id)
     if (!building) {
       const prefs = pending.get(id) ?? {}
+      // A tool call held for the person: the card goes down the stream (and
+      // waits on the thread for a page that opens later); the answer route
+      // resolves it. The turn waits meanwhile.
+      const ask: AskApproval = (card) =>
+        new Promise((resolve) => {
+          const thread = threads.get(id)
+          if (!thread) {
+            resolve({ approved: false, reason: 'The thread is gone. Do not request this tool again.' })
+            return
+          }
+          const approval: PendingApproval = { id: crypto.randomUUID(), ...card }
+          thread.pending.set(approval.id, { ...approval, resolve })
+          thread.state = 'waiting'
+          thread.updatedAt = ++tick
+          thread.sink?.({ type: 'approval-request', approval })
+        })
       building = options
         .createSession(
           id,
@@ -217,6 +271,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             thread.sink?.(event)
           },
           prefs,
+          ask,
         )
         .then((session) => {
           const thread: Thread = {
@@ -224,6 +279,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             started: false,
             busy: false,
             sink: null,
+            pending: new Map(),
+            answered: [],
             state: 'new',
             partial: '',
             updatedAt: ++tick,
@@ -325,7 +382,40 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       turns: thread.session.turns,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
+      busy: thread.busy,
+      pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines }) => ({
+        id: approvalId,
+        toolName,
+        lines,
+      })),
+      answered: thread.answered,
     })
+  })
+
+  // The person's answer to a held tool call. The turn resumes with it: an
+  // approved call runs, a declined one is reported to the model as such.
+  app.post('/:id/approvals/:approvalId', async (c) => {
+    const thread = threads.get(c.req.param('id'))
+    if (!thread) return c.json({ message: 'no such thread' }, 404)
+    const approval = thread.pending.get(c.req.param('approvalId'))
+    if (!approval) return c.json({ message: 'no such approval — it may have been answered already' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { approved?: unknown } | null
+    if (typeof body?.approved !== 'boolean') return c.json({ message: 'expected { approved: true | false }' }, 400)
+
+    thread.pending.delete(approval.id)
+    // The message that asked is the last turn; the reply lands after it.
+    const at = thread.session.turns.length
+    const { resolve, ...card } = approval
+    thread.answered.push({ ...card, approved: body.approved, at })
+    if (thread.pending.size === 0) thread.state = 'thinking'
+    thread.updatedAt = ++tick
+    thread.sink?.({ type: 'approval-answered', id: approval.id, approved: body.approved, at })
+    resolve(
+      body.approved
+        ? { approved: true, reason: 'User approved' }
+        : { approved: false, reason: 'User declined. Do not request this tool again.' },
+    )
+    return c.json({ id: approval.id, approved: body.approved, at, waiting: thread.pending.size })
   })
 
   // What the model sees: the last rebuild's records, kept and cut, and the

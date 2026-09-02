@@ -2845,3 +2845,75 @@ a.sky-thread {
   letter-spacing: normal;
   font-weight: 400;
 }
+
+/* ============ a tool call held for the person's go ============ */
+.sky-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 72ch;
+  padding: 18px 24px 16px;
+  border-radius: 18px;
+  background: var(--sky-side);
+}
+
+[data-mantine-color-scheme='dark'] .sky-ask {
+  background: var(--mantine-color-dark-6);
+}
+
+.sky-ask-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-ask-body {
+  margin: 0;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sky-ask-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.sky-thread .sky-meta[data-state='waiting'] {
+  color: var(--sky-blue-deep);
+}
+
+.sky-ask-view {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.sky-ask[data-answered] .sky-ask-body {
+  color: var(--sky-text-2);
+}
+
+.sky-ask[data-answered='true'] .sky-ask-head > span:nth-child(2) {
+  color: var(--sky-green);
+}
+
+.sky-ask-body.sky-rendered p {
+  margin: 0 0 8px;
+  max-width: none;
+}
+
+.sky-ask-body.sky-rendered p:last-child {
+  margin-bottom: 0;
+}
+
+.sky-ask-body.sky-rendered ul,
+.sky-ask-body.sky-rendered ol {
+  max-width: none;
+}

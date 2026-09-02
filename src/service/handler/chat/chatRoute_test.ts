@@ -10,6 +10,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
+import { approvalCard } from './approvalCard.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -86,7 +87,7 @@ const settingsHost: ChatSettingsHost = {
 
 async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
-  const createSession: ChatSessionFactory = (id, onEvent, prefs) =>
+  const createSession: ChatSessionFactory = (id, onEvent, prefs, ask) =>
     Promise.resolve(
       new ChatSession({
         today: TODAY,
@@ -106,7 +107,7 @@ async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<Chat
         ambient: AMBIENT,
         systemPrompt: () => Promise.resolve('You are a test assistant.'),
         tools: () => Promise.resolve({ tools: {}, toolApproval: {} }),
-        approvalHandler: () => Promise.resolve({ approved: false, reason: 'no' }),
+        approvalHandler: ({ toolName, input }) => ask({ toolName, lines: approvalCard(toolName, input) }),
         autosavePath: path.join(tmp, `${id}.autosave.md`),
         onEvent,
         invokeModel: over.invokeModel ?? streamingModel(['Focus on ', 'the demo.']),
@@ -567,5 +568,135 @@ test({ name: 'chat route - a smaller budget on a live thread reassembles its con
       threadKept: after.stats.kept,
       story: ['seed'],
     },
+  })
+})
+
+/** A model that asks for one tool's approval, then answers once it has it. */
+function askingModel(): ModelInvoker {
+  let round = 0
+  return (args) => {
+    round++
+    if (round === 1) {
+      return Promise.resolve({
+        ...EMPTY,
+        content: [
+          {
+            type: 'tool-approval-request',
+            approvalId: 'ap-1',
+            toolCall: { toolName: 'slack_post', input: { channel: 'general', text: 'Hello' } },
+          },
+        ],
+      })
+    }
+    args.sink.write('Posted.')
+    return Promise.resolve(EMPTY)
+  }
+}
+
+async function until<T>(read: () => Promise<T>, ok: (value: T) => boolean): Promise<T> {
+  for (let i = 0; i < 300; i++) {
+    const value = await read()
+    if (ok(value)) return value
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error('gave up waiting')
+}
+
+test({ name: 'chat route - a tool call that needs a go waits on the page and resumes with the answer' }, async () => {
+  const app = appWith(await testHost({ invokeModel: askingModel() }))
+  const response = await post(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' })
+  const body = response.text()
+
+  const thread = await until(
+    () => getJson(app, 'http://localhost/chat/a1'),
+    (t) => Array.isArray(t.pending) && t.pending.length > 0,
+  )
+  const list = await getJson(app, 'http://localhost/chat')
+  assert({
+    given: 'a model asking to post to Slack',
+    should: 'hold the call on the thread with its card, stay busy, and say so in the list',
+    actual: {
+      busy: thread.busy,
+      card: thread.pending[0].toolName,
+      lines: thread.pending[0].lines,
+      state: list.threads[0].state,
+      line: list.threads[0].line,
+    },
+    expected: {
+      busy: true,
+      card: 'slack_post',
+      lines: ['channel: general', 'text: Hello'],
+      state: 'waiting',
+      line: 'needs your go',
+    },
+  })
+
+  const approvalId = thread.pending[0].id as string
+  const wrong = await post(app, `http://localhost/chat/a1/approvals/${approvalId}`, { approved: 'yes' })
+  const missing = await post(app, 'http://localhost/chat/a1/approvals/nope', { approved: true })
+  const answered = await post(app, `http://localhost/chat/a1/approvals/${approvalId}`, { approved: true })
+  const frames = parseSSE(await body)
+  const after = await getJson(app, 'http://localhost/chat/a1')
+  const request = frames.find((f) => f.event === 'approval-request')?.data as { approval?: { toolName: string } }
+  const answer = frames.find((f) => f.event === 'approval-answered')?.data as { approved?: boolean; at?: number }
+  assert({
+    given: 'a malformed answer, an unknown approval, then the go',
+    should: 'refuse the first two, resume the turn on the third, and finish with nothing held',
+    actual: {
+      wrong: wrong.status,
+      missing: missing.status,
+      answered: answered.status,
+      events: frames
+        .map((f) => f.event)
+        .filter((e) => ['approval-request', 'approval-answered', 'text-delta', 'turn'].includes(e)),
+      asked: request?.approval?.toolName,
+      answer: [answer?.approved, answer?.at],
+      reply: frames.at(-1)?.data?.text,
+      pending: after.pending.length,
+      busy: after.busy,
+      kept: after.answered.map((a: { toolName: string; approved: boolean; at: number; lines: string[] }) => [
+        a.toolName,
+        a.approved,
+        a.at,
+        a.lines.length,
+      ]),
+    },
+    expected: {
+      wrong: 400,
+      missing: 404,
+      answered: 200,
+      events: ['approval-request', 'approval-answered', 'text-delta', 'turn'],
+      asked: 'slack_post',
+      answer: [true, 1],
+      reply: 'Posted.',
+      pending: 0,
+      busy: false,
+      kept: [['slack_post', true, 1, 2]],
+    },
+  })
+})
+
+test({ name: 'chat route - a declined call tells the model so, and the turn goes on' }, async () => {
+  const app = appWith(await testHost({ invokeModel: askingModel() }))
+  const response = await post(app, 'http://localhost/chat/a2/messages', { message: 'Post hello for me' })
+  const body = response.text()
+  const thread = await until(
+    () => getJson(app, 'http://localhost/chat/a2'),
+    (t) => Array.isArray(t.pending) && t.pending.length > 0,
+  )
+  await post(app, `http://localhost/chat/a2/approvals/${thread.pending[0].id}`, { approved: false })
+  const frames = parseSSE(await body)
+  const context = await getJson(app, 'http://localhost/chat/a2/context')
+  assert({
+    given: 'the person declining the call',
+    should: 'still finish the turn, and record the call as denied in the story',
+    actual: {
+      answered: (frames.find((f) => f.event === 'approval-answered')?.data as { approved?: boolean })?.approved,
+      reply: frames.at(-1)?.data?.text,
+      tools: context.log.flatMap((e: { tools: Array<{ tool: string; outcome: string }> }) =>
+        e.tools.map((t) => ({ tool: t.tool, outcome: t.outcome })),
+      ),
+    },
+    expected: { answered: false, reply: 'Posted.', tools: [{ tool: 'slack_post', outcome: 'denied' }] },
   })
 })

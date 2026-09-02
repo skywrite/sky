@@ -36,6 +36,24 @@ a person can see and touch:
 - **What the model sees now**, below the story, folded: every document in
   context with its tokens, what was left out and why, and the hand on it
   (pin, drop, let back, pin a file by path). As before.
+- **A tool call that needs a go.** The page offers every tool the terminal
+  offers, gated the same way: the decorator's `needsApproval` is the source
+  of truth. When the model calls a gated tool — post to Slack, build a
+  Google Doc, create a decision — the turn holds, a card appears in the
+  thread with the call as the tool describes it (its own `formatApproval`,
+  else the input's fields), and two buttons: Allow, Not now. The answer
+  goes to `POST /chat/:id/approvals/:approvalId` `{ approved }`; the turn
+  resumes with it — an approved call runs, a declined one is reported to
+  the model as declined and recorded in the story as such. The card stays
+  in the thread once answered, settled (allowed or declined), before the
+  reply it preceded: the thread keeps `answered` with each call's position,
+  so a reload shows the record too. A Slack message reads on the card as
+  it will read in Slack (its marks rendered, `slackMarkdown.ts`); any other
+  call renders as markdown; Raw shows the text as sent. The stream
+  carries `approval-request` and `approval-answered`; a page that opens
+  while a call is held finds it in `GET /chat/:id` as `pending` (with
+  `busy`) and follows the turn by re-reading the thread until it settles.
+  The day's list shows such a thread as `waiting` with "needs your go".
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
 gathered (the deduplicated universe, never the raw sweep sizes); a grown entry lists the documents its queries added (cut ones
@@ -49,6 +67,12 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   starts, the budget when the context is rebuilt. The page keeps both
   controls out with the composer while a turn runs.
 - The transcript records one model — the one answering when it is saved.
+- A held call waits as long as it takes; there is no timeout. Closing the
+  page does not answer it — the thread stays busy until someone does, or
+  the service restarts.
+- No standing grants on the web yet: every gated call asks. The terminal's
+  per-file blessing ("don't ask again for this file") slots in through the
+  same approval config when that lands.
 - The wire never carries the whole universe twice: the stream carries
   counts, the context route carries the current records and the story's
   changes.
@@ -57,6 +81,12 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   read the last rebuild report before the log.
 
 ## Verified
+
+- 2026-09-01 — approval route tests: a scripted model asks to post to
+  Slack; the thread holds the call with its card and shows `waiting`; a
+  malformed answer and an unknown approval are refused; the go resumes the
+  turn (request, answered, text, turn on the stream) and leaves nothing
+  held; a decline finishes the turn and records the call as denied.
 
 - 2026-09-01 — route tests: defaults before the first message, a choice
   kept for the thread and recorded in the turn log's budget, refusals

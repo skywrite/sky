@@ -73,7 +73,7 @@ export interface DayRecord {
   skipped: number
 }
 
-export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'done' | 'failed' | 'saving'
+export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'waiting' | 'done' | 'failed' | 'saving'
 
 export interface ThreadSummary {
   id: string
@@ -282,6 +282,7 @@ const STATE_TONE: Record<ThreadState, 'quiet' | 'live' | 'done' | 'failed'> = {
   reading: 'quiet',
   thinking: 'live',
   streaming: 'live',
+  waiting: 'live',
   done: 'done',
   failed: 'failed',
   saving: 'quiet',
