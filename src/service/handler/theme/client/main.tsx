@@ -8,14 +8,7 @@ import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
-import {
-  SETTINGS_SECTIONS,
-  settingsHref,
-  SettingsMain,
-  saveSetting,
-  settingsSectionOf,
-  useAppearanceBoot,
-} from './settings.tsx'
+import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
 
@@ -140,9 +133,8 @@ function Canvas() {
       <nav className="sky-side" data-open={menu}>
         <div className="sky-side-top">
           <span className="sky-brand">sky</span>
-          <SchemeToggle persist />
+          <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
         </div>
-        <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
         {explorerFile !== null ? (
           <>
             <button type="button" className="sky-thread" onClick={() => navigate('/')}>
@@ -328,18 +320,12 @@ function Sidebar({ view, onNavigate }: { view: View; onNavigate: (view: View) =>
   )
 }
 
-function SchemeToggle({ persist }: { persist?: boolean }) {
+// The reference /theme page only: the app's scheme is a Settings preference.
+function SchemeToggle() {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
   const next = colorScheme === 'dark' ? 'light' : 'dark'
   return (
-    <Button
-      size="compact-sm"
-      onClick={() => {
-        toggleColorScheme()
-        // In the app the toggle is a real preference; the reference /theme page stays local.
-        if (persist) void saveSetting('web.theme', next)
-      }}
-    >
+    <Button size="compact-sm" onClick={toggleColorScheme}>
       {next}
     </Button>
   )
