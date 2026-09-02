@@ -20,6 +20,7 @@ import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/s
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 import { extractTypedNameLists } from './lib/typedNameLists.ts'
 
 // -----------------------------------------------------------------------------
@@ -84,11 +85,20 @@ const params = {
     optional: true,
     hidden: true,
   }),
+  fresh: Flag.bool('Start over: forget what an earlier run of this file already produced', {
+    default: false,
+  }),
+  run: Flag.string('Run record key, passed down by the command that owns the run', {
+    optional: true,
+    hidden: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
 
 type Result = {
+  /** The run record's key — the sha256 of the source file — for whoever continues the run; null for a paste */
+  run: string | null
   outputPath: string | null
   title: string
   time: string | null // PlainDateTime format: YYYY-MM-DDTHH:MM
@@ -226,7 +236,12 @@ export default class AudioTranscriptSummaryTask extends Command {
       template,
       summaryPrompt: summaryPromptPath,
       extractPrompt: extractPromptPath,
+      fresh,
+      run: runKey,
     } = args
+    const runOptions = runOptionsFor(context)
+    /** The run record, once the source file is known; null for a paste */
+    let run: TranscriptRun | null = null
     const builtin = PROMPT_FILES[template as keyof typeof PROMPT_FILES] ?? PROMPT_FILES.meeting
     const prompts = {
       summary: summaryPromptPath ?? builtin.summary,
@@ -251,16 +266,17 @@ export default class AudioTranscriptSummaryTask extends Command {
     if (useCleanPipeline) {
       // --from-audio: transcribe → clean. --from-zoom-vtt / --from-srt / --from-text:
       // clean an existing transcript.
-      const cleanResult = await tasks.run(
-        'audio:transcript:clean',
-        useAudioPipeline
+      const cleanResult = await tasks.run('audio:transcript:clean', {
+        ...(useAudioPipeline
           ? { fromAudio }
           : fromSrt !== undefined
             ? { fromSrt }
             : fromText !== undefined
               ? { fromText }
-              : { fromZoomVtt },
-      )
+              : { fromZoomVtt }),
+        fresh,
+        run: runKey,
+      })
       if (!cleanResult.ok || !cleanResult.data) {
         // No prefix: callers (meeting:new, video:new) already label the pipeline failure.
         return CommandResult.fail(cleanResult.message ?? 'Transcript cleaning failed')
@@ -271,6 +287,8 @@ export default class AudioTranscriptSummaryTask extends Command {
       pipelineAudioFilePath = cleanResult.data.audioFilePath
       pipelineDuration = cleanResult.data.durationMinutes
       transcriptFilePath = cleanResult.data.transcriptFilePath
+      // The cleaner keyed the run by the source file, and cleared it if asked to.
+      if (cleanResult.data.run) run = await TranscriptRun.open(cleanResult.data.run, runOptions)
       output.log(`\nExtracted attendees: ${pipelineWho.join(', ') || 'none'}`)
       output.log('Generating summary...\n')
     } else if (text) {
@@ -282,6 +300,12 @@ export default class AudioTranscriptSummaryTask extends Command {
         transcript = await readTextFile(file)
       } catch (err) {
         return CommandResult.error(err as Error, `Failed to read file: ${file}`)
+      }
+      run = await TranscriptRun.resolve(runKey, file, runOptions)
+      // A record this command keyed itself is its own to start over; one a parent passed down was cleared there.
+      if (fresh && !runKey) {
+        await run.clear()
+        output.log(colors.gray('Starting over.'))
       }
     } else {
       transcript = await this.readMultilineInput(output)
@@ -309,39 +333,48 @@ export default class AudioTranscriptSummaryTask extends Command {
 
     const { output: summaryPrompt } = renderPromptFile(promptContent, 'transcript-summary.prompt.md', renderInput)
 
-    // 3. Generate summary with AI
+    // 3. Generate summary with AI — unless an earlier run of this file already has it.
     output.stage('writeup', 'Writing it up')
 
     let summary: string
-    // Streamed for the same reason as the analysis call (see clean.ts): a long
-    // silent non-streaming socket gets killed by network idle timeouts, and
-    // onError is where the real failure cause surfaces.
-    let streamError: unknown
-    try {
-      const stream = streamText({
-        ...aiModelByProfile(SUMMARY_MODEL),
-        abortSignal: context.signal,
-        prompt: summaryPrompt,
-        timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
-        onError: ({ error }) => {
-          streamError ??= error
-        },
-      })
-      // The write-up appears as it is written — the only progress a model
-      // call offers, and the words the person is about to check.
-      let streamed = ''
-      for await (const delta of stream.textStream) {
-        streamed += delta
-        output.write(delta)
+    const keptWriteup = run ? await run.get('writeup') : null
+    if (keptWriteup) {
+      summary = keptWriteup.data.summary
+      output.log(colors.gray(`Write-up from ${clockLabel(keptWriteup.at, runOptions.now())}, reused.`))
+      // Shown whole, as the streamed one would have been: it is what the person is about to check.
+      output.write(summary + '\n')
+    } else {
+      // Streamed for the same reason as the analysis call (see clean.ts): a long
+      // silent non-streaming socket gets killed by network idle timeouts, and
+      // onError is where the real failure cause surfaces.
+      let streamError: unknown
+      try {
+        const stream = streamText({
+          ...aiModelByProfile(SUMMARY_MODEL),
+          abortSignal: context.signal,
+          prompt: summaryPrompt,
+          timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
+          onError: ({ error }) => {
+            streamError ??= error
+          },
+        })
+        // The write-up appears as it is written — the only progress a model
+        // call offers, and the words the person is about to check.
+        let streamed = ''
+        for await (const delta of stream.textStream) {
+          streamed += delta
+          output.write(delta)
+        }
+        if (streamError !== undefined) throw streamError
+        output.write('\n')
+        summary = streamed
+      } catch (err) {
+        const error = (streamError ?? err) as Error
+        output.error(`AI Error: ${error.message}`)
+        await logAIError({ source: 'audio:transcript:summary', stage: 'summary', message: error.message })
+        return CommandResult.error(error, `Failed to generate summary: ${error.message}`)
       }
-      if (streamError !== undefined) throw streamError
-      output.write('\n')
-      summary = streamed
-    } catch (err) {
-      const error = (streamError ?? err) as Error
-      output.error(`AI Error: ${error.message}`)
-      await logAIError({ source: 'audio:transcript:summary', stage: 'summary', message: error.message })
-      return CommandResult.error(error, `Failed to generate summary: ${error.message}`)
+      if (run) await run.put('writeup', { summary })
     }
 
     log.debug('summary generated', { chars: summary.length })
@@ -362,14 +395,6 @@ export default class AudioTranscriptSummaryTask extends Command {
       actionItems?: unknown // Validated by normalizeActionItems, never trusted as typed
     }
 
-    output.log(colors.cyan('Extracting metadata...'))
-
-    const extractPromptContent = await readTextFile(prompts.extract)
-    const { output: extractPrompt } = renderPromptFile(extractPromptContent, 'transcript-summary-extract.prompt.md', {
-      ...renderInput,
-      user: { input: summary },
-    })
-
     let extractedTitle: string = 'Untitled'
     let extractedTime: string | null = null
     let extractedDuration: number | null = null
@@ -379,59 +404,105 @@ export default class AudioTranscriptSummaryTask extends Command {
     let extractedFrom: string | null = null
     let extractedTo: string | null = null
     let extractedActionItems: TranscriptActionItem[] = []
+    let finalWho: string[] = []
+    let finalRel: string[] = []
     const isMessageTemplate = template === 'audio-message'
 
-    // Hoisted so the failure warn can carry the payload that failed to parse.
-    let extractRaw = ''
-    try {
-      const result = await generateText({
-        ...aiModel('balanced'),
-        abortSignal: context.signal,
-        prompt: extractPrompt,
-        timeout: 20 * 60 * 1000, // 20 min
+    // The fields as an earlier run of this file left them — extracted, and
+    // corrected by whatever rounds of the check it got through. The check
+    // below still asks, with those on screen, so nothing is retyped.
+    const keptExtract = run ? await run.get('extract') : null
+    if (keptExtract) {
+      const kept = keptExtract.data
+      extractedTitle = kept.title
+      extractedTime = kept.time
+      extractedDuration = kept.durationMinutes
+      extractedMedium = kept.medium
+      extractedFrom = kept.from
+      extractedTo = kept.to
+      extractedActionItems = normalizeActionItems(kept.actionItems)
+      finalWho = kept.who
+      finalRel = kept.rel
+      output.log(colors.gray(`Fields from ${clockLabel(keptExtract.at, runOptions.now())}, reused.`))
+    } else {
+      output.log(colors.cyan('Extracting metadata...'))
+
+      const extractPromptContent = await readTextFile(prompts.extract)
+      const { output: extractPrompt } = renderPromptFile(extractPromptContent, 'transcript-summary-extract.prompt.md', {
+        ...renderInput,
+        user: { input: summary },
       })
 
-      extractRaw = result.text
+      // Hoisted so the failure warn can carry the payload that failed to parse.
+      let extractRaw = ''
+      try {
+        const result = await generateText({
+          ...aiModel('balanced'),
+          abortSignal: context.signal,
+          prompt: extractPrompt,
+          timeout: 20 * 60 * 1000, // 20 min
+        })
 
-      log.debug('metadata extract response', { raw: extractRaw })
+        extractRaw = result.text
 
-      const extracted = extractJson<ExtractedMetadata>(extractRaw)
-      extractedTitle = extracted.title || 'Untitled'
-      extractedTime = extracted.time || null
-      extractedDuration = extracted.durationMinutes ?? null
-      extractedMedium = extracted.medium || null
-      extractedRel = Array.isArray(extracted.rel) ? extracted.rel : []
-      extractedActionItems = normalizeActionItems(extracted.actionItems)
-      if (isMessageTemplate) {
-        extractedFrom = extracted.from || null
-        extractedTo = extracted.to || null
-      } else {
-        extractedWho = Array.isArray(extracted.who) ? extracted.who : []
+        log.debug('metadata extract response', { raw: extractRaw })
+
+        const extracted = extractJson<ExtractedMetadata>(extractRaw)
+        extractedTitle = extracted.title || 'Untitled'
+        extractedTime = extracted.time || null
+        extractedDuration = extracted.durationMinutes ?? null
+        extractedMedium = extracted.medium || null
+        extractedRel = Array.isArray(extracted.rel) ? extracted.rel : []
+        extractedActionItems = normalizeActionItems(extracted.actionItems)
+        if (isMessageTemplate) {
+          extractedFrom = extracted.from || null
+          extractedTo = extracted.to || null
+        } else {
+          extractedWho = Array.isArray(extracted.who) ? extracted.who : []
+        }
+      } catch (err) {
+        output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
+        log.warn('metadata extraction failed', { error: err, raw: extractRaw })
+        await logAIError({
+          source: 'audio:transcript:summary',
+          stage: 'extract',
+          message: `${(err as Error).message}${extractRaw ? ` — raw head: ${extractRaw.slice(0, 200)}` : ''}`,
+        })
       }
-    } catch (err) {
-      output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
-      log.warn('metadata extraction failed', { error: err, raw: extractRaw })
-      await logAIError({
-        source: 'audio:transcript:summary',
-        stage: 'extract',
-        message: `${(err as Error).message}${extractRaw ? ` — raw head: ${extractRaw.slice(0, 200)}` : ''}`,
-      })
+
+      // Duration computed from VTT cue timestamps is exact — prefer it over the
+      // model's guess from the summary prose. User corrections below still override.
+      if (pipelineDuration !== null) extractedDuration = pipelineDuration
+
+      // Merge who/rel: prefer the analysis step's lists — it phonetically matched names
+      // against known contacts (canonical full names), so it's the authoritative source.
+      // Fall back to the summary-extracted lists on the paste/file path (no analysis step).
+      // Shown in the confirmation box below; user corrections override them.
+      finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
+      finalRel = pipelineRel.length > 0 ? pipelineRel : extractedRel
+      // rel: lists people discussed, never the parties — who/from/to already
+      // record them. The analysis and extract prompts ask for that split; models
+      // leak, so this enforces it. Hand edits to the written file stay sovereign.
+      finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
     }
 
-    // Duration computed from VTT cue timestamps is exact — prefer it over the
-    // model's guess from the summary prose. User corrections below still override.
-    if (pipelineDuration !== null) extractedDuration = pipelineDuration
-
-    // Merge who/rel: prefer the analysis step's lists — it phonetically matched names
-    // against known contacts (canonical full names), so it's the authoritative source.
-    // Fall back to the summary-extracted lists on the paste/file path (no analysis step).
-    // Shown in the confirmation box below; user corrections override them.
-    let finalWho = pipelineWho.length > 0 ? pipelineWho : extractedWho
-    let finalRel = pipelineRel.length > 0 ? pipelineRel : extractedRel
-    // rel: lists people discussed, never the parties — who/from/to already
-    // record them. The analysis and extract prompts ask for that split; models
-    // leak, so this enforces it. Hand edits to the written file stay sovereign.
-    finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
+    // The fields as they stand, kept after extraction and after every round
+    // of the check, so a rerun shows the corrected ones.
+    const keepFields = async () => {
+      if (!run) return
+      await run.put('extract', {
+        title: extractedTitle,
+        time: extractedTime,
+        durationMinutes: extractedDuration,
+        medium: extractedMedium,
+        who: finalWho,
+        rel: finalRel,
+        from: extractedFrom,
+        to: extractedTo,
+        actionItems: extractedActionItems,
+      })
+    }
+    if (!keptExtract) await keepFields()
 
     const finalTitle = title !== 'Transcript Summary' ? title : extractedTitle
 
@@ -609,6 +680,7 @@ Example output: {"time": "2026-03-31 25:30"}`,
           })
         }
         if (!isMessageTemplate) matches = await matchProfiles([...finalWho, ...finalRel])
+        await keepFields()
         showMetadata()
       }
     }
@@ -655,7 +727,12 @@ ${summary}
       output.log('\n' + content)
     }
 
+    // Standalone, the summary is the whole run; composed, the parent carries
+    // the record on and forgets it when it files.
+    if (run && context.compositionDepth === 0) await run.clear()
+
     return CommandResult.success({
+      run: run?.key ?? null,
       outputPath,
       title: correctedTitle,
       time: extractedTime,

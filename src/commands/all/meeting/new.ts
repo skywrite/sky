@@ -3,10 +3,16 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import {
+  type Checkpoint,
+  clockLabel,
+  runOptionsFor,
+  TranscriptRun,
+} from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, dayFileExists, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
-import { parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
+import { normalizeActionItems, parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
@@ -42,6 +48,8 @@ const params = {
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-meeting tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   noActions: Flag.bool('Skip action-item acceptance into the day/schedule/next lists', { default: false }),
+  fresh: Flag.bool('Start over: forget what an earlier run of the file already produced', { default: false }),
+  run: Flag.string('Run record key, passed by a host that keyed the file itself', { optional: true, hidden: true }),
 }
 
 type Params = InferParams<typeof params>
@@ -93,7 +101,36 @@ export default class MeetingNewTask extends Command {
     const usePipeline = sources.length === 1
     const willRouteActions = !args.noActions && category.startsWith('Professional')
 
+    // The run record for the source file: what an earlier run of it already
+    // produced, picked up rather than paid for again. Known up front when the
+    // file was named, or when a host keyed it — a filed run has moved the file
+    // into the attachments, and the key still finds the record. A file found
+    // on the Desktop is keyed by the pipeline.
+    const runOptions = runOptionsFor(context)
+    const sourcePath = sources.find((flag): flag is string => typeof flag === 'string' && flag !== 'true')
+    let run = sourcePath
+      ? await TranscriptRun.resolve(args.run, sourcePath, runOptions)
+      : args.run
+        ? await TranscriptRun.open(args.run, runOptions)
+        : null
+
     if (usePipeline) {
+      if (run && args.fresh) {
+        await run.clear()
+        output.log('Starting over.')
+      } else if (run) {
+        const resume = await run.resume()
+        if (resume) {
+          const escape = context.platform === CommandPlatform.Console ? ' Pass --fresh to start over.' : ''
+          output.log(
+            `Picking up the run from ${clockLabel(resume.started, runOptions.now())} at ${resume.step}.${escape}`,
+          )
+        }
+        // Filed already, by a run that stopped after: no second meeting.
+        const filed = await run.get('filed')
+        if (filed) return this.finishFiled(run, filed, context, tasks)
+      }
+
       // The steps ahead, in the words a person reads; the transcript pipeline
       // reports the first three by the same ids as it reaches them.
       output.plan([
@@ -106,20 +143,29 @@ export default class MeetingNewTask extends Command {
 
       // Delegate to audio:transcript:summary which handles:
       // (audio: transcribe →) clean → summarize with user corrections
-      const summaryResult = await tasks.run(
-        'audio:transcript:summary',
-        fromVoiceMemo !== undefined
+      const summaryResult = await tasks.run('audio:transcript:summary', {
+        ...(fromVoiceMemo !== undefined
           ? { fromAudio: fromVoiceMemo }
           : fromText !== undefined
             ? { fromText }
-            : { fromZoomVtt },
-      )
+            : { fromZoomVtt }),
+        run: run?.key,
+        fresh: args.fresh,
+      })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
       }
       if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       const data = summaryResult.data
+
+      // A file found on the Desktop was keyed by the pipeline; the filed check
+      // it could not have up front happens here, before anything is written.
+      if (!run && data.run) {
+        run = await TranscriptRun.open(data.run, runOptions)
+        const filed = await run.get('filed')
+        if (filed) return this.finishFiled(run, filed, context, tasks)
+      }
 
       // Extract meeting data from results
       who = data.who.length > 0 ? data.who.join(', ') : 'Unknown'
@@ -265,6 +311,15 @@ export default class MeetingNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write day item')
     }
 
+    // From here the meeting exists; a rerun after a stop below must not file it again.
+    if (run) {
+      await run.put('filed', {
+        file: path.join(ddfw.fullDir, file),
+        actionItems,
+        routeActions: willRouteActions,
+      })
+    }
+
     // Formal acceptance of the meeting's action items: nothing routes anywhere
     // without an explicit confirm. Runs after the meeting file and day item are
     // on disk so a cancel or crash here can't lose them, and before openEditor
@@ -320,8 +375,47 @@ export default class MeetingNewTask extends Command {
       await delay(500)
     }
 
+    // The run is complete: nothing of it outlives the meeting on disk.
+    if (run) await run.clear()
+
     output.log(`\n  Successfully created meeting ${file}.\n`)
 
+    return CommandResult.success({ file })
+  }
+
+  // A run that filed the meeting and stopped after — in the action items, in
+  // the profile curation, in a restart — picks up with what was left: the
+  // action items still to accept. The meeting itself is not touched.
+  private async finishFiled(
+    run: TranscriptRun,
+    filed: Checkpoint<'filed'>,
+    context: CommandArgs<Params>['context'],
+    tasks: CommandArgs<Params>['tasks'],
+  ): Promise<CommandResult<Result>> {
+    const { output } = context
+    const { file, routeActions } = filed.data
+    const actionItems = normalizeActionItems(filed.data.actionItems)
+    output.log(`Already filed at ${clockLabel(filed.at, runOptionsFor(context).now())}: ${path.basename(file)}`)
+
+    if (actionItems.length > 0 && routeActions && context.prompt.interactive && !context.signal?.aborted) {
+      output.plan([{ id: 'actions', label: 'Action items' }])
+      output.stage('actions', 'Action items', `${actionItems.length} to accept`)
+      try {
+        await this.acceptActionItems(actionItems, context, tasks)
+      } catch (err) {
+        output.error(`Action-item routing failed: ${(err as Error).message}`)
+      }
+    }
+
+    if (context.platform === CommandPlatform.Console) {
+      openEditor([{ file, line: 1 }])
+      await delay(500)
+    }
+
+    await run.clear()
+    output.log(`\n  Meeting ${path.basename(file)} is filed.\n`)
+    // Absolute, where the fresh path returns the day-relative name: the day
+    // it was filed under is the record's, not this run's.
     return CommandResult.success({ file })
   }
 

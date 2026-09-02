@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
+import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { Args, CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -46,6 +47,7 @@ const params = {
   ),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
+  fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
   split: Flag.stringOrBool(
     'Split a --from-video recording into one entry per subject: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
     { bareValue: 'auto' },
@@ -95,6 +97,7 @@ export default class JournalNewTask extends Command {
         noAutoTag: args.noAutoTag,
         noAutoRel: args.noAutoRel,
         split: args.split,
+        fresh: args.fresh,
       })
     }
 
@@ -107,6 +110,7 @@ export default class JournalNewTask extends Command {
       // Delegate to audio:transcript:clean which handles: transcribe → clean
       const cleanResult = await tasks.run('audio:transcript:clean', {
         fromAudio,
+        fresh: args.fresh,
       })
       if (!cleanResult.ok || !cleanResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${cleanResult.message}`)
@@ -215,6 +219,9 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
       const fileSlug = slugify(journalType)
       const filePath = await ddfw.write(`journal/${fileSlug}.md`, doc.toMarkdown())
       const fullPath = path.join(ddfw.fullDir, filePath)
+
+      // The entry is filed: the pipeline's run record has nothing left to pick up.
+      if (data.run) await clearTranscriptRun(data.run)
 
       output.log(`\n  Successfully created ${filePath}.\n`)
       if (context.platform === CommandPlatform.Console) openEditor([{ file: fullPath, line: 1, column: 0 }])

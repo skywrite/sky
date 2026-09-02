@@ -10,6 +10,7 @@ import { env } from '#shared/sys/mod.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { glossaryKeywords, loadGlossary } from './lib/glossary.ts'
 import { transcribeWithOpenAI } from './lib/transcribe.ts'
+import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 
 // -----------------------------------------------------------------------------
 // Provider Types
@@ -65,6 +66,13 @@ const params = {
   glossary: Flag.bool('Guide transcription with settled glossary vocabulary (openai only)', {
     default: true,
   }),
+  fresh: Flag.bool('Start over: forget what an earlier run of this file already produced', {
+    default: false,
+  }),
+  run: Flag.string('Run record key, passed down by the command that owns the run', {
+    optional: true,
+    hidden: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -75,6 +83,8 @@ type Result = {
   outputPath: string | null
   durationSeconds: number | undefined
   language: string | undefined
+  /** The run record's key — the sha256 of the recording — for whoever continues the run */
+  run: string
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -131,6 +141,8 @@ export default class AudioTranscriptCreateTask extends Command {
       provider,
       diarize,
       glossary: useGlossary,
+      fresh,
+      run: runKey,
     } = args
 
     // Validate provider
@@ -161,6 +173,17 @@ export default class AudioTranscriptCreateTask extends Command {
       return CommandResult.fail(`File not found: ${inputFile}`)
     }
 
+    // The run record for this recording, keyed by its bytes: a rerun of the
+    // same file — after a failure, a cancel, a restart — finds the transcript
+    // an earlier run already paid for. Hashed before any conversion, so the
+    // key is the file the person has.
+    const runOptions = runOptionsFor(context)
+    const run = await TranscriptRun.resolve(runKey, inputFile, runOptions)
+    if (fresh) {
+      await run.clear()
+      output.log(colors.gray('Starting over.'))
+    }
+
     output.log(colors.gray(`\nTranscribing: ${inputFile}`))
 
     // 3. Convert .caf to .m4a (unsupported by transcription APIs)
@@ -182,62 +205,73 @@ export default class AudioTranscriptCreateTask extends Command {
       inputFile = tempConvertedFile
     }
 
-    // 4. Read the audio file
-    let audioData: Uint8Array
-    try {
-      audioData = await readFile(transcribeFile)
-    } catch (err) {
-      return CommandResult.error(err as Error, `Failed to read audio file: ${transcribeFile}`)
-    }
-
-    output.log(colors.gray(`File size: ${(audioData.length / 1024 / 1024).toFixed(2)} MB`))
-
-    // 4. Transcribe using selected provider
+    // 4. Transcribe using selected provider — unless an earlier run of this
+    // file already did, in which case its words are the transcript.
     const providerName = provider === 'mistral' ? 'Mistral Voxtral' : 'OpenAI'
-    output.stage('transcribe', 'Transcribing', providerName)
+    const kept = await run.get('raw')
+    output.stage('transcribe', 'Transcribing', kept ? 'reused' : providerName)
 
     let transcriptText: string
     let durationSeconds: number | undefined
     let language: string | undefined
 
-    try {
-      if (provider === 'mistral') {
-        const result = await this.transcribeWithMistral(audioData, path.basename(transcribeFile), diarize)
-        transcriptText = result.text
-        durationSeconds = result.durationSeconds
-        language = result.language
-      } else {
-        // Glossary vocabulary guides recognition of names and jargon the
-        // model would otherwise mishear. Malformed glossary → no keywords.
-        let keywords: string[] = []
-        if (useGlossary) {
-          const glossary = await loadGlossary()
-          if (glossary) keywords = glossaryKeywords(glossary)
-          if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
-        }
-        // Streamed only when the transcript is going to a file: on stdout the
-        // text is the deliverable and a piped reader must get it exactly once.
-        const streaming = Boolean(outputPath || save)
-        const result = await transcribeWithOpenAI(audioData, path.basename(transcribeFile), {
-          keywords,
-          onDelta: streaming ? (text) => output.write(text) : undefined,
-          signal: context.signal,
-        })
-        if (streaming) output.write('\n')
-        transcriptText = result.text
-        language = result.language
-        // A streamed transcription reports no length; the file knows its own.
-        durationSeconds =
-          result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
+    if (kept) {
+      transcriptText = kept.data.text
+      durationSeconds = kept.data.durationSeconds
+      language = kept.data.language
+      output.log(colors.gray(`Transcript from ${clockLabel(kept.at, runOptions.now())}, reused.`))
+    } else {
+      let audioData: Uint8Array
+      try {
+        audioData = await readFile(transcribeFile)
+      } catch (err) {
+        return CommandResult.error(err as Error, `Failed to read audio file: ${transcribeFile}`)
       }
-    } catch (err) {
-      const error = err as Error
-      output.error(`Transcription error: ${error.message}`)
-      return CommandResult.error(error, 'Failed to transcribe audio')
-    }
 
-    if (!transcriptText.trim()) {
-      return CommandResult.fail('Transcription returned empty text')
+      output.log(colors.gray(`File size: ${(audioData.length / 1024 / 1024).toFixed(2)} MB`))
+
+      try {
+        if (provider === 'mistral') {
+          const result = await this.transcribeWithMistral(audioData, path.basename(transcribeFile), diarize)
+          transcriptText = result.text
+          durationSeconds = result.durationSeconds
+          language = result.language
+        } else {
+          // Glossary vocabulary guides recognition of names and jargon the
+          // model would otherwise mishear. Malformed glossary → no keywords.
+          let keywords: string[] = []
+          if (useGlossary) {
+            const glossary = await loadGlossary()
+            if (glossary) keywords = glossaryKeywords(glossary)
+            if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
+          }
+          // Streamed only when the transcript is going to a file: on stdout the
+          // text is the deliverable and a piped reader must get it exactly once.
+          const streaming = Boolean(outputPath || save)
+          const result = await transcribeWithOpenAI(audioData, path.basename(transcribeFile), {
+            keywords,
+            onDelta: streaming ? (text) => output.write(text) : undefined,
+            signal: context.signal,
+          })
+          if (streaming) output.write('\n')
+          transcriptText = result.text
+          language = result.language
+          // A streamed transcription reports no length; the file knows its own.
+          durationSeconds =
+            result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
+        }
+      } catch (err) {
+        const error = err as Error
+        output.error(`Transcription error: ${error.message}`)
+        return CommandResult.error(error, 'Failed to transcribe audio')
+      }
+
+      if (!transcriptText.trim()) {
+        return CommandResult.fail('Transcription returned empty text')
+      }
+
+      // Kept the moment it exists: everything after this is cheap to redo, this was not.
+      await run.put('raw', { text: transcriptText, durationSeconds, language })
     }
 
     output.log(colors.green(`\nTranscription complete!`))
@@ -290,12 +324,17 @@ ${transcriptText}
       output.log(colors.yellow(`Deleted source: ${inputFile}`))
     }
 
+    // Standalone, the transcript is the whole run; composed, the parent
+    // carries the record on and forgets it when it files.
+    if (context.compositionDepth === 0) await run.clear()
+
     return CommandResult.success({
       transcript: transcriptText,
       inputFile,
       outputPath: finalOutputPath,
       durationSeconds,
       language,
+      run: run.key,
     })
   }
 

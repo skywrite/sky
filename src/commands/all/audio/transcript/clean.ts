@@ -32,6 +32,7 @@ import {
 } from './lib/glossary.ts'
 import { isRtf, stampedDurationMinutes, turnStamps } from './lib/plainText.ts'
 import SRT from './lib/SRT/mod.ts'
+import { clockLabel, type ReviewCorrection, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 import ZoomVTT from './lib/ZoomVTT/mod.ts'
 
 // -----------------------------------------------------------------------------
@@ -80,6 +81,13 @@ const params = {
     short: 't',
     default: () => 'Transcript',
   }),
+  fresh: Flag.bool('Start over: forget what an earlier run of this file already produced', {
+    default: false,
+  }),
+  run: Flag.string('Run record key, passed down by the command that owns the run', {
+    optional: true,
+    hidden: true,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -97,6 +105,8 @@ type Result = {
   transcriptFilePath: string | null
   /** Length from cue timestamps (VTT/SRT, exact) or --from-text turn stamps (last turn's start, rounded up); null when the input carried neither */
   durationMinutes: number | null
+  /** The run record's key — the sha256 of the source file — for whoever continues the run; null for a paste */
+  run: string | null
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -157,14 +167,8 @@ const DROP_LABELS: Record<DropReason, string> = {
   'too-short': 'too short to replace safely',
 }
 
-interface UserCorrection {
-  issueIndex: number
-  originalText: string
-  correction: string
-  /** Instances behind this entry — the correction phase must hit them all. */
-  occurrences: number
-  action: 'accept' | 'custom' | 'skip'
-}
+/** A review answer as the correction phase applies it — and as the run record keeps it. */
+type UserCorrection = ReviewCorrection
 
 /** What kind of problem an issue is, in plain words. */
 function issueTypeLabel(type: TranscriptIssue['type']): string {
@@ -219,7 +223,21 @@ export default class AudioTranscriptCleanTask extends Command {
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { file, fromAudio, fromZoomVtt, fromSrt, fromText, title, output: outputArg, save: saveArg } = args
+    const {
+      file,
+      fromAudio,
+      fromZoomVtt,
+      fromSrt,
+      fromText,
+      title,
+      output: outputArg,
+      save: saveArg,
+      fresh,
+      run: runKey,
+    } = args
+    const runOptions = runOptionsFor(context)
+    /** The run record, once the source file is known; null for a paste */
+    let run: TranscriptRun | null = null
 
     // Handle --from-audio: transcribe first, then clean
     const useAudioPipeline = fromAudio !== undefined
@@ -243,7 +261,7 @@ export default class AudioTranscriptCleanTask extends Command {
     if (useAudioPipeline) {
       output.log('Starting audio transcription...\n')
 
-      const createArgs: Record<string, unknown> = { save: true, delete: false }
+      const createArgs: Record<string, unknown> = { save: true, delete: false, fresh, run: runKey }
       if (audioFilePath) {
         createArgs.file = audioFilePath
       }
@@ -253,6 +271,8 @@ export default class AudioTranscriptCleanTask extends Command {
       }
       const transcriptPath = createResult.data.outputPath
       audioSourcePath = createResult.data.inputFile
+      // The transcriber keyed the run by the recording, and cleared it if asked to.
+      run = await TranscriptRun.open(createResult.data.run, runOptions, path.basename(createResult.data.inputFile))
       if (!transcriptPath) {
         return CommandResult.fail('Transcription did not save to file')
       }
@@ -291,6 +311,7 @@ export default class AudioTranscriptCleanTask extends Command {
         )
       }
       transcriptSourcePath = transcriptPath
+      run = await TranscriptRun.resolve(runKey, transcriptPath, runOptions)
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
       try {
         transcript = await readTextFile(transcriptPath)
@@ -324,12 +345,21 @@ export default class AudioTranscriptCleanTask extends Command {
       } catch (err) {
         return CommandResult.error(err as Error, `Failed to read file: ${file}`)
       }
+      run = await TranscriptRun.resolve(runKey, file, runOptions)
     } else {
       transcript = await this.readMultilineInput(output)
     }
 
     if (!transcript.trim()) {
       return CommandResult.fail('No transcript content provided')
+    }
+
+    // A record this command keyed itself is its own to start over. One a
+    // parent passed down was cleared there; one the transcriber just wrote
+    // the transcript into must stay.
+    if (fresh && run && !runKey && !useAudioPipeline) {
+      await run.clear()
+      output.log(colors.gray('Starting over.'))
     }
 
     log.debug('transcript received', { chars: transcript.length, lines: transcript.split('\n').length })
@@ -440,44 +470,53 @@ export default class AudioTranscriptCleanTask extends Command {
       renderInput,
     )
 
-    // 4. AI Analysis
+    // 4. AI Analysis — unless an earlier run of this file already has it.
     output.stage('names', 'Checking names')
 
     let analysis: z.infer<typeof TranscriptIssueSchema>
-    // Streamed because a long analysis is minutes of silence as a non-streaming
-    // request — idle sockets get killed by network timeouts; SSE bytes keep it
-    // alive and put it under the provider's stream idle guard. onError captures
-    // the real cause: the SDK's result promises reject with a generic
-    // NoOutputGeneratedError (mirrors ChatEngine).
-    let streamError: unknown
-    try {
-      // Use streamText + manual JSON parsing instead of generateObject
-      // because generateObject's tool mode has issues with Anthropic
-      const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
-      const stream = streamText({
-        ...aiModelByProfile(TRANSCRIPT_MODEL),
-        abortSignal: context.signal,
-        prompt: jsonPrompt,
-        timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
-        onError: ({ error }) => {
-          streamError ??= error
-        },
-      })
-      const text = await stream.text
-      if (streamError !== undefined) throw streamError
+    const keptAnalysis = run ? await run.get('analysis') : null
+    const restored = keptAnalysis ? TranscriptIssueSchema.safeParse(keptAnalysis.data.analysis) : null
+    if (keptAnalysis && restored?.success) {
+      analysis = restored.data
+      output.log(colors.gray(`Analysis from ${clockLabel(keptAnalysis.at, runOptions.now())}, reused.`))
+    } else {
+      // Streamed because a long analysis is minutes of silence as a non-streaming
+      // request — idle sockets get killed by network timeouts; SSE bytes keep it
+      // alive and put it under the provider's stream idle guard. onError captures
+      // the real cause: the SDK's result promises reject with a generic
+      // NoOutputGeneratedError (mirrors ChatEngine).
+      let streamError: unknown
+      try {
+        // Use streamText + manual JSON parsing instead of generateObject
+        // because generateObject's tool mode has issues with Anthropic
+        const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
+        const stream = streamText({
+          ...aiModelByProfile(TRANSCRIPT_MODEL),
+          abortSignal: context.signal,
+          prompt: jsonPrompt,
+          timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
+          onError: ({ error }) => {
+            streamError ??= error
+          },
+        })
+        const text = await stream.text
+        if (streamError !== undefined) throw streamError
 
-      analysis = TranscriptIssueSchema.parse(extractJson(text))
-    } catch (err) {
-      const error = (streamError ?? err) as Error & { text?: string; cause?: unknown }
-      output.error(`AI Error: ${error.message}`)
-      if (error.text) output.error(`Response text: ${error.text}`)
-      if (error.cause) output.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`)
-      await logAIError({
-        source: 'audio:transcript:clean',
-        stage: 'analysis',
-        message: `${error.message}${error.text ? ` — response head: ${error.text.slice(0, 200)}` : ''}`,
-      })
-      return CommandResult.error(error, `Failed to analyze transcript: ${error.message}`)
+        analysis = TranscriptIssueSchema.parse(extractJson(text))
+      } catch (err) {
+        const error = (streamError ?? err) as Error & { text?: string; cause?: unknown }
+        output.error(`AI Error: ${error.message}`)
+        if (error.text) output.error(`Response text: ${error.text}`)
+        if (error.cause) output.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`)
+        await logAIError({
+          source: 'audio:transcript:clean',
+          stage: 'analysis',
+          message: `${error.message}${error.text ? ` — response head: ${error.text.slice(0, 200)}` : ''}`,
+        })
+        return CommandResult.error(error, `Failed to analyze transcript: ${error.message}`)
+      }
+      // Kept as the model returned it, before the merge below shapes it.
+      if (run) await run.put('analysis', { analysis })
     }
 
     // The contract asks for one issue per distinct problem, but models leak
@@ -517,29 +556,43 @@ export default class AudioTranscriptCleanTask extends Command {
       output.log(colors.green('No issues found! Transcript looks clean.'))
     }
 
-    // 5. Review of the medium/low confidence issues, by whoever is there
-    if (reviewIssues.length > 0 && context.prompt.interactive) {
-      output.stage('names', 'Checking names', `${reviewIssues.length} to check`)
-    }
-    const reviewCorrections = await this.reviewIssues(context.prompt, reviewIssues)
+    // 5. Review of the medium/low confidence issues, by whoever is there —
+    // or the answers an earlier run of this file already collected.
+    let reviewCorrections: UserCorrection[] = []
+    const keptReview = run ? await run.get('review') : null
+    if (keptReview) {
+      reviewCorrections = keptReview.data.corrections
+      output.log(colors.gray(`Names checked at ${clockLabel(keptReview.at, runOptions.now())}, reused.`))
+    } else {
+      if (reviewIssues.length > 0 && context.prompt.interactive) {
+        output.stage('names', 'Checking names', `${reviewIssues.length} to check`)
+      }
+      const reviewed = await this.reviewIssues(context.prompt, reviewIssues)
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
+      reviewCorrections = reviewed ?? []
 
-    // Persist the user's rulings, plus lastSeen touches from this transcript,
-    // so future runs stop asking about settled terms.
-    if (glossary !== null) {
-      const rulings = buildRulings(reviewIssues, reviewCorrections)
-      if (rulings.length > 0) applyRulings(glossary, rulings, context.notebookNow.date)
-      if (rulings.length > 0 || glossaryTouched > 0) {
-        const changes = [
-          ...(rulings.length > 0 ? [`${rulings.length} rulings`] : []),
-          ...(glossaryTouched > 0 ? [`${glossaryTouched} seen`] : []),
-        ]
-        try {
-          await saveGlossary(glossary)
-          output.log(colors.gray(`Glossary updated (${changes.join(', ')}): ${GLOSSARY_FILE}`))
-        } catch (err) {
-          output.error(`Failed to save glossary: ${(err as Error).message}`)
+      // Persist the user's rulings, plus lastSeen touches from this transcript,
+      // so future runs stop asking about settled terms.
+      if (glossary !== null) {
+        const rulings = buildRulings(reviewIssues, reviewCorrections)
+        if (rulings.length > 0) applyRulings(glossary, rulings, context.notebookNow.date)
+        if (rulings.length > 0 || glossaryTouched > 0) {
+          const changes = [
+            ...(rulings.length > 0 ? [`${rulings.length} rulings`] : []),
+            ...(glossaryTouched > 0 ? [`${glossaryTouched} seen`] : []),
+          ]
+          try {
+            await saveGlossary(glossary)
+            output.log(colors.gray(`Glossary updated (${changes.join(', ')}): ${GLOSSARY_FILE}`))
+          } catch (err) {
+            output.error(`Failed to save glossary: ${(err as Error).message}`)
+          }
         }
       }
+
+      // Answers a person gave are kept; a review nobody was there for, or one
+      // quit early, is asked again next time.
+      if (reviewed !== null && run) await run.put('review', { corrections: reviewCorrections })
     }
 
     // Auto-accept all high-confidence fixes
@@ -642,6 +695,10 @@ ${cleanedTranscript}
       }
     }
 
+    // Standalone, the cleaned transcript is the whole run; composed, the
+    // parent carries the record on and forgets it when it files.
+    if (run && context.compositionDepth === 0) await run.clear()
+
     return CommandResult.success({
       outputPath,
       cleanedText: cleanedTranscript,
@@ -653,6 +710,7 @@ ${cleanedTranscript}
       audioFilePath: audioSourcePath,
       transcriptFilePath: transcriptSourcePath,
       durationMinutes: cueDurationMinutes,
+      run: run?.key ?? null,
     })
   }
 
@@ -759,10 +817,12 @@ ${cleanedTranscript}
   /**
    * The issues the analysis was unsure about, put to whoever is there as one
    * review. A headless run gets no review: the high-confidence fixes still
-   * apply, and nothing else changes.
+   * apply, and nothing else changes. Null when no review happened — nobody
+   * there, or the person quit it — as opposed to a review with nothing to ask.
    */
-  private async reviewIssues(prompt: Prompter, issues: TranscriptIssue[]): Promise<UserCorrection[]> {
-    if (issues.length === 0 || !prompt.interactive) return []
+  private async reviewIssues(prompt: Prompter, issues: TranscriptIssue[]): Promise<UserCorrection[] | null> {
+    if (issues.length === 0) return []
+    if (!prompt.interactive) return null
 
     const answers = await prompt.form({
       title: 'Interactive Review',
@@ -777,7 +837,7 @@ ${cleanedTranscript}
         alternatives: issue.options ?? [],
       })),
     })
-    if (!answers) return []
+    if (!answers) return null
 
     // An item without an answer was never reached — the review was quit early.
     const corrections: UserCorrection[] = []

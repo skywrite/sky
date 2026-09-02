@@ -476,3 +476,20 @@
 .sky-thread .sky-meta[data-state='failed'] {
   color: var(--mantine-color-red-7);
 }
+
+.sky-confirm-resume {
+  font-size: 16px;
+  color: var(--sky-dim);
+  max-width: 72ch;
+}
+
+.sky-confirm-link {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sky-text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

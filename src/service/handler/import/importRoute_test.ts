@@ -27,15 +27,19 @@ const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pri
 interface World {
   options: ImportRoutesOptions
   runs: ImportJob[]
-  /** The next run asks these questions, in order, and returns this */
-  script: { ask: Array<'text' | 'form' | 'multiselect'>; outcome: 'filed' | 'failed' }
+  /** The next run asks these questions, in order, and returns this; the record says what an earlier run left */
+  script: {
+    ask: Array<'text' | 'form' | 'multiselect'>
+    outcome: 'filed' | 'failed'
+    resume: { step: string; started: string } | null
+  }
 }
 
 async function world(): Promise<World & { dir: string; notebook: string }> {
   const notebook = await makeTempDir()
   const dir = path.join(notebook, '.user-data', 'imports')
   const runs: ImportJob[] = []
-  const script: World['script'] = { ask: [], outcome: 'filed' }
+  const script: World['script'] = { ask: [], outcome: 'filed', resume: null }
   const options: ImportRoutesOptions = {
     dir,
     journalTypes: ['Reflection', 'Mood'],
@@ -45,6 +49,11 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
       return readUnknown(name)
     },
     suggestWhen: () => '2026-01-27 09:31',
+    // Keyed by name here rather than by bytes; what is left to pick up is scripted.
+    record: async ({ path: filePath, key }) => ({
+      key: key ?? `k-${path.basename(filePath)}`,
+      resume: script.resume,
+    }),
     listen: async () => ({ kind: 'meeting', opening: 'Okay, quick recap…', guess: 'Sounds like a meeting recap.' }),
     calendar: async () => ({
       title: 'Atlas pricing sync',
@@ -315,7 +324,7 @@ test('start runs the door, streams its output, parks its questions, and files', 
     expected: {
       // Read after the first question arrived: the run's events land over the stream, after the start answers.
       state: 'needs-you',
-      fields: { kind: 'meeting', when: '2026-01-27 09:31', category: 'Personal', journalType: null },
+      fields: { kind: 'meeting', when: '2026-01-27 09:31', category: 'Personal', journalType: null, fresh: false },
       again: 409,
       // The calendar match arrived before the start and stays at the head of the replay.
       types: ['calendar', 'state', 'plan', 'stage', 'line', 'text', 'tick', 'prompt'],
@@ -466,5 +475,54 @@ test('a service restart reads a running job as failed, file kept', async () => {
     should: 'read as failed with the restart sentence, the upload still there',
     actual: [list.imports[0]?.state, list.imports[0]?.error, staged.includes('atlas.vtt')],
     expected: ['failed', 'Sky restarted while this was running. The file is still here.', true],
+  })
+})
+
+test('an earlier run of the file shows on the job, and Start over reaches the command', async () => {
+  const w = await world()
+  w.script.resume = { step: 'Writing it up', started: '2026-01-27 00:06' }
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const response = await app.request('/import', { method: 'POST', body: upload('atlas-pricing-sync.vtt', VTT) })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const started = await postJson(app, `/import/${job.id}/start`, {
+    kind: 'meeting',
+    when: '2026-01-27 09:31',
+    fresh: true,
+  })
+  await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'state' && e.state === 'done')
+  assert({
+    given: 'a file an earlier run got part way through, started over',
+    should: 'carry the key and the earlier run on the job, and hand the command fresh',
+    actual: {
+      status: started.status,
+      key: job.runKey,
+      resume: job.resume,
+      fresh: w.runs[0]?.fields?.fresh,
+    },
+    expected: {
+      status: 200,
+      key: 'k-atlas-pricing-sync.vtt',
+      resume: { step: 'Writing it up', started: '2026-01-27 00:06' },
+      fresh: true,
+    },
+  })
+})
+
+test('a run that stopped is looked at again when the job is opened', async () => {
+  const w = await world()
+  w.script.outcome = 'failed'
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const response = await app.request('/import', { method: 'POST', body: upload('atlas-pricing-sync.vtt', VTT) })
+  const { job } = (await response.json()) as { job: ImportJob }
+  await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'state' && e.state === 'failed')
+  // What the run left behind is on disk by now; the next look at the job finds it.
+  w.script.resume = { step: 'Checking names', started: '2026-01-27 09:31' }
+  const opened = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+  assert({
+    given: 'a run that failed, then the job opened again',
+    should: 'show nothing to pick up at upload and the earlier run afterwards, with the key kept',
+    actual: [job.resume, opened.job.resume, opened.job.runKey, w.runs[0]?.fields?.fresh],
+    expected: [null, { step: 'Checking names', started: '2026-01-27 09:31' }, 'k-atlas-pricing-sync.vtt', false],
   })
 })

@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
+import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
@@ -16,6 +17,7 @@ const params = {
   }),
   when: whenNBTime(),
   category: categoryComplete(),
+  fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -34,6 +36,8 @@ export default class EventNewTask extends Command {
     let body: string | undefined
     let rel: string[] | undefined
     let who: string | string[] | undefined
+    /** The pipeline's run record, forgotten once the event is filed */
+    let runKey: string | null = null
 
     // Handle --from-audio pipeline via audio:transcript:summary
     const useAudioPipeline = fromAudio !== undefined
@@ -41,12 +45,14 @@ export default class EventNewTask extends Command {
     if (useAudioPipeline) {
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromAudio,
+        fresh: args.fresh,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)
       }
 
       const data = summaryResult.data
+      runKey = data.run
 
       what = data.title
       body = data.body
@@ -100,6 +106,8 @@ export default class EventNewTask extends Command {
       openEditor([{ file: path.join(ddfw.fullDir, file), line: data.split('\n').length }])
     }
     await delay(500)
+
+    if (runKey) await clearTranscriptRun(runKey)
 
     output.log(`\n  Successfully created event ${file}.\n`)
 

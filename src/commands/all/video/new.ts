@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import { desktopFilesByExt } from '#commands/all/audio/transcript/lib/desktopFiles.ts'
+import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -25,6 +26,7 @@ const params = {
   }),
   when: whenNBTime(),
   category: categoryComplete(),
+  fresh: Flag.bool('Start over: forget what an earlier run of the transcript already produced', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -52,6 +54,8 @@ export default class VideoNewTask extends Command {
     let body: string | undefined
     let rel: string[] | undefined
     let srtSourcePath: string | null = null
+    /** The pipeline's run record, forgotten once the video is filed */
+    let runKey: string | null = null
 
     // --from-srt pipeline: clean + summarize the transcript via audio:transcript:summary.
     // The 'audio-message' template is the one-way-communication shape (from/to rather
@@ -65,12 +69,14 @@ export default class VideoNewTask extends Command {
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromSrt: srtSourcePath,
         template: 'audio-message',
+        fresh: args.fresh,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
       }
 
       const data = summaryResult.data
+      runKey = data.run
 
       // Explicit flags win over anything the model inferred.
       if (!from) from = data.from ?? undefined
@@ -179,6 +185,8 @@ export default class VideoNewTask extends Command {
     await writeDayItems(whenDate, category, dayItem)
 
     await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+
+    if (runKey) await clearTranscriptRun(runKey)
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 

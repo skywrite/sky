@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { runOptionsFor, TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import { extractAudio, probeMedia } from '#lib/media/ffmpeg/mod.ts'
@@ -53,6 +54,8 @@ export interface FromVideoOptions {
   noAutoRel?: boolean
   /** 'auto' groups by subject; "Health, Faith" extracts those entries plus a remainder. */
   split?: string
+  /** Start over: forget what an earlier run of the recording already produced. */
+  fresh?: boolean
 }
 
 /**
@@ -99,13 +102,22 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
     output.log(`Length: ${Math.round(media.durationSeconds / 60)}m, recorded from ${when.date} ${when.time}`)
   }
 
+  // The run record is the video's, not the extracted audio's: a rerun extracts
+  // again, and the pipeline finds the transcript it already paid for by the
+  // recording it came from.
+  const run = await TranscriptRun.forFile(videoPath, runOptionsFor(context))
+  if (options.fresh) {
+    await run.clear()
+    output.log('Starting over.')
+  }
+
   // 3. Video containers are not what the transcription endpoints want, and the
   //    video stream would be most of an upload that only needs the audio.
   output.log('Extracting audio...')
   const audioPath = await extractAudio(videoPath)
 
   // 4. Transcribe and correct, reusing the audio pipeline wholesale.
-  const cleanResult = await tasks.run('audio:transcript:clean', { fromAudio: audioPath })
+  const cleanResult = await tasks.run('audio:transcript:clean', { fromAudio: audioPath, run: run.key })
   if (!cleanResult.ok || !cleanResult.data) {
     return CommandResult.fail(`Transcription failed: ${cleanResult.message}`)
   }
@@ -210,6 +222,9 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
   } else {
     written.push(await writeEntry({ title, markdown: [h1, '', body].join('\n') }))
   }
+
+  // The entries are filed: the run has nothing left to pick up.
+  await run.clear()
 
   output.log('')
   for (const relPath of written) output.log(`  Created ${relPath}`)

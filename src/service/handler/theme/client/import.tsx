@@ -53,6 +53,8 @@ export interface ImportJob {
     relation: 'matches' | 'just-after'
   } | null
   suggestedWhen: string
+  /** What an earlier run of the same file left to pick up, when there is one */
+  resume: { step: string; started: string } | null
   fields: { kind: ImportKind; when: string; category: 'Professional' | 'Personal'; journalType: string | null } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
@@ -394,7 +396,14 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
   }
 }
 
-type Fields = { kind: ImportKind; when: string; category: 'Professional' | 'Personal'; journalType: string }
+type Fields = {
+  kind: ImportKind
+  when: string
+  category: 'Professional' | 'Personal'
+  journalType: string
+  /** Start over rather than pick up an earlier run of the file */
+  fresh: boolean
+}
 
 function Pills<T extends string>({
   label,
@@ -496,6 +505,7 @@ function ConfirmBody({
     when: live?.suggestedWhen ?? '',
     category: 'Professional',
     journalType: options?.journalTypes[0] ?? 'Reflection',
+    fresh: false,
   })
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -533,6 +543,7 @@ function ConfirmBody({
         when: fields.when.trim(),
         category: fields.category,
         journalType: fields.kind === 'journal' ? fields.journalType : undefined,
+        fresh: fields.fresh,
       })
       onStart(fields)
     } catch (err) {
@@ -618,6 +629,20 @@ function ConfirmBody({
             />
           )}
           <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType)}</div>
+          {live.resume && (
+            <div className="sky-confirm-resume">
+              {fields.fresh
+                ? `Starts over. The run from ${whenLabel(live.resume.started, todayYmd)} is forgotten.`
+                : `Picks up where the run from ${whenLabel(live.resume.started, todayYmd)} stopped, at ${live.resume.step}.`}{' '}
+              <button
+                type="button"
+                className="sky-confirm-link"
+                onClick={() => setFields((f) => ({ ...f, fresh: !f.fresh }))}
+              >
+                {fields.fresh ? 'Pick up instead' : 'Start over'}
+              </button>
+            </div>
+          )}
         </>
       )}
       {error && <div className="sky-confirm-read">{error}</div>}

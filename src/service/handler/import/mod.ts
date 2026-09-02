@@ -27,6 +27,7 @@ import {
   type Listen,
   progressLine,
   type PromptOnWire,
+  type Resume,
   type StagedFile,
   type StartFields,
   summarize,
@@ -40,6 +41,7 @@ export type {
   ImportState,
   Listen,
   PromptOnWire,
+  Resume,
   Stage,
   StagedFile,
   StartFields,
@@ -61,6 +63,12 @@ export interface ImportRoutesOptions {
   listen?: (filePath: string, jobDir: string) => Promise<Listen | null>
   /** A calendar event near the suggested when; absent or null when there is none */
   calendar?: (when: string, readback: ReadBack) => Promise<CalendarMatch | null>
+  /**
+   * The pipeline's run record for the file: its key, from the file's bytes
+   * unless one is already known, and what an earlier run left to pick up.
+   * Absent when the host keeps no records.
+   */
+  record?: (file: { path: string; key: string | null }) => Promise<{ key: string; resume: Resume | null }>
   /**
    * Run the import as the person asked: the door command with the job's
    * fields, as one stream of what it reports and asks, ending in how it went.
@@ -135,7 +143,7 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
   if (kind === 'journal' && !journalType) return 'a journal needs a type'
-  return { kind: kind as StartFields['kind'], when, category, journalType }
+  return { kind: kind as StartFields['kind'], when, category, journalType, fresh: b.fresh === true }
 }
 
 export function createImportRoutes(options: ImportRoutesOptions): Hono {
@@ -168,6 +176,9 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     }
     const readback = await options.read({ path: filePath, name, size: upload.size })
     const suggestedWhen = options.suggestWhen(file, readback)
+    // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
+    const kept =
+      readback.refusal || !options.record ? null : await options.record({ path: filePath, key: null }).catch(() => null)
     const job: ImportJob = {
       id,
       file,
@@ -175,6 +186,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       listen: null,
       calendar: null,
       suggestedWhen,
+      runKey: kept?.key ?? null,
+      resume: kept?.resume ?? null,
       fields: null,
       state: readback.refusal ? 'failed' : 'new',
       plan: null,
@@ -225,7 +238,17 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     await loaded
     const record = store.get(c.req.param('id'))
     if (!record) return notFound(c)
-    return c.json({ job: summarize(record.job), options: { journalTypes: options.journalTypes } })
+    const { job } = record
+    // A run that stopped left more to pick up than the upload showed; the
+    // dialog opening again is when that is looked at.
+    if (options.record && (job.state === 'failed' || job.state === 'cancelled') && !job.readback.refusal) {
+      const kept = await options.record({ path: store.filePath(job), key: job.runKey }).catch(() => null)
+      if (kept) {
+        job.runKey = kept.key
+        job.resume = kept.resume
+      }
+    }
+    return c.json({ job: summarize(job), options: { journalTypes: options.journalTypes } })
   })
 
   // Everything the job has said, then everything it says until it settles.

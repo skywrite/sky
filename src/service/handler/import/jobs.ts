@@ -33,12 +33,22 @@ export interface CalendarMatch {
   relation: 'matches' | 'just-after'
 }
 
+/** What a run of the file would pick up at: the pipeline's record from an earlier run. */
+export interface Resume {
+  /** The step, in the ladder's words: "Writing it up" */
+  step: string
+  /** Notebook time the earlier run began, YYYY-MM-DD HH:MM */
+  started: string
+}
+
 export interface StartFields {
   kind: ImportKind
   /** Notebook time, YYYY-MM-DD HH:MM — the date decides the day folder */
   when: string
   category: 'Professional' | 'Personal'
   journalType: string | null
+  /** Start over: forget the earlier run's record */
+  fresh: boolean
 }
 
 /** The step a command says it is on, in its own words. */
@@ -63,6 +73,10 @@ export interface ImportJob {
   calendar: CalendarMatch | null
   /** The when sky proposes, from the file's time and length */
   suggestedWhen: string
+  /** The pipeline's record key for the file, from its bytes at upload; null when the host keeps none */
+  runKey: string | null
+  /** The earlier run to pick up, when there is one */
+  resume: Resume | null
   fields: StartFields | null
   state: ImportState
   /** The steps the command announced for this run, in the words a person reads */

@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import {
   ArgOrFlag,
   categoryComplete,
@@ -36,6 +37,7 @@ const params = {
   category: categoryComplete(),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-notes tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
+  fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
 }
 
 // `kind` is the noun the enrichment prompts use for what they are labeling.
@@ -57,6 +59,8 @@ export default class NotesNewTask extends Command {
     let body = ''
     let rel: string[] | undefined
     let attachmentFiles: string[] = []
+    /** The pipeline's run record, forgotten once the note is filed */
+    let runKey: string | null = null
 
     const useAudioPipeline = fromAudio !== undefined
     const useImagePipeline = fromImage !== undefined
@@ -70,6 +74,7 @@ export default class NotesNewTask extends Command {
     if (useAudioPipeline) {
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromAudio,
+        fresh: args.fresh,
         summaryPrompt: new URL('./prompts/audio-summary.prompt.md', import.meta.url).pathname,
         extractPrompt: new URL('./prompts/audio-extract.prompt.md', import.meta.url).pathname,
       })
@@ -78,6 +83,7 @@ export default class NotesNewTask extends Command {
       }
 
       const data = summaryResult.data
+      runKey = data.run
       if (!summary) summary = data.title
       const merged = Array.from(new Set([...data.who, ...data.rel]))
       if (merged.length > 0) rel = merged
@@ -209,6 +215,8 @@ export default class NotesNewTask extends Command {
       openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
     }
     await delay(500)
+
+    if (runKey) await clearTranscriptRun(runKey)
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 

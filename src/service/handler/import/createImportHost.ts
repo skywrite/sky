@@ -10,6 +10,7 @@ import { readFile, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { transcribeWithOpenAI } from '#commands/all/audio/transcript/lib/transcribe.ts'
+import { peekTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import { runCommand, type RunEvent } from '#commands/lib/core/runCommand.ts'
@@ -161,6 +162,14 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     }
   }
 
+  // The pipeline's run record for the file — what an earlier run of the same
+  // bytes left to pick up. Keyed at upload, so a run that has since moved the
+  // file into the attachments is still found by its key.
+  const record: ImportRoutesOptions['record'] = async ({ path: filePath, key }) => {
+    const runKey = key ?? (await sha256Of(filePath))
+    return { key: runKey, resume: await peekTranscriptRun(runKey) }
+  }
+
   const run = async function* (
     job: ImportJob,
     filePath: string,
@@ -171,6 +180,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     const when = PlainDateTime.fromString(fields.when)
     const category = `${fields.category} Complete`
     const audio = job.readback.source === 'audio'
+    const { fresh } = fields
 
     let command: string
     let args: Record<string, unknown>
@@ -185,23 +195,25 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
               : { fromVoiceMemo: filePath }),
           category,
           when,
+          fresh,
+          run: job.runKey ?? undefined,
         }
         break
       case 'journal':
         command = 'journal:new'
-        args = { fromAudio: filePath, types: [fields.journalType], when }
+        args = { fromAudio: filePath, types: [fields.journalType], when, fresh }
         break
       case 'note':
         command = 'notes:new'
-        args = { fromAudio: filePath, category, when }
+        args = { fromAudio: filePath, category, when, fresh }
         break
       case 'message':
         command = 'message:new'
-        args = { fromAudio: filePath, category, when }
+        args = { fromAudio: filePath, category, when, fresh }
         break
       case 'event':
         command = 'event:new'
-        args = { fromAudio: filePath, category, when }
+        args = { fromAudio: filePath, category, when, fresh }
         break
     }
     if (!audio && fields.kind !== 'meeting') return { ok: false, message: 'only a recording can be filed that way' }
@@ -223,6 +235,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     suggestWhen,
     listen,
     calendar,
+    record,
     run,
     journalTypes: [...JournalTypes],
   }

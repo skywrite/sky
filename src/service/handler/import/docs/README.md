@@ -26,7 +26,8 @@ the terminal runs it. Everything the job says travels as server-sent events.
   an answer comes back.
 - `mod.ts` — the routes, over a host of seams so tests script the world.
 - `createImportHost.ts` — the production host: the door commands run
-  in-process through `CommandService`; the first minute of a recording is
+  in-process through `CommandService`; the pipeline's run record is keyed
+  at upload and read back when a stopped job is opened again; the first minute of a recording is
   heard through the pipeline's own transcription call and a small model
   names the kind; the day's calendar is read the way the meeting check
   reads it.
@@ -52,6 +53,14 @@ the names review (`form`), the write-up corrections (`text`, in a loop),
 and the action items (`multiselect`). They arrive as `prompt` events and
 are answered through `POST /import/:id/answer`.
 
+A run that stops — a failure, a cancel, a restart — leaves the pipeline's
+run record behind, keyed by the file's bytes at upload. Opening the job
+again shows what it would pick up at ("Picks up where the run from Today
+0:06 stopped, at Checking the write-up") with *Start over* beside it, and
+Start runs the same command, which reads the record on its own. The
+record itself is the transcript pipeline's: see
+`commands/all/audio/transcript/docs/README.md`.
+
 ## Routes
 
 | Route | Does |
@@ -60,7 +69,7 @@ are answered through `POST /import/:id/answer`.
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, category?, journalType?}` — runs the door command |
+| `POST /import/:id/start` | `{kind, when, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 

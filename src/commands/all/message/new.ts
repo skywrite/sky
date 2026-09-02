@@ -2,6 +2,7 @@ import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import colors from 'picocolors'
+import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import {
   ArgOrFlag,
@@ -67,6 +68,7 @@ const params = {
   aiContext: Flag.string('Additional context for AI image extraction', { optional: true }),
   when: whenNBTime(),
   category: categoryComplete(),
+  fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -86,17 +88,24 @@ export default class MessageNewTask extends Command {
     let body: string | undefined
     let attachmentFiles: string[] = []
     let audioRel: string[] | undefined
+    /** The pipeline's run record, forgotten once the message is filed */
+    let runKey: string | null = null
 
     // --from-audio pipeline: transcribe → clean → summarize (via audio:transcript:summary)
     const useAudioPipeline = fromAudio !== undefined
 
     if (useAudioPipeline) {
-      const summaryResult = await tasks.run('audio:transcript:summary', { fromAudio, template: 'audio-message' })
+      const summaryResult = await tasks.run('audio:transcript:summary', {
+        fromAudio,
+        template: 'audio-message',
+        fresh: args.fresh,
+      })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)
       }
 
       const data = summaryResult.data
+      runKey = data.run
 
       // Apply extracted metadata (summary already prompted for corrections)
       if (!from) from = data.from || (data.who.length > 0 ? data.who[0] : undefined)
@@ -462,6 +471,8 @@ export default class MessageNewTask extends Command {
     if (context.platform === CommandPlatform.Console) {
       await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
     }
+
+    if (runKey) await clearTranscriptRun(runKey)
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 
