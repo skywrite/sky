@@ -23,8 +23,8 @@ export interface ThreadSettings {
   documents: number | null
 }
 
-/** Budgets to choose from; the thread's own joins them when it is none of these. */
-const STOPS = [100_000, 150_000, 300_000, 500_000]
+/** Budgets to choose from, nothing first; the thread's own joins them when it is none of these. */
+const STOPS = [0, 100_000, 150_000, 300_000, 500_000]
 
 /** `300000` → `300k` — the strip and the stops speak in thousands. */
 export function thousands(n: number): string {
@@ -121,7 +121,11 @@ export function ModelControl({ chat }: { chat: Chat }) {
   )
 }
 
-/** How much sky reads before answering — the token ceiling on the assembled context, in stops. */
+/**
+ * How much sky reads before answering — the token ceiling on the assembled
+ * context, in stops. Nothing keeps the notebook closed: sky answers from the
+ * conversation and its tools until a budget opens it again.
+ */
 export function BudgetControl({ chat }: { chat: Chat }) {
   const { state, setContextTokens } = chat
   const [open, setOpen] = useState(false)
@@ -145,7 +149,7 @@ export function BudgetControl({ chat }: { chat: Chat }) {
           onClick={() => setOpen((o) => !o)}
           aria-label="Reading budget"
         >
-          Reads up to {thousands(tokens)}
+          {tokens === 0 ? 'Reads nothing' : `Reads up to ${thousands(tokens)}`}
           <Caret />
         </button>
       </Popover.Target>
@@ -155,11 +159,12 @@ export function BudgetControl({ chat }: { chat: Chat }) {
           fullWidth
           value={String(tokens)}
           onChange={(value) => void setContextTokens(Number(value))}
-          data={stops.map((stop) => ({ value: String(stop), label: thousands(stop) }))}
+          data={stops.map((stop) => ({ value: String(stop), label: stop === 0 ? 'Nothing' : thousands(stop) }))}
         />
         <p className="sky-ctl-note">
-          {thousands(tokens)} tokens is about {pages(tokens)} pages.{fit} A smaller budget answers faster; a larger one
-          reaches further back.
+          {tokens === 0
+            ? 'Your notebook stays closed: sky answers from this conversation and the tools it calls. Pick a budget to open it again.'
+            : `${thousands(tokens)} tokens is about ${pages(tokens)} pages.${fit} A smaller budget answers faster; a larger one reaches further back.`}
         </p>
         <div className="sky-ctl-foot">Applies from your next message.</div>
       </Popover.Dropdown>

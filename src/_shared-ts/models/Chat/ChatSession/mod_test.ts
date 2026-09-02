@@ -193,6 +193,70 @@ test('ChatSession.send - later turns evolve rather than gather', async () => {
   })
 })
 
+test('ChatSession - a zero budget reads nothing, and a budget after it gathers at the next message', async () => {
+  const { session, events, producerCalls } = await makeSession({
+    contextTokens: 0,
+    invokeModel: scriptedModel([['A.'], ['B.'], ['C.']]).invokeModel,
+  })
+  const started = await session.start()
+  assert({
+    given: 'a session started with no reading budget',
+    should: 'gather no baseline and report the notebook closed',
+    actual: { started, paths: session.paths, initial: producerCalls.initial },
+    expected: { started: { closed: true }, paths: [], initial: 0 },
+  })
+
+  await session.send('What should I focus on?')
+  await session.send('And after that?')
+  assert({
+    given: 'two messages under the zero budget',
+    should:
+      'run the model with no gathering, no rebuild, and no producer call; each turn logs as closed with nothing kept',
+    actual: {
+      events: types(events),
+      producerCalls,
+      kept: session.kept,
+      log: session.contextLog.map((e) => [e.turn, e.stats?.budget, e.stats?.kept]),
+    },
+    expected: {
+      events: ['tools', 'model-start', 'text-delta', 'turn-complete', 'model-start', 'text-delta', 'turn-complete'],
+      producerCalls: { initial: 0, evolve: 0 },
+      kept: 0,
+      log: [
+        [1, 0, 0],
+        [2, 0, 0],
+      ],
+    },
+  })
+
+  const before = events.length
+  const reassembled = session.setContextTokens(5000)
+  await session.send('Now with my notebook.')
+  assert({
+    given: 'a budget set after the closed turns',
+    should:
+      'reassemble nothing yet, then gather the baseline and run the first gathering turn at the next message, recording the universe on it',
+    actual: {
+      reassembled,
+      thirdTurn: types(events.slice(before)),
+      producerCalls,
+      paths: [...session.paths].sort(),
+      log: session.contextLog.map((e) => [e.turn, e.stats?.budget, e.universe !== undefined]),
+    },
+    expected: {
+      reassembled: null,
+      thirdTurn: ['context-gathering', 'context-rebuilt', 'model-start', 'text-delta', 'turn-complete'],
+      producerCalls: { initial: 1, evolve: 0 },
+      paths: [FIX.day, FIX.goal, FIX.roadmap].sort(),
+      log: [
+        [1, 0, false],
+        [2, 0, false],
+        [3, 5000, true],
+      ],
+    },
+  })
+})
+
 test('ChatSession.send - a failed model turn is reported, logged, and survived', async () => {
   const { session, events, errors, tmp } = await makeSession({
     invokeModel: () => Promise.reject(new Error('overloaded')),

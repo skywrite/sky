@@ -24,7 +24,7 @@ import { timelineOf } from './timeline.ts'
 export interface ThreadPrefs {
   /** Model profile name */
   profile?: string
-  /** Token budget for the assembled document context */
+  /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens?: number
 }
 
@@ -75,6 +75,7 @@ export interface ModelChoice {
 /** How a thread is tuned: the model it thinks with and the reading budget. */
 export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
+  /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens: number
   /** How many documents the model sees as the context stands; null before any turn */
   kept: number | null
@@ -346,7 +347,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           if (!thread.started) {
             await thread.session.start()
             thread.started = true
-            frame('session-started', { documents: thread.session.paths.length })
+            frame('session-started', {
+              documents: thread.session.paths.length,
+              closed: thread.session.contextTokens === 0,
+            })
           }
           const turn = await thread.session.send(message)
           thread.state = turn.error ? 'failed' : 'done'
@@ -441,7 +445,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
 
   // Tune a thread: the model it thinks with, the reading budget. A live
   // thread changes between turns — a new budget reassembles its context at
-  // once; a thread not yet built keeps the choice for when it is.
+  // once; a thread not yet built keeps the choice for when it is. A budget
+  // of zero keeps the notebook closed: nothing read, nothing queried, until
+  // a budget opens it again.
   app.post('/:id/settings', async (c) => {
     const id = c.req.param('id')
     const host = options.settings
@@ -453,8 +459,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return c.json({ message: 'expected { profile?: name, contextTokens?: count }' }, 400)
     }
     if (profile !== undefined && typeof profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
-    if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens > 0)) {
-      return c.json({ message: 'contextTokens must be a positive whole number' }, 400)
+    if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens >= 0)) {
+      return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
     }
     let chosen: ReturnType<ChatSettingsHost['resolve']> | undefined
     if (typeof profile === 'string') {
@@ -487,7 +493,17 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const thread = threads.get(c.req.param('id'))
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     const context = contextOf(thread)
-    if (!context) return c.json({ message: 'no context yet — the first message builds it' }, 404)
+    if (!context) {
+      const closed = thread.session.contextTokens === 0
+      return c.json(
+        {
+          message: closed
+            ? 'Not reading your notebook for this thread.'
+            : 'No context yet — the first message builds it.',
+        },
+        404,
+      )
+    }
     return c.json(context)
   })
 

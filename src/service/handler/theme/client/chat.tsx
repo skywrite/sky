@@ -216,7 +216,12 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       return {
         ...state,
         phase: 'busy',
-        gather: state.turns.length === 0 ? 'reading your notebook' : null,
+        gather:
+          state.turns.length === 0
+            ? state.settings?.contextTokens === 0
+              ? 'not reading your notebook'
+              : 'reading your notebook'
+            : null,
         provenance: null,
         turns: [...state.turns, { role: 'user', content: action.content, time: clock() }],
       }
@@ -520,7 +525,7 @@ export function useChat(id: string) {
               dispatch({
                 id,
                 type: 'gather',
-                text: `reading your notebook · ${d.documents} files`,
+                text: d.closed ? 'not reading your notebook' : `reading your notebook · ${d.documents} files`,
                 documents: d.documents as number,
               })
               break
@@ -881,7 +886,8 @@ export function Composer({
             {hints}
           </>
         )}
-        {state.documents !== null && (
+        {/* The count says what sky read; a closed notebook's control already says nothing was. */}
+        {state.documents !== null && state.settings?.contextTokens !== 0 && (
           <>
             <span className="sky-hint">·</span>
             <span>{state.documents} files in context</span>

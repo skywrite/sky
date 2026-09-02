@@ -46,7 +46,7 @@ export interface ToolCall {
 export interface TimelineEntry {
   turn: number
   when: string | null
-  kind: 'seed' | 'grew' | 'same' | 'failed'
+  kind: 'seed' | 'grew' | 'same' | 'closed' | 'failed'
   searches: number
   stats?: TurnStats
   found?: number
@@ -83,9 +83,8 @@ export function useThreadContext(id: string, version: number, open: boolean) {
           setNote(null)
         } else {
           setContext(null)
-          setNote(
-            r.status === 404 ? 'No context yet — the first message builds it.' : `The service answered ${r.status}.`,
-          )
+          const body = (await r.json().catch(() => ({}))) as { message?: string }
+          setNote(body.message ?? `The service answered ${r.status}.`)
         }
       })
       .catch(() => alive && setNote("Couldn't reach sky — is the service running?"))
@@ -190,6 +189,11 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
       title = 'Nothing new'
       tone = 'quiet'
       if (stats) line = `Same ${stats.kept} files`
+      break
+    case 'closed':
+      title = 'Notebook closed'
+      tone = 'quiet'
+      line = 'Nothing read'
       break
     case 'failed':
       title = "Couldn't gather"

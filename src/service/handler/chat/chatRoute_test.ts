@@ -525,14 +525,14 @@ test(
 test({ name: 'chat route - settings refuse what the host cannot take' }, async () => {
   const app = appWith(await testHost())
   const unknown = await post(app, 'http://localhost/chat/s2/settings', { profile: 'nope' })
-  const zero = await post(app, 'http://localhost/chat/s2/settings', { contextTokens: 0 })
+  const negative = await post(app, 'http://localhost/chat/s2/settings', { contextTokens: -1 })
   const text = await post(app, 'http://localhost/chat/s2/settings', { contextTokens: '5k' })
   const empty = await post(app, 'http://localhost/chat/s2/settings', {})
   const kept = await getJson(app, 'http://localhost/chat/s2/settings')
   assert({
-    given: 'an unknown model, a zero budget, a budget that is not a number, and nothing at all',
+    given: 'an unknown model, a negative budget, a budget that is not a number, and nothing at all',
     should: 'refuse each and leave the defaults standing',
-    actual: [unknown.status, zero.status, text.status, empty.status, kept.model.current, kept.contextTokens],
+    actual: [unknown.status, negative.status, text.status, empty.status, kept.model.current, kept.contextTokens],
     expected: [400, 400, 400, 400, 'test-thinking', 300_000],
   })
 })
@@ -567,6 +567,71 @@ test({ name: 'chat route - a smaller budget on a live thread reassembles its con
       settingsKept: after.stats.kept,
       threadKept: after.stats.kept,
       story: ['seed'],
+    },
+  })
+})
+
+test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget opens it again' }, async () => {
+  const app = appWith(await testHost())
+  const closed = await post(app, 'http://localhost/chat/s4/settings', { contextTokens: 0 })
+  const first = parseSSE(
+    await (await post(app, 'http://localhost/chat/s4/messages', { message: 'Draft a note.' })).text(),
+  )
+  const noContext = await app.request('http://localhost/chat/s4/context')
+  const settings = await getJson(app, 'http://localhost/chat/s4/settings')
+  assert({
+    given: 'a thread set to read nothing before its first message',
+    should: 'start closed, gather nothing, run the model without a rebuild, and say so where the context would be',
+    actual: {
+      status: closed.status,
+      started: first.find((f) => f.event === 'session-started')?.data,
+      events: first.map((f) => f.event),
+      contextStatus: noContext.status,
+      contextNote: ((await noContext.json()) as { message: string }).message,
+      kept: settings.kept,
+      documents: settings.documents,
+    },
+    expected: {
+      status: 200,
+      started: { documents: 0, closed: true },
+      events: ['session-started', 'tools', 'model-start', 'text-delta', 'text-delta', 'turn-complete', 'turn'],
+      contextStatus: 404,
+      contextNote: 'Not reading your notebook for this thread.',
+      kept: 0,
+      documents: null,
+    },
+  })
+
+  const opened = await post(app, 'http://localhost/chat/s4/settings', { contextTokens: 5000 })
+  const second = parseSSE(
+    await (await post(app, 'http://localhost/chat/s4/messages', { message: 'And with my notebook?' })).text(),
+  )
+  const context = await getJson(app, 'http://localhost/chat/s4/context')
+  assert({
+    given: 'a budget after the closed turn',
+    should: 'gather at the next message, and tell the story as a closed turn then the seed',
+    actual: {
+      status: opened.status,
+      events: second.map((f) => f.event),
+      story: context.log.map((e: { kind: string; turn: number }) => [e.turn, e.kind]),
+      documents: context.documents,
+    },
+    expected: {
+      status: 200,
+      events: [
+        'context-gathering',
+        'context-rebuilt',
+        'model-start',
+        'text-delta',
+        'text-delta',
+        'turn-complete',
+        'turn',
+      ],
+      story: [
+        [1, 'closed'],
+        [2, 'seed'],
+      ],
+      documents: 3,
     },
   })
 })

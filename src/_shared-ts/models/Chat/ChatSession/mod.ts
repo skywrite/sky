@@ -45,6 +45,13 @@ import { type SaveChatReport, type SaveEnricher, type SaveProgress, saveChat } f
 import type { ConversationMessage } from '../type.d.ts'
 import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
 
+/**
+ * The activity block of a closed notebook, said outright: an empty block
+ * reads to the model as a notebook with nothing in it.
+ */
+const CLOSED_ACTIVITY =
+  '(Not read. The notebook is closed for this thread: the person set the reading budget to nothing. Answer from the conversation and your tools, and never describe the notebook as empty or missing.)'
+
 // -----------------------------------------------------------------------------
 // Events — the one stream a host renders
 // -----------------------------------------------------------------------------
@@ -119,10 +126,12 @@ export interface ChatSessionOptions {
   logError?: (entry: AIErrorEntry) => Promise<void>
 }
 
-/** Exactly one of the two is set: a restored context log, or a fresh baseline. */
+/** One of the three is set: a restored context log, a fresh baseline, or a closed notebook that gathered nothing. */
 export interface StartReport {
   restored?: RestoreReport
   seeded?: SeedReport
+  /** The budget was zero, so no baseline was gathered; the first message under a budget gathers it then. */
+  closed?: boolean
 }
 
 export interface TurnReport {
@@ -179,6 +188,8 @@ export default class ChatSession {
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
   private profile: { provider: string; model: string }
   private firstTurnPending = true
+  /** The baseline universe exists, gathered or restored — a closed start leaves it for the first open turn. */
+  private seeded = false
   private toolsAnnounced = false
   private newMessages = false
 
@@ -254,12 +265,22 @@ export default class ChatSession {
       const [restored, rendered] = await Promise.all([this.context.restore(resume.state), prompt])
       this.systemPrompt = rendered
       this.firstTurnPending = false
+      this.seeded = true
       this.contextPrompt = buildContextPrompt(this.opts.ambient, restored.rebuild.activityMarkdown)
       return { restored }
     }
 
+    if (this.context.budget === 0) {
+      // A closed notebook: nothing to gather. The prompt still says so, or
+      // the model would read an empty activity block as an empty life.
+      this.systemPrompt = await prompt
+      this.contextPrompt = buildContextPrompt(this.opts.ambient, CLOSED_ACTIVITY)
+      return { closed: true }
+    }
+
     const [seeded, rendered] = await Promise.all([this.context.seedBaseline(), prompt])
     this.systemPrompt = rendered
+    this.seeded = true
     return { seeded }
   }
 
@@ -291,11 +312,12 @@ export default class ChatSession {
   /**
    * Change the budget. Once a turn has built the context it is reassembled
    * at once and reported like any rebuild; before that, the first turn
-   * simply builds within the new budget.
+   * simply builds within the new budget. Zero closes the notebook from the
+   * next turn on; a budget after a closed start gathers at the next message.
    */
   setContextTokens(tokens: number): RebuildReport | null {
     this.context.setBudget(tokens)
-    return this.firstTurnPending ? null : this.reassembled()
+    return this.firstTurnPending || !this.seeded ? null : this.reassembled()
   }
 
   /**
@@ -320,7 +342,10 @@ export default class ChatSession {
 
   private reassembled(): RebuildReport {
     const report = this.context.reassemble()
-    this.contextPrompt = buildContextPrompt(this.opts.ambient, report.activityMarkdown)
+    this.contextPrompt = buildContextPrompt(
+      this.opts.ambient,
+      this.context.budget === 0 ? CLOSED_ACTIVITY : report.activityMarkdown,
+    )
     this.emit({ type: 'context-rebuilt', report })
     return report
   }
@@ -336,10 +361,19 @@ export default class ChatSession {
     // stamp should say when the message was sent, not when the model ran.
     const turnWhen = await this.stamp()
 
+    // A notebook opened after a closed start gathers its baseline now, and
+    // the turn runs as the first gathering turn.
+    if (!this.seeded && this.context.budget > 0) {
+      await this.context.seedBaseline()
+      this.seeded = true
+      this.firstTurnPending = true
+    }
+
     let context: TurnContextReport
     if (this.firstTurnPending) {
       this.firstTurnPending = false
-      this.emit({ type: 'context-gathering' })
+      // A closed notebook gathers nothing — no gathering to announce.
+      if (this.context.budget > 0) this.emit({ type: 'context-gathering' })
       context = await this.context.firstTurn(userMessage)
     } else {
       context = await this.context.evolveTurn(userMessage, this.turns.slice(-6))

@@ -131,3 +131,22 @@ test({ name: 'timeline - a cut carried through a quiet turn is not pushed out ag
     expected: { kind: 'grew', pushedOut: 0, searches: 1 },
   })
 })
+
+test({ name: 'timeline - a closed turn reads nothing; the seed can follow it' }, () => {
+  const [closed, seed] = timelineOf(
+    [
+      { turn: 1, queries: [], stats: { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: 0 } },
+      { ...LOG[0]!, turn: 2 },
+    ],
+    TURNS,
+  )
+  assert({
+    given: 'a zero-budget turn before the first gathering turn',
+    should: 'read as closed with nothing added or pushed out, and leave the seed to count what it found',
+    actual: {
+      closed: [closed?.kind, closed?.when, closed?.added.length, closed?.pushedOut.length],
+      seed: [seed?.kind, seed?.when, seed?.found],
+    },
+    expected: { closed: ['closed', '09:12', 0, 0], seed: ['seed', '09:14', 4] },
+  })
+})

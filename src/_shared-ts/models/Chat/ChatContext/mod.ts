@@ -283,6 +283,7 @@ export default class ChatContext {
   }
 
   /** Change the budget. It governs the next rebuild; reassemble() applies it at once. */
+  /** Zero closes the notebook: turns read nothing and query nothing until a budget opens it again. */
   setBudget(tokens: number): void {
     this.maxTokens = tokens
   }
@@ -469,11 +470,16 @@ export default class ChatContext {
   // Turns
   // ---------------------------------------------------------------------------
 
-  /** Turn 1: produce the initial query from the question and merge its results. */
+  /**
+   * The first gathering turn: produce the initial query from the question
+   * and merge its results. Turn 1 of a session that read from the start;
+   * a later turn when the notebook opened after closed turns, which count.
+   */
   async firstTurn(userMessage: string): Promise<TurnContextReport> {
-    this.turnNumber = 1
+    this.turnNumber++
     this.turnErrors = []
     this.turnTruncations = []
+    if (this.maxTokens === 0) return this.closedTurn()
 
     let newPaths: string[] | undefined
     try {
@@ -537,6 +543,7 @@ export default class ChatContext {
     this.turnNumber++
     this.turnErrors = []
     this.turnTruncations = []
+    if (this.maxTokens === 0) return this.closedTurn()
 
     let rebuilt: RebuildReport | undefined
     try {
@@ -624,6 +631,21 @@ export default class ChatContext {
 
     this.ensureErrorEntry()
     return { rebuilt, errors: [...this.turnErrors] }
+  }
+
+  /**
+   * A turn under a zero budget: the notebook is closed, so nothing is read
+   * and nothing is queried. The turn still logs — zero kept under a zero
+   * budget is how the story tells a closed turn from a recording gap — and
+   * the last open assembly stays as it was for when the budget returns.
+   */
+  private closedTurn(): TurnContextReport {
+    this.contextLog.push({
+      turn: this.turnNumber,
+      queries: [...this.queries],
+      stats: { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: 0 },
+    })
+    return { errors: [] }
   }
 
   /**
@@ -891,9 +913,11 @@ export default class ChatContext {
     if (record) {
       const entry: ContextTurnLog = { turn: this.turnNumber, queries: [...this.queries] }
       if (turnStats) entry.stats = turnStats
-      if (this.turnNumber === 1) {
-        // The full universe, shipped and cut alike — cut docs carry their
-        // reason inline, so turn 1 needs no separate pruned section.
+      if (!this.contextLog.some((e) => e.universe)) {
+        // The first assembly records the full universe, shipped and cut
+        // alike — cut docs carry their reason inline, so it needs no
+        // separate pruned section. Turn 1 as a rule; a later turn when the
+        // notebook opened after closed turns.
         entry.universe = this.contextPaths
           .map((p) => docRecords.get(p) ?? { path: this.relPath(p), tokens: 0 })
           .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))

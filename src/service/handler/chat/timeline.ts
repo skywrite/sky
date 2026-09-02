@@ -19,10 +19,11 @@ import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 
 /**
  * What a turn did to the context: `seed` gathered the baseline, `grew`
- * ran new queries and reassembled, `same` reused the last assembly, and
- * `failed` recorded errors and no assembly.
+ * ran new queries and reassembled, `same` reused the last assembly,
+ * `closed` read nothing under a zero budget, and `failed` recorded errors
+ * and no assembly.
  */
-export type TimelineKind = 'seed' | 'grew' | 'same' | 'failed'
+export type TimelineKind = 'seed' | 'grew' | 'same' | 'closed' | 'failed'
 
 export interface TimelineEntry {
   turn: number
@@ -48,6 +49,7 @@ function byBudget(rec: ContextDocRecord): boolean {
 }
 
 function kindOf(entry: ContextTurnLog): TimelineKind {
+  if (entry.stats?.budget === 0) return 'closed'
   if (entry.universe) return 'seed'
   if (entry.stats?.reused) return 'same'
   if (entry.stats) return 'grew'

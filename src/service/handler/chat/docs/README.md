@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -25,7 +25,17 @@ a person can see and touch:
   `POST /chat/:id/settings` with `{ profile?, contextTokens? }` changes it:
   a live thread swaps the model for its next turn and reassembles its
   context under a new budget at once; a thread not yet built keeps the
-  choice for when its first message builds it.
+  choice for when its first message builds it. The first stop is
+  **Nothing** (`contextTokens: 0`): the notebook stays closed. No baseline
+  is gathered, no question is turned into queries, the model answers
+  from the conversation and the tools it calls, and the context prompt
+  says so outright rather than showing an empty activity block. The
+  gather line reads "not reading your notebook", the files count leaves
+  the strip, the Context panel says the notebook is closed, and each turn
+  enters the story as "Notebook closed". A budget chosen later opens it:
+  the next message gathers the baseline and runs as the first gathering
+  turn, whose entry records the universe. The rule lives in the context
+  model, so the terminal inherits it the day it offers the same stop.
 - **The context, turn by turn.** The Context panel opens with the story:
   the notebook read at the start (files found, how many fit),
   what a later question brought in, what the budget pushed out to make
@@ -79,8 +89,22 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 - The count shown anywhere is the latest assembly's. A pin, a drop, or a
   new budget reassembles between turns without a log entry, so the routes
   read the last rebuild report before the log.
+- A closed turn still logs: zero kept under a zero budget is how the story
+  tells "read nothing on purpose" from a recording gap. It is not the
+  terminal's `/no-context`, which drops the universe but lets later
+  questions query; Nothing queries nothing.
 
 ## Verified
+
+- 2026-09-02 — Reads nothing: a session started at zero gathers no
+  baseline and reports itself closed; two closed turns call no producer
+  and log as closed with nothing kept; a budget after them reassembles
+  nothing yet and the next message gathers, running as the first
+  gathering turn with the universe on its entry (session test). The route
+  accepts zero and refuses a negative budget; a closed thread's stream
+  carries `closed` on the start frame and no rebuild, its context route
+  answers 404 with the closed note, and after a budget the story reads
+  closed then seed (route test); the story kind itself (timeline test).
 
 - 2026-09-01 — approval route tests: a scripted model asks to post to
   Slack; the thread holds the call with its card and shows `waiting`; a
