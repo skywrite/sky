@@ -15,7 +15,9 @@ import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
-import { attachmentCandidates, storeAttachment } from './attachments/mod.ts'
+import type { KeepOptions } from './attachments/keep.ts'
+import { attachmentCandidates } from './attachments/mod.ts'
+import { createAttachmentRoutes } from './attachments/routes.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
@@ -23,6 +25,7 @@ import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
 import {
+  decodeRoutePath,
   exportMarkdownPreviewPdf,
   MarkdownSaveConflictError,
   readMarkdownContent,
@@ -72,6 +75,8 @@ export interface HttpHandlerOptions {
   imports?: ImportRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
   userDataDir: string
+  /** Where a file's original is looked for before its bytes are copied in: the Desktop and Downloads, then Spotlight, unless said */
+  keep?: KeepOptions
 }
 
 /**
@@ -91,6 +96,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     clock,
     imports,
     userDataDir,
+    keep,
   } = options
 
   const app = new Hono()
@@ -347,23 +353,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.json({ message: 'File not found' }, 404)
   })
 
-  // A file pasted or dropped into a document (CLP-16): the bytes are stored beside the document —
-  // a day document's in the day's attachments — and the name the copy carries comes back.
-  app.put('/docs/_api/attach/*', async (c) => {
-    const fileParam = decodeRoutePath(c.req.url, '/docs/_api/attach/')
-    const previewRequest = resolveMarkdownPreviewRequest(fileParam, undefined, markdownBaseDir, markdownDirs)
-    if (!previewRequest.ok) return c.json({ message: previewRequest.message }, previewRequest.status)
-    const name = c.req.query('name')?.trim()
-    if (!name) return c.json({ message: 'Missing file name' }, 400)
-    const data = new Uint8Array(await c.req.arrayBuffer())
-    if (data.byteLength === 0) return c.json({ message: 'Empty file' }, 400)
-    try {
-      const stored = await storeAttachment({ userDataDir, relativePath: previewRequest.value.relativePath, name, data })
-      return c.json(stored)
-    } catch (err) {
-      return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
-    }
-  })
+  // A file kept beside a document (CLP-16) — pasted into the editor, or added from the rail: the
+  // bytes as a copy, or the original moved in when this Mac has it.
+  app.route('/', createAttachmentRoutes({ markdownBaseDir, markdownDirs, userDataDir, keep }))
 
   app.put('/docs/_api/content/*', async (c) => {
     const fileParam = decodeRoutePath(c.req.url, '/docs/_api/content/')
@@ -564,12 +556,6 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   })
 
   return app
-}
-
-function decodeRoutePath(url: string, prefix: string): string | undefined {
-  const pathname = new URL(url).pathname
-  const routePath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : ''
-  return routePath.length > 0 ? routePath.split('/').map(decodeURIComponent).join('/') : undefined
 }
 
 const CONTENT_TYPES: Record<string, string> = {

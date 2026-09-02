@@ -32,6 +32,8 @@ export interface WysiwygE2eFixture {
   relativePath: string
   /** The user-data directory the app was given: day attachments and the media mirror land here. */
   userDataDir: string
+  /** Stands in for Downloads: the look for a dropped file's original checks here, and nowhere else. */
+  downloads: string
   /** Uncaught page errors and console errors so far — an assertion can demand none. */
   errors: string[]
 }
@@ -94,7 +96,9 @@ export async function runWysiwygE2e(
     const relativePath = options.file ?? 'notes/preview.md'
     const file = path.join(notebookBaseDir, relativePath)
     const userDataDir = path.join(notebookBaseDir, 'user-data')
+    const downloads = path.join(notebookBaseDir, 'Downloads')
     await mkdir(path.dirname(file), { recursive: true })
+    await mkdir(downloads)
     await writeFile(file, options.initialMarkdown)
     const roots = new Set([relativePath.split('/')[0]!])
     for (const [extra, content] of Object.entries(options.files ?? {})) {
@@ -117,7 +121,7 @@ export async function runWysiwygE2e(
     }
     const app = createTestHttpApp(
       [...roots].map((root) => path.join(notebookBaseDir, root)),
-      { userDataDir, markdownStore },
+      { userDataDir, markdownStore, keep: { searchDirs: [downloads], spotlight: false } },
     )
     browser = await launchChromiumOrSkip(t)
     server = startAppServer(app)
@@ -128,7 +132,7 @@ export async function runWysiwygE2e(
       if (message.type() === 'error' && !message.text().includes('404')) errors.push(`console: ${message.text()}`)
     })
     try {
-      await run({ origin: server.origin, page, file, relativePath, userDataDir, errors })
+      await run({ origin: server.origin, page, file, relativePath, userDataDir, downloads, errors })
     } finally {
       if (errors.length > 0) console.error(`[e2e page errors]\n${errors.join('\n')}`)
     }

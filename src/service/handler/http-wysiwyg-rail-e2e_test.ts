@@ -2,7 +2,13 @@
 // rows in both views, chips with completion from the notebook, what links here, the outline, the
 // raw YAML behind a switch; every change one undo step on the document.
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
+import { exists } from '#shared/fs/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import dayDir from '#shared/nbfs/dayDir.ts'
 import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   modShortcut,
   openEditor,
@@ -25,6 +31,8 @@ attachments:
 ---
 `
 const DOC = `${FRONT}\n# Atlas sync\n\nHello\n\n## Decisions\n\nLaunch in September.\n`
+const DAY = new PlainDate('2026-08-05')
+const DAY_DOC = path.posix.join('time', dayDir(DAY), 'meeting_atlas-sync.md')
 const PEOPLE = {
   'people/Jane-Doe.md': '---\nname: Jane Doe\norg: Acme\ntitle: Head of Ops\n---\n\nRuns operations.\n',
   'people/Jamal-Reyes.md': '---\nname: Jamal Reyes\norg: Atlas\n---\n',
@@ -303,6 +311,115 @@ test(
             'hide the rail until Details, show it as an overlay that Esc closes, fit the phone, and stack the identity fields',
           actual: [hiddenAtFirst, overlay, phone, phoneEdit, errors],
           expected: [true, true, { overflow: false, railFits: true }, { overflow: false, stacked: true }, []],
+        })
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'rail — files join the list from the dialog: brought in from this Mac, picked from beside the document, copied, unlisted',
+    timeout: 40000,
+  },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      { initialMarkdown: DOC, tempPrefix: 'wysiwyg-rail-files-', file: DAY_DOC, files: PEOPLE, store: true },
+      async ({ page, origin, file, relativePath, userDataDir, downloads, errors }) => {
+        await page.setViewportSize({ width: 1400, height: 900 })
+        await openEditor(page, origin, relativePath)
+        await page.waitForSelector('.sky-rail:not([data-readonly]) .sky-rail-pad')
+        const chip = (name: string) =>
+          `.sky-rail .sky-prop[data-key="attachments"] a.sky-prop-chip.file[href$="/${name}"]`
+        const dialogRows = async () => {
+          await page.click('.sky-rail-choose')
+          await page.waitForSelector('.sky-attach-dialog .sky-attach-row')
+          return await page.evaluate(() =>
+            [...document.querySelectorAll('.sky-attach-row')].map((row) => [
+              row.querySelector('.sky-attach-name')?.textContent,
+              row.hasAttribute('data-listed'),
+            ]),
+          )
+        }
+        // A file the day holds that the document does not list yet.
+        const dayFilesDir = path.join(userDataDir, 'attachments', dayAttachmentsDir(DAY))
+        await mkdir(dayFilesDir, { recursive: true })
+        await writeFile(path.join(dayFilesDir, 'chart.png'), 'PNG bytes')
+        const rowsBefore = await dialogRows()
+        // Brought in from this Mac: a real file, so the browser reports its modified time and the look finds it.
+        const original = path.join(downloads, 'deck.pdf')
+        await writeFile(original, '%PDF-1.4 deck')
+        await page.setInputFiles('.sky-attach-dialog input[type="file"]', original)
+        await page.waitForSelector(chip('deck.pdf'))
+        const note = await page.textContent('.sky-rail-note span')
+        const undoOffered = await page.isVisible('.sky-rail-undo')
+        await waitForAutosave(page)
+        const afterMove = await readMarkdownFromDisk(file)
+        const movedOut = !(await exists(original))
+        // Picked from beside the document: the one the day held all along.
+        const rowsAfter = await dialogRows()
+        await page.click('.sky-attach-row:not([data-listed]) input[type="checkbox"]')
+        await page.getByRole('button', { name: 'Add', exact: true }).click()
+        await page.waitForSelector(chip('chart.png'))
+        const pickNote = await page.textContent('.sky-rail-note span')
+        await waitForAutosave(page)
+        const afterPick = await readMarkdownFromDisk(file)
+        // Bytes with no original anywhere land as a copy.
+        await page.click('.sky-rail-choose')
+        await page.waitForSelector('.sky-attach-dialog')
+        await page.setInputFiles('.sky-attach-dialog input[type="file"]', {
+          name: 'notes.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('a few notes'),
+        })
+        await page.waitForSelector(chip('notes.txt'))
+        const copyNote = await page.textContent('.sky-rail-note span')
+        await waitForAutosave(page)
+        const afterCopy = await readMarkdownFromDisk(file)
+        await page.click('.sky-rail .sky-prop[data-key="attachments"] button[aria-label="Remove deck.pdf"]')
+        await waitForAutosave(page)
+        const afterRemove = await readMarkdownFromDisk(file)
+        const listed = (files: string) => `  - { file: "report.pdf" }\n${files}`
+        const deck = '  - { file: "deck.pdf" }\n'
+        const chart = '  - { file: "chart.png" }\n'
+        const notes = '  - { file: "notes.txt" }\n'
+        assert({
+          given:
+            'the dialog over a day holding one unlisted file; a file chosen from the stand-in Downloads; that file ticked; bytes from nowhere; Remove on the moved one',
+          should:
+            'list the directory with the listed marked; move the original in and note it with Undo; add the ticked one and note it; copy the bytes; and unlist the first while its file stays',
+          actual: [
+            rowsBefore,
+            note,
+            undoOffered,
+            movedOut,
+            afterMove,
+            rowsAfter,
+            pickNote,
+            afterPick,
+            copyNote,
+            afterCopy,
+            afterRemove,
+            errors,
+          ],
+          expected: [
+            [['chart.png', false]],
+            'Moved “deck.pdf” here from Downloads',
+            true,
+            true,
+            DOC.replace(listed(''), listed(deck)),
+            [
+              ['chart.png', false],
+              ['deck.pdf', true],
+            ],
+            'Listed “chart.png”',
+            DOC.replace(listed(''), listed(deck + chart)),
+            'Kept a copy of “notes.txt” here',
+            DOC.replace(listed(''), listed(deck + chart + notes)),
+            DOC.replace(listed(''), listed(chart + notes)),
+            [],
+          ],
         })
       },
     )

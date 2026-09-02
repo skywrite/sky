@@ -6,6 +6,7 @@ export {
   saveMarkdownContent,
 } from './content.ts'
 export {
+  decodeRoutePath,
   type ResolvedPreviewRequest,
   resolveMarkdownPreviewRequest,
   isPathWithinRoot,

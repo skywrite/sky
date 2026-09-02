@@ -68,3 +68,10 @@ export function isPathWithinRoot(filePath: string, rootDir: string): boolean {
   const relative = path.relative(resolvedRoot, filePath)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
+
+/** The notebook path after a route prefix, percent-decoded per segment; undefined when nothing follows. */
+export function decodeRoutePath(url: string, prefix: string): string | undefined {
+  const pathname = new URL(url).pathname
+  const routePath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : ''
+  return routePath.length > 0 ? routePath.split('/').map(decodeURIComponent).join('/') : undefined
+}

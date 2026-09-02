@@ -10,14 +10,23 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { copyFileDedup } from '#lib/notebook/attachments.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { cleanName, createKeeper, factsOf, moveFile, moveRequestOf } from '../attachments/keep.ts'
+import {
+  cleanName,
+  createKeeper,
+  factsOf,
+  kindOf,
+  listFiles,
+  type ListedFile,
+  moveFile,
+  moveRequestOf,
+} from '../attachments/keep.ts'
 import isDay from './isDay.ts'
 
 export interface DayFilesOptions {
@@ -29,58 +38,6 @@ export interface DayFilesOptions {
   spotlight?: boolean
   /** Where a removed file goes — the Mac's Trash by default */
   trashDir?: string
-}
-
-export type FileKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'document' | 'archive' | 'file'
-
-export interface DayFile {
-  name: string
-  size: number
-  /** ISO, the file's own modified time */
-  modified: string
-  kind: FileKind
-}
-
-const KINDS: Record<string, FileKind> = {
-  '.png': 'image',
-  '.jpg': 'image',
-  '.jpeg': 'image',
-  '.gif': 'image',
-  '.webp': 'image',
-  '.heic': 'image',
-  '.svg': 'image',
-  '.m4a': 'audio',
-  '.mp3': 'audio',
-  '.wav': 'audio',
-  '.aac': 'audio',
-  '.ogg': 'audio',
-  '.flac': 'audio',
-  '.caf': 'audio',
-  '.mp4': 'video',
-  '.mov': 'video',
-  '.webm': 'video',
-  '.m4v': 'video',
-  '.pdf': 'pdf',
-  '.txt': 'text',
-  '.md': 'text',
-  '.vtt': 'text',
-  '.srt': 'text',
-  '.csv': 'text',
-  '.json': 'text',
-  '.doc': 'document',
-  '.docx': 'document',
-  '.pages': 'document',
-  '.rtf': 'document',
-  '.ppt': 'document',
-  '.pptx': 'document',
-  '.key': 'document',
-  '.xls': 'document',
-  '.xlsx': 'document',
-  '.numbers': 'document',
-  '.zip': 'archive',
-  '.gz': 'archive',
-  '.tar': 'archive',
-  '.dmg': 'archive',
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -112,10 +69,6 @@ const CONTENT_TYPES: Record<string, string> = {
   '.zip': 'application/zip',
 }
 
-export function kindOf(name: string): FileKind {
-  return KINDS[path.extname(name).toLowerCase()] ?? 'file'
-}
-
 function contentTypeOf(name: string): string {
   return CONTENT_TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream'
 }
@@ -125,25 +78,7 @@ export function dayFilesDir(userDataDir: string, ymd: string): string {
   return path.join(userDataDir, 'attachments', dayAttachmentsDir(new PlainDate(ymd)))
 }
 
-export async function listDayFiles(dir: string): Promise<DayFile[]> {
-  let entries: string[]
-  try {
-    entries = await readdir(dir)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw err
-  }
-  const files: DayFile[] = []
-  for (const name of entries) {
-    if (name.startsWith('.')) continue
-    const info = await stat(path.join(dir, name)).catch(() => null)
-    if (!info?.isFile()) continue
-    files.push({ name, size: info.size, modified: info.mtime.toISOString(), kind: kindOf(name) })
-  }
-  return files.sort((a, b) => a.name.localeCompare(b.name))
-}
-
-async function describe(dir: string, name: string): Promise<DayFile> {
+async function describe(dir: string, name: string): Promise<ListedFile> {
   const info = await stat(path.join(dir, name))
   return { name, size: info.size, modified: info.mtime.toISOString(), kind: kindOf(name) }
 }
@@ -162,7 +97,7 @@ export function createDayFilesRoutes(options: DayFilesOptions): Hono {
   app.get('/:ymd/files', async (c) => {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return badDay(c, ymd)
-    return c.json({ files: await listDayFiles(dayFilesDir(options.userDataDir, ymd)) })
+    return c.json({ files: await listFiles(dayFilesDir(options.userDataDir, ymd)) })
   })
 
   // The file itself, inline: a PDF or an image opens in the tab, anything else downloads.

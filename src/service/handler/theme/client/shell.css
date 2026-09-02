@@ -2145,6 +2145,129 @@ a.sky-thread {
   cursor: pointer;
 }
 
+/* adding a file from the rail: a pad to drop on with a chooser in it, then a note that holds Undo */
+.sky-rail-attach {
+  padding: 8px 0 2px;
+}
+
+.sky-rail-pad {
+  border: 1.5px dashed color-mix(in srgb, var(--sky-dim) 50%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--sky-dim);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.sky-rail-pad[data-over] {
+  border-color: var(--sky-blue-deep);
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-rail-pad[data-busy] {
+  border-style: solid;
+  color: var(--sky-blue-deep);
+}
+
+.sky-rail-choose,
+.sky-rail-undo {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sky-rail-problem {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--mantine-color-red-7);
+}
+
+.sky-rail-note {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--sky-dim);
+}
+
+.sky-rail-note span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* the dialog behind "choose files…": what is beside the document, and a way in from this Mac */
+.sky-attach-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0 -8px;
+}
+
+.sky-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 15.5px;
+  cursor: pointer;
+}
+
+.sky-attach-row:hover {
+  background: var(--sky-hover);
+}
+
+.sky-attach-row[data-listed] {
+  color: var(--sky-dim);
+  cursor: default;
+}
+
+.sky-attach-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-attach-empty {
+  margin: 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+.sky-attach-dialog .sky-confirm-actions > :first-child {
+  margin-right: auto;
+}
+
+/* without a pointer there is nothing to drop: the pad is the chooser */
+@media (hover: none) {
+  .sky-rail-pad {
+    border-style: solid;
+  }
+
+  .sky-rail-drop-words {
+    display: none;
+  }
+
+  .sky-rail-choose {
+    display: inline-block;
+  }
+
+  .sky-rail-choose::first-letter {
+    text-transform: uppercase;
+  }
+}
+
 .sky-backlinks,
 .sky-outline {
   list-style: none;

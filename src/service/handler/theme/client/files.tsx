@@ -1,5 +1,8 @@
 import { Button } from '@mantine/core'
 import { type DragEvent, Fragment, useEffect, useRef, useState } from 'react'
+import { type FileKind, type ListedFile, type Locate, type Located, post, sizeLabel, uploadBytes } from './keep.ts'
+
+export { sizeLabel } from './keep.ts'
 
 /**
  * A file kept with the day. A drop carries bytes, a name, a size and a
@@ -14,29 +17,8 @@ import { type DragEvent, Fragment, useEffect, useRef, useState } from 'react'
 // What the service says
 // -----------------------------------------------------------------------------
 
-export type FileKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'document' | 'archive' | 'file'
-
-export interface DayFile {
-  name: string
-  size: number
-  /** ISO */
-  modified: string
-  kind: FileKind
-}
-
-export interface Located {
-  path: string
-  /** "Desktop", "Downloads" — the folder, as a person says it */
-  where: string
-}
-
-/** What the look for the original found. */
-export interface Locate {
-  token: string
-  match: Located | null
-  ambiguous: Located[]
-  already: boolean
-}
+/** A file in the day's directory, as the service lists it. */
+export type DayFile = ListedFile
 
 /** What keeping did — the toast's words, and what Undo reverses. */
 export interface Kept {
@@ -61,52 +43,13 @@ function extOf(name: string): string {
   return dot > 0 ? name.slice(dot).toLowerCase() : ''
 }
 
-/** "3.9 MB", "12 KB" */
-export function sizeLabel(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
-
 export function dayFileHref(ymd: string, name: string): string {
   return `/day/${ymd}/files/${encodeURIComponent(name)}`
-}
-
-export async function post<T>(url: string, body: unknown): Promise<T> {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const data = (await r.json().catch(() => ({}))) as T & { message?: string }
-  if (!r.ok) throw new Error(data.message ?? `${r.status}`)
-  return data
 }
 
 /** The look for the original, from the three facts the drop carries. */
 export function locateFile(file: File, ymd: string): Promise<Locate> {
   return post<Locate>(`/day/${ymd}/files/locate`, { name: file.name, size: file.size, lastModified: file.lastModified })
-}
-
-/** The bytes PUT to a URL, with progress that is real: the one wait a copy has. The answer, parsed. */
-export function uploadBytes<T>(url: string, file: File, onProgress: (fraction: number) => void): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('PUT', url)
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded / e.total)
-    }
-    xhr.onload = () => {
-      try {
-        const body = JSON.parse(xhr.responseText) as T & { message?: string }
-        if (xhr.status >= 200 && xhr.status < 300) resolve(body)
-        else reject(new Error(body.message ?? `Upload failed (${xhr.status})`))
-      } catch {
-        reject(new Error('Upload failed'))
-      }
-    }
-    xhr.onerror = () => reject(new Error('Upload failed'))
-    xhr.send(file)
-  })
 }
 
 /** A copy into the day's files. */
@@ -151,7 +94,12 @@ export async function undoKeep(kept: Kept[]): Promise<void> {
  */
 export async function moveIn(file: File, ymd: string, onProgress: (fraction: number) => void): Promise<Kept> {
   const locate = await locateFile(file, ymd).catch(
-    (): Locate => ({ token: '', match: null, ambiguous: [], already: false }),
+    (): Locate => ({
+      token: '',
+      match: null,
+      ambiguous: [],
+      already: false,
+    }),
   )
   if (locate.already) return { ymd, name: file.name, moved: false, moveId: null, from: null, already: true }
   const path = locate.match?.path ?? locate.ambiguous[0]?.path ?? null

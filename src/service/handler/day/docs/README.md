@@ -58,8 +58,8 @@ directory is given.
 | `POST /undo` | `{moveId}` → the file goes back where it came from |
 | `POST /remove` | `{name}` → into the Trash |
 
-`files.ts` holds the routes. The look, the move and the undo live in
-`../attachments/keep.ts`, shared with a document's attachments — a file added
-from the explorer's rail lands the same way beside its document; and
-`#lib/sys/locateFile.ts` holds the look itself. Tests run against temp folders
-with Spotlight off.
+`files.ts` holds the routes. The look, the move, the undo and the directory
+listing live in `../attachments/keep.ts`, shared with a document's
+attachments — a file added from the explorer's rail lands the same way beside
+its document; and `#lib/sys/locateFile.ts` holds the look itself. Tests run
+against temp folders with Spotlight off.

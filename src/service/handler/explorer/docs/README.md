@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-02
 ---
 
 # Explorer — the notebook's files as pages
@@ -25,6 +25,13 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   editor mount. The column resolves its path as a file first, then as
   a directory, and re-reads whichever it shows every few seconds, so a
   save or a new capture from another session lands in place.
+- `theme/client/frontmatter/` — the identity line under the title and
+  the rail beside the document: tags, links, what links here, files,
+  the outline, the raw YAML behind a switch. The rail's Files section
+  lists `attachments:` and, while editing, adds to it — a pad to drop a
+  file on, or a dialog of what is beside the document to tick, with a
+  way in from this Mac; a brought-in file's original moves in when this
+  Mac has it — see `2026-09-02-add-a-file-from-the-rail.md`.
 
 ## The rules it lives by
 
@@ -61,3 +68,13 @@ after; see `2026-09-01-completion-answers-expire.md`.
 without `Temporal` — Safari, Firefox, an older Chromium — because the date
 helper behind the hint reached for it even for a full date; see
 `2026-09-01-when-row-without-temporal.md`.
+
+2026-09-02: a file could be taken off a document's list in the rail but not
+put on it. The Files section now carries a pad while editing, and a dialog
+of what is beside the document to tick, with a way in from this Mac: the
+original moves in when this Mac has it, else a copy lands; either way the
+name joins `attachments:` — see `2026-09-02-add-a-file-from-the-rail.md`.
+Route and model unit tests, and a headless run through the rail: the dialog
+listing the day's files with the listed one marked, a chosen file moved out
+of the stand-in Downloads folder and listed, a ticked one listed, bytes from
+nowhere copied and listed, Remove unlisting.

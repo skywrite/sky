@@ -5,9 +5,10 @@
  */
 
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
+import { AttachFiles } from './attach.tsx'
 import { type Backlink, fetchBacklinks } from './complete.ts'
 import { homeOf, kindOf, railSectionOf, TYPE_MARKS } from './kinds.ts'
-import { addKey, isEmptyRow } from './model.ts'
+import { addAttachment, addKey, isEmptyRow, removeAttachment } from './model.ts'
 import { AddProperty, hrefOf, PropRow, YamlFace } from './rows.tsx'
 import type { FrontmatterState } from './useFrontmatter.ts'
 
@@ -123,6 +124,8 @@ export function DocumentRail({
   const document = rowsOf('document')
   const present = new Set<string>(state.rows.map((row) => row.key))
   const readOnly = state.readOnly
+  // A file can be added while editing, as long as the front matter reads as rows to list it in.
+  const canAttach = !readOnly && !state.error
   const row = (r: (typeof state.rows)[number]) => (
     <Fragment key={r.key}>
       <PropRow
@@ -178,9 +181,17 @@ export function DocumentRail({
           ) : null}
         </Section>
       ) : null}
-      {files.length > 0 ? (
-        <Section title="Files" count={chipCount(files)}>
+      {files.length > 0 || canAttach ? (
+        <Section title="Files" count={chipCount(files) || undefined}>
           {files.map(row)}
+          {canAttach ? (
+            <AttachFiles
+              file={file}
+              listed={files.flatMap((r) => (Array.isArray(r.value) ? r.value : []))}
+              onAdd={(name) => state.update((body) => addAttachment(body, name))}
+              onRemove={(name) => state.update((body) => removeAttachment(body, name))}
+            />
+          ) : null}
         </Section>
       ) : null}
       {outline.length > 1 ? (

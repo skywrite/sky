@@ -2,8 +2,8 @@ import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists, makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { type LocateAnswer, placeFile } from '../attachments/keep.ts'
-import { createDayFilesRoutes, kindOf, listDayFiles } from './files.ts'
+import { kindOf, listFiles, type LocateAnswer, placeFile } from '../attachments/keep.ts'
+import { createDayFilesRoutes } from './files.ts'
 
 const YMD = '2026-03-05'
 const MODIFIED = new Date('2026-03-05T14:22:31.575Z')
@@ -285,7 +285,7 @@ test({ name: 'day files - kinds come from the extension' }, () => {
   })
 })
 
-test({ name: 'day files - listDayFiles sorts by name' }, async () => {
+test({ name: 'day files - listFiles sorts by name' }, async () => {
   const w = await world()
   await mkdir(w.dayDir, { recursive: true })
   await fileOn(w.dayDir, 'b.txt', 'b')
@@ -293,7 +293,7 @@ test({ name: 'day files - listDayFiles sorts by name' }, async () => {
   assert({
     given: 'two files',
     should: 'list them by name',
-    actual: (await listDayFiles(w.dayDir)).map((f) => f.name),
+    actual: (await listFiles(w.dayDir)).map((f) => f.name),
     expected: ['a.txt', 'b.txt'],
   })
 })

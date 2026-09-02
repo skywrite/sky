@@ -3,7 +3,7 @@
  * points, and one commit that writes the body back — trimmed to the block's convention.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Resolved, resolveNames } from './complete.ts'
 import { ENTITY_KINDS } from './kinds.ts'
 import { isEmptyFrontmatter, readFrontmatter, type Row } from './model.ts'
@@ -20,6 +20,8 @@ export interface FrontmatterState {
   setFocusKey: (key: string | null) => void
   /** Writes a new body; a body without keys removes the block */
   commit: (text: string) => void
+  /** Rewrites the body from its latest text, so changes made one after another each see the last */
+  update: (change: (body: string) => string) => void
   readOnly: boolean
 }
 
@@ -52,11 +54,16 @@ export function useFrontmatter(
       alive = false
     }
   }, [namesKey, file]) // eslint-disable-line react-hooks/exhaustive-deps -- names is derived from namesKey
+  // What the body is right now — a commit's text before the page has re-rendered with it.
+  const latest = useRef(body)
+  latest.current = body
   const commit = (next: string) => {
     if (!onChange) return
     // The block's text has no trailing newline; the YAML document's does.
     const trimmed = next.replace(/\n$/, '')
+    latest.current = trimmed
     onChange(isEmptyFrontmatter(trimmed) ? null : trimmed)
   }
-  return { body, rows, error: parsed.error, resolved, focusKey, setFocusKey, commit, readOnly: !onChange }
+  const update = (change: (body: string) => string) => commit(change(latest.current))
+  return { body, rows, error: parsed.error, resolved, focusKey, setFocusKey, commit, update, readOnly: !onChange }
 }

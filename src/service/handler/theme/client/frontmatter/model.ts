@@ -192,3 +192,29 @@ export function isEmptyRow(row: Row): boolean {
   if (row.children) return row.children.every(isEmptyRow)
   return Array.isArray(row.value) ? row.value.length === 0 : row.value.trim().length === 0
 }
+
+const ATTACHMENTS = 'attachments'
+
+/** The file names the attachments list holds. */
+export function attachmentNames(text: string): string[] {
+  const row = readFrontmatter(text).rows.find((r) => r.key === ATTACHMENTS)
+  return row && Array.isArray(row.value) ? row.value : []
+}
+
+/** The front matter text with a file on the attachments list — unchanged when it is there already. */
+export function addAttachment(text: string, name: string): string {
+  const names = attachmentNames(text)
+  return names.includes(name) ? text : writeValue(text, ATTACHMENTS, 'files', [...names, name])
+}
+
+/** The front matter text without a file on the attachments list. */
+export function removeAttachment(text: string, name: string): string {
+  const names = attachmentNames(text)
+  if (!names.includes(name)) return text
+  return writeValue(
+    text,
+    ATTACHMENTS,
+    'files',
+    names.filter((n) => n !== name),
+  )
+}

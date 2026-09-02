@@ -1,5 +1,15 @@
 import { assert, test } from '#test'
-import { addKey, isEmptyFrontmatter, readFrontmatter, removeKey, writeChildValue, writeValue } from './model.ts'
+import {
+  addAttachment,
+  addKey,
+  attachmentNames,
+  isEmptyFrontmatter,
+  readFrontmatter,
+  removeAttachment,
+  removeKey,
+  writeChildValue,
+  writeValue,
+} from './model.ts'
 
 const CAPTURE = `when: 2026-08-05 10:15 - 11:25
 who: Jane Doe, Sam Park
@@ -120,6 +130,34 @@ test({ name: 'frontmatter model - a change rewrites only its key, in the shape t
       'email:\n  work: new@example.com\n',
       'tags: first\n',
       'tags: a\n',
+    ],
+  })
+})
+
+test({ name: 'frontmatter model - a file joins and leaves the attachments list in the notebook shape' }, () => {
+  const added = addAttachment(CAPTURE, 'deck.pdf')
+  const fresh = addAttachment('title: Notes\n', 'chart.png')
+  const first = addAttachment('', 'chart.png')
+  assert({
+    given: 'a file added to a capture, to a block without the key, and to no block at all',
+    should: 'append a `{ file }` entry after the ones there, create the key at the end, or start the block with it',
+    actual: [
+      added,
+      attachmentNames(added),
+      fresh,
+      first,
+      addAttachment(added, 'deck.pdf') === added,
+      removeAttachment(added, 'deck.pdf') === CAPTURE,
+      removeAttachment(CAPTURE, 'nothing.pdf') === CAPTURE,
+    ],
+    expected: [
+      CAPTURE.replace('  - { file: "report.pdf" }\n', '  - { file: "report.pdf" }\n  - { file: "deck.pdf" }\n'),
+      ['report.pdf', 'deck.pdf'],
+      'title: Notes\nattachments:\n  - { file: "chart.png" }\n',
+      'attachments:\n  - { file: "chart.png" }\n',
+      true,
+      true,
+      true,
     ],
   })
 })

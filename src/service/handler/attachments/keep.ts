@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { sha256File } from '#lib/notebook/attachments.ts'
@@ -64,6 +64,82 @@ export interface Keeper {
   move(dir: string, request: MoveRequest): Promise<MoveAnswer>
   /** Back where it came from, while the move is fresh */
   undo(moveId: string): Promise<UndoAnswer>
+}
+
+export type FileKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'document' | 'archive' | 'file'
+
+/** A file in a directory, as a page lists it. */
+export interface ListedFile {
+  name: string
+  size: number
+  /** ISO, the file's own modified time */
+  modified: string
+  kind: FileKind
+}
+
+const KINDS: Record<string, FileKind> = {
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.gif': 'image',
+  '.webp': 'image',
+  '.heic': 'image',
+  '.svg': 'image',
+  '.m4a': 'audio',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.aac': 'audio',
+  '.ogg': 'audio',
+  '.flac': 'audio',
+  '.caf': 'audio',
+  '.mp4': 'video',
+  '.mov': 'video',
+  '.webm': 'video',
+  '.m4v': 'video',
+  '.pdf': 'pdf',
+  '.txt': 'text',
+  '.md': 'text',
+  '.vtt': 'text',
+  '.srt': 'text',
+  '.csv': 'text',
+  '.json': 'text',
+  '.doc': 'document',
+  '.docx': 'document',
+  '.pages': 'document',
+  '.rtf': 'document',
+  '.ppt': 'document',
+  '.pptx': 'document',
+  '.key': 'document',
+  '.xls': 'document',
+  '.xlsx': 'document',
+  '.numbers': 'document',
+  '.zip': 'archive',
+  '.gz': 'archive',
+  '.tar': 'archive',
+  '.dmg': 'archive',
+}
+
+export function kindOf(name: string): FileKind {
+  return KINDS[path.extname(name).toLowerCase()] ?? 'file'
+}
+
+/** The files of a directory by name, hidden ones left out; none when the directory is not there yet. */
+export async function listFiles(dir: string): Promise<ListedFile[]> {
+  let entries: string[]
+  try {
+    entries = await readdir(dir)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+  const files: ListedFile[] = []
+  for (const name of entries) {
+    if (name.startsWith('.')) continue
+    const info = await stat(path.join(dir, name)).catch(() => null)
+    if (!info?.isFile()) continue
+    files.push({ name, size: info.size, modified: info.mtime.toISOString(), kind: kindOf(name) })
+  }
+  return files.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const TTL_MS = 10 * 60 * 1000
