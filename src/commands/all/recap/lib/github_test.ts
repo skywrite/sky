@@ -1,10 +1,13 @@
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
+  type DiscoveredCommit,
   type GithubEvent,
   type GithubRepoActivity,
+  activeRepos,
   clampActivity,
   collectFromEvents,
+  foldCommits,
   renderGithubRecap,
 } from './github.ts'
 
@@ -12,7 +15,8 @@ const WINDOW = { start: new Date('2026-02-08T06:00:00Z'), end: new Date('2026-02
 
 test('collectFromEvents folds the event feed into per-repo activity', () => {
   const events: GithubEvent[] = [
-    { type: 'PushEvent', created_at: '2026-02-08T09:15:00Z', repo: { name: 'acme/atlas' } },
+    // Pushes say nothing about when commits were written — never tracked on their own
+    { type: 'PushEvent', created_at: '2026-02-08T09:15:00Z', repo: { name: 'acme/push-only' } },
     {
       type: 'PullRequestEvent',
       created_at: '2026-02-08T14:02:00Z',
@@ -33,7 +37,7 @@ test('collectFromEvents folds the event feed into per-repo activity', () => {
     },
     { type: 'IssueCommentEvent', created_at: '2026-02-08T11:00:00Z', repo: { name: 'acme/wallet' } },
     // Outside the window — dropped
-    { type: 'PushEvent', created_at: '2026-02-07T09:00:00Z', repo: { name: 'acme/old' } },
+    { type: 'IssueCommentEvent', created_at: '2026-02-07T09:00:00Z', repo: { name: 'acme/old' } },
     // Assignment-style PR actions are not opened/closed — dropped
     {
       type: 'PullRequestEvent',
@@ -46,8 +50,8 @@ test('collectFromEvents folds the event feed into per-repo activity', () => {
   const repos = collectFromEvents(events, WINDOW)
 
   assert({
-    given: 'events across two repos plus out-of-window noise',
-    should: 'track exactly the two repos',
+    given: 'events across two repos, a push-only repo, and out-of-window noise',
+    should: 'track exactly the two repos with PR, review, or issue activity',
     expected: ['acme/atlas', 'acme/wallet'],
     actual: [...repos.keys()].sort(),
   })
@@ -75,6 +79,87 @@ test('collectFromEvents folds the event feed into per-repo activity', () => {
     should: 'count it with its instant',
     expected: 1,
     actual: wallet?.issueEventTimes.length,
+  })
+})
+
+test('foldCommits merges both discovery sources by sha and dates each commit by the window rule', () => {
+  const repos = new Map<string, GithubRepoActivity>()
+  repos.set('acme/quiet', {
+    repo: 'acme/quiet',
+    commits: [],
+    prs: [],
+    reviews: [],
+    issueEvents: 0,
+    issueEventTimes: [],
+  })
+
+  const morning = new Date('2026-02-08T09:15:00Z')
+  const commits: DiscoveredCommit[] = [
+    // Reported by search and by the sweep — one entry, subject from the first line
+    {
+      repo: 'acme/atlas',
+      sha: 'aaaa111',
+      message: 'feat: morning\n\nlonger body',
+      authored: morning,
+      committed: morning,
+    },
+    {
+      repo: 'acme/atlas',
+      sha: 'aaaa111',
+      message: 'feat: morning\n\nlonger body',
+      authored: morning,
+      committed: morning,
+    },
+    // Written before the window, rebased in during it — dated by its committed time
+    {
+      repo: 'acme/atlas',
+      sha: 'bbbb222',
+      message: 'fix: rebased in',
+      authored: new Date('2026-02-07T20:00:00Z'),
+      committed: new Date('2026-02-08T08:00:00Z'),
+    },
+    // Both times outside the window — not this day's
+    {
+      repo: 'acme/atlas',
+      sha: 'cccc333',
+      message: 'chore: old',
+      authored: new Date('2026-02-07T10:00:00Z'),
+      committed: new Date('2026-02-07T10:00:00Z'),
+    },
+    // A fork the event feed never mentioned — the sweep found it
+    {
+      repo: 'acme/atlas-fork',
+      sha: 'dddd444',
+      message: 'feat: on the fork',
+      authored: new Date('2026-02-08T22:00:00Z'),
+      committed: null,
+    },
+  ]
+
+  foldCommits(repos, commits, WINDOW)
+
+  assert({
+    given: 'a duplicate, a rebase, an out-of-window commit, and a fork',
+    should: 'keep one dated copy of each in-window commit, sorted by instant',
+    expected: 'bbbb222@2026-02-08T08:00:00.000Z aaaa111@2026-02-08T09:15:00.000Z',
+    actual: repos
+      .get('acme/atlas')
+      ?.commits.map((c) => `${c.sha}@${c.instant.toISOString()}`)
+      .join(' '),
+  })
+
+  assert({
+    given: 'a multi-line commit message',
+    should: 'keep the first line as the subject',
+    expected: 'feat: morning',
+    actual: repos.get('acme/atlas')?.commits[1]?.subject,
+  })
+
+  assert({
+    given: 'a repo the feed never mentioned and a repo with nothing in it',
+    should: 'list the active repos only, earliest activity first',
+    expected: ['acme/atlas', 'acme/atlas-fork'],
+    actual: activeRepos(repos).map((r) => r.repo),
   })
 })
 

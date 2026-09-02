@@ -1,3 +1,4 @@
+import colors from 'picocolors'
 import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -5,7 +6,8 @@ import { isCommandAvailable } from '#lib/sys/command.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
-import { activityInstants, clampActivity, fetchGithubActivity, renderGithubRecap } from './lib/github.ts'
+import { activityInstants, clampActivity, renderGithubRecap } from './lib/github.ts'
+import { fetchGithubActivity } from './lib/githubFetch.ts'
 import findWakeCutoff, { findWakeStart } from './lib/wakeGap.ts'
 import writeRecapFile, { readRecapCuration } from './lib/writeRecapFile.ts'
 
@@ -64,10 +66,10 @@ export default class RecapGithubTask extends Command {
     // wake to wake, not day:start to day:start.
     let repos
     try {
-      repos = await fetchGithubActivity({
-        start: new Date(window.start.getTime() - WAKE_LOOKBACK_MS),
-        end: window.end,
-      })
+      repos = await fetchGithubActivity(
+        { start: new Date(window.start.getTime() - WAKE_LOOKBACK_MS), end: window.end },
+        { warn: (message) => output.log(colors.yellow(`⚠ ${message}`)) },
+      )
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to fetch GitHub activity')
     }

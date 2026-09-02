@@ -1,4 +1,3 @@
-import { runCommand } from '#lib/sys/command.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { RenderedRecap, ScanWindow } from './claudeCode.ts'
 import { dayClock, dayLabel } from './clock.ts'
@@ -45,22 +44,40 @@ export interface GithubEvent {
 }
 
 /**
- * Fold the user's event feed into per-repo activity. Pushes only mark the
- * repo as touched — commit details come from the per-repo listing, which
- * carries authored times (a batch push at 23:00 would otherwise collapse the
- * day's rhythm into one spike).
+ * A commit as a discovery source reports it, before the window rule picks
+ * its instant. Search hits and per-repo listings both map here.
+ */
+export interface DiscoveredCommit {
+  repo: string
+  sha: string
+  message: string
+  authored: Date | null
+  committed: Date | null
+}
+
+function ensureActivity(repos: Map<string, GithubRepoActivity>, repo: string): GithubRepoActivity {
+  let activity = repos.get(repo)
+  if (!activity) {
+    activity = { repo, commits: [], prs: [], reviews: [], issueEvents: 0, issueEventTimes: [] }
+    repos.set(repo, activity)
+  }
+  return activity
+}
+
+function hasActivity(activity: GithubRepoActivity): boolean {
+  return (
+    activity.commits.length > 0 || activity.prs.length > 0 || activity.reviews.length > 0 || activity.issueEvents > 0
+  )
+}
+
+/**
+ * Fold the user's event feed into per-repo activity: PRs, reviews, and
+ * issue activity. Pushes are ignored. The feed lags GitHub by hours and
+ * sometimes never catches up, and a push's time says nothing about when
+ * its commits were written. Commits arrive through foldCommits instead.
  */
 export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Map<string, GithubRepoActivity> {
   const repos = new Map<string, GithubRepoActivity>()
-
-  const ensure = (repo: string): GithubRepoActivity => {
-    let activity = repos.get(repo)
-    if (!activity) {
-      activity = { repo, commits: [], prs: [], reviews: [], issueEvents: 0, issueEventTimes: [] }
-      repos.set(repo, activity)
-    }
-    return activity
-  }
 
   for (const event of events) {
     if (!event.created_at || !event.repo?.name) continue
@@ -72,14 +89,11 @@ export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Ma
     const payload = event.payload ?? {}
 
     switch (event.type) {
-      case 'PushEvent':
-        ensure(repo)
-        break
       case 'PullRequestEvent': {
         const pr = payload.pull_request
         if (!pr?.number || payload.action === undefined) break
         if (payload.action !== 'opened' && payload.action !== 'closed') break
-        ensure(repo).prs.push({
+        ensureActivity(repos, repo).prs.push({
           number: pr.number,
           title: pr.title ?? '',
           action: payload.action === 'opened' ? 'opened' : pr.merged ? 'merged' : 'closed',
@@ -90,7 +104,7 @@ export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Ma
       case 'PullRequestReviewEvent': {
         const pr = payload.pull_request
         if (!pr?.number) break
-        ensure(repo).reviews.push({
+        ensureActivity(repos, repo).reviews.push({
           prNumber: pr.number,
           prTitle: pr.title ?? '',
           state: payload.review?.state ?? 'reviewed',
@@ -100,7 +114,7 @@ export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Ma
       }
       case 'IssuesEvent':
       case 'IssueCommentEvent': {
-        const activity = ensure(repo)
+        const activity = ensureActivity(repos, repo)
         activity.issueEvents += 1
         activity.issueEventTimes.push(instant)
         break
@@ -113,88 +127,41 @@ export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Ma
   return repos
 }
 
-async function ghJsonLines<T>(args: string[]): Promise<T[]> {
-  const result = await runCommand('gh', args)
-  if (!result.success) {
-    throw new Error(`gh ${args.slice(0, 2).join(' ')} failed: ${result.stderr.trim() || result.stdout.trim()}`)
-  }
-  return result.stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((lineText) => JSON.parse(lineText) as T)
-}
-
-export async function fetchLogin(): Promise<string> {
-  const result = await runCommand('gh', ['api', 'user', '--jq', '.login'])
-  if (!result.success) {
-    throw new Error(`gh api user failed — is gh authenticated? ${result.stderr.trim()}`)
-  }
-  return result.stdout.trim()
-}
-
-interface GithubCommitResponse {
-  sha?: string
-  commit?: {
-    message?: string
-    author?: { date?: string }
-    committer?: { date?: string }
-  }
-}
-
 /**
- * Pull the day's GitHub activity: the event feed for discovery (which repos,
- * PRs, reviews), then per-repo commit listings for authored times. A commit
- * whose authored time falls outside the window (a rebase) keeps its
- * committed time instead, so its clock stays inside the day it landed.
+ * Fold discovered commits into per-repo activity. Both sources can report
+ * the same commit; the sha dedupes it. A commit's instant is its authored
+ * time when that falls inside the window, else its committed time (a
+ * rebase landing a commit written earlier), else it is not this window's.
  */
-export async function fetchGithubActivity(window: ScanWindow): Promise<GithubRepoActivity[]> {
-  const login = await fetchLogin()
-  const events = await ghJsonLines<GithubEvent>([
-    'api',
-    '--paginate',
-    `users/${login}/events?per_page=100`,
-    '--jq',
-    '.[]',
-  ])
-  const repos = collectFromEvents(events, window)
+export function foldCommits(
+  repos: Map<string, GithubRepoActivity>,
+  commits: DiscoveredCommit[],
+  window: ScanWindow,
+): void {
+  const inWindow = (d: Date | null): d is Date => d !== null && d >= window.start && d < window.end
+  const seen = new Set<string>()
 
-  const since = window.start.toISOString()
-  const until = window.end.toISOString()
+  for (const found of commits) {
+    const instant = inWindow(found.authored) ? found.authored : inWindow(found.committed) ? found.committed : null
+    if (!instant) continue
+    const key = `${found.repo} ${found.sha}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    ensureActivity(repos, found.repo).commits.push({
+      sha: found.sha,
+      subject: found.message.split('\n')[0],
+      instant,
+    })
+  }
 
   for (const activity of repos.values()) {
-    let commits: GithubCommitResponse[]
-    try {
-      commits = await ghJsonLines<GithubCommitResponse>([
-        'api',
-        '--paginate',
-        `repos/${activity.repo}/commits?author=${login}&since=${since}&until=${until}&per_page=100`,
-        '--jq',
-        '.[]',
-      ])
-    } catch {
-      continue // repo listing can fail (deleted repo, missing scope) — keep the event-level activity
-    }
-
-    for (const response of commits) {
-      if (!response.sha || !response.commit) continue
-      const authored = response.commit.author?.date ? new Date(response.commit.author.date) : null
-      const committed = response.commit.committer?.date ? new Date(response.commit.committer.date) : null
-      const inWindow = (d: Date | null): d is Date => d !== null && d >= window.start && d < window.end
-      const instant = inWindow(authored) ? authored : inWindow(committed) ? committed : null
-      if (!instant) continue
-
-      activity.commits.push({
-        sha: response.sha,
-        subject: (response.commit.message ?? '').split('\n')[0],
-        instant,
-      })
-    }
     activity.commits.sort((a, b) => a.instant.getTime() - b.instant.getTime())
   }
+}
 
-  const active = [...repos.values()].filter(
-    (a) => a.commits.length > 0 || a.prs.length > 0 || a.reviews.length > 0 || a.issueEvents > 0,
-  )
+/** Repos with something in them, earliest activity first. */
+export function activeRepos(repos: Map<string, GithubRepoActivity>): GithubRepoActivity[] {
+  const active = [...repos.values()].filter(hasActivity)
   active.sort((a, b) => firstInstant(a) - firstInstant(b))
   return active
 }
@@ -226,7 +193,7 @@ export function clampActivity(repos: GithubRepoActivity[], start: Date, end: Dat
         issueEvents: issueEventTimes.length,
       }
     })
-    .filter((r) => r.commits.length > 0 || r.prs.length > 0 || r.reviews.length > 0 || r.issueEvents > 0)
+    .filter(hasActivity)
 }
 
 function firstInstant(activity: GithubRepoActivity): number {
