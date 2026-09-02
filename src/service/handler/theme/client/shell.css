@@ -212,6 +212,17 @@ body {
   padding: 12px 19px;
   max-width: 72%;
   font-size: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-bubble a {
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+
+.sky-bubble a:hover {
+  text-decoration: underline;
 }
 
 .sky-body {
@@ -667,6 +678,7 @@ body {
 
 .sky-rendered a {
   color: var(--sky-blue-deep);
+  overflow-wrap: anywhere;
 }
 
 /* ============ the day ============ */

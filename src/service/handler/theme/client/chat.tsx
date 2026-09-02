@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, type ThreadSettings } from './controls.tsx'
+import { splitLinks } from './links.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
@@ -942,9 +943,20 @@ export function TurnView({
   cards?: ReactNode
 }) {
   if (turn.role === 'user') {
+    // What the person typed, verbatim — an address in it is a link out.
     return (
       <div className="sky-turn sky-turn-user">
-        <div className="sky-bubble">{turn.content}</div>
+        <div className="sky-bubble">
+          {splitLinks(turn.content).map((run, i) =>
+            run.url ? (
+              <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
+                {run.text}
+              </a>
+            ) : (
+              <Fragment key={i}>{run.text}</Fragment>
+            ),
+          )}
+        </div>
       </div>
     )
   }
