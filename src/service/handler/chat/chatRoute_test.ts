@@ -10,7 +10,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
-import type { ChatRoutesOptions, ChatSessionFactory, ThreadSummary } from './mod.ts'
+import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -69,9 +69,24 @@ const stubEnricher: SaveEnricher = {
   chooseRel: async () => undefined,
 }
 
+const CHOICES = [
+  { name: 'test-thinking', label: 'Test Thinking', provider: 'Test', roles: ['Thinking'] },
+  { name: 'test-quick', label: 'Test Quick', provider: 'Test', roles: ['Quick'] },
+]
+
+const settingsHost: ChatSettingsHost = {
+  defaultModel: 'test-thinking',
+  defaultContextTokens: 300_000,
+  choices: () => CHOICES,
+  resolve: (name) => {
+    if (!CHOICES.some((c) => c.name === name)) throw new Error(`Unknown model profile: "${name}"`)
+    return { model: {} as ResolvedModel, profile: { provider: 'test', model: name } }
+  },
+}
+
 async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
-  const createSession: ChatSessionFactory = (id, onEvent) =>
+  const createSession: ChatSessionFactory = (id, onEvent, prefs) =>
     Promise.resolve(
       new ChatSession({
         today: TODAY,
@@ -79,9 +94,10 @@ async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<Chat
         days: 7,
         baseDir: BASE_DIR,
         timeDir: tmp,
+        contextTokens: prefs.contextTokens,
         resume: null,
         model: {} as ResolvedModel,
-        profile: { provider: 'claude', model: 'claude-opus-4-6' },
+        profile: { provider: 'claude', model: prefs.profile ?? 'claude-opus-4-6' },
         producers: {
           produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap] })),
           evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
@@ -99,7 +115,11 @@ async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<Chat
         logError: () => Promise.resolve(),
       }),
     )
-  return { createSession, endDefaults: { enricher: stubEnricher }, timeDir: tmp, tmp }
+  return { createSession, settings: settingsHost, endDefaults: { enricher: stubEnricher }, timeDir: tmp, tmp }
+}
+
+async function getJson(app: App, url: string): Promise<Record<string, any>> {
+  return (await (await app.request(url)).json()) as Record<string, any>
 }
 
 function appWith(host: ChatRoutesOptions) {
@@ -428,5 +448,124 @@ test({ name: 'chat route - the context can be read, and shaped by hand' }, async
       (await post(app, url, { action: 'pin', path: 'projects/Nowhere/Missing.md' })).status,
     ],
     expected: [400, 400],
+  })
+})
+
+test(
+  { name: 'chat route - settings before the first message are the defaults; a choice waits for the thread' },
+  async () => {
+    const app = appWith(await testHost())
+    const before = await getJson(app, 'http://localhost/chat/s1/settings')
+    assert({
+      given: 'a thread nobody has messaged',
+      should: 'answer the host defaults, with nothing in context yet',
+      actual: {
+        current: before.model.current,
+        fallback: before.model.default,
+        choices: before.model.choices.map((c: { name: string }) => c.name),
+        contextTokens: before.contextTokens,
+        kept: before.kept,
+        documents: before.documents,
+      },
+      expected: {
+        current: 'test-thinking',
+        fallback: 'test-thinking',
+        choices: ['test-thinking', 'test-quick'],
+        contextTokens: 300_000,
+        kept: null,
+        documents: null,
+      },
+    })
+
+    const chosen = await post(app, 'http://localhost/chat/s1/settings', { profile: 'test-quick', contextTokens: 5000 })
+    const chosenBody = (await chosen.json()) as { model: { current: string }; contextTokens: number }
+    assert({
+      given: 'a model and a budget chosen before the first message',
+      should: 'be kept for the thread',
+      actual: { status: chosen.status, current: chosenBody.model.current, contextTokens: chosenBody.contextTokens },
+      expected: { status: 200, current: 'test-quick', contextTokens: 5000 },
+    })
+
+    await (await post(app, 'http://localhost/chat/s1/messages', { message: 'What should I focus on?' })).text()
+    const after = await getJson(app, 'http://localhost/chat/s1/settings')
+    const context = await getJson(app, 'http://localhost/chat/s1/context')
+    assert({
+      given: 'the first message',
+      should: 'build the session with the chosen model and budget, which the turn log records',
+      actual: {
+        current: after.model.current,
+        contextTokens: after.contextTokens,
+        kept: after.kept,
+        documents: after.documents,
+        budget: context.stats.budget,
+        log: context.log.map((e: { kind: string; found?: number; when: string | null }) => [e.kind, e.found, e.when]),
+      },
+      expected: {
+        current: 'test-quick',
+        contextTokens: 5000,
+        kept: 3,
+        documents: 3,
+        budget: 5000,
+        log: [['seed', 3, '09:31']],
+      },
+    })
+
+    await (await post(app, 'http://localhost/chat/s1/messages', { message: 'And then?' })).text()
+    const again = await getJson(app, 'http://localhost/chat/s1/context')
+    assert({
+      given: 'a second message whose queries did not change',
+      should: 'add a quiet entry to the story',
+      actual: again.log.map((e: { kind: string }) => e.kind),
+      expected: ['seed', 'same'],
+    })
+  },
+)
+
+test({ name: 'chat route - settings refuse what the host cannot take' }, async () => {
+  const app = appWith(await testHost())
+  const unknown = await post(app, 'http://localhost/chat/s2/settings', { profile: 'nope' })
+  const zero = await post(app, 'http://localhost/chat/s2/settings', { contextTokens: 0 })
+  const text = await post(app, 'http://localhost/chat/s2/settings', { contextTokens: '5k' })
+  const empty = await post(app, 'http://localhost/chat/s2/settings', {})
+  const kept = await getJson(app, 'http://localhost/chat/s2/settings')
+  assert({
+    given: 'an unknown model, a zero budget, a budget that is not a number, and nothing at all',
+    should: 'refuse each and leave the defaults standing',
+    actual: [unknown.status, zero.status, text.status, empty.status, kept.model.current, kept.contextTokens],
+    expected: [400, 400, 400, 400, 'test-thinking', 300_000],
+  })
+})
+
+test({ name: 'chat route - a smaller budget on a live thread reassembles its context at once' }, async () => {
+  const app = appWith(await testHost())
+  await (await post(app, 'http://localhost/chat/s3/messages', { message: 'What should I focus on?' })).text()
+  const before = await getJson(app, 'http://localhost/chat/s3/context')
+  const changed = await post(app, 'http://localhost/chat/s3/settings', { contextTokens: 1 })
+  const body = (await changed.json()) as { kept: number | null }
+  const after = await getJson(app, 'http://localhost/chat/s3/context')
+  const thread = await getJson(app, 'http://localhost/chat/s3')
+  assert({
+    given: 'a budget too small for the documents in context',
+    should: 'cut what no longer fits at once, and say so wherever the count shows',
+    actual: {
+      status: changed.status,
+      keptBefore: before.stats.kept,
+      fewer: after.stats.kept < before.stats.kept,
+      budget: after.stats.budget,
+      cut: after.cut.length > 0,
+      settingsKept: body.kept,
+      threadKept: thread.kept,
+      story: after.log.map((e: { kind: string }) => e.kind),
+    },
+    expected: {
+      status: 200,
+      keptBefore: 3,
+      fewer: true,
+      budget: 1,
+      cut: true,
+      settingsKept: after.stats.kept,
+      threadKept: after.stats.kept,
+      story: ['seed'],
+    },
   })
 })

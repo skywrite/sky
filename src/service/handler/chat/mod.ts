@@ -12,16 +12,63 @@
 
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import { timelineOf } from './timeline.ts'
+
+/** What a thread is tuned with before its first message builds it. */
+export interface ThreadPrefs {
+  /** Model profile name */
+  profile?: string
+  /** Token budget for the assembled document context */
+  contextTokens?: number
+}
 
 /** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
-export type ChatSessionFactory = (id: string, onEvent: (event: ChatSessionEvent) => void) => Promise<ChatSession>
+export type ChatSessionFactory = (
+  id: string,
+  onEvent: (event: ChatSessionEvent) => void,
+  prefs: ThreadPrefs,
+) => Promise<ChatSession>
+
+/** One model a thread may think with, as the picker lists it. */
+export interface ModelChoice {
+  /** Profile name — what a thread is set to */
+  name: string
+  /** `Claude Opus 5` */
+  label: string
+  /** `Anthropic` — the picker groups by it */
+  provider: string
+  /** The roles this profile holds — `Thinking`, `Quick`, … */
+  roles: string[]
+}
+
+/** How a thread is tuned: the model it thinks with and the reading budget. */
+export interface ThreadSettings {
+  model: { current: string; default: string; choices: ModelChoice[] }
+  contextTokens: number
+  /** How many documents the model sees as the context stands; null before any turn */
+  kept: number | null
+  /** Documents in the universe, shipped and cut alike; null before any turn */
+  documents: number | null
+}
+
+/** The host's catalog and defaults behind the settings routes. */
+export interface ChatSettingsHost {
+  defaultModel: string
+  defaultContextTokens: number
+  choices(): ModelChoice[]
+  /** A choice as a session takes it; throws on a name it doesn't know */
+  resolve(name: string): { model: ResolvedModel; profile: { provider: string; model: string } }
+}
 
 export interface ChatRoutesOptions {
   createSession: ChatSessionFactory
+  /** The models to choose from and the budget's default — absent, a thread cannot be tuned */
+  settings?: ChatSettingsHost
   /** How a thread files when the client ends it — the host's saving policy */
   endDefaults?: Omit<EndOptions, 'save'>
   /** Notebook time root — the day view lists the day's saved chats from it */
@@ -65,6 +112,8 @@ interface Thread {
   updatedAt: number
   /** The last rebuild's full report — the per-document records the wire leaves out */
   context: RebuildReport | null
+  /** Model profile name the thread thinks with */
+  profile: string
 }
 
 const LINE_CHARS = 140
@@ -138,6 +187,8 @@ function wireTurn(turn: TurnReport): unknown {
 export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const threads = new Map<string, Thread>()
   const opening = new Map<string, Promise<Thread>>()
+  // Tuning chosen before a thread's first message — applied when it is built.
+  const pending = new Map<string, ThreadPrefs>()
   const app = new Hono()
   // Two threads can move within one millisecond; a counter keeps "newest
   // activity first" true where a clock would tie.
@@ -148,20 +199,25 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const open = (id: string): Promise<Thread> => {
     const existing = threads.get(id)
     if (existing) return Promise.resolve(existing)
-    let pending = opening.get(id)
-    if (!pending) {
-      pending = options
-        .createSession(id, (event) => {
-          const thread = threads.get(id)
-          if (!thread) return
-          const next = stateAfter(event)
-          if (next) thread.state = next
-          if (event.type === 'model-start') thread.partial = ''
-          if (event.type === 'text-delta') thread.partial += event.text
-          if (event.type === 'context-rebuilt') thread.context = event.report
-          thread.updatedAt = ++tick
-          thread.sink?.(event)
-        })
+    let building = opening.get(id)
+    if (!building) {
+      const prefs = pending.get(id) ?? {}
+      building = options
+        .createSession(
+          id,
+          (event) => {
+            const thread = threads.get(id)
+            if (!thread) return
+            const next = stateAfter(event)
+            if (next) thread.state = next
+            if (event.type === 'model-start') thread.partial = ''
+            if (event.type === 'text-delta') thread.partial += event.text
+            if (event.type === 'context-rebuilt') thread.context = event.report
+            thread.updatedAt = ++tick
+            thread.sink?.(event)
+          },
+          prefs,
+        )
         .then((session) => {
           const thread: Thread = {
             session,
@@ -172,15 +228,39 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             partial: '',
             updatedAt: ++tick,
             context: null,
+            profile: prefs.profile ?? options.settings?.defaultModel ?? '',
           }
           threads.set(id, thread)
+          pending.delete(id)
           return thread
         })
         .finally(() => opening.delete(id))
-      opening.set(id, pending)
+      opening.set(id, building)
     }
-    return pending
+    return building
   }
+
+  // A thread's tuning: the live thread's own, else what was chosen for it, else the host's defaults.
+  const settingsOf = (id: string): ThreadSettings | null => {
+    const host = options.settings
+    if (!host) return null
+    const thread = threads.get(id)
+    const prefs = pending.get(id)
+    return {
+      model: {
+        current: thread?.profile ?? prefs?.profile ?? host.defaultModel,
+        default: host.defaultModel,
+        choices: host.choices(),
+      },
+      contextTokens: thread?.session.contextTokens ?? prefs?.contextTokens ?? host.defaultContextTokens,
+      kept: thread ? keptOf(thread) : null,
+      documents: thread?.context?.collectionSize ?? null,
+    }
+  }
+
+  // A pin, a drop, or a new budget reassembles between turns without a log
+  // entry, so the latest assembly answers before the log does.
+  const keptOf = (thread: Thread): number | null => thread.context?.stats?.kept ?? thread.session.kept
 
   app.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
@@ -244,12 +324,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       id,
       turns: thread.session.turns,
       documents: thread.session.paths.length,
-      kept: thread.session.kept,
+      kept: keptOf(thread),
     })
   })
 
-  // What the model sees: the last rebuild's records, kept and cut. The
-  // stream carries counts only; the documents themselves are here.
+  // What the model sees: the last rebuild's records, kept and cut, and the
+  // story of how they got there, turn by turn. The stream carries counts
+  // only; the documents themselves are here.
   const contextOf = (thread: Thread) => {
     const report = thread.context
     if (!report) return null
@@ -259,8 +340,58 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       stats: report.stats ?? null,
       kept: report.kept,
       cut: report.cut,
+      log: timelineOf(thread.session.contextLog, thread.session.turns),
     }
   }
+
+  app.get('/:id/settings', (c) => {
+    const settings = settingsOf(c.req.param('id'))
+    return settings ? c.json(settings) : c.json({ message: 'this host has no settings' }, 404)
+  })
+
+  // Tune a thread: the model it thinks with, the reading budget. A live
+  // thread changes between turns — a new budget reassembles its context at
+  // once; a thread not yet built keeps the choice for when it is.
+  app.post('/:id/settings', async (c) => {
+    const id = c.req.param('id')
+    const host = options.settings
+    if (!host) return c.json({ message: 'this host has no settings' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { profile?: unknown; contextTokens?: unknown } | null
+    const profile = body?.profile
+    const tokens = body?.contextTokens
+    if (profile === undefined && tokens === undefined) {
+      return c.json({ message: 'expected { profile?: name, contextTokens?: count }' }, 400)
+    }
+    if (profile !== undefined && typeof profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
+    if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens > 0)) {
+      return c.json({ message: 'contextTokens must be a positive whole number' }, 400)
+    }
+    let chosen: ReturnType<ChatSettingsHost['resolve']> | undefined
+    if (typeof profile === 'string') {
+      try {
+        chosen = host.resolve(profile)
+      } catch (err) {
+        return c.json({ message: (err as Error).message }, 400)
+      }
+    }
+
+    const thread = threads.get(id)
+    if (thread) {
+      if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
+      if (chosen && typeof profile === 'string') {
+        thread.session.setModel(chosen.model, chosen.profile)
+        thread.profile = profile
+      }
+      if (typeof tokens === 'number') thread.session.setContextTokens(tokens)
+      thread.updatedAt = ++tick
+    } else {
+      const prefs = pending.get(id) ?? {}
+      if (typeof profile === 'string') prefs.profile = profile
+      if (typeof tokens === 'number') prefs.contextTokens = tokens
+      pending.set(id, prefs)
+    }
+    return c.json(settingsOf(id))
+  })
 
   app.get('/:id/context', (c) => {
     const thread = threads.get(c.req.param('id'))

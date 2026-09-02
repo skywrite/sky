@@ -17,6 +17,7 @@
 
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -172,12 +173,15 @@ export default class ChatSession {
   private readonly attachments = new Map<string, Attachment>()
   private systemPrompt = ''
   private contextPrompt = ''
+  /** What the transcript records — the model answering from now on, which a host may change between turns. */
+  private profile: { provider: string; model: string }
   private firstTurnPending = true
   private toolsAnnounced = false
   private newMessages = false
 
   constructor(opts: ChatSessionOptions) {
     this.opts = opts
+    this.profile = opts.profile
     this.now = opts.now ?? (async () => (await fetchNow()).plainDateTime)
     this.logError = opts.logError ?? logAIError
     this.context = new ChatContext({
@@ -203,6 +207,11 @@ export default class ChatSession {
   /** Absolute paths of the documents in the context universe. */
   get paths(): string[] {
     return this.context.paths
+  }
+
+  /** The per-turn context log so far — what the context did each turn, as the transcript will record it. */
+  get contextLog(): ContextTurnLog[] {
+    return this.context.log
   }
 
   /** How many documents the model actually saw last turn — what "in context" means to a host. Null before any turn. */
@@ -255,6 +264,35 @@ export default class ChatSession {
   clearContext(): void {
     this.firstTurnPending = false
     this.context.clear()
+  }
+
+  /** The provider and model answering from now on. */
+  get modelProfile(): { provider: string; model: string } {
+    return this.profile
+  }
+
+  /**
+   * Think with another model from the next turn on. The transcript records
+   * one model — the one answering when it is saved.
+   */
+  setModel(model: ResolvedModel, profile: { provider: string; model: string }): void {
+    this.engine.setModel(model)
+    this.profile = profile
+  }
+
+  /** The token budget the document context is assembled within. */
+  get contextTokens(): number {
+    return this.context.budget
+  }
+
+  /**
+   * Change the budget. Once a turn has built the context it is reassembled
+   * at once and reported like any rebuild; before that, the first turn
+   * simply builds within the new budget.
+   */
+  setContextTokens(tokens: number): RebuildReport | null {
+    this.context.setBudget(tokens)
+    return this.firstTurnPending ? null : this.reassembled()
   }
 
   /**
@@ -394,8 +432,8 @@ export default class ChatSession {
       day: this.opts.today,
       startTime: this.opts.startTime,
       endTime: await this.now(),
-      provider: this.opts.profile.provider,
-      model: this.opts.profile.model,
+      provider: this.profile.provider,
+      model: this.profile.model,
       externalFiles: this.externalFiles,
       attachments: [...this.attachments.values()],
       autoTag: opts.autoTag,
@@ -424,8 +462,8 @@ export default class ChatSession {
         contextLog: this.context.log,
         resume: this.opts.resume,
         startTime: this.opts.startTime,
-        provider: this.opts.profile.provider,
-        model: this.opts.profile.model,
+        provider: this.profile.provider,
+        model: this.profile.model,
         externalFiles: this.externalFiles,
         attachments: [...this.attachments.values()],
       })

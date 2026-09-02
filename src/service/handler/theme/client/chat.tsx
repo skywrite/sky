@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { ContextPanel } from './context.tsx'
+import { BudgetControl, ModelControl, type ThreadSettings } from './controls.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -66,6 +67,10 @@ export interface ThreadState {
   provenance: string | null
   /** Files in context after the last rebuild */
   documents: number | null
+  /** The model the thread thinks with and its reading budget; null until read from the service */
+  settings: ThreadSettings | null
+  /** Moves whenever the context may have changed — a rebuild, a finished turn, a new budget; the panel re-reads on it */
+  contextVersion: number
 }
 
 /**
@@ -85,6 +90,7 @@ type Action =
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
   | { type: 'ended'; id: string }
+  | { type: 'settings'; id: string; settings: ThreadSettings }
 
 function clock(): string {
   const now = new Date()
@@ -99,7 +105,17 @@ function withReply(turns: Turn[], edit: (reply: Turn) => Turn): Turn[] {
 }
 
 function initial(id: string): ThreadState {
-  return { id, turns: [], phase: 'idle', loaded: false, gather: null, provenance: null, documents: null }
+  return {
+    id,
+    turns: [],
+    phase: 'idle',
+    loaded: false,
+    gather: null,
+    provenance: null,
+    documents: null,
+    settings: null,
+    contextVersion: 0,
+  }
 }
 
 function reduce(state: ThreadState, action: Action): ThreadState {
@@ -126,6 +142,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         gather: action.text,
         provenance: action.provenance ? action.text : state.provenance,
         documents: action.documents ?? state.documents,
+        contextVersion: action.provenance ? state.contextVersion + 1 : state.contextVersion,
       }
     case 'delta': {
       const note = state.provenance ?? undefined
@@ -142,6 +159,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         phase: 'idle',
         gather: null,
+        contextVersion: state.contextVersion + 1,
         turns: withReply(state.turns, (r) => ({
           ...r,
           content: action.content,
@@ -153,6 +171,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         phase: 'idle',
         gather: null,
+        contextVersion: state.contextVersion + 1,
         turns: withReply(state.turns, (r) => ({ ...r, error: action.message })),
       }
     case 'rendered':
@@ -161,6 +180,14 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       return { ...state, phase: 'saving' }
     case 'ended':
       return { ...state, phase: 'idle' }
+    case 'settings':
+      // A new budget reassembles the context on the service; its counts come back with the settings.
+      return {
+        ...state,
+        settings: action.settings,
+        documents: action.settings.kept ?? state.documents,
+        contextVersion: state.contextVersion + 1,
+      }
   }
 }
 
@@ -256,6 +283,39 @@ export function useChat(id: string) {
       cancelled = true
     }
   }, [id])
+
+  // The thread's tuning — the host's defaults until the person changes it.
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    fetch(`/chat/${id}/settings`)
+      .then(async (response) => {
+        if (cancelled || !response.ok) return
+        dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  // Tune the thread: what comes back is the tuning as the service holds it.
+  const tune = useCallback(
+    async (change: { profile?: string; contextTokens?: number }) => {
+      if (!state.id) return
+      const id = state.id
+      const response = await fetch(`/chat/${id}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(change),
+      }).catch(() => null)
+      if (!response?.ok) return
+      dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
+    },
+    [state.id],
+  )
+  const setModel = useCallback((profile: string) => tune({ profile }), [tune])
+  const setContextTokens = useCallback((contextTokens: number) => tune({ contextTokens }), [tune])
 
   const send = useCallback(
     async (content: string) => {
@@ -399,7 +459,7 @@ export function useChat(id: string) {
 
   // The reset for a new id lands in an effect, one render late. Until then the
   // store still holds the previous thread; the caller must never see it.
-  return { state: state.id === id ? state : initial(id), send, end }
+  return { state: state.id === id ? state : initial(id), send, end, setModel, setContextTokens }
 }
 
 export type Chat = ReturnType<typeof useChat>
@@ -514,7 +574,20 @@ export function Composer({ chat, placeholder, hints }: { chat: Chat; placeholder
         </ActionIcon>
       </div>
       <div className="sky-under">
-        {hints}
+        {state.settings && (
+          <>
+            <ModelControl chat={chat} />
+            <span className="sky-hint">·</span>
+            <BudgetControl chat={chat} />
+          </>
+        )}
+        {/* The keys are worth a word before the first message; after it the tuning takes the room. */}
+        {state.turns.length === 0 && (
+          <>
+            {state.settings && <span className="sky-hint">·</span>}
+            {hints}
+          </>
+        )}
         {state.documents !== null && (
           <>
             <span className="sky-hint">·</span>
@@ -590,7 +663,15 @@ export function ChatMain({
 
           <Composer chat={chat} placeholder="Message sky…" hints={KEY_HINTS} />
         </div>
-        {panel && <ContextPanel id={state.id} turns={state.turns.length} busy={busy} onClose={() => setPanel(false)} />}
+        {panel && (
+          <ContextPanel
+            id={state.id}
+            version={state.contextVersion}
+            busy={busy}
+            live={busy ? state.gather : null}
+            onClose={() => setPanel(false)}
+          />
+        )}
       </div>
     </div>
   )

@@ -2613,3 +2613,235 @@ a.sky-thread {
 .sky-check:hover .sky-check-box[data-on='true'] {
   opacity: 0.7;
 }
+
+/* ============ thread tuning, under the composer ============ */
+.sky-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sky-text-2);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sky-ctl:hover {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+}
+
+.sky-ctl:disabled {
+  color: var(--sky-dim);
+  background: none;
+  cursor: default;
+}
+
+.sky-ctl svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
+.sky-ctl-head {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  padding: 8px 12px 2px;
+}
+
+.sky-ctl-check {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  color: var(--sky-blue-deep);
+  opacity: 0;
+}
+
+.sky-ctl-check[data-on='true'] {
+  opacity: 1;
+}
+
+.sky-ctl-title {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.sky-ctl-note {
+  font-size: 14.5px;
+  color: var(--sky-text-2);
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
+.sky-ctl-foot {
+  padding: 10px 12px 4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--sky-border-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+}
+
+.sky-chip-sm {
+  font-size: 13px;
+  padding: 2px 10px;
+}
+
+/* ============ the context's story, turn by turn ============ */
+.sky-tl-entry {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 8px 0 10px;
+}
+
+.sky-tl-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sky-tl-rail .sky-dot {
+  margin-top: 7px;
+}
+
+.sky-tl-line {
+  flex: 1;
+  width: 1px;
+  margin-top: 6px;
+  background: var(--sky-border-soft);
+}
+
+.sky-tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.sky-tl-head[data-tone='quiet'] {
+  color: var(--sky-dim);
+  font-weight: 500;
+}
+
+.sky-tl-when {
+  flex: none;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+
+.sky-tl-txt {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+}
+
+.sky-tl-sub {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--sky-dim);
+}
+
+.sky-tl-fate {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--mantine-color-red-7);
+}
+
+.sky-tl-label {
+  margin: 8px 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-tl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 15px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-tl-mark {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-tl-mark[data-k='add'] {
+  color: var(--sky-green);
+}
+
+.sky-tl-doc {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sky-tl-name {
+  flex: none;
+  max-width: 62%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-tl-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-tl-name a:hover {
+  text-decoration: underline;
+}
+
+.sky-tl-row[data-cut='true'] .sky-tl-name {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-tl-dir {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-tl-row .sky-tag {
+  margin-left: 0;
+  font-size: 12px;
+}
+
+.sky-now .sky-more {
+  margin: 0 0 0 auto;
+  padding: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}

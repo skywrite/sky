@@ -213,7 +213,7 @@ function toolInputDigest(input: unknown): string | undefined {
 // -----------------------------------------------------------------------------
 
 export default class ChatEngine {
-  private readonly model: ResolvedModel
+  private model: ResolvedModel
   private readonly approvalHandler: ApprovalHandler
   private readonly onEvent?: (event: ChatEngineEvent) => void
   private readonly maxApprovalRounds: number
@@ -230,6 +230,11 @@ export default class ChatEngine {
     this.maxApprovalRounds = opts.maxApprovalRounds ?? 3
     this.maxSteps = opts.maxSteps ?? 5
     this.invokeModel = opts.invokeModel
+  }
+
+  /** Think with another model from the next invocation on — a host's per-thread choice. */
+  setModel(model: ResolvedModel): void {
+    this.model = model
   }
 
   /**

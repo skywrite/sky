@@ -216,7 +216,7 @@ export default class ChatContext {
   private readonly today: PlainDate
   private readonly days: number
   private readonly baseDir: string
-  private readonly maxTokens: number
+  private maxTokens: number
   private readonly ownChatPath: string | null
   private readonly summaryBaseline: boolean
   private readonly producers: ContextProducers
@@ -275,6 +275,16 @@ export default class ChatContext {
   /** The per-turn context log, for serialization on save. */
   get log(): ContextTurnLog[] {
     return this.contextLog
+  }
+
+  /** The token budget the next rebuild assembles within. */
+  get budget(): number {
+    return this.maxTokens
+  }
+
+  /** Change the budget. It governs the next rebuild; reassemble() applies it at once. */
+  setBudget(tokens: number): void {
+    this.maxTokens = tokens
   }
 
   // ---------------------------------------------------------------------------

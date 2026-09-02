@@ -1,16 +1,20 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { humanize } from './chat.tsx'
 import { fileHref } from './explorer.tsx'
 
 /**
- * What sky read — the thread's context, by document, and the hand on it.
+ * What sky read — the thread's context as a story, and the hand on it.
  *
  * The stream tells the thread how many files are in context; this panel
- * lists them: what the model saw last rebuild with its tokens, what was
- * left out and why, and three moves — pin a document in (any file, by
- * path), keep one out, or let one go. Every move reassembles the context
- * at once, so the list is always what the next message will be answered
- * from.
+ * tells how they got there, turn by turn: the notebook read at the start,
+ * what later questions brought in, what the budget pushed out to make
+ * room, what the model read by tool, and the step under way while a reply
+ * is prepared. Below the story sits what the model sees now — every
+ * document with its tokens, what was left out and why — and three moves:
+ * pin a document in (any file, by path), keep one out, or let one go.
+ * Every move reassembles the context at once, so the list is always what
+ * the next message will be answered from.
  */
 
 export interface ContextDoc {
@@ -22,17 +26,49 @@ export interface ContextDoc {
   via?: 'reserve'
 }
 
+export interface TurnStats {
+  kept: number
+  pruned: number
+  excluded: number
+  docTokens: number
+  budget?: number
+  reused?: boolean
+}
+
+export interface ToolCall {
+  tool: string
+  input?: string
+  outcome: 'ok' | 'error' | 'denied'
+  tokens?: number
+}
+
+/** One turn of the story — mirrors handler/chat/timeline.ts. */
+export interface TimelineEntry {
+  turn: number
+  when: string | null
+  kind: 'seed' | 'grew' | 'same' | 'failed'
+  searches: number
+  stats?: TurnStats
+  found?: number
+  added: ContextDoc[]
+  pushedOut: ContextDoc[]
+  tools: ToolCall[]
+  errors: string[]
+}
+
 export interface ThreadContext {
   turn: number
   documents: number
-  stats: { kept: number; pruned: number; excluded: number; docTokens: number; budget?: number } | null
+  stats: TurnStats | null
   kept: ContextDoc[]
   cut: ContextDoc[]
+  log: TimelineEntry[]
 }
 
 export type ContextAction = 'pin' | 'exclude' | 'release'
 
-export function useThreadContext(id: string, turns: number, open: boolean) {
+/** The thread's context, re-read whenever the thread's turn count or context version moves. */
+export function useThreadContext(id: string, version: number, open: boolean) {
   const [context, setContext] = useState<ThreadContext | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
@@ -56,7 +92,7 @@ export function useThreadContext(id: string, turns: number, open: boolean) {
     return () => {
       alive = false
     }
-  }, [id, turns, open])
+  }, [id, version, open])
 
   const act = useCallback(
     async (action: ContextAction, path: string) => {
@@ -80,7 +116,7 @@ export function useThreadContext(id: string, turns: number, open: boolean) {
   return { context, note, act }
 }
 
-function tokens(n: number): string {
+export function tokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n)
 }
 
@@ -89,6 +125,167 @@ function split(path: string): { name: string; dir: string } {
   const file = slash >= 0 ? path.slice(slash + 1) : path
   return { name: file.replace(/\.md$/, ''), dir: slash >= 0 ? path.slice(0, slash) : '' }
 }
+
+// -----------------------------------------------------------------------------
+// The story
+// -----------------------------------------------------------------------------
+
+/** One document in a turn's change: came in, or was pushed out. */
+function ChangeRow({ doc, mark }: { doc: ContextDoc; mark: 'add' | 'cut' }) {
+  const { name, dir } = split(doc.path)
+  const tag = mark === 'add' ? (doc.cut ? "didn't fit" : doc.pinned ? 'pinned' : null) : null
+  return (
+    <div className="sky-tl-row" data-cut={mark === 'cut' || Boolean(doc.cut)}>
+      <span className="sky-tl-mark" data-k={mark}>
+        {mark === 'add' ? '+' : '−'}
+      </span>
+      <span className="sky-tl-doc">
+        <span className="sky-tl-name">
+          <a href={fileHref(doc.path)}>{name}</a>
+        </span>
+        {dir && <span className="sky-tl-dir">{dir}</span>}
+      </span>
+      {tag && <span className="sky-tag">{tag}</span>}
+      <span className="sky-ctx-tok">{tokens(doc.tokens)}</span>
+    </div>
+  )
+}
+
+/** One tool the model called during the turn — what it reached for, and what came back. */
+function ToolRow({ call }: { call: ToolCall }) {
+  return (
+    <div className="sky-tl-row">
+      <span className="sky-tl-mark"></span>
+      <span className="sky-tl-doc">
+        <span className="sky-chip sky-chip-sm" data-act="true">
+          {humanize(call.tool)}
+        </span>
+        {call.input && <span className="sky-tl-dir">{call.input}</span>}
+      </span>
+      {call.outcome !== 'ok' && <span className="sky-tag">{call.outcome}</span>}
+      {call.tokens !== undefined && <span className="sky-ctx-tok">{tokens(call.tokens)}</span>}
+    </div>
+  )
+}
+
+function budgetLine(stats: TurnStats): string {
+  return stats.budget ? `${tokens(stats.docTokens)} of ${tokens(stats.budget)}` : tokens(stats.docTokens)
+}
+
+function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
+  const stats = entry.stats
+  let title: string
+  let line: string | null = null
+  let tone: 'done' | 'quiet' | 'failed' = 'done'
+  switch (entry.kind) {
+    case 'seed':
+      title = 'Read your notebook'
+      if (stats) line = `${entry.found ?? 0} files found · ${stats.kept} fit · ${budgetLine(stats)}`
+      break
+    case 'grew':
+      title = entry.added.length > 0 ? 'Looked for more' : 'Looked again'
+      if (entry.added.length === 0) line = 'Nothing new'
+      break
+    case 'same':
+      title = 'Nothing new'
+      tone = 'quiet'
+      if (stats) line = `Same ${stats.kept} files`
+      break
+    case 'failed':
+      title = "Couldn't gather"
+      tone = 'failed'
+      break
+  }
+  const searches =
+    entry.searches > 0 && entry.kind !== 'seed'
+      ? `${entry.searches} new search${entry.searches === 1 ? '' : 'es'}`
+      : null
+
+  return (
+    <div className="sky-tl-entry">
+      <div className="sky-tl-rail">
+        <span className="sky-dot" data-tone={tone === 'failed' ? 'failed' : tone === 'quiet' ? undefined : 'done'} />
+        {!last && <span className="sky-tl-line" />}
+      </div>
+      <div>
+        <div className="sky-tl-head" data-tone={tone}>
+          <span className="sky-tl-when">{entry.when ?? ''}</span>
+          <span>{title}</span>
+        </div>
+        {line && <div className="sky-tl-txt">{line}</div>}
+        {searches && <div className="sky-tl-sub">{searches}</div>}
+        {entry.errors.map((error, i) => (
+          <div key={i} className="sky-tl-fate">
+            {error}
+          </div>
+        ))}
+        {entry.added.length > 0 && (
+          <>
+            <div className="sky-tl-label">Added {entry.added.length}</div>
+            {entry.added.map((doc) => (
+              <Fragment key={doc.path}>
+                <ChangeRow doc={doc} mark="add" />
+              </Fragment>
+            ))}
+          </>
+        )}
+        {entry.pushedOut.length > 0 && (
+          <>
+            <div className="sky-tl-label">Pushed out by budget · {entry.pushedOut.length}</div>
+            {entry.pushedOut.map((doc) => (
+              <Fragment key={doc.path}>
+                <ChangeRow doc={doc} mark="cut" />
+              </Fragment>
+            ))}
+          </>
+        )}
+        {entry.tools.length > 0 && (
+          <>
+            <div className="sky-tl-label">Also used</div>
+            {entry.tools.map((call, i) => (
+              <Fragment key={i}>
+                <ToolRow call={call} />
+              </Fragment>
+            ))}
+          </>
+        )}
+        {entry.kind === 'grew' && stats && (
+          <div className="sky-tl-sub" style={{ marginTop: 6 }}>
+            {stats.kept} in · {budgetLine(stats)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** The turns so far, oldest first, and the step under way while a reply is prepared. */
+function Timeline({ log, live }: { log: TimelineEntry[]; live: string | null }) {
+  return (
+    <div className="sky-tl">
+      {log.map((entry, i) => (
+        <Fragment key={entry.turn}>
+          <Entry entry={entry} last={!live && i === log.length - 1} />
+        </Fragment>
+      ))}
+      {live && (
+        <div className="sky-tl-entry">
+          <div className="sky-tl-rail">
+            <span className="sky-dot" data-tone="live" />
+          </div>
+          <div className="sky-tl-head">
+            <span className="sky-tl-when">now</span>
+            <span>{live}…</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// What the model sees now
+// -----------------------------------------------------------------------------
 
 function DocRow({
   doc,
@@ -161,16 +358,21 @@ function Rows({
 
 export function ContextPanel({
   id,
-  turns,
+  version,
   busy,
+  live,
   onClose,
 }: {
   id: string
-  turns: number
+  /** Moves whenever the thread's context may have changed — the panel re-reads on it */
+  version: number
   busy: boolean
+  /** The step under way while a reply is prepared, or null between turns */
+  live: string | null
   onClose: () => void
 }) {
-  const { context, note, act } = useThreadContext(id, turns, true)
+  const { context, note, act } = useThreadContext(id, version, true)
+  const [now, setNow] = useState(false)
   const [filter, setFilter] = useState('')
   const [adding, setAdding] = useState('')
 
@@ -192,9 +394,9 @@ export function ContextPanel({
     <aside className="sky-panel">
       <div className="sky-panel-head">
         <span className="sky-panel-title">Context</span>
-        {stats && (
+        {context && stats && (
           <span className="sky-mini">
-            {stats.kept} in · {stats.pruned + stats.excluded} out · {tokens(stats.docTokens)} tokens
+            {context.kept.length} in · {context.cut.length} out · {budgetLine(stats)}
           </span>
         )}
         <Button size="compact-sm" onClick={onClose} aria-label="Close context">
@@ -202,32 +404,45 @@ export function ContextPanel({
         </Button>
       </div>
 
-      {context && (
-        <TextInput
-          size="sm"
-          value={filter}
-          onChange={(e) => setFilter(e.currentTarget.value)}
-          placeholder="Filter by path…"
-          className="sky-panel-filter"
-        />
-      )}
+      {note && !live && <div className="sky-condensed">— {note} —</div>}
 
-      {note && <div className="sky-condensed">— {note} —</div>}
+      {(context || live) && <Timeline log={context?.log ?? []} live={live} />}
 
       {context && (
         <>
-          <div className="sky-panel-label">
-            In context <span className="sky-mini">{kept.length}</span>
+          <div className="sky-panel-label sky-now">
+            What sky sees now
+            <span className="sky-mini">
+              {context.kept.length} in · {context.cut.length} out
+            </span>
+            <button type="button" className="sky-more" onClick={() => setNow((open) => !open)}>
+              {now ? 'Hide' : 'Show'}
+            </button>
           </div>
-          {kept.length === 0 && <div className="sky-ctx-empty">Nothing{filter ? ' matches' : ' in context'}.</div>}
-          <Rows docs={kept} busy={busy} onAct={act} />
 
-          {cut.length > 0 && (
+          {now && (
             <>
+              <TextInput
+                size="sm"
+                value={filter}
+                onChange={(e) => setFilter(e.currentTarget.value)}
+                placeholder="Filter by path…"
+                className="sky-panel-filter"
+              />
               <div className="sky-panel-label">
-                Left out <span className="sky-mini">{cut.length}</span>
+                In context <span className="sky-mini">{kept.length}</span>
               </div>
-              <Rows docs={cut} busy={busy} onAct={act} />
+              {kept.length === 0 && <div className="sky-ctx-empty">Nothing{filter ? ' matches' : ' in context'}.</div>}
+              <Rows docs={kept} busy={busy} onAct={act} />
+
+              {cut.length > 0 && (
+                <>
+                  <div className="sky-panel-label">
+                    Left out <span className="sky-mini">{cut.length}</span>
+                  </div>
+                  <Rows docs={cut} busy={busy} onAct={act} />
+                </>
+              )}
             </>
           )}
 
