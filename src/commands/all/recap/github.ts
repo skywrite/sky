@@ -1,6 +1,8 @@
 import colors from 'picocolors'
 import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import enrichRecap from '#lib/notebook/enrich/enrichRecap.ts'
+import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { isCommandAvailable } from '#lib/sys/command.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
@@ -9,9 +11,12 @@ import dayWindow from './lib/dayWindow.ts'
 import { activityInstants, clampActivity, renderGithubRecap } from './lib/github.ts'
 import { fetchGithubActivity } from './lib/githubFetch.ts'
 import findWakeCutoff, { findWakeStart } from './lib/wakeGap.ts'
-import writeRecapFile, { readRecapCuration } from './lib/writeRecapFile.ts'
+import writeRecapFile from './lib/writeRecapFile.ts'
 
 const APP = 'github'
+const WHAT = 'Code - GitHub'
+// What the tag and rel classifiers are told they are labeling.
+const KIND = 'daily GitHub activity recap'
 
 // How far before the day:start ceremony to look for the day's true beginning.
 const WAKE_LOOKBACK_MS = 12 * 3_600_000
@@ -21,6 +26,8 @@ const params = {
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
   noEditor: Flag.bool('Skip opening the recap in the editor', { default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-recaps tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -54,7 +61,7 @@ export default class RecapGithubTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { day, dryRun, noEditor, rel } = args
+    const { day, dryRun, noEditor, rel, noAutoTag, noAutoRel } = args
 
     if (!(await isCommandAvailable('gh'))) {
       return CommandResult.fail('gh CLI not found. Install GitHub CLI and run: gh auth login')
@@ -98,15 +105,21 @@ export default class RecapGithubTask extends Command {
       .map((entry) => entry.trim())
       .filter(Boolean)
 
-    // Re-runs keep the human-curated slots from the existing file.
+    // Re-runs keep the human-curated slots from the existing file; the
+    // classifiers fill only what is still empty.
     const curation = await readRecapCuration(day, APP)
+    const curated = await enrichRecap(
+      { app: APP, what: WHAT, body: rendered.body, kind: KIND },
+      { rel: relList?.length ? relList : curation.rel, tags: curation.tags },
+      { noAutoTag, noAutoRel, log: (line) => output.log(line) },
+    )
 
     const doc = RecapDocument.create({
       app: APP,
-      what: 'Code - GitHub',
+      what: WHAT,
       when,
-      rel: relList?.length ? relList : curation.rel,
-      tags: curation.tags,
+      rel: curated.rel,
+      tags: curated.tags,
       body: rendered.body,
     })
     const contents = doc.toMarkdown()

@@ -11,9 +11,9 @@ export type MessageRecord = {
   path: string
   /** YYYY-MM-DD — corpus slicing compares these strings */
   date: string
-  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat | note */
+  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat | note | recap */
   medium: string
-  /** Conversation identity: `to:` (meetings: `who:`), else `from` (DMs captured from-only); unset for journals, chats and notes */
+  /** Conversation identity: `to:` (meetings: `who:`, recaps: `app:`), else `from` (DMs captured from-only); unset for journals, chats and notes */
   to?: string
   from?: string
   summary?: string
@@ -71,12 +71,22 @@ export type NoteRow = {
   path: string
   markdown?: string
 }
+export type RecapRow = {
+  app: string
+  what?: string | null
+  date: string
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
 export type CorpusRows = {
   messages?: MessageRow[]
   meetings?: MeetingRow[]
   journals?: JournalRow[]
   chats?: ChatRow[]
   notes?: NoteRow[]
+  recaps?: RecapRow[]
 }
 
 /** Message-domain platforms fold into three corpus mediums: slack, email, and message (all others). */
@@ -159,6 +169,21 @@ export function recordsFromRows(rows: CorpusRows, mediums: string[]): MessageRec
       })
     }
   }
+  if (wanted.has('recap')) {
+    for (const row of rows.recaps ?? []) {
+      records.push({
+        path: row.path,
+        date: row.date,
+        medium: 'recap',
+        // The app is the recap's conversation: each app's past choices are its prior.
+        to: str(row.app),
+        summary: str(row.what),
+        tags: row.tags,
+        rel: row.rel,
+        body: row.markdown ?? '',
+      })
+    }
+  }
 
   records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.path < b.path ? -1 : 1))
   return records
@@ -176,7 +201,7 @@ export type LoadCorpusOptions = {
 
 /**
  * Load corpus records of the given mediums from the service:
- * slack | email | message (any other message platform) | meeting | journal | chat | note.
+ * slack | email | message (any other message platform) | meeting | journal | chat | note | recap.
  * Derived fresh on every call — the store follows the notebook files, so
  * landing in a file IS joining the corpus, with no separate state to maintain.
  */
@@ -198,6 +223,9 @@ export async function loadMessageCorpus(mediums: string[], opts: LoadCorpusOptio
   }
   if (wanted.has('note')) {
     parts.push(`notes(limit: ${QUERY_LIMIT}) { date summary tags rel path${body} }`)
+  }
+  if (wanted.has('recap')) {
+    parts.push(`recaps(limit: ${QUERY_LIMIT}) { app what date tags rel path${body} }`)
   }
   if (parts.length === 0) return { records: [] }
 

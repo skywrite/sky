@@ -16,7 +16,8 @@
     "./secrets": "./src/secrets.ts",
     "./nbfs": "./src/nbfs.ts",
     "./shell": "./src/shell.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./recap": "./src/recap.ts"
   },
   "scripts": {
     "build": "echo 'TODO: bundle for publishing'"

@@ -64,6 +64,16 @@ const ROWS: CorpusRows = {
       path: '/nb/time/2026/01/10/actions/notes/n.md',
     },
   ],
+  recaps: [
+    {
+      app: 'github',
+      what: 'Code - GitHub',
+      date: '2026-01-11',
+      tags: ['Work/Eng'],
+      rel: ['projects/Atlas'],
+      path: '/nb/time/2026/01/11/actions/recaps/09-00_github.md',
+    },
+  ],
 }
 
 test('corpusMediumOf folds message platforms into slack, email, and message', () => {
@@ -141,6 +151,16 @@ test('recordsFromRows maps notes without a conversation identity', () => {
     expected: 'Whiteboard sketch of the rollout',
   })
   assert({ given: 'a note row', should: 'keep rel', actual: records[0]?.rel, expected: ['projects/Atlas-Rollout'] })
+})
+
+test('recordsFromRows maps recaps with the app as their conversation', () => {
+  const records = recordsFromRows(ROWS, ['recap'])
+  assert({
+    given: 'recap requested',
+    should: 'key the record on the app, with the what label as its summary',
+    actual: records.map((r) => `${r.medium}:${r.to}:${r.summary}:${r.tags.join(',')}:${r.rel.join(',')}`),
+    expected: ['recap:github:Code - GitHub:Work/Eng:projects/Atlas'],
+  })
 })
 
 test('recordsFromRows falls back to from when to is absent', () => {

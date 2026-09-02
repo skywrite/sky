@@ -2,6 +2,8 @@ import * as path from 'node:path'
 import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_HOME } from '#config'
+import enrichRecap from '#lib/notebook/enrich/enrichRecap.ts'
+import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { getProfile } from '#shared/ai/models.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
@@ -10,9 +12,12 @@ import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
 import { digestSessions } from './lib/sessionDigest.ts'
 import findWakeCutoff, { findWakeStart } from './lib/wakeGap.ts'
-import writeRecapFile, { readRecapCuration } from './lib/writeRecapFile.ts'
+import writeRecapFile from './lib/writeRecapFile.ts'
 
 const APP = 'claude-code'
+const WHAT = 'Coding - Claude Code'
+// What the tag and rel classifiers are told they are labeling.
+const KIND = 'daily Claude Code session recap'
 
 // How far before the day:start ceremony to look for the day's true beginning
 // (work done after waking but before running day:start).
@@ -26,7 +31,9 @@ const params = {
   dryRun: Flag.bool('Render the recap without writing it', { default: false }),
   noEditor: Flag.bool('Skip opening the recap in the editor', { default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
-  noAi: Flag.bool('Skip AI session digests (mechanical trail only)', { default: false }),
+  noAi: Flag.bool('Skip AI session digests and auto tags/rel (mechanical trail only)', { default: false }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-recaps tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   model: Flag.string('Model profile for session digests', {
     short: 'm',
     default: () => DEFAULT_DIGEST_PROFILE,
@@ -70,7 +77,7 @@ export default class RecapClaudeCodeTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { day, dryRun, noEditor, rel, noAi, model, projectsDir } = args
+    const { day, dryRun, noEditor, rel, noAi, noAutoTag, noAutoRel, model, projectsDir } = args
 
     // A bad -m should fail before any scanning happens.
     if (!noAi) {
@@ -128,15 +135,21 @@ export default class RecapClaudeCodeTask extends Command {
       .map((entry) => entry.trim())
       .filter(Boolean)
 
-    // Re-runs keep the human-curated slots from the existing file.
+    // Re-runs keep the human-curated slots from the existing file; the
+    // classifiers fill only what is still empty. --no-ai means no AI at all.
     const curation = await readRecapCuration(day, APP)
+    const curated = await enrichRecap(
+      { app: APP, what: WHAT, body: rendered.body, kind: KIND },
+      { rel: relList?.length ? relList : curation.rel, tags: curation.tags },
+      { noAutoTag: noAi || noAutoTag, noAutoRel: noAi || noAutoRel, log: (line) => output.log(line) },
+    )
 
     const doc = RecapDocument.create({
       app: APP,
-      what: 'Coding - Claude Code',
+      what: WHAT,
       when,
-      rel: relList?.length ? relList : curation.rel,
-      tags: curation.tags,
+      rel: curated.rel,
+      tags: curated.tags,
       body: rendered.body,
     })
     const contents = doc.toMarkdown()

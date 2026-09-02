@@ -43,3 +43,29 @@ The pure fold, clamp, and render live in `lib/github.ts` and are tested
 without GitHub. `lib/githubFetch.ts` holds every `gh` call.
 
 Narrative: [2026-09-01 — commits found without the event feed](2026-09-01-github-commits-without-the-event-feed.md).
+
+## Recaps tag and rel themselves
+
+Every recap writer fills its empty `tags:` and `rel:` slots through
+`lib/notebook/enrich/enrichRecap.ts`, the same auto-tag and auto-rel stack
+the message, meeting, note, and chat captures use. The writers outside this
+repo reach it as `@skywrite/core/recap`, together with
+`lib/notebook/recap/readRecapCuration.ts`, which reads the slots back from
+the day's existing file. Its rules:
+
+- **Hand curation always wins.** A re-run keeps the file's existing
+  `tags:` and `rel:`, and `--rel` is curation too. Enrichment fills only
+  what is still empty. `--no-auto-tag` and `--no-auto-rel` close a slot;
+  `recap:claude-code --no-ai` closes both, since it promises no AI at all.
+- **The app is the recap's conversation.** The corpus (`recap` medium in
+  `lib/notebook/enrich/corpus.ts`, fed by the service's `recaps` query)
+  keys each recap on its `app:`, so a GitHub recap's prior is what earlier
+  GitHub recaps carried, and the tag menu is the closed set of tags already
+  on recaps. A tag the archives never used cannot be proposed.
+- **Rel comes from the body and the prior.** Subjects extracted from the
+  recap body resolve against open projects and known entities; this app's
+  earlier refs are candidates too. Selection keeps at most two.
+- **Abstaining is fine.** A slot the classifiers cannot fill stays empty,
+  exactly as before.
+
+Narrative: [2026-09-01 — recaps tag and rel themselves](2026-09-01-recaps-tag-and-rel-themselves.md).
