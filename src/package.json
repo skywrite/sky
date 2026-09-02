@@ -39,7 +39,6 @@
     "@logtape/logtape": "2.3.0",
     "@mantine/core": "9.5.0",
     "@mantine/hooks": "9.5.0",
-    "@modelcontextprotocol/sdk": "1.30.0",
     "@ngrok/ngrok": "1.5.2",
     "@slack/web-api": "7.11.0",
     "ai": "7.0.89",
@@ -82,11 +81,8 @@
   "overrides": {
     "axios": "1.19.0",
     "form-data": "4.0.6",
-    "qs": "6.15.3",
     "ip-address": "10.3.1",
     "ws": "8.21.1",
-    "body-parser": "2.3.0",
-    "fast-uri": "3.1.5",
     "hono": "4.12.34",
     "decode-uri-component": "0.5.0"
   },
