@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-09-01
 ---
 
 # ChatContext admission — one scorer, question-conditioned policy
@@ -23,6 +23,14 @@ the question's shape:
   stated range start when the extractor resolved one (stats: `sweepFrom`).
   Mechanism: `ContextAssembler` `ReserveOptions`; wiring: `sweepReserve()`
   in mod.ts.
+
+The candidate pool is policy too. Under the lean baseline
+(`summaryBaseline`, the CLI default) days before yesterday seed from their
+summary.md — or the day.md ledger alone — and today and yesterday seed
+whole **minus message-capture bodies**: day.md ledgers every capture at a
+line each, and retrieval fetches any body a conversation asks about. See
+[2026-09-01](2026-09-01-lean-baseline-drops-message-bodies.md) for the
+capture-volume shift that forced this.
 
 The scorer never changes — s3 answers "how much evidence does this one doc
 carry?", which no policy needs re-answered. What changes is the set-level

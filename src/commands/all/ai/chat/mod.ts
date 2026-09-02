@@ -69,7 +69,7 @@ const params = {
     },
   }),
   summaryBaseline: Flag.bool(
-    'Seed days before yesterday from summary.md (else day.md alone) instead of every raw file',
+    'Lean baseline: days before yesterday seed from summary.md (else day.md alone); message bodies stay out of today+yesterday',
     { default: true },
   ),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', {

@@ -23,6 +23,7 @@ import { withExcludedPaths, withPinnedPaths } from '#shared/models/AI/ContextAss
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
+import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
@@ -167,8 +168,9 @@ export interface ChatContextOptions {
   /**
    * Opt-in lean baseline: previous days before yesterday seed from their
    * summary.md — or the day.md ledger alone when no summary exists —
-   * instead of every raw file. Today and yesterday always seed whole.
-   * Default off: a no-summary day sweeps in all its raw files.
+   * instead of every raw file. Today and yesterday seed whole, minus
+   * message-capture bodies (day.md ledgers those; retrieval fetches any
+   * the conversation needs). Default off: every raw file seeds.
    */
   summaryBaseline?: boolean
   onProgress?: (event: ContextProgressEvent) => void
@@ -206,6 +208,18 @@ async function mergePathsIntoCollection(
   if (docs.length === 0) return existing
   const newCollection = DomainCollection.fromDocuments(docs, null, { depth: 0 })
   return existing ? existing.merge(newCollection) : newCollection
+}
+
+/**
+ * Message-capture bodies stay out of the lean baseline's whole-day seeds:
+ * at current capture volume (dozens a day) they are the bulk of today's
+ * and yesterday's files and crowd the floor band with ambient chatter.
+ * day.md ledgers every capture (time, sender, one-line subject), so the
+ * model still sees what came in; retrieval and the read_file tool fetch
+ * any body a conversation actually asks about.
+ */
+function withoutMessages(docs: Array<{ doc: Document; path: string }>): Array<{ doc: Document; path: string }> {
+  return docs.filter((d) => detectTypeFromPath(d.path) !== 'message')
 }
 
 // -----------------------------------------------------------------------------
@@ -306,7 +320,7 @@ export default class ChatContext {
     // sweep cost seconds of serialize for content the query-targeted rel
     // path (ai:context:files) is meant to fetch when relevant.
     let t0 = performance.now()
-    const [todayDocs, prevDocsRaw, goalDocs, decisionDocs, memoryDocs] = await Promise.all([
+    const [todayDocsRaw, prevDocsRaw, goalDocs, decisionDocs, memoryDocs] = await Promise.all([
       this.fetchContext(`{ documents(where: { date: "${this.today}", pathContains: "/time/" }) { path } }`, 1),
       this.fetchContext(
         `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
@@ -322,6 +336,8 @@ export default class ChatContext {
       this.fetchContext(`{ documents(where: { pathContains: "${MEMORY_PATH_SEGMENT}" }) { path } }`, 0),
     ])
     const fetchMs = performance.now() - t0
+
+    const todayDocs = this.summaryBaseline ? withoutMessages(todayDocsRaw) : todayDocsRaw
 
     // Group previous day docs by date and apply per-day strategy. Week- and
     // month-level docs (the week plan, a week summary) are real context but
@@ -347,8 +363,8 @@ export default class ChatContext {
     const yesterdayKey = yesterday.toString()
     for (const [date, files] of byDate) {
       // The opt-in summary baseline exempts yesterday: like today it seeds
-      // whole — recent enough that conversations usually need the raw
-      // record, summarized or not.
+      // whole (minus message bodies) — recent enough that conversations
+      // usually need the raw record, summarized or not.
       const exempt = this.summaryBaseline && date === yesterdayKey
       const hasSummary = files.some((f) => f.path.endsWith('/summary.md'))
       if (hasSummary && !exempt) {
@@ -365,7 +381,8 @@ export default class ChatContext {
         // reach anything dropped here.
         prevDocs.push(...files.filter((f) => f.path.endsWith('/day.md')))
       } else {
-        prevDocs.push(...files)
+        // Yesterday's exemption keeps the raw day, not the message flood.
+        prevDocs.push(...(exempt ? withoutMessages(files) : files))
       }
     }
     prevDocs.push(...spanDocs)
@@ -396,7 +413,8 @@ export default class ChatContext {
 
     return {
       counts: {
-        today: todayDocs.length,
+        // Raw sweep sizes, like prev — the deduped universe size is `size`.
+        today: todayDocsRaw.length,
         prev: prevDocsRaw.length,
         goals: goalDocs.length,
         decisions: decisionDocs.length,

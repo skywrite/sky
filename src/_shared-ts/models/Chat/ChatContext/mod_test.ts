@@ -23,6 +23,8 @@ const FIX = {
   prevDay: abs('time/2026/W05/01-26/day.md'),
   prevSummary: abs('time/2026/W05/01-26/summary.md'),
   prevMeeting: abs('time/2026/W05/01-26/actions/meetings/14-00_Atlas_Review.md'),
+  prevMessage: abs('time/2026/W05/01-26/actions/messages/slack_Ops-to-atlas-general_Deploy-Window.md'),
+  todayMessage: abs('time/2026/W05/01-27/actions/messages/slack_Jane-to-atlas-general_Deploy-Question.md'),
   oldDay: abs('time/2026/W04/01-22/day.md'),
   oldMessage: abs('time/2026/W04/01-22/actions/messages/slack_Ops-to-atlas-general_Standup-Notes.md'),
   goal: abs('goals/2026.md'),
@@ -136,12 +138,15 @@ test('ChatContext.seedBaseline - summary baseline', async () => {
   const { context } = makeContext({
     summaryBaseline: true,
     fetchContext: fetchFake({
-      today: [FIX.day],
+      // Today seeds whole, minus its message capture
+      today: [FIX.day, FIX.todayMessage],
       prev: [
-        // Yesterday (01-26) is exempt: raw survives even its own summary
+        // Yesterday (01-26) is exempt: raw survives even its own summary —
+        // except message bodies, which the lean baseline never seeds
         FIX.prevDay,
         FIX.prevMeeting,
         FIX.prevSummary,
+        FIX.prevMessage,
         // 01-20 has a summary: it replaces raw, the journal rides along
         FIX.summary,
         FIX.journal,
@@ -157,8 +162,10 @@ test('ChatContext.seedBaseline - summary baseline', async () => {
   await context.firstTurn('what happened with Atlas this week?')
 
   assert({
-    given: 'the opt-in summary baseline over an exempt yesterday, a summarized day, and an unsummarized day',
-    should: 'keep yesterday whole, collapse the other days to summary/ledger, and tag the turn stats',
+    given:
+      'the summary baseline over message captures on today and the exempt yesterday, a summarized day, and an unsummarized day',
+    should:
+      'seed today and yesterday whole minus message bodies, collapse the other days to summary/ledger, and tag the turn stats',
     actual: {
       paths: [...context.paths].sort(),
       baseline: context.log[0].stats?.baseline,
@@ -175,6 +182,26 @@ test('ChatContext.seedBaseline - summary baseline', async () => {
         FIX.goal,
       ].sort(),
       baseline: 'summary',
+    },
+  })
+})
+
+test('ChatContext.seedBaseline - message bodies seed without the summary baseline', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({
+      today: [FIX.day, FIX.todayMessage],
+      prev: [FIX.prevDay, FIX.prevMessage],
+    }),
+  })
+  const report = await context.seedBaseline()
+
+  assert({
+    given: 'message captures on today and yesterday with the summary baseline off',
+    should: 'seed the bodies whole — the old flood stays reachable',
+    actual: { paths: [...context.paths].sort(), size: report.size },
+    expected: {
+      paths: [FIX.day, FIX.todayMessage, FIX.prevDay, FIX.prevMessage].sort(),
+      size: 4,
     },
   })
 })
