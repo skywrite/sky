@@ -35,7 +35,8 @@ a person can see and touch:
   enters the story as "Notebook closed". A budget chosen later opens it:
   the next message gathers the baseline and runs as the first gathering
   turn, whose entry records the universe. The rule lives in the context
-  model, so the terminal inherits it the day it offers the same stop.
+  model, and the terminal offers the same stop: `sky ai:chat --no-context`
+  (or `--max-context 0`) starts closed, fetches nothing, and says so.
 - **The context, turn by turn.** The Context panel opens with the story:
   the notebook read at the start (files found, how many fit),
   what a later question brought in, what the budget pushed out to make

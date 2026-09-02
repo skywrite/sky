@@ -58,16 +58,23 @@ const params = {
     short: 'd',
     default: () => 7,
   }),
-  maxContext: Flag.number('Token ceiling for the assembled document context — commas allowed (e.g. 150,000)', {
-    default: () => 300_000,
-    parse: (raw) => {
-      const n = Number(String(raw).replace(/,/g, ''))
-      if (!Number.isInteger(n) || n <= 0) {
-        throw new Error(`--max-context needs a positive token count, got "${raw}"`)
-      }
-      return n
+  maxContext: Flag.number(
+    'Token ceiling for the assembled document context — commas allowed (e.g. 150,000); 0 keeps the notebook closed',
+    {
+      default: () => 300_000,
+      parse: (raw) => {
+        const n = Number(String(raw).replace(/,/g, ''))
+        if (!Number.isInteger(n) || n < 0) {
+          throw new Error(`--max-context needs a whole token count, zero or more, got "${raw}"`)
+        }
+        return n
+      },
     },
-  }),
+  ),
+  noContext: Flag.bool(
+    'Keep the notebook closed: no documents read or queried, only the conversation and tools (same as --max-context 0)',
+    { default: false },
+  ),
   summaryBaseline: Flag.bool(
     'Lean baseline: days before yesterday seed from summary.md (else day.md alone); message bodies stay out of today+yesterday',
     { default: true },
@@ -223,6 +230,7 @@ export default class AiChatTask extends Command {
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
       'sky ai:chat --days 14                    # Include 14 days of context',
       'sky ai:chat --max-context 150,000        # Cap assembled context (commas ok)',
+      'sky ai:chat --no-context                 # Notebook closed: no documents read',
       'sky ai:chat --no-summary-baseline        # Every raw file for all days (old flood)',
       'sky ai:chat -E                           # Ephemeral: exit without saving',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
@@ -237,6 +245,7 @@ export default class AiChatTask extends Command {
       fast: fastProfileName,
       days,
       maxContext,
+      noContext,
       summaryBaseline,
       inspectInitialContext,
       category,
@@ -258,7 +267,13 @@ export default class AiChatTask extends Command {
     const reasoning = resolveProfile(reasoningProfile)
     const fast = resolveProfile(getProfile(fastProfileName))
 
-    output.log(`Gathering context from last ${days} days...`)
+    // A closed notebook: the flag or a zero ceiling. Documents are neither
+    // read nor queried; the ambient day (summaries, health, prices, calendar)
+    // still frames the conversation, as it does on the web page.
+    const contextBudget = noContext ? 0 : maxContext
+    const closed = contextBudget === 0
+
+    output.log(closed ? 'Notebook closed: reading no documents.' : `Gathering context from last ${days} days...`)
 
     // Get current notebook time
     let t0 = performance.now()
@@ -468,7 +483,7 @@ export default class AiChatTask extends Command {
       days,
       baseDir,
       timeDir,
-      contextTokens: maxContext,
+      contextTokens: contextBudget,
       summaryBaseline,
       resume: resumeSession,
       model: reasoning,
@@ -615,11 +630,11 @@ export default class AiChatTask extends Command {
     // A resumed chat with a context log restores its recorded universe
     // exactly; anything else gathers a fresh baseline (the session decides).
     const restoring = resumeSession !== null && resumeSession.state.contextLog.length > 0
-    output.log(
-      colors.dim(
-        restoring ? '[resume] Resolving recorded context universe...' : '[server] Fetching context from server...',
-      ),
-    )
+    if (restoring) {
+      output.log(colors.dim('[resume] Resolving recorded context universe...'))
+    } else if (!closed) {
+      output.log(colors.dim('[server] Fetching context from server...'))
+    }
     t0 = performance.now()
     const started = await session.start()
 
@@ -657,10 +672,13 @@ export default class AiChatTask extends Command {
       }
 
       output.log(colors.dim(`[server] DomainCollection: ${seed.collectionMs.toFixed(0)}ms`))
+    } else if (started.closed) {
+      if (inspectInitialContext) return CommandResult.success({ turns: 0 })
+      output.log(colors.dim('[server] Notebook closed — no context fetched.'))
     }
 
     output.log(`Found:`)
-    output.log(`  - ${session.paths.length} documents (including summaries)`)
+    if (!started.closed) output.log(`  - ${session.paths.length} documents (including summaries)`)
     output.log(`  - ${peopleCount} active people`)
     output.log(`  - ${ctx.health.length} days of health data`)
     output.log(`  - ${ctx.prices.length} days of price data`)
