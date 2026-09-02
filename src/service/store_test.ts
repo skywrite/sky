@@ -309,3 +309,37 @@ test('INTERACTION_WEIGHTS - meeting/project are highest priority', () => {
     expected: true,
   })
 })
+
+// =============================================================================
+// One person, many spellings
+// =============================================================================
+
+test('Store - a person scores as one across the names their file lists', () => {
+  const store = new Store()
+  const today = new PlainDate('2026-02-01')
+  store.rememberPersonNames('/nb/people/Jane-Doe.md', ['Jane Doe', 'Jane', 'JD'])
+  store.rememberPersonNames('/nb/people/Jane-Roe.md', ['Jane Roe', 'Jane'])
+  store.update('people', new Set(['Jane Doe', 'Jane', 'JD', 'Jane Roe']))
+  store.recordInteraction('JD', '2026-02-01', INTERACTION_WEIGHTS.meeting, today)
+  store.recordInteraction('jane doe', '2026-02-01', INTERACTION_WEIGHTS.email, today)
+  store.recordInteraction('Jane', '2026-02-01', INTERACTION_WEIGHTS.slack, today)
+
+  assert({
+    given: 'two profiles that both list the bare name Jane',
+    should: 'give each profile its own names without the shared one; the shared name and a stranger stand alone',
+    actual: [
+      store.spellingsOf('Jane Doe'),
+      store.spellingsOf('jane roe'),
+      store.spellingsOf('Jane'),
+      store.spellingsOf('Nobody'),
+    ],
+    expected: [['Jane Doe', 'JD'], ['Jane Roe'], ['Jane'], ['Nobody']],
+  })
+  const scores = new Map(store.getPeopleWithScores().map((p) => [p.name, p.score]))
+  assert({
+    given: 'interactions under an initialism, a lowercased name, and the shared bare name',
+    should: 'credit the initialism and the name to Jane Doe, and the bare name to nobody in particular',
+    actual: ['JD', 'Jane Doe', 'Jane', 'Jane Roe'].map((name) => scores.get(name)),
+    expected: [15, 15, 3, 0],
+  })
+})

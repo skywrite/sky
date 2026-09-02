@@ -29,6 +29,7 @@
  * 4. Delete this file (service/store.ts).
  */
 import { EventEmitter } from 'node:events'
+import { normalizeName } from '#shared/models/Store/normalize.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
@@ -60,6 +61,10 @@ export class Store extends EventEmitter {
   private _tags = TagSet.EMPTY
   private _organizations = new Set<string>()
   private _scoring = new ScoringStore()
+  /** Each person file's `name:` list by the file's path — the spellings one person goes by */
+  private _personFiles = new Map<string, string[]>()
+  /** Normalized name → the person files listing it; rebuilt when the lists change */
+  private _filesByName: Map<string, Set<string>> | null = null
 
   constructor() {
     super()
@@ -110,10 +115,58 @@ export class Store extends EventEmitter {
   }
 
   /**
-   * Get people sorted by score (descending)
+   * Get people sorted by score (descending) — one entry per person, their
+   * interactions added up across every spelling their person file lists.
    */
   getPeopleWithScores(): PersonScore[] {
-    return this._scoring.getPeopleWithScores(this._people)
+    return this._scoring.getPeopleWithScores(this._people, (name) => this.spellingsOf(name))
+  }
+
+  /**
+   * Remember a person file's `name:` list: these names are one person's, so
+   * an interaction recorded under any of them counts for that person.
+   */
+  rememberPersonNames(file: string, names: unknown[]): void {
+    const group = [
+      ...new Set(
+        names
+          .filter((name): name is string => typeof name === 'string')
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0),
+      ),
+    ]
+    if (group.length === 0) this._personFiles.delete(file)
+    else this._personFiles.set(file, group)
+    this._filesByName = null
+  }
+
+  /**
+   * The spellings that are one person's alone: the `name:` list of the single
+   * person file that lists this name, minus any name another file lists too.
+   * A name two files share — a bare first name two profiles claim — or none
+   * stands for itself.
+   */
+  spellingsOf(name: string): string[] {
+    const index = this.filesByName()
+    const files = index.get(normalizeName(name))
+    if (!files || files.size !== 1) return [name]
+    const own = this._personFiles.get([...files][0] ?? '') ?? []
+    return own.filter((spelling) => index.get(normalizeName(spelling))?.size === 1)
+  }
+
+  private filesByName(): Map<string, Set<string>> {
+    if (this._filesByName) return this._filesByName
+    const index = new Map<string, Set<string>>()
+    for (const [file, names] of this._personFiles) {
+      for (const name of names) {
+        const key = normalizeName(name)
+        const files = index.get(key) ?? new Set<string>()
+        files.add(file)
+        index.set(key, files)
+      }
+    }
+    this._filesByName = index
+    return index
   }
 
   /**
@@ -144,7 +197,7 @@ export class Store extends EventEmitter {
    * Emit person scores updated event
    */
   emitPersonScoresUpdated(): void {
-    this._scoring.emitPersonScoresUpdated(this._people)
+    this._scoring.emitPersonScoresUpdated(this._people, (name) => this.spellingsOf(name))
   }
 
   /**
@@ -212,6 +265,8 @@ export class Store extends EventEmitter {
    */
   replaceFrom(other: Store): void {
     this._people = new Set(other._people)
+    this._personFiles = new Map(other._personFiles)
+    this._filesByName = null
     this._organizations = new Set(other._organizations)
     this._tags = other._tags
     this._scoring.replaceFrom(other._scoring)

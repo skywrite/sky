@@ -11,6 +11,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { normalizeName } from '#shared/models/Store/normalize.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /**
@@ -91,6 +92,19 @@ export interface ScoringStoreEvents {
  * const topOrgs = scoring.getOrgsWithScores(allOrgNames)
  * ```
  */
+/** The entries of one person as one: scores and counts added, the latest interaction kept. */
+function asOnePerson(name: string, entries: Iterable<PersonScore>): PersonScore {
+  const one: PersonScore = { name, score: 0, lastInteraction: null, interactionCount: 0 }
+  for (const entry of entries) {
+    one.score += entry.score
+    one.interactionCount += entry.interactionCount
+    if (entry.lastInteraction && (!one.lastInteraction || entry.lastInteraction > one.lastInteraction)) {
+      one.lastInteraction = entry.lastInteraction
+    }
+  }
+  return one
+}
+
 export class ScoringStore extends EventEmitter {
   private _personScores = new Map<string, PersonScore>()
   private _orgScores = new Map<string, OrgScore>()
@@ -232,18 +246,33 @@ export class ScoringStore extends EventEmitter {
    * Get people sorted by score (descending).
    *
    * @param allPeople - All known people names (includes those without scores)
+   * @param spellingsOf - The other names a person goes by; absent = the name alone
    * @returns Sorted array with all people, zero-scored ones included
    */
-  getPeopleWithScores(allPeople: Iterable<string>): PersonScore[] {
-    const result: PersonScore[] = []
+  getPeopleWithScores(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): PersonScore[] {
+    // A person is one person however a file spelled them: entries whose
+    // names match case-insensitively add up, and so do the entries for the
+    // other spellings `spellingsOf` gives — a profile's `name:` list. Two
+    // reported names that are the same name report once.
+    const byNormalized = new Map<string, PersonScore[]>()
+    for (const entry of this._personScores.values()) {
+      const key = normalizeName(entry.name)
+      const entries = byNormalized.get(key) ?? []
+      entries.push(entry)
+      byNormalized.set(key, entries)
+    }
 
+    const result: PersonScore[] = []
+    const reported = new Set<string>()
     for (const name of allPeople) {
-      const existing = this._personScores.get(name)
-      if (existing) {
-        result.push(existing)
-      } else {
-        result.push({ name, score: 0, lastInteraction: null, interactionCount: 0 })
-      }
+      const key = normalizeName(name)
+      if (reported.has(key)) continue
+      reported.add(key)
+      const spellings = new Set([key])
+      for (const spelling of spellingsOf?.(name) ?? []) spellings.add(normalizeName(spelling))
+      const entries = new Set<PersonScore>()
+      for (const spelling of spellings) for (const entry of byNormalized.get(spelling) ?? []) entries.add(entry)
+      result.push(asOnePerson(name, entries))
     }
 
     // Sort by score descending, then by name ascending for ties
@@ -281,8 +310,8 @@ export class ScoringStore extends EventEmitter {
   /**
    * Emit person scores updated event.
    */
-  emitPersonScoresUpdated(allPeople: Iterable<string>): void {
-    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople))
+  emitPersonScoresUpdated(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): void {
+    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople, spellingsOf))
   }
 
   /**

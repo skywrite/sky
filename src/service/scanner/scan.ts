@@ -98,6 +98,8 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
 
     const newSet = store.people.union(new Set(persons))
     store.update('people', newSet)
+    // One person however a file spells them: every name here scores as one
+    store.rememberPersonNames(file, persons)
 
     // Record 'met' date as an interaction so new contacts appear in recent list
     const metDate = md.yaml.met

@@ -333,3 +333,30 @@ test('ScoringStore - can be used independently of Store', () => {
     expected: 2,
   })
 })
+
+test('ScoringStore - a person scores as one across spellings and case', () => {
+  const scoring = new ScoringStore()
+  scoring.recordPersonInteraction('Jane Doe', '2026-01-26', INTERACTION_WEIGHTS.meeting, referenceDate)
+  scoring.recordPersonInteraction('jane doe', '2026-01-30', INTERACTION_WEIGHTS.email, referenceDate)
+  scoring.recordPersonInteraction('Janie', '2026-02-01', INTERACTION_WEIGHTS.slack, referenceDate)
+  scoring.recordPersonInteraction('Sam Park', '2026-02-01', INTERACTION_WEIGHTS.meeting, referenceDate)
+  const spellingsOf = (name: string) => (['Jane Doe', 'Janie'].includes(name) ? ['Jane Doe', 'Janie'] : [name])
+
+  const people = scoring.getPeopleWithScores(['Jane Doe', 'Janie', 'jane doe', 'Sam Park'], spellingsOf)
+  assert({
+    given: 'interactions under two casings and a nickname the profile lists, reported under three names',
+    should: 'add them up under each of her names, keep the latest date, and report a casing once',
+    actual: people.map((p) => [p.name, p.score, p.lastInteraction, p.interactionCount]),
+    expected: [
+      ['Jane Doe', 18, '2026-02-01', 3],
+      ['Janie', 18, '2026-02-01', 3],
+      ['Sam Park', 10, '2026-02-01', 1],
+    ],
+  })
+  assert({
+    given: 'no spellings given',
+    should: 'still add up the casings of one name',
+    actual: scoring.getPeopleWithScores(['Jane Doe']).map((p) => [p.name, p.score]),
+    expected: [['Jane Doe', 15]],
+  })
+})

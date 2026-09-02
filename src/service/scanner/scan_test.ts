@@ -1,4 +1,5 @@
 import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { Store } from '../store.ts'
 import { createScanners, type EntityChecker } from './scan.ts'
 
@@ -64,5 +65,28 @@ test('readFileAndUpdateTags: skips update when all tags are projects/', () => {
     should: 'store no tags',
     expected: 0,
     actual: store.tags.size,
+  })
+})
+
+test('readFileAndUpdatePeople: the names a person file lists score as one person', () => {
+  const store = new Store()
+  const referenceDate = new PlainDate('2026-02-01')
+  const { readFileAndUpdatePeople, trackPersonInteractions } = createScanners(store, entityChecker, { referenceDate })
+  readFileAndUpdatePeople('---\nname:\n  - Jane Doe\n  - Janie\n---\n', '/nb/people/Jane-Doe.md')
+  trackPersonInteractions('---\nwho: Janie\n---\n', '/nb/time/2026/W05/01-30/actions/meetings/09-00_Zoom_Janie_Sync.md')
+  trackPersonInteractions(
+    '---\nwho: jane doe\n---\n',
+    '/nb/time/2026/W05/01-31/actions/messages/10-00_slack_Jane-Doe_Hello.md',
+  )
+
+  const scores = new Map(store.getPeopleWithScores().map((p) => [p.name, [p.score, p.lastInteraction]]))
+  assert({
+    given: 'a profile listing two names, a meeting under the nickname and a message under the lowercased name',
+    should: 'report the meeting and the message as one person under either name',
+    actual: [scores.get('Jane Doe'), scores.get('Janie')],
+    expected: [
+      [13, '2026-01-31'],
+      [13, '2026-01-31'],
+    ],
   })
 })
