@@ -1,12 +1,16 @@
 ---
 schema: 0.2.0
 created: 2026-03-17
+updated: 2026-09-02
 description: Extract structured metadata from a conversation summary
 ---
 
 Extract the title, time, and participants from this conversation summary.
 
 Today's date is {{context.notebookDate}}.
+{{#if stated.when}}
+The conversation took place at {{stated.when}} — the notebook owner said so. That is its `time`.
+{{/if}}
 
 ## Summary
 

@@ -99,6 +99,7 @@ export default class MessageNewTask extends Command {
         fromAudio,
         template: 'audio-message',
         fresh: args.fresh,
+        when: rawArgs.when !== undefined ? args.when.toString() : undefined,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)

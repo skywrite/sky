@@ -75,6 +75,7 @@ export default class NotesNewTask extends Command {
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromAudio,
         fresh: args.fresh,
+        when: rawArgs.when !== undefined ? args.when.toString() : undefined,
         summaryPrompt: new URL('./prompts/audio-summary.prompt.md', import.meta.url).pathname,
         extractPrompt: new URL('./prompts/audio-extract.prompt.md', import.meta.url).pathname,
       })

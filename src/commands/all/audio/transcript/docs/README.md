@@ -34,6 +34,15 @@ runs `create`. The doors — `meeting:new`, `journal:new`, `notes:new`,
 `message:new`, `event:new`, `video:new` — run one of the three and file what
 comes back.
 
+## What the caller states wins
+
+A door that knows when the meeting began — `--when` typed on the command
+line, or the When row of the import dialog — passes it down to the summary
+as `--when`. The write-up's Time/Date section says it, the extraction takes
+it as the time and resolves "Friday" against it, and the check shows it in
+the time field. Only a correction typed at the check replaces it. Without
+one, the time is whatever the transcript states, which is often nothing.
+
 ## What counts as a transcript file
 
 `lib/ZoomVTT/` reads `.vtt`, `lib/SRT/` reads `.srt`, `lib/plainText.ts`
@@ -96,3 +105,5 @@ Start runs the same command, which finds the record on its own.
 - `2026-09-02-a-transcript-without-a-header.md` — the captioner dialect
   the sniff refused, and where a clock-stamped file's length is measured
   from.
+- `2026-09-02-the-stated-time-carries-through.md` — the start chosen in
+  the dialog reached the filing step but not the write-up or its check.

@@ -1,13 +1,16 @@
 ---
 schema: 0.2.0
 created: 2026-01-19
-updated: 2026-08-26
+updated: 2026-09-02
 description: Extract structured metadata from a meeting summary
 ---
 
 Extract the title, time, duration, and medium from this meeting summary.
 
 Today's date is {{context.notebookDate}}.
+{{#if stated.when}}
+The meeting began at {{stated.when}} — the speaker said so. That is its `time`, and relative dates in action items resolve against it.
+{{/if}}
 
 ## Summary
 

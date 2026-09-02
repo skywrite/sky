@@ -151,6 +151,8 @@ export default class MeetingNewTask extends Command {
             : { fromZoomVtt }),
         run: run?.key,
         fresh: args.fresh,
+        // The start the caller stated goes with it, so the write-up and its check say it.
+        when: whenStated ? when.toString() : undefined,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)

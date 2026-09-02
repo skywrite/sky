@@ -30,7 +30,7 @@ export default class EventNewTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
     let { what, when, category, fromAudio } = args
     let body: string | undefined
@@ -46,6 +46,7 @@ export default class EventNewTask extends Command {
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromAudio,
         fresh: args.fresh,
+        when: rawArgs.when !== undefined ? args.when.toString() : undefined,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)

@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-15
-updated: 2026-08-26
+updated: 2026-09-02
 description: Generate a structured summary from a meeting transcript
 ---
 
@@ -13,6 +13,9 @@ Summarize the following meeting notes from dictated audio transcription.
 - The transcript contains no spelling errors or name errors
 - Do not ask clarifying questions - proceed directly to summarization
 - The speaker is {{me.fullName}}, {{me.title}} of {{me.company}}
+{{#if stated.when}}
+- The meeting began at {{stated.when}} (notebook time, YYYY-MM-DD HH:MM) — the speaker said so. The Time/Date section states that date and time; the transcript's own clock, if it has one, counts from it
+{{/if}}
 
 ## Transcript
 

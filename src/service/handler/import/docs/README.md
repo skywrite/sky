@@ -46,7 +46,8 @@ The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
 checked against the calendar within the meeting check's fifteen minutes).
 The when is passed as a stated argument, so the command keeps it over a
-time the transcript mentions.
+time the transcript mentions, and hands it to the summary, so the write-up
+says it and the check's time field shows it.
 
 Three stops need the person, and each is the CLI's own prompt given a form:
 the names review (`form`), the write-up corrections (`text`, in a loop),

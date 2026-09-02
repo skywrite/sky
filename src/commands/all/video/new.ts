@@ -47,7 +47,7 @@ export default class VideoNewTask extends Command {
     postProcess: [validateAnyArgFlagExists('summary', 'fromSrt')],
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
     let { medium, from, to, when, summary, category } = args
     const { fromSrt } = args
@@ -70,6 +70,7 @@ export default class VideoNewTask extends Command {
         fromSrt: srtSourcePath,
         template: 'audio-message',
         fresh: args.fresh,
+        when: rawArgs.when !== undefined ? args.when.toString() : undefined,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)

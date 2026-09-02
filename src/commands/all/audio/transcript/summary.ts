@@ -92,6 +92,10 @@ const params = {
     optional: true,
     hidden: true,
   }),
+  when: Flag.string(
+    'The start as the caller states it — typed, or chosen in a dialog — in notebook time, YYYY-MM-DD HH:MM; the write-up says it and the time field keeps it over a time the transcript mentions',
+    { optional: true, hidden: true },
+  ),
 }
 
 type Params = InferParams<typeof params>
@@ -318,6 +322,14 @@ export default class AudioTranscriptSummaryTask extends Command {
     log.debug('transcript received', { chars: transcript.length, lines: transcript.split('\n').length })
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
 
+    // A start the caller states — typed on the command line, or chosen in the
+    // import dialog — is the meeting's time: the write-up says it, the time
+    // field keeps it, and only a correction typed at the check replaces it.
+    const statedWhen = args.when?.trim() || null
+    if (statedWhen && !/^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/.test(statedWhen)) {
+      return CommandResult.fail(`Invalid --when "${statedWhen}" — use notebook time, YYYY-MM-DD HH:MM`)
+    }
+
     // 2. Load and render summary prompt
     const promptContent = await readTextFile(prompts.summary)
 
@@ -328,6 +340,8 @@ export default class AudioTranscriptSummaryTask extends Command {
         notebookTimezone: context.notebookNow.timezone,
         systemTimezone: context.systemNow.timezone,
       },
+      // What the caller stated, for the write-up's Time/Date and the extraction; empty when nobody did.
+      stated: { when: statedWhen ?? '' },
       user: { input: transcript },
     }
 
@@ -485,6 +499,10 @@ export default class AudioTranscriptSummaryTask extends Command {
       // leak, so this enforces it. Hand edits to the written file stay sovereign.
       finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
     }
+
+    // The stated start is the time: it replaces the extraction's reading, and
+    // fills a kept record that has none. A time corrected at an earlier check stays.
+    if (statedWhen && (!keptExtract || !extractedTime)) extractedTime = statedWhen
 
     // The fields as they stand, kept after extraction and after every round
     // of the check, so a rerun shows the corrected ones.
