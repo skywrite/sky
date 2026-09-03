@@ -145,6 +145,8 @@ export interface ThreadSummary {
   line: string | null
   /** Notebook time of the last message, `HH:MM`; null before any */
   when: string | null
+  /** The day the thread started, `YYYY-MM-DD` — the day it belongs to and files under */
+  day: string
   turns: number
   busy: boolean
 }
@@ -270,6 +272,7 @@ function summarize(id: string, thread: Thread): ThreadSummary {
     state,
     line,
     when: session.turns.at(-1)?.when?.slice(11) ?? null,
+    day: session.startTime.plainDate.ymd,
     turns: session.turns.length,
     busy: thread.busy,
   }

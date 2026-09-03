@@ -1,34 +1,65 @@
-# The day's files
+# The day's rail, and the day's files
+
+Design notes for `src/service/handler/day/` and the page that drives it,
+`theme/client/day.tsx` with `dayRail.tsx`.
+
+## The rail
+
+A day has the Details rail a document has (`theme/client/rail.ts` holds the
+one rule for opening it: a third column on a wide window, remembered; an
+overlay from the header's Details button below 1180px). Its body scrolls;
+its foot is anchored.
+
+- **Schedule** — the calendar's meetings for the day, from the same read the
+  meeting check makes (`schedule.ts`, `GET /day/:ymd/schedule`). Each row
+  stands against the notebook clock: a past meeting says `filed`, linking
+  the record the notebook has of it, or `no record`; the one under way is
+  tinted and offers `join` when the event has a conference link; a coming
+  one shows its length. The record match is the meeting check's own rule,
+  a notebook meeting starting within fifteen minutes of the calendar's
+  start. Re-read every minute. A calendar that does not answer reads as
+  "Calendar not read", never as an empty day.
+- **Chats** — the chats filed under the day, with time and turn count, and
+  the live threads that started on it, marked with a dot.
+- **Working** — import jobs in hand: running, waiting for the person, or
+  stopped where a start could pick them up, with Review or Open. A filed
+  import is on the day already and leaves the rail; a file sky refused was
+  never work and never shows. Imports do not appear in the sidebar's
+  Threads list.
+- **File Attachments** — the drop pad, anchored at the foot, and nothing
+  else; the day's directory is the explorer's to show.
+
+## The day's files
 
 A day keeps files the way the desktop sweep does: in its attachments
 directory, `attachments/YYYY/MM/DD/` under the user-data directory. The
 directory is the record. Nothing is written into the notebook for a file
 that is only kept, so the day file and notebook git stay as they were.
 
-## What a person sees
+### What a person sees
 
-- **The Files button** in the day's header opens the Files panel at the top
-  of the day: a drop pad, then the directory as it is — time, kind chip,
-  name, size, Remove. The button is always in the header, and it is the only
-  thing that opens the panel: a drag over the page never does, so a drop
-  lands where the person aimed it.
+- **The pad** at the foot of the rail takes a drop, or a pick through
+  "choose files…". It is the only place a file is kept as it is: a drag
+  over the page never opens anything, so a drop lands where the person
+  aimed it.
 - **Drop on the pad and it moves.** No dialog, no question. The original
   keeps its name; the toast says "Moved report.pdf to today from Downloads"
   and holds Undo for eight seconds. Several files at once move together and
   Undo reverses all of them. A file with no original on this Mac lands as a
   copy, with progress shown in the pad.
-- **Drop anywhere else and it is an import** — the page, and the panel's
-  own header and rows too; only the pad keeps. The import dialog opens (see
+- **Drop anywhere else and it is an import** — the page, and the rail's
+  other sections too; only the pad keeps. The import dialog opens (see
   `../../import/docs/README.md`): a transcript, a recording or a screenshot
   of a conversation goes to its door, and a file no door takes is refused
   there and leaves with Remove. A recording over the transcription cap, or
   a screenshot over the vision model's, is refused before it uploads. The
   dialog never keeps; the pad does.
-- **Remove** sends a file to the Trash.
+- **Remove** (`POST …/remove`) sends a file to the Trash; the page offers
+  no button for it since the pad lists nothing.
 - **On the phone** the paperclip is the import's picker; the pad is a desk
   thing, so a phone has no way to keep a file yet.
 
-## Why a look, then a move
+### Why a look, then a move
 
 A browser drop carries a File with a name, a size, a type and a modified
 time, and nothing else. No path, in Chromium, Safari or Firefox alike; that
@@ -46,7 +77,7 @@ Only a located file ever moves: the move quotes the look's token, and the
 service re-checks size and modified time before renaming. A file that
 changed since the look is refused.
 
-## Routes
+### Routes
 
 All under `/day/:ymd/files`, mounted by `createDayRoutes` when a user-data
 directory is given.

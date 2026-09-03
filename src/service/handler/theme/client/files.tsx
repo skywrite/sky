@@ -1,6 +1,5 @@
-import { Button } from '@mantine/core'
-import { type DragEvent, Fragment, useEffect, useRef, useState } from 'react'
-import { type FileKind, type ListedFile, type Locate, type Located, post, sizeLabel, uploadBytes } from './keep.ts'
+import { useEffect, useRef } from 'react'
+import { type ListedFile, type Locate, type Located, post, uploadBytes } from './keep.ts'
 
 export { sizeLabel } from './keep.ts'
 
@@ -8,9 +7,9 @@ export { sizeLabel } from './keep.ts'
  * A file kept with the day. A drop carries bytes, a name, a size and a
  * modified time — never a path — so keeping starts with the service
  * looking for the original on this Mac. Found, the file moves and nothing
- * uploads; not found, the bytes go up and a copy lands. The Files block
- * lists the day's directory as it is, so what the doors attach and what
- * the editor pastes show there too.
+ * uploads; not found, the bytes go up and a copy lands. The pad that takes
+ * the drop sits at the foot of the day's rail (dayRail.tsx); this file is
+ * the keep itself and the toast that says what happened.
  */
 
 // -----------------------------------------------------------------------------
@@ -36,15 +35,6 @@ export interface KeepChoice {
   name: string
   ymd: string
   path: string | null
-}
-
-function extOf(name: string): string {
-  const dot = name.lastIndexOf('.')
-  return dot > 0 ? name.slice(dot).toLowerCase() : ''
-}
-
-export function dayFileHref(ymd: string, name: string): string {
-  return `/day/${ymd}/files/${encodeURIComponent(name)}`
 }
 
 /** The look for the original, from the three facts the drop carries. */
@@ -106,158 +96,14 @@ export async function moveIn(file: File, ymd: string, onProgress: (fraction: num
   return keepFile(file, locate, { name: file.name, ymd, path }, onProgress)
 }
 
-export async function removeDayFile(ymd: string, name: string): Promise<void> {
-  await post(`/day/${ymd}/files/remove`, { name })
-}
-
-/** The day's files, re-read whenever `generation` moves. */
-export function useDayFiles(ymd: string | null, generation = 0): { files: DayFile[]; refresh: () => void } {
-  const [files, setFiles] = useState<DayFile[]>([])
-  const [own, setOwn] = useState(0)
-  useEffect(() => {
-    if (!ymd) {
-      setFiles([])
-      return
-    }
-    let alive = true
-    fetch(`/day/${ymd}/files`)
-      .then((r) => (r.ok ? r.json() : { files: [] }))
-      .then((body) => alive && setFiles((body as { files: DayFile[] }).files))
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [ymd, generation, own])
-  return { files, refresh: () => setOwn((n) => n + 1) }
-}
-
 /** "today" on today, else the day itself. */
 export function dayWord(ymd: string, todayYmd: string | null): string {
   return ymd === todayYmd ? 'today' : ymd
 }
 
 // -----------------------------------------------------------------------------
-// The Files block on the day, and the toast after a keep
+// The toast after a keep
 // -----------------------------------------------------------------------------
-
-const EXT_LABEL: Partial<Record<FileKind, string>> = { image: 'IMG', audio: 'AUD', video: 'VID', pdf: 'PDF' }
-
-/** The chip beside a file: its extension, or the kind when the extension says less. */
-function extChip(file: DayFile): string {
-  const ext = extOf(file.name).slice(1).toUpperCase()
-  return ext.length > 0 && ext.length <= 5 ? ext : (EXT_LABEL[file.kind] ?? 'FILE')
-}
-
-/** `HH:MM` from the file's own modified time, in the browser's zone. */
-function modifiedClock(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-}
-
-/**
- * The Files panel: the drop pad, then the day's directory as it is. The pad
- * is the one place a dropped file moves in without a question — the page's
- * drop hook leaves anything inside `data-drop-pad` to it. The panel's head
- * and rows are the page: a drop there is an import, like anywhere else.
- */
-export function FilesPanel({
-  ymd,
-  files,
-  onChanged,
-  onKept,
-}: {
-  ymd: string
-  files: DayFile[]
-  onChanged: () => void
-  /** Every file the pad just moved or copied, for the toast */
-  onKept: (kept: Kept[]) => void
-}) {
-  const [over, setOver] = useState(0)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
-  const [removing, setRemoving] = useState<string | null>(null)
-  const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
-  const remove = async (name: string) => {
-    setRemoving(name)
-    try {
-      await removeDayFile(ymd, name)
-      onChanged()
-    } finally {
-      setRemoving(null)
-    }
-  }
-  const drop = async (event: DragEvent) => {
-    if (!hasFiles(event)) return
-    event.preventDefault()
-    setOver(0)
-    const dropped: File[] = event.dataTransfer ? Array.from(event.dataTransfer.files) : []
-    if (dropped.length === 0 || busy) return
-    const kept: Kept[] = []
-    setProblem(null)
-    try {
-      for (const file of dropped) {
-        setBusy(`Moving ${file.name}…`)
-        kept.push(
-          await moveIn(file, ymd, (fraction) => setBusy(`Copying ${file.name} · ${Math.round(fraction * 100)}%`)),
-        )
-        onChanged()
-      }
-    } catch (err) {
-      setProblem((err as Error).message)
-    } finally {
-      setBusy(null)
-    }
-    if (kept.length > 0) onKept(kept)
-  }
-  return (
-    <div className="sky-block sky-files">
-      <div className="sky-block-head sky-bhead">
-        Files
-        <span className="sky-spacer" />
-        {files.length > 0 && <span className="sky-count">{files.length}</span>}
-      </div>
-      <div className="sky-block-pad">
-        <div
-          className="sky-pad"
-          data-drop-pad=""
-          data-over={over > 0 ? '' : undefined}
-          data-busy={busy ? '' : undefined}
-          onDragEnter={(e) => hasFiles(e) && setOver((n) => n + 1)}
-          onDragOver={(e) => hasFiles(e) && e.preventDefault()}
-          onDragLeave={(e) => hasFiles(e) && setOver((n) => Math.max(0, n - 1))}
-          onDrop={(e) => void drop(e)}
-        >
-          {busy ?? 'Drop files here to move them into the day'}
-        </div>
-        {problem && <div className="sky-pad-problem">{problem}</div>}
-        {files.map((f) => (
-          <Fragment key={f.name}>
-            <div className="sky-file" data-gone={removing === f.name ? '' : undefined}>
-              <span className="sky-dat">{modifiedClock(f.modified)}</span>
-              <span className="sky-file-ext">{extChip(f)}</span>
-              <span className="sky-file-name">
-                <a href={dayFileHref(ymd, f.name)} target="_blank" rel="noreferrer">
-                  {f.name}
-                </a>
-              </span>
-              <span className="sky-file-size">{sizeLabel(f.size)}</span>
-              <Button
-                size="xs"
-                variant="subtle"
-                color="gray"
-                onClick={() => void remove(f.name)}
-                disabled={removing !== null}
-              >
-                Remove
-              </Button>
-            </div>
-          </Fragment>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 const TOAST_MS = 8000
 

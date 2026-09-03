@@ -13,6 +13,7 @@ import { IdentityLine } from './frontmatter/Identity.tsx'
 import { useOutline } from './frontmatter/outline.ts'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
+import { useRail } from './rail.ts'
 import { highlightCodeBlocks } from './wysiwyg/highlight.ts'
 import { type EditorHandle, type EditorStatusKind, mountEditor } from './wysiwyg/mod.ts'
 
@@ -398,30 +399,6 @@ function focusIdentityInput() {
   inputs[inputs.length - 1]?.focus()
 }
 
-const RAIL_KEY = 'sky-rail'
-const NARROW = '(max-width: 1180px)'
-
-/** Whether the window is too narrow for a third column — then the rail is an overlay. */
-function useNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
-  useEffect(() => {
-    const query = window.matchMedia(NARROW)
-    const update = () => setNarrow(query.matches)
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return narrow
-}
-
-/** The rail's wide-screen preference: shown unless closed once. */
-function railRemembered(): boolean {
-  try {
-    return localStorage.getItem(RAIL_KEY) !== 'closed'
-  } catch {
-    return true
-  }
-}
-
 /**
  * The editor, mounted into the column for one file: the file read once, then
  * its own DOM until the file changes or editing ends. What it reports — status,
@@ -559,34 +536,7 @@ export function DocView({ file }: { file: string }) {
         }
       : undefined,
   )
-  const narrow = useNarrow()
-  const [railWide, setRailWide] = useState(railRemembered)
-  const [railOverlay, setRailOverlay] = useState(false)
-  const railOpen = narrow ? railOverlay : railWide
-  const toggleRail = () => {
-    if (narrow) setRailOverlay((open) => !open)
-    else {
-      setRailWide((open) => {
-        try {
-          localStorage.setItem(RAIL_KEY, open ? 'closed' : 'open')
-        } catch {
-          // Then the choice lasts for this visit only.
-        }
-        return !open
-      })
-    }
-  }
-  useEffect(() => {
-    if (!narrow || !railOverlay) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setRailOverlay(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [narrow, railOverlay])
-  useEffect(() => {
-    setRailOverlay(false)
-  }, [file])
+  const { narrow, open: railOpen, toggle: toggleRail, close: closeRail } = useRail(file)
   const outline = useOutline(scrollRef, [doc?.path, doc?.html, editing])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
@@ -740,12 +690,7 @@ export function DocView({ file }: { file: string }) {
         </div>
       </div>
       {file && !missing && railOpen && (editing || doc) ? (
-        <DocumentRail
-          state={frontmatter}
-          file={file}
-          outline={outline}
-          onClose={narrow ? () => setRailOverlay(false) : undefined}
-        />
+        <DocumentRail state={frontmatter} file={file} outline={outline} onClose={narrow ? closeRail : undefined} />
       ) : null}
     </div>
   )

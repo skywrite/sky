@@ -241,6 +241,11 @@ export default class ChatSession {
     return this.opts.resume
   }
 
+  /** When the session started — the day it files under, and the key of its snapshot. */
+  get startTime(): PlainDateTime {
+    return this.opts.startTime
+  }
+
   /** True once a message was sent this session — a resumed chat with none leaves its file untouched. */
   get hasNewMessages(): boolean {
     return this.newMessages

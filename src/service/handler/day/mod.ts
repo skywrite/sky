@@ -16,6 +16,7 @@ import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/t
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
+import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
 
 export interface DayRoutesOptions {
   /** The notebook root that saved-chat paths are shown relative to */
@@ -30,6 +31,8 @@ export interface DayRoutesOptions {
   ownerNames?: string[]
   /** The day's files live under the user-data directory; without it the files routes stay off */
   files?: DayFilesOptions
+  /** The day's calendar schedule for the rail; without it the schedule route stays off */
+  schedule?: ScheduleHost
 }
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
@@ -132,5 +135,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
   })
   // The day's files: listed, served, kept from a drop, put back, removed.
   if (options.files) app.route('/', createDayFilesRoutes(options.files))
+  // The day's schedule: the calendar's meetings against the notebook clock, for the rail.
+  if (options.schedule) app.route('/', createScheduleRoutes(options.schedule))
   return app
 }

@@ -1,9 +1,11 @@
 import { Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
+import { DayRail } from './dayRail.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
-import { FilesPanel, type Kept, KeptToast, useDayFiles } from './files.tsx'
-import { DropOverlay, type ImportJob, ImportRow } from './import.tsx'
+import { type Kept, KeptToast } from './files.tsx'
+import { DropOverlay, type ImportJob } from './import.tsx'
+import { useRail } from './rail.ts'
 
 /**
  * The day is the page. Its column is what needs to get done — with
@@ -83,6 +85,8 @@ export interface ThreadSummary {
   state: ThreadState
   line: string | null
   when: string | null
+  /** The day the thread started, `YYYY-MM-DD` */
+  day: string
   turns: number
   busy: boolean
 }
@@ -278,34 +282,6 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
 // -----------------------------------------------------------------------------
 // Rendering
 // -----------------------------------------------------------------------------
-
-const STATE_TONE: Record<ThreadState, 'quiet' | 'live' | 'done' | 'failed'> = {
-  new: 'quiet',
-  reading: 'quiet',
-  thinking: 'live',
-  streaming: 'live',
-  waiting: 'live',
-  done: 'done',
-  failed: 'failed',
-  saving: 'quiet',
-}
-
-function RunningRow({ thread, onOpen }: { thread: ThreadSummary; onOpen: (id: string) => void }) {
-  const line = thread.state === 'new' ? null : thread.line ? `${thread.state} · ${thread.line}` : thread.state
-  return (
-    <div className="sky-run">
-      <span className="sky-run-dot">
-        <span className="sky-dot" data-tone={STATE_TONE[thread.state]} />
-      </span>
-      <span className="sky-run-txt">
-        {thread.title ?? 'New chat'}
-        {line && <span className="sky-run-line">{line}</span>}
-      </span>
-      {thread.when && <span className="sky-run-at">{thread.when}</span>}
-      <Button onClick={() => onOpen(thread.id)}>Open</Button>
-    </div>
-  )
-}
 
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
@@ -546,11 +522,10 @@ function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: n
   )
 }
 
-/** The archive, folded to a line each: reference threads and the day's saved chats. */
-function FiledCard({ archive, chats }: { archive: DayRecord['messages']['archive']; chats: DayData['chats'] }) {
+/** The archive, folded to a line: the conversations filed for reference. The day's chats are the rail's. */
+function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
   const [showArchive, setShowArchive] = useState(false)
-  const [showChats, setShowChats] = useState(false)
-  if (archive.length === 0 && chats.length === 0) return null
+  if (archive.length === 0) return null
   return (
     <Block head="Filed">
       {archive.length > 0 && (
@@ -569,24 +544,6 @@ function FiledCard({ archive, chats }: { archive: DayRecord['messages']['archive
                   {(m.from || m.to) && (
                     <span className="sky-rec-sub">{[m.from, m.to].filter(Boolean).join(' → ')}</span>
                   )}
-                </DocLine>
-              </Fragment>
-            ))}
-        </>
-      )}
-      {chats.length > 0 && (
-        <>
-          <div className="sky-fold-line">
-            <span>{count(chats.length, 'chat')} saved with the day</span>
-            <button type="button" className="sky-showlink" onClick={() => setShowChats((v) => !v)}>
-              {showChats ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showChats &&
-            chats.map((c) => (
-              <Fragment key={c.path}>
-                <DocLine when={c.time} tag={count(c.exchanges, 'turn')}>
-                  <a href={fileHref(c.path)}>{c.summary || c.path}</a>
                 </DocLine>
               </Fragment>
             ))}
@@ -614,7 +571,6 @@ export function DayView({
   onOpenImport = () => {},
   dragging = false,
   attach,
-  filesGeneration = 0,
   kept = [],
   onKept = () => {},
   onUndoKept = () => {},
@@ -631,11 +587,9 @@ export function DayView({
   /** Files are held over the page */
   dragging?: boolean
   attach?: ComposerAttach
-  /** Moves when the day's files changed outside the block — a keep, an undo, an import that attached its files */
-  filesGeneration?: number
   /** Files just kept: the toast holds Undo for a moment */
   kept?: Kept[]
-  /** The Files pad moved or copied these */
+  /** The rail's pad moved or copied these */
   onKept?: (kept: Kept[]) => void
   onUndoKept?: () => void
   onDismissKept?: () => void
@@ -648,19 +602,9 @@ export function DayView({
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView)
-  const dayFiles = useDayFiles(view?.day.ymd ?? null, filesGeneration)
-  // The Files panel opens from its button, and from nothing else. A drag over the
-  // page never opens it: a file dropped on the day is the import it was aimed to
-  // be, and only a drop on the pad, opened on purpose, keeps a file as it is.
-  const [filesOpen, setFilesOpen] = useState(false)
-  const filesRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (filesOpen) filesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }, [filesOpen])
-
-  const running =
-    threads.filter((t) => t.busy).length +
-    imports.filter((j) => j.state === 'running' || j.state === 'needs-you').length
+  // The rail beside the day: a third column on a wide window, an overlay from
+  // the header on a narrow one — the same rule as a document's Details.
+  const rail = useRail(view?.day.ymd ?? null)
   const section = view?.section ?? null
   const record = view?.record ?? null
   const isToday = view ? view.day.ymd === view.today.ymd : false
@@ -692,201 +636,198 @@ export function DayView({
       record.messages.involved.length > 0 ||
       doneToday.length > 0 ||
       record.journals.length + record.notes.length > 0 ||
-      record.messages.archive.length > 0 ||
-      (view?.chats.length ?? 0) > 0)
+      record.messages.archive.length > 0)
 
   return (
     <div className="sky-main sky-day">
       <header className="sky-head">
         <span className="sky-title">{view?.day.dateLabel ?? 'Today'}</span>
         <nav className="sky-tabs">
-          {threads.length > 0 && (
-            <span className="sky-head-count">
-              {threads.length} thread{threads.length === 1 ? '' : 's'}
-              {running > 0 ? ` · ${running} running` : ''}
-            </span>
-          )}
-          <Button
-            size="sm"
-            variant={filesOpen ? 'light' : 'default'}
-            disabled={!view}
-            onClick={() => setFilesOpen((open) => !open)}
-          >
-            Files{dayFiles.files.length > 0 ? ` · ${dayFiles.files.length}` : ''}
-          </Button>
           {view?.day.dayRelativePath && (
             <Button size="sm" component="a" href={fileHref(view.day.dayRelativePath)}>
               Day file
             </Button>
           )}
+          <Button
+            size="sm"
+            variant={rail.open ? 'light' : 'subtle'}
+            disabled={!view}
+            onClick={rail.toggle}
+            data-active={rail.open}
+            aria-pressed={rail.open}
+          >
+            Details
+          </Button>
         </nav>
       </header>
 
-      <div className="sky-scroll" ref={scrollRef}>
-        <div className="sky-col">
-          {view && filesOpen && (
-            <div ref={filesRef} className="sky-files-anchor">
-              <FilesPanel ymd={view.day.ymd} files={dayFiles.files} onChanged={dayFiles.refresh} onKept={onKept} />
-            </div>
-          )}
-          {notes.map((note, i) => (
-            <Fragment key={i}>
-              <NoteLine note={note} />
-            </Fragment>
-          ))}
+      <div className="sky-split">
+        <div className="sky-split-main">
+          <div className="sky-scroll" ref={scrollRef}>
+            <div className="sky-col">
+              {notes.map((note, i) => (
+                <Fragment key={i}>
+                  <NoteLine note={note} />
+                </Fragment>
+              ))}
 
-          {record && (
-            <>
-              {hasPlan && <div className="sky-sect">What needs to get done</div>}
+              {record && (
+                <>
+                  {hasPlan && <div className="sky-sect">What needs to get done</div>}
 
-              <PlanCard
-                head="Most important"
-                items={record.mostImportant}
-                today={isToday}
-                checkOff={checkOff}
-                at={at}
-              />
-              <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at} />
-              <TodoCard items={record.todos} checkOff={checkOff} at={at} />
-              <ReminderCard items={record.reminders} checkOff={checkOff} at={at} />
-
-              {section && (section.streaks.length > 0 || section.mostImportant.length > 0) && (
-                <Block
-                  head={section.mostImportant.length > 0 ? 'Today' : 'Streaks'}
-                  mini={`${section.streaks.filter((s) => s.doneToday).length} of ${section.streaks.length} done`}
-                >
-                  {section.mostImportant.map((item) => (
-                    <div key={item.relativePath} className="sky-rec-line">
-                      <span className="sky-rec-txt">
-                        <a href={fileHref(item.relativePath)}>{item.label}</a>
-                      </span>
-                    </div>
-                  ))}
-                  {section.streaks.map((streak) => (
-                    <div key={streak.title} className="sky-prow">
-                      <span className="sky-scheck" data-on={streak.doneToday}>
-                        {streak.doneToday && <Tick />}
-                      </span>
-                      <span className="sky-ptext" data-dim={streak.doneToday || undefined}>
-                        {streak.title}
-                      </span>
-                    </div>
-                  ))}
-                </Block>
-              )}
-
-              {hasDayFar && <div className="sky-sect">The day so far</div>}
-
-              {record.meetings.length > 0 && (
-                <Block head="Meetings" mini={String(record.meetings.length)}>
-                  {record.meetings.map((m) => (
-                    <Fragment key={m.path}>
-                      <DocLine when={m.when}>
-                        <a href={fileHref(m.path)}>{m.title}</a>
-                        {m.who && <span className="sky-rec-sub">{m.who}</span>}
-                      </DocLine>
-                    </Fragment>
-                  ))}
-                </Block>
-              )}
-
-              {record.messages.involved.length > 0 && (
-                <Block head="Messages" mini={count(record.messages.involved.length, 'conversation')}>
-                  <Fold
-                    rows={record.messages.involved}
-                    render={(m: DayRecord['messages']['involved'][number]) => (
-                      <DocLine when={m.when} tag={mediumLabel(m.medium)}>
-                        <a href={fileHref(m.path)}>{m.title}</a>
-                        {(m.from || m.to) && (
-                          <span className="sky-rec-sub">{[m.from, m.to].filter(Boolean).join(' → ')}</span>
-                        )}
-                      </DocLine>
-                    )}
+                  <PlanCard
+                    head="Most important"
+                    items={record.mostImportant}
+                    today={isToday}
+                    checkOff={checkOff}
+                    at={at}
                   />
-                </Block>
-              )}
+                  <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at} />
+                  <TodoCard items={record.todos} checkOff={checkOff} at={at} />
+                  <ReminderCard items={record.reminders} checkOff={checkOff} at={at} />
 
-              {doneToday.length > 0 && (
-                <Block head="Done today" mini={String(doneToday.length)}>
-                  <Fold
-                    rows={doneToday}
-                    render={({ item, undoable }) => (
-                      <div className="sky-prow">
-                        {undoable ? (
-                          <button
-                            type="button"
-                            className="sky-check"
-                            aria-label="Put back"
-                            title="Put back"
-                            onClick={() => checkOff.uncheck(item)}
-                          >
-                            <span className="sky-check-box" data-on="true">
-                              <Tick />
-                            </span>
-                          </button>
-                        ) : (
-                          <span className="sky-done-tick">
-                            <Tick />
+                  {section && (section.streaks.length > 0 || section.mostImportant.length > 0) && (
+                    <Block
+                      head={section.mostImportant.length > 0 ? 'Today' : 'Streaks'}
+                      mini={`${section.streaks.filter((s) => s.doneToday).length} of ${section.streaks.length} done`}
+                    >
+                      {section.mostImportant.map((item) => (
+                        <div key={item.relativePath} className="sky-rec-line">
+                          <span className="sky-rec-txt">
+                            <a href={fileHref(item.relativePath)}>{item.label}</a>
                           </span>
+                        </div>
+                      ))}
+                      {section.streaks.map((streak) => (
+                        <div key={streak.title} className="sky-prow">
+                          <span className="sky-scheck" data-on={streak.doneToday}>
+                            {streak.doneToday && <Tick />}
+                          </span>
+                          <span className="sky-ptext" data-dim={streak.doneToday || undefined}>
+                            {streak.title}
+                          </span>
+                        </div>
+                      ))}
+                    </Block>
+                  )}
+
+                  {hasDayFar && <div className="sky-sect">The day so far</div>}
+
+                  {record.meetings.length > 0 && (
+                    <Block head="Meetings" mini={String(record.meetings.length)}>
+                      {record.meetings.map((m) => (
+                        <Fragment key={m.path}>
+                          <DocLine when={m.when}>
+                            <a href={fileHref(m.path)}>{m.title}</a>
+                            {m.who && <span className="sky-rec-sub">{m.who}</span>}
+                          </DocLine>
+                        </Fragment>
+                      ))}
+                    </Block>
+                  )}
+
+                  {record.messages.involved.length > 0 && (
+                    <Block head="Messages" mini={count(record.messages.involved.length, 'conversation')}>
+                      <Fold
+                        rows={record.messages.involved}
+                        render={(m: DayRecord['messages']['involved'][number]) => (
+                          <DocLine when={m.when} tag={mediumLabel(m.medium)}>
+                            <a href={fileHref(m.path)}>{m.title}</a>
+                            {(m.from || m.to) && (
+                              <span className="sky-rec-sub">{[m.from, m.to].filter(Boolean).join(' → ')}</span>
+                            )}
+                          </DocLine>
                         )}
-                        <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
-                        <span className="sky-ptext sky-done-text">
-                          {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
-                        </span>
-                        {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
-                      </div>
-                    )}
-                  />
-                </Block>
+                      />
+                    </Block>
+                  )}
+
+                  {doneToday.length > 0 && (
+                    <Block head="Done today" mini={String(doneToday.length)}>
+                      <Fold
+                        rows={doneToday}
+                        render={({ item, undoable }) => (
+                          <div className="sky-prow">
+                            {undoable ? (
+                              <button
+                                type="button"
+                                className="sky-check"
+                                aria-label="Put back"
+                                title="Put back"
+                                onClick={() => checkOff.uncheck(item)}
+                              >
+                                <span className="sky-check-box" data-on="true">
+                                  <Tick />
+                                </span>
+                              </button>
+                            ) : (
+                              <span className="sky-done-tick">
+                                <Tick />
+                              </span>
+                            )}
+                            <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
+                            <span className="sky-ptext sky-done-text">
+                              {item.link ? (
+                                <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a>
+                              ) : (
+                                item.text
+                              )}
+                            </span>
+                            {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
+                          </div>
+                        )}
+                      />
+                    </Block>
+                  )}
+
+                  {(record.journals.length > 0 || record.notes.length > 0) && (
+                    <Block head="Written" mini={String(record.journals.length + record.notes.length)}>
+                      {record.journals.map((row) => (
+                        <Fragment key={row.path}>
+                          <DocLine when={row.when}>
+                            <a href={fileHref(row.path)}>{row.title}</a>
+                          </DocLine>
+                        </Fragment>
+                      ))}
+                      {record.notes.map((row) => (
+                        <Fragment key={row.path}>
+                          <DocLine when={row.when}>
+                            <a href={fileHref(row.path)}>{row.title}</a>
+                            <span className="sky-rec-sub">note</span>
+                          </DocLine>
+                        </Fragment>
+                      ))}
+                    </Block>
+                  )}
+
+                  <FiledCard archive={record.messages.archive} />
+                </>
               )}
 
-              {(record.journals.length > 0 || record.notes.length > 0) && (
-                <Block head="Written" mini={String(record.journals.length + record.notes.length)}>
-                  {record.journals.map((row) => (
-                    <Fragment key={row.path}>
-                      <DocLine when={row.when}>
-                        <a href={fileHref(row.path)}>{row.title}</a>
-                      </DocLine>
-                    </Fragment>
-                  ))}
-                  {record.notes.map((row) => (
-                    <Fragment key={row.path}>
-                      <DocLine when={row.when}>
-                        <a href={fileHref(row.path)}>{row.title}</a>
-                        <span className="sky-rec-sub">note</span>
-                      </DocLine>
-                    </Fragment>
-                  ))}
-                </Block>
+              <ThreadColumn chat={chat} />
+
+              {chat.state.turns.length === 0 && !chat.state.gather && (
+                <div className="sky-blank" style={{ height: 'auto', padding: '24px 0' }}>
+                  <p>Ask the day anything, or start a chat — answers come from your files.</p>
+                </div>
               )}
-
-              <FiledCard archive={record.messages.archive} chats={view?.chats ?? []} />
-            </>
-          )}
-
-          {threads.length + imports.length > 0 && (
-            <Block head="Running" mini={running > 0 ? `${running} on sky` : 'all quiet'}>
-              {imports.map((j) => (
-                <Fragment key={j.id}>
-                  <ImportRow job={j} onOpen={onOpenImport} />
-                </Fragment>
-              ))}
-              {threads.map((t) => (
-                <Fragment key={t.id}>
-                  <RunningRow thread={t} onOpen={onOpen} />
-                </Fragment>
-              ))}
-            </Block>
-          )}
-
-          <ThreadColumn chat={chat} />
-
-          {chat.state.turns.length === 0 && !chat.state.gather && threads.length === 0 && imports.length === 0 && (
-            <div className="sky-blank" style={{ height: 'auto', padding: '24px 0' }}>
-              <p>Ask the day anything, or start a chat — answers come from your files.</p>
             </div>
-          )}
+          </div>
+
+          <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} attach={attach} />
         </div>
+        {rail.open && view && (
+          <DayRail
+            ymd={view.day.ymd}
+            chats={view.chats}
+            threads={threads}
+            imports={imports}
+            onOpenThread={onOpen}
+            onOpenImport={onOpenImport}
+            onKept={onKept}
+            onClose={rail.narrow ? rail.close : undefined}
+          />
+        )}
       </div>
 
       {checkOff.undo && (
@@ -910,7 +851,6 @@ export function DayView({
         <KeptToast kept={kept} todayYmd={view?.today.ymd ?? null} onUndo={onUndoKept} onDone={onDismissKept} />
       )}
 
-      <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} attach={attach} />
       {dragging && <DropOverlay />}
     </div>
   )

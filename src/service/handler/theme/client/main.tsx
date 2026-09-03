@@ -9,15 +9,7 @@ import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
-import {
-  acceptsImports,
-  ImportDialog,
-  ImportMain,
-  importStateWord,
-  useFileDrop,
-  useImportQueue,
-  useImports,
-} from './import.tsx'
+import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
@@ -121,22 +113,14 @@ function Canvas() {
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
   const openImport = (id: string) => navigate(`/import/${id}`)
-  // A file the pad kept with the day: the toast holds Undo, and the Files block re-reads the directory.
+  // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])
-  const [filesGeneration, setFilesGeneration] = useState(0)
-  const bumpFiles = useCallback(() => setFilesGeneration((g) => g + 1), [])
   const queue = useImportQueue((job) => openImport(job.id))
   const drop = useFileDrop(onDayPage, queue.take)
-  // An import that finished attached its files to the day.
-  const doneImports = imports.filter((j) => j.state === 'done').length
-  useEffect(() => bumpFiles(), [doneImports, bumpFiles])
   const undoKept = () => {
     const held = kept
     setKept([])
-    if (held.length > 0)
-      void undoKeep(held)
-        .then(bumpFiles)
-        .catch(() => {})
+    if (held.length > 0) void undoKeep(held).catch(() => {})
   }
   const dismissKept = useCallback(() => setKept([]), [])
   const newChat = () => openThread(crypto.randomUUID())
@@ -234,21 +218,7 @@ function Canvas() {
               </button>
             ))}
 
-            {others.length + importRows.length > 0 && <div className="sky-side-label">Threads</div>}
-            {importRows.map((j) => (
-              <button
-                key={j.id}
-                type="button"
-                className="sky-thread"
-                data-active={j.id === importId}
-                onClick={() => openImport(j.id)}
-              >
-                <span>{j.title}</span>
-                <span className="sky-meta" data-state={j.state}>
-                  {importStateWord(j)}
-                </span>
-              </button>
-            ))}
+            {others.length > 0 && <div className="sky-side-label">Threads</div>}
             {others.map((t) => (
               <button
                 key={t.id}
@@ -304,7 +274,7 @@ function Canvas() {
         <Fragment key={threadId}>
           <ChatMain
             chat={chat}
-            title={threadTitle(chat.state.turns) ?? 'New chat'}
+            title={threads.find((t) => t.id === threadId)?.title ?? threadTitle(chat.state.turns) ?? 'New chat'}
             back={{ label: 'Today', onClick: () => navigate('/') }}
             onEnd={endThread}
           />
@@ -313,19 +283,15 @@ function Canvas() {
         <DayView
           chat={chat}
           day={day}
-          threads={isToday ? others : []}
+          threads={others}
           imports={isToday ? importRows : []}
           notes={notes}
           onOpen={openThread}
           onOpenImport={openImport}
           dragging={drop.dragging}
           attach={{ accept: acceptsImports(), onFiles: queue.take }}
-          filesGeneration={filesGeneration}
           kept={kept}
-          onKept={(list) => {
-            setKept(list)
-            bumpFiles()
-          }}
+          onKept={setKept}
           onUndoKept={undoKept}
           onDismissKept={dismissKept}
         />

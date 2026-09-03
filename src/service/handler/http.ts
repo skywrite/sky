@@ -21,6 +21,7 @@ import { createAttachmentRoutes } from './attachments/routes.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
+import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
@@ -133,6 +134,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         timeDir: chat.timeDir,
         aboutMePath: chat.aboutMePath,
         files: { userDataDir },
+        schedule: createDayScheduleHost({ timeDir: chat.timeDir, markdownBaseDir }),
       }),
     )
   }
