@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -65,6 +65,20 @@ a person can see and touch:
   while a call is held finds it in `GET /chat/:id` as `pending` (with
   `busy`) and follows the turn by re-reading the thread until it settles.
   The day's list shows such a thread as `waiting` with "needs your go".
+- **A tool at work, in its own words.** Every line a command prints in the
+  terminal reaches the page while the tool runs: the session's tools get
+  their own command service whose output is an `EventOutput`, and
+  `toolOutputSink` in `createSession.ts` turns lines, stages, closing
+  ticks, and command boundaries into `tool-started`, `tool-line`, and
+  `tool-finished` events for the routes. The routes keep one `ToolRun` per
+  call with the thread (`runs` on `GET /chat/:id`, like the cards) and
+  stream the same three as frames. On the page the running tool's chip
+  carries the time since it started and the last thing it said sits
+  under it; a click opens everything it said; once the turn is done the
+  lines fold under the chip and stay as the record of what the tool did.
+  The day's list shows the running tool's latest line for a thread that
+  is thinking. A tool that prints nothing keeps its chip from the model's
+  own record of the call; the two never double up.
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
 gathered (the deduplicated universe, never the raw sweep sizes); a grown entry lists the documents its queries added (cut ones
@@ -94,8 +108,19 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   tells "read nothing on purpose" from a recording gap. It is not the
   terminal's `/no-context`, which drops the universe but lets later
   questions query; Nothing queries nothing.
+- Tool runs live with the thread, not the transcript: they are the
+  page's record while the thread is held, as the cards are. The context
+  log's tool records stay the saved trail.
+- A run keeps its newest 400 lines; a mission narrates for an hour and
+  the end of the story matters more than its middle.
 
 ## Verified
+
+- 2026-09-03 — tool lines: a scripted model whose call narrates two lines
+  and holds; mid-run the thread carries the open run with both lines and
+  the list shows the latest line; released, the stream carries started,
+  two lines, finished in order before the reply, and the run settles with
+  the reply (route test).
 
 - 2026-09-02 — Reads nothing: a session started at zero gathers no
   baseline and reports itself closed; two closed turns call no producer

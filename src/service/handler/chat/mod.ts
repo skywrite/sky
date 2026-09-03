@@ -52,10 +52,33 @@ export interface AnsweredApproval extends PendingApproval {
  */
 export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision>
 
+/**
+ * A tool's own words as it works, as the host hears them from the
+ * command's output: where a run starts, each line it prints, how it ends.
+ */
+export type ToolOutputEvent =
+  | { type: 'tool-started'; tool: string }
+  | { type: 'tool-line'; tool: string; text: string; level: 'log' | 'error' }
+  | { type: 'tool-finished'; tool: string; status: 'success' | 'fail' | 'error' }
+
+/** One tool call at work, kept with the thread like the cards — the page shows it under the reply it belongs to. */
+export interface ToolRun {
+  /** The tool as the model calls it (`google_agent`) */
+  tool: string
+  /** The reply's turn index — the run sits with that reply */
+  at: number
+  /** Epoch milliseconds when the run started — the page counts the wait from it */
+  started: number
+  /** What the command printed, oldest first, colors stripped; the newest stay when the cap is hit */
+  lines: string[]
+  /** How it ended; null while it runs */
+  status: 'success' | 'fail' | 'error' | null
+}
+
 /** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
 export type ChatSessionFactory = (
   id: string,
-  onEvent: (event: ChatSessionEvent) => void,
+  onEvent: (event: ChatSessionEvent | ToolOutputEvent) => void,
   prefs: ThreadPrefs,
   ask: AskApproval,
 ) => Promise<ChatSession>
@@ -126,11 +149,14 @@ export interface ThreadSummary {
   busy: boolean
 }
 
-/** What travels the turn's stream: the session's events, and the approvals the routes add around them. */
+/** What travels the turn's stream: the session's events, and what the routes add around them — approvals and tool runs. */
 type WireEvent =
   | ChatSessionEvent
   | { type: 'approval-request'; approval: PendingApproval }
   | { type: 'approval-answered'; id: string; approved: boolean; at: number }
+  | { type: 'tool-started'; run: ToolRun }
+  | { type: 'tool-line'; tool: string; at: number; text: string; level: 'log' | 'error' }
+  | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error' }
 
 interface Thread {
   session: ChatSession
@@ -143,6 +169,8 @@ interface Thread {
   pending: Map<string, PendingApproval & { resolve: (decision: ApprovalDecision) => void }>
   /** The calls answered so far, oldest first */
   answered: AnsweredApproval[]
+  /** Every tool run so far, oldest first — the running one is the last without a status */
+  runs: ToolRun[]
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -156,6 +184,8 @@ interface Thread {
 
 const LINE_CHARS = 140
 const TITLE_WORDS = 8
+/** Lines kept per tool run — a mission narrates for an hour; the newest lines are the ones that matter */
+const RUN_LINES = 400
 
 function head(text: string, chars = LINE_CHARS): string {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -185,12 +215,53 @@ function stateAfter(event: ChatSessionEvent): ThreadState | null {
   }
 }
 
+/** The tool run under way, if any. */
+function runningOf(thread: Thread): ToolRun | undefined {
+  return thread.runs.findLast((run) => run.status === null)
+}
+
+/**
+ * Keep a tool's output with the thread and shape it for the wire. A line
+ * from a tool nobody announced starts its run — a host without boundaries
+ * still gets its lines shown.
+ */
+function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | null {
+  const at = thread.session.turns.length
+  const open = thread.runs.findLast((run) => run.tool === event.tool && run.status === null)
+  switch (event.type) {
+    case 'tool-started': {
+      if (open) return null
+      const run: ToolRun = { tool: event.tool, at, started: Date.now(), lines: [], status: null }
+      thread.runs.push(run)
+      return { type: 'tool-started', run }
+    }
+    case 'tool-line': {
+      let run = open
+      if (!run) {
+        run = { tool: event.tool, at, started: Date.now(), lines: [], status: null }
+        thread.runs.push(run)
+        thread.sink?.({ type: 'tool-started', run })
+      }
+      if (run.lines.length >= RUN_LINES) run.lines.shift()
+      run.lines.push(event.text)
+      return { type: 'tool-line', tool: run.tool, at: run.at, text: event.text, level: event.level }
+    }
+    case 'tool-finished': {
+      if (!open) return null
+      open.status = event.status
+      return { type: 'tool-finished', tool: open.tool, at: open.at, status: event.status }
+    }
+  }
+}
+
 function summarize(id: string, thread: Thread): ThreadSummary {
   const { session, state } = thread
   const lastReply = [...session.turns].reverse().find((t) => t.role === 'assistant')
+  const running = thread.busy ? runningOf(thread) : undefined
   let line: string | null = null
   if (state === 'streaming') line = head(thread.partial)
   else if (state === 'waiting') line = 'needs your go'
+  else if (running && running.lines.length > 0) line = head(running.lines.at(-1) ?? '')
   else if (state === 'done' && lastReply) line = head(lastReply.content)
   else if (state === 'failed') line = thread.partial || null
   return {
@@ -263,6 +334,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           (event) => {
             const thread = threads.get(id)
             if (!thread) return
+            if (event.type === 'tool-started' || event.type === 'tool-line' || event.type === 'tool-finished') {
+              const wire = recordToolOutput(thread, event)
+              thread.updatedAt = ++tick
+              if (wire) thread.sink?.(wire)
+              return
+            }
             const next = stateAfter(event)
             if (next) thread.state = next
             if (event.type === 'model-start') thread.partial = ''
@@ -282,6 +359,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             sink: null,
             pending: new Map(),
             answered: [],
+            runs: [],
             state: 'new',
             partial: '',
             updatedAt: ++tick,
@@ -353,6 +431,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             })
           }
           const turn = await thread.session.send(message)
+          // A run still open when the turn ends never reported its end — the turn did.
+          for (const run of thread.runs) if (run.status === null) run.status = turn.error ? 'error' : 'success'
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
           thread.updatedAt = ++tick
@@ -393,6 +473,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         lines,
       })),
       answered: thread.answered,
+      runs: thread.runs,
     })
   })
 

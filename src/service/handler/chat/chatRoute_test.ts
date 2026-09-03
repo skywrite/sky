@@ -11,7 +11,7 @@ import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import { approvalCard } from './approvalCard.ts'
-import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary } from './mod.ts'
+import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -85,10 +85,17 @@ const settingsHost: ChatSettingsHost = {
   },
 }
 
-async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<ChatRoutesOptions & { tmp: string }> {
+async function testHost(
+  over: {
+    invokeModel?: ModelInvoker
+    /** Hands the test the host's report channel — what a tool's command output would reach */
+    capture?: (report: (event: ToolOutputEvent) => void) => void
+  } = {},
+): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
   const createSession: ChatSessionFactory = (id, onEvent, prefs, ask) =>
     Promise.resolve(
+      (over.capture?.(onEvent),
       new ChatSession({
         today: TODAY,
         startTime: START,
@@ -114,7 +121,7 @@ async function testHost(over: { invokeModel?: ModelInvoker } = {}): Promise<Chat
         fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
         now: () => Promise.resolve(STAMP),
         logError: () => Promise.resolve(),
-      }),
+      })),
     )
   return { createSession, settings: settingsHost, endDefaults: { enricher: stubEnricher }, timeDir: tmp, tmp }
 }
@@ -632,6 +639,95 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
         [2, 'seed'],
       ],
       documents: 3,
+    },
+  })
+})
+
+test({ name: "chat route - a tool's own lines reach the page as it works, and stay with the reply" }, async () => {
+  let report: ((event: ToolOutputEvent) => void) | null = null
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  // A model whose one call runs a command that narrates, then waits to be let go.
+  const invokeModel: ModelInvoker = async (args) => {
+    report?.({ type: 'tool-started', tool: 'google_agent' })
+    report?.({ type: 'tool-line', tool: 'google_agent', text: 'Mission started', level: 'log' })
+    report?.({ type: 'tool-line', tool: 'google_agent', text: 'Applied 3 update(s) to "Atlas Plan"', level: 'log' })
+    await held
+    report?.({ type: 'tool-finished', tool: 'google_agent', status: 'success' })
+    args.sink.write('Done.')
+    return EMPTY
+  }
+  const app = appWith(await testHost({ invokeModel, capture: (channel) => (report = channel) }))
+  const response = await post(app, 'http://localhost/chat/r1/messages', { message: 'Fix the fonts' })
+  const body = response.text()
+
+  const thread = await until(
+    () => getJson(app, 'http://localhost/chat/r1'),
+    (t) => Array.isArray(t.runs) && t.runs[0]?.lines?.length === 2,
+  )
+  const list = await getJson(app, 'http://localhost/chat')
+  assert({
+    given: 'a tool at work',
+    should: 'keep its run on the thread with its lines, still open, and show its latest line in the list',
+    actual: {
+      run: {
+        tool: thread.runs[0].tool,
+        at: thread.runs[0].at,
+        status: thread.runs[0].status,
+        lines: thread.runs[0].lines,
+      },
+      started: typeof thread.runs[0].started,
+      line: list.threads[0].line,
+      state: list.threads[0].state,
+    },
+    expected: {
+      run: {
+        tool: 'google_agent',
+        at: 1,
+        status: null,
+        lines: ['Mission started', 'Applied 3 update(s) to "Atlas Plan"'],
+      },
+      started: 'number',
+      line: 'Applied 3 update(s) to "Atlas Plan"',
+      state: 'thinking',
+    },
+  })
+
+  release()
+  const frames = parseSSE(await body)
+  const after = await getJson(app, 'http://localhost/chat/r1')
+  assert({
+    given: 'the finished turn',
+    should: 'have streamed the run as its own frames in order, and keep it settled with the reply',
+    actual: {
+      events: frames.map((f) => f.event),
+      lines: frames.filter((f) => f.event === 'tool-line').map((f) => [f.data?.tool, f.data?.at, f.data?.text]),
+      run: { status: after.runs[0].status, at: after.runs[0].at, lines: after.runs[0].lines.length },
+      turns: after.turns.length,
+    },
+    expected: {
+      events: [
+        'session-started',
+        'context-gathering',
+        'context-rebuilt',
+        'tools',
+        'model-start',
+        'tool-started',
+        'tool-line',
+        'tool-line',
+        'tool-finished',
+        'text-delta',
+        'turn-complete',
+        'turn',
+      ],
+      lines: [
+        ['google_agent', 1, 'Mission started'],
+        ['google_agent', 1, 'Applied 3 update(s) to "Atlas Plan"'],
+      ],
+      run: { status: 'success', at: 1, lines: 2 },
+      turns: 2,
     },
   })
 })

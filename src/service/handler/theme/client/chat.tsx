@@ -42,8 +42,6 @@ export interface Turn {
   time?: string
   /** The reply rendered as HTML once it finished streaming */
   html?: string
-  /** Tools the reply called, in order */
-  tools?: string[]
   /** The gather that preceded this reply, kept as its provenance */
   note?: string
   error?: string
@@ -62,6 +60,19 @@ export interface Answered extends Approval {
   approved: boolean
   /** The turn index the card sits before */
   at: number
+}
+
+/** One tool call at work, with what it printed — kept with the reply it belongs to. */
+export interface Run {
+  /** The tool as the model calls it (`google_agent`) */
+  tool: string
+  /** The reply's turn index */
+  at: number
+  /** Epoch milliseconds when it started */
+  started: number
+  lines: string[]
+  /** How it ended; null while it runs */
+  status: 'success' | 'fail' | 'error' | null
 }
 
 /** A line in the record's voice: what happened to a thread, not a message in it. */
@@ -92,6 +103,8 @@ export interface ThreadState {
   approvals: Approval[]
   /** Calls answered this thread, oldest first */
   answered: Answered[]
+  /** Tool runs this thread, oldest first — a running one has no status yet */
+  runs: Run[]
 }
 
 /**
@@ -109,6 +122,7 @@ type Action =
       busy?: boolean
       approvals?: Approval[]
       answered?: Answered[]
+      runs?: Run[]
     }
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
   | {
@@ -119,6 +133,7 @@ type Action =
       busy: boolean
       approvals: Approval[]
       answered: Answered[]
+      runs: Run[]
     }
   | { type: 'approval'; id: string; approval: Approval }
   | { type: 'answered'; id: string; approvalId: string; approved: boolean; at: number }
@@ -126,6 +141,9 @@ type Action =
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
   | { type: 'tool'; id: string; name: string }
+  | { type: 'run-started'; id: string; run: Run }
+  | { type: 'run-line'; id: string; tool: string; at: number; text: string }
+  | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
   | { type: 'finished'; id: string; content: string }
   | { type: 'failed'; id: string; message: string }
   | { type: 'rendered'; id: string; index: number; html: string }
@@ -139,6 +157,11 @@ function clock(): string {
 }
 
 /** Ensure the turn being written is the reply, creating it on the first sign of one. */
+/** Where the reply lands: the last turn when it has begun, the next index while it is still coming. */
+function replyIndexOf(turns: Turn[]): number {
+  return turns.at(-1)?.role === 'assistant' ? turns.length - 1 : turns.length
+}
+
 function withReply(turns: Turn[], edit: (reply: Turn) => Turn): Turn[] {
   const last = turns.at(-1)
   if (last?.role === 'assistant') return [...turns.slice(0, -1), edit(last)]
@@ -158,6 +181,7 @@ function initial(id: string): ThreadState {
     contextVersion: 0,
     approvals: [],
     answered: [],
+    runs: [],
   }
 }
 
@@ -183,6 +207,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         loaded: true,
         approvals,
         answered: action.answered ?? [],
+        runs: action.runs ?? [],
         phase: busy ? 'busy' : state.phase,
         gather: busy ? (approvals.length > 0 ? WAITING : 'still working') : state.gather,
       }
@@ -194,6 +219,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         documents: action.documents,
         approvals: action.approvals,
         answered: action.answered,
+        runs: action.runs,
         phase: action.busy ? 'busy' : 'idle',
         gather: action.busy ? (action.approvals.length > 0 ? WAITING : 'still working') : null,
         contextVersion: action.busy ? state.contextVersion : state.contextVersion + 1,
@@ -241,8 +267,33 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         turns: withReply(state.turns, (r) => ({ ...r, content: r.content + action.text, note: r.note ?? note })),
       }
     }
-    case 'tool':
-      return { ...state, turns: withReply(state.turns, (r) => ({ ...r, tools: [...(r.tools ?? []), action.name] })) }
+    case 'tool': {
+      // The model's record of a call. A run that spoke for itself is here already; a quiet tool gets its chip.
+      const at = replyIndexOf(state.turns)
+      if (state.runs.some((run) => run.tool === action.name && run.at === at)) return state
+      const chip: Run = { tool: action.name, at, started: Date.now(), lines: [], status: 'success' }
+      return { ...state, runs: [...state.runs, chip] }
+    }
+    case 'run-started': {
+      // A call that asked first was recorded before it ran: that chip becomes the run.
+      const { run } = action
+      const chip = state.runs.findIndex((r) => r.tool === run.tool && r.at === run.at && r.lines.length === 0)
+      if (chip >= 0) return { ...state, runs: state.runs.map((r, i) => (i === chip ? run : r)) }
+      return { ...state, runs: [...state.runs, run] }
+    }
+    case 'run-line': {
+      const i = state.runs.findLastIndex((r) => r.tool === action.tool && r.at === action.at)
+      if (i < 0) {
+        const run: Run = { tool: action.tool, at: action.at, started: Date.now(), lines: [action.text], status: null }
+        return { ...state, runs: [...state.runs, run] }
+      }
+      return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, lines: [...r.lines, action.text] } : r)) }
+    }
+    case 'run-finished': {
+      const i = state.runs.findLastIndex((r) => r.tool === action.tool && r.at === action.at && r.status === null)
+      if (i < 0) return state
+      return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, status: action.status } : r)) }
+    }
     case 'finished':
       return {
         ...state,
@@ -250,6 +301,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         gather: null,
         approvals: [],
         contextVersion: state.contextVersion + 1,
+        // A run still open when the turn ends never reported its end — the turn did.
+        runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'success' } : r)),
         turns: withReply(state.turns, (r) => ({
           ...r,
           content: action.content,
@@ -263,6 +316,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         gather: null,
         approvals: [],
         contextVersion: state.contextVersion + 1,
+        runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
         turns: withReply(state.turns, (r) => ({ ...r, error: action.message })),
       }
     case 'rendered':
@@ -347,6 +401,7 @@ interface ThreadBody {
   busy?: boolean
   pending?: Approval[]
   answered?: Answered[]
+  runs?: Run[]
 }
 
 function turnsOf(body: ThreadBody): Turn[] {
@@ -384,6 +439,7 @@ export function useChat(id: string) {
           busy: body.busy,
           approvals: body.pending ?? [],
           answered: body.answered ?? [],
+          runs: body.runs ?? [],
         })
       })
       .catch(() => {
@@ -413,6 +469,7 @@ export function useChat(id: string) {
             busy: Boolean(body.busy),
             approvals: body.pending ?? [],
             answered: body.answered ?? [],
+            runs: body.runs ?? [],
           })
         })
         .catch(() => {})
@@ -551,7 +608,22 @@ export function useChat(id: string) {
               dispatch({ id, type: 'delta', text: d.text as string })
               break
             case 'tool-call':
-              dispatch({ id, type: 'tool', name: humanize(d.toolName as string) })
+              dispatch({ id, type: 'tool', name: d.toolName as string })
+              break
+            case 'tool-started':
+              dispatch({ id, type: 'run-started', run: d.run as Run })
+              break
+            case 'tool-line':
+              dispatch({ id, type: 'run-line', tool: d.tool as string, at: d.at as number, text: d.text as string })
+              break
+            case 'tool-finished':
+              dispatch({
+                id,
+                type: 'run-finished',
+                tool: d.tool as string,
+                at: d.at as number,
+                status: d.status as Run['status'],
+              })
               break
             case 'turn': {
               finished = true
@@ -665,6 +737,78 @@ export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[]
   }, deps)
 }
 
+/** Seconds since a moment, ticking once a second while `active`. */
+function useElapsed(since: number, active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [active])
+  return Math.max(0, Math.floor((now - since) / 1000))
+}
+
+function elapsedLabel(seconds: number): string {
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m`
+}
+
+/**
+ * A tool at work, in its own words. The chip names it; while it runs, the
+ * line under the chip is the last thing it said, with the time since it
+ * started; a click opens everything it said. Once done the lines fold
+ * under the chip and stay, the record of what the tool did.
+ */
+function RunView({ run }: { run: Run }) {
+  const [open, setOpen] = useState(false)
+  const running = run.status === null
+  const seconds = useElapsed(run.started, running)
+  const count = run.lines.length
+  const last = run.lines.at(-1)
+  return (
+    <div className="sky-tool-run" data-running={running} data-status={run.status ?? undefined}>
+      <button
+        type="button"
+        className="sky-chip sky-tool-chip"
+        data-act="true"
+        data-open={open}
+        onClick={count > 0 ? () => setOpen((o) => !o) : undefined}
+        aria-expanded={count > 0 ? open : undefined}
+      >
+        {running && <span className="sky-tool-pulse" aria-hidden="true" />}
+        {humanize(run.tool)}
+        {count > 0 && (
+          <span className="sky-tool-meta">
+            {running ? elapsedLabel(seconds) : `${count} line${count === 1 ? '' : 's'}`}
+          </span>
+        )}
+      </button>
+      {running && last && !open && <div className="sky-tool-last">{last}</div>}
+      {open && (
+        <div className="sky-tool-lines">
+          {run.lines.map((line, i) => (
+            <div key={i} className="sky-tool-line">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RunList({ runs }: { runs: Run[] }) {
+  return (
+    <div className="sky-tool-runs">
+      {runs.map((run, i) => (
+        <Fragment key={`${run.tool}-${run.at}-${i}`}>
+          <RunView run={run} />
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
 /**
  * The line that stands in for a reply that hasn't started. A large prompt
  * takes the model ten seconds or more to answer; once the wait is long
@@ -752,6 +896,9 @@ export function NoteLine({ note }: { note: Note }) {
 export function ThreadColumn({ chat }: { chat: Chat }) {
   const { state, answer } = chat
   const busy = state.phase !== 'idle'
+  // A tool at work speaks for the wait; the quiet line would only say "thinking" over it.
+  const running = state.runs.some((run) => run.status === null)
+  const coming = state.runs.filter((run) => run.at >= state.turns.length)
   // An answered card sits before the reply it preceded; past the last turn while that reply is still coming.
   const settled = (at: number) =>
     state.answered
@@ -770,6 +917,7 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
             turn={turn}
             streaming={busy && i === state.turns.length - 1 && turn.role === 'assistant'}
             cards={turn.role === 'assistant' ? settled(i) : undefined}
+            runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
           />
         </Fragment>
       ))}
@@ -785,7 +933,9 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
           <ApprovalCard approval={approval} onAnswer={(approved) => void answer(approval.id, approved)} />
         </Fragment>
       ))}
-      {state.gather && state.approvals.length === 0 && <QuietLine text={state.gather} />}
+      {/* Runs for a reply that has not begun sit where it will land. */}
+      {coming.length > 0 && <RunList runs={coming} />}
+      {state.gather && state.approvals.length === 0 && !running && <QuietLine text={state.gather} />}
       {state.phase === 'saving' && <QuietLine text="saving" />}
     </>
   )
@@ -980,11 +1130,14 @@ export function TurnView({
   turn,
   streaming,
   cards,
+  runs,
 }: {
   turn: Turn
   streaming: boolean
   /** The calls answered on the way to this reply — after the reading, before the words */
   cards?: ReactNode
+  /** The tools this reply ran, with what each said */
+  runs?: Run[]
 }) {
   if (turn.role === 'user') {
     // What the person typed, verbatim — an address in it is a link out.
@@ -1029,15 +1182,7 @@ export function TurnView({
             )}
           </div>
         )}
-        {turn.tools && turn.tools.length > 0 && (
-          <div className="sky-chips">
-            {turn.tools.map((tool, i) => (
-              <span key={i} className="sky-chip" data-act="true">
-                {tool}
-              </span>
-            ))}
-          </div>
-        )}
+        {runs && runs.length > 0 && <RunList runs={runs} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
       </div>
     </>
