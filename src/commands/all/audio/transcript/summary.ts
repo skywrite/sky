@@ -20,6 +20,7 @@ import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/s
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { resolveTimeField } from './lib/timeField.ts'
 import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 import { extractTypedNameLists } from './lib/typedNameLists.ts'
 
@@ -93,7 +94,11 @@ const params = {
     hidden: true,
   }),
   when: Flag.string(
-    'The start as the caller states it — typed, or chosen in a dialog — in notebook time, YYYY-MM-DD HH:MM; the write-up says it and the time field keeps it over a time the transcript mentions',
+    'The start as the caller states it — typed, or changed by hand in a dialog — in notebook time, YYYY-MM-DD HH:MM; the write-up says it and the time field keeps it over a time the transcript mentions',
+    { optional: true, hidden: true },
+  ),
+  clock: Flag.string(
+    "The start the file's clock gives — when a recording was made, or when a transcript began — in notebook time, YYYY-MM-DD HH:MM; sky's own reading, passed by a host: the words are resolved against it, and it fills the time field only when they give no time",
     { optional: true, hidden: true },
   ),
 }
@@ -140,6 +145,9 @@ const SUMMARY_MODEL = ROLES.reasoning
 
 // No-op until the CLI process family configures logging (see #shared/log.ts).
 const log = logger('transcript')
+
+/** Notebook time as the flags take it: YYYY-MM-DD HH:MM, extended hours allowed */
+const NOTEBOOK_WHEN = /^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/
 
 const PROMPT_FILES = {
   meeting: {
@@ -322,12 +330,20 @@ export default class AudioTranscriptSummaryTask extends Command {
     log.debug('transcript received', { chars: transcript.length, lines: transcript.split('\n').length })
     output.log(colors.gray(`\nReceived ${transcript.split('\n').length} lines of transcript`))
 
-    // A start the caller states — typed on the command line, or chosen in the
-    // import dialog — is the meeting's time: the write-up says it, the time
-    // field keeps it, and only a correction typed at the check replaces it.
+    // A start the caller states — typed on the command line, or changed by
+    // hand in the import dialog — is the meeting's time: the write-up says it,
+    // the time field keeps it, and only a correction typed at the check
+    // replaces it.
     const statedWhen = args.when?.trim() || null
-    if (statedWhen && !/^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/.test(statedWhen)) {
+    if (statedWhen && !NOTEBOOK_WHEN.test(statedWhen)) {
       return CommandResult.fail(`Invalid --when "${statedWhen}" — use notebook time, YYYY-MM-DD HH:MM`)
+    }
+    // What the file's clock says — a host's reading of when a recording was
+    // made or a transcript began, never the person's word. The prompts get it
+    // as the fact it is, and it fills the time field only when nothing else does.
+    const clockWhen = args.clock?.trim() || null
+    if (clockWhen && !NOTEBOOK_WHEN.test(clockWhen)) {
+      return CommandResult.fail(`Invalid --clock "${clockWhen}" — use notebook time, YYYY-MM-DD HH:MM`)
     }
 
     // 2. Load and render summary prompt
@@ -342,6 +358,8 @@ export default class AudioTranscriptSummaryTask extends Command {
       },
       // What the caller stated, for the write-up's Time/Date and the extraction; empty when nobody did.
       stated: { when: statedWhen ?? '' },
+      // What the file's clock says, as the fact it is: when a recording was made, or when a transcript began.
+      clock: useAudioPipeline ? { recorded: clockWhen ?? '', start: '' } : { recorded: '', start: clockWhen ?? '' },
       user: { input: transcript },
     }
 
@@ -500,9 +518,14 @@ export default class AudioTranscriptSummaryTask extends Command {
       finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
     }
 
-    // The stated start is the time: it replaces the extraction's reading, and
-    // fills a kept record that has none. A time corrected at an earlier check stays.
-    if (statedWhen && (!keptExtract || !extractedTime)) extractedTime = statedWhen
+    // The time field, settled: a stated start is the person's word, the clock
+    // is sky's reading, and a time settled at an earlier check stays.
+    extractedTime = resolveTimeField({
+      time: extractedTime,
+      kept: Boolean(keptExtract),
+      stated: statedWhen,
+      clock: clockWhen,
+    })
 
     // The fields as they stand, kept after extraction and after every round
     // of the check, so a rerun shows the corrected ones.

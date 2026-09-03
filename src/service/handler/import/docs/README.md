@@ -45,9 +45,11 @@ One door for every file kind. The kind picks the command:
 The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
 checked against the calendar within the meeting check's fifteen minutes).
-The when is passed as a stated argument, so the command keeps it over a
-time the transcript mentions, and hands it to the summary, so the write-up
-says it and the check's time field shows it.
+A when the person changed is passed as a stated argument, which the
+command keeps over anything the words say; left as proposed, it is passed
+as the file's clock, which the pipeline resolves the words against and
+falls back on when they give no time. Either way the write-up says what
+was settled, and the check's time field shows it (`startArgs.ts`).
 
 Three stops need the person, and each is the CLI's own prompt given a form:
 the names review (`form`), the write-up corrections (`text`, in a loop),

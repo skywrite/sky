@@ -50,6 +50,10 @@ const params = {
   noActions: Flag.bool('Skip action-item acceptance into the day/schedule/next lists', { default: false }),
   fresh: Flag.bool('Start over: forget what an earlier run of the file already produced', { default: false }),
   run: Flag.string('Run record key, passed by a host that keyed the file itself', { optional: true, hidden: true }),
+  clock: Flag.string(
+    "The start the file's clock gives, in notebook time, passed by a host that read the file; sky's reading, not the caller's, so a time the transcript states wins over it",
+    { optional: true, hidden: true },
+  ),
 }
 
 type Params = InferParams<typeof params>
@@ -78,8 +82,9 @@ export default class MeetingNewTask extends Command {
     let importFiles: string[] = []
     let actionItems: TranscriptActionItem[] = []
     let anchors: string[] | undefined
-    // A when the caller stated outright — typed, or chosen in a dialog — is
-    // theirs; only the default gives way to a time the transcript mentions.
+    // A when the caller stated outright — typed, or changed by hand in a
+    // dialog — is theirs, and goes down to the pipeline as such; the default
+    // gives way to whatever time the pipeline settles on.
     const whenStated = rawArgs.when !== undefined
 
     const sources = [fromVoiceMemo, fromZoomVtt, fromText].filter((flag) => flag !== undefined)
@@ -151,8 +156,10 @@ export default class MeetingNewTask extends Command {
             : { fromZoomVtt }),
         run: run?.key,
         fresh: args.fresh,
-        // The start the caller stated goes with it, so the write-up and its check say it.
+        // The start the caller stated goes with it, so the write-up and its check
+        // say it; a host's reading of the file's clock goes as just that.
         when: whenStated ? when.toString() : undefined,
+        clock: args.clock,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
@@ -187,10 +194,9 @@ export default class MeetingNewTask extends Command {
       // carry no dates and so route to the Next list.
       actionItems = data.actionItems.length > 0 ? data.actionItems : parseActionItemsSection(data.body)
 
-      // Parse time from summary if available, unless the caller already said when
-      if (data.time && !whenStated) {
-        when = new PlainDateTime(data.time)
-      }
+      // The pipeline's time is the last word on it: a stated start folded in,
+      // the words read against the clock, and whatever the check settled on.
+      if (data.time) when = new PlainDateTime(data.time)
 
       // A transcript knows a length, not an end time, so that's the spelling
       // `when:` keeps. Anything under a minute rounds to zero, which carries no

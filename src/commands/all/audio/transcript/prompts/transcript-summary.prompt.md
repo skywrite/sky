@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-15
-updated: 2026-09-02
+updated: 2026-09-03
 description: Generate a structured summary from a meeting transcript
 ---
 
@@ -14,7 +14,13 @@ Summarize the following meeting notes from dictated audio transcription.
 - Do not ask clarifying questions - proceed directly to summarization
 - The speaker is {{me.fullName}}, {{me.title}} of {{me.company}}
 {{#if stated.when}}
-- The meeting began at {{stated.when}} (notebook time, YYYY-MM-DD HH:MM) — the speaker said so. The Time/Date section states that date and time; the transcript's own clock, if it has one, counts from it
+- The meeting began at {{stated.when}} (notebook time, YYYY-MM-DD HH:MM) — the notebook owner said so. The Time/Date section states that date and time; the transcript's own clock, if it has one, counts from it
+{{/if}}
+{{#if clock.recorded}}
+- These notes were recorded at {{clock.recorded}} (notebook time, YYYY-MM-DD HH:MM), after the meeting they recount. When the speaker says when the meeting was held, that is its date and time — a bare weekday or "this morning" is read against the recording's date. When the speaker gives no time, the Time/Date section says the notes were recorded then and does not invent a meeting time
+{{/if}}
+{{#if clock.start}}
+- The file's clock puts the meeting's start at {{clock.start}} (notebook time, YYYY-MM-DD HH:MM). The Time/Date section states that date and time unless the transcript itself says otherwise; the transcript's own clock, if it has one, counts from it
 {{/if}}
 
 ## Transcript

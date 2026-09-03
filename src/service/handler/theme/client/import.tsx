@@ -616,8 +616,9 @@ function ConfirmBody({
               onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
             />
             <span className="sky-when-note">
-              {source === 'audio' ? 'when the memo was recorded' : "from the file's time and length"}
-              {fields.when === live.suggestedWhen ? ` · ${whenLabel(live.suggestedWhen, todayYmd)}` : ''}
+              {fields.when === live.suggestedWhen
+                ? `${source === 'audio' ? 'when the memo was recorded' : "from the file's time and length"} · ${whenLabel(live.suggestedWhen, todayYmd)} · ${source === 'audio' ? 'a time you say in it wins' : 'a time it states wins'}`
+                : `yours · wins over ${source === 'audio' ? 'what the memo says' : 'what the transcript states'}`}
             </span>
           </div>
           {calendar && (

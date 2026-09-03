@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-19
-updated: 2026-09-02
+updated: 2026-09-03
 description: Extract structured metadata from a meeting summary
 ---
 
@@ -9,7 +9,13 @@ Extract the title, time, duration, and medium from this meeting summary.
 
 Today's date is {{context.notebookDate}}.
 {{#if stated.when}}
-The meeting began at {{stated.when}} — the speaker said so. That is its `time`, and relative dates in action items resolve against it.
+The meeting began at {{stated.when}} — the notebook owner said so. That is its `time`, and relative dates in action items resolve against it.
+{{/if}}
+{{#if clock.recorded}}
+The notes were recorded at {{clock.recorded}}, after the meeting they recount. `time` is when the meeting itself was held, as the summary states it — a bare weekday or "this morning" there is read against the recording's date, not today's — and null when the summary gives none. Relative dates in action items resolve against the recording's date.
+{{/if}}
+{{#if clock.start}}
+The file's clock puts the meeting's start at {{clock.start}}. `time` is the start as the summary states it, on that date when the summary gives only a clock, and null when it gives none. Relative dates in action items resolve against that date.
 {{/if}}
 
 ## Summary

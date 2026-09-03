@@ -33,6 +33,7 @@ import {
   readUnknown,
   sourceOf,
 } from './readback.ts'
+import { startArgs } from './startArgs.ts'
 import { startOnSavedDay } from './startOnSavedDay.ts'
 
 /** How long a recording sky listens to before guessing what it is. */
@@ -181,56 +182,20 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   ): AsyncGenerator<RunEvent, RunOutcome, void> {
     const fields = job.fields
     if (!fields) return { ok: false, message: 'nothing to start with' }
-    const when = PlainDateTime.fromString(fields.when)
-    const category = `${fields.category} Complete`
-    const audio = job.readback.source === 'audio'
-    const { fresh } = fields
-
-    let command: string
-    let args: Record<string, unknown>
-    switch (fields.kind) {
-      case 'meeting':
-        command = 'meeting:new'
-        args = {
-          ...(job.readback.source === 'transcript'
-            ? { fromZoomVtt: filePath }
-            : job.readback.source === 'text'
-              ? { fromText: filePath }
-              : { fromVoiceMemo: filePath }),
-          category,
-          when,
-          fresh,
-          run: job.runKey ?? undefined,
-        }
-        break
-      case 'journal':
-        command = 'journal:new'
-        args = { fromAudio: filePath, types: [fields.journalType], when, fresh }
-        break
-      case 'note':
-        command = 'notes:new'
-        args = { fromAudio: filePath, category, when, fresh }
-        break
-      case 'message':
-        command = 'message:new'
-        args = { fromAudio: filePath, category, when, fresh }
-        break
-      case 'event':
-        command = 'event:new'
-        args = { fromAudio: filePath, category, when, fresh }
-        break
+    if (job.readback.source !== 'audio' && fields.kind !== 'meeting') {
+      return { ok: false, message: 'only a recording can be filed that way' }
     }
-    if (!audio && fields.kind !== 'meeting') return { ok: false, message: 'only a recording can be filed that way' }
 
-    // The when is stated, so the command keeps it over a time the transcript mentions.
-    const result = yield* runCommand(command, {
-      context: CommandContext.server(config, env),
-      args,
-      rawArgs: { _: [], when: fields.when },
-      signal,
-    })
+    // A when the person changed goes as stated, and the command keeps it over
+    // anything the words say; left as proposed, it goes as the file's clock.
+    const { command, args, rawArgs } = startArgs(
+      { source: job.readback.source, runKey: job.runKey, suggestedWhen: job.suggestedWhen },
+      fields,
+      filePath,
+    )
+    const result = yield* runCommand(command, { context: CommandContext.server(config, env), args, rawArgs, signal })
     if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish` }
-    return { ok: true, file: filedPath(result.data, when, config) }
+    return { ok: true, file: filedPath(result.data, PlainDateTime.fromString(fields.when), config) }
   }
 
   return {

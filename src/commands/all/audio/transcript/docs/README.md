@@ -34,14 +34,26 @@ runs `create`. The doors — `meeting:new`, `journal:new`, `notes:new`,
 `message:new`, `event:new`, `video:new` — run one of the three and file what
 comes back.
 
-## What the caller states wins
+## What the caller states wins; what sky reads only fills
 
-A door that knows when the meeting began — `--when` typed on the command
-line, or the When row of the import dialog — passes it down to the summary
-as `--when`. The write-up's Time/Date section says it, the extraction takes
-it as the time and resolves "Friday" against it, and the check shows it in
-the time field. Only a correction typed at the check replaces it. Without
-one, the time is whatever the transcript states, which is often nothing.
+A start the person stated — `--when` typed on the command line, or the
+When row of the import dialog changed by hand — reaches the summary as
+`--when`. The write-up's Time/Date section says it, the extraction takes it
+as the time and resolves "Friday" against it, and the check shows it in the
+time field. Only a correction typed at the check replaces it.
+
+A start sky read off the file — the dialog's proposal, left as it was — is
+not a statement, and reaches the summary as `--clock`. The prompts get it
+as the fact it is: when a recording was made, or when a transcript's clock
+says the meeting began. A memo's clock is when the notes were dictated,
+after the meeting they recount, so a time the speaker gives is the
+meeting's, and the clock only anchors the date ("Wednesday", "this
+morning"). The clock fills the time field when the words give none, and
+replaces nothing. `lib/timeField.ts` holds the rule.
+
+Whatever the pipeline returns as the time is the door's last word at
+filing: the stated start folded in, then whatever the check settled on. No
+door keeps a dialog value over it.
 
 ## What counts as a transcript file
 
@@ -107,3 +119,6 @@ Start runs the same command, which finds the record on its own.
   from.
 - `2026-09-02-the-stated-time-carries-through.md` — the start chosen in
   the dialog reached the filing step but not the write-up or its check.
+- `2026-09-03-a-default-is-not-a-statement.md` — the dialog's untouched
+  proposal was passed as a stated start: it beat the memo's own words at
+  the check and the person's correction at filing.
