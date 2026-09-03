@@ -569,6 +569,43 @@ export default class DayDocument extends ListDocument {
     return !DayDocument.isItemDone(task)
   }
 
+  /**
+   * Mark one list item done or not done, as a line edit on the day file's
+   * text — the writer to `isItemDone`'s reader, producing exactly the forms
+   * it recognizes: `~~task~~`, and for a timed item `HH:MM > ~~task~~`, the
+   * time staying outside the marks and readable.
+   *
+   * The item is addressed by its list heading and its text (strike marks
+   * ignored), so a stale caller misses instead of striking a neighbour —
+   * and every other byte of the file stays untouched, reference-link
+   * definitions included. A line edit rather than remove/insert on the
+   * parsed document on purpose: the item never leaves the document, so
+   * nothing has to carry its links back in, and the file's own spelling
+   * survives whatever shape it was written in.
+   */
+  static toggleItem(content: string, listTitle: string, raw: string, done: boolean): ToggleItemResult {
+    const lines = content.split('\n')
+    const wantTitle = listTitle.trim()
+    const wantText = plainItemText(raw)
+
+    let inList = false
+    for (let i = 0; i < lines.length; i++) {
+      const heading = lines[i].match(TOGGLE_HEADING)
+      if (heading) {
+        inList = heading[1].trim() === wantTitle
+        continue
+      }
+      if (!inList) continue
+      const bullet = lines[i].match(TOGGLE_BULLET)
+      if (!bullet || plainItemText(bullet[2]) !== wantText) continue
+      if (DayDocument.isItemDone(bullet[2]) === done) return { kind: 'unchanged' }
+      const text = done ? strikeItemText(plainItemText(bullet[2])) : plainItemText(bullet[2])
+      lines[i] = bullet[1] + text + bullet[3]
+      return { kind: 'written', content: lines.join('\n') }
+    }
+    return { kind: 'missing' }
+  }
+
   static itemStartsWithTime(task: string): boolean {
     const timePattern = /^\d{2}:\d{2} >/
     return timePattern.test(task)
@@ -577,6 +614,28 @@ export default class DayDocument extends ListDocument {
   static itemDoesNotStartWithTime(task: string): boolean {
     return !DayDocument.itemStartsWithTime(task)
   }
+}
+
+export type ToggleItemResult =
+  | { kind: 'written'; content: string }
+  /** Already in the asked-for state — nothing to write */
+  | { kind: 'unchanged' }
+  /** No such list, or no item with that text — the caller's view is stale */
+  | { kind: 'missing' }
+
+const TOGGLE_HEADING = /^##\s+(.+?)\s*$/
+const TOGGLE_BULLET = /^(\s*[-*+]\s+)(.*?)(\s*)$/
+const TOGGLE_TIMED = /^(\d{1,2}:\d{2}\s*>\s*)(.+)$/
+
+/** The item's text with strike marks off — what names it across states. */
+function plainItemText(text: string): string {
+  return text.replace(/~~/g, '').trim()
+}
+
+/** `09:30 > task` strikes as `09:30 > ~~task~~`; anything else wraps whole. */
+function strikeItemText(stored: string): string {
+  const timed = stored.match(TOGGLE_TIMED)
+  return timed ? `${timed[1]}~~${timed[2]}~~` : `~~${stored}~~`
 }
 
 /** Extract PlainDate from markdown heading like "# **2026-01-23 - Thu**" */

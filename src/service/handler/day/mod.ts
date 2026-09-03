@@ -9,13 +9,13 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
 import { dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/today.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
-import { toggleDayItem } from './toggle.ts'
 
 export interface DayRoutesOptions {
   /** The notebook root that saved-chat paths are shown relative to */
@@ -125,7 +125,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     }
     const file = path.join(options.timeDir, dayFile(new PlainDate(ymd)))
     if (!(await exists(file))) return c.json({ error: `no day file for ${ymd}` }, 404)
-    const result = toggleDayItem(await readTextFile(file), body.list, body.raw, body.done)
+    const result = DayDocument.toggleItem(await readTextFile(file), body.list, body.raw, body.done)
     if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
     if (result.kind === 'written') await writeTextFile(file, result.content)
     return c.json(await buildDayView(options, ymd))
