@@ -9,14 +9,16 @@ that is only kept, so the day file and notebook git stay as they were.
 
 - **The Files button** in the day's header opens the Files panel at the top
   of the day: a drop pad, then the directory as it is — time, kind chip,
-  name, size, Remove. The panel also opens by itself while files are dragged
-  over the page, so the pad is always there to aim at.
+  name, size, Remove. The button is always in the header, and it is the only
+  thing that opens the panel: a drag over the page never does, so a drop
+  lands where the person aimed it.
 - **Drop on the pad and it moves.** No dialog, no question. The original
   keeps its name; the toast says "Moved report.pdf to today from Downloads"
   and holds Undo for eight seconds. Several files at once move together and
   Undo reverses all of them. A file with no original on this Mac lands as a
   copy, with progress shown in the pad.
-- **Drop anywhere else and it is an import.** The import dialog opens (see
+- **Drop anywhere else and it is an import** — the page, and the panel's
+  own header and rows too; only the pad keeps. The import dialog opens (see
   `../../import/docs/README.md`): a transcript or a recording goes to its
   door, and a file no door takes is refused there and leaves with Remove.
   A recording over the transcription cap is refused before it uploads. The

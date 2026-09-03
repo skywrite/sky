@@ -355,8 +355,8 @@ export function DropOverlay() {
         </div>
         <div className="sky-drop-title">Drop it on the day</div>
         <div className="sky-drop-sub">
-          On the Files pad it moves into the day as it is. Anywhere else sky files it: a transcript (.vtt), a voice
-          memo, or a notetaker's text (.txt).
+          Sky files it: a transcript (.vtt), a voice memo, or a notetaker's text (.txt). To keep a file with the day as
+          it is, open Files and drop it on the pad.
         </div>
       </div>
     </div>

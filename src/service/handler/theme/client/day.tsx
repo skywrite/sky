@@ -649,14 +649,14 @@ export function DayView({
   useEffect(() => setView(day), [day])
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView)
   const dayFiles = useDayFiles(view?.day.ymd ?? null, filesGeneration)
-  // The Files panel: opened from the header, and by itself while files are dragged over the page.
+  // The Files panel opens from its button, and from nothing else. A drag over the
+  // page never opens it: a file dropped on the day is the import it was aimed to
+  // be, and only a drop on the pad, opened on purpose, keeps a file as it is.
   const [filesOpen, setFilesOpen] = useState(false)
   const filesRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!dragging) return
-    setFilesOpen(true)
-    filesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }, [dragging])
+    if (filesOpen) filesRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [filesOpen])
 
   const running =
     threads.filter((t) => t.busy).length +
@@ -706,11 +706,14 @@ export function DayView({
               {running > 0 ? ` · ${running} running` : ''}
             </span>
           )}
-          {view && (
-            <Button size="sm" variant={filesOpen ? 'light' : 'default'} onClick={() => setFilesOpen((o) => !o)}>
-              Files{dayFiles.files.length > 0 ? ` · ${dayFiles.files.length}` : ''}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant={filesOpen ? 'light' : 'default'}
+            disabled={!view}
+            onClick={() => setFilesOpen((open) => !open)}
+          >
+            Files{dayFiles.files.length > 0 ? ` · ${dayFiles.files.length}` : ''}
+          </Button>
           {view?.day.dayRelativePath && (
             <Button size="sm" component="a" href={fileHref(view.day.dayRelativePath)}>
               Day file

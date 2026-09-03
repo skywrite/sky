@@ -12,7 +12,10 @@ import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
+import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import type { ImportRoutesOptions } from './import/mod.ts'
+import { readText, readTranscript, readUnknown, sourceOf } from './import/readback.ts'
 
 interface TestContext {
   skip: (message?: string) => void
@@ -76,6 +79,37 @@ function startAppServer(app: { fetch: (request: Request) => Response | Promise<R
   }
 }
 
+/**
+ * The day page on the temp notebook: its routes ride on a chat host, though no
+ * session ever starts here, and a drop on it needs the import routes — the
+ * read-back is the real one for a transcript or a text, and nothing ever runs.
+ */
+function dayHosts(
+  notebookBaseDir: string,
+  userDataDir: string,
+): { chat: ChatRoutesOptions; imports: ImportRoutesOptions } {
+  return {
+    chat: {
+      createSession: () => Promise.reject(new Error('a test never opens a chat')),
+      timeDir: path.join(notebookBaseDir, 'time'),
+    },
+    imports: {
+      dir: path.join(userDataDir, 'imports'),
+      journalTypes: ['Reflection'],
+      read: async ({ path: filePath, name }) => {
+        const source = sourceOf(name)
+        if (source === 'transcript') return readTranscript(await readFile(filePath, 'utf8'), name)
+        if (source === 'text') return readText(await readFile(filePath, 'utf8'), name)
+        return readUnknown(name)
+      },
+      suggestWhen: () => '2026-08-05 10:00',
+      run: async function* () {
+        throw new Error('a test never starts an import')
+      },
+    },
+  }
+}
+
 export async function runWysiwygE2e(
   t: TestContext,
   options: {
@@ -86,6 +120,8 @@ export async function runWysiwygE2e(
     files?: Record<string, string>
     /** Build the notebook's store too, so completion and name resolution answer */
     store?: boolean
+    /** Serve the day page too: its routes, and the import routes a drop on it needs */
+    day?: boolean
   },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,
 ) {
@@ -121,7 +157,12 @@ export async function runWysiwygE2e(
     }
     const app = createTestHttpApp(
       [...roots].map((root) => path.join(notebookBaseDir, root)),
-      { userDataDir, markdownStore, keep: { searchDirs: [downloads], spotlight: false } },
+      {
+        userDataDir,
+        markdownStore,
+        keep: { searchDirs: [downloads], spotlight: false },
+        ...(options.day ? dayHosts(notebookBaseDir, userDataDir) : {}),
+      },
     )
     browser = await launchChromiumOrSkip(t)
     server = startAppServer(app)
@@ -275,6 +316,41 @@ export async function dispatchFilePaste(page: Page, file: { name: string; type: 
       (anchor instanceof Element ? anchor : anchor?.parentElement) ?? document.querySelector('.sky-wysiwyg')!
     target.dispatchEvent(event)
   }, file)
+}
+
+export interface DraggedFile {
+  name: string
+  type: string
+  text: string
+  /** `File.lastModified`, ms since the epoch — the look for an original matches it to the millisecond */
+  lastModified?: number
+}
+
+/**
+ * A file held over an element the way a drag from the Finder arrives — `dragenter`,
+ * then `dragover`, with `Files` among the transfer's types — and, with `drop`, let go
+ * there. The events go to the element itself, so React's handlers up the tree see them.
+ */
+export async function dispatchFileDrag(page: Page, selector: string, file: DraggedFile, drop = false) {
+  await page.evaluate(
+    ({ selector, file, drop }) => {
+      const target = document.querySelector(selector)
+      if (!target) throw new Error(`No element at ${selector}`)
+      const transfer = new DataTransfer()
+      const bag: FilePropertyBag = { type: file.type }
+      if (file.lastModified !== undefined) bag.lastModified = file.lastModified
+      transfer.items.add(new File([new TextEncoder().encode(file.text)], file.name, bag))
+      for (const type of drop ? ['dragenter', 'dragover', 'drop'] : ['dragenter', 'dragover']) {
+        target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }))
+      }
+    },
+    { selector, file, drop },
+  )
+}
+
+/** A file dropped on an element: the drag, then the `drop` carrying the File. */
+export function dispatchFileDrop(page: Page, selector: string, file: DraggedFile) {
+  return dispatchFileDrag(page, selector, file, true)
 }
 
 export function modShortcut(key: string) {

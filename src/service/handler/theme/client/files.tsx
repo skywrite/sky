@@ -156,9 +156,10 @@ function modifiedClock(iso: string): string {
 }
 
 /**
- * The Files panel: the drop pad, then the day's directory as it is. A file
- * dropped on the pad moves in without a question — the page's drop hook
- * leaves anything inside `data-drop-pad` to the pad.
+ * The Files panel: the drop pad, then the day's directory as it is. The pad
+ * is the one place a dropped file moves in without a question — the page's
+ * drop hook leaves anything inside `data-drop-pad` to it. The panel's head
+ * and rows are the page: a drop there is an import, like anywhere else.
  */
 export function FilesPanel({
   ymd,
@@ -210,22 +211,23 @@ export function FilesPanel({
     if (kept.length > 0) onKept(kept)
   }
   return (
-    <div
-      className="sky-block sky-files"
-      data-drop-pad=""
-      data-over={over > 0 ? '' : undefined}
-      onDragEnter={(e) => hasFiles(e) && setOver((n) => n + 1)}
-      onDragOver={(e) => hasFiles(e) && e.preventDefault()}
-      onDragLeave={(e) => hasFiles(e) && setOver((n) => Math.max(0, n - 1))}
-      onDrop={(e) => void drop(e)}
-    >
+    <div className="sky-block sky-files">
       <div className="sky-block-head sky-bhead">
         Files
         <span className="sky-spacer" />
         {files.length > 0 && <span className="sky-count">{files.length}</span>}
       </div>
       <div className="sky-block-pad">
-        <div className="sky-pad" data-busy={busy ? '' : undefined}>
+        <div
+          className="sky-pad"
+          data-drop-pad=""
+          data-over={over > 0 ? '' : undefined}
+          data-busy={busy ? '' : undefined}
+          onDragEnter={(e) => hasFiles(e) && setOver((n) => n + 1)}
+          onDragOver={(e) => hasFiles(e) && e.preventDefault()}
+          onDragLeave={(e) => hasFiles(e) && setOver((n) => Math.max(0, n - 1))}
+          onDrop={(e) => void drop(e)}
+        >
           {busy ?? 'Drop files here to move them into the day'}
         </div>
         {problem && <div className="sky-pad-problem">{problem}</div>}

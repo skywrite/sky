@@ -7,7 +7,7 @@
   z-index: 6;
   background: color-mix(in srgb, var(--sky-blue-soft) 94%, transparent);
   display: flex;
-  /* The Files pad opens at the top while a drag is on; the hint keeps clear of it. */
+  /* An open Files pad sits at the top of the column; the hint keeps clear of it. */
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 22vh;
@@ -522,7 +522,7 @@
     background 120ms ease;
 }
 
-.sky-files[data-over] .sky-pad {
+.sky-pad[data-over] {
   border-color: var(--sky-blue-deep);
   background: var(--sky-blue-soft);
   color: var(--sky-blue-deep);

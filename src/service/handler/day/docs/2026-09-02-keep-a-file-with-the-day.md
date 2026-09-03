@@ -63,3 +63,15 @@ recording over the transcription cap is refused before its bytes go up, in
 the read-back's sentence, so a Zoom video never uploads just to be told no.
 What is left for the phone, where the pad is not shown, is a rung: a Files
 button that keeps from the picker.
+
+**And again, that afternoon.** The panel had been opening by itself while a
+file was dragged over the page, scrolling to the top of the column under the
+cursor, and the whole panel counted as the pad. So a file dragged onto the
+day to import it landed on the panel and moved into the attachments
+directory without a word: the drop JP wanted turned into the one he did not.
+Now nothing but the Files button opens the panel, the button is in the
+header whatever the day holds, and only the dashed pad itself is the move.
+The panel's header and rows are the page, an import like everywhere else.
+The end-to-end test `http-day-drop-e2e_test.ts` holds the rule: a drag opens
+nothing, a drop beside the open panel opens the import dialog and nothing
+lands in the directory, and a drop on the pad moves the original in.
