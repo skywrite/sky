@@ -91,43 +91,42 @@ export default class ListDocument extends Document {
     // Clamp index to valid range
     const clampedIndex = Math.max(0, Math.min(index, this._lists.length))
 
-    // Build new lists array with insertion
-    const newLists = [...this._lists.slice(0, clampedIndex), listObj, ...this._lists.slice(clampedIndex)]
+    // Splice into the document's own text — never rebuild it from its lists.
+    // The rebuild dropped prose between and after lists, and lost the whole
+    // header whenever the first list could not be string-matched.
+    const lines = this.toMarkdown({ links: false }).split('\n')
+    const titles = this._lists.map((l) => l.title)
+    const listLines = listObj.toMarkdown().split('\n')
 
-    // Get the document header (everything before the first list)
-    let headerMarkdown: string
-    const fullMarkdown = this.toMarkdown({ links: false })
-
-    if (this._lists.length > 0) {
-      const firstListMarkdown = this._lists[0].toMarkdown()
-      const firstListIndex = fullMarkdown.indexOf(firstListMarkdown)
-      if (firstListIndex > 0) {
-        headerMarkdown = fullMarkdown.substring(0, firstListIndex).trim()
-      } else {
-        headerMarkdown = ''
-      }
+    let assembled: string[]
+    if (this._lists.length === 0) {
+      // No lists yet: the new list starts its block after the content.
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop()
+      assembled = [...lines, '', ...listLines, '']
+    } else if (clampedIndex < this._lists.length) {
+      const region = locateList(lines, titles, clampedIndex)
+      assembled = [...lines.slice(0, region.heading), ...listLines, '', ...lines.slice(region.heading)]
     } else {
-      headerMarkdown = fullMarkdown.trim()
+      const region = locateList(lines, titles, this._lists.length - 1)
+      assembled = [...lines.slice(0, region.last + 1), '', ...listLines, ...lines.slice(region.last + 1)]
     }
 
-    // Rebuild markdown with all lists in new order
-    let newMarkdown = headerMarkdown
-    for (const l of newLists) {
-      newMarkdown = newMarkdown + '\n\n' + l.toMarkdown()
-    }
-    newMarkdown = newMarkdown + '\n'
-
-    let newDoc = (this.constructor as typeof ListDocument).fromMarkdown(newMarkdown) as this
+    let newDoc = (this.constructor as typeof ListDocument).fromMarkdown(assembled.join('\n')) as this
     newDoc._yaml = structuredClone(this.yaml)
 
     // Merge links
     newDoc = newDoc.updateLinks(mergeLinkMaps([this.links, listObj.links])) as this
+    if (newDoc._lists.length !== this._lists.length + 1) {
+      throw new Error(`insertList(): the document did not take the "${listObj.title}" list`)
+    }
     return newDoc
   }
 
   public replaceList(listIndexOrTitle: number | string, newList: ItemList): this {
     const list = this.findListFromIndexOrTitle(listIndexOrTitle)
-    const newMarkdown = this.toMarkdown().replace(list.toMarkdown(), newList.toMarkdown())
+    const index = this._lists.indexOf(list)
+    const titles = this._lists.map((l) => l.title)
+    const newMarkdown = spliceList(this.toMarkdown(), titles, index, newList.toMarkdown())
     const doc = (this.constructor as typeof ListDocument).fromMarkdown(newMarkdown) as this
 
     // replace links
@@ -143,17 +142,44 @@ export default class ListDocument extends Document {
       if (!list.links.has(refLabel)) newLinks.set(refLabel, link)
     })
 
-    return doc.updateLinks(newLinks) as this
+    const replaced = doc.updateLinks(newLinks) as this
+
+    // The swap must have taken: a miss that returns the document unchanged is
+    // how a caller ends up reporting success over an unwritten file. (An
+    // emptied list re-renders as the model's own bare `-` slot — that shape
+    // passes without the item check.)
+    if (newList.size > 0) {
+      const applied = replaced._lists.at(index)
+      const items = (l: ItemList) => l.items.map((item) => item.trim()).join('\n')
+      if (!applied || applied.title.trim() !== newList.title.trim() || items(applied) !== items(newList)) {
+        throw new Error(`replaceList(): the document did not take the new "${newList.title}" list`)
+      }
+    }
+    return replaced
   }
 
   public removeList(index: number): this {
     const itemList = this._lists.at(index)
     if (!itemList) throw new Error(`Cannot find list with index ${index}.`)
+    const at = index < 0 ? this._lists.length + index : index
+    const titles = this._lists.map((l) => l.title)
 
-    const itemListMarkdown = itemList.toMarkdown()
+    // Take the region out by structure (see locateList), along with one
+    // adjacent blank line so the neighbours keep a single separator.
+    const lines = this.toMarkdown().split('\n')
+    const region = locateList(lines, titles, at)
+    let from = region.heading
+    let to = region.last
+    if (to + 1 < lines.length && lines[to + 1].trim() === '') to++
+    else if (from > 0 && lines[from - 1].trim() === '') from--
 
-    const markdownWithYaml = this.toMarkdown().replace('\n' + itemListMarkdown + '\n', '')
-    return (this.constructor as typeof ListDocument).fromMarkdown(markdownWithYaml) as this
+    const doc = (this.constructor as typeof ListDocument).fromMarkdown(
+      [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n'),
+    ) as this
+    if (doc._lists.length !== this._lists.length - 1) {
+      throw new Error(`removeList(): the document did not drop the "${itemList.title}" list`)
+    }
+    return doc
   }
 
   public findListIndex(predicate: (list: ItemList) => boolean): number {
@@ -186,6 +212,83 @@ export default class ListDocument extends Document {
 
     return new this(yamlData as Record<string, unknown>, markdown)
   }
+}
+
+const LIST_HEADING = /^##\s+(.+?)\s*$/
+const BULLET_LINE = /^\s*[-*+](\s|$)/
+
+interface ListRegion {
+  /** Line index of the `##` heading */
+  heading: number
+  /** Line index of the first bullet */
+  first: number
+  /** Line index of the last bullet */
+  last: number
+}
+
+/**
+ * Locate the `index`-th list — its `##` heading line through its last
+ * bullet — in rendered markdown, by structure rather than by string match.
+ *
+ * String-matching `ItemList.toMarkdown()` (which renders no blank line
+ * after the heading) silently missed any file spelled the ordinary
+ * hand-written way, and callers then reported success over an unchanged
+ * document. The Nth heading-whose-next-content-is-a-bullet region is the
+ * Nth parsed list; a blank run stays inside the region only when more
+ * bullets follow (a hand-written loose list is one region); a list that
+ * cannot be located is an error, never a no-op.
+ */
+function locateList(lines: string[], titles: string[], index: number): ListRegion {
+  const isBlank = (line: string) => line.trim() === ''
+
+  let ordinal = -1
+  for (let i = 0; i < lines.length; i++) {
+    const heading = lines[i].match(LIST_HEADING)
+    if (!heading) continue
+    // A list heading is one whose next non-blank line is a bullet.
+    let first = i + 1
+    while (first < lines.length && isBlank(lines[first])) first++
+    if (first >= lines.length || !BULLET_LINE.test(lines[first])) continue
+    ordinal++
+    if (ordinal < index) continue
+    if (heading[1].trim() !== titles[index]?.trim()) break
+
+    let last = first
+    let probe = first + 1
+    while (probe < lines.length) {
+      if (BULLET_LINE.test(lines[probe])) {
+        last = probe
+        probe++
+        continue
+      }
+      if (isBlank(lines[probe])) {
+        let ahead = probe
+        while (ahead < lines.length && isBlank(lines[ahead])) ahead++
+        if (ahead < lines.length && BULLET_LINE.test(lines[ahead])) {
+          probe = ahead
+          continue
+        }
+      }
+      break
+    }
+    return { heading: i, first, last }
+  }
+  throw new Error(`Cannot locate list ${index} ("${titles[index]}") in the document`)
+}
+
+/**
+ * Swap one list's region for `replacement`, leaving every other byte of
+ * the document alone — the file's own spelling between heading and first
+ * bullet included.
+ */
+function spliceList(markdown: string, titles: string[], index: number, replacement: string): string {
+  const lines = markdown.split('\n')
+  const region = locateList(lines, titles, index)
+  const gap = lines.slice(region.heading + 1, region.first)
+  const [newHeading, ...newItems] = replacement.split('\n')
+  return [...lines.slice(0, region.heading), newHeading, ...gap, ...newItems, ...lines.slice(region.last + 1)].join(
+    '\n',
+  )
 }
 
 function parseItemListsFromTokens(tokens: marked.TokensList): ItemList[] {

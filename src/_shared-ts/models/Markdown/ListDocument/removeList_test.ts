@@ -119,10 +119,11 @@ test('ListDocument.removeList - only works with correct format (no blank lines)'
   })
 })
 
-test('ListDocument.removeList - DESIGN: requires no blank lines for removal to work', () => {
-  // IMPORTANT DESIGN CHOICE: removeList() only works when there's NO blank line between heading and list.
-  // While ListDocument recognizes lists in both formats, removeList is designed for the compact format.
-  // This is because ItemList.toMarkdown() produces the compact format without blank lines.
+test('ListDocument.removeList - blank lines after the heading no longer defeat removal', () => {
+  // This used to be pinned as a design choice: the old string-match removal
+  // only worked on the compact format, and a blank-line document was
+  // silently returned unchanged. The region-based removal works for both
+  // spellings; the silent no-op is gone.
 
   const markdownWithBlankLines = `# Schedule
 
@@ -145,25 +146,23 @@ test('ListDocument.removeList - DESIGN: requires no blank lines for removal to w
     expected: 2,
   })
 
-  // Try to remove the first list
   const newDoc = doc.removeList(0)
 
-  // BY DESIGN: The list is NOT removed when there are blank lines
   assert({
     given: 'new document after removeList(0) with blank lines',
-    should: 'still have 2 lists (by design - removal requires compact format)',
+    should: 'have 1 list — the blank-line spelling removes like any other',
     actual: newDoc.lists.length,
-    expected: 2, // By design - removeList doesn't work with blank lines
+    expected: 1,
   })
 
   assert({
     given: 'new document markdown',
-    should: 'still contain 2025-01-20 (by design - not removed due to format)',
+    should: 'no longer contain 2025-01-20',
     actual: newDoc.toMarkdown().includes('2025-01-20'),
-    expected: true, // By design - the list remains due to blank line format
+    expected: false,
   })
 
-  // The removeList ONLY works without blank lines:
+  // The compact format keeps working exactly as before:
   const markdownWithoutBlankLines = `# Schedule
 
 ## 2025-01-20
