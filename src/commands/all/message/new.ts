@@ -1,6 +1,13 @@
+/**
+ * A message filed under the day: typed in, dictated as a recording, or read
+ * off screenshots of the conversation. The two pipelines ask their questions
+ * through `context.prompt` — the terminal answers with a prompt, the web's
+ * import page with a form — and report their steps through `output.plan`
+ * and `output.stage`, so a host can draw the work as it happens.
+ */
+
 import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
 import * as path from 'node:path'
-import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
@@ -21,6 +28,7 @@ import { exists } from '#shared/fs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
 import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
@@ -55,6 +63,18 @@ function formatDuration(ms: number): string {
   return `${days}d ago`
 }
 
+/**
+ * Whether the source file moves into the day's attachments. The terminal
+ * asks: the file is the person's own, wherever they keep it. A host that
+ * staged an upload keeps nothing else, so there it always moves. Nobody
+ * there to answer: it stays where it is.
+ */
+async function keepWithDay(context: CommandArgs['context'], message: string): Promise<boolean> {
+  if (context.platform === CommandPlatform.Server) return true
+  if (!context.prompt.interactive) return false
+  return (await context.prompt.confirm({ message })) ?? false
+}
+
 const params = {
   to: ArgOrFlag.string('Channel or person', { short: 't' }),
   from: Flag.string('Who the communication was from', { short: 'f' }),
@@ -72,6 +92,7 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
+/** Where the message was filed, absolute: the day it went under is the pipeline's, not the caller's. */
 type Result = { filePath: string }
 
 export default class MessageNewTask extends Command {
@@ -83,7 +104,7 @@ export default class MessageNewTask extends Command {
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output, config } = context
+    const { output, config, prompt } = context
     let { when, to, from, medium, summary, category, fromImage, fromAudio, aiContext } = args
     let body: string | undefined
     let attachmentFiles: string[] = []
@@ -95,6 +116,14 @@ export default class MessageNewTask extends Command {
     const useAudioPipeline = fromAudio !== undefined
 
     if (useAudioPipeline) {
+      // The steps ahead, in the words a person reads; the transcript pipeline
+      // reports the first three by the same ids as it reaches them.
+      output.plan([
+        { id: 'transcribe', label: 'Transcribing' },
+        { id: 'names', label: 'Checking names' },
+        { id: 'writeup', label: 'Writing it up' },
+        { id: 'file', label: 'Filing' },
+      ])
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromAudio,
         template: 'audio-message',
@@ -104,6 +133,7 @@ export default class MessageNewTask extends Command {
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Audio pipeline failed: ${summaryResult.message}`)
       }
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       const data = summaryResult.data
       runKey = data.run
@@ -114,17 +144,14 @@ export default class MessageNewTask extends Command {
       if (!summary) summary = data.title
       if (data.rel.length > 0) audioRel = data.rel
       if (data.medium && !medium) medium = data.medium
-      if (data.time) {
-        const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
-        when = new PlainDateTime(data.time)
-      }
+      if (data.time) when = new PlainDateTime(data.time)
 
       // Format body with summary and transcript
       body = `${data.body}\n\n## Transcript\n\n${data.cleanedText}`
 
-      // Prompt for medium if still not set
-      if (!medium) {
-        const selected = await p.select({
+      // Ask for the medium when nothing named it and someone is there to answer.
+      if (!medium && prompt.interactive) {
+        const selected = await prompt.select({
           message: 'Which messaging medium?',
           options: [
             { value: 'In Person', label: 'In Person' },
@@ -134,47 +161,32 @@ export default class MessageNewTask extends Command {
             { value: 'Voice Memo', label: 'Voice Memo' },
           ],
         })
-
-        if (p.isCancel(selected)) {
-          p.cancel('Cancelled.')
-          return CommandResult.fail('Cancelled')
-        }
-
+        if (selected === null) return CommandResult.fail('Cancelled')
         medium = selected
       }
 
-      // Prompt to move audio file to attachments
-      if (data.audioFilePath) {
+      if (data.audioFilePath && (await keepWithDay(context, 'Move audio file to attachments?'))) {
         const audioPath = data.audioFilePath
-        const moveConfirm = await p.confirm({ message: 'Move audio file to attachments?' })
+        const messageDate = when.plainDate
+        const whoStr = from && to ? `${from}-to-${to}` : from || to || ''
+        const whoSlugPart = whoStr ? `_${slugify(whoStr, { preserveCase: true })}` : ''
+        const summarySlugPart = summary
+          ? `_${slugify(summary as string, { preserveCase: true, suggestedLength: 40 })}`
+          : ''
+        const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(messageDate))
+        await mkdir(attachDir, { recursive: true })
 
-        if (p.isCancel(moveConfirm)) {
-          p.cancel('Cancelled.')
-          return CommandResult.fail('Cancelled')
-        }
+        const ext = path.extname(audioPath)
+        const newFileName = `${messageDate}_${slugify(medium as string, {
+          preserveCase: true,
+        })}${whoSlugPart}${summarySlugPart}${ext}`
 
-        if (moveConfirm) {
-          const messageDate = when.plainDate
-          const whoStr = from && to ? `${from}-to-${to}` : from || to || ''
-          const whoSlugPart = whoStr ? `_${slugify(whoStr, { preserveCase: true })}` : ''
-          const summarySlugPart = summary
-            ? `_${slugify(summary as string, { preserveCase: true, suggestedLength: 40 })}`
-            : ''
-          const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(messageDate))
-          await mkdir(attachDir, { recursive: true })
-
-          const ext = path.extname(audioPath)
-          const newFileName = `${messageDate}_${slugify(medium as string, {
-            preserveCase: true,
-          })}${whoSlugPart}${summarySlugPart}${ext}`
-
-          const destPath = path.join(attachDir, newFileName)
-          await rename(audioPath, destPath).catch(async () => {
-            await copyFile(audioPath, destPath)
-          })
-          attachmentFiles.push(newFileName)
-          output.log(colors.gray(`Moved audio file to ${attachDir}\n`))
-        }
+        const destPath = path.join(attachDir, newFileName)
+        await rename(audioPath, destPath).catch(async () => {
+          await copyFile(audioPath, destPath)
+        })
+        attachmentFiles.push(newFileName)
+        output.log(colors.gray(`Moved audio file to ${attachDir}\n`))
       }
     }
 
@@ -206,21 +218,16 @@ export default class MessageNewTask extends Command {
           output.log(colors.cyan(`Found: ${path.basename(found[0])}`))
         } else {
           const now = Date.now()
-          const selected = await p.multiselect({
+          const selected = await prompt.multiselect({
             message: 'Select screenshots to include (space to toggle, enter to confirm)',
             options: found.map((fp) => ({
               value: fp,
               label: path.basename(fp),
               hint: relativeAge(now, fp),
             })),
-            required: true,
           })
-
-          if (p.isCancel(selected)) {
-            p.cancel('Cancelled.')
-            return CommandResult.fail('Cancelled')
-          }
-
+          if (selected === null) return CommandResult.fail('Cancelled')
+          if (selected.length === 0) return CommandResult.fail('No screenshots selected.')
           imagePaths = selected
         }
       }
@@ -242,6 +249,12 @@ export default class MessageNewTask extends Command {
 
       // 2. Extract conversation from image(s)
       const label = imagePaths.length === 1 ? 'screenshot' : `${imagePaths.length} screenshots`
+      output.plan([
+        { id: 'read', label: `Reading the ${label}` },
+        { id: 'check', label: 'Checking it with you' },
+        { id: 'file', label: 'Filing' },
+      ])
+      output.stage('read', `Reading the ${label}`)
       output.log(colors.gray(`Extracting conversation from ${label}...`))
       const participants = [from, to].filter(Boolean)
       const hints = [
@@ -254,6 +267,7 @@ export default class MessageNewTask extends Command {
         aiContext: hints.length > 0 ? hints.join(' ') : undefined,
         now: `${when}`,
       })
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       // 3. Apply extracted values (CLI flags override AI)
       from = from || extraction.from || undefined
@@ -266,17 +280,16 @@ export default class MessageNewTask extends Command {
       // the parse before defaults are applied, so a `when` key there means the user
       // typed --when and meant it — that always wins over what the model read.
       if (extraction.when && rawArgs.when === undefined) {
-        const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
         when = new PlainDateTime(extraction.when)
       }
 
-      // 4. Resolve medium: CLI flag > AI detection > user prompt
+      // 4. Resolve medium: CLI flag > AI detection > a question, when someone is there
       if (!medium && extraction.platform) {
         medium = extraction.platform
       }
 
-      if (!medium) {
-        const selected = await p.select({
+      if (!medium && prompt.interactive) {
+        const selected = await prompt.select({
           message: 'Which messaging platform?',
           options: [
             { value: 'WhatsApp', label: 'WhatsApp' },
@@ -287,19 +300,16 @@ export default class MessageNewTask extends Command {
             { value: 'LinkedIn Messages', label: 'LinkedIn Messages' },
           ],
         })
-
-        if (p.isCancel(selected)) {
-          p.cancel('Cancelled.')
-          return CommandResult.fail('Cancelled')
-        }
-
+        if (selected === null) return CommandResult.fail('Cancelled')
         medium = selected
       }
 
-      // 5. Show extracted metadata and take correction rounds until accepted —
-      // re-displaying after each round so a misapplied correction is visible
-      // before anything is written.
-      while (true) {
+      // 5. Show the conversation and what was read off it, then take correction
+      // rounds until accepted — re-displaying after each round so a misapplied
+      // correction is visible before anything is written.
+      output.stage('check', 'Checking it with you')
+      output.write(`\n${renderDialogue(messages)}\n`)
+      const showExtracted = () => {
         output.log(colors.cyan('\n─── Extracted ───'))
         output.log(colors.white(`  From:     ${from ?? '(none)'}`))
         output.log(colors.white(`  To:       ${to ?? '(none)'}`))
@@ -314,18 +324,17 @@ export default class MessageNewTask extends Command {
           output.log(colors.yellow(`  Notes:    ${extraction.continuityNotes}`))
         }
         output.log(colors.cyan('─────────────────'))
+      }
+      showExtracted()
 
-        const corrections = await p.text({
-          message: 'Any corrections? (Enter to accept)',
+      let rounds = 0
+      while (prompt.interactive) {
+        const corrections = await prompt.text({
+          message: rounds > 0 ? 'Anything else? (Enter to accept)' : 'Any corrections? (Enter to accept)',
           placeholder: 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
         })
-
-        if (p.isCancel(corrections)) {
-          p.cancel('Cancelled.')
-          return CommandResult.fail('Cancelled')
-        }
-
         if (!corrections) break
+        rounds++
 
         output.log(colors.gray('Parsing corrections...'))
 
@@ -336,7 +345,6 @@ export default class MessageNewTask extends Command {
         // applyParticipantCorrections) so nothing it returns can override them.
         const typedTime = extractTypedTime(corrections, context.notebookNow.date)
         if (typedTime) {
-          const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
           when = new PlainDateTime(typedTime.hasDate ? typedTime.value : `${when.plainDate} ${typedTime.value}`)
           if (typedTime.yearInferred) {
             output.log(colors.gray(`  Typed time "${typedTime.raw}" read as ${typedTime.value}`))
@@ -369,7 +377,6 @@ export default class MessageNewTask extends Command {
         if (c.medium) medium = c.medium
         if (c.summary) summary = c.summary
         if (!typedTime && c.when) {
-          const { PlainDateTime } = await import('#universal/dates/nbdt/mod.ts')
           // AI may return "HH:MM" or "YYYY-MM-DD HH:MM". Test for a leading
           // date rather than for a hyphen anywhere: a negative hour ("-7:56",
           // valid per docs/nbfs.md) carries one but has no date.
@@ -384,20 +391,15 @@ export default class MessageNewTask extends Command {
         messages = applied.messages
 
         output.log(colors.green('Applied corrections.'))
+        showExtracted()
       }
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       body = renderDialogue(messages)
 
-      // 6. Prompt to move screenshots to attachments
+      // 6. The screenshots go with the message
       const moveLabel = imagePaths.length === 1 ? 'Move screenshot to attachments?' : 'Move screenshots to attachments?'
-      const moveConfirm = await p.confirm({ message: moveLabel })
-
-      if (p.isCancel(moveConfirm)) {
-        p.cancel('Cancelled.')
-        return CommandResult.fail('Cancelled')
-      }
-
-      if (moveConfirm) {
+      if (await keepWithDay(context, moveLabel)) {
         const messageDate = when.plainDate
         const whoStr = from && to ? `${from}-to-${to}` : from || to || ''
         const whoSlugPart = whoStr ? `_${slugify(whoStr, { preserveCase: true })}` : ''
@@ -429,6 +431,8 @@ export default class MessageNewTask extends Command {
     if (!medium) {
       return CommandResult.fail('Missing required flag: --medium (-m)')
     }
+
+    if (useAudioPipeline || useImagePipeline) output.stage('file', 'Filing')
 
     const date = when.plainDate
 
@@ -463,6 +467,7 @@ export default class MessageNewTask extends Command {
     }
 
     const filePath = await ddfw.write(fileName, data.trimStart())
+    const fullPath = path.join(ddfw.fullDir, filePath)
 
     const commEntry = `${who} ${medium}`.trim() // we trim in case there's no 'who'
 
@@ -470,13 +475,13 @@ export default class MessageNewTask extends Command {
     await writeDayItems(date, category, dayItem)
 
     if (context.platform === CommandPlatform.Console) {
-      await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+      await openEditor([{ file: fullPath, line: data.split('\n').length }])
     }
 
     if (runKey) await clearTranscriptRun(runKey)
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 
-    return CommandResult.success({ filePath })
+    return CommandResult.success({ filePath: fullPath })
   }
 }

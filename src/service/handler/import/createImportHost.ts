@@ -2,8 +2,8 @@
  * The import over the real notebook: uploads under the user-data directory,
  * the door commands run in-process with the browser answering their
  * questions, the first minute of a recording heard through the same
- * transcription call the pipeline uses, and the day's calendar read the
- * way the meeting check reads it.
+ * transcription call the pipeline uses, a screenshot's pixels read from its
+ * header, and the day's calendar read the way the meeting check reads it.
  */
 
 import { readFile, rm } from 'node:fs/promises'
@@ -15,6 +15,7 @@ import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/mee
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import { runCommand, type RunEvent } from '#commands/lib/core/runCommand.ts'
 import { probeMedia, runFfmpeg } from '#lib/media/ffmpeg/mod.ts'
+import { imageSize } from '#lib/media/image/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
@@ -28,6 +29,7 @@ import {
   KINDS,
   type ReadBack,
   readAudio,
+  readImage,
   readText,
   readTranscript,
   readUnknown,
@@ -112,6 +114,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === null) return readUnknown(name)
     if (source === 'transcript') return readTranscript(await readTextFile(filePath), name)
     if (source === 'text') return readText(await readTextFile(filePath), name)
+    if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
     const info = await probeMedia(filePath).catch(() => null)
     return readAudio(size, info?.durationSeconds ?? null)
   }
@@ -142,6 +145,8 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   }
 
   const calendar = async (when: string, readback: ReadBack): Promise<CalendarMatch | null> => {
+    // A screenshot is a conversation, not a meeting: the calendar has nothing to say about it.
+    if (readback.source === 'image') return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)
@@ -182,8 +187,8 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   ): AsyncGenerator<RunEvent, RunOutcome, void> {
     const fields = job.fields
     if (!fields) return { ok: false, message: 'nothing to start with' }
-    if (job.readback.source !== 'audio' && fields.kind !== 'meeting') {
-      return { ok: false, message: 'only a recording can be filed that way' }
+    if (!job.readback.kinds.includes(fields.kind)) {
+      return { ok: false, message: `this file cannot be filed as a ${fields.kind}` }
     }
 
     // A when the person changed goes as stated, and the command keeps it over

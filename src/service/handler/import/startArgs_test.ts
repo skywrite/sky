@@ -77,3 +77,34 @@ test('startArgs() — the other doors', () => {
     expected: { command: 'notes:new', rawArgs: { _: [], when: '2026-01-27 09:30' } },
   })
 })
+
+test('startArgs() — a screenshot', () => {
+  const shot = startArgs({ ...memo, source: 'image' }, fields({ kind: 'message' }), '/tmp/chat.png')
+  const memoMessage = startArgs(memo, fields({ kind: 'message' }), '/tmp/memo.m4a')
+  assert({
+    given: 'a screenshot filed as a message, when left as proposed',
+    should: 'run message:new by its image door with the proposal as the default, and nothing stated',
+    actual: {
+      command: shot.command,
+      image: shot.args.fromImage,
+      audio: shot.args.fromAudio,
+      when: String(shot.args.when),
+      category: shot.args.category,
+      rawArgs: shot.rawArgs,
+    },
+    expected: {
+      command: 'message:new',
+      image: '/tmp/chat.png',
+      audio: undefined,
+      when: PROPOSED,
+      category: 'Professional Complete',
+      rawArgs: { _: [] },
+    },
+  })
+  assert({
+    given: 'a memo filed as a message',
+    should: 'still go in by the audio door',
+    actual: [memoMessage.args.fromAudio, memoMessage.args.fromImage],
+    expected: ['/tmp/memo.m4a', undefined],
+  })
+})

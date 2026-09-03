@@ -19,9 +19,10 @@ that is only kept, so the day file and notebook git stay as they were.
   copy, with progress shown in the pad.
 - **Drop anywhere else and it is an import** — the page, and the panel's
   own header and rows too; only the pad keeps. The import dialog opens (see
-  `../../import/docs/README.md`): a transcript or a recording goes to its
-  door, and a file no door takes is refused there and leaves with Remove.
-  A recording over the transcription cap is refused before it uploads. The
+  `../../import/docs/README.md`): a transcript, a recording or a screenshot
+  of a conversation goes to its door, and a file no door takes is refused
+  there and leaves with Remove. A recording over the transcription cap, or
+  a screenshot over the vision model's, is refused before it uploads. The
   dialog never keeps; the pad does.
 - **Remove** sends a file to the Trash.
 - **On the phone** the paperclip is the import's picker; the pad is a desk

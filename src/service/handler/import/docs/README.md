@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Meeting from a file — the import
@@ -10,15 +10,17 @@ Design notes for `src/service/handler/import/` and the page that fronts it,
 
 ## What is built
 
-A transcript or a recording dropped on the day page becomes an **import
-job**: the upload is staged under `<user-data>/imports/<id>/`, read back at
-once, and, on Start, the matching command runs inside the service the way
-the terminal runs it. Everything the job says travels as server-sent events.
+A transcript, a recording or a screenshot dropped on the day page becomes
+an **import job**: the upload is staged under `<user-data>/imports/<id>/`,
+read back at once, and, on Start, the matching command runs inside the
+service the way the terminal runs it. Everything the job says travels as
+server-sent events.
 
 - `readback.ts` — what a file is, before anything runs. A `.vtt` is parsed
   for its length, speakers and turns; a `.txt` for its stamped turns; a
   recording for its size (its length comes from the container, probed by
-  the host). A file sky does not take, or cannot, gets a sentence.
+  the host); a screenshot for its size and its pixels (`lib/media/image`
+  reads the header). A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
   so a restart still knows what was there (a job that was running when the
   service died reads as failed, with the file kept). `JobPrompter` is how a
@@ -41,10 +43,12 @@ One door for every file kind. The kind picks the command:
 | `.vtt` | `meeting:new --from-zoom-vtt` |
 | `.txt` | `meeting:new --from-text` |
 | audio | the kind chosen in the dialog: `meeting:new --from-voice-memo`, or `journal:new`, `notes:new`, `message:new`, `event:new` with `--from-audio` |
+| image | `message:new --from-image` — a screenshot of a conversation |
 
 The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
-checked against the calendar within the meeting check's fifteen minutes).
+checked against the calendar within the meeting check's fifteen minutes;
+for a screenshot, when it was taken, and the calendar is not asked).
 A when the person changed is passed as a stated argument, which the
 command keeps over anything the words say; left as proposed, it is passed
 as the file's clock, which the pipeline resolves the words against and
@@ -54,7 +58,12 @@ was settled, and the check's time field shows it (`startArgs.ts`).
 Three stops need the person, and each is the CLI's own prompt given a form:
 the names review (`form`), the write-up corrections (`text`, in a loop),
 and the action items (`multiselect`). They arrive as `prompt` events and
-are answered through `POST /import/:id/answer`.
+are answered through `POST /import/:id/answer`. A screenshot has one stop:
+`message:new` shows the conversation it read and the fields beside it, and
+asks for corrections in the same loop; the platform is a `select` when the
+screenshot did not say. The screenshot moves into the day's attachments
+without a question — the upload was sky's staging copy, not the person's
+file — where the terminal asks.
 
 A run that stops — a failure, a cancel, a restart — leaves the pipeline's
 run record behind, keyed by the file's bytes at upload. Opening the job
@@ -122,12 +131,15 @@ the command's own plan.
 
 - `2026-09-01-meeting-from-a-file.md` — the design, the seams, what changed
   in the pipeline commands.
+- `2026-09-03-a-screenshot-is-a-message.md` — the image door: the read-back,
+  and what it took for `message:new` to run from the page.
 
 ## A drop is an import
 
 Every file dropped on the day, and every file the composer's paperclip
 takes, comes through this dialog: a door takes it, or the read-back says
 why not and the file leaves with Remove. A recording over the transcription
-cap is refused before its bytes go up, in the read-back's own sentence.
+cap, or a screenshot over the vision model's, is refused before its bytes
+go up, in the read-back's own sentence.
 Keeping a file with the day as it is — a PDF, a Zoom video, anything — is
 the Files pad's job, never this dialog's: `../../day/docs/README.md`.

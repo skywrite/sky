@@ -245,7 +245,7 @@ test('POST /import refuses a file sky does not take, and start refuses it too', 
     actual: [job.state, job.error, start.status],
     expected: [
       'failed',
-      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, or a notetaker's .txt.",
+      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
       400,
     ],
   })

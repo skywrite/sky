@@ -1,14 +1,15 @@
 /**
- * Meeting from a file — the service's side of dropping a transcript or a
- * recording on the day.
+ * Meeting from a file — the service's side of dropping a transcript, a
+ * recording or a screenshot on the day.
  *
  * A drop becomes a job: the upload staged under the user-data directory,
  * read back at once (length, speakers, turns; for a recording the first
- * minute heard), then, on Start, the matching command run in-process the
- * way the terminal runs it. The command's output is the job's progress and
- * its questions park on the job until the browser answers; everything the
- * job says travels as server-sent events, replayed from the start on every
- * connection so a page reopened mid-way shows all of it.
+ * minute heard; for a screenshot its pixels), then, on Start, the matching
+ * command run in-process the way the terminal runs it. The command's output
+ * is the job's progress and its questions park on the job until the browser
+ * answers; everything the job says travels as server-sent events, replayed
+ * from the start on every connection so a page reopened mid-way shows all
+ * of it.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -79,9 +80,11 @@ export interface ImportRoutesOptions {
   journalTypes: string[]
 }
 
-/** "Voice memo 9:14", or the file's name without its extension. */
+/** "Voice memo 9:14", "Screenshot 7:44", or the file's name without its extension. */
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
-  if (readback.source === 'audio') return `Voice memo ${when.slice(11).replace(/^0/, '')}`
+  const time = when.slice(11).replace(/^0/, '')
+  if (readback.source === 'audio') return `Voice memo ${time}`
+  if (readback.source === 'image') return `Screenshot ${time}`
   return file.name.replace(/\.[^.]+$/, '')
 }
 

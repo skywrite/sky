@@ -3,9 +3,10 @@
  *
  * A transcript is parsed for its length, speakers and turns; a notetaker's
  * text for its stamped turns; a recording only for its size here — its
- * length comes from the file's own container, which the host probes. The
- * result is what the confirm dialog says back, and the refusals are the
- * sentences a file that cannot be imported gets instead of a wait.
+ * length comes from the file's own container, which the host probes; a
+ * screenshot for its size and the pixels its header states. The result is
+ * what the confirm dialog says back, and the refusals are the sentences a
+ * file that cannot be imported gets instead of a wait.
  */
 
 import * as path from 'node:path'
@@ -14,7 +15,7 @@ import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
 
 export type ImportKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
-export type ImportSource = 'transcript' | 'text' | 'audio'
+export type ImportSource = 'transcript' | 'text' | 'audio' | 'image'
 
 export const KINDS: ImportKind[] = ['meeting', 'journal', 'note', 'message', 'event']
 
@@ -22,6 +23,12 @@ export const AUDIO_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac'
 
 /** The transcription request cap; a longer recording is refused up front, not after a wait. */
 export const AUDIO_LIMIT_BYTES = 25 * 1024 * 1024
+
+/** What the vision model reads, and HEIC, which the door converts before it does. */
+export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
+
+/** The model takes 10 MB of base64 per image; that is this many bytes of file. */
+export const IMAGE_LIMIT_BYTES = 7.5 * 1024 * 1024
 
 export interface ReadBack {
   source: ImportSource
@@ -45,6 +52,7 @@ export function sourceOf(name: string): ImportSource | null {
   if (ext === '.vtt') return 'transcript'
   if (ext === '.txt') return 'text'
   if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
+  if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
   return null
 }
 
@@ -136,11 +144,30 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null): Re
   }
 }
 
+/** A screenshot of a conversation: its pixels when the header states them, its size always. */
+export function readImage(sizeBytes: number, pixels: { width: number; height: number } | null): ReadBack {
+  if (sizeBytes > IMAGE_LIMIT_BYTES) {
+    const mb = (sizeBytes / 1024 / 1024).toFixed(0)
+    return refused('image', `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`)
+  }
+  const size = pixels ? `${pixels.width} × ${pixels.height}` : null
+  return {
+    source: 'image',
+    kinds: ['message'],
+    summary: ['Screenshot', size].filter((p): p is string => Boolean(p)).join(' · '),
+    detail: null,
+    durationMinutes: null,
+    clockStartSeconds: null,
+    speakers: [],
+    refusal: null,
+  }
+}
+
 /** A file sky does not take, in a sentence. */
 export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a Zoom transcript (.vtt), a voice memo, or a notetaker's .txt.`,
+    `Sky doesn't take ${ext} files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
   )
 }

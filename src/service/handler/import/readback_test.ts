@@ -1,8 +1,10 @@
 import { assert, test } from '#test'
 import {
   AUDIO_LIMIT_BYTES,
+  IMAGE_LIMIT_BYTES,
   lengthLabel,
   readAudio,
+  readImage,
   readText,
   readTranscript,
   readUnknown,
@@ -28,8 +30,8 @@ test('sourceOf', () => {
   assert({
     given: 'file names of each kind',
     should: 'point at the door family, or nowhere',
-    actual: ['call.VTT', 'notes.txt', 'memo.m4a', 'song.MP3', 'deck.pdf'].map(sourceOf),
-    expected: ['transcript', 'text', 'audio', 'audio', null],
+    actual: ['call.VTT', 'notes.txt', 'memo.m4a', 'song.MP3', 'chat.png', 'photo.HEIC', 'deck.pdf'].map(sourceOf),
+    expected: ['transcript', 'text', 'audio', 'audio', 'image', 'image', null],
   })
 })
 
@@ -106,6 +108,27 @@ test('readAudio', () => {
   })
 })
 
+test('readImage', () => {
+  assert({
+    given: 'a screenshot whose header states its pixels',
+    should: 'say so and offer it as a message',
+    actual: [readImage(254_000, { width: 1170, height: 2532 }).summary, readImage(254_000, null).summary],
+    expected: ['Screenshot · 1170 × 2532', 'Screenshot'],
+  })
+  assert({
+    given: 'the kinds a screenshot can be',
+    should: 'be a message only',
+    actual: [readImage(254_000, null).kinds, readImage(254_000, null).source, readImage(254_000, null).refusal],
+    expected: [['message'], 'image', null],
+  })
+  assert({
+    given: "an image over the model's cap",
+    should: 'refuse up front',
+    actual: readImage(IMAGE_LIMIT_BYTES + 1.5 * 1024 * 1024, { width: 5120, height: 2880 }).refusal,
+    expected: 'The screenshot is 9 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
+  })
+})
+
 test('lengthLabel and readUnknown', () => {
   assert({
     given: 'lengths in seconds',
@@ -117,7 +140,8 @@ test('lengthLabel and readUnknown', () => {
     given: 'a file of a kind sky does not take',
     should: 'say so and name what it does take',
     actual: readUnknown('deck.pdf').refusal,
-    expected: "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, or a notetaker's .txt.",
+    expected:
+      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
   })
 })
 

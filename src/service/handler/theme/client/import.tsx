@@ -20,10 +20,10 @@ import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
- * Meeting from a file. A transcript or a recording dropped on the day
- * becomes an import: the dialog says what sky read in it and settles what
- * it is and when; the Running block shows it working; its own page shows
- * the work as it happens and the questions it stops to ask.
+ * Meeting from a file. A transcript, a recording or a screenshot dropped on
+ * the day becomes an import: the dialog says what sky read in it and
+ * settles what it is and when; the Running block shows it working; its own
+ * page shows the work as it happens and the questions it stops to ask.
  */
 
 // -----------------------------------------------------------------------------
@@ -37,7 +37,7 @@ export interface ImportJob {
   id: string
   file: { name: string; size: number; lastModified: number | null }
   readback: {
-    source: 'transcript' | 'text' | 'audio'
+    source: 'transcript' | 'text' | 'audio' | 'image'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -281,21 +281,30 @@ export function useImportFeed(id: string | null): ImportFeed {
 // -----------------------------------------------------------------------------
 
 const RECORDING_EXTS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
 /** The transcriber takes at most this much per request: the read-back's cap, so the sentence below is its sentence. */
 const TRANSCRIBE_CAP = 25 * 1024 * 1024
+/** The vision model takes 10 MB of base64 per image: this much file. The read-back's cap, and its sentence. */
+const IMAGE_CAP = 7.5 * 1024 * 1024
 
 export function acceptsImports(): string {
-  return ['.vtt', '.txt', ...RECORDING_EXTS, 'audio/*'].join(',')
+  return ['.vtt', '.txt', ...RECORDING_EXTS, ...IMAGE_EXTS, 'audio/*', 'image/*'].join(',')
 }
 
-/** A recording over the cap is refused before its bytes go up, in the read-back's words. */
+/** A recording or a screenshot over its cap is refused before its bytes go up, in the read-back's words. */
 function refusedBeforeUpload(file: File): string | null {
   const dot = file.name.lastIndexOf('.')
   const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : ''
-  const recording = RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
-  if (!recording || file.size <= TRANSCRIBE_CAP) return null
   const mb = (file.size / 1024 / 1024).toFixed(0)
-  return `The recording is ${mb} MB, over the 25 MB limit. Trim it, or record shorter parts.`
+  const recording = RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
+  if (recording && file.size > TRANSCRIBE_CAP) {
+    return `The recording is ${mb} MB, over the 25 MB limit. Trim it, or record shorter parts.`
+  }
+  const image = IMAGE_EXTS.includes(ext) || file.type.startsWith('image/')
+  if (image && file.size > IMAGE_CAP) {
+    return `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`
+  }
+  return null
 }
 
 /** Drag-and-drop over a whole page: true while files are held over it. The Files pad handles its own drops. */
@@ -355,8 +364,8 @@ export function DropOverlay() {
         </div>
         <div className="sky-drop-title">Drop it on the day</div>
         <div className="sky-drop-sub">
-          Sky files it: a transcript (.vtt), a voice memo, or a notetaker's text (.txt). To keep a file with the day as
-          it is, open Files and drop it on the pad.
+          Sky files it: a transcript (.vtt), a voice memo, a notetaker's text (.txt), or a screenshot of a conversation.
+          To keep a file with the day as it is, open Files and drop it on the pad.
         </div>
       </div>
     </div>
@@ -471,6 +480,24 @@ function Pills<T extends string>({
   )
 }
 
+/** Under When: where the proposal came from and what wins, or that the person's own wins. */
+function whenNote(source: ImportJob['readback']['source'], proposed: boolean, label: string): string {
+  switch (source) {
+    case 'audio':
+      return proposed
+        ? `when the memo was recorded · ${label} · a time you say in it wins`
+        : 'yours · wins over what the memo says'
+    case 'image':
+      return proposed
+        ? `when the screenshot was taken · ${label} · a time it shows wins`
+        : 'yours · wins over what the screenshot shows'
+    default:
+      return proposed
+        ? `from the file's time and length · ${label} · a time it states wins`
+        : 'yours · wins over what the transcript states'
+  }
+}
+
 /** `2026-09-01 09:31` reads as `Today 9:31` on today, else the date and time. */
 function whenLabel(when: string, todayYmd: string | null): string {
   const [ymd, hhmm] = when.split(' ')
@@ -480,6 +507,9 @@ function whenLabel(when: string, todayYmd: string | null): string {
 }
 
 function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], journalType: string): string {
+  if (source === 'image') {
+    return 'Sky reads the conversation off the screenshot, checks what it read with you, and files it as a message under the day.'
+  }
   const heard =
     source === 'audio'
       ? 'Sky transcribes it, checks unsure names with you'
@@ -544,7 +574,14 @@ function ConfirmBody({
   const uploading = pending && !pending.job && !pending.error
   const refusal = live?.readback.refusal ?? pending?.error ?? null
   const source = live?.readback.source ?? 'audio'
-  const sourceWord = source === 'audio' ? 'a voice memo' : source === 'text' ? 'a text file' : 'a transcript'
+  const sourceWord =
+    source === 'audio'
+      ? 'a voice memo'
+      : source === 'text'
+        ? 'a text file'
+        : source === 'image'
+          ? 'a screenshot'
+          : 'a transcript'
   // The title says what this makes — "New meeting from a transcript" — and follows the choice below.
   const title = refusal
     ? 'Sky cannot take this file'
@@ -616,9 +653,7 @@ function ConfirmBody({
               onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
             />
             <span className="sky-when-note">
-              {fields.when === live.suggestedWhen
-                ? `${source === 'audio' ? 'when the memo was recorded' : "from the file's time and length"} · ${whenLabel(live.suggestedWhen, todayYmd)} · ${source === 'audio' ? 'a time you say in it wins' : 'a time it states wins'}`
-                : `yours · wins over ${source === 'audio' ? 'what the memo says' : 'what the transcript states'}`}
+              {whenNote(source, fields.when === live.suggestedWhen, whenLabel(live.suggestedWhen, todayYmd))}
             </span>
           </div>
           {calendar && (
@@ -862,7 +897,8 @@ function derive(events: ImportEvent[]): Derived {
     } else if (event.type === 'line') {
       lines.push(event.text)
       const flat = event.text.trim()
-      if (flat.includes('Extracted Metadata')) box = []
+      // The box a door prints before its check: "─── Extracted Metadata ───", "─── Extracted ───"
+      if (/^─+ Extracted\b.*─+$/.test(flat)) box = []
       else if (box && /^─+$/.test(flat)) {
         fields = box
           .map((l) => l.match(/^([A-Za-z ]+):\s*(.*)$/))
@@ -1157,16 +1193,20 @@ function Fields({ fields }: { fields: Derived['fields'] }) {
 function CorrectionsExchange({
   prompt,
   d,
+  job,
   history,
   onAnswer,
 }: {
   prompt: Extract<PromptOnWire, { kind: 'text' }>
   d: Derived
+  job: ImportJob
   history: { question: string; answer: string }[]
   onAnswer: (answer: string) => void
 }) {
   const [value, setValue] = useState('')
-  const writeup = d.text['writeup']
+  // What the door streamed under the step it is checking: the write-up, or the conversation read off a screenshot.
+  const writeup = d.text[(d.stage ?? job.stage)?.id ?? 'writeup'] ?? d.text['writeup']
+  const conversation = job.readback.source === 'image'
   const send = (text: string) => onAnswer(text)
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1176,7 +1216,7 @@ function CorrectionsExchange({
   }
   return (
     <>
-      <Block head="Check the write-up" mini="what sky read out of it">
+      <Block head={conversation ? 'Check the conversation' : 'Check the write-up'} mini="what sky read out of it">
         <div className="sky-lead" style={{ marginBottom: 8 }}>
           Read it over. Then say what's wrong, in your own words or by field.
         </div>
@@ -1502,8 +1542,14 @@ export function ImportMain({
             </Block>
           )}
           {pending?.kind === 'form' && <ReviewForm prompt={pending} onAnswer={(a) => void answer(pending, a)} />}
-          {pending?.kind === 'text' && (
-            <CorrectionsExchange prompt={pending} d={d} history={history} onAnswer={(a) => void answer(pending, a)} />
+          {pending?.kind === 'text' && job && (
+            <CorrectionsExchange
+              prompt={pending}
+              d={d}
+              job={job}
+              history={history}
+              onAnswer={(a) => void answer(pending, a)}
+            />
           )}
           {pending?.kind === 'multiselect' && (
             <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
