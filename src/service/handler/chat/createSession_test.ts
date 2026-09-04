@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { toolOutputSink } from './createSession.ts'
+import { choiceLabel, toolOutputSink } from './createSession.ts'
 import type { ToolOutputEvent } from './mod.ts'
 
 const MISSION = 'google:agent'
@@ -84,5 +84,35 @@ test({ name: 'toolOutputSink - without a summarizer the events are the three as 
     should: 'report start, lines, end, nothing more',
     actual: events.map((e) => e.type),
     expected: ['tool-started', 'tool-line', 'tool-line', 'tool-finished'],
+  })
+})
+
+test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone one keeps the bare name' }, () => {
+  const all = {
+    'default-fable-5.1': {
+      provider: 'anthropic',
+      model: 'claude-fable-5-1',
+      options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
+    },
+    'default-fable-5.1-high': {
+      provider: 'anthropic',
+      model: 'claude-fable-5-1',
+      options: { effort: 'high', thinking: { type: 'adaptive' } },
+    },
+    'default-opus-5': { provider: 'anthropic', model: 'claude-opus-5', options: { effort: 'xhigh' } },
+    'default-gpt-5.5': { provider: 'openai', model: 'gpt-5.5', options: { reasoningEffort: 'xhigh' } },
+    mine: { provider: 'openai', model: 'gpt-5.5' },
+  } as unknown as Parameters<typeof choiceLabel>[1]
+  assert({
+    given: 'a catalog where Fable 5.1 appears twice, once at each effort, and Opus 5 once',
+    should: 'tell the twins apart by effort and leave the lone model bare',
+    actual: Object.keys(all).map((name) => choiceLabel(name, all)),
+    expected: [
+      'Claude Fable 5.1 · xhigh',
+      'Claude Fable 5.1 · high',
+      'Claude Opus 5',
+      'GPT 5.5 · xhigh',
+      'GPT 5.5 · mine',
+    ],
   })
 })

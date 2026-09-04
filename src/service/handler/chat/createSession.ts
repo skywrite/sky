@@ -25,7 +25,15 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import {
+  aiModel,
+  getAllProfiles,
+  getProfile,
+  type ModelProfile,
+  PROFILES,
+  resolveProfile,
+  ROLES,
+} from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
@@ -174,15 +182,31 @@ export function toolOutputSink(
   }
 }
 
+/**
+ * A profile's line in the picker: the model's name, and when another profile runs the
+ * same model, the effort that tells them apart — `Claude Fable 5.1 · xhigh` beside
+ * `Claude Fable 5.1 · high`. A model only one profile runs keeps its bare name.
+ */
+export function choiceLabel(name: string, all: Record<string, ModelProfile>): string {
+  const profile = all[name]
+  const model = prettyModel(profile.model)
+  const twins = Object.values(all).filter((p) => p.provider === profile.provider && p.model === profile.model)
+  if (twins.length < 2) return model
+  const options = (profile.options ?? {}) as { effort?: string; reasoningEffort?: string }
+  const effort = options.effort ?? options.reasoningEffort
+  return `${model} · ${effort ?? name}`
+}
+
 /** Every configuration, yours first, each with the roles it holds — what the picker lists. */
 export function modelChoices(): ModelChoice[] {
   const rolesBy = new Map<string, string[]>()
   for (const [role, name] of Object.entries(ROLES)) {
     rolesBy.set(name, [...(rolesBy.get(name) ?? []), ROLE_LABEL[role] ?? role])
   }
-  const choices = Object.entries(getAllProfiles()).map(([name, profile]) => ({
+  const all = getAllProfiles()
+  const choices = Object.entries(all).map(([name, profile]) => ({
     name,
-    label: prettyModel(profile.model),
+    label: choiceLabel(name, all),
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
   }))
