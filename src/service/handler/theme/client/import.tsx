@@ -1,5 +1,5 @@
 import './import.css'
-import { Button, Drawer, Modal } from '@mantine/core'
+import { Button, Drawer, Modal, Popover } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -13,6 +13,17 @@ import {
   useRef,
   useState,
 } from 'react'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import {
+  dayLabel,
+  normalizeClock,
+  type PlaceWhen,
+  placeLabel,
+  placeWhere,
+  restOfWeek,
+  shortDate,
+  weekdayName,
+} from '#universal/dates/whenLabel/mod.ts'
 import { fileHref } from './explorer.tsx'
 import { sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
@@ -109,11 +120,33 @@ interface FormItem {
 
 type FormAnswer = { action: 'accept'; value: string } | { action: 'custom'; value: string } | { action: 'skip' }
 
+interface PlaceItem {
+  value: string
+  label: string
+  hint?: string
+  mine: boolean
+  when: PlaceWhen
+}
+
+/** Accept some items and say when each one happens — see commands/lib/prompt/Prompter.ts */
+interface PlacePrompt {
+  message: string
+  items: PlaceItem[]
+  initial: string[]
+  today: string
+  createdThrough: string | null
+  fallback: PlaceWhen
+  waiting: number
+}
+
+type PlaceAnswer = { value: string; when: PlaceWhen }[]
+
 type PromptOnWire = { id: string } & (
   | { kind: 'text'; prompt: { message: string; placeholder?: string; hint?: string[]; initial?: string } }
   | { kind: 'confirm'; prompt: { message: string; initial?: boolean } }
   | { kind: 'select'; prompt: { message: string; options: PromptOption[]; initial?: string } }
   | { kind: 'multiselect'; prompt: { message: string; options: PromptOption[]; initial?: string[] } }
+  | { kind: 'place'; prompt: PlacePrompt }
   | { kind: 'form'; prompt: { title: string; intro?: string; items: FormItem[] } }
 )
 
@@ -126,7 +159,7 @@ type ImportEvent = { seq: number } & (
   | { type: 'line'; text: string; level: 'log' | 'error' }
   | { type: 'text'; text: string }
   | { type: 'prompt'; prompt: PromptOnWire }
-  | { type: 'answered'; id: string }
+  | { type: 'answered'; id: string; answer?: unknown }
   | { type: 'state'; state: ImportState; line: string | null; result: { file: string } | null; error: string | null }
 )
 
@@ -871,6 +904,8 @@ interface Derived {
   pending: PromptOnWire | null
   /** The last "Extracted Metadata" box the write-up printed */
   fields: { key: string; value: string }[]
+  /** The action items as they were placed, once the question is answered */
+  placed: { prompt: Extract<PromptOnWire, { kind: 'place' }>; answer: PlaceAnswer } | null
 }
 
 function derive(events: ImportEvent[]): Derived {
@@ -883,6 +918,7 @@ function derive(events: ImportEvent[]): Derived {
   let pending: PromptOnWire | null = null
   let box: string[] | null = null
   let fields: Derived['fields'] = []
+  let placed: Derived['placed'] = null
   for (const event of events) {
     if (event.type === 'plan') {
       plan ??= event.steps
@@ -910,11 +946,16 @@ function derive(events: ImportEvent[]): Derived {
       pending = event.prompt
     } else if (event.type === 'answered') {
       answered.add(event.id)
-      if (pending?.id === event.id) pending = null
+      if (pending?.id === event.id) {
+        if (pending.kind === 'place' && Array.isArray(event.answer)) {
+          placed = { prompt: pending, answer: event.answer as PlaceAnswer }
+        }
+        pending = null
+      }
     }
   }
   if (pending && answered.has(pending.id)) pending = null
-  return { plan, stage, tick, text, lines, pending, fields }
+  return { plan, stage, tick, text, lines, pending, fields, placed }
 }
 
 type StepState = 'done' | 'live' | 'need' | 'next'
@@ -1293,7 +1334,7 @@ function ActionItems({
   return (
     <Block head="Action items" mini={`${options.length} from the summary`}>
       <div className="sky-lead" style={{ marginBottom: 6 }}>
-        Tick what you'll own. Each one lands where it belongs.
+        {prompt.prompt.message.replace(/\s*\(.*\)\s*$/, '')}
       </div>
       {options.map((o) => {
         const on = picked.has(o.value)
@@ -1332,7 +1373,459 @@ function ActionItems({
           Accept {picked.size}
         </Button>
         <Button onClick={() => onAnswer([])}>None</Button>
-        <span className="sky-dim">Nothing routes without your tick.</span>
+      </div>
+    </Block>
+  )
+}
+
+// --- action items: accept and place ------------------------------------------------
+
+const Tick = (
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <path
+      d="M2.5 7.5L5.5 10.5L11.5 3.5"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
+function sameWhen(a: PlaceWhen, b: PlaceWhen): boolean {
+  return a.date === b.date && a.time === b.time
+}
+
+/**
+ * Every action item the summary found, the person's own ticked, each with a
+ * chip saying when it happens. The chip in the lead sentence moves every
+ * row that has not been set on its own; a row's own chip sets just that row.
+ * A date or time the words named arrives set (it wins over the default).
+ */
+function PlaceItems({
+  prompt,
+  onAnswer,
+}: {
+  prompt: Extract<PromptOnWire, { kind: 'place' }>
+  onAnswer: (answer: PlaceAnswer) => void
+}) {
+  const p = prompt.prompt
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(p.initial))
+  const [fallback, setFallback] = useState<PlaceWhen>(p.fallback)
+  const [chosen, setChosen] = useState<Map<string, PlaceWhen>>(() => {
+    const set = new Map<string, PlaceWhen>()
+    for (const item of p.items) if (!sameWhen(item.when, p.fallback)) set.set(item.value, item.when)
+    return set
+  })
+  const whenOf = (item: PlaceItem) => chosen.get(item.value) ?? fallback
+  const toggle = (value: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+  const choose = (value: string, when: PlaceWhen) => setChosen((prev) => new Map(prev).set(value, when))
+
+  const ticked = p.items.filter((item) => picked.has(item.value))
+  const tally = new Map<string, { label: string; count: number }>()
+  for (const item of ticked) {
+    const when = whenOf(item)
+    const key = when.date ?? '~'
+    const label = when.date === null ? 'Next' : dayLabel(when.date, p.today)
+    tally.set(key, { label, count: (tally.get(key)?.count ?? 0) + 1 })
+  }
+  const tallied = [...tally.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, t]) => t)
+  const shared = { today: p.today, createdThrough: p.createdThrough, waiting: p.waiting }
+
+  return (
+    <Block head="Action items" mini={`${p.items.length} from the summary`}>
+      <div
+        className="sky-lead"
+        style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px' }}
+      >
+        <span>Tick what you'll own. Ticked items go to</span>
+        <WhenChip when={fallback} lead onChange={setFallback} {...shared} />
+        <span>unless a row says otherwise.</span>
+      </div>
+      {p.items.map((item) => {
+        const on = picked.has(item.value)
+        return (
+          <div key={item.value} className="sky-action sky-action-place">
+            <button
+              type="button"
+              className="sky-check"
+              aria-label={on ? 'Accepted' : 'Accept'}
+              onClick={() => toggle(item.value)}
+            >
+              <span className="sky-check-box" data-on={on}>
+                {on && Tick}
+              </span>
+            </button>
+            <span className="sky-action-text" style={{ color: on ? undefined : 'var(--sky-text-2)' }}>
+              {item.label}
+            </span>
+            {item.mine && <span className="sky-action-me">me</span>}
+            <WhenChip
+              when={whenOf(item)}
+              quiet={!chosen.has(item.value)}
+              off={!on}
+              itemText={item.label}
+              onChange={(when) => choose(item.value, when)}
+              {...shared}
+            />
+          </div>
+        )
+      })}
+      <div className="sky-form-foot">
+        <Button
+          variant="light"
+          color="blue"
+          onClick={() => onAnswer(ticked.map((item) => ({ value: item.value, when: whenOf(item) })))}
+        >
+          Accept {ticked.length}
+        </Button>
+        <Button onClick={() => onAnswer([])}>None</Button>
+        {tallied.length > 0 && (
+          <span className="sky-dim">{tallied.map((t) => `${t.label} ${t.count}`).join(' · ')}</span>
+        )}
+      </div>
+    </Block>
+  )
+}
+
+/** The chip that says when an item happens; a menu under it on a desk, a sheet on a phone. */
+function WhenChip({
+  when,
+  today,
+  createdThrough,
+  waiting,
+  quiet = false,
+  off = false,
+  lead = false,
+  itemText,
+  onChange,
+}: {
+  when: PlaceWhen
+  today: string
+  createdThrough: string | null
+  waiting: number
+  quiet?: boolean
+  off?: boolean
+  lead?: boolean
+  itemText?: string
+  onChange: (when: PlaceWhen) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const phone = useMediaQuery('(max-width: 900px)') ?? false
+  const day = when.date === null ? 'Next' : dayLabel(when.date, today)
+  const button = (
+    <button
+      type="button"
+      className={`sky-place-chip${lead ? ' sky-place-chip-lead' : ''}`}
+      data-quiet={quiet || undefined}
+      data-off={off || undefined}
+      data-open={open || undefined}
+      aria-label={`When: ${placeLabel(when, today)}`}
+      onClick={() => setOpen((o) => !o)}
+    >
+      {day}
+      {when.time && <span className="sky-place-chip-sub">· {when.time}</span>}
+      <svg className="sky-place-chip-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path
+          d="M3 4.5L6 7.5L9 4.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  )
+  const menu = (
+    <WhenMenu
+      when={when}
+      today={today}
+      createdThrough={createdThrough}
+      waiting={waiting}
+      onChange={onChange}
+      onDone={() => setOpen(false)}
+    />
+  )
+  if (phone) {
+    return (
+      <>
+        {button}
+        <Drawer
+          opened={open}
+          onClose={() => setOpen(false)}
+          position="bottom"
+          size="auto"
+          withCloseButton={false}
+          padding={12}
+          radius="lg"
+          styles={{
+            inner: { alignItems: 'flex-end' },
+            content: { height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
+          }}
+        >
+          <div className="sky-sheet">
+            <div className="sky-sheet-handle" />
+            {itemText && <div className="sky-sheet-for">{itemText}</div>}
+            {menu}
+          </div>
+        </Drawer>
+      </>
+    )
+  }
+  return (
+    <Popover
+      opened={open}
+      onChange={setOpen}
+      position="bottom-end"
+      offset={6}
+      withinPortal
+      shadow="none"
+      styles={{
+        dropdown: {
+          padding: 0,
+          border: '1px solid var(--sky-border-soft)',
+          borderRadius: 11,
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.12)',
+          background: 'var(--sky-card)',
+        },
+      }}
+    >
+      <Popover.Target>{button}</Popover.Target>
+      <Popover.Dropdown>{menu}</Popover.Dropdown>
+    </Popover>
+  )
+}
+
+const MenuTick = (
+  <svg className="sky-place-menu-tick" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
+/**
+ * Today, Tomorrow, the rest of this week by name, another day, a time, and
+ * Next. Picking a day keeps the time the item had; a time makes the day a
+ * Commitment; Next drops both.
+ */
+function WhenMenu({
+  when,
+  today,
+  createdThrough,
+  waiting,
+  onChange,
+  onDone,
+}: {
+  when: PlaceWhen
+  today: string
+  createdThrough: string | null
+  waiting: number
+  onChange: (when: PlaceWhen) => void
+  onDone: () => void
+}) {
+  const tomorrow = new PlainDate(today).addDays(1).ymd
+  const named = new Set([today, tomorrow, ...restOfWeek(today)])
+  const [otherDay, setOtherDay] = useState(when.date !== null && !named.has(when.date))
+  const [atTime, setAtTime] = useState(when.time !== null)
+  const [timeText, setTimeText] = useState(when.time ?? '')
+  const days = [
+    { date: today, label: 'Today', sub: shortDate(today) },
+    { date: tomorrow, label: 'Tomorrow', sub: shortDate(tomorrow) },
+    ...restOfWeek(today).map((date) => ({ date, label: weekdayName(date), sub: shortDate(date).slice(4) })),
+  ]
+  const pickDay = (date: string) => {
+    onChange({ date, time: when.time })
+    onDone()
+  }
+  const commitTime = () => {
+    const time = normalizeClock(timeText)
+    if (time && when.date !== null) onChange({ date: when.date, time })
+    else setTimeText(when.time ?? '')
+  }
+  const beyond = when.date !== null && (createdThrough === null || when.date > createdThrough)
+
+  return (
+    <div className="sky-place-menu">
+      {days.map((d) => (
+        <button
+          key={d.date}
+          type="button"
+          className="sky-place-menu-row"
+          data-on={when.date === d.date}
+          onClick={() => pickDay(d.date)}
+        >
+          {d.label}
+          {when.date === d.date && MenuTick}
+          <span className="sky-place-menu-sub">{d.sub}</span>
+        </button>
+      ))}
+      {otherDay ? (
+        <div className="sky-place-menu-field">
+          <span>On</span>
+          <input
+            type="date"
+            className="sky-when-input"
+            min={today}
+            value={when.date ?? ''}
+            onChange={(e) => e.target.value && onChange({ date: e.target.value, time: when.time })}
+          />
+          {beyond && (
+            <span className="sky-place-menu-hint">Its week isn't created yet. It lands on the day when it is.</span>
+          )}
+        </div>
+      ) : (
+        <button type="button" className="sky-place-menu-row" onClick={() => setOtherDay(true)}>
+          Another day…
+        </button>
+      )}
+      {when.date !== null &&
+        (atTime ? (
+          <div className="sky-place-menu-field">
+            <span>At</span>
+            <input
+              className="sky-when-input"
+              placeholder="9:30"
+              value={timeText}
+              autoFocus={when.time === null}
+              onChange={(e) => setTimeText(e.target.value)}
+              onBlur={commitTime}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  commitTime()
+                  onDone()
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="sky-place-menu-clear"
+              onClick={() => {
+                onChange({ date: when.date, time: null })
+                setTimeText('')
+                setAtTime(false)
+              }}
+            >
+              clear
+            </button>
+            <span className="sky-place-menu-hint">
+              A time makes it a Commitment on that day. Without one it's a Todo.
+            </span>
+          </div>
+        ) : (
+          <button type="button" className="sky-place-menu-row" onClick={() => setAtTime(true)}>
+            At a time…<span className="sky-place-menu-sub">makes it a Commitment</span>
+          </button>
+        ))}
+      <div className="sky-place-menu-sep" />
+      <button
+        type="button"
+        className="sky-place-menu-row"
+        data-on={when.date === null}
+        data-dim
+        onClick={() => {
+          onChange({ date: null, time: null })
+          onDone()
+        }}
+      >
+        Next
+        {when.date === null && MenuTick}
+        <span className="sky-place-menu-sub">the list · {waiting} waiting</span>
+      </button>
+    </div>
+  )
+}
+
+/** Where the accepted items went, grouped by day, with the failures the ledger reported. */
+function Placed({ placed, lines }: { placed: NonNullable<Derived['placed']>; lines: string[] }) {
+  const p = placed.prompt.prompt
+  const items = new Map(p.items.map((item) => [item.value, item]))
+  const failed = new Map<string, string>()
+  for (const line of lines) {
+    const m = line.trim().match(/^✗ (.+?) — (.+)$/)
+    if (m) failed.set(m[1], m[2])
+  }
+  interface Group {
+    key: string
+    when: PlaceWhen
+    rows: { text: string; time: string | null; problem: string | null }[]
+  }
+  const groups = new Map<string, Group>()
+  for (const a of placed.answer) {
+    const item = items.get(a.value)
+    if (!item) continue
+    const key = a.when.date ?? 'next'
+    const group = groups.get(key) ?? { key, when: { date: a.when.date, time: null }, rows: [] }
+    group.rows.push({ text: item.label, time: a.when.time, problem: failed.get(item.label) ?? null })
+    groups.set(key, group)
+  }
+  const ordered = [...groups.values()].sort((a, b) => (a.when.date ?? '9').localeCompare(b.when.date ?? '9'))
+  const nextCount = groups.get('next')?.rows.length ?? 0
+  const declined = p.items.length - placed.answer.length
+
+  const describe = (g: Group): { label: string; sub: string; href: string; open: string } => {
+    if (g.when.date === null) {
+      return {
+        label: 'Next',
+        sub: `the list · now ${p.waiting + nextCount} waiting`,
+        href: fileHref('time/next-professional.md'),
+        open: 'Open the list',
+      }
+    }
+    const where = placeWhere({ date: g.when.date, time: g.rows[0]?.time ?? null }, p.createdThrough)
+    if (where === 'schedule') {
+      return {
+        label: dayLabel(g.when.date, p.today),
+        sub: "its week isn't created yet · lands on the day when it is",
+        href: fileHref('time/schedule-professional.md'),
+        open: 'See the schedule',
+      }
+    }
+    const lists = new Set(g.rows.map((r) => (r.time ? 'Commitments' : 'Todos')))
+    const which = lists.size === 2 ? 'Todos and Commitments' : [...lists][0]
+    const label = dayLabel(g.when.date, p.today)
+    return {
+      label,
+      // "Today · Wed 11 Mar · Todos"; a named day already says its date
+      sub: label === 'Today' || label === 'Tomorrow' ? `${shortDate(g.when.date)} · ${which}` : which,
+      href: g.when.date === p.today ? '/' : `/${g.when.date}`,
+      open: g.when.date === p.today ? 'Open the day' : `Open ${weekdayName(g.when.date)}`,
+    }
+  }
+
+  return (
+    <Block head="Action items" mini={`${placed.answer.length} placed · ${declined} stay in the write-up`}>
+      <div className="sky-placed">
+        {ordered.map((g) => {
+          const d = describe(g)
+          return (
+            <div key={g.key} className="sky-placed-group">
+              <div className="sky-placed-head">
+                {d.label}
+                <span className="sky-placed-sub">{d.sub}</span>
+                <a className="sky-placed-open" href={d.href}>
+                  {d.open} ›
+                </a>
+              </div>
+              {g.rows.map((row) => (
+                <div key={row.text} className="sky-placed-item">
+                  <span className="sky-check-box" data-on={row.problem === null}>
+                    {row.problem === null && Tick}
+                  </span>
+                  <span>
+                    {row.time && <span className="sky-placed-time">{row.time} › </span>}
+                    {row.text}
+                    {row.problem && <span className="sky-placed-fail"> · didn't land: {row.problem}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
     </Block>
   )
@@ -1554,6 +2047,7 @@ export function ImportMain({
           {pending?.kind === 'multiselect' && (
             <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
           )}
+          {pending?.kind === 'place' && <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />}
           {(pending?.kind === 'select' || pending?.kind === 'confirm') && (
             <Choice prompt={pending} onAnswer={(a) => void answer(pending, a)} />
           )}
@@ -1564,6 +2058,7 @@ export function ImportMain({
               <div className="sky-condensed" data-tone="done">
                 — filed{job.result ? ` · ${job.result.file}` : ''} —
               </div>
+              {d.placed && <Placed placed={d.placed} lines={d.lines} />}
               {job.result && <FiledDetails file={job.result.file} />}
               {job.result && <FiledDoc file={job.result.file} />}
               {!job.result && <div className="sky-lead">Filed. The day has it.</div>}

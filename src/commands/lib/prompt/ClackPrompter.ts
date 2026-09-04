@@ -7,6 +7,8 @@ import type {
   FormItem,
   FormPrompt,
   MultiselectPrompt,
+  PlaceAnswer,
+  PlacePrompt,
   Prompter,
   SelectPrompt,
   TextPrompt,
@@ -59,6 +61,22 @@ export class ClackPrompter implements Prompter {
       required: false,
     })
     return p.isCancel(answer) ? null : (answer as string[])
+  }
+
+  // The terminal has no room to move each item, so it stays the multiselect
+  // it has always been: tick what you accept, and each one takes the when
+  // it arrived with. The hint says where that is.
+  async place(prompt: PlacePrompt): Promise<PlaceAnswer | null> {
+    if (!this.interactive) return null
+    const answer = await p.multiselect({
+      message: prompt.message,
+      options: prompt.items.map((item) => ({ value: item.value, label: item.label, hint: item.hint })),
+      initialValues: prompt.initial,
+      required: false,
+    })
+    if (p.isCancel(answer)) return null
+    const ticked = new Set(answer as string[])
+    return prompt.items.filter((item) => ticked.has(item.value)).map((item) => ({ value: item.value, when: item.when }))
   }
 
   async form(prompt: FormPrompt): Promise<FormAnswers | null> {

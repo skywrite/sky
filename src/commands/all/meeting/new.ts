@@ -11,7 +11,7 @@ import {
 } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DayDirFileWriter, dayFileExists, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import { normalizeActionItems, parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
@@ -24,6 +24,14 @@ import MeetingDocument from '#shared/models/Meeting/mod.ts'
 import { applyPersonFacts, formatPersonOpLine } from '#shared/models/Person/write.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
+import { placeLabel, type PlaceWhen } from '#universal/dates/whenLabel/mod.ts'
+import {
+  countWaiting,
+  executeActionItemRoute,
+  lastCreatedDay,
+  planActionItemRoute,
+  proposedWhen,
+} from './lib/actionItemRoutes.ts'
 
 const params = {
   who: Arg.string('Person or group (optional with --from-voice-memo/--from-zoom-vtt/--from-text)', {
@@ -427,97 +435,69 @@ export default class MeetingNewTask extends Command {
     return CommandResult.success({ file })
   }
 
-  // One selector over every extracted item, the speaker's own preselected:
+  // One question over every extracted item, the speaker's own preselected:
   // a misattributed owner stays one keystroke from rescue instead of silently
-  // lost. Routes are decided up front so each option's hint can say where
-  // acceptance sends it.
+  // lost. Each item arrives with a proposed when — the day and time its words
+  // named, or tomorrow when they named none; the Next list is never proposed,
+  // it is where items go to be forgotten — and the answer says where each
+  // accepted one goes. Routes are decided from the answer, so the ledger can
+  // say it.
   private async acceptActionItems(
     items: TranscriptActionItem[],
     context: CommandArgs<Params>['context'],
     tasks: CommandArgs<Params>['tasks'],
   ): Promise<void> {
-    const { output } = context
-    const today = String(context.notebookNow.date)
-
-    const routes = await Promise.all(items.map((item) => planActionItemRoute(item, today)))
-
+    const { config, output } = context
+    const today = new PlainDate(context.notebookNow.date)
+    const fallback: PlaceWhen = { date: today.addDays(1).ymd, time: null }
+    const proposed = items.map((item) => proposedWhen(item, today.ymd, fallback))
     const indexes = items.map((_, i) => i)
-    const selected = await context.prompt.multiselect({
+
+    const answer = await context.prompt.place({
       message: 'Accept action items (space toggles, enter confirms)',
-      options: indexes.map((i) => ({
+      items: indexes.map((i) => ({
         value: String(i),
         label: items[i].text,
-        hint: [items[i].mine ? 'me' : null, `→ ${routes[i].destination}`].filter(Boolean).join(' · '),
+        hint: [items[i].mine ? 'me' : null, `→ ${placeLabel(proposed[i], today.ymd)}`].filter(Boolean).join(' · '),
+        mine: items[i].mine,
+        when: proposed[i],
       })),
       initial: indexes.filter((i) => items[i].mine).map(String),
+      today: today.ymd,
+      createdThrough: await lastCreatedDay(today),
+      fallback,
+      waiting: await countWaiting(<string>config.FILE_NEXT_PROFESSIONAL),
     })
 
-    if (selected === null) {
+    if (answer === null) {
       output.log('  Action items skipped.')
       return
     }
 
     // Meeting order, not toggle order
-    const accepted = selected.map(Number).sort((a, b) => a - b)
+    const accepted = answer
+      .map((a) => ({ index: Number(a.value), when: a.when }))
+      .filter((a) => Number.isInteger(a.index) && a.index >= 0 && a.index < items.length)
+      .sort((a, b) => a.index - b.index)
     if (accepted.length === 0) {
       output.log('  No action items accepted.')
       return
     }
 
     let routed = 0
-    for (const [n, i] of accepted.entries()) {
+    for (const [n, a] of accepted.entries()) {
+      const item = items[a.index]
+      const route = await planActionItemRoute({ text: item.text, when: a.when }, today.ymd)
       try {
-        await executeActionItemRoute(routes[i], tasks)
+        await executeActionItemRoute(route, tasks)
         routed++
-        output.log(`  ✓ ${items[i].text} → ${routes[i].destination}`)
+        output.log(`  ✓ ${item.text} → ${route.destination}`)
       } catch (err) {
-        output.error(`  ✗ ${items[i].text} — ${(err as Error).message}`)
+        output.error(`  ✗ ${item.text} — ${(err as Error).message}`)
       }
       output.tick(n + 1, accepted.length, 'action items')
     }
     const declined = items.length - accepted.length
     output.log(`  Routed ${routed} of ${accepted.length} accepted action items (${declined} declined).`)
-  }
-}
-
-// Where an accepted action item lands. Decided before the selector renders so
-// the hint can announce it, executed only after the user confirms.
-type ActionItemRoute =
-  | { kind: 'next'; task: string; destination: string }
-  | { kind: 'commitments'; task: string; when: PlainDate; destination: string }
-  | { kind: 'todo'; task: string; when: PlainDate; destination: string }
-
-async function planActionItemRoute(item: TranscriptActionItem, today: string): Promise<ActionItemRoute> {
-  // A past date can't be scheduled — an overdue commitment is still next work.
-  const date = item.date !== null && item.date >= today ? item.date : null
-  if (date === null) return { kind: 'next', task: item.text, destination: 'next-professional' }
-
-  // The HH:MM prefix is the day-item convention, and how day:schedule:update
-  // recognizes a Commitment when it drains the schedule file on the morning.
-  // Only a timed item is a Commitment; a dated one without a time is a Todo
-  // on its day, mirroring that drain's split.
-  const task = item.time !== null ? `${item.time} > ${item.text}` : item.text
-  const when = new PlainDate(date)
-
-  if (await dayFileExists(when)) {
-    if (item.time !== null) return { kind: 'commitments', task, when, destination: `${date} Commitments` }
-    return { kind: 'todo', task, when, destination: `${date} Todos` }
-  }
-  return { kind: 'todo', task, when, destination: `schedule-professional ${date}` }
-}
-
-async function executeActionItemRoute(route: ActionItemRoute, tasks: CommandArgs<Params>['tasks']): Promise<void> {
-  if (route.kind === 'commitments') {
-    await writeDayItems(route.when, 'Professional Commitments', route.task)
-    return
-  }
-  // day:todo:add itself forks on whether the day file exists yet: into its
-  // Todos list when it does, into the schedule file's date entry when not.
-  const result =
-    route.kind === 'next'
-      ? await tasks.run('next:add', { task: route.task })
-      : await tasks.run('day:todo:add', { task: route.task, when: route.when })
-  if (!result.ok) {
-    throw new Error(result.message ?? `${route.kind === 'next' ? 'next:add' : 'day:todo:add'} failed`)
   }
 }

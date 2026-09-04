@@ -361,8 +361,10 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (!open || !record.reply) return c.json({ message: 'no question is waiting with that id' }, 404)
     const reply = record.reply
     record.reply = null
-    reply(body?.answer ?? null)
-    store.emit(record, { type: 'answered', id: promptId })
+    const answer = body?.answer ?? null
+    reply(answer)
+    // The answer rides along, so a page opened later can still say what was decided.
+    store.emit(record, { type: 'answered', id: promptId, answer })
     record.job.line = progressLine(record.job.stage, record.job.tick) ?? 'Working…'
     await store.setState(record, 'running')
     return c.json({ job: summarize(record.job) })

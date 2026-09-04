@@ -105,7 +105,7 @@ export type ImportEventBody =
   | { type: 'line'; text: string; level: 'log' | 'error' }
   | { type: 'text'; text: string }
   | { type: 'prompt'; prompt: PromptOnWire }
-  | { type: 'answered'; id: string }
+  | { type: 'answered'; id: string; answer: unknown }
   | { type: 'state'; state: ImportState; line: string | null; result: { file: string } | null; error: string | null }
 
 export type ImportEvent = ImportEventBody & { seq: number }

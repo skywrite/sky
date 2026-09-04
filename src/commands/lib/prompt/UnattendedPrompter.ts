@@ -3,6 +3,8 @@ import type {
   FormAnswers,
   FormPrompt,
   MultiselectPrompt,
+  PlaceAnswer,
+  PlacePrompt,
   Prompter,
   SelectPrompt,
   TextPrompt,
@@ -30,6 +32,10 @@ export class UnattendedPrompter implements Prompter {
   }
 
   multiselect(_prompt: MultiselectPrompt): Promise<string[] | null> {
+    return Promise.resolve(null)
+  }
+
+  place(_prompt: PlacePrompt): Promise<PlaceAnswer | null> {
     return Promise.resolve(null)
   }
 

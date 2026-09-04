@@ -5,6 +5,8 @@ import type {
   FormAnswers,
   FormPrompt,
   MultiselectPrompt,
+  PlaceAnswer,
+  PlacePrompt,
   Prompter,
   PromptRequest,
   SelectPrompt,
@@ -82,6 +84,10 @@ export class EventPrompter implements Prompter {
 
   multiselect(prompt: MultiselectPrompt): Promise<string[] | null> {
     return this.ask<string[]>({ kind: 'multiselect', prompt })
+  }
+
+  place(prompt: PlacePrompt): Promise<PlaceAnswer | null> {
+    return this.ask<PlaceAnswer>({ kind: 'place', prompt })
   }
 
   form(prompt: FormPrompt): Promise<FormAnswers | null> {

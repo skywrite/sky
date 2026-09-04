@@ -57,8 +57,14 @@ was settled, and the check's time field shows it (`startArgs.ts`).
 
 Three stops need the person, and each is the CLI's own prompt given a form:
 the names review (`form`), the write-up corrections (`text`, in a loop),
-and the action items (`multiselect`). They arrive as `prompt` events and
-are answered through `POST /import/:id/answer`. A screenshot has one stop:
+and the action items (`place`: tick what you'll own, and a chip on every
+row says when it happens — Today, Tomorrow, a day this week, another day,
+a time, or the Next list; one chip in the lead sentence moves the whole
+batch; the terminal keeps its multiselect). They arrive as `prompt` events
+and are answered through `POST /import/:id/answer`; the answer rides on the
+`answered` event, so after Accept the page can show where each item went,
+grouped by day, with the day a link away. Where an item lands is
+`commands/all/meeting/docs/README.md`. A screenshot has one stop:
 `message:new` shows the conversation it read and the fields beside it, and
 asks for corrections in the same loop; the platform is a `select` when the
 screenshot did not say. The screenshot moves into the day's attachments
@@ -133,6 +139,8 @@ the command's own plan.
   in the pipeline commands.
 - `2026-09-03-a-screenshot-is-a-message.md` — the image door: the read-back,
   and what it took for `message:new` to run from the page.
+- `commands/all/meeting/docs/2026-09-03-action-items-land-on-days.md` — the
+  action-item step: a when on every row instead of everything to Next.
 
 ## A drop is an import
 

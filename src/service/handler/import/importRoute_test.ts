@@ -29,7 +29,7 @@ interface World {
   runs: ImportJob[]
   /** The next run asks these questions, in order, and returns this; the record says what an earlier run left */
   script: {
-    ask: Array<'text' | 'form' | 'multiselect'>
+    ask: Array<'text' | 'form' | 'place'>
     outcome: 'filed' | 'failed'
     resume: { step: string; started: string } | null
   }
@@ -121,8 +121,18 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
                   },
                 })
               : question({
-                  kind: 'multiselect',
-                  prompt: { message: 'Accept action items', options: [{ value: '0', label: 'Send the sheet' }] },
+                  kind: 'place',
+                  prompt: {
+                    message: 'Accept action items',
+                    items: [
+                      { value: '0', label: 'Send the sheet', mine: true, when: { date: '2026-01-28', time: null } },
+                    ],
+                    initial: ['0'],
+                    today: '2026-01-27',
+                    createdThrough: '2026-02-01',
+                    fallback: { date: '2026-01-28', time: null },
+                    waiting: 3,
+                  },
                 })
         yield q.event
         const answer = await q.answered
@@ -289,7 +299,7 @@ test('a recording is heard and matched to the calendar before it starts', async 
 
 test('start runs the door, streams its output, parks its questions, and files', async () => {
   const w = await world()
-  w.script.ask = ['form', 'text', 'multiselect']
+  w.script.ask = ['form', 'text', 'place']
   const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
   const { job } = (await (await app.request('/import', { method: 'POST', body: upload('atlas.vtt', VTT) })).json()) as {
     job: ImportJob
@@ -354,12 +364,13 @@ test('start runs the door, streams its output, parks its questions, and files', 
   })
   const third = await events(
     await app.request(`/import/${job.id}/events`),
-    (e) => e.type === 'prompt' && e.prompt.kind === 'multiselect',
+    (e) => e.type === 'prompt' && e.prompt.kind === 'place',
   )
-  const multi = third.filter((e) => e.type === 'prompt').at(-1)
+  const place = third.filter((e) => e.type === 'prompt').at(-1)
+  const placed = [{ value: '0', when: { date: '2026-01-30', time: '09:30' } }]
   await postJson(app, `/import/${job.id}/answer`, {
-    promptId: multi?.type === 'prompt' ? multi.prompt.id : '',
-    answer: ['0'],
+    promptId: place?.type === 'prompt' ? place.prompt.id : '',
+    answer: placed,
   })
   const settled = await events(
     await app.request(`/import/${job.id}/events`),
@@ -377,6 +388,7 @@ test('start runs the door, streams its output, parks its questions, and files', 
       state: snapshot.state,
       line: snapshot.line,
       replay: settled.filter((e) => e.type === 'answered').length,
+      carried: settled.filter((e) => e.type === 'answered').at(-1)?.answer,
     },
     expected: {
       wrong: 404,
@@ -385,6 +397,7 @@ test('start runs the door, streams its output, parks its questions, and files', 
       state: 'done',
       line: 'Filed · 0931_Zoom_Jane-Doe_Atlas-pricing-sync',
       replay: 3,
+      carried: placed,
     },
   })
 })

@@ -439,6 +439,215 @@
   color: var(--sky-blue-deep);
 }
 
+/* the when chip: where a ticked item lands. Set = the person or the words chose;
+   quiet = following the block's default; off = the row is not ticked */
+.sky-place-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 9px 0 12px;
+  border-radius: 8px;
+  border: 0;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--sky-text);
+  background: var(--sky-border-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sky-place-chip[data-quiet='true'] {
+  background: transparent;
+  color: var(--sky-dim);
+  font-weight: 400;
+}
+.sky-place-chip[data-off='true'] {
+  background: transparent;
+  color: var(--mantine-color-gray-5);
+  font-weight: 400;
+}
+/* hovered or open, a chip is a button whatever state it was in */
+.sky-place-chip:hover,
+.sky-place-chip[data-open='true'] {
+  background: var(--mantine-color-gray-3);
+  color: var(--sky-text);
+}
+.sky-place-chip:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+}
+.sky-place-chip-sub {
+  color: var(--sky-dim);
+  font-weight: 400;
+}
+.sky-place-chip-chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.sky-place-chip-lead {
+  height: 30px;
+  font-size: 16px;
+}
+
+/* the menu under a chip, and the same rows in the phone's sheet */
+.sky-place-menu {
+  width: 336px;
+  padding: 6px;
+  border-radius: 11px;
+  border: 1px solid var(--sky-border-soft);
+  background: var(--sky-card);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+.sky-place-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  color: var(--sky-text);
+  text-align: left;
+  cursor: pointer;
+}
+.sky-place-menu-row:hover {
+  background: var(--sky-hover);
+}
+.sky-place-menu-row[data-on='true'] {
+  background: var(--sky-s2);
+}
+.sky-place-menu-row[data-dim='true'] {
+  color: var(--sky-text-2);
+}
+.sky-place-menu-sub {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+.sky-place-menu-tick {
+  width: 16px;
+  height: 16px;
+  color: var(--sky-blue-deep);
+  flex: none;
+}
+.sky-place-menu-sep {
+  height: 1px;
+  background: var(--sky-border-soft);
+  margin: 6px 8px;
+}
+.sky-place-menu-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 12px 10px;
+  border-radius: 8px;
+  background: var(--sky-s2);
+  font-size: 16px;
+}
+.sky-place-menu-field .sky-when-input {
+  width: auto;
+  min-width: 84px;
+  background: var(--sky-card);
+  border: 1px solid var(--mantine-color-gray-4);
+  font-size: 16px;
+}
+.sky-place-menu-clear {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+}
+.sky-place-menu-hint {
+  width: 100%;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--sky-dim);
+}
+.sky-sheet .sky-place-menu {
+  width: auto;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.sky-sheet .sky-place-menu-row {
+  min-height: 48px;
+  font-size: 17px;
+}
+.sky-sheet-for {
+  padding: 0 8px 10px;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: var(--sky-dim);
+}
+
+/* where the accepted items went */
+.sky-placed {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sky-placed-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sky-placed-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--sky-text-2);
+}
+.sky-placed-sub {
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+.sky-placed-open {
+  margin-left: auto;
+  font-weight: 500;
+  font-size: 15px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.sky-action-text {
+  flex: 1;
+  min-width: 0;
+}
+.sky-placed-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 17px;
+}
+.sky-placed-item .sky-check-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+}
+.sky-placed-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--sky-text-2);
+}
+.sky-placed-fail {
+  font-size: 14.5px;
+  color: var(--mantine-color-red-8);
+}
+
 /* the filed document and its rail */
 .sky-filed-doc {
   padding: 6px 4px 0;
@@ -455,6 +664,18 @@
 @media (max-width: 900px) {
   .sky-drop-title {
     font-size: 24px;
+  }
+
+  /* a narrow row: the text on its own line, the pill and the chip under it, aligned with the text */
+  .sky-action-place {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .sky-action-place .sky-action-text {
+    flex: 1 1 100%;
+  }
+  .sky-action-place .sky-action-me {
+    margin-left: 34px;
   }
 
   .sky-field {
