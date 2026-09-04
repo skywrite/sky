@@ -13,7 +13,10 @@ import {
   backfillMissingMessages,
   fetchInProgressLater,
   laterCapturable,
+  laterChannelMatches,
   laterItemLink,
+  laterMatchableName,
+  normalizeChannelQuery,
   renderLaterRow,
   resolveRowMemberNames,
   resolveRowMentions,
@@ -26,6 +29,9 @@ const params = {
     optional: true,
   }),
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
+  channel: Flag.string('Only this conversation: #name, DM person, or group-DM slug (exact match)', {
+    optional: true,
+  }),
   capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
   captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
   open: Flag.stringOrBool(
@@ -36,6 +42,9 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
+
+/** Shell-quote a value for the re-run hint — DM names carry spaces; plain names stay bare. */
+const quoteArg = (value: string): string => (/^[\w.#-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)
 
 type DayItem = {
   item: AgentSlackLaterItem
@@ -76,7 +85,10 @@ export default class SlackLaterDayTask extends Command {
     descriptionLong: [
       "Lists the in-progress items from Slack's Later tab whose origin message",
       'falls on the given notebook day (--saved-on matches the day you saved',
-      'them instead). Listing is read-only.',
+      'them instead). --channel narrows the day to one conversation, by exact',
+      'name: #name or name for channels, the person for DMs, the raw slug for',
+      'group DMs — the capture and open flags then act on that scoped list.',
+      'Listing is read-only.',
       '',
       'With --capture, each picked item runs through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
@@ -98,6 +110,7 @@ export default class SlackLaterDayTask extends Command {
     usage: [
       'sky slack:later:day',
       'sky slack:later:day --capture all',
+      'sky slack:later:day --channel atlas --capture all',
       'sky slack:later:day 2026-06-03 --capture-batch 10',
       'sky slack:later:day 2026-06-03 --capture 1,3 --open',
       'sky slack:later:day 2026-06-03 --open=3',
@@ -116,6 +129,11 @@ export default class SlackLaterDayTask extends Command {
       return CommandResult.fail(`Invalid date: ${args.date} (use YYYY-MM-DD)`)
     }
     const dayStr = day.toString()
+
+    const channelQuery = args.channel === undefined ? undefined : normalizeChannelQuery(args.channel)
+    if (channelQuery === '') {
+      return CommandResult.fail(`Invalid --channel: ${args.channel} (use a conversation name like #atlas)`)
+    }
 
     // Both name what to capture — pick one rather than guess a precedence
     if (args.capture !== undefined && args.captureBatch !== undefined) {
@@ -170,15 +188,23 @@ export default class SlackLaterDayTask extends Command {
       dayItems.push({ item, messageDay, savedDay, timeLabel, link })
     }
 
-    const matched = dayItems
+    const onDay = dayItems
       .filter((d) => (args.savedOn ? d.savedDay === dayStr : d.messageDay === dayStr))
       .sort((a, b) => (a.item.ts < b.item.ts ? -1 : 1))
+    const matched = channelQuery === undefined ? onDay : onDay.filter((d) => laterChannelMatches(d.item, channelQuery))
 
     output.log(
-      `Saved-later items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}): ` +
-        `${colors.bold(String(matched.length))} matched of ${list.items.length} fetched` +
+      `Saved-later items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}` +
+        (channelQuery === undefined ? '' : `, only ${channelQuery}`) +
+        `): ${colors.bold(String(matched.length))} matched of ${list.items.length} fetched` +
         (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
+    // A scoped run that matches nothing usually means a name typo — show what
+    // the day actually has, in the form --channel matches
+    if (channelQuery !== undefined && matched.length === 0 && onDay.length > 0) {
+      const present = [...new Set(onDay.flatMap((d) => laterMatchableName(d.item) ?? []))].sort()
+      output.log(colors.dim(`No later items there that day — present: ${present.join(', ')}`))
+    }
     const stale = resolveStaleChannels(list.items)
     await backfillMissingMessages(matched)
     const [, groupMembers] = await Promise.all([
@@ -214,10 +240,11 @@ export default class SlackLaterDayTask extends Command {
 
     if (matched.length === 0 || (!args.capture && args.captureBatch === undefined)) {
       if (matched.length > 0) {
+        const scope = channelQuery === undefined ? '' : ` --channel ${quoteArg(channelQuery)}`
         output.log('')
         output.log(
           colors.dim(
-            `Re-run with: sky slack:later:day ${dayStr} --capture-batch 10   (or --capture all, --capture 1,3)`,
+            `Re-run with: sky slack:later:day ${dayStr}${scope} --capture-batch 10   (or --capture all, --capture 1,3)`,
           ),
         )
       }

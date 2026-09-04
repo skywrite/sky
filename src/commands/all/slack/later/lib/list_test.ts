@@ -3,9 +3,11 @@ import { assert, test } from '#test'
 import {
   backfillMissingMessages,
   laterChannelLabel,
+  laterChannelMatches,
   laterConversationKind,
   laterIsThreadReply,
   laterItemLink,
+  laterMatchableName,
   renderLaterRow,
   resolveRowMemberNames,
   resolveRowMentions,
@@ -52,6 +54,66 @@ test('laterChannelLabel picks the right conversation label', () => {
     should: 'fall back to the id',
     actual: laterChannelLabel(item({})),
     expected: 'C0123ABCDEF',
+  })
+})
+
+test('laterChannelMatches scopes by exact conversation name', () => {
+  assert({
+    given: 'the bare channel name',
+    should: 'match',
+    actual: laterChannelMatches(item({ channel_name: 'general' }), 'general'),
+    expected: true,
+  })
+  assert({
+    given: 'a #-prefixed, differently-cased query with spaces',
+    should: 'match after normalizing',
+    actual: laterChannelMatches(item({ channel_name: 'general' }), ' #General '),
+    expected: true,
+  })
+  assert({
+    given: 'a substring of the name',
+    should: 'not match — exact only',
+    actual: laterChannelMatches(item({ channel_name: 'general' }), 'gen'),
+    expected: false,
+  })
+  assert({
+    given: 'a DM person query',
+    should: 'match the DM by its person name',
+    actual: laterChannelMatches(item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe' }), 'jane.doe'),
+    expected: true,
+  })
+  assert({
+    given: 'an item with no channel name (stale id)',
+    should: 'never match',
+    actual: laterChannelMatches(item({}), 'general'),
+    expected: false,
+  })
+})
+
+test('laterMatchableName renders the form --channel matches', () => {
+  assert({
+    given: 'a named channel',
+    should: 'prefix #',
+    actual: laterMatchableName(item({ channel_name: 'general' })),
+    expected: '#general',
+  })
+  assert({
+    given: 'a DM (D-prefixed id)',
+    should: 'use the bare person name',
+    actual: laterMatchableName(item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe' })),
+    expected: 'jane.doe',
+  })
+  assert({
+    given: 'a group DM',
+    should: 'keep the raw slug — member names never match',
+    actual: laterMatchableName(item({ channel_name: 'mpdm-alice--bob.smith--carol-1' })),
+    expected: 'mpdm-alice--bob.smith--carol-1',
+  })
+  assert({
+    given: 'no channel name',
+    should: 'be undefined',
+    actual: laterMatchableName(item({})),
+    expected: undefined,
   })
 })
 

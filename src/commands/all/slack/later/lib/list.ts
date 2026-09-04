@@ -55,6 +55,29 @@ export function laterChannelLabel(item: AgentSlackLaterItem, members?: string[])
   return name ? (isDm ? name : `#${name}`) : item.channel_id
 }
 
+/** The form --channel matching compares on: trimmed, #-stripped, lowercased. */
+export function normalizeChannelQuery(name: string): string {
+  return name.trim().replace(/^#/, '').toLowerCase()
+}
+
+/** Whether a --channel query names this item's conversation — exact match after normalizing. */
+export function laterChannelMatches(item: AgentSlackLaterItem, query: string): boolean {
+  if (!item.channel_name) return false
+  return normalizeChannelQuery(item.channel_name) === normalizeChannelQuery(query)
+}
+
+/**
+ * The name a --channel query would have to give to match this item: #name for
+ * channels, the person for DMs, the raw slug for group DMs. Unlike
+ * laterChannelLabel this never substitutes group members — their names don't
+ * match, the slug does.
+ */
+export function laterMatchableName(item: AgentSlackLaterItem): string | undefined {
+  const name = item.channel_name?.replace(/^#/, '')
+  if (!name) return undefined
+  return laterConversationKind(item) === 'channel' ? `#${name}` : name
+}
+
 /** Permalink to a later item's origin message. */
 export function laterItemLink(workspace: string, item: AgentSlackLaterItem): string {
   return `${workspace}/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
