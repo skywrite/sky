@@ -30,6 +30,7 @@ import type * as ConfigModule from '#shared/config.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
 import truncate from '#shared/strings/truncate.ts'
+import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ModelChoice, ToolOutputEvent } from './mod.ts'
@@ -203,6 +204,10 @@ export function createChatSettingsHost(): ChatSettingsHost {
 }
 
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
+  /** A thread's crash copy: the service's own snapshot, named by the thread id. */
+  const snapshotPath = (id: string, startTime: PlainDateTime) =>
+    path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
+
   const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask) => {
     const context = CommandContext.server(config, env)
     const tasks = new CommandService(context)
@@ -261,13 +266,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       // The card is the tool's own description of the call; the answer is the person's, from the page.
       approvalHandler: ({ toolName, input }) =>
         ask({ toolName, lines: approvalCard(toolName, input, getApprovalFormatter(toolName)) }),
-      autosavePath: path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id)),
+      autosavePath: snapshotPath(id, startTime),
       onEvent,
     })
   }
 
   return {
     createSession,
+    snapshotPath,
     settings: createChatSettingsHost(),
     endDefaults: { autoTag: true, autoRel: true, memoryDir: config.DIR_AI_MEMORY, people: true },
     timeDir: config.DIR_TIME,

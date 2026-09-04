@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import * as path from 'node:path'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
@@ -123,7 +124,14 @@ async function testHost(
         logError: () => Promise.resolve(),
       })),
     )
-  return { createSession, settings: settingsHost, endDefaults: { enricher: stubEnricher }, timeDir: tmp, tmp }
+  return {
+    createSession,
+    snapshotPath: (id: string) => path.join(tmp, `${id}.autosave.md`),
+    settings: settingsHost,
+    endDefaults: { enricher: stubEnricher },
+    timeDir: tmp,
+    tmp,
+  }
 }
 
 async function getJson(app: App, url: string): Promise<Record<string, any>> {
@@ -373,6 +381,64 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
     should: 'refuse to end again',
     actual: (await post(app, 'http://localhost/chat/t5/end', {})).status,
     expected: 404,
+  })
+})
+
+test(
+  { name: 'chat route - a thread that will not be kept leaves no crash copy and is dropped at its end' },
+  async () => {
+    const host = await testHost()
+    const app = appWith(host)
+    const copy = (id: string) => existsSync(path.join(host.tmp, `${id}.autosave.md`))
+
+    await post(app, 'http://localhost/chat/t8/settings', { saves: false })
+    const before = await getJson(app, 'http://localhost/chat/t8/settings')
+    await (await post(app, 'http://localhost/chat/t8/messages', { message: 'What should I focus on?' })).text()
+    await (await post(app, 'http://localhost/chat/t9/messages', { message: 'What should I focus on?' })).text()
+    const list = await getJson(app, 'http://localhost/chat')
+    assert({
+      given: 'a thread set not to save before its first message, beside one that saves',
+      should: 'answer the setting, keep no copy after its turn while the other keeps one, and say so in the list',
+      actual: {
+        saves: before.saves,
+        copies: { t8: copy('t8'), t9: copy('t9') },
+        listed: Object.fromEntries(list.threads.map((t: { id: string; saves: boolean }) => [t.id, t.saves])),
+      },
+      expected: { saves: false, copies: { t8: false, t9: true }, listed: { t8: false, t9: true } },
+    })
+
+    const ended = (await (await post(app, 'http://localhost/chat/t8/end', {})).json()) as { saved: unknown }
+    assert({
+      given: 'ending it with no say either way',
+      should: 'drop it: nothing saved, thread gone',
+      actual: { saved: ended.saved, after: (await app.request('http://localhost/chat/t8')).status },
+      expected: { saved: null, after: 404 },
+    })
+  },
+)
+
+test({ name: 'chat route - keeping can be turned off and on between turns' }, async () => {
+  const host = await testHost()
+  const app = appWith(host)
+  const copy = () => existsSync(path.join(host.tmp, 't10.autosave.md'))
+
+  await (await post(app, 'http://localhost/chat/t10/messages', { message: 'What should I focus on?' })).text()
+  const kept = copy()
+  await post(app, 'http://localhost/chat/t10/settings', { saves: false })
+  const dropped = copy()
+  await post(app, 'http://localhost/chat/t10/settings', { saves: true })
+  await (await post(app, 'http://localhost/chat/t10/messages', { message: 'And then?' })).text()
+  assert({
+    given: 'a saving thread turned off, then on again before its next turn',
+    should: 'have its copy, lose it at once, and write it again with the next turn',
+    actual: { kept, dropped, again: copy() },
+    expected: { kept: true, dropped: false, again: true },
+  })
+  assert({
+    given: 'a setting that is neither true nor false',
+    should: 'be refused',
+    actual: (await post(app, 'http://localhost/chat/t10/settings', { saves: 'yes' })).status,
+    expected: 400,
   })
 })
 

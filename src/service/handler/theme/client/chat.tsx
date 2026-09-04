@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react'
 import { ContextPanel } from './context.tsx'
-import { BudgetControl, ModelControl, type ThreadSettings } from './controls.tsx'
+import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -528,7 +528,7 @@ export function useChat(id: string) {
 
   // Tune the thread: what comes back is the tuning as the service holds it.
   const tune = useCallback(
-    async (change: { profile?: string; contextTokens?: number }) => {
+    async (change: { profile?: string; contextTokens?: number; saves?: boolean }) => {
       if (!state.id) return
       const id = state.id
       const response = await fetch(`/chat/${id}/settings`, {
@@ -543,6 +543,7 @@ export function useChat(id: string) {
   )
   const setModel = useCallback((profile: string) => tune({ profile }), [tune])
   const setContextTokens = useCallback((contextTokens: number) => tune({ contextTokens }), [tune])
+  const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
   const send = useCallback(
     async (content: string) => {
@@ -701,7 +702,7 @@ export function useChat(id: string) {
           } | null
         }
         const notes: Note[] = []
-        if (!saved) notes.push({ text: 'Nothing to save', tone: 'quiet' })
+        if (!saved) notes.push({ text: save ? 'Nothing to save' : 'Discarded — nothing kept', tone: 'quiet' })
         else if (saved.aborted)
           notes.push({ text: `Not saved — ${saved.aborted.reason}. A recovery copy was written.`, tone: 'failed' })
         else
@@ -728,7 +729,7 @@ export function useChat(id: string) {
 
   // The reset for a new id lands in an effect, one render late. Until then the
   // store still holds the previous thread; the caller must never see it.
-  return { state: state.id === id ? state : initial(id), send, end, setModel, setContextTokens, answer }
+  return { state: state.id === id ? state : initial(id), send, end, setModel, setContextTokens, setSaves, answer }
 }
 
 export type Chat = ReturnType<typeof useChat>
@@ -1091,6 +1092,8 @@ export function Composer({
             <ModelControl chat={chat} />
             <span className="sky-hint">·</span>
             <BudgetControl chat={chat} />
+            <span className="sky-hint">·</span>
+            <SavesControl chat={chat} />
           </>
         )}
         {/* The keys are worth a word before the first message; after it the tuning takes the room. */}
@@ -1154,7 +1157,13 @@ export function ChatMain({
           )}
           {state.turns.length > 0 && (
             <Button size="sm" onClick={onEnd} disabled={busy}>
-              {state.phase === 'saving' ? 'Saving…' : 'Save & close'}
+              {state.settings?.saves === false
+                ? state.phase === 'saving'
+                  ? 'Closing…'
+                  : 'Discard'
+                : state.phase === 'saving'
+                  ? 'Saving…'
+                  : 'Save & close'}
             </Button>
           )}
         </nav>

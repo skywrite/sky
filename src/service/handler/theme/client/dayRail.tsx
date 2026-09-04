@@ -206,7 +206,9 @@ function ChatsSection({
             <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenThread(t.id)}>
               {t.title ?? 'New chat'}
             </button>
-            <span className="sky-dr-mark">{threadWord(t)}</span>
+            <span className="sky-dr-mark">
+              {[t.saves === false ? 'not saved' : null, threadWord(t)].filter(Boolean).join(' · ')}
+            </span>
           </div>
         </Fragment>
       ))}

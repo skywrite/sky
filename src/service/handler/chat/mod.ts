@@ -18,6 +18,8 @@ import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
+import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { timelineOf } from './timeline.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -26,6 +28,8 @@ export interface ThreadPrefs {
   profile?: string
   /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens?: number
+  /** Whether ending files the thread. False is incognito: no transcript, no day entry, no crash copy at rest */
+  saves?: boolean
 }
 
 /** A tool call awaiting the person's go, as the page shows it. */
@@ -108,6 +112,8 @@ export interface ThreadSettings {
   kept: number | null
   /** Documents in the universe, shipped and cut alike; null before any turn */
   documents: number | null
+  /** Whether ending files the thread; false keeps nothing of it */
+  saves: boolean
 }
 
 /** The host's catalog and defaults behind the settings routes. */
@@ -121,6 +127,11 @@ export interface ChatSettingsHost {
 
 export interface ChatRoutesOptions {
   createSession: ChatSessionFactory
+  /**
+   * Where a thread's crash copy lives. A thread that does not save has it
+   * removed as each turn ends, so nothing of the thread rests on disk.
+   */
+  snapshotPath?: (id: string, startTime: PlainDateTime) => string
   /** The models to choose from and the budget's default — absent, a thread cannot be tuned */
   settings?: ChatSettingsHost
   /** How a thread files when the client ends it — the host's saving policy */
@@ -153,6 +164,8 @@ export interface ThreadSummary {
   day: string
   turns: number
   busy: boolean
+  /** False for a thread that will not be kept — the list says so */
+  saves: boolean
 }
 
 /** What travels the turn's stream: the session's events, and what the routes add around them — approvals and tool runs. */
@@ -178,6 +191,8 @@ interface Thread {
   answered: AnsweredApproval[]
   /** Every tool run so far, oldest first — the running one is the last without a status */
   runs: ToolRun[]
+  /** Whether ending files the thread; a false one keeps no crash copy at rest */
+  saves: boolean
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -289,6 +304,7 @@ function summarize(id: string, thread: Thread): ThreadSummary {
     day: session.startTime.plainDate.ymd,
     turns: session.turns.length,
     busy: thread.busy,
+    saves: thread.saves,
   }
 }
 
@@ -382,6 +398,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             pending: new Map(),
             answered: [],
             runs: [],
+            // Kept unless told otherwise before the first message.
+            saves: prefs.saves ?? true,
             state: 'new',
             partial: '',
             updatedAt: ++tick,
@@ -413,7 +431,15 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       contextTokens: thread?.session.contextTokens ?? prefs?.contextTokens ?? host.defaultContextTokens,
       kept: thread ? keptOf(thread) : null,
       documents: thread?.context?.collectionSize ?? null,
+      saves: thread?.saves ?? prefs?.saves ?? true,
     }
+  }
+
+  // A thread that is not kept leaves no copy at rest: the session writes
+  // its crash copy as a turn ends, and the routes remove it right after.
+  const dropSnapshot = async (id: string, thread: Thread) => {
+    const at = options.snapshotPath?.(id, thread.session.startTime)
+    if (at) await clearChatAutosave(at)
   }
 
   // A pin, a drop, or a new budget reassembles between turns without a log
@@ -453,6 +479,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             })
           }
           const turn = await thread.session.send(message)
+          if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
           for (const run of thread.runs) if (run.status === null) run.status = turn.error ? 'error' : 'success'
           thread.state = turn.error ? 'failed' : 'done'
@@ -546,25 +573,33 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     return settings ? c.json(settings) : c.json({ message: 'this host has no settings' }, 404)
   })
 
-  // Tune a thread: the model it thinks with, the reading budget. A live
-  // thread changes between turns — a new budget reassembles its context at
-  // once; a thread not yet built keeps the choice for when it is. A budget
-  // of zero keeps the notebook closed: nothing read, nothing queried, until
-  // a budget opens it again.
+  // Tune a thread: the model it thinks with, the reading budget, whether it
+  // is kept. A live thread changes between turns — a new budget reassembles
+  // its context at once, keeping turned off removes its crash copy at once;
+  // a thread not yet built keeps the choice for when it is. A budget of
+  // zero keeps the notebook closed: nothing read, nothing queried, until a
+  // budget opens it again.
   app.post('/:id/settings', async (c) => {
     const id = c.req.param('id')
     const host = options.settings
     if (!host) return c.json({ message: 'this host has no settings' }, 404)
-    const body = (await c.req.json().catch(() => null)) as { profile?: unknown; contextTokens?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as {
+      profile?: unknown
+      contextTokens?: unknown
+      saves?: unknown
+    } | null
     const profile = body?.profile
     const tokens = body?.contextTokens
-    if (profile === undefined && tokens === undefined) {
-      return c.json({ message: 'expected { profile?: name, contextTokens?: count }' }, 400)
+    const saves = body?.saves
+    if (profile === undefined && tokens === undefined && saves === undefined) {
+      return c.json({ message: 'expected { profile?: name, contextTokens?: count, saves?: true | false }' }, 400)
     }
     if (profile !== undefined && typeof profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
     if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens >= 0)) {
       return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
     }
+    if (saves !== undefined && typeof saves !== 'boolean')
+      return c.json({ message: 'saves must be true or false' }, 400)
     let chosen: ReturnType<ChatSettingsHost['resolve']> | undefined
     if (typeof profile === 'string') {
       try {
@@ -582,11 +617,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         thread.profile = profile
       }
       if (typeof tokens === 'number') thread.session.setContextTokens(tokens)
+      if (typeof saves === 'boolean') {
+        thread.saves = saves
+        if (!saves) await dropSnapshot(id, thread)
+      }
       thread.updatedAt = ++tick
     } else {
       const prefs = pending.get(id) ?? {}
       if (typeof profile === 'string') prefs.profile = profile
       if (typeof tokens === 'number') prefs.contextTokens = tokens
+      if (typeof saves === 'boolean') prefs.saves = saves
       pending.set(id, prefs)
     }
     return c.json(settingsOf(id))
@@ -637,12 +677,14 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
     const body = (await c.req.json().catch(() => null)) as { save?: unknown } | null
+    // The thread's own setting decides; a caller may still say so outright.
+    const save = typeof body?.save === 'boolean' ? body.save : thread.saves
 
     // The thread stays until the end succeeds, so a failed save can be retried.
     thread.busy = true
     thread.state = 'saving'
     try {
-      const saved = await thread.session.end({ ...options.endDefaults, save: body?.save !== false })
+      const saved = await thread.session.end({ ...options.endDefaults, save })
       threads.delete(id)
       return c.json({ saved })
     } finally {

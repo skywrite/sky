@@ -127,7 +127,7 @@ function Canvas() {
   // Back to the day at once. The save — enrichment included — finishes behind
   // the Running block, and its note lands in the day when it does.
   const endThread = () => {
-    const saving = chat.end(true)
+    const saving = chat.end(chat.state.settings?.saves !== false)
     navigate('/')
     void saving.then((notes) => setNotes((prev) => [...prev, ...notes]))
   }

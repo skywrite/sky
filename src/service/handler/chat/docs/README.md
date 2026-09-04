@@ -85,6 +85,17 @@ a person can see and touch:
   list shows the running tool's latest line for a thread that is
   thinking. A tool that prints nothing keeps its chip from the model's
   own record of the call; the two never double up.
+- **Whether the thread is kept.** `Saves to today ▾` sits with the model and
+  the budget, two stops: saves to today, or not saved. Set before the first
+  message it is an incognito chat; it can change until the close. The
+  setting rides the settings routes as `saves`; the end route follows it
+  unless the caller says `save` outright. A thread that is not kept leaves
+  no crash copy at rest — the routes remove the session's snapshot as each
+  turn ends and the moment the setting turns off (`snapshotPath` on the
+  host names it) — so it does not come back after a restart. Its end
+  button reads Discard, the list marks it "not saved", and its end writes
+  nothing: no transcript, no day entry, no memory or person facts
+  ([2026-09-03](2026-09-03-a-chat-you-do-not-keep.md)).
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
 gathered (the deduplicated universe, never the raw sweep sizes); a grown entry lists the documents its queries added (cut ones
@@ -119,8 +130,18 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   log's tool records stay the saved trail.
 - A run keeps its newest 400 lines; a mission narrates for an hour and
   the end of the story matters more than its middle.
+- Not saved is about what stays behind, never about what the thread may
+  read or do. The session writes its crash copy as every turn ends; the
+  routes, not the session, decide it does not stay.
 
 ## Verified
+
+- 2026-09-03 — not saved: a thread set not to save before its first message
+  answers the setting, keeps no crash copy after its turn while a saving
+  thread beside it does, is listed as not saved, and ends with nothing
+  saved and the thread gone; a saving thread turned off loses its copy at
+  once and, turned on again, writes one with its next turn; a setting that
+  is neither true nor false is refused (route tests).
 
 - 2026-09-03 — the fold: the scripted run's summary line follows finished
   on the stream and settles on the run (route test); the sink asks the

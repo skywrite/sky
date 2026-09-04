@@ -21,6 +21,8 @@ export interface ThreadSettings {
   contextTokens: number
   kept: number | null
   documents: number | null
+  /** Whether closing the thread files it; false keeps nothing of it */
+  saves: boolean
 }
 
 /** Budgets to choose from, nothing first; the thread's own joins them when it is none of these. */
@@ -167,6 +169,57 @@ export function BudgetControl({ chat }: { chat: Chat }) {
             : `${thousands(tokens)} tokens is about ${pages(tokens)} pages.${fit} A smaller budget answers faster; a larger one reaches further back.`}
         </p>
         <div className="sky-ctl-foot">Applies from your next message.</div>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
+/**
+ * Whether the chat is kept. Saves to today files the transcript under the
+ * day's chats when the thread is closed, with what sky learned from it;
+ * Not saved keeps nothing — no transcript, no day entry, no crash copy —
+ * and the thread is gone when it is closed or when sky restarts. Set before
+ * the first message it is an incognito chat; it can change until the close.
+ */
+export function SavesControl({ chat }: { chat: Chat }) {
+  const { state, setSaves } = chat
+  const [open, setOpen] = useState(false)
+  const settings = state.settings
+  if (!settings) return null
+  const busy = state.phase !== 'idle'
+  const saves = settings.saves
+
+  return (
+    <Popover position="top-start" shadow="md" width={400} withinPortal opened={open} onChange={setOpen}>
+      <Popover.Target>
+        <button
+          type="button"
+          className="sky-ctl"
+          disabled={busy}
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Whether this chat is kept"
+        >
+          {saves ? 'Saves to today' : 'Not saved'}
+          <Caret />
+        </button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <div className="sky-ctl-title">Whether this chat is kept</div>
+        <SegmentedControl
+          fullWidth
+          value={saves ? 'saves' : 'not'}
+          onChange={(value) => void setSaves(value === 'saves')}
+          data={[
+            { value: 'saves', label: 'Saves to today' },
+            { value: 'not', label: 'Not saved' },
+          ]}
+        />
+        <p className="sky-ctl-note">
+          {saves
+            ? 'Filed under today’s chats when you close it, with what sky learned from it.'
+            : 'Nothing is kept: no transcript, no day entry, no crash copy. Gone when you close it or when sky restarts.'}
+        </p>
+        <div className="sky-ctl-foot">Applies now.</div>
       </Popover.Dropdown>
     </Popover>
   )

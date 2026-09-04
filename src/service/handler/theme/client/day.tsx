@@ -89,6 +89,8 @@ export interface ThreadSummary {
   day: string
   turns: number
   busy: boolean
+  /** False for a thread that will not be kept */
+  saves?: boolean
 }
 
 /** The day named by `ymd`, or today when null. */
