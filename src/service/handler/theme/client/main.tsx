@@ -97,7 +97,7 @@ function Canvas() {
   const imports = useImports()
   const importRows = imports.filter((j) => j.state !== 'cancelled')
 
-  // A day's own conversation is a thread whose id is the day; those stay off the Threads list.
+  // A day's own conversation is a thread whose id is the day; the day's rail lists the others.
   const dayThreadId = day ? `day-${day.day.ymd}` : ''
   const chat = useChat(threadId ?? dayThreadId)
   const isToday = dayYmd === null
@@ -148,7 +148,7 @@ function Canvas() {
       <button
         type="button"
         className="sky-menu"
-        aria-label={menu ? 'Close' : explorerFile !== null ? 'Files' : 'Days and threads'}
+        aria-label={menu ? 'Close' : explorerFile !== null ? 'Files' : 'Days'}
         aria-expanded={menu}
         onClick={() => setMenu((open) => !open)}
       >
@@ -215,22 +215,6 @@ function Canvas() {
               >
                 <span>{d.label}</span>
                 <span className="sky-meta">{d.meta}</span>
-              </button>
-            ))}
-
-            {others.length > 0 && <div className="sky-side-label">Threads</div>}
-            {others.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className="sky-thread"
-                data-active={t.id === threadId}
-                onClick={() => openThread(t.id)}
-              >
-                <span>{t.title ?? 'New chat'}</span>
-                <span className="sky-meta" data-state={t.state}>
-                  {t.state === 'new' ? '' : t.state}
-                </span>
               </button>
             ))}
 

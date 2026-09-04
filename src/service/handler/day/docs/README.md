@@ -24,8 +24,8 @@ its foot is anchored.
 - **Working** — import jobs in hand: running, waiting for the person, or
   stopped where a start could pick them up, with Review or Open. A filed
   import is on the day already and leaves the rail; a file sky refused was
-  never work and never shows. Imports do not appear in the sidebar's
-  Threads list.
+  never work and never shows. The sidebar lists neither threads nor
+  imports; the rail is where a day's chats and work show.
 - **File Attachments** — the drop pad, anchored at the foot, and nothing
   else; the day's directory is the explorer's to show.
 
