@@ -606,6 +606,48 @@ export default class DayDocument extends ListDocument {
     return { kind: 'missing' }
   }
 
+  /**
+   * Take one item out of the day file, as a line edit — addressed the way
+   * `toggleItem` addresses it, by list heading and text with strike marks
+   * ignored, every other byte left alone. The answer carries the item's
+   * place among the list's items so `restoreItem` can put it back where
+   * it was. A list whose last item leaves keeps a bare `-`, the spelling
+   * the day template gives an empty list: the heading stays a list, and
+   * the next write into it lands there and not in a neighbour.
+   */
+  static deleteItem(content: string, listTitle: string, raw: string): DeleteItemResult {
+    const lines = content.split('\n')
+    const list = listLines(lines, listTitle)
+    if (!list) return { kind: 'missing' }
+    const wantText = plainItemText(raw)
+    const at = list.items.findIndex((line) => plainItemText(bulletText(lines[line])) === wantText)
+    if (at < 0) return { kind: 'missing' }
+    if (list.items.length === 1 && list.slots.length === 0) lines[list.items[0]] = '-'
+    else lines.splice(list.items[at], 1)
+    return { kind: 'written', content: lines.join('\n'), at }
+  }
+
+  /**
+   * Put a deleted item back at the place `deleteItem` reported — the undo
+   * of a delete, byte for byte when the list has not moved since. Past the
+   * end of a list that has, the item lands last; a bare `-` slot gives way
+   * to it. An item already in the list is left as it is.
+   */
+  static restoreItem(content: string, listTitle: string, raw: string, at: number): RestoreItemResult {
+    const lines = content.split('\n')
+    const list = listLines(lines, listTitle)
+    if (!list) return { kind: 'missing' }
+    const wantText = plainItemText(raw)
+    if (list.items.some((line) => plainItemText(bulletText(lines[line])) === wantText)) return { kind: 'unchanged' }
+    const marker = list.items.length > 0 ? (lines[list.items[0]].match(TOGGLE_BULLET)?.[1] ?? '- ') : '- '
+    const line = marker + raw.trim()
+    if (list.items.length === 0 && list.slots.length > 0) lines[list.slots[0]] = line
+    else if (at < list.items.length) lines.splice(list.items[at], 0, line)
+    else if (list.items.length > 0) lines.splice(list.items[list.items.length - 1] + 1, 0, line)
+    else lines.splice(list.heading + 1, 0, line)
+    return { kind: 'written', content: lines.join('\n') }
+  }
+
   static itemStartsWithTime(task: string): boolean {
     const timePattern = /^\d{2}:\d{2} >/
     return timePattern.test(task)
@@ -623,9 +665,47 @@ export type ToggleItemResult =
   /** No such list, or no item with that text — the caller's view is stale */
   | { kind: 'missing' }
 
+export type DeleteItemResult =
+  /** `at` is the item's place among the list's items, for `restoreItem` */
+  | { kind: 'written'; content: string; at: number }
+  /** No such list, or no item with that text — the caller's view is stale */
+  | { kind: 'missing' }
+
+export type RestoreItemResult =
+  | { kind: 'written'; content: string }
+  /** The list already holds an item with that text — nothing to write */
+  | { kind: 'unchanged' }
+  /** No such list — the caller's view is stale */
+  | { kind: 'missing' }
+
 const TOGGLE_HEADING = /^##\s+(.+?)\s*$/
 const TOGGLE_BULLET = /^(\s*[-*+]\s+)(.*?)(\s*)$/
 const TOGGLE_TIMED = /^(\d{1,2}:\d{2}\s*>\s*)(.+)$/
+/** A bare `-`: the slot an empty list keeps, not an item */
+const EMPTY_SLOT = /^\s*[-*+]\s*$/
+
+/** The `##` list named `title` by line: its heading, its items, and any empty slots — or null without the heading. */
+function listLines(lines: string[], title: string): { heading: number; items: number[]; slots: number[] } | null {
+  const wantTitle = title.trim()
+  let found: { heading: number; items: number[]; slots: number[] } | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const heading = lines[i].match(TOGGLE_HEADING)
+    if (heading) {
+      if (found) break
+      if (heading[1].trim() === wantTitle) found = { heading: i, items: [], slots: [] }
+      continue
+    }
+    if (!found) continue
+    if (EMPTY_SLOT.test(lines[i])) found.slots.push(i)
+    else if (TOGGLE_BULLET.test(lines[i])) found.items.push(i)
+  }
+  return found
+}
+
+/** The text of a bullet line, marker off. */
+function bulletText(line: string): string {
+  return line.match(TOGGLE_BULLET)?.[2] ?? ''
+}
 
 /** The item's text with strike marks off — what names it across states. */
 function plainItemText(text: string): string {

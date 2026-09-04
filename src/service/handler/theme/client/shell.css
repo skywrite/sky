@@ -2864,6 +2864,111 @@ a.sky-thread {
   opacity: 0.7;
 }
 
+/* An item leaves the day: the × a hover shows, or a swipe left on the phone */
+.sky-irow {
+  display: block;
+  position: relative;
+  touch-action: pan-y;
+}
+
+.sky-irow-front {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.22s ease;
+}
+
+.sky-irow-front[data-dragging] {
+  transition: none;
+}
+
+/* the pane the row slides off: as wide as the pull, Delete inside once there is room */
+.sky-irow-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--mantine-color-red-8);
+  color: #ffffff;
+}
+
+.sky-irow-delete {
+  border: 0;
+  background: none;
+  padding: 0;
+  min-width: 88px;
+  height: 100%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* the ×: inline, right after the item's last word */
+.sky-x {
+  border: 0;
+  background: none;
+  padding: 6px;
+  margin: -6px 0 -6px 2px;
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--sky-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.sky-irow:hover .sky-x,
+.sky-x:focus-visible {
+  opacity: 1;
+}
+
+.sky-x:hover {
+  color: var(--mantine-color-red-7);
+  background: var(--sky-s2);
+}
+
+.sky-irow[data-phase] .sky-x {
+  visibility: hidden;
+}
+
+/* a deleted row collapses without a strike */
+.sky-prow[data-phase='removed'] {
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+}
+
+.sky-undo-tick[data-how='deleted'] {
+  color: var(--sky-dim);
+}
+
+/* without a hover there is no ×: the swipe is the way */
+@media (hover: none) {
+  .sky-x {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-irow-front {
+    transition: none;
+  }
+}
+
 /* ============ thread tuning, under the composer ============ */
 .sky-ctl {
   display: inline-flex;

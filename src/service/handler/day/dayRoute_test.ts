@@ -228,6 +228,130 @@ test({ name: 'day route - a checkbox miss is a 404, and a malformed body a 400' 
   })
 })
 
+/** POST to one of the item routes and hand back status plus the parsed body. */
+async function itemRequest(
+  app: ReturnType<typeof createDayRoutes>,
+  route: '/delete' | '/restore',
+  body: unknown,
+  ymd = '2026-01-27',
+): Promise<{ status: number; body: unknown }> {
+  const response = await app.request(`/${ymd}/item${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return { status: response.status, body: await response.json() }
+}
+
+test({ name: 'day route - the × takes an item out of the file, and Undo puts it back byte for byte' }, async () => {
+  const base = await notebookWithOneChat()
+  const file = path.join(base, 'time', dayFile(TODAY))
+  await writeFile(file, TOGGLE_DAY_MD)
+  const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })
+
+  const deleted = await itemRequest(app, '/delete', {
+    list: 'Professional Todos',
+    raw: 'Reply to the vendor shortlist',
+  })
+  const afterDelete = await readFile(file, 'utf8')
+  const answer = deleted.body as { at: number; view: DayView }
+  const restored = await itemRequest(app, '/restore', {
+    list: 'Professional Todos',
+    raw: 'Reply to the vendor shortlist',
+    at: answer.at,
+  })
+
+  assert({
+    given: 'the first todo deleted by its list and text, then restored at the place the delete reported',
+    should: 'drop the line, say it was first, serve a record without it, and give the original file back on restore',
+    actual: {
+      deletedStatus: deleted.status,
+      at: answer.at,
+      lineGone: !afterDelete.includes('Reply to the vendor shortlist'),
+      restOfFile: afterDelete === TOGGLE_DAY_MD.replace('- Reply to the vendor shortlist\n', ''),
+      recordTodos: answer.view.record.todos.map((t) => t.text),
+      restoredStatus: restored.status,
+      restoredFile: (await readFile(file, 'utf8')) === TOGGLE_DAY_MD,
+      restoredRecord: (restored.body as DayView).record.todos.map((t) => t.text),
+    },
+    expected: {
+      deletedStatus: 200,
+      at: 0,
+      lineGone: true,
+      restOfFile: true,
+      recordTodos: ['File the expense report'],
+      restoredStatus: 200,
+      restoredFile: true,
+      restoredRecord: ['Reply to the vendor shortlist', 'File the expense report'],
+    },
+  })
+})
+
+test(
+  { name: "day route - deleting a list's only item leaves the list, empty, and the view shows no reminder" },
+  async () => {
+    const base = await notebookWithOneChat()
+    const file = path.join(base, 'time', dayFile(TODAY))
+    await writeFile(file, TOGGLE_DAY_MD)
+    const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })
+
+    const deleted = await itemRequest(app, '/delete', { list: 'Reminders', raw: 'Water the plants' })
+    const afterDelete = await readFile(file, 'utf8')
+    const restored = await itemRequest(app, '/restore', { list: 'Reminders', raw: 'Water the plants', at: 0 })
+
+    assert({
+      given: 'the only reminder deleted, then restored',
+      should: 'keep the Reminders heading over a bare slot, serve no reminders, and restore the original file',
+      actual: {
+        slot: afterDelete.includes('## Reminders\n\n-\n'),
+        reminders: (deleted.body as { view: DayView }).view.record.reminders,
+        restoredFile: (await readFile(file, 'utf8')) === TOGGLE_DAY_MD,
+        restoredStatus: restored.status,
+      },
+      expected: { slot: true, reminders: [], restoredFile: true, restoredStatus: 200 },
+    })
+  },
+)
+
+test(
+  { name: 'day route - a delete miss is a 404, a malformed body a 400, and a stale restore is unchanged' },
+  async () => {
+    const base = await notebookWithOneChat()
+    const file = path.join(base, 'time', dayFile(TODAY))
+    await writeFile(file, TOGGLE_DAY_MD)
+    const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })
+
+    const stale = await itemRequest(app, '/delete', { list: 'Professional Todos', raw: 'A line that is not there' })
+    const wrongList = await itemRequest(app, '/delete', { list: 'Personal Todos', raw: 'Water the plants' })
+    const badDelete = await itemRequest(app, '/delete', { list: 'Professional Todos' })
+    const badRestore = await itemRequest(app, '/restore', { list: 'Professional Todos', raw: 'x', at: -1 })
+    const noFile = await itemRequest(app, '/delete', { list: 'Reminders', raw: 'Water the plants' }, '2026-01-20')
+    const noList = await itemRequest(app, '/restore', { list: 'Personal Todos', raw: 'Water the plants', at: 0 })
+    // Undo pressed twice: the item is already back — nothing written, the view served.
+    const twice = await itemRequest(app, '/restore', { list: 'Reminders', raw: 'Water the plants', at: 0 })
+
+    assert({
+      given:
+        'a stale text, a wrong list, two malformed bodies, a day with no file, a restore into no list, and a restore of an item still there',
+      should:
+        'refuse the misses with 404 and the malformed bodies with 400, serve the double restore, and leave the file as it was',
+      actual: {
+        statuses: [
+          stale.status,
+          wrongList.status,
+          badDelete.status,
+          badRestore.status,
+          noFile.status,
+          noList.status,
+          twice.status,
+        ],
+        untouched: (await readFile(file, 'utf8')) === TOGGLE_DAY_MD,
+      },
+      expected: { statuses: [404, 404, 400, 400, 404, 404, 200], untouched: true },
+    })
+  },
+)
+
 test({ name: 'day route - a date that is not a day is not found' }, async () => {
   const base = await notebookWithOneChat()
   const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })

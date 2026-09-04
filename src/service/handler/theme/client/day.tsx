@@ -6,13 +6,15 @@ import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
 import { DropOverlay, type ImportJob } from './import.tsx'
 import { useRail } from './rail.ts'
+import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
 /**
  * The day is the page. Its column is what needs to get done — with
  * checkboxes that write back to the day file — then the day so far, the
  * threads running inside it, and the day's own conversation. A checked
- * to-do slides into Done today; a checked reminder just leaves; Undo
- * holds the door for eight seconds either way.
+ * to-do slides into Done today; a checked reminder just leaves; an item
+ * can also be taken off the day, by the × a hover shows or a swipe on the
+ * phone. Undo holds the door for eight seconds whichever way a row left.
  */
 
 // -----------------------------------------------------------------------------
@@ -164,20 +166,30 @@ function currentMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
-type ItemPhase = 'struck' | 'gone'
+/** A checked row shows its strike, then collapses; a deleted row only collapses. */
+type ItemPhase = 'struck' | 'gone' | 'removed'
+
+/** How a row left: checked off, a reminder cleared, or deleted */
+type Leaving = 'done' | 'cleared' | 'deleted'
+
+const UNDO_WORDS: Record<Leaving, string> = { done: 'Done', cleared: 'Reminder cleared', deleted: 'Deleted' }
 
 interface UndoState {
   key: string
   list: string
   raw: string
   text: string
-  reminder: boolean
+  how: Leaving
+  /** Where a deleted item stood in its list — the address Undo puts it back at */
+  at: number | null
 }
 
 interface CheckOff {
   phases: Record<string, ItemPhase>
   undo: UndoState | null
   check: (item: DayItem) => void
+  /** Take an item off the day — the row's ×, or the phone's swipe */
+  remove: (item: DayItem) => void
   revert: () => void
   /** Put a done item back — the Done today row's own un-check */
   uncheck: (item: DayItem) => void
@@ -186,7 +198,9 @@ interface CheckOff {
 /**
  * The checkbox flow: strike locally at once, write to the day file, and
  * let the row leave once both the animation and the write are done. The
- * file keeps everything — Undo just un-strikes.
+ * file keeps everything — Undo just un-strikes. A delete is the same
+ * shape without the strike: the row collapses, the line leaves the file,
+ * and Undo puts it back where it was.
  */
 function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff {
   const [phases, setPhases] = useState<Record<string, ItemPhase>>({})
@@ -212,17 +226,25 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
     }
   }
 
-  const post = async (list: string, raw: string, done: boolean): Promise<DayData | null> => {
+  /** A write to the item routes; null when it did not land. */
+  const send = async <T,>(route: string, body: unknown): Promise<T | null> => {
     try {
-      const response = await fetch(`/day/${ymd}/item`, {
+      const response = await fetch(`/day/${ymd}/item${route}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ list, raw, done }),
+        body: JSON.stringify(body),
       })
-      return response.ok ? ((await response.json()) as DayData) : null
+      return response.ok ? ((await response.json()) as T) : null
     } catch {
       return null
     }
+  }
+  const post = (list: string, raw: string, done: boolean) => send<DayData>('', { list, raw, done })
+
+  const hold = (undo: UndoState) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    setUndo(undo)
+    undoTimer.current = setTimeout(() => setUndo(null), UNDO_MS)
   }
 
   const check = (item: DayItem) => {
@@ -243,9 +265,27 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
       }
       applyView(view)
       settle(key, 'resp')
-      if (undoTimer.current) clearTimeout(undoTimer.current)
-      setUndo({ key, list: item.list, raw: item.raw, text: item.text, reminder: /^reminders$/i.test(item.list.trim()) })
-      undoTimer.current = setTimeout(() => setUndo(null), UNDO_MS)
+      const how: Leaving = /^reminders$/i.test(item.list.trim()) ? 'cleared' : 'done'
+      hold({ key, list: item.list, raw: item.raw, text: item.text, how, at: null })
+    })
+  }
+
+  const remove = (item: DayItem) => {
+    const key = itemKey(item)
+    if (phases[key]) return
+    setPhases((p) => ({ ...p, [key]: 'removed' }))
+    // The row finishes collapsing before the view without it lands, so it never blinks out.
+    const collapsed = new Promise<void>((done) => window.setTimeout(done, 380))
+    const written = send<{ at: number; view: DayData }>('/delete', { list: item.list, raw: item.raw })
+    void Promise.all([written, collapsed]).then(([result]) => {
+      if (!result) {
+        // The write did not land — the row pops back untouched.
+        dropPhase(key)
+        return
+      }
+      applyView(result.view)
+      dropPhase(key)
+      hold({ key, list: item.list, raw: item.raw, text: item.text, how: 'deleted', at: result.at })
     })
   }
 
@@ -254,7 +294,11 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
     if (!held) return
     if (undoTimer.current) clearTimeout(undoTimer.current)
     setUndo(null)
-    void post(held.list, held.raw, false).then((view) => {
+    const back =
+      held.how === 'deleted'
+        ? send<DayData>('/restore', { list: held.list, raw: held.raw, at: held.at })
+        : post(held.list, held.raw, false)
+    void back.then((view) => {
       delete gate.current[held.key]
       dropPhase(held.key)
       if (view) applyView(view)
@@ -278,7 +322,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
     })
   }
 
-  return { phases, undo, check, revert, uncheck }
+  return { phases, undo, check, remove, revert, uncheck }
 }
 
 // -----------------------------------------------------------------------------
@@ -303,6 +347,14 @@ function Tick() {
   )
 }
 
+function Cross() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function Block({ head, mini, children }: { head: string; mini?: string; children: ReactNode }) {
   return (
     <div className="sky-block">
@@ -316,7 +368,12 @@ function Block({ head, mini, children }: { head: string; mini?: string; children
   )
 }
 
-/** One plan item: checkbox, its time when the list is timed, the text, Personal when it's the exception. */
+/**
+ * One plan item: checkbox, its time when the list is timed, the text,
+ * Personal when it's the exception — and the way off the day: an × right
+ * after the text, shown on hover, or on the phone a swipe left that bares
+ * Delete.
+ */
 function PlanRow({
   item,
   phase,
@@ -326,6 +383,7 @@ function PlanRow({
   soft,
   at,
   onCheck,
+  onDelete,
 }: {
   item: DayItem
   phase: ItemPhase | undefined
@@ -339,30 +397,66 @@ function PlanRow({
   soft: boolean
   at: string
   onCheck: (item: DayItem) => void
+  onDelete: (item: DayItem) => void
 }) {
-  const struck = item.done || Boolean(phase)
+  const struck = item.done || phase === 'struck' || phase === 'gone'
+  const swipe = useSwipeToDelete(() => onDelete(item))
+  // A row whose write did not land stands where it was — slid back if it had gone.
+  useEffect(() => {
+    if (!phase) swipe.close()
+  }, [phase])
   return (
-    <div className="sky-prow" data-phase={phase} data-soft={soft || undefined}>
-      <button
-        type="button"
-        className="sky-check"
-        aria-label={struck ? 'Done' : 'Mark done'}
-        onClick={() => !struck && onCheck(item)}
-      >
-        <span className="sky-check-box" data-on={struck}>
-          {struck && <Tick />}
-        </span>
-      </button>
-      {timed && (
-        <span className="sky-when" data-tone={struck ? undefined : tone}>
-          {item.time ? clock(item.time) : '—'}
-        </span>
+    <div className="sky-prow sky-irow" data-phase={phase} data-soft={soft || undefined} ref={swipe.ref}>
+      {swipe.offset < 0 && (
+        <div className="sky-irow-back" style={{ width: -swipe.offset }}>
+          <button
+            type="button"
+            className="sky-irow-delete"
+            style={{ opacity: revealOpacity(swipe.offset) }}
+            tabIndex={swipe.open ? 0 : -1}
+            onClick={swipe.commit}
+          >
+            Delete
+          </button>
+        </div>
       )}
-      <span className="sky-ptext" data-done={struck}>
-        {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
-      </span>
-      {tone === 'late' && !struck && <span className="sky-late">overdue</span>}
-      {chip && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
+      <div
+        className="sky-irow-front"
+        data-dragging={swipe.dragging || undefined}
+        style={swipe.offset ? { transform: `translateX(${swipe.offset}px)` } : undefined}
+        onClickCapture={(event) => {
+          // A tap on an open row puts it back; nothing under the finger fires.
+          if (!swipe.open) return
+          event.preventDefault()
+          event.stopPropagation()
+          swipe.close()
+        }}
+        {...swipe.handlers}
+      >
+        <button
+          type="button"
+          className="sky-check"
+          aria-label={struck ? 'Done' : 'Mark done'}
+          onClick={() => !struck && onCheck(item)}
+        >
+          <span className="sky-check-box" data-on={struck}>
+            {struck && <Tick />}
+          </span>
+        </button>
+        {timed && (
+          <span className="sky-when" data-tone={struck ? undefined : tone}>
+            {item.time ? clock(item.time) : '—'}
+          </span>
+        )}
+        <span className="sky-ptext" data-done={struck}>
+          {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
+          <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
+            <Cross />
+          </button>
+        </span>
+        {tone === 'late' && !struck && <span className="sky-late">overdue</span>}
+        {chip && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
+      </div>
     </div>
   )
 }
@@ -419,6 +513,7 @@ function PlanCard({
               soft={false}
               at={at}
               onCheck={checkOff.check}
+              onDelete={checkOff.remove}
             />
           </Fragment>
         )
@@ -459,6 +554,7 @@ function TodoCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOf
                   soft={false}
                   at={at}
                   onCheck={checkOff.check}
+                  onDelete={checkOff.remove}
                 />
               </Fragment>
             ))}
@@ -487,6 +583,7 @@ function ReminderCard({ items, checkOff, at }: { items: DayItem[]; checkOff: Che
             soft
             at={at}
             onCheck={checkOff.check}
+            onDelete={checkOff.remove}
           />
         </Fragment>
       ))}
@@ -834,11 +931,11 @@ export function DayView({
 
       {checkOff.undo && (
         <div className="sky-undo" key={checkOff.undo.key}>
-          <span className="sky-undo-tick">
-            <Tick />
+          <span className="sky-undo-tick" data-how={checkOff.undo.how}>
+            {checkOff.undo.how === 'deleted' ? <Cross /> : <Tick />}
           </span>
           <span className="sky-undo-text">
-            {checkOff.undo.reminder ? 'Reminder cleared' : 'Done'} — “{checkOff.undo.text}”
+            {UNDO_WORDS[checkOff.undo.how]} — “{checkOff.undo.text}”
           </span>
           <button type="button" className="sky-undo-btn" onClick={checkOff.revert}>
             Undo
