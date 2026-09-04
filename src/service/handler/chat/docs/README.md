@@ -74,10 +74,16 @@ a person can see and touch:
   call with the thread (`runs` on `GET /chat/:id`, like the cards) and
   stream the same three as frames. On the page the running tool's chip
   carries the time since it started and the last thing it said sits
-  under it; a click opens everything it said; once the turn is done the
-  lines fold under the chip and stay as the record of what the tool did.
-  The day's list shows the running tool's latest line for a thread that
-  is thinking. A tool that prints nothing keeps its chip from the model's
+  under it; a click opens everything it said. Once it ends the run folds
+  to one line — a caret, the tool's name, and what it did in a small
+  model's words: as a run ends with more than one line the sink asks
+  `summarizeToolRun` (the fast role, twelve words at most) and the routes
+  stream the answer as `tool-summary`, kept on the run as `summary`;
+  until it lands, or when none comes, the run's last line stands in, and
+  a page whose turn ended before the line reads the thread back for it. A
+  click on the line unfolds the record of what the tool said. The day's
+  list shows the running tool's latest line for a thread that is
+  thinking. A tool that prints nothing keeps its chip from the model's
   own record of the call; the two never double up.
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
@@ -115,6 +121,17 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   the end of the story matters more than its middle.
 
 ## Verified
+
+- 2026-09-03 — the fold: the scripted run's summary line follows finished
+  on the stream and settles on the run (route test); the sink asks the
+  summarizer once per ended run with its lines and how it ended, reports
+  its line after the end, asks nothing for a one-line run, and reports
+  nothing when the summarizer has nothing (sink test). Live on the page,
+  notebook closed, a message that runs the day's items: the run folds
+  the moment it ends with its last line as the label, the fast model's
+  line replaces it a second later, a click unfolds the fifty-nine lines;
+  on a turn whose one-word reply beat the line, the page's follow-up read
+  picked it up.
 
 - 2026-09-03 — tool lines: a scripted model whose call narrates two lines
   and holds; mid-run the thread carries the open run with both lines and

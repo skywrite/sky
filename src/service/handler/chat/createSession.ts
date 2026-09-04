@@ -9,6 +9,7 @@
  */
 
 import * as path from 'node:path'
+import { generateText } from 'ai'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { createFileTools } from '#commands/lib/chat/fileTools.ts'
 import {
@@ -23,10 +24,12 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
-import { getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import { logAIError } from '#shared/ai/errorLog.ts'
+import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
+import truncate from '#shared/strings/truncate.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ModelChoice, ToolOutputEvent } from './mod.ts'
@@ -37,19 +40,76 @@ const WEB_CHAT = { days: 7, contextTokens: 300_000 }
 /** The terminal's bullet on a progress line; the page draws its own marks. */
 const BULLET = /^[◦•]\s+/
 
+/** The newest lines a run's summary is drawn from — the end of a long run is what it did. */
+const SUMMARY_LINES = 120
+/** A summary is a label, not a paragraph. */
+const SUMMARY_CHARS = 120
+/** A label that takes longer than this is not worth waiting for. */
+const SUMMARY_TIMEOUT_MS = 20_000
+
+/** One line on what an ended run did, or null when there is nothing to say. */
+export type RunSummarizer = (
+  tool: string,
+  lines: string[],
+  status: 'success' | 'fail' | 'error',
+) => Promise<string | null>
+
+/**
+ * A small model's one line on a finished run — the label its output folds
+ * under on the page. A failure logs and yields nothing; the page shows the
+ * run's last line instead.
+ */
+export async function summarizeToolRun(
+  tool: string,
+  lines: string[],
+  status: 'success' | 'fail' | 'error',
+): Promise<string | null> {
+  try {
+    const result = await generateText({
+      ...aiModel('fast', { maxOutputTokens: 64 }),
+      abortSignal: AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
+      prompt: `A tool called "${tool.replaceAll('_', ' ')}" just ran inside a chat and ${status === 'success' ? 'finished' : 'failed'}. These are the lines it printed while working, oldest first:
+
+"""
+${lines.join('\n')}
+"""
+
+Write the one line a person wants in place of all of that, at a glance: what the tool did or found, with the numbers that matter, and how it ended only if it did not end cleanly. At most twelve plain words. No quotes, no trailing period, no preamble, no words like "output" or "summary".`,
+    })
+    const text = (result.text.trim().split('\n')[0] ?? '').replace(/^["'“”]+|["'“”.]+$/g, '').trim()
+    return text ? truncate(text, SUMMARY_CHARS) : null
+  } catch (err) {
+    await logAIError({
+      source: 'chat',
+      stage: 'tool-summary',
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
 /**
  * Command output as tool events. A chat tool is a command run one level
  * under the session's context; whatever it composes runs deeper and
  * speaks for the tool that ran it. Boundaries come from the command
  * service; lines carry the terminal's words minus their colors and
  * bullets. Streamed pieces gather until a line ends, or the run does.
+ * When a run ends with more than one line, the summarizer is asked for
+ * its one line, reported once it answers; a single line is its own label.
  */
-export function toolOutputSink(report: (event: ToolOutputEvent) => void): (event: OutputEvent) => void {
+export function toolOutputSink(
+  report: (event: ToolOutputEvent) => void,
+  summarize?: RunSummarizer,
+): (event: OutputEvent) => void {
   let current: string | null = null
   let partial = ''
+  let said: string[] = []
   const line = (tool: string, text: string, level: 'log' | 'error' = 'log') => {
-    const said = text.replace(BULLET, '').trimEnd()
-    if (said.trim()) report({ type: 'tool-line', tool, text: said, level })
+    const clean = text.replace(BULLET, '').trimEnd()
+    if (!clean.trim()) return
+    report({ type: 'tool-line', tool, text: clean, level })
+    said.push(clean)
+    if (said.length > SUMMARY_LINES) said.shift()
   }
   const flush = (tool: string) => {
     if (partial) line(tool, partial)
@@ -60,6 +120,7 @@ export function toolOutputSink(report: (event: ToolOutputEvent) => void): (event
       if (event.depth === 1) {
         current = commandNameToToolName(event.command)
         partial = ''
+        said = []
         report({ type: 'tool-started', tool: current })
       }
       return
@@ -70,6 +131,12 @@ export function toolOutputSink(report: (event: ToolOutputEvent) => void): (event
         flush(tool)
         report({ type: 'tool-finished', tool, status: event.status })
         current = null
+        if (summarize && said.length > 1) {
+          void summarize(tool, said, event.status).then((text) => {
+            if (text) report({ type: 'tool-summary', tool, text })
+          })
+        }
+        said = []
       }
       return
     }
@@ -142,7 +209,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     // The tools' own command service hears its output: every line a tool
     // prints in the terminal goes to the page instead of a buffer nobody
     // reads. The producers keep the quiet one — a gather is not a tool.
-    const toolTasks = new CommandService(context.fork({ output: new EventOutput(toolOutputSink(onEvent)) }))
+    const toolTasks = new CommandService(
+      context.fork({ output: new EventOutput(toolOutputSink(onEvent, summarizeToolRun)) }),
+    )
     const startTime = context.notebookNow.plainDateTime
     const today = startTime.plainDate
     const profile = getProfile(prefs.profile ?? ROLES.reasoning)

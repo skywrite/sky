@@ -54,12 +54,14 @@ export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision>
 
 /**
  * A tool's own words as it works, as the host hears them from the
- * command's output: where a run starts, each line it prints, how it ends.
+ * command's output: where a run starts, each line it prints, how it ends —
+ * and, once it has ended, one line on what it did.
  */
 export type ToolOutputEvent =
   | { type: 'tool-started'; tool: string }
   | { type: 'tool-line'; tool: string; text: string; level: 'log' | 'error' }
   | { type: 'tool-finished'; tool: string; status: 'success' | 'fail' | 'error' }
+  | { type: 'tool-summary'; tool: string; text: string }
 
 /** One tool call at work, kept with the thread like the cards — the page shows it under the reply it belongs to. */
 export interface ToolRun {
@@ -73,6 +75,8 @@ export interface ToolRun {
   lines: string[]
   /** How it ended; null while it runs */
   status: 'success' | 'fail' | 'error' | null
+  /** One line on what it did, from a small model once it ended — the label its output folds under. Absent until then, or when none came */
+  summary?: string
 }
 
 /** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
@@ -159,6 +163,7 @@ type WireEvent =
   | { type: 'tool-started'; run: ToolRun }
   | { type: 'tool-line'; tool: string; at: number; text: string; level: 'log' | 'error' }
   | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error' }
+  | { type: 'tool-summary'; tool: string; at: number; text: string }
 
 interface Thread {
   session: ChatSession
@@ -253,6 +258,15 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
       open.status = event.status
       return { type: 'tool-finished', tool: open.tool, at: open.at, status: event.status }
     }
+    case 'tool-summary': {
+      // The line comes after the run ended: it labels the newest ended run of that tool still without one.
+      const ended = thread.runs.findLast(
+        (run) => run.tool === event.tool && run.status !== null && run.summary === undefined,
+      )
+      if (!ended) return null
+      ended.summary = event.text
+      return { type: 'tool-summary', tool: ended.tool, at: ended.at, text: event.text }
+    }
   }
 }
 
@@ -337,7 +351,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           (event) => {
             const thread = threads.get(id)
             if (!thread) return
-            if (event.type === 'tool-started' || event.type === 'tool-line' || event.type === 'tool-finished') {
+            if (
+              event.type === 'tool-started' ||
+              event.type === 'tool-line' ||
+              event.type === 'tool-finished' ||
+              event.type === 'tool-summary'
+            ) {
               const wire = recordToolOutput(thread, event)
               thread.updatedAt = ++tick
               if (wire) thread.sink?.(wire)

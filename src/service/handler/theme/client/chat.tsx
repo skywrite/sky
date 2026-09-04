@@ -73,6 +73,8 @@ export interface Run {
   lines: string[]
   /** How it ended; null while it runs */
   status: 'success' | 'fail' | 'error' | null
+  /** One line on what it did, from a small model once it ended — the label it folds under */
+  summary?: string
 }
 
 /** A line in the record's voice: what happened to a thread, not a message in it. */
@@ -144,6 +146,7 @@ type Action =
   | { type: 'run-started'; id: string; run: Run }
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
+  | { type: 'run-summary'; id: string; tool: string; at: number; text: string }
   | { type: 'finished'; id: string; content: string }
   | { type: 'failed'; id: string; message: string }
   | { type: 'rendered'; id: string; index: number; html: string }
@@ -294,6 +297,11 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       if (i < 0) return state
       return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, status: action.status } : r)) }
     }
+    case 'run-summary': {
+      const i = state.runs.findLastIndex((r) => r.tool === action.tool && r.at === action.at)
+      if (i < 0) return state
+      return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, summary: action.text } : r)) }
+    }
     case 'finished':
       return {
         ...state,
@@ -381,6 +389,11 @@ function renderMarkdown(raw: string): string | null {
 
 export function humanize(toolName: string): string {
   return toolName.replaceAll('_', ' ')
+}
+
+/** The tool's name as a heading: `google_agent` → `Google Agent`. */
+function titleOf(toolName: string): string {
+  return humanize(toolName).replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 }
 
 /** First words of the first message — how a thread is named until it is saved. */
@@ -625,6 +638,9 @@ export function useChat(id: string) {
                 status: d.status as Run['status'],
               })
               break
+            case 'tool-summary':
+              dispatch({ id, type: 'run-summary', tool: d.tool as string, at: d.at as number, text: d.text as string })
+              break
             case 'turn': {
               finished = true
               if (typeof d.error === 'string') {
@@ -651,6 +667,7 @@ export function useChat(id: string) {
         attached.current = false
       }
       if (!finished) dispatch({ id, type: 'failed', message: 'The connection closed before the reply finished.' })
+      followSummaries(id, dispatch)
     },
     [state.id, state.phase, state.turns.length],
   )
@@ -737,6 +754,34 @@ export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[]
   }, deps)
 }
 
+/** When the page reads a thread back for a run's line that came after its turn ended. */
+const SUMMARY_FOLLOW_UP_MS = [2000, 6000, 15000]
+
+/**
+ * A run's one line comes from a model as the run ends, and a quick reply
+ * can end the turn — and the stream — before it lands. It is on the thread
+ * by then; the page reads it back a few times, stopping once every ended
+ * run that said more than one thing has its line.
+ */
+function followSummaries(id: string, dispatch: (action: Action) => void, attempt = 0): void {
+  const delay = SUMMARY_FOLLOW_UP_MS[attempt]
+  if (delay === undefined) return
+  setTimeout(() => {
+    fetch(`/chat/${id}`)
+      .then(async (response) => {
+        if (!response.ok) return
+        const runs = ((await response.json()) as ThreadBody).runs ?? []
+        for (const run of runs) {
+          if (run.summary) dispatch({ id, type: 'run-summary', tool: run.tool, at: run.at, text: run.summary })
+        }
+        if (runs.some((run) => run.status !== null && run.lines.length > 1 && !run.summary)) {
+          followSummaries(id, dispatch, attempt + 1)
+        }
+      })
+      .catch(() => {})
+  }, delay)
+}
+
 /** Seconds since a moment, ticking once a second while `active`. */
 function useElapsed(since: number, active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -756,33 +801,52 @@ function elapsedLabel(seconds: number): string {
 /**
  * A tool at work, in its own words. The chip names it; while it runs, the
  * line under the chip is the last thing it said, with the time since it
- * started; a click opens everything it said. Once done the lines fold
- * under the chip and stay, the record of what the tool did.
+ * started; a click opens everything it said. Once done the run folds to
+ * one line — a caret, the tool's name, and what it did in a small model's
+ * words (its last line until that arrives) — and a click on that line
+ * unfolds the record of what the tool said.
  */
 function RunView({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
   const running = run.status === null
+  // Ending folds the run, even one opened to watch it work.
+  useEffect(() => {
+    if (!running) setOpen(false)
+  }, [running])
   const seconds = useElapsed(run.started, running)
   const count = run.lines.length
   const last = run.lines.at(-1)
+  const folded = !running && count > 0
   return (
     <div className="sky-tool-run" data-running={running} data-status={run.status ?? undefined}>
-      <button
-        type="button"
-        className="sky-chip sky-tool-chip"
-        data-act="true"
-        data-open={open}
-        onClick={count > 0 ? () => setOpen((o) => !o) : undefined}
-        aria-expanded={count > 0 ? open : undefined}
-      >
-        {running && <span className="sky-tool-pulse" aria-hidden="true" />}
-        {humanize(run.tool)}
-        {count > 0 && (
-          <span className="sky-tool-meta">
-            {running ? elapsedLabel(seconds) : `${count} line${count === 1 ? '' : 's'}`}
+      {folded ? (
+        <button
+          type="button"
+          className="sky-tool-fold"
+          data-act="true"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <span className="sky-tool-caret" aria-hidden="true">
+            {open ? '▾' : '▸'}
           </span>
-        )}
-      </button>
+          <span className="sky-tool-fold-name">{titleOf(run.tool)} Output</span>
+          <span className="sky-tool-fold-summary">{run.summary ?? last}</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="sky-chip sky-tool-chip"
+          data-act="true"
+          data-open={open}
+          onClick={count > 0 ? () => setOpen((o) => !o) : undefined}
+          aria-expanded={count > 0 ? open : undefined}
+        >
+          {running && <span className="sky-tool-pulse" aria-hidden="true" />}
+          {humanize(run.tool)}
+          {count > 0 && <span className="sky-tool-meta">{elapsedLabel(seconds)}</span>}
+        </button>
+      )}
       {running && last && !open && <div className="sky-tool-last">{last}</div>}
       {open && (
         <div className="sky-tool-lines">

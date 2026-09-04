@@ -656,6 +656,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
     report?.({ type: 'tool-line', tool: 'google_agent', text: 'Applied 3 update(s) to "Atlas Plan"', level: 'log' })
     await held
     report?.({ type: 'tool-finished', tool: 'google_agent', status: 'success' })
+    report?.({ type: 'tool-summary', tool: 'google_agent', text: 'Applied three updates to the plan' })
     args.sink.write('Done.')
     return EMPTY
   }
@@ -704,7 +705,12 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
     actual: {
       events: frames.map((f) => f.event),
       lines: frames.filter((f) => f.event === 'tool-line').map((f) => [f.data?.tool, f.data?.at, f.data?.text]),
-      run: { status: after.runs[0].status, at: after.runs[0].at, lines: after.runs[0].lines.length },
+      run: {
+        status: after.runs[0].status,
+        at: after.runs[0].at,
+        lines: after.runs[0].lines.length,
+        summary: after.runs[0].summary,
+      },
       turns: after.turns.length,
     },
     expected: {
@@ -718,6 +724,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
         'tool-line',
         'tool-line',
         'tool-finished',
+        'tool-summary',
         'text-delta',
         'turn-complete',
         'turn',
@@ -726,7 +733,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
         ['google_agent', 1, 'Mission started'],
         ['google_agent', 1, 'Applied 3 update(s) to "Atlas Plan"'],
       ],
-      run: { status: 'success', at: 1, lines: 2 },
+      run: { status: 'success', at: 1, lines: 2, summary: 'Applied three updates to the plan' },
       turns: 2,
     },
   })

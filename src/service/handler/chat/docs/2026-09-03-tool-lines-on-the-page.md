@@ -43,3 +43,28 @@ nobody read: the service's command context is built with a `BufferedOutput`.
 It is not the saved record. The transcript's context log keeps the tool
 trail it always kept; the runs are the page's, for the life of the thread
 on the service, like the cards.
+
+## Later the same day: the fold
+
+The first cut left a finished run as it was when the person last touched
+it: a run opened to watch it work stayed open, a wall of lines under the
+reply. Asked for: once the tool is done, one line with a caret, and the
+lines behind it on a click.
+
+- Ending folds the run. The chip gives way to one line — `▸`, the tool's
+  name, and what it did — and a click on it turns the caret down and
+  unfolds the lines; a click again folds them.
+- What it did is a small model's one line. As a run ends with more than
+  one line, `toolOutputSink` hands its newest lines (up to 120) and how it
+  ended to a summarizer; `summarizeToolRun` asks the fast role for at most
+  twelve plain words and the routes stream the answer as `tool-summary`,
+  keeping it on the run as `summary`. A run of one line is its own label
+  and asks for nothing.
+- Until the line lands, or when none comes (the model failing or taking
+  over twenty seconds logs to the AI error log and yields nothing), the
+  run's last line stands in. The reply keeps streaming meanwhile. A quick
+  reply can end the turn — and its stream — before the line lands (seen
+  live: a tool that answered in one word); it is on the thread by then,
+  and the page reads the thread back at two, six, and fifteen seconds
+  after the turn until every ended run that said more than one thing has
+  its line.
