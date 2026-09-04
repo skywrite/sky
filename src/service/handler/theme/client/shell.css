@@ -95,8 +95,12 @@ body {
   font-size: 18px;
 }
 
+/* The sidebar is a flex column that scrolls; the button is the one child that
+   could shrink (Mantine clips it), so it says no or it collapses when the
+   list outgrows the window. */
 .sky-newchat {
   margin-bottom: 10px;
+  flex: none;
 }
 
 .sky-side-label {
