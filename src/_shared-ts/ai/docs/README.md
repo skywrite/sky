@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-03
 ---
 
 # Model registry — roles, profiles, providers
@@ -35,7 +35,18 @@ profiles because those models reject them with a 400.
   Run `node scripts/syncTitles.ts` in `extensions/vscode`; `dev:check`
   fails until they are in sync.
 
+## Prompt caching
+
+`promptCache.ts` owns the Anthropic cache breakpoints: `cachedInstructions`
+marks the stable instruction segments, `withCacheTail` marks the last
+message of a conversation, and `cacheTailStep` moves that marker before
+every step of a tool loop. Rule: every `streamText` / `generateText` loop
+with `stopWhen` passes `prepareStep: cacheTailStep`, or each step re-bills
+the whole replayed history.
+
 ## Notes
 
 - [2026-09-01](2026-09-01-fable-5-1-profile.md) — Fable 5.1 joins the
   catalog; there is no Opus 5.1, so `reasoning` stays on Opus 5.
+- [2026-09-03](2026-09-03-cache-tail-every-step.md) — the cache tail moves
+  on every loop step; a mission's history is read from cache, not re-sent.

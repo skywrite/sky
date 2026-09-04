@@ -1,4 +1,4 @@
-import type { SystemModelMessage } from 'ai'
+import type { ModelMessage, SystemModelMessage } from 'ai'
 
 /**
  * Prompt-cache plumbing for AI SDK calls.
@@ -94,4 +94,16 @@ export function withCacheTail<T extends CacheTailMessage>(messages: T[]): T[] {
         : { ...message, providerOptions: undefined }
     ) as T
   })
+}
+
+/**
+ * `prepareStep` for tool loops (`streamText` / `generateText` with
+ * `stopWhen`). The SDK replays the whole conversation on every step, so the
+ * tail breakpoint has to move before each model call: with it, a step reads
+ * everything before it from cache and writes only what the last step added;
+ * without it, only the system prompt is cached and every step re-bills the
+ * full history. Pass as `prepareStep: cacheTailStep`.
+ */
+export function cacheTailStep({ messages }: { messages: ModelMessage[] }): { messages: ModelMessage[] } {
+  return { messages: withCacheTail(messages) }
 }

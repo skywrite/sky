@@ -1,6 +1,6 @@
 import type { ModelMessage } from 'ai'
 import { assert, test } from '#test'
-import { cachedInstructions, PROMPT_CACHE_BOUNDARY, withCacheTail } from './promptCache.ts'
+import { cachedInstructions, cacheTailStep, PROMPT_CACHE_BOUNDARY, withCacheTail } from './promptCache.ts'
 
 const breakpoint = { anthropic: { cacheControl: { type: 'ephemeral' } } }
 
@@ -118,5 +118,36 @@ test('withCacheTail preserves unrelated provider options while moving the breakp
     should: 'keep the metadata and drop only the breakpoint',
     actual: marked[0].providerOptions,
     expected: { anthropic: { signature: 'abc' } },
+  })
+})
+
+test('cacheTailStep re-tails the breakpoint for the next loop step', () => {
+  const afterStepOne = withCacheTail([{ role: 'user', content: 'mission' } as ModelMessage])
+  const grown: ModelMessage[] = [
+    ...afterStepOne,
+    { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'probe', input: {} }] },
+    {
+      role: 'tool',
+      content: [{ type: 'tool-result', toolCallId: 'c1', toolName: 'probe', output: { type: 'text', value: 'ok' } }],
+    },
+  ]
+  const { messages } = cacheTailStep({ messages: grown })
+  assert({
+    given: "the next step's message list, still carrying the previous step's tail marker",
+    should: 'strip the stale marker',
+    actual: messages[0].providerOptions,
+    expected: undefined,
+  })
+  assert({
+    given: "the next step's message list",
+    should: 'mark the tool result that closes the last step',
+    actual: messages[2].providerOptions,
+    expected: breakpoint,
+  })
+  assert({
+    given: 'the input array',
+    should: 'not be mutated',
+    actual: grown[2].providerOptions,
+    expected: undefined,
   })
 })

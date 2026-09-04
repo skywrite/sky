@@ -14,7 +14,7 @@
 
 import { isStepCount, streamText, type SystemModelMessage, type ToolSet } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
-import { cachedInstructions, withCacheTail } from '#shared/ai/promptCache.ts'
+import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/promptCache.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -352,6 +352,9 @@ export default class ChatEngine {
           tools: opts.tools as ToolSet,
           toolApproval: opts.toolApproval,
           stopWhen: isStepCount(this.maxSteps),
+          // Each tool step replays the turn so far; re-tailing the cache
+          // breakpoint per step keeps that replay a cache read.
+          prepareStep: cacheTailStep,
           onStepEnd,
           // Deltas ride a callback rather than a consumed stream: awaiting
           // the result promises below is what drives this stream, and

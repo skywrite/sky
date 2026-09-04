@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-08-09
+updated: 2026-09-03
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -18,6 +18,11 @@ that loop are non-obvious and load-bearing:
   visible parts for minutes — only keep-alive pings prove the transport is
   alive. Anything that equates "no visible parts" with "dead" will execute
   healthy missions (see the [2026-08-09 shakedown](2026-08-09-contract-review-shakedown.md)).
+- **Every step replays the whole mission.** The cache breakpoint moves to
+  the step's last message before each model call (`prepareStep:
+  cacheTailStep`), so the replay is a cache read; without it a mission's
+  input grows with the square of its step count
+  ([2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cache-tail-every-step.md)).
 
 ## The timeout ladder
 

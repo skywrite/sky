@@ -22,7 +22,7 @@ import {
 import type { DriveFile } from '#lib/google/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { cachedInstructions } from '#shared/ai/promptCache.ts'
+import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
@@ -284,6 +284,9 @@ export default class GoogleAgentTask extends Command {
         messages: [{ role: 'user', content: missionMessage }],
         tools,
         stopWhen: isStepCount(MAX_STEPS),
+        // A mission replays its whole history on every step; moving the cache
+        // breakpoint to the step's last message makes that replay a cache read.
+        prepareStep: cacheTailStep,
         abortSignal: abort.signal,
         // Raw SSE frames (pings included) feed the stall watchdog, so a long
         // silent think is not mistaken for a dead stream.

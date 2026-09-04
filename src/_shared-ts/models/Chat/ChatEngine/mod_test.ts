@@ -1,3 +1,5 @@
+import { jsonSchema, simulateReadableStream } from 'ai'
+import { MockLanguageModelV3 } from 'ai/test'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { assert, test } from '#test'
 import ChatEngine, {
@@ -722,5 +724,77 @@ test('ChatEngine.runTurn - an inline-approved call (request+response pair) start
       asked: 0,
       tools: [{ tool: 'google_agent', outcome: 'ok' }],
     },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The real streaming path (SDK loop over a mock model)
+// ---------------------------------------------------------------------------
+
+const MOCK_USAGE = {
+  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 1, text: 1, reasoning: 0 },
+}
+
+/** One model step as the SDK's provider stream: the parts, then a finish. */
+function mockStep(parts: unknown[], unified: 'tool-calls' | 'stop') {
+  return {
+    // deno-lint-ignore no-explicit-any
+    stream: simulateReadableStream<any>({
+      chunks: [
+        { type: 'stream-start', warnings: [] },
+        ...parts,
+        { type: 'finish', finishReason: { unified, raw: undefined }, usage: MOCK_USAGE },
+      ],
+    }),
+  }
+}
+
+test('the streaming path re-tails the cache breakpoint on every tool step', async () => {
+  const model = new MockLanguageModelV3({
+    doStream: [
+      mockStep([{ type: 'tool-call', toolCallId: 'c1', toolName: 'probe', input: '{}' }], 'tool-calls'),
+      mockStep(
+        [
+          { type: 'text-start', id: 't' },
+          { type: 'text-delta', id: 't', delta: 'done' },
+          { type: 'text-end', id: 't' },
+        ],
+        'stop',
+      ),
+    ],
+  })
+  const engine = new ChatEngine({ model: { model }, approvalHandler: () => Promise.resolve(DECLINE) })
+  engine.appendUserMessage('call the probe')
+  const tools = {
+    probe: {
+      description: 'Answers ok.',
+      inputSchema: jsonSchema<Record<string, never>>({ type: 'object', properties: {} }),
+      execute: () => Promise.resolve('ok'),
+    },
+  }
+  const result = await engine.runTurn({ instructions: ['system prompt'], tools, toolApproval: {} })
+
+  // Which non-system messages of a call carried the breakpoint, in order.
+  // deno-lint-ignore no-explicit-any
+  const marks = (prompt: any[]) =>
+    prompt.filter((m) => m.role !== 'system').map((m) => m.providerOptions?.anthropic?.cacheControl !== undefined)
+  assert({
+    given: 'a turn whose first step called a tool',
+    should: "finish with the second step's text",
+    actual: result.text,
+    expected: 'done',
+  })
+  assert({
+    given: 'the first model call of the turn',
+    should: 'mark only the user message',
+    actual: marks(model.doStreamCalls[0].prompt),
+    expected: [true],
+  })
+  assert({
+    given: 'the second model call, after the tool ran',
+    should: 'move the mark to the tool result that closes step one',
+    actual: marks(model.doStreamCalls[1].prompt),
+    expected: [false, false, true],
   })
 })
