@@ -91,7 +91,7 @@ record itself is the transcript pipeline's: see
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 
@@ -157,3 +157,22 @@ cap, or a screenshot over the vision model's, is refused before its bytes
 go up, in the read-back's own sentence.
 Keeping a file with the day as it is — a PDF, a Zoom video, anything — is
 the Files pad's job, never this dialog's: `../../day/docs/README.md`.
+
+## Dropping on a meeting
+
+The day's Details rail accepts a transcript or recording on a timed past
+meeting marked `no record`. The row turns blue and says `drop to import`;
+leaving it or dropping clears the highlight. It owns the drop, so the
+page's overlay stays out of the way and the file enters the queue once.
+
+Each queued file carries the selected slot's title and full date/time.
+The shared dialog opens with Meeting selected and that time filled in,
+even if the audio listener later guesses a journal. Start follows the
+usual `meeting:new` flow. Other file kinds keep their normal import door.
+
+A slot chosen by dropping is an explicit time: `whenStated` carries that
+fact through Start even when it equals the file's proposed time. The
+pipeline keeps it over times mentioned in the recording. A stopped
+import retains those fields when opened again.
+
+Narrative: [2026-09-05 — a file dropped on its meeting](2026-09-05-a-file-dropped-on-its-meeting.md).

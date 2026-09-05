@@ -345,6 +345,7 @@ function Canvas() {
           notes={notes}
           onOpen={openThread}
           onOpenImport={openImport}
+          onImportMeeting={queue.take}
           dragging={drop.dragging}
           attach={{ accept: acceptsImports(), onFiles: queue.take }}
           kept={kept}

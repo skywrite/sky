@@ -8,7 +8,8 @@
  * a video, by --from-srt.
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
- * a value the person changed. Only the second is theirs. It goes as a raw
+ * a value the person changed or chose by dropping on a calendar slot.
+ * The person's choice goes as a raw
  * argument, which the doors read as a stated start that wins over anything
  * the words say. The proposal goes as what it is, the file's clock: the
  * pipeline gives the model that fact to resolve the words against, and
@@ -40,8 +41,8 @@ export function startArgs(job: StartContext, fields: StartFields, filePath: stri
   const when = PlainDateTime.fromString(fields.when)
   const category = `${fields.category} Complete`
   const { fresh } = fields
-  // Changed by hand, the when is the person's word; left as proposed, it is sky's reading.
-  const stated = fields.when !== job.suggestedWhen
+  // Typed or chosen from a calendar slot, the when is the person's word.
+  const stated = fields.whenStated === true || fields.when !== job.suggestedWhen
   const rawArgs = stated ? { _: [], when: fields.when } : { _: [] }
   switch (fields.kind) {
     case 'meeting':

@@ -3,7 +3,7 @@ import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'r
 import type { DayData, ThreadSummary } from './day.tsx'
 import { fileHref } from './explorer.tsx'
 import { type Kept, moveIn } from './files.tsx'
-import { type ImportJob, importStateWord } from './import.tsx'
+import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
 
 /**
  * The rail beside a day: what is around the day rather than in its
@@ -104,54 +104,87 @@ function Section({ title, count, children }: { title: string; count?: number; ch
   )
 }
 
-function ScheduleSection({ schedule }: { schedule: DaySchedule | null }) {
-  if (!schedule) return <Section title="Schedule">{null}</Section>
+function MeetingRow({
+  meeting: m,
+  ymd,
+  onImportMeeting,
+}: {
+  meeting: ScheduledMeeting
+  ymd: string
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+}) {
+  const canDrop = Boolean(onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
+  const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
+  return (
+    <div
+      className="sky-dr-item"
+      data-state={m.state}
+      data-meeting-drop={canDrop || undefined}
+      data-dragging={drop.dragging || undefined}
+      title={canDrop ? 'Drop a transcript or recording to import this meeting' : undefined}
+      {...drop.handlers}
+    >
+      <span className="sky-dr-time">{m.allDay ? 'all day' : m.start}</span>
+      <span className="sky-dr-label">{m.title || '(untitled)'}</span>
+      <span className="sky-dr-mark">
+        {drop.dragging ? (
+          'drop to import'
+        ) : m.state === 'past' ? (
+          m.record ? (
+            <a href={fileHref(m.record.path)}>filed</a>
+          ) : (
+            'no record'
+          )
+        ) : m.state === 'now' ? (
+          m.joinUrl ? (
+            <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
+              join
+            </a>
+          ) : (
+            'now'
+          )
+        ) : (
+          lengthWords(m.start, m.end)
+        )}
+      </span>
+      {(m.who.length > 0 || m.state === 'now') && (
+        <span className="sky-dr-who">
+          {[whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ScheduleSection({
+  schedule,
+  ymd,
+  onImportMeeting,
+}: {
+  schedule: DaySchedule | null
+  ymd: string
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+}) {
+  if (!schedule) return <Section title="Meetings">{null}</Section>
   if (!schedule.read) {
     return (
-      <Section title="Schedule">
+      <Section title="Meetings">
         <p className="sky-rail-empty">Calendar not read.</p>
       </Section>
     )
   }
   if (schedule.meetings.length === 0) {
     return (
-      <Section title="Schedule">
+      <Section title="Meetings">
         <p className="sky-rail-empty">Nothing on the calendar.</p>
       </Section>
     )
   }
   return (
-    <Section title="Schedule" count={schedule.meetings.length}>
+    <Section title="Meetings" count={schedule.meetings.length}>
       {schedule.meetings.map((m, i) => (
-        <Fragment key={`${m.start}-${i}`}>
-          <div className="sky-dr-item" data-state={m.state}>
-            <span className="sky-dr-time">{m.allDay ? 'all day' : m.start}</span>
-            <span className="sky-dr-label">{m.title || '(untitled)'}</span>
-            <span className="sky-dr-mark">
-              {m.state === 'past' ? (
-                m.record ? (
-                  <a href={fileHref(m.record.path)}>filed</a>
-                ) : (
-                  'no record'
-                )
-              ) : m.state === 'now' ? (
-                m.joinUrl ? (
-                  <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
-                    join
-                  </a>
-                ) : (
-                  'now'
-                )
-              ) : (
-                lengthWords(m.start, m.end)
-              )}
-            </span>
-            {(m.who.length > 0 || m.state === 'now') && (
-              <span className="sky-dr-who">
-                {[whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')}
-              </span>
-            )}
-          </div>
+        <Fragment key={`${ymd}-${m.start}-${i}`}>
+          <MeetingRow meeting={m} ymd={ymd} onImportMeeting={onImportMeeting} />
         </Fragment>
       ))}
     </Section>
@@ -332,6 +365,7 @@ export function DayRail({
   imports,
   onOpenThread,
   onOpenImport,
+  onImportMeeting,
   onKept,
   onClose,
 }: {
@@ -344,6 +378,7 @@ export function DayRail({
   imports: ImportJob[]
   onOpenThread: (id: string) => void
   onOpenImport: (id: string) => void
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files the pad kept — the toast's words, and what Undo reverses */
   onKept: (kept: Kept[]) => void
   /** Set when the rail is an overlay that can be dismissed */
@@ -361,7 +396,7 @@ export function DayRail({
         ) : null}
       </div>
       <div className="sky-rail-body">
-        <ScheduleSection schedule={schedule} />
+        <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
         <ChatsSection ymd={ymd} chats={chats} threads={threads} onOpenThread={onOpenThread} />
         <WorkingSection imports={imports} onOpenImport={onOpenImport} />
       </div>

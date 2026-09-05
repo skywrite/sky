@@ -10,8 +10,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import { ContextPanel } from './context.tsx'
 import { type TokenUsage, usageLine } from '#universal/ai/tokenUsage.ts'
+import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'

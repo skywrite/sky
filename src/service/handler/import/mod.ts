@@ -146,7 +146,14 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
   if (kind === 'journal' && !journalType) return 'a journal needs a type'
-  return { kind: kind as StartFields['kind'], when, category, journalType, fresh: b.fresh === true }
+  return {
+    kind: kind as StartFields['kind'],
+    when,
+    ...(b.whenStated === true ? { whenStated: true } : {}),
+    category,
+    journalType,
+    fresh: b.fresh === true,
+  }
 }
 
 export function createImportRoutes(options: ImportRoutesOptions): Hono {

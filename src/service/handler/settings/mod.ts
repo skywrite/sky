@@ -13,8 +13,8 @@
  */
 
 import { Hono } from 'hono'
-import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { ModelProfile } from '#shared/ai/models.ts'
+import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 
 // ── The configuration view (the Advanced pane) ──────────────────────

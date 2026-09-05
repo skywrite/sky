@@ -56,6 +56,16 @@ test('startArgs() — a when the person changed', () => {
   })
 })
 
+test('startArgs() — a selected calendar slot is stated even when it matches the proposal', () => {
+  const start = startArgs(memo, fields({ whenStated: true }), '/tmp/memo.m4a')
+  assert({
+    given: 'a recording dropped on a calendar slot at the proposed time',
+    should: 'keep the selected time over anything the recording says',
+    actual: { when: String(start.args.when), clock: start.args.clock, rawArgs: start.rawArgs },
+    expected: { when: PROPOSED, clock: undefined, rawArgs: { _: [], when: PROPOSED } },
+  })
+})
+
 test('startArgs() — the other doors', () => {
   const journal = startArgs(memo, fields({ kind: 'journal', journalType: 'Mood' }), '/tmp/memo.m4a')
   const note = startArgs(memo, fields({ kind: 'note', when: '2026-01-27 09:30' }), '/tmp/memo.m4a')

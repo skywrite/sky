@@ -68,7 +68,13 @@ export interface ImportJob {
   suggestedWhen: string
   /** What an earlier run of the same file left to pick up, when there is one */
   resume: { step: string; started: string } | null
-  fields: { kind: ImportKind; when: string; category: 'Professional' | 'Personal'; journalType: string | null } | null
+  fields: {
+    kind: ImportKind
+    when: string
+    whenStated?: boolean
+    category: 'Professional' | 'Personal'
+    journalType: string | null
+  } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
   plan: PlanStep[] | null
@@ -342,20 +348,26 @@ function refusedBeforeUpload(file: File): string | null {
   return null
 }
 
-/** Drag-and-drop over a whole page: true while files are held over it. The Files pad handles its own drops. */
+/** A page or meeting row owns its drop; nested meeting rows and the Files pad handle their own. */
 export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) {
   const [dragging, setDragging] = useState(false)
   const depth = useRef(0)
   const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
+  const ownsDrop = (event: DragEvent) => {
+    const target = event.target instanceof Element ? event.target.closest('[data-drop-pad], [data-meeting-drop]') : null
+    return !target || target === event.currentTarget
+  }
   const onDragEnter = (event: DragEvent) => {
     if (!enabled || !hasFiles(event)) return
     event.preventDefault()
     depth.current += 1
-    setDragging(true)
+    setDragging(ownsDrop(event))
   }
   const onDragOver = (event: DragEvent) => {
     if (!enabled || !hasFiles(event)) return
     event.preventDefault()
+    setDragging(ownsDrop(event))
+    if (ownsDrop(event)) event.dataTransfer.dropEffect = 'copy'
   }
   const onDragLeave = (event: DragEvent) => {
     if (!enabled || !hasFiles(event)) return
@@ -367,8 +379,7 @@ export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) 
     event.preventDefault()
     depth.current = 0
     setDragging(false)
-    // A drop on the Files pad is the pad's: it moves the file in on its own.
-    if (event.target instanceof Element && event.target.closest('[data-drop-pad]')) return
+    if (!ownsDrop(event)) return
     const list = event.dataTransfer?.files
     const files: File[] = list ? Array.from(list) : []
     if (files.length > 0) onFiles(files)
@@ -411,9 +422,19 @@ export function DropOverlay() {
 // The confirm: upload, read-back, what and when, Start
 // -----------------------------------------------------------------------------
 
-interface Pending {
-  key: string
+/** A slot the person chose by dropping a transcript or recording onto its row. */
+export interface MeetingImport {
+  title: string
+  when: string
+}
+
+interface QueuedImport {
   file: File
+  meeting: MeetingImport | null
+}
+
+interface Pending extends QueuedImport {
+  key: string
   fraction: number
   job: ImportJob | null
   options: ImportOptions | null
@@ -425,20 +446,31 @@ interface Pending {
  * started (or dropped), then the next comes up.
  */
 export function useImportQueue(onStarted: (job: ImportJob) => void) {
-  const [queue, setQueue] = useState<File[]>([])
+  const [queue, setQueue] = useState<QueuedImport[]>([])
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
-  const take = (files: File[]) => setQueue((q) => [...q, ...files])
+  const take = (files: File[], meeting: MeetingImport | null = null) =>
+    setQueue((q) => [
+      ...q,
+      ...files.map((file) => ({
+        file,
+        meeting:
+          ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
+          file.type.startsWith('audio/')
+            ? meeting
+            : null,
+      })),
+    ])
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [file, ...rest] = queue
+    const [{ file, meeting }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
     const refusal = refusedBeforeUpload(file)
-    setPending({ key, file, fraction: 0, job: null, options: null, error: refusal })
+    setPending({ key, file, meeting, fraction: 0, job: null, options: null, error: refusal })
     if (refusal) return
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
     uploadImport(file, (fraction) => patch((p) => ({ ...p, fraction })))
@@ -585,12 +617,14 @@ function ConfirmBody({
   const feed = useImportFeed(job?.id ?? null)
   const live = feed.job ?? job
   const kinds = live?.readback.kinds ?? []
-  const [touched, setTouched] = useState(false)
+  const meeting = pending?.meeting
+  const whenStated = Boolean(meeting || job?.fields?.whenStated)
+  const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const [fields, setFields] = useState<Fields>({
-    kind: kinds[0] ?? 'meeting',
-    when: live?.suggestedWhen ?? '',
-    category: 'Professional',
-    journalType: options?.journalTypes[0] ?? 'Reflection',
+    kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
+    when: meeting?.when ?? job?.fields?.when ?? live?.suggestedWhen ?? '',
+    category: job?.fields?.category ?? 'Professional',
+    journalType: job?.fields?.journalType ?? options?.journalTypes[0] ?? 'Reflection',
     fresh: false,
   })
   const [starting, setStarting] = useState(false)
@@ -634,6 +668,7 @@ function ConfirmBody({
       await post(`/import/${live.id}/start`, {
         kind: fields.kind,
         when: fields.when.trim(),
+        whenStated,
         category: fields.category,
         journalType: fields.kind === 'journal' ? fields.journalType : undefined,
         fresh: fields.fresh,
@@ -647,7 +682,7 @@ function ConfirmBody({
 
   const fileName = live?.file.name ?? pending?.file.name ?? ''
   const size = live?.file.size ?? pending?.file.size ?? 0
-  const calendar = live?.calendar
+  const calendar = meeting ? null : live?.calendar
 
   return (
     <div className={`sky-confirm${phone ? ' sky-sheet' : ''}`}>
@@ -690,9 +725,14 @@ function ConfirmBody({
               onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
             />
             <span className="sky-when-note">
-              {whenNote(source, fields.when === live.suggestedWhen, whenLabel(live.suggestedWhen, todayYmd))}
+              {whenNote(
+                source,
+                !whenStated && fields.when === live.suggestedWhen,
+                whenLabel(live.suggestedWhen, todayYmd),
+              )}
             </span>
           </div>
+          {meeting && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
           {calendar && (
             <div className="sky-when-cal">
               {calendar.relation === 'matches' ? 'Matches' : 'Just after'} “{calendar.title}” on your calendar

@@ -4,7 +4,7 @@ import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadCo
 import { DayRail } from './dayRail.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
-import { DropOverlay, type ImportJob } from './import.tsx'
+import { DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
 import { useRail } from './rail.ts'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
@@ -668,6 +668,7 @@ export function DayView({
   notes,
   onOpen,
   onOpenImport = () => {},
+  onImportMeeting,
   dragging = false,
   attach,
   kept = [],
@@ -683,6 +684,7 @@ export function DayView({
   notes: Note[]
   onOpen: (id: string) => void
   onOpenImport?: (id: string) => void
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files are held over the page */
   dragging?: boolean
   attach?: ComposerAttach
@@ -923,6 +925,7 @@ export function DayView({
             imports={imports}
             onOpenThread={onOpen}
             onOpenImport={onOpenImport}
+            onImportMeeting={onImportMeeting}
             onKept={onKept}
             onClose={rail.narrow ? rail.close : undefined}
           />

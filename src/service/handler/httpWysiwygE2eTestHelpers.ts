@@ -87,6 +87,7 @@ function startAppServer(app: { fetch: (request: Request) => Response | Promise<R
 function dayHosts(
   notebookBaseDir: string,
   userDataDir: string,
+  imports: Partial<ImportRoutesOptions> = {},
 ): { chat: ChatRoutesOptions; imports: ImportRoutesOptions } {
   return {
     chat: {
@@ -106,6 +107,7 @@ function dayHosts(
       run: async function* () {
         throw new Error('a test never starts an import')
       },
+      ...imports,
     },
   }
 }
@@ -122,6 +124,8 @@ export async function runWysiwygE2e(
     store?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
+    /** Script an import's read-back and run when testing the day import flow */
+    imports?: Partial<ImportRoutesOptions>
   },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,
 ) {
@@ -161,7 +165,7 @@ export async function runWysiwygE2e(
         userDataDir,
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
-        ...(options.day ? dayHosts(notebookBaseDir, userDataDir) : {}),
+        ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
       },
     )
     browser = await launchChromiumOrSkip(t)

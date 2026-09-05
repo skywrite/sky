@@ -45,6 +45,8 @@ export interface StartFields {
   kind: ImportKind
   /** Notebook time, YYYY-MM-DD HH:MM — the date decides the day folder */
   when: string
+  /** Explicitly chosen, including a drop on a calendar slot whose time matches the proposal */
+  whenStated?: boolean
   category: 'Professional' | 'Personal'
   journalType: string | null
   /** Start over: forget the earlier run's record */

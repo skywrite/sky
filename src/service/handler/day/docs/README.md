@@ -54,7 +54,7 @@ one rule for opening it: a third column on a wide window, remembered; an
 overlay from the header's Details button below 1180px). Its body scrolls;
 its foot is anchored.
 
-- **Schedule** — the calendar's meetings for the day, from the same read the
+- **Meetings** — the calendar's meetings for the day, from the same read the
   meeting check makes (`schedule.ts`, `GET /day/:ymd/schedule`). Each row
   stands against the notebook clock: a past meeting says `filed`, linking
   the record the notebook has of it, or `no record`; the one under way is
@@ -63,6 +63,9 @@ its foot is anchored.
   a notebook meeting starting within fifteen minutes of the calendar's
   start. Re-read every minute. A calendar that does not answer reads as
   "Calendar not read", never as an empty day.
+  A timed past meeting marked `no record` takes a transcript or recording
+  drop: the row lights blue and opens the shared import dialog for that
+  slot. See [the import's meeting-slot flow](../../import/docs/README.md#dropping-on-a-meeting).
 - **Chats** — the chats filed under the day, with time and turn count, and
   the live threads that started on it, marked with a dot.
 - **Working** — import jobs in hand: running, waiting for the person, or
