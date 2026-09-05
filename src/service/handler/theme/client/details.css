@@ -172,6 +172,21 @@
   min-width: 0;
 }
 
+/* the whole day's files, as a page, at the foot of the Files section; the section's one row draws no line before it */
+.sky-rail-sec[data-section='files'] > .sky-prop {
+  border-bottom: 0;
+}
+
+.sky-rail-all-files {
+  display: inline-block;
+  margin-top: 6px;
+  text-decoration: none;
+}
+
+.sky-rail-all-files:hover {
+  text-decoration: underline;
+}
+
 /* the dialog behind "choose files…": what is beside the document, and a way in from this Mac */
 .sky-attach-list {
   display: flex;

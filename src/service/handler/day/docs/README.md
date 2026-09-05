@@ -75,8 +75,9 @@ its foot is anchored.
   import is on the day already and leaves the rail; a file sky refused was
   never work and never shows. The sidebar lists neither threads nor
   imports; the rail is where a day's chats and work show.
-- **File Attachments** — the drop pad, anchored at the foot, and nothing
-  else; the day's directory is the explorer's to show.
+- **File Attachments** — the drop pad, anchored at the foot, with the
+  count of what the day keeps in its heading and Browse beside it. The pad
+  lists nothing; Browse opens the day's files as a page (below).
 
 ## The day's files
 
@@ -84,6 +85,37 @@ A day keeps files the way the desktop sweep does: in its attachments
 directory, `attachments/YYYY/MM/DD/` under the user-data directory. The
 directory is the record. Nothing is written into the notebook for a file
 that is only kept, so the day file and notebook git stay as they were.
+
+### The page
+
+`/<ymd>/files` is the directory as a page (`theme/client/dayFiles.tsx`),
+titled by a crumb — `Thursday, September 3, 2026 › File Attachments` —
+and reached from the rail's heading, or from a note's Files section
+("All of the day's files…"). Folders come first, then files, one row each:
+the kind, the name, the note that lists the file in its `attachments:`
+(a link to it), the size. A folder row opens the folder in place and the
+crumb deepens (`… › File Attachments › photos`); a file opens in a new
+tab. The line above the rows says what the page holds — `13 files,
+1 folder · 118 MB`, the folders' bytes counted in. The list re-reads every
+few seconds while the tab shows, so a capture or a sweep lands without a
+reload.
+
+- **The ×** after a name, shown when the pointer rests on the row, sends
+  the file — or the folder, whole — to the Mac's Trash. On a phone the row
+  swipes left instead, the way a day's item does. The row folds, and the
+  toast says `Moved “x” to the Trash` (`Moved “photos” and its 12 files to
+  the Trash` for a folder) and holds Undo for eight seconds; Undo brings
+  it back out of the Trash. There is no confirm: the Trash and Undo are the
+  safety.
+- **Select** turns the rows into checkboxes; `Move 5 to the Trash` sends
+  them one after another, and one toast holds Undo for all of them.
+- **A note that lists a file** keeps its `attachments:` line when the file
+  goes; the note's rail then shows the name without a file behind it.
+  Unlisting from the note is not done here.
+- **Show in Finder**, in the header, opens the folder the page shows in
+  the Finder — the day's own, made on the spot if the day has none yet.
+- The rail's pad is still the way to keep a file; the page keeps nothing
+  and imports nothing, so a drop on it does nothing.
 
 ### What a person sees
 
@@ -103,8 +135,9 @@ that is only kept, so the day file and notebook git stay as they were.
   there and leaves with Remove. A recording over the transcription cap, or
   a screenshot over the vision model's, is refused before it uploads. The
   dialog never keeps; the pad does.
-- **Remove** (`POST …/remove`) sends a file to the Trash; the page offers
-  no button for it since the pad lists nothing.
+- **Remove** (`POST …/remove`) sends a file or a folder to the Trash and
+  answers with a move Undo can quote; the files page is where it is
+  offered.
 - **On the phone** the paperclip is the import's picker; the pad is a desk
   thing, so a phone has no way to keep a file yet.
 
@@ -133,13 +166,19 @@ directory is given.
 
 | Route | Does |
 | --- | --- |
-| `GET` | The list: name, size, modified, kind |
-| `GET /:name` | The bytes, inline, by a clean name only |
+| `GET [?dir=]` | The listing: `{path, label, folders: [{name, files, size, modified}], files: [{name, size, modified, kind, listedBy?}]}` — the day's, or one folder's |
+| `GET /*` | The bytes, inline, by a clean path inside the day's files |
 | `PUT ?name=` | Store uploaded bytes as a copy |
 | `POST /locate` | `{name, size, lastModified}` → `{token, match, ambiguous, already}` |
 | `POST /move` | `{token, path, name}` → moves the located file in |
-| `POST /undo` | `{moveId}` → the file goes back where it came from |
-| `POST /remove` | `{name}` → into the Trash |
+| `POST /undo` | `{moveId}` → the file goes back where it came from — off the desktop, or out of the Trash |
+| `POST /remove` | `{path}` → the file, or the folder whole, into the Trash → `{moveId, folder, files}` |
+| `POST /reveal` | `{path}` → the Finder on the folder, or on the file selected in its folder |
+
+A path inside the day's files is clean segments only (`cleanRelativePath`):
+no way up, nothing hidden. The `listedBy` mark comes from reading the day's
+notes for their `attachments:` (the routes are given the notebook's time
+root for it; without one, nothing is marked).
 
 `files.ts` holds the routes. The look, the move, the undo and the directory
 listing live in `../attachments/keep.ts`, shared with a document's

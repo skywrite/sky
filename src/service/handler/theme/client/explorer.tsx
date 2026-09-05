@@ -42,6 +42,8 @@ export interface ExplorerDoc {
   frontmatter: string
   html: string
   version: number
+  /** The day a document under time/ belongs to, `YYYY-MM-DD` */
+  day?: string
 }
 
 /** The page for a notebook file. */
@@ -690,7 +692,13 @@ export function DocView({ file }: { file: string }) {
         </div>
       </div>
       {file && !missing && railOpen && (editing || doc) ? (
-        <DocumentRail state={frontmatter} file={file} outline={outline} onClose={narrow ? closeRail : undefined} />
+        <DocumentRail
+          state={frontmatter}
+          file={file}
+          day={doc?.day ?? null}
+          outline={outline}
+          onClose={narrow ? closeRail : undefined}
+        />
       ) : null}
     </div>
   )

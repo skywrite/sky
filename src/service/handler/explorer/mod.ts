@@ -10,6 +10,7 @@ import { Hono } from 'hono'
 import { marked } from 'marked'
 import { exists, readDir } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import { readMarkdownContent } from '../markdown-preview/content.ts'
 import {
   isPathWithinRoot,
@@ -47,6 +48,8 @@ export interface ExplorerDoc {
   /** The body rendered to HTML, HTML comments left out */
   html: string
   version: number
+  /** The day a document under time/ belongs to, `YYYY-MM-DD` — whose files are its files */
+  day?: string
 }
 
 type Refusal = { ok: false; status: 400 | 403; message: string }
@@ -118,6 +121,7 @@ async function readDoc(
     const snapshot = await readMarkdownContent(request.value.filePath)
     const { yaml, markdown } = splitYamlMarkdown(snapshot.content)
     const body = markdown.replace(COMMENT, '').trim()
+    const time = parseTimePath(request.value.relativePath)
     return {
       ok: true,
       doc: {
@@ -125,6 +129,7 @@ async function readDoc(
         frontmatter: yaml,
         html: body.length > 0 ? resolveImageSources(await marked.parse(body), request.value.relativePath) : '',
         version: snapshot.version,
+        ...(time?.kind === 'day' ? { day: time.date.toString() } : {}),
       },
     }
   } catch (err) {

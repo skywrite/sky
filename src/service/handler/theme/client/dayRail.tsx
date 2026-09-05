@@ -2,7 +2,7 @@ import { Button, FileButton } from '@mantine/core'
 import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
 import type { DayData, ThreadSummary } from './day.tsx'
 import { fileHref } from './explorer.tsx'
-import { type Kept, moveIn } from './files.tsx'
+import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
 import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
 
 /**
@@ -97,11 +97,14 @@ function Section({
   count,
   children,
   drop,
+  extra,
 }: {
   title: string
   count?: number
   children: ReactNode
   drop?: ReturnType<typeof useFileDrop>
+  /** At the heading's right edge */
+  extra?: ReactNode
 }) {
   return (
     <section
@@ -114,6 +117,7 @@ function Section({
       <h2 className="sky-rail-sec-h">
         <span>{title}</span>
         {count !== undefined && count > 0 ? <span className="sky-rail-count">{count}</span> : null}
+        {extra}
       </h2>
       {children}
     </section>
@@ -291,16 +295,34 @@ function WorkingSection({ imports, onOpenImport }: { imports: ImportJob[]; onOpe
   )
 }
 
+/** How many folders and files the day keeps, for the heading; re-counted after each keep. */
+function useDayFileCount(ymd: string, version: number): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    let alive = true
+    readListing(ymd)
+      .then((listing) => alive && setCount(listing.folders.length + listing.files.length))
+      .catch(() => alive && setCount(0))
+    return () => {
+      alive = false
+    }
+  }, [ymd, version])
+  return count
+}
+
 /**
  * The pad at the foot of the rail: a file dropped or chosen here is kept
  * with the day — the original moves in when this Mac has it, else a copy
  * lands — and the toast says what happened and holds Undo. The pad lists
- * nothing: the day's directory is the explorer's to show.
+ * nothing; the heading counts what the day keeps, and Browse opens the
+ * day's files as a page.
  */
 function AttachmentsPad({ ymd, onKept }: { ymd: string; onKept: (kept: Kept[]) => void }) {
   const [over, setOver] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  const [kept, setKeptCount] = useState(0)
+  const count = useDayFileCount(ymd, kept)
   const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
   const keep = async (files: File[]) => {
     if (files.length === 0 || busy) return
@@ -318,7 +340,10 @@ function AttachmentsPad({ ymd, onKept }: { ymd: string; onKept: (kept: Kept[]) =
     } finally {
       setBusy(null)
     }
-    if (kept.length > 0) onKept(kept)
+    if (kept.length > 0) {
+      onKept(kept)
+      setKeptCount((n) => n + 1)
+    }
   }
   const drop = (event: DragEvent) => {
     if (!hasFiles(event)) return
@@ -328,7 +353,15 @@ function AttachmentsPad({ ymd, onKept }: { ymd: string; onKept: (kept: Kept[]) =
   }
   return (
     <div className="sky-rail-foot">
-      <Section title="File Attachments">
+      <Section
+        title="File Attachments"
+        count={count}
+        extra={
+          <a className="sky-rail-browse" href={filesHref(ymd)}>
+            Browse
+          </a>
+        }
+      >
         <div
           className="sky-rail-pad sky-dr-pad"
           data-drop-pad=""

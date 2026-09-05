@@ -141,7 +141,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         markdownBaseDir,
         timeDir: chat.timeDir,
         aboutMePath: chat.aboutMePath,
-        files: { userDataDir },
+        files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir },
         schedule: createDayScheduleHost({ timeDir: chat.timeDir, markdownBaseDir }),
       }),
     )
@@ -567,6 +567,14 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // A day's page is its date — /2026-08-27. Its data lives under /day/….
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // The day's files as a page — /2026-08-27/files, or a folder inside them. Its data lives under /day/:ymd/files.
+  app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/files', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/files/*', (c) => {
     return c.html(renderAppHtml('sky'))
   })
 

@@ -16,8 +16,56 @@ export { sizeLabel } from './keep.ts'
 // What the service says
 // -----------------------------------------------------------------------------
 
-/** A file in the day's directory, as the service lists it. */
-export type DayFile = ListedFile
+/** A folder in the day's directory, as the service lists it. */
+export interface DayFolder {
+  name: string
+  /** The files inside, all the way down */
+  files: number
+  /** Their bytes together */
+  size: number
+  modified: string
+}
+
+/** The note that lists a file in its `attachments:` */
+export interface ListedBy {
+  path: string
+  title: string
+}
+
+/** A file in the day's directory, as the service lists it — with the note that lists it, when one does. */
+export type DayFile = ListedFile & { listedBy?: ListedBy }
+
+/** The day's files, or one folder inside them, as the service lists them. */
+export interface DayListing {
+  /** The folder inside the day's files, '' for the day itself */
+  path: string
+  /** The day, as its page titles it */
+  label: string
+  folders: DayFolder[]
+  files: DayFile[]
+}
+
+const encodePath = (rel: string) => rel.split('/').map(encodeURIComponent).join('/')
+
+/** The page for a day's files, or a folder inside them (dayFiles.tsx). */
+export function filesHref(ymd: string, folder = ''): string {
+  return folder ? `/${ymd}/files/${encodePath(folder)}` : `/${ymd}/files`
+}
+
+/** The file itself, as the day serves it: inline where the browser shows the kind, a download otherwise. */
+export function dayFileHref(ymd: string, rel: string): string {
+  return `/day/${ymd}/files/${encodePath(rel)}`
+}
+
+/** The day's files, or a folder's; throws with the service's message, `not there` for a folder that is not. */
+export async function readListing(ymd: string, folder = ''): Promise<DayListing> {
+  const query = folder ? `?dir=${encodeURIComponent(folder)}` : ''
+  const r = await fetch(`/day/${ymd}/files${query}`)
+  const body = (await r.json().catch(() => ({}))) as DayListing & { message?: string }
+  if (r.status === 404) throw new Error('not there')
+  if (!r.ok) throw new Error(body.message ?? `${r.status}`)
+  return body
+}
 
 /** What keeping did — the toast's words, and what Undo reverses. */
 export interface Kept {

@@ -196,3 +196,19 @@
 .sky-dr-item[data-branch] .sky-dr-label {
   padding-left: 14px;
 }
+
+/* Browse, at the File Attachments heading's right edge: a link in the page's type, not the heading's */
+.sky-rail-sec-h .sky-rail-browse {
+  margin-left: auto;
+  font-family: var(--mantine-font-family);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+
+.sky-rail-sec-h .sky-rail-browse:hover {
+  text-decoration: underline;
+}

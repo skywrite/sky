@@ -95,11 +95,14 @@ function Section({
 export function DocumentRail({
   state,
   file,
+  day,
   outline,
   onClose,
 }: {
   state: FrontmatterState
   file: string
+  /** The day a document under time/ belongs to, when it does */
+  day?: string | null
   outline: OutlineItem[]
   /** Set when the rail is an overlay that can be dismissed */
   onClose?: () => void
@@ -181,9 +184,10 @@ export function DocumentRail({
           ) : null}
         </Section>
       ) : null}
-      {files.length > 0 || canAttach ? (
+      {files.length > 0 || canAttach || day ? (
         <Section title="Files" count={chipCount(files) || undefined}>
           {files.map(row)}
+          {files.length === 0 && !canAttach ? <p className="sky-rail-empty">No files yet.</p> : null}
           {canAttach ? (
             <AttachFiles
               file={file}
@@ -191,6 +195,12 @@ export function DocumentRail({
               onAdd={(name) => state.update((body) => addAttachment(body, name))}
               onRemove={(name) => state.update((body) => removeAttachment(body, name))}
             />
+          ) : null}
+          {/* A note of a day: the day's files, all of them, as a page. */}
+          {day ? (
+            <a className="sky-rail-more sky-rail-all-files" href={`/${day}/files`}>
+              All of the day’s files…
+            </a>
           ) : null}
         </Section>
       ) : null}

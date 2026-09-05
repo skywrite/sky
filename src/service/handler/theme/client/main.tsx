@@ -8,6 +8,7 @@ import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } 
 import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
+import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
@@ -62,6 +63,8 @@ function Canvas() {
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
   const importId = path.match(/^\/import\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
+  // /<ymd>/files is the day's files, /<ymd>/files/<folder> a folder inside them.
+  const filesRoute = filesRouteOf(path)
   const isVoice = path === '/voice'
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
@@ -102,6 +105,7 @@ function Canvas() {
     !isClock &&
     !isAutomations &&
     !isWeek &&
+    filesRoute === null &&
     explorerFile === null
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
@@ -131,7 +135,8 @@ function Canvas() {
     const anchor = (event.target as Element).closest('a')
     if (!anchor?.href) return
     const url = new URL(anchor.href)
-    if (url.origin !== location.origin || !url.pathname.startsWith('/explorer/')) return
+    if (url.origin !== location.origin) return
+    if (!url.pathname.startsWith('/explorer/') && filesRouteOf(url.pathname) === null) return
     event.preventDefault()
     navigate(url.pathname)
   }
@@ -290,6 +295,8 @@ function Canvas() {
 
       {explorerFile !== null ? (
         <DocView file={explorerFile} />
+      ) : filesRoute ? (
+        <DayFilesMain ymd={filesRoute.ymd} folder={filesRoute.folder} go={navigate} />
       ) : isWeek ? (
         <WeekMain
           id={weekId}

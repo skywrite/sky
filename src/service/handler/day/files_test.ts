@@ -1,9 +1,11 @@
 import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists, makeTempDir } from '#shared/fs/mod.ts'
+import { dayDir } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { kindOf, listFiles, type LocateAnswer, placeFile } from '../attachments/keep.ts'
-import { createDayFilesRoutes } from './files.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { cleanRelativePath, kindOf, listFiles, type LocateAnswer, placeFile } from '../attachments/keep.ts'
+import { createDayFilesRoutes, type DayListing, noteTitle } from './files.ts'
 
 const YMD = '2026-03-05'
 const MODIFIED = new Date('2026-03-05T14:22:31.575Z')
@@ -14,6 +16,11 @@ interface World {
   downloads: string
   trash: string
   dayDir: string
+  /** The notebook root, and the day's directory of notes under its time root */
+  notebook: string
+  notesDir: string
+  /** What the Finder was asked to show: the path, and whether a file or a folder */
+  revealed: Array<[string, string]>
   app: ReturnType<typeof createDayFilesRoutes>
 }
 
@@ -23,15 +30,41 @@ async function world(): Promise<World> {
   const desktop = path.join(root, 'Desktop')
   const downloads = path.join(root, 'Downloads')
   const trash = path.join(root, 'Trash')
-  await Promise.all([mkdir(userData, { recursive: true }), mkdir(desktop), mkdir(downloads)])
+  const notebook = path.join(root, 'notebook')
+  const timeDir = path.join(notebook, 'time')
+  await Promise.all([
+    mkdir(userData, { recursive: true }),
+    mkdir(desktop),
+    mkdir(downloads),
+    mkdir(timeDir, { recursive: true }),
+  ])
+  const revealed: Array<[string, string]> = []
   const app = createDayFilesRoutes({
     userDataDir: userData,
+    timeDir,
+    markdownBaseDir: notebook,
     searchDirs: [desktop, downloads],
     spotlight: false,
     trashDir: trash,
+    reveal: async (target, kind) => {
+      revealed.push([target, kind])
+    },
   })
-  return { userData, desktop, downloads, trash, dayDir: path.join(userData, 'attachments', '2026', '03', '05'), app }
+  return {
+    userData,
+    desktop,
+    downloads,
+    trash,
+    dayDir: path.join(userData, 'attachments', '2026', '03', '05'),
+    notebook,
+    notesDir: path.join(timeDir, dayDir(new PlainDate(YMD))),
+    revealed,
+    app,
+  }
 }
+
+const listing = async (w: World, dir = ''): Promise<DayListing> =>
+  (await (await w.app.request(`/${YMD}/files${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`)).json()) as DayListing
 
 /** A file as a person dropped it: bytes on disk, stamped with the fixed modified time. */
 async function fileOn(dir: string, name: string, bytes: string): Promise<string> {
@@ -56,7 +89,12 @@ test({ name: 'day files - the list is the directory, empty until something lands
   await fileOn(w.dayDir, 'report.pdf', 'twelve bytes')
   await fileOn(w.dayDir, '.DS_Store', 'noise')
   const listed = (await (await w.app.request(`/${YMD}/files`)).json()) as { files: Array<Record<string, unknown>> }
-  assert({ given: 'a day with no files yet', should: 'answer an empty list', actual: empty, expected: { files: [] } })
+  assert({
+    given: 'a day with no files yet',
+    should: "answer an empty list under the day's label",
+    actual: empty,
+    expected: { path: '', label: 'Thursday, March 5, 2026', folders: [], files: [] },
+  })
   assert({
     given: 'a PDF in the day directory beside a hidden file',
     should: 'list the PDF with its size and kind, and skip the hidden file',
@@ -297,3 +335,178 @@ test({ name: 'day files - listFiles sorts by name' }, async () => {
     expected: ['a.txt', 'b.txt'],
   })
 })
+
+test({ name: 'day files - folders list first with their files counted, and a folder lists its own' }, async () => {
+  const w = await world()
+  await mkdir(path.join(w.dayDir, 'photos', 'raw'), { recursive: true })
+  await fileOn(w.dayDir, 'report.pdf', 'twelve bytes')
+  await fileOn(path.join(w.dayDir, 'photos'), 'a.jpg', 'aa')
+  await fileOn(path.join(w.dayDir, 'photos'), '.DS_Store', 'noise')
+  await fileOn(path.join(w.dayDir, 'photos', 'raw'), 'b.heic', 'bbb')
+  const day = await listing(w)
+  assert({
+    given: 'a folder with a file, a hidden file and a folder inside, beside a PDF',
+    should: 'list the folder with two files counted, and the PDF',
+    actual: [day.folders.map((f) => [f.name, f.files]), day.files.map((f) => f.name)],
+    expected: [[['photos', 2]], ['report.pdf']],
+  })
+  const inside = await listing(w, 'photos')
+  assert({
+    given: 'the folder asked for',
+    should: 'list what is directly inside it, under its path',
+    actual: [inside.path, inside.folders.map((f) => [f.name, f.files]), inside.files.map((f) => [f.name, f.kind])],
+    expected: ['photos', [['raw', 1]], [['a.jpg', 'image']]],
+  })
+  const up = await w.app.request(`/${YMD}/files?dir=..`)
+  const notThere = await w.app.request(`/${YMD}/files?dir=videos`)
+  const aFile = await w.app.request(`/${YMD}/files?dir=report.pdf`)
+  assert({
+    given: 'a way up, a folder that is not there, and a file named as a folder',
+    should: 'refuse the first and miss the other two',
+    actual: [up.status, notThere.status, aFile.status],
+    expected: [400, 404, 404],
+  })
+})
+
+test({ name: 'day files - a file inside a folder is served by its path' }, async () => {
+  const w = await world()
+  await mkdir(path.join(w.dayDir, 'photos'), { recursive: true })
+  await fileOn(path.join(w.dayDir, 'photos'), 'a.jpg', 'aa')
+  const served = await w.app.request(`/${YMD}/files/photos/a.jpg`)
+  const folder = await w.app.request(`/${YMD}/files/photos`)
+  const missing = await w.app.request(`/${YMD}/files/photos/b.jpg`)
+  assert({
+    given: 'the file by its path inside the folder, the folder itself, and a file that is not there',
+    should: 'serve the file as an image, and miss the other two',
+    actual: [served.status, served.headers.get('content-type'), await served.text(), folder.status, missing.status],
+    expected: [200, 'image/jpeg', 'aa', 404, 404],
+  })
+})
+
+test({ name: 'day files - a folder goes to the Trash whole, and undo brings it back' }, async () => {
+  const w = await world()
+  await mkdir(path.join(w.dayDir, 'photos', 'raw'), { recursive: true })
+  await fileOn(path.join(w.dayDir, 'photos'), 'a.jpg', 'aa')
+  await fileOn(path.join(w.dayDir, 'photos', 'raw'), 'b.heic', 'bbb')
+  const removed = await w.app.request(`/${YMD}/files/remove`, json({ path: 'photos' }))
+  const answer = (await removed.json()) as { moveId: string; folder: boolean; files: number }
+  assert({
+    given: 'remove for the folder',
+    should: 'move it into the Trash with everything inside, counting its files',
+    actual: [
+      removed.status,
+      answer.folder,
+      answer.files,
+      await exists(path.join(w.dayDir, 'photos')),
+      await exists(path.join(w.trash, 'photos', 'raw', 'b.heic')),
+    ],
+    expected: [200, true, 2, false, true],
+  })
+  const undone = await w.app.request(`/${YMD}/files/undo`, json({ moveId: answer.moveId }))
+  assert({
+    given: 'undo with the move the answer named',
+    should: 'put the folder back where it was',
+    actual: [
+      undone.status,
+      await exists(path.join(w.dayDir, 'photos', 'raw', 'b.heic')),
+      await exists(path.join(w.trash, 'photos')),
+    ],
+    expected: [200, true, false],
+  })
+  const nested = await w.app.request(`/${YMD}/files/remove`, json({ path: 'photos/a.jpg' }))
+  const up = await w.app.request(`/${YMD}/files/remove`, json({ path: '../a.jpg' }))
+  assert({
+    given: 'remove for a file inside the folder, and for a way up',
+    should: 'trash the one and refuse the other',
+    actual: [nested.status, await exists(path.join(w.trash, 'a.jpg')), up.status],
+    expected: [200, true, 400],
+  })
+})
+
+test({ name: 'day files - a file a note lists carries the note' }, async () => {
+  const w = await world()
+  await mkdir(w.dayDir, { recursive: true })
+  await mkdir(w.notesDir, { recursive: true })
+  await fileOn(w.dayDir, 'report.pdf', 'twelve bytes')
+  await fileOn(w.dayDir, 'loose.png', 'png')
+  await writeFile(
+    path.join(w.notesDir, 'meeting_Jane-Doe_Budget.md'),
+    '---\nkind: meeting\nattachments:\n  - file: report.pdf\n---\n\n# Budget review\n\nNotes.\n',
+  )
+  const day = await listing(w)
+  assert({
+    given: 'a note in the day listing the PDF, beside a file no note lists',
+    should: 'mark the PDF with the note and its heading, and leave the other unmarked',
+    actual: day.files.map((f) => [f.name, f.listedBy]),
+    expected: [
+      ['loose.png', undefined],
+      [
+        'report.pdf',
+        { path: path.join('time', dayDir(new PlainDate(YMD)), 'meeting_Jane-Doe_Budget.md'), title: 'Budget review' },
+      ],
+    ],
+  })
+})
+
+test({ name: 'day files - a note is called by its title, its heading, or its name as words' }, () => {
+  assert({
+    given: 'front matter with a title, a body with a heading, and neither',
+    should: 'pick them in that order',
+    actual: [
+      noteTitle({ title: ' Audit ' }, '# Other', 'x.md'),
+      noteTitle({}, '---\nkind: note\n---\n\n# Budget review\n', 'x.md'),
+      noteTitle({}, 'just text', '/notes/meeting_Jane-Doe_Budget-Talk.md'),
+    ],
+    expected: ['Audit', 'Budget review', 'meeting · Jane Doe · Budget Talk'],
+  })
+})
+
+test({ name: 'day files - a path inside the day is clean segments only' }, () => {
+  assert({
+    given: 'a folder path, a nested file, the day itself, and ways out',
+    should: 'keep the clean ones and refuse the rest',
+    actual: ['photos', 'photos/a.jpg', '', '/photos/', '../x', 'a//b', '.hidden/x', 'photos/..', 42].map(
+      cleanRelativePath,
+    ),
+    expected: ['photos', 'photos/a.jpg', '', 'photos', null, null, null, null, null],
+  })
+})
+
+test(
+  { name: "day files - Show in Finder opens the folder, or selects the file, and makes the day's folder if it must" },
+  async () => {
+    const w = await world()
+    await mkdir(path.join(w.dayDir, 'photos'), { recursive: true })
+    await fileOn(path.join(w.dayDir, 'photos'), 'a.jpg', 'aa')
+    const root = await w.app.request(`/${YMD}/files/reveal`, json({ path: '' }))
+    const folder = await w.app.request(`/${YMD}/files/reveal`, json({ path: 'photos' }))
+    const file = await w.app.request(`/${YMD}/files/reveal`, json({ path: 'photos/a.jpg' }))
+    const missing = await w.app.request(`/${YMD}/files/reveal`, json({ path: 'videos' }))
+    const up = await w.app.request(`/${YMD}/files/reveal`, json({ path: '../x' }))
+    assert({
+      given: 'reveal for the day, a folder, a file, a folder that is not there, and a way up',
+      should: 'open the first two as folders and the file selected, and refuse the last two',
+      actual: [root.status, folder.status, file.status, missing.status, up.status, w.revealed],
+      expected: [
+        200,
+        200,
+        200,
+        404,
+        400,
+        [
+          [w.dayDir, 'folder'],
+          [path.join(w.dayDir, 'photos'), 'folder'],
+          [path.join(w.dayDir, 'photos', 'a.jpg'), 'file'],
+        ],
+      ],
+    })
+    const fresh = await world()
+    await fresh.app.request(`/${YMD}/files/reveal`, json({ path: '' }))
+    assert({
+      given: 'reveal for a day with no folder yet',
+      should: 'make the folder and open it',
+      actual: [await exists(fresh.dayDir), fresh.revealed],
+      expected: [true, [[fresh.dayDir, 'folder']]],
+    })
+  },
+)
