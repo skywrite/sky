@@ -1,7 +1,7 @@
 ---
 status: shipped
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 # Fable 5.1 joins the catalog; reasoning stays on Opus 5
@@ -12,6 +12,10 @@ updated: 2026-09-01
 thinking: the same shape as `default-fable-5`. Addressable everywhere a
 profile name goes (`ai:chat --reasoning`, `summary:* --model`, the settings
 pane). No role was repointed and `default-fable-5` stays.
+
+`default-fable-5.1-high` (added 2026-09-02) is the same model at effort
+`high`, the API's default depth. It is for work that does not repay
+`xhigh`'s longer turns; no role points at it either.
 
 `summary:day`, `summary:week` and `week:checkin` keep their own
 `default-fable-5` default; moving them is a separate call.
