@@ -692,14 +692,6 @@
   position: relative;
 }
 
-.sky-thread .sky-meta[data-state='needs-you'] {
-  color: var(--sky-amber);
-}
-
-.sky-thread .sky-meta[data-state='failed'] {
-  color: var(--mantine-color-red-7);
-}
-
 .sky-confirm-resume {
   font-size: 16px;
   color: var(--sky-dim);

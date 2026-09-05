@@ -487,7 +487,6 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   })
 
   // The app shell (Mantine on the sky theme; client bundled by Bun at first request).
-  // `/` is the blank canvas being wired up; `/theme` is the living reference mock.
   app.get('/', (c) => {
     return c.html(renderAppHtml('sky'))
   })
@@ -549,10 +548,6 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // A day's page is its date — /2026-08-27. Its data lives under /day/….
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}', (c) => {
     return c.html(renderAppHtml('sky'))
-  })
-
-  app.get('/theme', (c) => {
-    return c.html(renderAppHtml('sky · theme'))
   })
 
   app.get('/_assets/:name', async (c) => {

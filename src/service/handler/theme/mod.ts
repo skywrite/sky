@@ -5,7 +5,7 @@ import dirnameFilename from '#lib/util/dirnameFilename.ts'
 const { __dirname } = dirnameFilename(import.meta.url)
 
 /**
- * The /theme page — the living style guide.
+ * The web app's client bundle and its shell HTML.
  *
  * The client (React + Mantine) is bundled by Bun itself on first request and
  * served from memory: no build step, no artifacts. The client sources under

@@ -3,7 +3,7 @@ import { createTheme } from '@mantine/core'
 /**
  * The sky theme — the v4.5 design contract as a Mantine theme.
  *
- * Scale: the /theme HTML sets `html { font-size: 112.5% }` (18px base), which
+ * Scale: the app HTML sets `html { font-size: 112.5% }` (18px base), which
  * grows every rem-based Mantine size uniformly. Do NOT set `theme.scale` to
  * compensate — bigger elements are the point.
  *

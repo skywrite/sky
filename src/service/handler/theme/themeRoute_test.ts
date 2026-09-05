@@ -15,33 +15,35 @@ async function withApp<T>(run: (app: ReturnType<typeof createTestHttpApp>) => Pr
   }
 }
 
-test({ name: 'theme route - serves the style guide shell' }, async () => {
+test({ name: 'app shell - serves the client at /' }, async () => {
   await withApp(async (app) => {
-    const response = await app.request('http://localhost/theme')
+    const response = await app.request('http://localhost/')
     const html = await response.text()
 
     assert({
-      given: 'a request for /theme',
+      given: 'a request for /',
       should: 'return 200',
       actual: response.status,
       expected: 200,
     })
 
     assert({
-      given: 'the /theme shell',
-      should: 'mount the client app and load its assets',
-      actual: html.includes('id="root"') && html.includes('/_assets/main.js') && html.includes('/_assets/main.css'),
+      given: 'the app shell',
+      should: 'mount the client app, load its assets, and carry the app title',
+      actual:
+        html.includes('id="root"') &&
+        html.includes('/_assets/main.js') &&
+        html.includes('/_assets/main.css') &&
+        html.includes('<title>sky</title>'),
       expected: true,
     })
 
-    const canvas = await app.request('http://localhost/')
-    const canvasHtml = await canvas.text()
-
+    const retired = await app.request('http://localhost/theme')
     assert({
-      given: 'the blank canvas at /',
-      should: 'serve the same client shell',
-      actual: canvas.status === 200 && canvasHtml.includes('id="root"') && canvasHtml.includes('<title>sky</title>'),
-      expected: true,
+      given: 'the retired /theme path',
+      should: 'return 404',
+      actual: retired.status,
+      expected: 404,
     })
   })
 })

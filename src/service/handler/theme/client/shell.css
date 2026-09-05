@@ -242,13 +242,6 @@ body {
   margin-bottom: 0;
 }
 
-.sky-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
-
 /* ============ blocks ============ */
 .sky-block {
   border-radius: 18px;
@@ -286,102 +279,7 @@ body {
   padding: 16px 28px 24px;
 }
 
-.sky-q {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0 0 9px;
-  max-width: 72ch;
-}
-
-.sky-quote {
-  font-size: 18px;
-  color: var(--sky-text-2);
-  border-left: 3px solid var(--sky-border-soft);
-  padding-left: 14px;
-  margin: 0 0 18px;
-  max-width: 72ch;
-}
-
-.sky-jfoot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.sky-progress {
-  font-size: 15px;
-  color: var(--sky-dim);
-  margin-left: auto;
-}
-
-/* ============ brief rows ============ */
-.sky-need {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--sky-border-soft);
-  font-size: 18px;
-}
-
-.sky-need:last-child {
-  border-bottom: none;
-}
-
-.sky-need-n {
-  color: var(--sky-dim);
-  font-size: 15px;
-  width: 18px;
-  flex: none;
-}
-
-.sky-need-txt {
-  flex: 1;
-  min-width: 0;
-}
-
-.sky-need-sub {
-  display: block;
-  font-size: 15px;
-  color: var(--sky-dim);
-  margin-top: 2px;
-}
-
-.sky-need-btns {
-  display: flex;
-  gap: 8px;
-  flex: none;
-}
-
-.sky-need[data-approved='true'] .sky-need-txt {
-  color: var(--sky-dim);
-}
-
-.sky-sent {
-  font-size: 15px;
-  color: var(--sky-green);
-  font-weight: 550;
-}
-
 /* ============ checklist ============ */
-.sky-todo {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 9px 0;
-  font-size: 18px;
-}
-
-.sky-todo-label {
-  flex: 1;
-}
-
-.sky-todo[data-done='true'] .sky-todo-label {
-  color: var(--sky-dim);
-  text-decoration: line-through;
-}
-
 .sky-tag {
   margin-left: auto;
   font-size: 14px;
@@ -389,28 +287,7 @@ body {
   font-family: var(--mantine-font-family-monospace);
 }
 
-.sky-week {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0 2px;
-  font-size: 15.5px;
-  color: var(--sky-dim);
-  cursor: pointer;
-}
-
-.sky-week:hover {
-  color: var(--sky-text-2);
-}
-
 /* ============ chips ============ */
-.sky-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 11px;
-}
-
 .sky-chip {
   font-size: 14.5px;
   padding: 5px 13px;
@@ -552,17 +429,6 @@ body {
 }
 
 /* ============ the record ============ */
-.sky-record {
-  padding: 12px 4px;
-}
-
-.sky-rec-date {
-  margin: 0 0 20px;
-  font-size: 30px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
 .sky-rec-label {
   font-size: 13.5px;
   font-weight: 600;
@@ -580,15 +446,6 @@ body {
   font-size: 18px;
 }
 
-.sky-rec-at {
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 14px;
-  color: var(--sky-dim);
-  width: 56px;
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-
 /* a range (`11:00 - 11:45`) needs more room than a stamp */
 .sky-rec-when {
   width: 120px;
@@ -599,14 +456,12 @@ body {
   min-width: 0;
 }
 
-.sky-rec-txt a,
-.sky-todo-label a {
+.sky-rec-txt a {
   color: inherit;
   text-decoration: none;
 }
 
-.sky-rec-txt a:hover,
-.sky-todo-label a:hover {
+.sky-rec-txt a:hover {
   text-decoration: underline;
 }
 
@@ -814,19 +669,6 @@ a.sky-thread {
 .sky-thread[data-empty='true'] {
   color: var(--sky-dim);
   cursor: default;
-}
-
-.sky-thread .sky-meta[data-state='streaming'],
-.sky-thread .sky-meta[data-state='thinking'] {
-  color: var(--sky-blue-deep);
-}
-
-.sky-thread .sky-meta[data-state='failed'] {
-  color: var(--mantine-color-red-7);
-}
-
-.sky-thread .sky-meta[data-state='done'] {
-  color: var(--sky-green);
 }
 
 .sky-run {
@@ -3238,10 +3080,6 @@ a.sky-thread {
   display: flex;
   gap: 10px;
   margin-top: 4px;
-}
-
-.sky-thread .sky-meta[data-state='waiting'] {
-  color: var(--sky-blue-deep);
 }
 
 .sky-ask-view {
