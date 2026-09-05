@@ -21,6 +21,8 @@ import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
+import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { callSubject } from './callSubject.ts'
@@ -210,6 +212,7 @@ interface Thread {
   saves: boolean
   /** Each reply's token counts and the profile that answered, by the reply's turn index */
   usage: Map<number, TokenUsage & { model: string }>
+  timings: Map<number, string>
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -365,7 +368,7 @@ function wireEvent(event: WireEvent): unknown {
 /** The turn report without its context rebuild, which already went out as its own frame. */
 function wireTurn(turn: TurnReport): unknown {
   const { context, ...rest } = turn
-  return { ...rest, context: { errors: context.errors } }
+  return { ...rest, timingText: turn.timing ? timingLine(turn.timing) : undefined, context: { errors: context.errors } }
 }
 
 /** A turn's stream says something at least this often, so the page can tell a thinking model from a dead connection. */
@@ -450,6 +453,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             answered: [],
             runs: [],
             usage: new Map(),
+            timings: new Map(),
             // Kept unless told otherwise before the first message.
             saves: prefs.saves ?? true,
             state: 'new',
@@ -511,8 +515,21 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const message = typeof body?.message === 'string' ? body.message.trim() : ''
     if (!message) return c.json({ message: 'message is required' }, 400)
 
-    const thread = await open(id)
-    if (thread.busy) return c.json({ message: 'a turn is already running on this thread' }, 409)
+    // Start at acceptance of a valid prompt, before thread construction or initial context.
+    const timing = new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
+    let thread: Thread
+    try {
+      thread = await timing.run(async () => {
+        return open(id)
+      })
+      if (thread.busy) {
+        timing.finish('fail')
+        return c.json({ message: 'a turn is already running on this thread' }, 409)
+      }
+    } catch (error) {
+      timing.finish(thrownOutcome(error))
+      throw error
+    }
     thread.busy = true
     // The baseline gather before the first event is a read too.
     thread.state = 'reading'
@@ -536,17 +553,20 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         // is a lost connection, however the socket looks from the browser.
         const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
         try {
-          if (!thread.started) {
-            await thread.session.start()
-            thread.started = true
-            frame('session-started', {
-              documents: thread.session.paths.length,
-              closed: thread.session.contextTokens === 0,
-            })
-          }
-          // The chat's own model calls record under the chat's name; a tool's under its own.
-          const turn = await runWithUsageSource('ai:chat', () => thread.session.send(message))
+          const turn = await timing.run(async () => {
+            if (!thread.started) {
+              await thread.session.start()
+              thread.started = true
+              frame('session-started', {
+                documents: thread.session.paths.length,
+                closed: thread.session.contextTokens === 0,
+              })
+            }
+            // The first reply includes the initial context gathering in its timing.
+            return runWithUsageSource('ai:chat', () => thread.session.send(message))
+          })
           if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
+          if (turn.timing && !turn.error) thread.timings.set(thread.session.turns.length - 1, timingLine(turn.timing))
           clearInterval(beat)
           if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
@@ -556,7 +576,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.updatedAt = ++tick
           frame('turn', { ...(wireTurn(turn) as object), model: thread.profile })
           await chain
+        } catch (error) {
+          timing.finish(thrownOutcome(error))
+          throw error
         } finally {
+          timing.finish('incomplete')
           clearInterval(beat)
           thread.sink = null
           thread.busy = false
@@ -594,6 +618,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       answered: thread.answered,
       runs: thread.runs,
       usage: [...thread.usage].map(([at, usage]) => ({ at, ...usage })),
+      timings: [...thread.timings].map(([at, text]) => ({ at, text })),
     })
   })
 

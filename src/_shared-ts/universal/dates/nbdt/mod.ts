@@ -1,6 +1,8 @@
 // Notebook Date Time (nbdt) module
 // Domain-specific date/time handling for the Notebook system
 
+export { instantNow } from './instantNow.ts'
+
 export { default as PlainDateTime } from './PlainDateTime/mod.ts'
 export type { PlainDateTimeConstructorOptions } from './PlainDateTime/mod.ts'
 

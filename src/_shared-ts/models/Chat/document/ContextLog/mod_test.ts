@@ -1,5 +1,7 @@
 import * as path from 'node:path'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { TimingSpan, withTimingEnvironment } from '#shared/timing/mod.ts'
+import { timingDetail } from '#shared/timing/summary.ts'
 import { assert, test } from '#test'
 import { type ContextTurnLog, serializeContextLog, splitContextLog } from './mod.ts'
 
@@ -7,6 +9,32 @@ import { type ContextTurnLog, serializeContextLog, splitContextLog } from './mod
 // document-level tests share stay one directory up.
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 const DOC_FIXTURES_DIR = path.join(import.meta.dirname!, '..', 'fixtures')
+
+test('contextLog - timing is an optional v2 field and round-trips beside older entries', () => {
+  withTimingEnvironment({ now: () => 0, instant: () => '2026-01-27T15:31:00.125Z', sink: () => {} }, () => {
+    const span = new TimingSpan({ kind: 'turn', name: 'ai:chat' })
+    const tool = span.run(() => new TimingSpan({ kind: 'tool', name: 'mock-->lookup' }))
+    tool.finish()
+    span.finish()
+    const entries: ContextTurnLog[] = [
+      { turn: 1, queries: [] },
+      { turn: 2, queries: [], timing: timingDetail(span) },
+    ]
+    const markdown = 'A mock transcript.\n' + serializeContextLog(entries)
+    const parsed = splitContextLog(markdown)
+    assert({
+      given: 'an old untimed turn followed by a timed turn whose metadata contains a comment terminator',
+      should: 'retain both entries and the exact serialized bytes within version 2',
+      actual: {
+        entries: parsed.entries,
+        roundTrip: parsed.body + serializeContextLog(parsed.entries) === markdown,
+        version: markdown.includes('"version": 2'),
+        escaped: !markdown.includes('mock-->lookup'),
+      },
+      expected: { entries, roundTrip: true, version: true, escaped: true },
+    })
+  })
+})
 
 async function readFixture(name: string, dir = FIXTURES_DIR): Promise<string> {
   return await readTextFile(path.join(dir, name))

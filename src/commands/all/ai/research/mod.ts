@@ -23,6 +23,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { timingLine, type TimingSummary } from '#shared/timing/summary.ts'
 import { createResearchTools, type ResearchTrace } from './lib/tools.ts'
 
 // -----------------------------------------------------------------------------
@@ -40,6 +41,7 @@ const params = {
 type Params = InferParams<typeof params>
 
 interface Result {
+  timing?: TimingSummary
   /** The findings report — the answer, key facts with inline paths, and a coverage line. */
   digest: string
   /** Notebook-relative paths of every document the run surfaced to the model. */
@@ -140,7 +142,8 @@ export default class AiResearchTask extends Command {
         output.log(colors.dim(`Sources (${sources.length}):`))
         for (const s of sources) output.log(colors.dim(`  ${s}`))
       }
-      return CommandResult.success({ digest, sources })
+      if (result.timing) output.log(colors.dim(`Timing: ${timingLine(result.timing)}`))
+      return CommandResult.success({ digest, sources, timing: result.timing })
     } catch (err) {
       const message = (err as Error).message ?? String(err)
       await logAIError({ source: 'ai:research', stage: 'turn', message, question })

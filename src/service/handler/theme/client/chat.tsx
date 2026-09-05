@@ -48,6 +48,7 @@ export interface Turn {
   note?: string
   /** What the reply cost, in tokens, every step summed */
   usage?: TokenUsage
+  timing?: string
   /** The profile that answered, as the settings name it */
   model?: string
   error?: string
@@ -155,8 +156,8 @@ type Action =
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
   | { type: 'run-summary'; id: string; tool: string; at: number; text: string }
-  | { type: 'finished'; id: string; content: string; usage?: TokenUsage; model?: string }
-  | { type: 'failed'; id: string; message: string }
+  | { type: 'finished'; id: string; content: string; usage?: TokenUsage; model?: string; timing?: string }
+  | { type: 'failed'; id: string; message: string; timing?: string }
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
   | { type: 'ended'; id: string }
@@ -341,6 +342,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           content: action.content,
           note: r.note ?? state.provenance ?? undefined,
           usage: action.usage ?? r.usage,
+          timing: action.timing ?? r.timing,
           model: action.model ?? r.model,
         })),
       }
@@ -352,7 +354,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         approvals: [],
         contextVersion: state.contextVersion + 1,
         runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
-        turns: withReply(state.turns, (r) => ({ ...r, error: action.message })),
+        turns: withReply(state.turns, (r) => ({ ...r, error: action.message, timing: action.timing ?? r.timing })),
       }
     case 'lost':
       // The connection ended before the reply did. What the tools were doing is unknown now; the read-back will say.
@@ -422,6 +424,7 @@ interface ThreadBody {
   runs?: Run[]
   /** Each reply's counts and the profile that answered, by turn index */
   usage?: Array<TokenUsage & { at: number; model: string }>
+  timings?: Array<{ at: number; text: string }>
 }
 
 function turnsOf(body: ThreadBody): Turn[] {
@@ -433,6 +436,7 @@ function turnsOf(body: ThreadBody): Turn[] {
     html: t.role === 'assistant' ? (renderMarkdown(t.content) ?? undefined) : undefined,
     usage: usageAt.get(i)?.usage,
     model: usageAt.get(i)?.model,
+    timing: body.timings?.find((entry) => entry.at === i)?.text,
   }))
 }
 
@@ -665,7 +669,7 @@ export function useChat(id: string) {
             case 'turn': {
               finished = true
               if (typeof d.error === 'string') {
-                dispatch({ id, type: 'failed', message: d.error })
+                dispatch({ id, type: 'failed', message: d.error, timing: d.timingText as string | undefined })
               } else {
                 const text = d.text as string
                 const sources = (d.sourceUrls as string[]) ?? []
@@ -677,6 +681,7 @@ export function useChat(id: string) {
                   type: 'finished',
                   content,
                   usage: d.usage as TokenUsage | undefined,
+                  timing: d.timingText as string | undefined,
                   model: d.model as string | undefined,
                 })
                 const html = renderMarkdown(content)
@@ -1332,6 +1337,7 @@ export function TurnView({
           </div>
         )}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
+        {turn.timing && !streaming && <div className="sky-usage">{turn.timing}</div>}
       </div>
     </>
   )

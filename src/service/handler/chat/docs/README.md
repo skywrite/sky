@@ -8,6 +8,10 @@ updated: 2026-09-05
 Design notes for `src/service/handler/chat/` and the page that drives it,
 `theme/client/chat.tsx` with `controls.tsx` and `context.tsx`.
 
+Reply timing starts at prompt acceptance, includes thread creation and the
+first context load, and is saved on each turn through the
+[shared timing system](../../../../_shared-ts/timing/docs/README.md).
+
 ## What is built
 
 A thread is a ChatSession kept in memory for the life of the service. A

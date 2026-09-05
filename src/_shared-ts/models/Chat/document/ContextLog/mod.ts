@@ -40,6 +40,7 @@ import type { TokenUsage } from '#shared/ai/usage.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
+import type { TimingDetail } from '#shared/timing/summary.ts'
 
 export const CONTEXT_LOG_VERSION = 2
 
@@ -141,6 +142,8 @@ export interface ContextTurnLog {
   errors?: string[]
   /** The turn's token counts, every model step summed (also in ai-usage.jsonl per call) */
   usage?: TokenUsage
+  /** Prompt-to-result elapsed time and individual calls; independent of transcript minute stamps. */
+  timing?: TimingDetail
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -161,6 +164,7 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     if (entry.people && entry.people.length > 0) fields.push(recordArrayField('people', entry.people))
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
+    if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

@@ -19,6 +19,8 @@ import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
+import { configureTiming } from '#shared/timing/log.ts'
+import { TimingSpan } from '#shared/timing/mod.ts'
 
 // Install before any command module loads, so AI SDK warnings from every
 // command — including ones that call providers directly, bypassing the
@@ -28,6 +30,7 @@ routeAISDKWarningsToLog()
 // CLI is its own log-stream family (cli.<date>.jsonl). Console mirroring stays
 // off — stdout belongs to the terminal UI.
 configureLogging({ stream: 'cli' })
+configureTiming({ source: 'cli' })
 
 /**
  * One wide event per CLI invocation. Timing starts at module load, so
@@ -49,6 +52,7 @@ configureLogging({ stream: 'cli' })
  */
 const logCli = logger('cli')
 const attempted = String(args._[0] ?? '').replace(/\/+/g, ':')
+const executionTiming = new TimingSpan({ kind: 'command', name: attempted || 'cli' })
 const invocation = beginEvent(logCli, 'invocation')
 // Seeded with the attempted name so a command that never resolves still
 // reports what was asked for; the resolved description name overwrites it
@@ -94,6 +98,7 @@ logCli.info('invocation-start', {
 // run(). The daily sink writes synchronously, so a record emitted here still
 // reaches disk.
 process.on('exit', (code) => {
+  executionTiming.finish(outcome === 'error' ? 'error' : code !== 0 ? 'fail' : 'success')
   const fields = { exitCode: code }
   // A failed invocation is logged at error level so it survives a raised
   // SKY_LOG_LEVEL; every other outcome (including a command's own `fail`,
@@ -365,7 +370,7 @@ function outputError(error: unknown) {
 }
 
 try {
-  await run()
+  await executionTiming.run(run)
 } catch (err) {
   // A CommandRunnerError means the arguments never typechecked, so the command
   // itself never ran — that is a usage failure, not a command failure.

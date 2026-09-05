@@ -28,6 +28,7 @@ import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTyp
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
+import type { TimingDetail } from '#shared/timing/summary.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   type ContextDocRecord,
@@ -667,12 +668,13 @@ export default class ChatContext {
     return { errors: [] }
   }
 
-  /**
-   * Attach the turn's tool records to its log entry — creating one when the
-   * turn changed no context and so recorded nothing else. Every turn writes
-   * an entry even when nothing changed and no tool ran: an absent turn is
-   * indistinguishable from a recording gap.
-   */
+  /** Persist timing on this turn, never on an entry inherited from a resumed session. */
+  recordTurnTiming(timing: TimingDetail): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.timing = timing
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], timing })
+  }
+
   /** The turn's token counts on its log entry — creating one when the turn changed no context. */
   recordTurnUsage(usage: TokenUsage): void {
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
@@ -680,6 +682,7 @@ export default class ChatContext {
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
   }
 
+  /** Every turn keeps an entry, even when no context changed and no tool ran. */
   recordTurnTools(turnTools: ToolCallRecord[]): void {
     if (turnTools.length > 0) {
       let turnEntry: ContextTurnLog | undefined

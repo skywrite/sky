@@ -4,6 +4,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
+import { withTiming, withTimingEnvironment } from '#shared/timing/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ProducerResult } from '../ChatContext/mod.ts'
@@ -112,6 +113,104 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
 }
 
 const types = (events: ChatSessionEvent[]) => events.map((e) => e.type)
+
+test('ChatSession persists precise prompt-to-result timing, individual calls, and unchanged resumed history', async () => {
+  let now = 0
+  let instant = '2026-01-27T15:31:00.125Z'
+  await withTimingEnvironment({ now: () => now, instant: () => instant, sink: () => {} }, async () => {
+    const { session, tmp } = await makeSession({
+      contextTokens: 0,
+      invokeModel: async ({ sink }) => {
+        await withTiming({ kind: 'model', name: 'mock-model', provider: 'mock', model: 'mock-model' }, async () => {
+          now += 10_000
+        })
+        for (let i = 0; i < 2; i++) {
+          await withTiming({ kind: 'tool', name: 'notebook_query' }, async () => {
+            await withTiming({ kind: 'command', name: 'mock:lookup' }, async () => {
+              now += 15_000
+            })
+            if (i === 0) {
+              await withTiming({ kind: 'model', name: 'mock-inner' }, async () => {
+                now += 5_000
+              })
+            }
+            return { text: 'Synthetic tool payload, not timing metadata' }
+          })
+        }
+        await withTiming({ kind: 'wait', name: 'tool:approval' }, async () => {
+          now += 250
+        })
+        instant = '2026-01-27T15:31:45.375Z'
+        sink.write('Done.')
+        return { text: '', content: [], steps: [], responseMessages: [] }
+      },
+    })
+    await session.start()
+    const turn = await session.send('Look up the mock roadmap')
+    const snapshot = await loadResumeSession(path.join(tmp, 'autosave.md'))
+    const timing = snapshot.state.contextLog[0]?.timing
+    const tools = timing?.spans.filter((span) => span.kind === 'tool') ?? []
+    assert({
+      given: 'a 45.25-second reply whose visible transcript stamps are both 09:31',
+      should: 'save sub-second timestamps, monotonic duration, and each nested call in its first snapshot',
+      actual: {
+        stamps: session.turns.map((message) => message.when),
+        startedAt: timing?.startedAt,
+        finishedAt: timing?.finishedAt,
+        wall: timing?.wallMs,
+        model: timing?.modelMs,
+        tool: timing?.toolMs,
+        other: timing?.otherMs,
+        outcome: timing?.outcome,
+        calls: tools.map((span) => [span.name, span.durationMs]),
+        distinct: new Set(tools.map((span) => span.spanId)).size,
+        nested: timing?.spans
+          .filter((span) => span.kind === 'command')
+          .every((span) => tools.some((tool) => tool.spanId === span.parentSpanId)),
+        leaked: JSON.stringify(timing).includes('Synthetic tool payload'),
+        matchesReport: JSON.stringify(timing) === JSON.stringify(turn.timing),
+      },
+      expected: {
+        stamps: ['2026-01-27 09:31', '2026-01-27 09:31'],
+        startedAt: '2026-01-27T15:31:00.125Z',
+        finishedAt: '2026-01-27T15:31:45.375Z',
+        wall: 45_250,
+        model: 15_000,
+        tool: 30_000,
+        other: 250,
+        outcome: 'success',
+        calls: [
+          ['notebook_query', 20_000],
+          ['notebook_query', 15_000],
+        ],
+        distinct: 2,
+        nested: true,
+        leaked: false,
+        matchesReport: true,
+      },
+    })
+
+    const written = await session.end({ save: true, enricher: stubEnricher })
+    const resume = await loadResumeSession(written!.path)
+    const second = await makeSession({ resume, contextTokens: 0 })
+    await second.session.start()
+    now += 100_000 // Idle time and a restart never become part of the next reply.
+    const next = await second.session.send('And the next step?')
+    const saved = await second.session.end({ save: true, enricher: stubEnricher })
+    const reparsed = await loadResumeSession(saved!.path)
+    assert({
+      given: 'a saved chat resumed after idle time, given another prompt, and saved again',
+      should: 'keep the original timing byte-for-byte and start a new trace for the new reply',
+      actual: {
+        aborted: saved?.aborted ?? false,
+        original: JSON.stringify(reparsed.state.contextLog[0]?.timing) === JSON.stringify(timing),
+        next: reparsed.state.contextLog[1]?.timing?.wallMs,
+        separate: next.timing?.traceId !== timing?.traceId,
+      },
+      expected: { aborted: false, original: true, next: 0, separate: true },
+    })
+  })
+})
 
 test('ChatSession.start - a new chat seeds the baseline', async () => {
   const { session } = await makeSession()
@@ -288,6 +387,13 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     should: 'still snapshot the session — the message the user typed is not lost',
     actual: await exists(path.join(tmp, 'autosave.md')),
     expected: true,
+  })
+  const failed = await loadResumeSession(path.join(tmp, 'autosave.md'))
+  assert({
+    given: 'the same failed turn read back from its snapshot',
+    should: 'retain error timing without treating it as a successful latency sample',
+    actual: failed.state.contextLog.at(-1)?.timing?.outcome,
+    expected: 'error',
   })
 })
 

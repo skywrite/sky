@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -75,6 +75,14 @@ polite "already in use" error.
 self-directing marker (`[Truncated — N chars total; continue with offset:
 M]`) and the workflow prompt tells the model to keep reading. The progress
 log distinguishes a full read from a first page (`first 40000 returned`).
+
+## Every mission says how long
+
+The mission uses the [shared timing system](../../../../../_shared-ts/timing/docs/README.md).
+The closing line and notebook record retain profile, steps, model/tool time,
+and per-tool counts, now with a trace ID and overlap/other measurements.
+`lib/timing.ts` is a compatibility export for the record format. The command
+trace also covers preparation and cleanup outside the mission's model loop.
 
 ## Stall forensics
 

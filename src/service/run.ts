@@ -8,6 +8,7 @@ import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
+import { configureTiming } from '#shared/timing/log.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
@@ -29,6 +30,7 @@ import store from './store.ts'
 // daily file only; interactive `bun run` development also mirrors them to the
 // terminal.
 configureLogging({ stream: 'service', console: process.stdout.isTTY === true })
+configureTiming({ source: 'service' })
 
 const logServer = logger('server')
 const logTz = logger('timezone')

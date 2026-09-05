@@ -18,6 +18,9 @@ import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/pro
 import { addUsage, NO_USAGE, type TokenUsage, tokenUsageOf } from '#shared/ai/usage.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { thrownOutcome, TimingSpan, withTiming } from '#shared/timing/mod.ts'
+import { installTimingTelemetry } from '#shared/timing/sdk.ts'
+import { timingSummary, type TimingSummary } from '#shared/timing/summary.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
@@ -66,6 +69,7 @@ export type ChatEngineEvent =
   | { type: 'turn-complete'; toolRecords: ToolCallRecord[] }
 
 export interface TurnResult {
+  timing?: TimingSummary
   /** The reply exactly as it streamed: every text delta in order, step and round boundaries as paragraph breaks. */
   text: string
   /** web_search result URLs in call order, duplicates included. */
@@ -290,6 +294,19 @@ export default class ChatEngine {
    * user message must already be appended (appendUserMessage).
    */
   async runTurn(opts: RunTurnOptions): Promise<TurnResult> {
+    installTimingTelemetry()
+    const span = new TimingSpan({ kind: 'generation', name: 'chat:turn' })
+    try {
+      const result = await span.run(() => this.runTimedTurn(opts))
+      span.finish()
+      return { ...result, timing: timingSummary(span) }
+    } catch (error) {
+      span.finish(thrownOutcome(error))
+      throw error
+    }
+  }
+
+  private async runTimedTurn(opts: RunTurnOptions): Promise<TurnResult> {
     // Every tool call this turn, for the saved log: executed ones are
     // collected from the result surfaces, denials at the approval protocol.
     const turnTools: ToolCallRecord[] = []
@@ -524,7 +541,9 @@ export default class ChatEngine {
             continue
           }
 
-          const decision = await this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input })
+          const decision = await withTiming({ kind: 'wait', name: 'tool:approval' }, () =>
+            this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input }),
+          )
           if (!decision.approved) {
             deniedTools.add(toolCall.toolName)
             recordDeniedTool(toolCall)

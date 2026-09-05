@@ -1,14 +1,22 @@
 import { existsSync } from 'node:fs'
+import { readFile, readdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
+import { generateText, jsonSchema } from 'ai'
+import { MockLanguageModelV3 } from 'ai/test'
+import { withCommandRun } from '#commands/lib/core/commandLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
+import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import type { SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { configureTiming } from '#shared/timing/log.ts'
+import { setTimingSink, withTimingEnvironment, type TimingEvent } from '#shared/timing/mod.ts'
+import { parseTimingLog } from '#shared/timing/read.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
@@ -204,6 +212,143 @@ test({ name: 'chat route - a message needs a body' }, async () => {
     actual: response.status,
     expected: 400,
   })
+})
+
+test('chat route - reply timing includes the first context load and survives a page reload', async () => {
+  const host = await testHost()
+  const factory = host.createSession
+  let now = 0
+  host.createSession = async (...args) => {
+    now += 25
+    const session = await factory(...args)
+    const start = session.start.bind(session)
+    session.start = async () => {
+      now += 50
+      return start()
+    }
+    return session
+  }
+  const events: TimingEvent[] = []
+  await withTimingEnvironment({ now: () => now, sink: (event) => events.push(event) }, async () => {
+    const app = appWith(host)
+    const response = await post(app, 'http://localhost/chat/timing-test/messages', { message: 'Find the mock roadmap' })
+    const frames = parseSSE(await response.text())
+    const turn = frames.find((frame) => frame.event === 'turn')?.data
+    const body = await getJson(app, 'http://localhost/chat/timing-test')
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'timing-test.autosave.md'))
+    const roots = events.filter((event) => event.event === 'timing-end' && event.span.kind === 'turn')
+    assert({
+      given: 'a first reply that spends 25 ms creating its thread and 50 ms initializing its context',
+      should: 'include that initialization in one reply trace and retain its displayed summary',
+      actual: {
+        wall: (turn?.timing as { wallMs: number })?.wallMs,
+        roots: roots.length,
+        outcome: roots[0]?.span.outcome,
+        summary: typeof turn?.timingText === 'string',
+        reloaded: body.timings?.[0]?.text === turn?.timingText,
+        saved: snapshot.state.contextLog[0]?.timing?.wallMs,
+      },
+      expected: { wall: 75, roots: 1, outcome: 'success', summary: true, reloaded: true, saved: 75 },
+    })
+  })
+})
+
+test('chat route - web tool and command timings persist automatically across replies', async () => {
+  const model = new MockLanguageModelV3({
+    doGenerate: async () => ({
+      content: [{ type: 'tool-call', toolCallId: 'mock-lookup', toolName: 'notebook_query', input: '{}' }],
+      finishReason: { unified: 'tool-calls', raw: undefined },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 2, text: 2, reasoning: 0 },
+      },
+      warnings: [],
+    }),
+  })
+  const host = await testHost({
+    invokeModel: async ({ sink }) => {
+      // No per-call telemetry settings: exercise the same global SDK hooks as production.
+      await generateText({
+        model,
+        prompt: 'Synthetic timing request that must stay out of logs',
+        tools: {
+          notebook_query: {
+            inputSchema: jsonSchema({ type: 'object', properties: {} }),
+            execute: () =>
+              withCommandRun({ command: 'mock:lookup', depth: 0 }, async () => ({
+                status: 'success',
+                text: 'Synthetic timing result that must stay out of logs',
+              })),
+          },
+        },
+      })
+      sink.write('Done.')
+      return EMPTY
+    },
+  })
+  const dir = path.join(host.tmp, 'timing')
+  try {
+    configureTiming({ source: 'service', dir })
+    const app = appWith(host)
+    for (let i = 0; i < 2; i++) {
+      const response = await post(app, 'http://localhost/chat/logged-timing/messages', { message: 'Look up Atlas' })
+      await response.text()
+    }
+    // Read disk, not the thread's in-memory summary or an injected event collector.
+    const raw = (await Promise.all((await readdir(dir)).map((file) => readFile(path.join(dir, file), 'utf8')))).join(
+      '\n',
+    )
+    const records = parseTimingLog(raw)
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'logged-timing.autosave.md'))
+    const archived = snapshot.state.contextLog.flatMap((entry) => entry.timing?.spans ?? [])
+    const turns = records.filter((record) => record.kind === 'turn')
+    const tools = records.filter((record) => record.kind === 'tool')
+    const commands = records.filter((record) => record.kind === 'command')
+    const models = records.filter((record) => record.kind === 'model')
+    const lines = raw
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    assert({
+      given: 'two normal web replies that run an SDK tool and a nested command',
+      should: 'persist one sample per call with names, outcomes, model metadata, and trace relationships',
+      actual: {
+        counts: [turns.length, tools.length, commands.length, models.length],
+        traces: new Set(turns.map((turn) => turn.traceId)).size,
+        toolNames: tools.map((tool) => tool.name),
+        nested: commands.every((command) =>
+          tools.some((tool) => tool.spanId === command.parentSpanId && tool.traceId === command.traceId),
+        ),
+        measured: records.every((record) => Number.isFinite(record.durationMs) && record.outcome === 'success'),
+        modelMetadata: models.every((record) => !!record.provider && !!record.model && record.usage?.input === 10),
+        envelopes: lines.every(
+          (line) => line.version === 1 && line.source === 'service' && typeof line.ts === 'string',
+        ),
+        leaked: raw.includes('Synthetic timing') || raw.includes('Look up Atlas'),
+        archivedCalls: archived
+          .filter((span) => span.kind === 'tool' || span.kind === 'command')
+          .map((span) => span.spanId)
+          .sort(),
+      },
+      expected: {
+        counts: [2, 2, 2, 2],
+        traces: 2,
+        toolNames: ['notebook_query', 'notebook_query'],
+        nested: true,
+        measured: true,
+        modelMetadata: true,
+        envelopes: true,
+        leaked: false,
+        archivedCalls: records
+          .filter((span) => span.kind === 'tool' || span.kind === 'command')
+          .map((span) => span.spanId)
+          .sort(),
+      },
+    })
+  } finally {
+    setTimingSink(() => {})
+    await rm(host.tmp, { recursive: true, force: true })
+  }
 })
 
 test({ name: 'chat route - the first message starts the session and streams the turn' }, async () => {

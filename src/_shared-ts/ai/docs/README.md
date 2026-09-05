@@ -54,6 +54,9 @@ the whole replayed history.
 
 ## Usage
 
+Execution timing is shared across commands, agents, model requests, and tools;
+see [timing](../../timing/docs/README.md). Both CLI and web service record it automatically.
+
 Every resolved model is wrapped in `usageMeter` (`usageLog.ts`): each call
 appends its token counts — full-rate input, cache reads, cache writes,
 output — with the model and the command making the call to

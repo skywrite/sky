@@ -93,3 +93,33 @@ test('withReadTarget', () => {
     actual: withReadTarget([edited], undefined).map((f) => f.id),
   })
 })
+
+test('buildDocArtifact carries the mission timing when given one', () => {
+  const artifact = buildDocArtifact({
+    date: '2026-07-29',
+    time: '09:15',
+    account: 'jane@example.com',
+    mission: 'Create Atlas Q3 Plan',
+    files: [{ id: 'f1', title: 'Atlas Q3 Plan', url: 'https://docs.google.com/document/d/f1/edit', action: 'created' }],
+    report: 'Done.',
+    timing: {
+      profile: 'default-cerebras-qwen-3.8',
+      steps: 4,
+      wallMs: 12_000,
+      modelMs: 3000,
+      toolMs: 8000,
+      tools: { batch_update_doc: { count: 2, ms: 8000 } },
+    },
+  })
+  assert({
+    given: 'a mission record with timing',
+    should: 'name the profile and steps in front matter and carry the timing block after the report',
+    actual: [
+      artifact.includes('\nprofile: default-cerebras-qwen-3.8\nsteps: 4\n---'),
+      artifact.includes(
+        '## Timing\n\n- steps: 4\n- wall: 12s\n- model: 3.0s\n- tools: 8.0s\n  - batch_update_doc: 2× 8.0s',
+      ),
+    ],
+    expected: [true, true],
+  })
+})

@@ -6,6 +6,7 @@ import { AI_PROFILES } from '#config'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
+import { installTimingTelemetry } from '#shared/timing/sdk.ts'
 import { PROFILES } from './defaultProfiles.ts'
 
 /**
@@ -153,6 +154,7 @@ function thinkingEnabled(profile: ModelProfile): boolean {
  * call sites can ask for determinism without tracking which model a profile resolves to.
  */
 export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions): ResolvedModel {
+  installTimingTelemetry()
   // Every call the model makes lands in the usage log, whoever made it.
   const base = languageModelFor(profile)
   const resolved: ResolvedModel = {

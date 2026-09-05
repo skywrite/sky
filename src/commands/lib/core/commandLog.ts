@@ -1,4 +1,5 @@
 import { beginEvent, logger } from '#shared/log.ts'
+import { withTiming } from '#shared/timing/mod.ts'
 
 /**
  * Structured logging for command runs.
@@ -95,6 +96,13 @@ export function beginCommandRun(fields: CommandRunFields): CommandRunLog {
  * to know that a returned error and a thrown one are the same severity.
  */
 export async function withCommandRun<T extends { status?: string } | undefined>(
+  fields: CommandRunFields,
+  body: () => Promise<T>,
+): Promise<T> {
+  return withTiming({ kind: 'command', name: fields.command }, () => loggedRun(fields, body))
+}
+
+async function loggedRun<T extends { status?: string } | undefined>(
   fields: CommandRunFields,
   body: () => Promise<T>,
 ): Promise<T> {

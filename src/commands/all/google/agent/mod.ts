@@ -21,13 +21,16 @@ import {
 } from '#lib/google/mod.ts'
 import type { DriveFile } from '#lib/google/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel } from '#shared/ai/models.ts'
+import { aiModel, ROLES } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
+import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
+import { timingSummary } from '#shared/timing/summary.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
 import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
+import { formatTiming, type MissionTiming } from './lib/timing.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
 
@@ -64,7 +67,7 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
-type Result = { report: string; files: MissionFile[]; steps: number; artifact?: string }
+type Result = { report: string; files: MissionFile[]; steps: number; artifact?: string; timing: MissionTiming }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -273,25 +276,28 @@ export default class GoogleAgentTask extends Command {
     log(`Mission started (${client.email})`)
 
     const abort = new AbortController()
+    const missionSpan = new TimingSpan({ kind: 'generation', name: 'google:mission' })
     try {
       // Streamed for the same reason as ai:chat: long generations hold the
       // socket past Anthropic's non-streaming ceiling on flaky networks.
-      const stream = streamText({
-        // A mission is expensive to lose — ride out 429/529 bursts with more
-        // patience than the SDK's default 2 retries.
-        ...aiModel('reasoning', { maxRetries: 4 }),
-        instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
-        messages: [{ role: 'user', content: missionMessage }],
-        tools,
-        stopWhen: isStepCount(MAX_STEPS),
-        // A mission replays its whole history on every step; moving the cache
-        // breakpoint to the step's last message makes that replay a cache read.
-        prepareStep: cacheTailStep,
-        abortSignal: abort.signal,
-        // Raw SSE frames (pings included) feed the stall watchdog, so a long
-        // silent think is not mistaken for a dead stream.
-        includeRawChunks: true,
-      })
+      const stream = missionSpan.run(() =>
+        streamText({
+          // A mission is expensive to lose — ride out 429/529 bursts with more
+          // patience than the SDK's default 2 retries.
+          ...aiModel('reasoning', { maxRetries: 4 }),
+          instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
+          messages: [{ role: 'user', content: missionMessage }],
+          tools,
+          stopWhen: isStepCount(MAX_STEPS),
+          // A mission replays its whole history on every step; moving the cache
+          // breakpoint to the step's last message makes that replay a cache read.
+          prepareStep: cacheTailStep,
+          abortSignal: abort.signal,
+          // Raw SSE frames (pings included) feed the stall watchdog, so a long
+          // silent think is not mistaken for a dead stream.
+          includeRawChunks: true,
+        }),
+      )
       let stalled = false
       let watchdog: ReturnType<typeof setTimeout> | undefined
       const arm = () => {
@@ -363,13 +369,18 @@ export default class GoogleAgentTask extends Command {
         ].join('\n')
       }
 
+      // The mission's last word on itself: what ran, how long, where the time went.
+      missionSpan.finish(stalled ? 'aborted' : 'success')
+      const timing: MissionTiming = { ...timingSummary(missionSpan), profile: ROLES.reasoning, steps }
+      log(formatTiming(timing))
+
       let artifact: string | undefined
       if (state.files.length > 0) {
         try {
           const now = context.notebookNow
           artifact = await writeDocArtifact(
             { date: now.date, time: now.time },
-            { account: client.email, mission: mission.trim(), files: state.files, report },
+            { account: client.email, mission: mission.trim(), files: state.files, report, timing },
           )
           log(`Recorded in notebook: ${artifact}`)
         } catch (err) {
@@ -391,8 +402,9 @@ export default class GoogleAgentTask extends Command {
               action: 'read' as const,
             }
           : undefined
-      return CommandResult.success({ report, files: withReadTarget(state.files, readTarget), steps, artifact })
+      return CommandResult.success({ report, files: withReadTarget(state.files, readTarget), steps, artifact, timing })
     } catch (err) {
+      missionSpan.finish(thrownOutcome(err))
       return CommandResult.error(err instanceof Error ? err.message : String(err))
     } finally {
       // Staged image uploads are only a fetch vehicle — Google copies the

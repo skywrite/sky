@@ -17,6 +17,10 @@ updated: 2026-09-05
 
 ## Notes
 
+- [2026-09-05 — per-turn timing is saved before autosave, with millisecond timestamps](../../../timing/docs/README.md)
+
+- [2026-09-05 — shared timings cover complete replies and nested research](../../../timing/docs/README.md)
+
 - [2026-09-05 — a reason the SDK did not read is quoted, not dropped](2026-09-05-a-reason-the-sdk-did-not-read.md)
 - [2026-09-04 — an answer with no body is named, not echoed](2026-09-04-an-answer-with-no-body.md)
 - [2026-09-03 — the cache tail moves on every tool step](../../../ai/docs/2026-09-03-cache-tail-every-step.md)

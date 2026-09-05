@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import DayDirFileWriter from '#lib/nbfs/DayDirFileWriter.ts'
 import { slugify } from '#lib/string/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { type MissionTiming, timingLines } from './timing.ts'
 import type { MissionFile } from './tools.ts'
 
 /** Artifact medium tag by workspace kind (gdoc / gslides / gsheet). */
@@ -37,6 +38,8 @@ export interface DocArtifactInput {
   mission: string
   files: MissionFile[]
   report: string
+  /** Where the mission's time went; absent for records written before timing existed */
+  timing?: MissionTiming
 }
 
 /**
@@ -57,6 +60,7 @@ export function buildDocArtifact(input: DocArtifactInput): string {
     'rel:',
     ...input.files.map((f) => `  - "[${f.title}](${f.url ?? f.id})"`),
     'tags: google-docs',
+    ...(input.timing ? [`profile: ${input.timing.profile}`, `steps: ${input.timing.steps}`] : []),
     '---',
     '',
     `# ${primary ? primary.title : 'Google Docs mission'}`,
@@ -69,6 +73,7 @@ export function buildDocArtifact(input: DocArtifactInput): string {
     '',
     input.report.trim(),
     '',
+    ...(input.timing ? ['## Timing', '', ...timingLines(input.timing), ''] : []),
   ]
   return lines.join('\n')
 }

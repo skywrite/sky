@@ -22,6 +22,8 @@ import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { currentTimingSpan, thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
+import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type ExternalFileRef, recordExternalFiles } from '../artifactRel.ts'
 import ChatContext, {
@@ -136,6 +138,7 @@ export interface StartReport {
 }
 
 export interface TurnReport {
+  timing?: TimingDetail
   context: TurnContextReport
   /** The reply; absent when the turn failed */
   text?: string
@@ -365,6 +368,28 @@ export default class ChatSession {
    * on, and any tool that already ran stays in the record.
    */
   async send(userMessage: string): Promise<TurnReport> {
+    // A trace is one reply, never an interactive session's idle time between messages.
+    const parent = currentTimingSpan()
+    const span =
+      parent?.record.kind === 'turn' && parent.record.name === 'ai:chat'
+        ? parent
+        : new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
+    try {
+      const report = await span.run(() => this.sendTimed(userMessage))
+      // Result-ready is the boundary. Persist its measurements in the very first
+      // snapshot, rather than trying to include the write of those measurements.
+      span.finish(report.error ? 'error' : 'success')
+      const timing = timingDetail(span)
+      this.context.recordTurnTiming(timing)
+      await this.snapshot()
+      return { ...report, timing }
+    } catch (error) {
+      span.finish(thrownOutcome(error))
+      throw error
+    }
+  }
+
+  private async sendTimed(userMessage: string): Promise<TurnReport> {
     // Stamped at submit time — the gather below can take a while, and the
     // stamp should say when the message was sent, not when the model ran.
     const turnWhen = await this.stamp()
@@ -452,7 +477,6 @@ export default class ChatSession {
       await this.logError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
     }
 
-    await this.snapshot()
     return report
   }
 

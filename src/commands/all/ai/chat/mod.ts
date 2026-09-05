@@ -33,6 +33,7 @@ import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
 import { SessionBlessings, harvestFileRefs } from './lib/approvals.ts'
@@ -843,12 +844,14 @@ export default class AiChatTask extends Command {
       if (turn.error) {
         output.log(colors.red(`Error: ${turn.error}`))
         output.log(colors.dim(`(logged to ${AI_ERROR_LOG_DISPLAY})`))
+        if (turn.timing) output.log(colors.dim(timingLine(turn.timing)))
         continue
       }
       if (turn.approvalRoundsExhausted) {
         output.log(colors.dim('Too many approval requests, moving on.'))
       }
       if (turn.usage) output.log(colors.dim(usageLine(turn.usage, reasoningProfileName)))
+      if (turn.timing) output.log(colors.dim(timingLine(turn.timing)))
 
       // One shot over the first exchange: the pinned line and tab title
       // update when the label lands (save-time titling is independent).
