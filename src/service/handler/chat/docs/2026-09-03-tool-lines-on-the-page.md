@@ -68,3 +68,34 @@ lines behind it on a click.
   and the page reads the thread back at two, six, and fifteen seconds
   after the turn until every ended run that said more than one thing has
   its line.
+
+## Later the same day: what the call was about
+
+A search ran and the page said `web search`: a chip with the tool's name
+and nothing else. Asked: make it clear what it is searching for. The
+message above had said, in the person's words; the chip should say, in
+the call's.
+
+- The model's record of a call (the session's `tool-call`, as its step
+  ends) carries the call's input. `callSubject` turns it into one line:
+  the field a tool acts on when it has one of the usual names (`query`,
+  `url`, `path`, `mission`, `message`, `text`), else the call's first
+  string; the first line only, spaces collapsed, cut to a chip's width;
+  an address without its scheme and `www.`. The routes stream it on the
+  `tool-call` frame as `subject`.
+- The routes keep it on the run. A run that spoke for itself takes the
+  subject once the record lands. A tool that ran without a word — a web
+  search — had no run on the thread at all, only a chip the page made
+  for itself and lost on a reload; it gets a run for its record alone. A
+  call that asked first is recorded before it runs, and the run that
+  follows takes that record over rather than standing beside it.
+- The chip shows the subject after the tool's name: `web search · atlas
+  roadmap reviews`, `web fetch · example.com/atlas/roadmap`. Two searches
+  in one step are two chips, where they folded into one.
+
+What it is not: a running chip with its subject. The model's record
+lands as its step ends — after a command-backed tool has run and folded
+— so the fold's line, what the tool did, stands for that run, and the
+subject rides its record for a reload. A record at the moment of the
+call would come from the engine's stream, which has the part; that is a
+later rung.

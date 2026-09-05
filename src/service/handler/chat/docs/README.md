@@ -84,7 +84,33 @@ a person can see and touch:
   click on the line unfolds the record of what the tool said. The day's
   list shows the running tool's latest line for a thread that is
   thinking. A tool that prints nothing keeps its chip from the model's
-  own record of the call; the two never double up.
+  own record of the call; the two never double up. That record — the
+  session's `tool-call`, as the model's step ends — carries the call's
+  input, and `callSubject` (`callSubject.ts`) turns it into one line on
+  what the call was about: the field a tool acts on when it has one of
+  the usual names (query, url, path, mission, message, text), else its
+  first string; the first line only, spaces collapsed, cut to a chip's
+  width; an address without its scheme. The routes stream it on the frame
+  as `subject` and keep it on the run: a run that spoke for itself takes
+  it once the record lands; a tool that ran without a word — a web search
+  — gets a run for its record alone, so a reload keeps its chip; a call
+  that asked first is recorded before it runs, and the run that follows
+  takes that record over. The chip shows it after the name: `web search ·
+  atlas roadmap reviews`. Two searches in one step are two chips.
+- **The page waits through a restart.** A turn's stream carries a
+  `heartbeat` frame every ten seconds when nothing else is said, so the
+  page can tell a thinking model from a dead connection: silence past
+  twenty-five seconds is a lost connection, however the socket looks (a
+  reload in place leaves it open and mute). The page then waits for the
+  service the way the terminal does — the ninety-second schedule of
+  `fetchWithConnectRetry` — with "sky is restarting" where the reply
+  would be, and takes the thread as the service holds it once it answers:
+  a turn still running there is followed by the poller, one that finished
+  is shown, and a thread that came back without the message, or not at
+  all, lost its reply to the restart and says so under the message. A
+  message the service never received (the send itself failed) waits the
+  same way and goes out once the service answers. `turnStream.ts` holds
+  the frame reader, the silence deadline, and the wait.
 - **Whether the thread is kept.** `Saves to today ▾` sits with the model and
   the budget, two stops: saves to today, or not saved. Set before the first
   message it is an incognito chat; it can change until the close. The
@@ -153,6 +179,32 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   line replaces it a second later, a click unfolds the fifty-nine lines;
   on a turn whose one-word reply beat the line, the page's follow-up read
   picked it up.
+
+- 2026-09-04 — the page waits: a held turn's stream carries heartbeat
+  frames while it waits, all before the turn frame (route test); frames
+  come off a stream whole however the bytes split, a stream that falls
+  silent ends as a Silence, and the wait for the service runs its schedule
+  through refusals and a 503 to the first answer, says gone on a 404, and
+  gives up after the schedule (turnStream test). Live: a sixteen-second
+  turn carried a heartbeat at ten seconds between its text frames; on the
+  real page a not-kept turn was streaming when a server file was saved —
+  the reply stopped, the line read "sky is restarting · 14s", the service
+  answered without the thread, and the message read "turn failed — sky
+  restarted while replying, and this chat isn't kept. Send it again to
+  start over."
+
+- 2026-09-03 — call subjects: the subject rule over a search, a fetch, a
+  read, a mission behind its file id, unnamed fields, several lines, a
+  long line, and calls with nothing to show (callSubject test). A
+  scripted step whose search said nothing, whose mission narrated, and
+  whose post asked first: the stream names each call's subject, the
+  search stands as its own run, the mission's run takes its subject after
+  it ended, and the post's record becomes its run — its started frame
+  carrying the subject, the mission's not, now that frames serialize as
+  they are emitted (route test). Live, a not-saved thread with the
+  notebook closed that searched the web: the frame named the query, the
+  run read back with it, and the page's chip read the tool's name and
+  the query beside it.
 
 - 2026-09-03 — tool lines: a scripted model whose call narrates two lines
   and holds; mid-run the thread carries the open run with both lines and

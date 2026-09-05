@@ -320,6 +320,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   border: 0;
   font: inherit;
   white-space: nowrap;
@@ -334,6 +335,19 @@ body {
   font-family: var(--mantine-font-family-monospace);
   font-size: 12.5px;
   opacity: 0.75;
+}
+
+/* What the call was about, after the tool's name: the query, the page, the mission */
+.sky-tool-subject {
+  min-width: 0;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+
+.sky-tool-subject::before {
+  content: '· ';
 }
 
 .sky-tool-pulse {

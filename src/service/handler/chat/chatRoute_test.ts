@@ -5,6 +5,7 @@ import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
+import type { ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
 import type { SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -90,7 +91,7 @@ async function testHost(
   over: {
     invokeModel?: ModelInvoker
     /** Hands the test the host's report channel — what a tool's command output would reach */
-    capture?: (report: (event: ToolOutputEvent) => void) => void
+    capture?: (report: (event: ChatSessionEvent | ToolOutputEvent) => void) => void
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
@@ -802,6 +803,84 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
       run: { status: 'success', at: 1, lines: 2, summary: 'Applied three updates to the plan' },
       turns: 2,
     },
+  })
+})
+
+test({ name: "chat route - a call's record says what it was about, and a quiet tool keeps its chip" }, async () => {
+  let report: ((event: ChatSessionEvent | ToolOutputEvent) => void) | null = null
+  // A model whose step searched the web without a word, ran a mission that narrated, and posted after asking first.
+  const invokeModel: ModelInvoker = (args) => {
+    report?.({ type: 'tool-call', toolName: 'web_search', input: { query: 'Atlas roadmap reviews' } })
+    report?.({ type: 'tool-started', tool: 'google_agent' })
+    report?.({ type: 'tool-line', tool: 'google_agent', text: 'Mission started', level: 'log' })
+    report?.({ type: 'tool-finished', tool: 'google_agent', status: 'success' })
+    report?.({ type: 'tool-call', toolName: 'google_agent', input: { file: 'doc-42', mission: 'Fix the fonts' } })
+    report?.({ type: 'tool-call', toolName: 'slack_post', input: { channel: 'general', text: 'Hello' } })
+    report?.({ type: 'tool-started', tool: 'slack_post' })
+    report?.({ type: 'tool-line', tool: 'slack_post', text: 'Posted to #general', level: 'log' })
+    report?.({ type: 'tool-finished', tool: 'slack_post', status: 'success' })
+    args.sink.write('Done.')
+    return Promise.resolve(EMPTY)
+  }
+  const app = appWith(await testHost({ invokeModel, capture: (channel) => (report = channel) }))
+  const response = await post(app, 'http://localhost/chat/s1/messages', { message: 'Look into Atlas, fix the fonts' })
+  const frames = parseSSE(await response.text())
+  const thread = await getJson(app, 'http://localhost/chat/s1')
+  type Started = { run: { subject?: string } }
+  type Kept = { tool: string; at: number; status: string | null; lines: string[]; subject?: string }
+  const startedRuns = frames.filter((f) => f.event === 'tool-started').map((f) => (f.data as unknown as Started).run)
+  assert({
+    given: 'a search that said nothing, a mission that narrated, and a post that asked first',
+    should: 'name each call on the wire, keep the search as its own run, and give the other runs their subjects',
+    actual: {
+      calls: frames.filter((f) => f.event === 'tool-call').map((f) => [f.data?.toolName, f.data?.subject]),
+      started: startedRuns.map((run) => run.subject),
+      runs: thread.runs.map((r: Kept) => [r.tool, r.at, r.status, r.lines.length, r.subject]),
+    },
+    expected: {
+      calls: [
+        ['web_search', 'Atlas roadmap reviews'],
+        ['google_agent', 'Fix the fonts'],
+        ['slack_post', 'Hello'],
+      ],
+      started: [undefined, 'Hello'],
+      runs: [
+        ['web_search', 1, 'success', 0, 'Atlas roadmap reviews'],
+        ['google_agent', 1, 'success', 1, 'Fix the fonts'],
+        ['slack_post', 1, 'success', 1, 'Hello'],
+      ],
+    },
+  })
+})
+
+test({ name: 'chat route - a turn that says nothing for a while still carries a heartbeat' }, async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  // A model that thinks in silence until let go.
+  const invokeModel: ModelInvoker = async (args) => {
+    await held
+    args.sink.write('Done.')
+    return EMPTY
+  }
+  const app = appWith({ ...(await testHost({ invokeModel })), heartbeatMs: 20 })
+  const response = await post(app, 'http://localhost/chat/h1/messages', { message: 'Think about it' })
+  const body = response.text()
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  release()
+  const frames = parseSSE(await body)
+  const beats = frames.filter((f) => f.event === 'heartbeat')
+  assert({
+    given: 'a turn held silent for seven heartbeats',
+    should: 'carry heartbeat frames while it waits, all before the turn frame',
+    actual: {
+      beats: beats.length >= 3,
+      data: beats[0]?.data,
+      allBeforeTurn: frames.findLastIndex((f) => f.event === 'heartbeat') < frames.findIndex((f) => f.event === 'turn'),
+      reply: frames.at(-1)?.data?.text,
+    },
+    expected: { beats: true, data: { type: 'heartbeat' }, allBeforeTurn: true, reply: 'Done.' },
   })
 })
 

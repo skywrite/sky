@@ -14,6 +14,7 @@ import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
+import { awaitReturn, frames } from './turnStream.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -75,6 +76,8 @@ export interface Run {
   status: 'success' | 'fail' | 'error' | null
   /** One line on what it did, from a small model once it ended — the label it folds under */
   summary?: string
+  /** What the call was about — the query, the page, the mission — from the model's record of it */
+  subject?: string
 }
 
 /** A line in the record's voice: what happened to a thread, not a message in it. */
@@ -142,7 +145,7 @@ type Action =
   | { type: 'sent'; id: string; content: string }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
-  | { type: 'tool'; id: string; name: string }
+  | { type: 'tool'; id: string; name: string; subject?: string }
   | { type: 'run-started'; id: string; run: Run }
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
@@ -152,6 +155,7 @@ type Action =
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
   | { type: 'ended'; id: string }
+  | { type: 'lost'; id: string }
   | { type: 'settings'; id: string; settings: ThreadSettings }
 
 function clock(): string {
@@ -189,6 +193,14 @@ function initial(id: string): ThreadState {
 }
 
 const WAITING = 'waiting for your go'
+/** Where the reply would be, while the page waits for the service to answer again */
+const RESTARTING = 'sky is restarting'
+/** A turn's stream is lost after this much silence; the service speaks at least every ten seconds while a turn runs */
+const SILENCE_MS = 25_000
+/** Under a message whose reply a restart took */
+const LOST = 'sky restarted while replying. Send it again.'
+const LOST_UNKEPT = "sky restarted while replying, and this chat isn't kept. Send it again to start over."
+const AWAY = "sky didn't come back — is the service running?"
 
 function reduce(state: ThreadState, action: Action): ThreadState {
   if (action.type !== 'reset' && action.id !== state.id) return state
@@ -271,17 +283,25 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       }
     }
     case 'tool': {
-      // The model's record of a call. A run that spoke for itself is here already; a quiet tool gets its chip.
+      // The model's record of a call: the run that spoke for it takes what it was about; a quiet tool gets its chip.
       const at = replyIndexOf(state.turns)
-      if (state.runs.some((run) => run.tool === action.name && run.at === at)) return state
-      const chip: Run = { tool: action.name, at, started: Date.now(), lines: [], status: 'success' }
+      const i = state.runs.findLastIndex((r) => r.tool === action.name && r.at === at && r.subject === undefined)
+      if (i >= 0) {
+        if (!action.subject) return state
+        return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, subject: action.subject } : r)) }
+      }
+      const { subject } = action
+      const chip: Run = { tool: action.name, at, started: Date.now(), lines: [], status: 'success', subject }
       return { ...state, runs: [...state.runs, chip] }
     }
     case 'run-started': {
       // A call that asked first was recorded before it ran: that chip becomes the run.
       const { run } = action
       const chip = state.runs.findIndex((r) => r.tool === run.tool && r.at === run.at && r.lines.length === 0)
-      if (chip >= 0) return { ...state, runs: state.runs.map((r, i) => (i === chip ? run : r)) }
+      if (chip >= 0) {
+        const runs = state.runs.map((r, i) => (i === chip ? { ...run, subject: run.subject ?? r.subject } : r))
+        return { ...state, runs }
+      }
       return { ...state, runs: [...state.runs, run] }
     }
     case 'run-line': {
@@ -327,6 +347,14 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
         turns: withReply(state.turns, (r) => ({ ...r, error: action.message })),
       }
+    case 'lost':
+      // The connection ended before the reply did. What the tools were doing is unknown now; the read-back will say.
+      return {
+        ...state,
+        gather: RESTARTING,
+        approvals: [],
+        runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
+      }
     case 'rendered':
       return { ...state, turns: state.turns.map((t, i) => (i === action.index ? { ...t, html: action.html } : t)) }
     case 'saving':
@@ -347,36 +375,6 @@ function reduce(state: ThreadState, action: Action): ThreadState {
 // -----------------------------------------------------------------------------
 // The wire
 // -----------------------------------------------------------------------------
-
-interface Frame {
-  event: string
-  data: Record<string, unknown>
-}
-
-/** Frames off a streaming response, as they complete. */
-async function* frames(response: Response): AsyncGenerator<Frame> {
-  const reader = response.body!.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let end = buffer.indexOf('\n\n')
-    while (end >= 0) {
-      const raw = buffer.slice(0, end)
-      buffer = buffer.slice(end + 2)
-      let event = 'message'
-      let data = ''
-      for (const line of raw.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        else if (line.startsWith('data:')) data += line.slice(5).trim()
-      }
-      yield { event, data: data ? (JSON.parse(data) as Record<string, unknown>) : {} }
-      end = buffer.indexOf('\n\n')
-    }
-  }
-}
 
 /** A reply's markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
 function renderMarkdown(raw: string): string | null {
@@ -556,17 +554,27 @@ export function useChat(id: string) {
       dispatch({ id, type: 'sent', content: message })
       const replyIndex = state.turns.length + 1
 
-      let response: Response
-      try {
-        response = await fetch(`/chat/${id}/messages`, {
+      // A message the service never received is safe to send again: when it
+      // cannot be reached, the page waits for it the way the terminal does,
+      // on the restart schedule, and sends once it answers.
+      const post = () =>
+        fetch(`/chat/${id}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message }),
         })
+      let response: Response
+      try {
+        response = await post()
       } catch {
-        attached.current = false
-        dispatch({ id, type: 'failed', message: "Couldn't reach sky — is the service running?" })
-        return
+        dispatch({ id, type: 'lost' })
+        const back = await awaitReturn(post)
+        if (back.kind !== 'answered') {
+          attached.current = false
+          dispatch({ id, type: 'failed', message: AWAY })
+          return
+        }
+        response = back.response
       }
       if (!response.ok) {
         attached.current = false
@@ -577,7 +585,7 @@ export function useChat(id: string) {
 
       let finished = false
       try {
-        for await (const frame of frames(response)) {
+        for await (const frame of frames(response, SILENCE_MS)) {
           const d = frame.data
           switch (frame.event) {
             case 'approval-request':
@@ -622,7 +630,7 @@ export function useChat(id: string) {
               dispatch({ id, type: 'delta', text: d.text as string })
               break
             case 'tool-call':
-              dispatch({ id, type: 'tool', name: d.toolName as string })
+              dispatch({ id, type: 'tool', name: d.toolName as string, subject: d.subject as string | undefined })
               break
             case 'tool-started':
               dispatch({ id, type: 'run-started', run: d.run as Run })
@@ -664,10 +672,19 @@ export function useChat(id: string) {
               break
           }
         }
+      } catch {
+        // Silence past the deadline, or the socket failing: the connection is lost, not the turn decided.
       } finally {
-        attached.current = false
+        // Still attached through the wait below, or the poller would read the thread back over the message just sent.
+        if (finished) attached.current = false
       }
-      if (!finished) dispatch({ id, type: 'failed', message: 'The connection closed before the reply finished.' })
+      if (!finished) {
+        try {
+          await reattach(id, replyIndex, dispatch)
+        } finally {
+          attached.current = false
+        }
+      }
       followSummaries(id, dispatch)
     },
     [state.id, state.phase, state.turns.length],
@@ -755,6 +772,35 @@ export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[]
   }, deps)
 }
 
+/**
+ * The connection ended before the reply did — the service restarted under
+ * the turn, or the socket died. The page waits for the service the way the
+ * terminal does, saying so where the reply would be, and takes the thread
+ * as the service holds it once it answers: a turn still running there is
+ * followed by the poller; one that came back complete is shown; a thread
+ * that came back without the message, or not at all, lost its reply to the
+ * restart, and the page says so under the message.
+ */
+async function reattach(id: string, replyIndex: number, dispatch: (action: Action) => void): Promise<void> {
+  dispatch({ id, type: 'lost' })
+  const back = await awaitReturn(() => fetch(`/chat/${id}`))
+  if (back.kind === 'gone') return dispatch({ id, type: 'failed', message: LOST_UNKEPT })
+  if (back.kind === 'away' || !back.response.ok) return dispatch({ id, type: 'failed', message: AWAY })
+  const body = (await back.response.json()) as ThreadBody
+  // The reply sits at replyIndex: a thread that reached it, or is still at work, holds the truth. Shorter lost the turn.
+  if (!body.busy && body.turns.length <= replyIndex) return dispatch({ id, type: 'failed', message: LOST })
+  dispatch({
+    id,
+    type: 'refresh',
+    turns: turnsOf(body),
+    documents: body.kept ?? body.documents,
+    busy: Boolean(body.busy),
+    approvals: body.pending ?? [],
+    answered: body.answered ?? [],
+    runs: body.runs ?? [],
+  })
+}
+
 /** When the page reads a thread back for a run's line that came after its turn ended. */
 const SUMMARY_FOLLOW_UP_MS = [2000, 6000, 15000]
 
@@ -800,8 +846,9 @@ function elapsedLabel(seconds: number): string {
 }
 
 /**
- * A tool at work, in its own words. The chip names it; while it runs, the
- * line under the chip is the last thing it said, with the time since it
+ * A tool at work, in its own words. The chip names it, and what the call
+ * was about once the model's record of it lands; while it runs, the line
+ * under the chip is the last thing it said, with the time since it
  * started; a click opens everything it said. Once done the run folds to
  * one line — a caret, the tool's name, and what it did in a small model's
  * words (its last line until that arrives) — and a click on that line
@@ -845,6 +892,7 @@ function RunView({ run }: { run: Run }) {
         >
           {running && <span className="sky-tool-pulse" aria-hidden="true" />}
           {humanize(run.tool)}
+          {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
           {count > 0 && <span className="sky-tool-meta">{elapsedLabel(seconds)}</span>}
         </button>
       )}

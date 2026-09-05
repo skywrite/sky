@@ -20,6 +20,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
+import { turnErrorMessage } from './turnErrorMessage.ts'
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
@@ -557,8 +558,7 @@ export default class ChatEngine {
       // error can embed the entire message array, and hosts print and log
       // the message. The tool trail rides along for the host's records.
       this.messages.length = historyMark
-      const message = err instanceof Error ? err.message : String(err)
-      throw new TurnError(truncate(message, MAX_TURN_ERROR_CHARS), turnTools)
+      throw new TurnError(truncate(turnErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools)
     }
   }
 }

@@ -20,6 +20,7 @@ import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Ch
 import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { callSubject } from './callSubject.ts'
 import { timelineOf } from './timeline.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -81,6 +82,8 @@ export interface ToolRun {
   status: 'success' | 'fail' | 'error' | null
   /** One line on what it did, from a small model once it ended — the label its output folds under. Absent until then, or when none came */
   summary?: string
+  /** What the call was about — the query, the page, the mission — from the model's record of the call, once its step ends */
+  subject?: string
 }
 
 /** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
@@ -132,6 +135,12 @@ export interface ChatRoutesOptions {
    * removed as each turn ends, so nothing of the thread rests on disk.
    */
   snapshotPath?: (id: string, startTime: PlainDateTime) => string
+  /**
+   * How often a turn's stream carries a heartbeat frame while nothing else
+   * is said — the page reads silence past it as a lost connection. Ten
+   * seconds unless set.
+   */
+  heartbeatMs?: number
   /** The models to choose from and the budget's default — absent, a thread cannot be tuned */
   settings?: ChatSettingsHost
   /** How a thread files when the client ends it — the host's saving policy */
@@ -173,6 +182,7 @@ type WireEvent =
   | ChatSessionEvent
   | { type: 'approval-request'; approval: PendingApproval }
   | { type: 'approval-answered'; id: string; approved: boolean; at: number }
+  | { type: 'tool-call'; toolName: string; input: unknown; subject?: string }
   | { type: 'tool-started'; run: ToolRun }
   | { type: 'tool-line'; tool: string; at: number; text: string; level: 'log' | 'error' }
   | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error' }
@@ -253,6 +263,13 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
   switch (event.type) {
     case 'tool-started': {
       if (open) return null
+      // A call that asked first was recorded before it ran: that record becomes the run.
+      const record = thread.runs.findLast((run) => run.tool === event.tool && run.at === at && run.lines.length === 0)
+      if (record) {
+        record.status = null
+        record.started = Date.now()
+        return { type: 'tool-started', run: record }
+      }
       const run: ToolRun = { tool: event.tool, at, started: Date.now(), lines: [], status: null }
       thread.runs.push(run)
       return { type: 'tool-started', run }
@@ -283,6 +300,23 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
       return { type: 'tool-summary', tool: ended.tool, at: ended.at, text: event.text }
     }
   }
+}
+
+/**
+ * The model's record of a call, as its step ends — after the tool ran, or
+ * before it when the call waits on a go. What the call was about lands on
+ * the run that spoke for it; a tool that ran without a word (a web search)
+ * gets a run for the record alone, so the page can name the call and a
+ * reload still shows it.
+ */
+function recordToolCall(thread: Thread, tool: string, subject: string | undefined): void {
+  const at = thread.session.turns.length
+  const run = thread.runs.findLast((r) => r.tool === tool && r.at === at && r.subject === undefined)
+  if (run) {
+    if (subject) run.subject = subject
+    return
+  }
+  thread.runs.push({ tool, at, started: Date.now(), lines: [], status: 'success', subject })
 }
 
 function summarize(id: string, thread: Thread): ThreadSummary {
@@ -326,6 +360,9 @@ function wireTurn(turn: TurnReport): unknown {
   const { context, ...rest } = turn
   return { ...rest, context: { errors: context.errors } }
 }
+
+/** A turn's stream says something at least this often, so the page can tell a thinking model from a dead connection. */
+const HEARTBEAT_MS = 10_000
 
 export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const threads = new Map<string, Thread>()
@@ -376,6 +413,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               const wire = recordToolOutput(thread, event)
               thread.updatedAt = ++tick
               if (wire) thread.sink?.(wire)
+              return
+            }
+            if (event.type === 'tool-call') {
+              const subject = callSubject(event.input)
+              recordToolCall(thread, event.toolName, subject)
+              thread.updatedAt = ++tick
+              thread.sink?.({ ...event, subject })
               return
             }
             const next = stateAfter(event)
@@ -463,12 +507,19 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     return streamSSE(
       c,
       async (stream) => {
-        // Frames leave in emission order: each write queues behind the last.
+        // Frames leave in emission order, each write queued behind the last —
+        // and say what was known when emitted: a run's record keeps changing
+        // after its started frame, and a frame written later must not carry that.
         let chain = Promise.resolve()
         const frame = (event: string, data: unknown) => {
-          chain = chain.then(() => stream.writeSSE({ event, data: JSON.stringify(data) }))
+          const body = JSON.stringify(data)
+          chain = chain.then(() => stream.writeSSE({ event, data: body }))
         }
         thread.sink = (event) => frame(event.type, wireEvent(event))
+        // The model can think for a minute before its first token. A frame on
+        // a timer keeps the page told the connection lives; silence past it
+        // is a lost connection, however the socket looks from the browser.
+        const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
         try {
           if (!thread.started) {
             await thread.session.start()
@@ -479,6 +530,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             })
           }
           const turn = await thread.session.send(message)
+          clearInterval(beat)
           if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
           for (const run of thread.runs) if (run.status === null) run.status = turn.error ? 'error' : 'success'
@@ -488,6 +540,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           frame('turn', wireTurn(turn))
           await chain
         } finally {
+          clearInterval(beat)
           thread.sink = null
           thread.busy = false
         }

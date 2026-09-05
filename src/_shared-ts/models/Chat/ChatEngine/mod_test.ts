@@ -1,4 +1,4 @@
-import { jsonSchema, simulateReadableStream } from 'ai'
+import { APICallError, jsonSchema, simulateReadableStream } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { assert, test } from '#test'
@@ -441,6 +441,41 @@ test('ChatEngine.runTurn - stream error throws a clamped TurnError with the tool
           tokens: estimateTokens(JSON.stringify({ success: false, error: 'too long' })),
         },
       ],
+    },
+  })
+})
+
+test('ChatEngine.runTurn - an API answer with no body is named, not echoed as its status text', async () => {
+  // The edge in front of the API answering 400 and saying nothing: the SDK's message is just "Bad Request".
+  const invokeModel: ModelInvoker = () =>
+    Promise.reject(
+      new APICallError({
+        message: 'Bad Request',
+        url: 'https://api.anthropic.com/v1/messages',
+        requestBodyValues: {},
+        statusCode: 400,
+        responseBody: '',
+      }),
+    )
+  const engine = new ChatEngine({
+    model: {} as ConstructorParameters<typeof ChatEngine>[0]['model'],
+    approvalHandler: () => Promise.resolve(APPROVE),
+    invokeModel,
+  })
+  engine.appendUserMessage('hi')
+  let thrown: unknown
+  try {
+    await engine.runTurn(TURN_OPTS)
+  } catch (err) {
+    thrown = err
+  }
+  assert({
+    given: 'an invocation rejected with a bodiless 400',
+    should: 'throw a TurnError that names the host and the status and says to send again',
+    actual: { failed: thrown instanceof TurnError, message: (thrown as Error).message },
+    expected: {
+      failed: true,
+      message: 'api.anthropic.com answered 400 with an empty body. Try sending it again.',
     },
   })
 })
