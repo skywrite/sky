@@ -18,7 +18,13 @@ a person can see and touch:
 - **The model a thread thinks with and how much it reads.** Both sit under
   the composer, beside the files-in-context count: `Opus 5 ▾` opens the
   configurations from Settings › AI grouped by provider, with the role
-  each one holds; `Reads up to 300k ▾` offers the reading budget in stops.
+  each one holds; `Reads up to 300k ▾` sets the reading budget on a
+  slider — Nothing, 25k, 50k, 100k, 300k, 500k, 750k. A model whose host
+  serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
+  request) ends the slider at the last stop that fits, 50k there; the
+  stops past it stay drawn, grayed, and a budget above them drops to that
+  stop — on the page, in the routes, and behind `sky ai:chat
+  --max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
   Both apply from the next message. `GET /chat/:id/settings` answers the
   tuning — the thread's own, else what was chosen before its first
   message, else the host's defaults (the Thinking role, ai:chat's 300k).
@@ -172,6 +178,15 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 
 ## Verified
 
+- 2026-09-05 — the budget slider: on the real page, a slow click, a quick
+  click, a drag and an arrow key each post their stop once, in order, and
+  the strip follows; the Cerebras Qwen profile ends the slider at 50k with
+  the stops past it grayed. Route tests: the window rides on the choice, a
+  300k choice on the small-window model drops to 50k while 25k stays, the
+  wide model takes 300k again, and a live thread switched to the
+  small-window model has its budget lowered and its context reassembled
+  within it. Shared helper tests: the stops, the nearest stop, the cap
+  behind a window (131,072 → 79,257) and the fit.
 - 2026-09-05 — the usage line: a scripted model that reports usage over two
   approval rounds sums into the turn's counts (engine test); the turn frame
   carries the counts and the profile, and the thread reads them back by turn

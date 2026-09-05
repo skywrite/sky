@@ -1,5 +1,6 @@
-import { Menu, Popover, SegmentedControl } from '@mantine/core'
-import { Fragment, useState } from 'react'
+import { Menu, Popover, SegmentedControl, Slider } from '@mantine/core'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { reachIndex, STOPS, stopIndex } from '#universal/ai/readingBudget.ts'
 import type { Chat } from './chat.tsx'
 
 /**
@@ -14,6 +15,8 @@ export interface ModelChoice {
   label: string
   provider: string
   roles: string[]
+  /** Tokens the host serves in one request; absent when the model takes any budget */
+  contextWindow?: number
 }
 
 export interface ThreadSettings {
@@ -25,8 +28,10 @@ export interface ThreadSettings {
   saves: boolean
 }
 
-/** Budgets to choose from, nothing first; the thread's own joins them when it is none of these. */
-const STOPS = [0, 100_000, 150_000, 300_000, 500_000]
+/** What a stop is called on the slider and in the strip. */
+function stopLabel(tokens: number): string {
+  return tokens === 0 ? 'Nothing' : thousands(tokens)
+}
 
 /** `300000` → `300k` — the strip and the stops speak in thousands. */
 export function thousands(n: number): string {
@@ -125,21 +130,58 @@ export function ModelControl({ chat }: { chat: Chat }) {
 
 /**
  * How much sky reads before answering — the token ceiling on the assembled
- * context, in stops. Nothing keeps the notebook closed: sky answers from the
- * conversation and its tools until a budget opens it again.
+ * context, on a slider with seven stops. Nothing keeps the notebook closed:
+ * sky answers from the conversation and its tools until a budget opens it
+ * again. The thumb follows the drag; the budget changes when it is let go.
+ * A model whose host serves less than the stops ask ends the slider at the
+ * last stop that fits; the stops past it stay drawn, grayed, out of reach.
+ *
+ * The slider reports a pointer's position a frame late and its release at
+ * once, so a quick tap is released before its stop arrives. The stop is kept
+ * as it arrives and committed on release when it is known, else as soon as
+ * the slider has been still for a moment — a tap, a drag and an arrow key
+ * all land, once.
  */
 export function BudgetControl({ chat }: { chat: Chat }) {
   const { state, setContextTokens } = chat
   const [open, setOpen] = useState(false)
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [pending, setPending] = useState<number | null>(null)
+  const latest = useRef<number | null>(null)
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const committed = useRef(0)
   const settings = state.settings
+  const tokens = settings?.contextTokens ?? 0
+  committed.current = tokens
+  useEffect(() => () => clearTimeout(settle.current ?? undefined), [])
   if (!settings) return null
   const busy = state.phase !== 'idle'
-  const tokens = settings.contextTokens
-  const stops = [...new Set([...STOPS, tokens])].toSorted((a, b) => a - b)
+  const current = settings.model.choices.find((c) => c.name === settings.model.current)
+  const reach = reachIndex(current?.contextWindow)
+  const capped = reach < STOPS.length - 1
+  const at = Math.min(dragging ?? pending ?? stopIndex(tokens), reach)
+  const shown = STOPS[at]
   const fit =
     settings.kept !== null && settings.documents !== null
       ? ` Right now ${settings.kept} of ${settings.documents} files fit.`
       : ''
+
+  const commit = () => {
+    if (settle.current) clearTimeout(settle.current)
+    settle.current = null
+    const i = latest.current
+    latest.current = null
+    setDragging(null)
+    if (i === null || STOPS[i] === committed.current) return
+    setPending(i)
+    void setContextTokens(STOPS[i]).finally(() => setPending(null))
+  }
+  const moved = (i: number) => {
+    latest.current = i
+    setDragging(i)
+    if (settle.current) clearTimeout(settle.current)
+    settle.current = setTimeout(commit, 500)
+  }
 
   return (
     <Popover position="top-start" shadow="md" width={420} withinPortal opened={open} onChange={setOpen}>
@@ -157,16 +199,31 @@ export function BudgetControl({ chat }: { chat: Chat }) {
       </Popover.Target>
       <Popover.Dropdown>
         <div className="sky-ctl-title">How much sky reads before answering</div>
-        <SegmentedControl
-          fullWidth
-          value={String(tokens)}
-          onChange={(value) => void setContextTokens(Number(value))}
-          data={stops.map((stop) => ({ value: String(stop), label: stop === 0 ? 'Nothing' : thousands(stop) }))}
+        <Slider
+          className="sky-budget"
+          min={0}
+          max={reach}
+          domain={[0, STOPS.length - 1]}
+          step={1}
+          value={at}
+          onChange={moved}
+          onChangeEnd={() => {
+            if (latest.current !== null) commit()
+          }}
+          marks={STOPS.map((stop, i) => ({
+            value: i,
+            label: <span data-off={i > reach || undefined}>{stopLabel(stop)}</span>,
+          }))}
+          label={null}
+          thumbLabel="Reading budget"
         />
         <p className="sky-ctl-note">
-          {tokens === 0
-            ? 'Your notebook stays closed: sky answers from this conversation and the tools it calls. Pick a budget to open it again.'
-            : `${thousands(tokens)} tokens is about ${pages(tokens)} pages.${fit} A smaller budget answers faster; a larger one reaches further back.`}
+          {shown === 0
+            ? 'Your notebook stays closed: sky answers from this conversation and the tools it calls. Slide right to open it again.'
+            : `${thousands(shown)} tokens is about ${pages(shown)} pages.${fit} A smaller budget answers faster; a larger one reaches further back.`}
+          {capped && current
+            ? ` ${current.label} takes ${thousands(current.contextWindow ?? 0)} tokens in all, so the stops past ${stopLabel(STOPS[reach])} are out of its reach.`
+            : ''}
         </p>
         <div className="sky-ctl-foot">Applies from your next message.</div>
       </Popover.Dropdown>

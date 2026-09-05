@@ -21,6 +21,7 @@ import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { callSubject } from './callSubject.ts'
 import { timelineOf } from './timeline.ts'
@@ -106,6 +107,8 @@ export interface ModelChoice {
   provider: string
   /** The roles this profile holds — `Thinking`, `Quick`, … */
   roles: string[]
+  /** Tokens the host serves in one request; absent when the model takes any budget */
+  contextWindow?: number
 }
 
 /** How a thread is tuned: the model it thinks with and the reading budget. */
@@ -127,7 +130,7 @@ export interface ChatSettingsHost {
   defaultContextTokens: number
   choices(): ModelChoice[]
   /** A choice as a session takes it; throws on a name it doesn't know */
-  resolve(name: string): { model: ResolvedModel; profile: { provider: string; model: string } }
+  resolve(name: string): { model: ResolvedModel; profile: { provider: string; model: string }; contextWindow?: number }
 }
 
 export interface ChatRoutesOptions {
@@ -465,19 +468,26 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     return building
   }
 
+  // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
+  const windowOf = (host: ChatSettingsHost, profile: string) =>
+    host.choices().find((choice) => choice.name === profile)?.contextWindow
+
   // A thread's tuning: the live thread's own, else what was chosen for it, else the host's defaults.
   const settingsOf = (id: string): ThreadSettings | null => {
     const host = options.settings
     if (!host) return null
     const thread = threads.get(id)
     const prefs = pending.get(id)
+    const current = thread?.profile ?? prefs?.profile ?? host.defaultModel
     return {
       model: {
-        current: thread?.profile ?? prefs?.profile ?? host.defaultModel,
+        current,
         default: host.defaultModel,
         choices: host.choices(),
       },
-      contextTokens: thread?.session.contextTokens ?? prefs?.contextTokens ?? host.defaultContextTokens,
+      contextTokens:
+        thread?.session.contextTokens ??
+        fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current)),
       kept: thread ? keptOf(thread) : null,
       documents: thread?.context?.collectionSize ?? null,
       saves: thread?.saves ?? prefs?.saves ?? true,
@@ -670,23 +680,32 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       }
     }
 
+    // The budget is fitted to the model it will ride with: the one chosen
+    // now, else the thread's. A model with a smaller window lowers a budget
+    // that no longer fits, whether or not this change names one.
     const thread = threads.get(id)
+    const held = pending.get(id)
+    const ridingWith = typeof profile === 'string' ? profile : (thread?.profile ?? held?.profile ?? host.defaultModel)
+    const window = chosen ? chosen.contextWindow : windowOf(host, ridingWith)
+    const standing = thread?.session.contextTokens ?? held?.contextTokens ?? host.defaultContextTokens
+    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window)
+    const budgetChanges = typeof tokens === 'number' || budget !== standing
     if (thread) {
       if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
       if (chosen && typeof profile === 'string') {
         thread.session.setModel(chosen.model, chosen.profile)
         thread.profile = profile
       }
-      if (typeof tokens === 'number') thread.session.setContextTokens(tokens)
+      if (budgetChanges) thread.session.setContextTokens(budget)
       if (typeof saves === 'boolean') {
         thread.saves = saves
         if (!saves) await dropSnapshot(id, thread)
       }
       thread.updatedAt = ++tick
     } else {
-      const prefs = pending.get(id) ?? {}
+      const prefs = held ?? {}
       if (typeof profile === 'string') prefs.profile = profile
-      if (typeof tokens === 'number') prefs.contextTokens = tokens
+      if (budgetChanges) prefs.contextTokens = budget
       if (typeof saves === 'boolean') prefs.saves = saves
       pending.set(id, prefs)
     }

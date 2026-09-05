@@ -30,6 +30,7 @@ import type * as ConfigModule from '#shared/config.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
@@ -186,6 +187,7 @@ export function modelChoices(): ModelChoice[] {
     label: choiceLabel(name, all),
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
+    contextWindow: profile.contextWindow,
   }))
   const builtin = (choice: ModelChoice) => Number(choice.name in PROFILES)
   return choices.toSorted((a, b) => builtin(a) - builtin(b))
@@ -199,7 +201,11 @@ export function createChatSettingsHost(): ChatSettingsHost {
     choices: modelChoices,
     resolve: (name) => {
       const profile = getProfile(name)
-      return { model: resolveProfile(profile), profile: { provider: profile.provider, model: profile.model } }
+      return {
+        model: resolveProfile(profile),
+        profile: { provider: profile.provider, model: profile.model },
+        contextWindow: profile.contextWindow,
+      }
     },
   }
 }
@@ -236,7 +242,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       days: WEB_CHAT.days,
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
-      contextTokens: prefs.contextTokens ?? WEB_CHAT.contextTokens,
+      contextTokens: fitBudget(prefs.contextTokens ?? WEB_CHAT.contextTokens, profile.contextWindow),
       resume: null,
       model: resolveProfile(profile),
       profile: { provider: profile.provider, model: profile.model },

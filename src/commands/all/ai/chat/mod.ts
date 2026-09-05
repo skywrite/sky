@@ -33,6 +33,7 @@ import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
 import { SessionBlessings, harvestFileRefs } from './lib/approvals.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
@@ -271,8 +272,17 @@ export default class AiChatTask extends Command {
     // A closed notebook: the flag or a zero ceiling. Documents are neither
     // read nor queried; the ambient day (summaries, health, prices, calendar)
     // still frames the conversation, as it does on the web page.
-    const contextBudget = noContext ? 0 : maxContext
+    const asked = noContext ? 0 : maxContext
+    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow)
     const closed = contextBudget === 0
+    if (contextBudget !== asked) {
+      output.log(
+        colors.dim(
+          `Reading budget ${asked.toLocaleString()} → ${contextBudget.toLocaleString()}: ` +
+            `${reasoningProfile.model} takes ${reasoningProfile.contextWindow?.toLocaleString()} tokens in all.`,
+        ),
+      )
+    }
 
     output.log(closed ? 'Notebook closed: reading no documents.' : `Gathering context from last ${days} days...`)
 

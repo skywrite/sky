@@ -57,6 +57,12 @@ export interface ModelProfile<P extends Provider = Provider> {
   provider: P
   model: string
   baseUrl?: string
+  /**
+   * Tokens the host serves in one request, when that is less than a chat may
+   * ask to read. A chat's reading budget is fitted to it — see
+   * universal/ai/readingBudget.ts. Absent, the model takes any budget.
+   */
+  contextWindow?: number
   options?: CommonOptions & ProviderOptionsByProvider[P]
 }
 

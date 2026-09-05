@@ -2907,6 +2907,25 @@ a.sky-thread {
   line-height: 1.5;
   color: var(--sky-dim);
 }
+/* the reading budget: seven stops on a slider, labels under the track */
+.sky-budget {
+  margin: 14px 6px 34px;
+}
+
+.sky-budget .mantine-Slider-markLabel {
+  font-size: 12.5px;
+  color: var(--sky-text-2);
+  margin-top: 6px;
+}
+
+.sky-budget .mantine-Slider-mark {
+  border-color: var(--sky-border-soft);
+}
+
+.sky-budget .mantine-Slider-markLabel [data-off='true'] {
+  color: var(--sky-dim);
+  opacity: 0.6;
+}
 
 .sky-chip-sm {
   font-size: 13px;

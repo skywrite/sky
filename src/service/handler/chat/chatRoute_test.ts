@@ -87,11 +87,29 @@ const settingsHost: ChatSettingsHost = {
   },
 }
 
+/** The catalog with a model whose host serves 131,072 tokens a request — Qwen on Cerebras. */
+const SMALL_WINDOW = 131_072
+const smallWindowHost: ChatSettingsHost = {
+  ...settingsHost,
+  choices: () => [
+    ...CHOICES,
+    { name: 'test-small', label: 'Test Small', provider: 'Test', roles: [], contextWindow: SMALL_WINDOW },
+  ],
+  resolve: (name) => {
+    if (name === 'test-small') {
+      return { model: {} as ResolvedModel, profile: { provider: 'test', model: name }, contextWindow: SMALL_WINDOW }
+    }
+    return settingsHost.resolve(name)
+  },
+}
+
 async function testHost(
   over: {
     invokeModel?: ModelInvoker
     /** Hands the test the host's report channel — what a tool's command output would reach */
     capture?: (report: (event: ChatSessionEvent | ToolOutputEvent) => void) => void
+    /** Another catalog behind the settings routes */
+    settings?: ChatSettingsHost
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
@@ -128,7 +146,7 @@ async function testHost(
   return {
     createSession,
     snapshotPath: (id: string) => path.join(tmp, `${id}.autosave.md`),
-    settings: settingsHost,
+    settings: over.settings ?? settingsHost,
     endDefaults: { enricher: stubEnricher },
     timeDir: tmp,
     tmp,
@@ -1045,3 +1063,48 @@ test({ name: 'chat route - a declined call tells the model so, and the turn goes
     expected: { answered: false, reply: 'Posted.', tools: [{ tool: 'slack_post', outcome: 'denied' }] },
   })
 })
+
+test(
+  { name: "chat route - a model's window caps the budget, before the first message and on a live thread" },
+  async () => {
+    const app = appWith(await testHost({ settings: smallWindowHost }))
+    const listed = await getJson(app, 'http://localhost/chat/s7/settings')
+    const small = await post(app, 'http://localhost/chat/s7/settings', {
+      profile: 'test-small',
+      contextTokens: 300_000,
+    })
+    const smallBody = (await small.json()) as { model: { current: string }; contextTokens: number }
+    const fits = await post(app, 'http://localhost/chat/s7/settings', { contextTokens: 25_000 })
+    const fitsBody = (await fits.json()) as { contextTokens: number }
+    const back = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-quick', contextTokens: 300_000 })
+    const backBody = (await back.json()) as { model: { current: string }; contextTokens: number }
+    assert({
+      given:
+        'the catalog, then the small-window model chosen with 300k, a 25k budget on it, and the wide model back with 300k',
+      should:
+        'list the window on the choice, drop 300k to 50k — the highest stop that fits — keep 25k, and take 300k on the wide model',
+      actual: {
+        window: listed.model.choices.find((c: { name: string }) => c.name === 'test-small')?.contextWindow,
+        small: [smallBody.model.current, smallBody.contextTokens],
+        fits: fitsBody.contextTokens,
+        back: [backBody.model.current, backBody.contextTokens],
+      },
+      expected: { window: SMALL_WINDOW, small: ['test-small', 50_000], fits: 25_000, back: ['test-quick', 300_000] },
+    })
+
+    await (await post(app, 'http://localhost/chat/s7/messages', { message: 'What should I focus on?' })).text()
+    const lowered = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-small' })
+    const loweredBody = (await lowered.json()) as { model: { current: string }; contextTokens: number }
+    const context = await getJson(app, 'http://localhost/chat/s7/context')
+    assert({
+      given: 'a live thread reading 300k, switched to the small-window model with no budget named',
+      should: 'lower its budget to 50k and reassemble the context within it',
+      actual: {
+        current: loweredBody.model.current,
+        contextTokens: loweredBody.contextTokens,
+        budget: context.stats.budget,
+      },
+      expected: { current: 'test-small', contextTokens: 50_000, budget: 50_000 },
+    })
+  },
+)

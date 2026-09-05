@@ -20,6 +20,14 @@ to the top level, provider-specific ones (effort, thinking) namespace under
 `providerOptions[provider]`. Sampling overrides are dropped on thinking
 profiles because those models reject them with a 400.
 
+A profile may declare `contextWindow` — the tokens its host serves in one
+request, when that is less than a chat may ask to read. A chat's reading
+budget is fitted to it (`universal/ai/readingBudget.ts`): the budget stays
+when it fits, else drops to the highest stop that leaves room for the
+prompt, the tools, the reply and the estimate's slack. Cerebras serves
+Qwen 3.8 at 131,072 tokens on the paid tier, so a chat there reads 50k at
+most; a profile with no window declared is not capped.
+
 ## Catalog policy
 
 - A profile ships only for a model that is live on its provider's API
