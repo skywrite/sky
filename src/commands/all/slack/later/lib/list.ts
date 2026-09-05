@@ -83,6 +83,20 @@ export function laterItemLink(workspace: string, item: AgentSlackLaterItem): str
   return `${workspace}/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
 }
 
+/**
+ * Browser-client form of the message link. Workspace-domain archive links
+ * greet a browser with Slack's "open the app" interstitial; app.slack.com is
+ * the web client's own host, so it lands straight in the conversation.
+ * Thread replies carry thread_ts/cid like Slack's own copy-link, so the
+ * client opens the thread pane rather than scrolling channel history the
+ * reply isn't in.
+ */
+export function laterBrowserLink(item: AgentSlackLaterItem): string {
+  const base = `https://app.slack.com/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
+  const threadTs = item.message?.thread_ts
+  return laterIsThreadReply(item) && threadTs ? `${base}?thread_ts=${threadTs}&cid=${item.channel_id}` : base
+}
+
 /** Conversation kind for a later item — drives the row label's color. */
 export type LaterConversationKind = 'channel' | 'dm' | 'group' | 'unknown'
 
@@ -98,6 +112,19 @@ const KIND_COLOR: Record<LaterConversationKind, (label: string) => string> = {
   dm: colors.magenta,
   group: colors.magenta,
   unknown: colors.red,
+}
+
+const GROUP_RANK: Record<LaterConversationKind, number> = { channel: 0, dm: 1, group: 1, unknown: 2 }
+
+/**
+ * Grouped-listing order key: channels first, then people (DMs and group DMs
+ * together), dead-id debris last; alphabetical within each block. The id
+ * suffix keeps two same-named conversations from interleaving. Sort by this
+ * key, then ts, so a conversation's items stay in reading order.
+ */
+export function laterGroupKey(item: AgentSlackLaterItem, members?: string[]): string {
+  const label = laterChannelLabel(item, members).replace(/^#/, '').toLowerCase()
+  return `${GROUP_RANK[laterConversationKind(item)]}:${label}:${item.channel_id}`
 }
 
 /** What a dead conversation id resolved to, inferred from timestamp twins in the same fetch. */
@@ -299,6 +326,31 @@ export type LaterRowContext = {
    * color-capable), so tests must pin it.
    */
   hyperlinks?: boolean
+  /** Drop the conversation label from the head line — grouped listings carry it in the group header */
+  omitLabel?: boolean
+  /** Leading whitespace for the head line; snippet and url lines sit 4 further in */
+  indent?: string
+}
+
+/**
+ * Colored conversation label for a row or a group header: kind-colored name,
+ * twin-inferred name with a stale or duplicate note for rows whose
+ * conversation id no longer resolves, a red marker when nothing names it.
+ */
+export function renderLaterLabel(
+  item: AgentSlackLaterItem,
+  context: Pick<LaterRowContext, 'stale' | 'groupMembers'> = {},
+): string {
+  const kind = laterConversationKind(item)
+  if (kind !== 'unknown') {
+    return colors.bold(KIND_COLOR[kind](laterChannelLabel(item, context.groupMembers?.get(item.channel_id))))
+  }
+  const staleInfo = context.stale?.get(item.channel_id)
+  if (staleInfo?.name) {
+    const note = staleInfo.duplicateTs.has(item.ts) ? 'duplicate save — stale channel id' : 'stale channel id'
+    return colors.yellow(`#${staleInfo.name}`) + colors.dim(` (${note})`)
+  }
+  return colors.red(`⚠ unavailable channel ${item.channel_id}`)
 }
 
 /**
@@ -318,19 +370,12 @@ export function renderLaterRow(
 ): string[] {
   const { item, timeLabel, link } = row
   const hyperlinks = context.hyperlinks ?? colors.isColorSupported
+  const indent = context.indent ?? '  '
   const kind = laterConversationKind(item)
   const staleInfo = kind === 'unknown' ? context.stale?.get(item.channel_id) : undefined
   const duplicate = staleInfo?.duplicateTs.has(item.ts) ?? false
 
-  let label: string
-  if (kind !== 'unknown') {
-    label = colors.bold(KIND_COLOR[kind](laterChannelLabel(item, context.groupMembers?.get(item.channel_id))))
-  } else if (staleInfo?.name) {
-    const note = duplicate ? 'duplicate save — stale channel id' : 'stale channel id'
-    label = colors.yellow(`#${staleInfo.name}`) + colors.dim(` (${note})`)
-  } else {
-    label = colors.red(`⚠ unavailable channel ${item.channel_id}`)
-  }
+  const label = context.omitLabel ? '' : `  ${renderLaterLabel(item, context)}`
 
   const threadBadge = laterIsThreadReply(item) ? colors.yellow('  ↳ thread reply') : ''
   const replies = item.message?.reply_count
@@ -344,10 +389,12 @@ export function renderLaterRow(
       : '(no preview — message not fetched)'
   const snippet = body === '' ? colors.dim(placeholder) : body
 
+  // The clickable link is the browser-client form; the piped url line keeps
+  // the workspace permalink — the copy-pasteable, capture-parseable spelling
   const lines = [
-    `  ${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, link) : timeLabel)}  ${label}${threadBadge}${replyBadge}`,
-    `      ${snippet}`,
+    `${indent}${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, laterBrowserLink(item)) : timeLabel)}${label}${threadBadge}${replyBadge}`,
+    `${indent}    ${snippet}`,
   ]
-  if (!hyperlinks) lines.push(`      ${link}`)
+  if (!hyperlinks) lines.push(`${indent}    ${link}`)
   return lines
 }

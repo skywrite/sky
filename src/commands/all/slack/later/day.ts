@@ -14,9 +14,11 @@ import {
   fetchInProgressLater,
   laterCapturable,
   laterChannelMatches,
+  laterGroupKey,
   laterItemLink,
   laterMatchableName,
   normalizeChannelQuery,
+  renderLaterLabel,
   renderLaterRow,
   resolveRowMemberNames,
   resolveRowMentions,
@@ -32,6 +34,7 @@ const params = {
   channel: Flag.string('Only this conversation: #name, DM person, or group-DM slug (exact match)', {
     optional: true,
   }),
+  sortTime: Flag.bool('One chronological list instead of grouping by conversation', { default: false }),
   capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
   captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
   open: Flag.stringOrBool(
@@ -85,10 +88,15 @@ export default class SlackLaterDayTask extends Command {
     descriptionLong: [
       "Lists the in-progress items from Slack's Later tab whose origin message",
       'falls on the given notebook day (--saved-on matches the day you saved',
-      'them instead). --channel narrows the day to one conversation, by exact',
-      'name: #name or name for channels, the person for DMs, the raw slug for',
-      'group DMs — the capture and open flags then act on that scoped list.',
-      'Listing is read-only.',
+      'them instead), grouped by conversation — channels first, then people,',
+      'alphabetical, each under its own header; --sort-time flattens back to',
+      'one chronological list. Numbering follows the printed order either way,',
+      'so --capture indexes always mean what you see. --channel narrows the',
+      'day to one conversation, by exact name: #name or name for channels, the',
+      'person for DMs, the raw slug for group DMs — the capture and open flags',
+      'then act on that scoped list. Clickable links and --open use the',
+      'app.slack.com browser client, skipping the "open the app" page; piped',
+      'output keeps workspace permalinks. Listing is read-only.',
       '',
       'With --capture, each picked item runs through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
@@ -111,6 +119,7 @@ export default class SlackLaterDayTask extends Command {
       'sky slack:later:day',
       'sky slack:later:day --capture all',
       'sky slack:later:day --channel atlas --capture all',
+      'sky slack:later:day --sort-time',
       'sky slack:later:day 2026-06-03 --capture-batch 10',
       'sky slack:later:day 2026-06-03 --capture 1,3 --open',
       'sky slack:later:day 2026-06-03 --open=3',
@@ -211,9 +220,39 @@ export default class SlackLaterDayTask extends Command {
       resolveRowMentions(matched, workspace),
       resolveRowMemberNames(matched, workspace),
     ])
+
+    // Default order groups by conversation (channels first, then people,
+    // alphabetical; time within each) — one context switch per conversation,
+    // and batch captures eat the queue a conversation at a time. Indexes are
+    // assigned after the sort, so --capture picks exactly what's printed.
+    if (!args.sortTime) {
+      const keys = new Map<string, string>()
+      for (const d of matched) {
+        if (!keys.has(d.item.channel_id)) {
+          keys.set(d.item.channel_id, laterGroupKey(d.item, groupMembers.get(d.item.channel_id)))
+        }
+      }
+      matched.sort((a, b) => {
+        const keyA = keys.get(a.item.channel_id) ?? ''
+        const keyB = keys.get(b.item.channel_id) ?? ''
+        if (keyA !== keyB) return keyA < keyB ? -1 : 1
+        return a.item.ts < b.item.ts ? -1 : 1
+      })
+    }
+
+    let headerGroup: string | undefined
     for (const [index, d] of matched.entries()) {
-      for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, { stale, groupMembers }))
+      if (!args.sortTime && d.item.channel_id !== headerGroup) {
+        headerGroup = d.item.channel_id
+        output.log('')
+        output.log(`  ${renderLaterLabel(d.item, { stale, groupMembers })}`)
+      }
+      const rowContext = args.sortTime
+        ? { stale, groupMembers }
+        : { stale, groupMembers, omitLabel: true, indent: '    ' }
+      for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, rowContext)) {
         output.log(line)
+      }
     }
 
     // Read-only triage: open the first N matched in Slack, capture nothing —

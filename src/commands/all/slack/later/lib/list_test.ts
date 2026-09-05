@@ -2,9 +2,11 @@ import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slac
 import { assert, test } from '#test'
 import {
   backfillMissingMessages,
+  laterBrowserLink,
   laterChannelLabel,
   laterChannelMatches,
   laterConversationKind,
+  laterGroupKey,
   laterIsThreadReply,
   laterItemLink,
   laterMatchableName,
@@ -126,6 +128,50 @@ test('laterItemLink builds the archives permalink', () => {
   })
 })
 
+test('laterBrowserLink targets the web client host', () => {
+  assert({
+    given: 'a thread-parent message',
+    should: 'use the plain app.slack.com archive form',
+    actual: laterBrowserLink(item({ message: { thread_ts: '1750000000.000100' } })),
+    expected: 'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100',
+  })
+  assert({
+    given: 'a thread reply',
+    should: 'carry thread_ts and cid so the client opens the thread pane',
+    actual: laterBrowserLink(item({ message: { thread_ts: '1749999999.000009' } })),
+    expected:
+      'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100?thread_ts=1749999999.000009&cid=C0123ABCDEF',
+  })
+  assert({
+    given: 'an unfetched message (no thread info)',
+    should: 'fall back to the plain form',
+    actual: laterBrowserLink(item({})),
+    expected: 'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100',
+  })
+})
+
+test('laterGroupKey orders channels, then people, then debris', () => {
+  const keys = [
+    laterGroupKey(item({ channel_id: 'D0000000001', channel_name: 'jane.doe' })),
+    laterGroupKey(item({ channel_id: 'C0000000001', channel_name: 'zebra' })),
+    laterGroupKey(item({ channel_id: 'C0000000002', channel_name: 'atlas' })),
+    laterGroupKey(item({ channel_id: 'C0000000003' })),
+    laterGroupKey(item({ channel_name: 'mpdm-alice--bob.smith--carol-1' })),
+  ]
+  assert({
+    given: 'a mix of conversation kinds',
+    should: 'sort channels alphabetically first, people next, unnamed last',
+    actual: [...keys].sort(),
+    expected: [keys[2], keys[1], keys[4], keys[0], keys[3]],
+  })
+  assert({
+    given: 'a group DM with resolved member names',
+    should: 'sort by the shown names, not the slug',
+    actual: laterGroupKey(item({ channel_id: 'G0000000001', channel_name: 'mpdm-x--y-1' }), ['Ann Doe', 'Bo Roe']),
+    expected: '1:ann doe, bo roe:G0000000001',
+  })
+})
+
 test('laterConversationKind classifies the conversation', () => {
   assert({
     given: 'a named channel',
@@ -179,8 +225,26 @@ test('renderLaterRow lays out head, snippet, and link lines', () => {
     should: 'wrap the time in an OSC-8 link and drop the url line',
     expected: '2 lines, head linked: true',
     actual: `${linked.length} lines, head linked: ${linked[0].includes(
-      ']8;;https://atlas.slack.com/archives/C0123ABCDEF/p17500000000001002026-01-05 09:30]8;;',
+      ']8;;https://app.slack.com/archives/C0123ABCDEF/p17500000000001002026-01-05 09:30]8;;',
     )}`,
+  })
+})
+
+test('renderLaterRow supports the grouped listing shape', () => {
+  const row = {
+    item: item({ channel_name: 'general', message: { content: 'hello  world\nsecond line' } }),
+    timeLabel: '2026-01-05 09:30',
+    link: 'https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100',
+  }
+  assert({
+    given: 'label omitted and a deeper indent, as under a group header',
+    should: 'render number and time with no inline label, lines shifted in',
+    actual: stripAnsi(renderLaterRow(row, 4, { hyperlinks: false, omitLabel: true, indent: '    ' })),
+    expected: [
+      '     5. 2026-01-05 09:30',
+      '        hello world second line',
+      '        https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100',
+    ],
   })
 })
 
