@@ -270,3 +270,103 @@ test({ name: 'voice route - ending a thread forgets it' }, async () => {
     expected: 404,
   })
 })
+
+test({ name: 'voice route - a gated tool parks until confirm_action, and only once' }, async () => {
+  const { host } = hostWith()
+  const runs: Record<string, unknown>[] = []
+  const thread = await host.createThread('t')
+  thread.tools.set('draft', {
+    definition: { type: 'function', name: 'draft', parameters: { type: 'object' } },
+    run: (input) => {
+      runs.push(input)
+      return Promise.resolve('draft saved')
+    },
+    needsApproval: true,
+  })
+  const app = await appWith(host)
+
+  const parked = await post(app, '/voice/gate/tools', { name: 'draft', arguments: '{"text":"hey"}' })
+  const parkedBody = (await parked.json()) as { output: string }
+  const payload = JSON.parse(parkedBody.output) as { needsConfirmation: boolean; approvalId: string; summary: string }
+  assert({
+    given: 'a call to a tool that needs approval',
+    should: 'park it and run nothing',
+    actual: [payload.needsConfirmation, runs.length, payload.summary.includes('hey')],
+    expected: [true, 0, true],
+  })
+
+  const confirmed = await post(app, '/voice/gate/tools', {
+    name: 'confirm_action',
+    arguments: JSON.stringify({ approvalId: payload.approvalId }),
+  })
+  assert({
+    given: 'the spoken yes relayed as confirm_action',
+    should: 'execute the parked call with its original input',
+    actual: [((await confirmed.json()) as { output: string }).output, runs],
+    expected: ['draft saved', [{ text: 'hey' }]],
+  })
+
+  const again = await post(app, '/voice/gate/tools', {
+    name: 'confirm_action',
+    arguments: JSON.stringify({ approvalId: payload.approvalId }),
+  })
+  assert({
+    given: 'the same approvalId a second time',
+    should: 'refuse — an approval is single-use',
+    actual: ((await again.json()) as { output: string }).output.startsWith('No such pending action'),
+    expected: true,
+  })
+})
+
+test({ name: 'voice route - cancel_action discards a parked call' }, async () => {
+  const { host } = hostWith()
+  const runs: unknown[] = []
+  const thread = await host.createThread('t')
+  thread.tools.set('draft', {
+    definition: { type: 'function', name: 'draft', parameters: { type: 'object' } },
+    run: (input) => {
+      runs.push(input)
+      return Promise.resolve('draft saved')
+    },
+    needsApproval: true,
+  })
+  const app = await appWith(host)
+
+  const parked = await post(app, '/voice/gate2/tools', { name: 'draft', arguments: '{"text":"scrap it"}' })
+  const payload = JSON.parse(((await parked.json()) as { output: string }).output) as { approvalId: string }
+
+  const cancelled = await post(app, '/voice/gate2/tools', {
+    name: 'cancel_action',
+    arguments: JSON.stringify({ approvalId: payload.approvalId }),
+  })
+  const line = ((await cancelled.json()) as { output: string }).output
+  assert({
+    given: 'a decline relayed as cancel_action',
+    should: 'discard the call without running it',
+    actual: [line.startsWith('Cancelled — nothing was done.'), runs.length],
+    expected: [true, 0],
+  })
+
+  const retry = await post(app, '/voice/gate2/tools', {
+    name: 'confirm_action',
+    arguments: JSON.stringify({ approvalId: payload.approvalId }),
+  })
+  assert({
+    given: 'a confirm after the cancel',
+    should: 'find nothing pending',
+    actual: ((await retry.json()) as { output: string }).output.startsWith('No such pending action'),
+    expected: true,
+  })
+})
+
+test({ name: 'voice route - an ungated tool still runs straight through' }, async () => {
+  const { host } = hostWith()
+  const app = await appWith(host)
+  const response = await post(app, '/voice/gate3/tools', { name: 'echo', arguments: '{"a":1}' })
+  assert({
+    given: 'a tool without the approval flag',
+    should: 'run immediately as before',
+    actual: ((await response.json()) as { output: string }).output,
+    expected: 'echo:{"a":1}',
+  })
+})

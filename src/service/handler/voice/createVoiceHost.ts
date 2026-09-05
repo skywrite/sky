@@ -31,9 +31,35 @@ import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { renderTemplate } from '#shared/prompts/mod.ts'
 import type { AuditionHost, ClientSecretMinter, VoiceRoutesOptions, VoiceThreadFactory, VoiceTool } from './mod.ts'
+import { APPROVAL_TOOLS } from './mod.ts'
 
 /** How long a minted secret can start a session; the session itself outlives it. */
 const SECRET_TTL_SECONDS = 60
+
+/**
+ * The commands a voice session offers, by name. Curated instead of
+ * inherited from the chat set: a realtime session re-bills every tool
+ * schema on every spoken reply, and a chat-only flow (clarify → create
+ * under a terminal approval card) has no voice shape. Reads and day-list
+ * writes run on the user's word and read their result back; commands
+ * whose decorator says needsApproval park in the route's spoken-confirm
+ * gate. Names not yet in the manifest simply wait here until they land.
+ */
+const VOICE_COMMANDS = new Set([
+  'day:items',
+  'day:items:add',
+  'day:items:done',
+  'slack:unread',
+  'slack:api:channels',
+  'slack:draft:new',
+  'slack:draft:reply',
+  'slack:draft:update',
+  'google:email:inbox:view',
+  'google:email:read',
+  'google:email:draft:new',
+  'google:email:draft:reply',
+  'google:email:draft:update',
+])
 
 function clockOf(context: CommandContext): VoiceClock {
   return {
@@ -71,9 +97,8 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
         return (await askNotebook(tasks, delegate, prompts.askPrompt, question)).answer
       },
     })
-    // Only tools that never ask — the page has no approval surface yet.
     for (const entry of entries) {
-      if (entry.needsApproval) continue
+      if (!VOICE_COMMANDS.has(entry.commandName)) continue
       tools.set(entry.toolName, {
         definition: {
           type: 'function',
@@ -82,15 +107,18 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
           parameters: commandDescriptionToSchema(entry.commandClass.description),
         },
         run: async (input) => JSON.stringify(await runToolCommand(tasks, entry, input)),
+        needsApproval: entry.needsApproval,
       })
     }
 
+    // The gate's confirm/cancel ride along whenever something can park.
+    const gated = [...tools.values()].some((tool) => tool.needsApproval)
     return {
       session: voiceSessionConfig({
         model: DEFAULT_VOICE_MODEL,
         voice: preferredVoice(),
         instructions: prompts.instructions,
-        tools: [...tools.values()].map((tool) => tool.definition),
+        tools: [...tools.values()].map((tool) => tool.definition).concat(gated ? APPROVAL_TOOLS : []),
       }),
       opening: openingInstructions(prompts.instructions, prompts.greeting),
       tools,
