@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # Model registry — roles, profiles, providers
@@ -44,9 +44,22 @@ every step of a tool loop. Rule: every `streamText` / `generateText` loop
 with `stopWhen` passes `prepareStep: cacheTailStep`, or each step re-bills
 the whole replayed history.
 
+## Usage
+
+Every resolved model is wrapped in `usageMeter` (`usageLog.ts`): each call
+appends its token counts — full-rate input, cache reads, cache writes,
+output — with the model and the command making the call to
+`<userDataDir>/logs/ai-usage.jsonl`. `runWithUsageSource` names the
+command; the command service and the CLI runner set it for every run, the
+chat routes for a turn. `sky ai:usage` rolls a day up by model and command.
+Tokens only; the invoice prices them.
+
 ## Notes
 
-- [2026-09-01](2026-09-01-fable-5-1-profile.md) — Fable 5.1 joins the
-  catalog; there is no Opus 5.1, so `reasoning` stays on Opus 5.
+- [2026-09-05](2026-09-05-usage-meter.md) — every model call records its
+  token counts; every chat turn shows its own; `sky ai:usage` rolls up.
 - [2026-09-03](2026-09-03-cache-tail-every-step.md) — the cache tail moves
   on every loop step; a mission's history is read from cache, not re-sent.
+- [2026-09-01](2026-09-01-fable-5-1-profile.md) — Fable 5.1 joins the
+  catalog; there is no Opus 5.1, so `reasoning` stays on Opus 5. A
+  `-high` variant followed on 2026-09-02.

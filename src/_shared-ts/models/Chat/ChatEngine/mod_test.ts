@@ -833,3 +833,48 @@ test('the streaming path re-tails the cache breakpoint on every tool step', asyn
     expected: [false, false, true],
   })
 })
+
+test('a turn sums the usage its invocations report, approval rounds included', async () => {
+  const usage = (input: number, cacheRead: number, output: number) => ({
+    inputTokens: input + cacheRead,
+    inputTokenDetails: { noCacheTokens: input, cacheReadTokens: cacheRead, cacheWriteTokens: 0 },
+    outputTokens: output,
+    outputTokenDetails: { textTokens: output, reasoningTokens: 0 },
+    totalTokens: input + cacheRead + output,
+  })
+  const { invokeModel } = scriptedInvoker([
+    {
+      ...textResult(''),
+      content: [approvalRequest('a1', 'c1', 'slack_cli_post-self', { text: 'hi' })],
+      usage: usage(100, 2000, 40),
+    },
+    { ...textResult('posted'), usage: usage(2, 2600, 12) },
+  ])
+  const { engine } = makeEngine([], [APPROVE])
+  const scripted = new ChatEngine({
+    model: {} as ConstructorParameters<typeof ChatEngine>[0]['model'],
+    approvalHandler: () => Promise.resolve(APPROVE),
+    invokeModel,
+  })
+  void engine
+  scripted.appendUserMessage('post hi')
+  const result = await scripted.runTurn(TURN_OPTS)
+  assert({
+    given: 'two invocations, one before the approval and one after',
+    should: 'add their counts into the turn',
+    actual: result.usage,
+    expected: { input: 102, cacheRead: 4600, cacheWrite: 0, output: 52 },
+  })
+})
+
+test('a turn whose invoker reports no usage shows zero, not nothing', async () => {
+  const { engine } = makeEngine([textResult('hello')])
+  engine.appendUserMessage('hi')
+  const result = await engine.runTurn(TURN_OPTS)
+  assert({
+    given: 'a scripted invoker without usage',
+    should: 'report zero counts',
+    actual: result.usage,
+    expected: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+  })
+})

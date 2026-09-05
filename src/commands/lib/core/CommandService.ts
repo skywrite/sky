@@ -2,6 +2,7 @@ import colors from 'picocolors'
 import type { Args } from '#commands/lib/commands.d.ts'
 import type { CommandArgs } from '#commands/lib/commands.d.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
+import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import type CommandContext from './CommandContext.ts'
 import { loadCommand } from './commandLoader.ts'
 import { withCommandRun } from './commandLog.ts'
@@ -223,9 +224,11 @@ export default class CommandService {
     // Wrapped rather than bracketed around execution alone, so a command that
     // fails to load or whose arguments do not typecheck still reports that it
     // was attempted. See commandLog.ts for what a run looks like in the log.
-    return withCommandRun(
-      { command: commandName, parent: this.currentTaskName, depth: this.context.compositionDepth },
-      () => this.dispatch<T>(commandName, argsOverride),
+    // A model call made while the command runs records under its name.
+    return runWithUsageSource(commandName, () =>
+      withCommandRun({ command: commandName, parent: this.currentTaskName, depth: this.context.compositionDepth }, () =>
+        this.dispatch<T>(commandName, argsOverride),
+      ),
     )
   }
 

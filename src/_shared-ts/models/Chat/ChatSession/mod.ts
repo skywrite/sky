@@ -17,6 +17,7 @@
 
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import type { TokenUsage } from '#shared/ai/usage.ts'
 import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
@@ -141,6 +142,8 @@ export interface TurnReport {
   /** Deduplicated web-search sources, already appended to the saved turn */
   sourceUrls: string[]
   approvalRoundsExhausted: boolean
+  /** The turn's token counts, every model step summed; absent when the turn failed */
+  usage?: TokenUsage
   /** The turn died — already logged; the conversation continues without a reply */
   error?: string
 }
@@ -425,6 +428,7 @@ export default class ChatSession {
       // Attach tool records to this turn's log entry — creating one when
       // the turn changed no context and so recorded nothing else.
       this.context.recordTurnTools(result.toolRecords)
+      this.context.recordTurnUsage(result.usage)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const assistant: ConversationMessage = { role: 'assistant', content: withSources(result.text, sourceUrls) }
@@ -435,6 +439,7 @@ export default class ChatSession {
       report.text = result.text
       report.sourceUrls = sourceUrls
       report.approvalRoundsExhausted = result.approvalRoundsExhausted
+      report.usage = result.usage
     } catch (err) {
       // A failed turn keeps its tool trail — an executed side-effectful
       // call (a sent post, a created doc) must not vanish from the

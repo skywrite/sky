@@ -123,6 +123,7 @@ Non-obvious design context lives next to the code that owns it, in a `docs/` fol
 - `docs/README.md` — current design: the mental model needed before changing this code. Keep it true when behavior changes.
 - `docs/YYYY-MM-DD-<slug>.md` — dated problem narratives: what was wrong, what was tried and rejected, why the fix works. Append-only, never retro-edited — a dated file is allowed to be stale.
 - Every doc opens with YAML frontmatter carrying `created:` and `updated:` dates (`YYYY-MM-DD`). Bump `updated:` on every edit.
+- Dated lists in a README (`## Notes`, `## Verified`) run newest first. A new entry goes at the top of its list, never appended at the bottom.
 - One home per topic — the module where the pieces compose, not where the mechanisms live. Other dirs the topic touches get a pointer line in their README, never a copy.
 - Cross-cutting topics with no owning module: `docs/topics/<slug>/` at repo root.
 - These files obey the mock-data rule above. Distill narratives with synthetic examples; raw session transcripts containing real notebook content stay out of the repo.

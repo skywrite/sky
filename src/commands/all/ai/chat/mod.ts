@@ -21,6 +21,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import { usageLine } from '#shared/ai/usage.ts'
 import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
@@ -837,6 +838,7 @@ export default class AiChatTask extends Command {
       if (turn.approvalRoundsExhausted) {
         output.log(colors.dim('Too many approval requests, moving on.'))
       }
+      if (turn.usage) output.log(colors.dim(usageLine(turn.usage, reasoningProfileName)))
 
       // One shot over the first exchange: the pinned line and tab title
       // update when the label lands (save-time titling is independent).

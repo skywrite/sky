@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { ContextPanel } from './context.tsx'
+import { type TokenUsage, usageLine } from '#universal/ai/tokenUsage.ts'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
@@ -45,6 +46,10 @@ export interface Turn {
   html?: string
   /** The gather that preceded this reply, kept as its provenance */
   note?: string
+  /** What the reply cost, in tokens, every step summed */
+  usage?: TokenUsage
+  /** The profile that answered, as the settings name it */
+  model?: string
   error?: string
 }
 
@@ -150,7 +155,7 @@ type Action =
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
   | { type: 'run-summary'; id: string; tool: string; at: number; text: string }
-  | { type: 'finished'; id: string; content: string }
+  | { type: 'finished'; id: string; content: string; usage?: TokenUsage; model?: string }
   | { type: 'failed'; id: string; message: string }
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
@@ -335,6 +340,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           ...r,
           content: action.content,
           note: r.note ?? state.provenance ?? undefined,
+          usage: action.usage ?? r.usage,
+          model: action.model ?? r.model,
         })),
       }
     case 'failed':
@@ -413,14 +420,19 @@ interface ThreadBody {
   pending?: Approval[]
   answered?: Answered[]
   runs?: Run[]
+  /** Each reply's counts and the profile that answered, by turn index */
+  usage?: Array<TokenUsage & { at: number; model: string }>
 }
 
 function turnsOf(body: ThreadBody): Turn[] {
-  return body.turns.map((t) => ({
+  const usageAt = new Map((body.usage ?? []).map(({ at, model, ...usage }) => [at, { usage, model }]))
+  return body.turns.map((t, i) => ({
     role: t.role,
     content: t.content,
     time: t.when?.slice(11),
     html: t.role === 'assistant' ? (renderMarkdown(t.content) ?? undefined) : undefined,
+    usage: usageAt.get(i)?.usage,
+    model: usageAt.get(i)?.model,
   }))
 }
 
@@ -660,7 +672,13 @@ export function useChat(id: string) {
                 const content = sources.length
                   ? `${text}\n\nSources:\n${sources.map((u) => `- ${u}`).join('\n')}`
                   : text
-                dispatch({ id, type: 'finished', content })
+                dispatch({
+                  id,
+                  type: 'finished',
+                  content,
+                  usage: d.usage as TokenUsage | undefined,
+                  model: d.model as string | undefined,
+                })
                 const html = renderMarkdown(content)
                 if (html) dispatch({ id, type: 'rendered', index: replyIndex, html })
               }
@@ -1031,6 +1049,7 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
             streaming={busy && i === state.turns.length - 1 && turn.role === 'assistant'}
             cards={turn.role === 'assistant' ? settled(i) : undefined}
             runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
+            labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
           />
         </Fragment>
       ))}
@@ -1252,6 +1271,7 @@ export function TurnView({
   streaming,
   cards,
   runs,
+  labelOf,
 }: {
   turn: Turn
   streaming: boolean
@@ -1259,6 +1279,8 @@ export function TurnView({
   cards?: ReactNode
   /** The tools this reply ran, with what each said */
   runs?: Run[]
+  /** The settings' label for a profile name, for the usage line; the name itself when absent */
+  labelOf?: (profile: string) => string
 }) {
   if (turn.role === 'user') {
     // What the person typed, verbatim — an address in it is a link out.
@@ -1304,6 +1326,11 @@ export function TurnView({
           </div>
         )}
         {runs && runs.length > 0 && <RunList runs={runs} />}
+        {turn.usage && !streaming && (
+          <div className="sky-usage">
+            {usageLine(turn.usage, turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined)}
+          </div>
+        )}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
       </div>
     </>

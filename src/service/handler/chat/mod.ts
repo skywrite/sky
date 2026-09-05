@@ -13,6 +13,8 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import type { TokenUsage } from '#shared/ai/usage.ts'
+import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
@@ -203,6 +205,8 @@ interface Thread {
   runs: ToolRun[]
   /** Whether ending files the thread; a false one keeps no crash copy at rest */
   saves: boolean
+  /** Each reply's token counts and the profile that answered, by the reply's turn index */
+  usage: Map<number, TokenUsage & { model: string }>
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -442,6 +446,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             pending: new Map(),
             answered: [],
             runs: [],
+            usage: new Map(),
             // Kept unless told otherwise before the first message.
             saves: prefs.saves ?? true,
             state: 'new',
@@ -529,7 +534,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               closed: thread.session.contextTokens === 0,
             })
           }
-          const turn = await thread.session.send(message)
+          // The chat's own model calls record under the chat's name; a tool's under its own.
+          const turn = await runWithUsageSource('ai:chat', () => thread.session.send(message))
+          if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
           clearInterval(beat)
           if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
@@ -537,7 +544,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
           thread.updatedAt = ++tick
-          frame('turn', wireTurn(turn))
+          frame('turn', { ...(wireTurn(turn) as object), model: thread.profile })
           await chain
         } finally {
           clearInterval(beat)
@@ -576,6 +583,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       })),
       answered: thread.answered,
       runs: thread.runs,
+      usage: [...thread.usage].map(([at, usage]) => ({ at, ...usage })),
     })
   })
 

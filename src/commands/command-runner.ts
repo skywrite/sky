@@ -15,6 +15,7 @@ import { Command, CommandResult, isError, isFail } from '#commands/mod.ts'
 import * as config from '#config'
 import { parsedArgs as args } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
+import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
@@ -229,7 +230,7 @@ async function run() {
   // Execute task with error handling wrapper
   let result: any
   try {
-    result = await commandFn(commandArgs)
+    result = await runWithUsageSource(commandName ?? 'cli', () => commandFn(commandArgs))
   } catch (error) {
     // Convert thrown errors to CommandResult.error
     const errorObj = error instanceof Error ? error : new Error(String(error))

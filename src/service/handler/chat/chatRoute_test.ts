@@ -443,6 +443,38 @@ test({ name: 'chat route - keeping can be turned off and on between turns' }, as
   })
 })
 
+test({ name: 'chat route - a reply carries its token counts, on the stream and on the thread' }, async () => {
+  const invokeModel: ModelInvoker = (args) => {
+    args.sink.write('Focus on the demo.')
+    return Promise.resolve({
+      ...EMPTY,
+      text: 'Focus on the demo.',
+      usage: {
+        inputTokens: 5600,
+        inputTokenDetails: { noCacheTokens: 2, cacheReadTokens: 3654, cacheWriteTokens: 536 },
+        outputTokens: 46,
+        outputTokenDetails: { textTokens: 46, reasoningTokens: 0 },
+        totalTokens: 5646,
+      },
+    })
+  }
+  const app = appWith(await testHost({ invokeModel }))
+  const frames = parseSSE(
+    await (await post(app, 'http://localhost/chat/t11/messages', { message: 'What should I focus on?' })).text(),
+  )
+  const turn = frames.find((f) => f.event === 'turn')?.data as { usage?: unknown; model?: string }
+  const thread = await getJson(app, 'http://localhost/chat/t11')
+  assert({
+    given: 'a model that reports its usage',
+    should: 'put the four counts and the profile on the turn frame, and keep them with the reply on the thread',
+    actual: { frame: { usage: turn.usage, model: turn.model }, thread: thread.usage },
+    expected: {
+      frame: { usage: { input: 2, cacheRead: 3654, cacheWrite: 536, output: 46 }, model: 'test-thinking' },
+      thread: [{ at: 1, input: 2, cacheRead: 3654, cacheWrite: 536, output: 46, model: 'test-thinking' }],
+    },
+  })
+})
+
 interface ContextBody {
   turn: number
   documents: number

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -111,6 +111,16 @@ a person can see and touch:
   message the service never received (the send itself failed) waits the
   same way and goes out once the service answers. `turnStream.ts` holds
   the frame reader, the silence deadline, and the wait.
+- **What a reply cost, in tokens.** The engine sums the SDK's usage over a
+  turn's steps and approval rounds; the session puts it on the turn report
+  and the turn's context-log entry (`usage`). The routes keep each reply's
+  counts with the thread (`usage` on `GET /chat/:id`, by turn index) and
+  send them on the `turn` frame with the profile that answered; the page
+  shows one dim line under the reply — `312k in · 298k from cache · 4.1k
+  out · Claude Opus 5` — and the terminal prints the same after each
+  reply. Every model call also lands in the usage log, under the command
+  making it; `sky ai:usage` rolls the day up
+  ([2026-09-05](../../../_shared-ts/ai/docs/2026-09-05-usage-meter.md)).
 - **Whether the thread is kept.** `Saves to today ▾` sits with the model and
   the budget, two stops: saves to today, or not saved. Set before the first
   message it is an incognito chat; it can change until the close. The
@@ -162,6 +172,20 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 
 ## Verified
 
+- 2026-09-05 — the usage line: a scripted model that reports usage over two
+  approval rounds sums into the turn's counts (engine test); the turn frame
+  carries the counts and the profile, and the thread reads them back by turn
+  index (route test).
+
+- 2026-09-05 — the budget slider: on the real page, a slow click, a quick
+  click, a drag and an arrow key each post their stop once, in order, and
+  the strip follows; the Cerebras Qwen profile ends the slider at 50k with
+  the stops past it grayed. Route tests: the window rides on the choice, a
+  300k choice on the small-window model drops to 50k while 25k stays, the
+  wide model takes 300k again, and a live thread switched to the
+  small-window model has its budget lowered and its context reassembled
+  within it. Shared helper tests: the stops, the nearest stop, the cap
+  behind a window (131,072 → 79,257) and the fit.
 - 2026-09-03 — not saved: a thread set not to save before its first message
   answers the setting, keeps no crash copy after its turn while a saving
   thread beside it does, is listed as not saved, and ends with nothing

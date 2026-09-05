@@ -36,6 +36,7 @@
  * disk.
  */
 
+import type { TokenUsage } from '#shared/ai/usage.ts'
 import type { QueryTruncation } from '#shared/models/DomainCollection/query/resolvers/shared.ts'
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
@@ -138,6 +139,8 @@ export interface ContextTurnLog {
   people?: PersonOpOutcome[]
   /** Context-pipeline failures this turn (also in ai-errors.jsonl) */
   errors?: string[]
+  /** The turn's token counts, every model step summed (also in ai-usage.jsonl per call) */
+  usage?: TokenUsage
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -157,6 +160,7 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     if (entry.memory && entry.memory.length > 0) fields.push(recordArrayField('memory', entry.memory))
     if (entry.people && entry.people.length > 0) fields.push(recordArrayField('people', entry.people))
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
+    if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

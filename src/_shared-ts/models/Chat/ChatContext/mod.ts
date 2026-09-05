@@ -17,6 +17,7 @@
 
 import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
+import type { TokenUsage } from '#shared/ai/usage.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ContextAssembler, { type ReserveOptions, type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { withExcludedPaths, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
@@ -672,6 +673,13 @@ export default class ChatContext {
    * an entry even when nothing changed and no tool ran: an absent turn is
    * indistinguishable from a recording gap.
    */
+  /** The turn's token counts on its log entry — creating one when the turn changed no context. */
+  recordTurnUsage(usage: TokenUsage): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.usage = usage
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
+  }
+
   recordTurnTools(turnTools: ToolCallRecord[]): void {
     if (turnTools.length > 0) {
       let turnEntry: ContextTurnLog | undefined

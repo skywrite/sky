@@ -4,6 +4,7 @@ import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { AI_PROFILES } from '#config'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { PROFILES } from './defaultProfiles.ts'
 
@@ -146,7 +147,11 @@ function thinkingEnabled(profile: ModelProfile): boolean {
  * call sites can ask for determinism without tracking which model a profile resolves to.
  */
 export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions): ResolvedModel {
-  const resolved: ResolvedModel = { model: languageModelFor(profile) }
+  // Every call the model makes lands in the usage log, whoever made it.
+  const base = languageModelFor(profile)
+  const resolved: ResolvedModel = {
+    model: typeof base === 'string' ? base : wrapLanguageModel({ model: base, middleware: usageMeter(profile) }),
+  }
   const common = resolved as unknown as Record<string, unknown>
   const providerOptions: Record<string, JSONValue> = {}
 

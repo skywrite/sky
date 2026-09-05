@@ -12,9 +12,10 @@
  * the approval protocol is unit-testable with scripted results.
  */
 
-import { isStepCount, streamText, type SystemModelMessage, type ToolSet } from 'ai'
+import { isStepCount, type LanguageModelUsage, streamText, type SystemModelMessage, type ToolSet } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/promptCache.ts'
+import { addUsage, NO_USAGE, type TokenUsage, tokenUsageOf } from '#shared/ai/usage.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -73,6 +74,8 @@ export interface TurnResult {
   toolRecords: ToolCallRecord[]
   /** True when the approval-round cap cut the loop short. */
   approvalRoundsExhausted: boolean
+  /** The turn's token counts, every step and approval round summed; zero when the invoker reports none. */
+  usage: TokenUsage
 }
 
 /**
@@ -117,6 +120,8 @@ export interface ModelInvocation {
    * rejection.
    */
   error?: unknown
+  /** The invocation's counts over all its steps, when the model reports them. */
+  usage?: LanguageModelUsage
 }
 
 /**
@@ -376,6 +381,7 @@ export default class ChatEngine {
             steps: await stream.steps,
             responseMessages: await stream.responseMessages,
             error: streamError,
+            usage: await stream.totalUsage,
           }
         } catch (err) {
           // When zero steps completed (e.g. every retry of the first request
@@ -386,6 +392,7 @@ export default class ChatEngine {
           throw streamError ?? err
         }
       })
+    let usage = NO_USAGE
     const runRound = async () => {
       roundPieces = 0
       const result = await invoke({
@@ -393,6 +400,7 @@ export default class ChatEngine {
         messages: withCacheTail(this.messages),
         sink,
       })
+      if (result.usage) usage = addUsage(usage, tokenUsageOf(result.usage))
       if (result.error !== undefined) {
         // The partial result still names what executed before the stream
         // died — scan it so the failed turn keeps its tool trail.
@@ -552,7 +560,7 @@ export default class ChatEngine {
       // path for the turn ending.
       emit({ type: 'turn-complete', toolRecords: turnTools })
 
-      return { text: reply, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted }
+      return { text: reply, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted, usage }
     } catch (err) {
       // Roll back to the turn's start and rethrow clamped — the raw SDK
       // error can embed the entire message array, and hosts print and log
