@@ -74,6 +74,18 @@ The shell's 18px UI base stays separate so navigation, buttons, metadata,
 and the user's appearance setting keep their existing scale. Explorer's
 text-size control multiplies the content size and keeps its saved preference.
 
+## Today's hierarchy
+
+Most important is the day's one filled card, including its all-done state.
+The other plan sections and the day record sit directly on the page, with
+less padding and subtle dividers between neighboring sections. The group
+headings separate the plan from the record.
+
+`day.css` scopes these rules to the day's own blocks. `sky-day-priority`
+marks Most important explicitly, so an absent priority list never makes
+another section look like the priority. Shared cards elsewhere retain
+their existing appearance.
+
 ## There is no reference page
 
 The app is its own reference. A `/theme` page once held the concept mock

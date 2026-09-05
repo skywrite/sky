@@ -7,9 +7,9 @@ import { createTheme } from '@mantine/core'
  * grows every rem-based Mantine size uniformly. Do NOT set `theme.scale` to
  * compensate — bigger elements are the point.
  *
- * Buttons: secondary is the default (ghost); primary is expressed as
- * `variant="light"` at the call site — the soft blue tint, never a filled blue
- * and never ink. Separation everywhere comes from background tone, not borders.
+ * Buttons: secondary is the default (ghost). Most primary actions use the
+ * soft blue `variant="light"`; the sidebar's New chat uses a neutral fill
+ * and subtle border so it is recognizable as a button without dominating the page.
  */
 export const skyTheme = createTheme({
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',

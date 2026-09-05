@@ -64,6 +64,32 @@
   position: relative;
 }
 
+/* Most important is the day's one card. The other sections share the page. */
+.sky-day .sky-col > .sky-block:not(.sky-day-priority) {
+  background: transparent;
+  border-radius: 0;
+}
+
+.sky-day .sky-col > .sky-block:not(.sky-day-priority) > .sky-block-head {
+  padding: 0;
+}
+
+.sky-day .sky-col > .sky-block:not(.sky-day-priority) > .sky-block-pad {
+  padding: 12px 0 0;
+}
+
+/* Separate neighboring open sections; the card and group headings separate themselves. */
+.sky-day .sky-col > .sky-block:not(.sky-day-priority) + .sky-block:not(.sky-day-priority) {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .sky-day .sky-col > .sky-block:not(.sky-day-priority) + .sky-block:not(.sky-day-priority) {
+    padding-top: 18px;
+  }
+}
+
 .sky-prow {
   display: flex;
   align-items: center;

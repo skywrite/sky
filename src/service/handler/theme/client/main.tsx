@@ -205,8 +205,8 @@ function Canvas() {
           </>
         ) : (
           <>
-            <Button className="sky-newchat" fullWidth justify="flex-start" onClick={newChat}>
-              ＋ New chat
+            <Button className="sky-newchat" fullWidth variant="default" onClick={newChat}>
+              New chat
             </Button>
             {/* A voice session is its own page, off the day like a thread. */}
             <button type="button" className="sky-thread" data-active={isVoice} onClick={() => navigate('/voice')}>

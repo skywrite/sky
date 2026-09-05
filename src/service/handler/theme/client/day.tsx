@@ -355,9 +355,19 @@ export function Cross() {
   )
 }
 
-export function Block({ head, mini, children }: { head: string; mini?: string; children: ReactNode }) {
+export function Block({
+  head,
+  mini,
+  children,
+  className,
+}: {
+  head: string
+  mini?: string
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <div className="sky-block">
+    <div className={className ? `sky-block ${className}` : 'sky-block'}>
       <div className="sky-block-head sky-bhead">
         {head}
         <span className="sky-spacer" />
@@ -468,12 +478,14 @@ function PlanCard({
   today,
   checkOff,
   at,
+  className,
 }: {
   head: string
   items: DayItem[]
   today: boolean
   checkOff: CheckOff
   at: string
+  className?: string
 }) {
   if (items.length === 0) return null
   const sorted = [...items].sort((a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME))
@@ -486,13 +498,13 @@ function PlanCard({
   const visible = sorted.filter((i) => !i.done || checkOff.phases[itemKey(i)])
   if (visible.length === 0 && doneCount === sorted.length) {
     return (
-      <Block head={head} mini={mini}>
+      <Block head={head} mini={mini} className={className}>
         <div className="sky-alldone">All done.</div>
       </Block>
     )
   }
   return (
-    <Block head={head} mini={mini}>
+    <Block head={head} mini={mini} className={className}>
       {visible.map((item) => {
         const key = itemKey(item)
         const minutes = minutesOf(item.time)
@@ -778,6 +790,7 @@ export function DayView({
 
                   <PlanCard
                     head="Most important"
+                    className="sky-day-priority"
                     items={record.mostImportant}
                     today={isToday}
                     checkOff={checkOff}
