@@ -27,6 +27,7 @@ const params = {
     { bareValue: 'landed' },
   ),
   limit: Flag.number('Max saved items to fetch from Slack', { default: 600 }),
+  includeUnavailable: Flag.bool('Show saved items whose channels are unavailable', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -56,10 +57,12 @@ export default class SlackLaterTask extends Command {
     name: 'slack:later',
     description: "List Slack's saved-for-later queue oldest-first, and optionally capture the oldest N.",
     descriptionLong: [
-      "Shows the head of Slack's Later tab — the oldest 20 in-progress items,",
+      "Shows the head of Slack's Later tab — the oldest 20 available in-progress items,",
       'oldest origin message first, whatever the day; the header line carries',
       'the full queue count. Listing is read-only; slack:later:day is the',
       'day-scoped view of the same queue.',
+      'Unavailable channels are hidden by default; --include-unavailable shows',
+      'them too, within the same listing limit. They remain in the queue.',
       '',
       '--capture-batch N captures the N oldest through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
@@ -80,6 +83,7 @@ export default class SlackLaterTask extends Command {
     ],
     usage: [
       'sky slack:later',
+      'sky slack:later --include-unavailable',
       'sky slack:later --capture-batch 5',
       'sky slack:later -n 5 --open',
       'sky slack:later --open=3',
@@ -138,7 +142,12 @@ export default class SlackLaterTask extends Command {
     )
     // Show enough to cover what a capture or open run is about to take
     const stale = resolveStaleChannels(list.items)
-    const shown = queue.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0, openCount ?? 0))
+    const visible = args.includeUnavailable ? queue : queue.filter((d) => laterCapturable(d.item))
+    const hidden = queue.length - visible.length
+    if (hidden > 0) {
+      output.log(colors.dim(`  ${hidden} unavailable-channel items hidden — use --include-unavailable to show them`))
+    }
+    const shown = visible.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0, openCount ?? 0))
     await backfillMissingMessages(shown)
     const [, groupMembers] = await Promise.all([
       resolveRowMentions(shown, workspace),
@@ -147,7 +156,7 @@ export default class SlackLaterTask extends Command {
     for (const [index, d] of shown.entries()) {
       for (const line of renderLaterRow(d, index, { stale, groupMembers })) output.log(line)
     }
-    if (shown.length < queue.length) output.log(colors.dim(`  …and ${queue.length - shown.length} more`))
+    if (shown.length < visible.length) output.log(colors.dim(`  …and ${visible.length - shown.length} more`))
 
     // Read-only triage: open the N oldest capturable in Slack, capture nothing —
     // items stay saved, so Slack's Later badge still marks them
@@ -167,7 +176,7 @@ export default class SlackLaterTask extends Command {
     }
 
     if (queue.length === 0 || args.captureBatch === undefined) {
-      if (queue.length > 0) {
+      if (queue.some((d) => laterCapturable(d.item))) {
         output.log('')
         output.log(colors.dim('Re-run with: sky slack:later --capture-batch 5   (captures the 5 oldest)'))
       }
@@ -183,7 +192,7 @@ export default class SlackLaterTask extends Command {
       })
     }
 
-    // Dead-id items would only fail the fetch — leave them listed, not picked
+    // Dead-id items would only fail the fetch, even when included in the listing
     const capturable = queue.filter((d) => laterCapturable(d.item))
     const picked = capturable.slice(0, args.captureBatch)
     if (capturable.length < queue.length) {
