@@ -21,9 +21,46 @@ web app's page and builds its client.
   client and reloading the page is enough.
 - `client/` is the React client. `main.tsx` turns the path into a page: a
   day, a thread, an import, a document in the explorer, settings, voice,
-  automations, a week. `theme.ts` is the Mantine theme. `shell.css` is the layout.
+  automations, a week. `theme.ts` is the Mantine theme. `shell.css` imports
+  the shared foundations and feature styles.
 - `http.ts`, one level up, mounts the shell at `/`, at a day's date, and at
   the page paths. `/_assets/:name` serves the bundle.
+
+## Stylesheet ownership
+
+`client/shell.css` is the CSS entrypoint imported by `main.tsx`, after
+Mantine's styles. It contains an explicit, ordered list of imports. Bun
+bundles these into the existing `/_assets/main.css`; the browser still
+loads one stylesheet.
+
+Keep changes with the feature they affect, including its responsive rules:
+
+| File in `client/` | Owns |
+| --- | --- |
+| `tokens.css` | Shared colors, syntax colors, content sizes, dark and narrow overrides |
+| `layout.css` | App frame, sidebar, navigation, headers, columns, mobile drawer |
+| `components.css` | Shared cards, section labels, counters, chips, activity rows, disclosure links |
+| `chat.css` | Conversation turns, replies, branch actions |
+| `composer.css` | Message input, composer controls, reading budget |
+| `chat-tools.css` | Tool activity, output, usage, approval prompts |
+| `context.css` | Chat context panel, files in context, turn timeline |
+| `explorer.css` | File tree, directory listings, breadcrumbs |
+| `document.css` | Reader/editor typography, markdown blocks, code highlighting |
+| `editor.css` | Editing status, visible markdown syntax, editable blocks, table tools |
+| `frontmatter.css` | Properties, completion, YAML, identity, property overrides in Details |
+| `details.css` | Shared Details rail, attachments, backlinks, document outline |
+| `day.css` | Today tasks, reminders, streaks, record, swipe deletion, undo |
+| `day-rail.css` | Today's meetings, chats, work in progress, attachment footer |
+| `week.css` | Week days, priorities, goals, check-ins, scheduling controls |
+
+`automations.css`, `clock.css`, `import.css`, `settings.css`, and `voice.css`
+remain imported by their existing components and join the same bundle.
+
+Shared foundations load before feature styles. Keep the import order
+explicit and check overlapping selectors when changing it. Properties in
+the Details rail live with their base property rules in `frontmatter.css`;
+reader and editor prose share `document.css`. Avoid adding another copy
+of shared rules to make a local change.
 
 ## Typography
 

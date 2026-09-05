@@ -1,0 +1,294 @@
+/* Application frame, navigation, headers, scrolling columns, and the mobile drawer. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--sky-text);
+  background: var(--sky-bg);
+  overflow: hidden;
+}
+
+#root,
+.sky-app {
+  display: flex;
+  height: 100vh;
+}
+
+/* the app claims the whole root; a sparse thread must not shrink the column */
+.sky-app {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-side {
+  width: 276px;
+  flex: none;
+  background: var(--sky-side);
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.sky-side-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 14px;
+}
+
+.sky-brand {
+  font-weight: 650;
+  font-size: 18px;
+}
+
+/* The sidebar is a flex column that scrolls; the button is the one child that
+   could shrink (Mantine clips it), so it says no or it collapses when the
+   list outgrows the window. */
+.sky-newchat {
+  margin-bottom: 10px;
+  flex: none;
+}
+
+.sky-side-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  padding: 13px 10px 5px;
+}
+
+.sky-thread {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--sky-text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  font-family: inherit;
+  width: 100%;
+  text-align: left;
+}
+
+.sky-thread:hover {
+  background: var(--sky-hover);
+}
+
+.sky-thread[data-active='true'] {
+  background: var(--sky-card);
+  box-shadow: var(--sky-card-shadow);
+  color: var(--sky-text);
+  font-weight: 550;
+}
+
+.sky-thread .sky-meta {
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+.sky-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sky-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 48px 10px;
+  max-width: 1096px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sky-title {
+  font-size: 18px;
+  font-weight: 600;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sky-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sky-col {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 44px 48px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+
+.sky-blank {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sky-dim);
+  font-size: 16px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.sky-blank a {
+  color: var(--sky-blue-deep);
+}
+
+a.sky-thread {
+  text-decoration: none;
+}
+
+.sky-thread > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-thread .sky-meta {
+  flex: none;
+}
+
+.sky-thread[data-empty='true'] {
+  color: var(--sky-dim);
+  cursor: default;
+}
+
+.sky-head-count {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+/* The menu button exists only where the sidebar is a drawer. */
+.sky-menu {
+  display: none;
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  z-index: 40;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--sky-card);
+  color: var(--sky-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sky-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 900px) {
+  /* The sidebar is a drawer: off-canvas until asked for, over a scrim. */
+  .sky-side {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(320px, 86vw);
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+  }
+
+  .sky-side[data-open='true'] {
+    transform: none;
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.14);
+  }
+
+  /* the brand row makes room for the menu button that floats over it */
+  .sky-side-top {
+    padding-left: 46px;
+  }
+
+  .sky-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sky-head {
+    padding: 14px 16px 8px 60px;
+    gap: 10px;
+  }
+
+  .sky-col {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .sky-col {
+    padding-top: 18px;
+    gap: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-side {
+    transition: none;
+  }
+}
+
+.sky-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.sky-split-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The way out of the day list and into the files sits at the foot of the sidebar. */
+.sky-side-foot {
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.sky-menu-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mantine-color-blue-6);
+}

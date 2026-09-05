@@ -1,0 +1,60 @@
+/* Shared colors, syntax colors, and content type sizes for light, dark, and narrow layouts. */
+
+:root {
+  --sky-content-font-size: 19px;
+  --sky-bg: var(--mantine-color-body);
+  --sky-side: var(--mantine-color-gray-0);
+  --sky-s2: var(--mantine-color-gray-1);
+  --sky-border-soft: var(--mantine-color-gray-2);
+  --sky-text: var(--mantine-color-gray-9);
+  --sky-text-2: var(--mantine-color-gray-7);
+  --sky-dim: var(--mantine-color-gray-6);
+  --sky-green: var(--mantine-color-green-8);
+  --sky-blue-deep: var(--mantine-color-blue-8);
+  --sky-blue-soft: var(--mantine-color-blue-0);
+  --sky-hover: var(--mantine-color-gray-2);
+  --sky-card: #ffffff;
+  --sky-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --sky-code-keyword: var(--mantine-color-grape-8);
+  --sky-code-string: var(--mantine-color-green-8);
+  --sky-code-number: var(--mantine-color-orange-8);
+  --sky-code-title: var(--mantine-color-blue-8);
+  --sky-code-type: var(--mantine-color-teal-8);
+  --sky-code-deletion: var(--mantine-color-red-8);
+}
+
+[data-mantine-color-scheme='dark'] {
+  --sky-code-keyword: var(--mantine-color-grape-3);
+  --sky-code-string: var(--mantine-color-green-4);
+  --sky-code-number: var(--mantine-color-orange-4);
+  --sky-code-title: var(--mantine-color-blue-3);
+  --sky-code-type: var(--mantine-color-teal-3);
+  --sky-code-deletion: var(--mantine-color-red-4);
+  --sky-side: var(--mantine-color-dark-8);
+  --sky-s2: var(--mantine-color-dark-5);
+  --sky-border-soft: var(--mantine-color-dark-4);
+  --sky-text: var(--mantine-color-dark-0);
+  --sky-text-2: var(--mantine-color-dark-1);
+  --sky-dim: var(--mantine-color-dark-2);
+  --sky-green: var(--mantine-color-green-4);
+  --sky-blue-deep: var(--mantine-color-blue-3);
+  --sky-blue-soft: rgba(34, 139, 230, 0.16);
+  --sky-hover: var(--mantine-color-dark-4);
+  --sky-card: var(--mantine-color-dark-5);
+  --sky-card-shadow: none;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --sky-content-font-size: 18px;
+  }
+}
+
+/* Plain type everywhere: sans counters, sentence-case labels, no monospace. */
+:root {
+  --sky-amber: var(--mantine-color-orange-8);
+}
+
+[data-mantine-color-scheme='dark'] {
+  --sky-amber: var(--mantine-color-orange-4);
+}

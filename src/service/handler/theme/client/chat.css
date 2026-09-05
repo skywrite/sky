@@ -1,0 +1,165 @@
+/* Conversation turns, message bodies, rendered replies, and branch actions. */
+
+.sky-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sky-who {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-turn-user {
+  align-items: flex-end;
+}
+
+.sky-bubble {
+  background: var(--sky-s2);
+  border-radius: 18px 18px 6px 18px;
+  padding: 12px 19px;
+  max-width: 72%;
+  font-size: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-bubble a {
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+
+.sky-bubble a:hover {
+  text-decoration: underline;
+}
+
+.sky-body {
+  font-size: 18px;
+}
+
+.sky-body p {
+  margin: 0 0 11px;
+  max-width: 72ch;
+}
+
+.sky-body p:last-child {
+  margin-bottom: 0;
+}
+
+.sky-bubble {
+  white-space: pre-wrap;
+}
+
+.sky-para {
+  white-space: pre-wrap;
+}
+
+.sky-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--sky-text-2);
+  animation: sky-blink 1s steps(2, start) infinite;
+}
+
+@keyframes sky-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-caret {
+    animation: none;
+  }
+}
+
+/* rendered replies: the reply is a document, so it gets the record's type */
+.sky-rendered ul,
+.sky-rendered ol {
+  margin: 0 0 11px;
+  padding-left: 1.4em;
+  max-width: 72ch;
+}
+
+.sky-rendered li {
+  margin: 2px 0;
+}
+
+.sky-rendered h1,
+.sky-rendered h2,
+.sky-rendered h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
+.sky-rendered blockquote {
+  color: var(--sky-text-2);
+  border-left: 3px solid var(--sky-border-soft);
+  padding-left: 14px;
+  margin: 0 0 11px;
+}
+
+.sky-rendered code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.92em;
+}
+
+.sky-rendered pre {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 15px;
+  background: var(--sky-s2);
+  padding: 12px 16px;
+  border-radius: 11px;
+  overflow-x: auto;
+  margin: 0 0 11px;
+}
+
+.sky-rendered a {
+  color: var(--sky-blue-deep);
+  overflow-wrap: anywhere;
+}
+
+/* The turns a branch inherited from its parent read dimmed; its own follow in full. */
+.sky-turn[data-shared] {
+  opacity: 0.58;
+}
+
+/* "New chat from here" sits at the reply's head, shown when the pointer is over the turn (always on touch). */
+.sky-who {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.sky-act {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.sky-turn:hover .sky-act,
+.sky-turn:focus-within .sky-act {
+  visibility: visible;
+}
+
+.sky-act:hover {
+  text-decoration: underline;
+}
+
+@media (hover: none) {
+  .sky-act {
+    visibility: visible;
+  }
+}

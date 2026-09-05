@@ -1,0 +1,399 @@
+/* Properties, completion controls, YAML, and the document identity line. */
+
+/* front matter rows: chips with completion, text, the YAML face, add-property */
+.sky-props-faces {
+  display: inline-flex;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.sky-props-faces button {
+  padding: 2px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sky-props-faces button[aria-pressed='true'] {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-weight: 500;
+}
+
+.sky-props-faces button:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: -2px;
+}
+
+.sky-prop {
+  display: grid;
+  grid-template-columns: 112px 1fr 24px;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail-sec > .sky-prop:last-child {
+  border-bottom: 0;
+}
+
+.sky-prop.sub {
+  padding-left: 34px;
+  border-bottom: 0;
+}
+
+.sky-prop.sub .sky-prop-key::before {
+  content: '└ ';
+  color: var(--sky-border-soft);
+}
+
+.sky-prop-children {
+  grid-column: 1 / -1;
+  margin: 2px 0 0 -14px;
+}
+
+.sky-prop-key {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+  padding-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.sky-prop-value {
+  min-width: 0;
+  min-height: 26px;
+}
+
+.sky-prop-remove {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.sky-prop:hover .sky-prop-remove,
+.sky-prop:focus-within .sky-prop-remove,
+.sky-prop-remove:focus-visible {
+  opacity: 1;
+}
+
+.sky-prop-remove:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-prop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.sky-prop-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sky-prop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.sky-prop-chip.link {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-prop-chip.link:hover {
+  text-decoration: underline;
+}
+
+.sky-prop-chip.new {
+  border-color: var(--mantine-color-orange-6);
+}
+
+.sky-prop-chip.new .sky-prop-mark {
+  color: var(--mantine-color-orange-7);
+}
+
+.sky-prop-mark {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 10.5px;
+  color: var(--sky-dim);
+}
+
+.sky-prop-chip-remove {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  margin-left: -4px;
+  padding: 2px 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sky-prop-chip-remove:hover {
+  color: var(--sky-text);
+  background: var(--sky-hover);
+}
+
+.sky-prop-text,
+.sky-prop-long {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-prop-text.auto {
+  color: var(--sky-dim);
+}
+
+.sky-prop-long {
+  display: inline;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+
+.sky-prop-more {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sky-prop-empty {
+  color: var(--sky-dim);
+}
+
+.sky-prop-hint {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-prop-hint.bad {
+  color: var(--mantine-color-orange-7);
+}
+
+.sky-prop-text-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.sky-prop-text-wrap .sky-prop-input {
+  flex: 1 1 200px;
+}
+
+.sky-prop-input .mantine-Input-input,
+.sky-prop-tags .mantine-PillsInput-input,
+.sky-props-add-input .mantine-Input-input,
+.sky-props-yaml-input .mantine-Input-input {
+  font-size: 14.5px;
+  min-height: 26px;
+  color: var(--sky-text);
+}
+
+.sky-prop-tags .mantine-Pill-root {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font-size: 13.5px;
+  height: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Sized to its content, not the rail input, so full tag paths stay readable. */
+.sky-props-dropdown {
+  min-width: 200px;
+  max-width: min(440px, calc(100vw - 24px));
+}
+
+.sky-prop-option {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.sky-prop-option .sky-prop-mark {
+  text-align: center;
+}
+
+.sky-prop-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-prop-option-hint {
+  font-size: 12px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
+.sky-props-add {
+  padding: 4px 14px;
+  color: var(--sky-dim);
+}
+
+.sky-props-add-input .mantine-Input-input {
+  color: var(--sky-blue-deep);
+}
+
+.sky-props-add-input .mantine-Input-input::placeholder {
+  color: var(--sky-blue-deep);
+  opacity: 0.9;
+}
+
+.sky-props-yaml,
+.sky-props-yaml-input .mantine-Input-input {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+  white-space: pre-wrap;
+}
+
+.sky-props-error {
+  margin: 0;
+  padding: 0 14px 8px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--mantine-color-orange-7);
+}
+
+@media (max-width: 640px) {
+  .sky-prop {
+    grid-template-columns: 1fr 24px;
+  }
+
+  .sky-prop-key {
+    grid-column: 1 / -1;
+  }
+}
+
+.sky-rail-sec-h .sky-props-faces {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* rows in the rail: the key above the value, the remove button beside */
+.sky-rail .sky-prop {
+  grid-template-columns: 1fr 24px;
+  gap: 2px 8px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail .sky-prop-key {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+
+.sky-rail .sky-rail-sec[data-section='tags'] .sky-prop-key,
+.sky-rail .sky-rail-sec[data-section='links'] .sky-prop-key,
+.sky-rail .sky-rail-sec[data-section='files'] .sky-prop-key {
+  display: none;
+}
+
+.sky-rail .sky-prop.sub {
+  padding-left: 14px;
+}
+
+/* the identity line under the title */
+.sky-identity {
+  margin: 0 0 18px;
+  font-family: var(--mantine-font-family);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--sky-text);
+}
+
+.sky-identity-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: baseline;
+}
+
+.sky-identity-facts .sky-prop {
+  display: inline-grid;
+  grid-template-columns: auto auto 20px;
+  gap: 0 8px;
+  padding: 2px 0;
+  border-bottom: 0;
+  align-items: baseline;
+}
+
+.sky-identity-facts .sky-prop-key {
+  padding-top: 0;
+}
+
+.sky-identity-facts .sky-prop-value {
+  min-height: 0;
+}
+
+.sky-identity-facts .sky-prop-input .mantine-Input-input {
+  min-width: 120px;
+}
+
+.sky-identity-below .sky-prop {
+  grid-template-columns: 1fr 24px;
+  padding: 4px 0;
+  border-bottom: 0;
+}
+
+.sky-identity-below .sky-prop-key {
+  display: none;
+}
+
+.sky-identity[data-readonly] .sky-identity-facts .sky-prop {
+  grid-template-columns: auto auto;
+}
+
+@media (max-width: 640px) {
+  .sky-identity-facts .sky-prop {
+    display: grid;
+    grid-template-columns: 1fr 20px;
+  }
+
+  .sky-identity-facts .sky-prop-key {
+    grid-column: 1 / -1;
+  }
+}

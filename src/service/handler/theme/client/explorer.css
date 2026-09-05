@@ -1,0 +1,152 @@
+/* File tree, directory listings, and path breadcrumbs. */
+
+/* The tree: one row per entry, a directory unfolds in place. */
+.sky-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: 20px;
+}
+
+.sky-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--sky-text-2);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sky-tree-row:hover {
+  background: var(--sky-hover);
+}
+
+/* the branch the open file is on reads a shade stronger */
+.sky-tree-row[data-branch='true'] {
+  color: var(--sky-text);
+}
+
+.sky-tree-row[data-active='true'] {
+  background: var(--sky-card);
+  box-shadow: var(--sky-card-shadow);
+  color: var(--sky-text);
+  font-weight: 550;
+}
+
+.sky-tree-chev {
+  flex: none;
+  width: 12px;
+  font-size: 12px;
+  color: var(--sky-dim);
+  transition: transform 120ms ease;
+}
+
+.sky-tree-row[data-open='true'] .sky-tree-chev {
+  transform: rotate(90deg);
+}
+
+.sky-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-tree-note {
+  padding: 6px 10px;
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+/* A directory's page: the files it holds, one row per entry, in the reading column. */
+.sky-dir {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 28px 48px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sky-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--sky-text-2);
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.sky-dir-row:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+/* directories read a shade stronger than the files beside them */
+.sky-dir-row[data-kind='dir'] {
+  color: var(--sky-text);
+  font-weight: 550;
+}
+
+.sky-dir-chev {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-dir-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The file's path as its title: directories dim, the name strong. Squeezed, the directories shrink first. */
+.sky-crumbs {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.sky-crumb-dirs,
+.sky-crumb-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-crumb-dirs {
+  flex: 0 1000 auto;
+}
+
+.sky-crumb-name {
+  flex: 0 1 auto;
+}
+
+.sky-crumb {
+  font-weight: 500;
+  color: var(--sky-dim);
+}
+
+.sky-crumb-sep {
+  margin: 0 6px;
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+
+@media (max-width: 900px) {
+  .sky-dir {
+    padding: 14px 8px 72px;
+  }
+}

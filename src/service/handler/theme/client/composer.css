@@ -1,0 +1,169 @@
+/* Message input, composer layout, chat settings, and the reading budget control. */
+
+.sky-composer-zone {
+  background: var(--sky-bg);
+}
+
+.sky-composer {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 48px 10px;
+}
+
+.sky-input {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 17px;
+  background: var(--sky-s2);
+  padding: 16px 19px;
+  font-size: 18px;
+  color: var(--sky-dim);
+}
+
+.sky-under {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 48px 14px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+.sky-input {
+  color: var(--sky-text);
+  align-items: flex-end;
+}
+
+.sky-input:focus-within {
+  box-shadow: 0 0 0 2px var(--sky-blue-soft);
+}
+
+.sky-input-root {
+  flex: 1;
+}
+
+.sky-input-field {
+  font-size: 18px;
+  line-height: 1.5;
+  padding: 0;
+  min-height: 0;
+  color: var(--sky-text);
+}
+
+.sky-input-field::placeholder {
+  color: var(--sky-dim);
+}
+
+@media (max-width: 900px) {
+  /* keyboard hints mean nothing on a phone */
+  .sky-hint {
+    display: none;
+  }
+
+  .sky-composer,
+  .sky-under {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+.sky-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sky-text-2);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sky-ctl:hover {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+}
+
+.sky-ctl:disabled {
+  color: var(--sky-dim);
+  background: none;
+  cursor: default;
+}
+
+.sky-ctl svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
+.sky-ctl-head {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  padding: 8px 12px 2px;
+}
+
+.sky-ctl-check {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  color: var(--sky-blue-deep);
+  opacity: 0;
+}
+
+.sky-ctl-check[data-on='true'] {
+  opacity: 1;
+}
+
+.sky-ctl-title {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.sky-ctl-note {
+  font-size: 14.5px;
+  color: var(--sky-text-2);
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
+.sky-ctl-foot {
+  padding: 10px 12px 4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--sky-border-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+}
+
+/* the reading budget: seven stops on a slider, labels under the track */
+.sky-budget {
+  margin: 14px 6px 34px;
+}
+
+.sky-budget .mantine-Slider-markLabel {
+  font-size: 12.5px;
+  color: var(--sky-text-2);
+  margin-top: 6px;
+}
+
+.sky-budget .mantine-Slider-mark {
+  border-color: var(--sky-border-soft);
+}
+
+.sky-budget .mantine-Slider-markLabel [data-off='true'] {
+  color: var(--sky-dim);
+  opacity: 0.6;
+}

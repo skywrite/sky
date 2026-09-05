@@ -1,0 +1,228 @@
+/* Shared cards, section labels, counters, chips, activity rows, and disclosure links. */
+
+.sky-block {
+  border-radius: 18px;
+  background: var(--sky-side);
+  overflow: hidden;
+}
+
+[data-mantine-color-scheme='dark'] .sky-block {
+  background: var(--mantine-color-dark-6);
+}
+
+.sky-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 28px 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-block-head .sky-spacer {
+  flex: 1;
+}
+
+.sky-mini {
+  font-weight: 400;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  opacity: 0.8;
+}
+
+.sky-block-pad {
+  padding: 16px 28px 24px;
+}
+
+.sky-tag {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.sky-chip {
+  font-size: 14.5px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  color: var(--sky-text-2);
+  background: var(--sky-s2);
+}
+
+.sky-chip[data-act='true'] {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-more {
+  display: block;
+  margin: 4px 0 0 72px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+
+.sky-more:hover {
+  text-decoration: underline;
+}
+
+.sky-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--sky-dim);
+}
+
+.sky-dot[data-tone='live'] {
+  background: var(--sky-blue-deep);
+}
+
+.sky-dot[data-tone='done'] {
+  background: var(--sky-green);
+}
+
+.sky-dot[data-tone='failed'] {
+  background: var(--mantine-color-red-7);
+}
+
+@media (max-width: 900px) {
+  .sky-block-head {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sky-block-pad {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+.sky-sect {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-bottom: -12px;
+}
+
+/* the cleaned card head: a shade darker than the old dim mono head */
+.sky-bhead {
+  font-size: 15.5px;
+  color: var(--sky-text-2);
+}
+
+.sky-count {
+  font-weight: 400;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-igroup {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sky-text-2);
+  padding: 14px 0 3px;
+}
+
+.sky-chip-sm {
+  font-size: 13px;
+  padding: 2px 10px;
+}
+
+.sky-igroup[data-tone='warn'] {
+  color: var(--sky-amber);
+}
+
+/* Activity rows also appear in Imports, Automations, and voice auditions. */
+.sky-rec-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  margin: 20px 0 7px;
+}
+
+.sky-run {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 18px;
+}
+
+.sky-run:last-child {
+  border-bottom: none;
+}
+
+.sky-run-dot {
+  width: 18px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sky-run-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-run-line {
+  display: block;
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-run-at {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+@media (max-width: 900px) {
+  .sky-run {
+    flex-wrap: wrap;
+  }
+}
+
+.sky-fold-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 0;
+  font-size: 18px;
+  color: var(--sky-text-2);
+}
+
+.sky-fold-line span:first-child {
+  flex: 1;
+}
+
+.sky-showlink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-showlink:hover {
+  text-decoration: underline;
+}

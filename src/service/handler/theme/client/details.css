@@ -1,0 +1,306 @@
+/* Shared Details rail, document columns, attachments, backlinks, and outline. */
+
+/* the document column and the rail beside it */
+.sky-main-rail {
+  flex-direction: row;
+  position: relative;
+}
+
+.sky-doc-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sky-rail {
+  width: 320px;
+  flex: none;
+  overflow-y: auto;
+  padding: 12px 18px 28px;
+  border-left: 1px solid var(--sky-border-soft);
+  background: var(--sky-bg);
+  font-family: var(--mantine-font-family);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--sky-text);
+}
+
+@media (max-width: 1180px) {
+  .sky-rail {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    width: min(400px, 100%);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.sky-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.sky-rail-title {
+  flex: 1;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-rail-close {
+  border: 0;
+  background: transparent;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sky-rail-close:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-rail-sec {
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-rail-sec:first-of-type {
+  border-top: 0;
+}
+
+.sky-rail-sec-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-rail-count {
+  font-size: 11px;
+  color: var(--sky-dim);
+}
+
+.sky-rail-empty {
+  margin: 0;
+  color: var(--sky-dim);
+  font-size: 13px;
+}
+
+.sky-rail-more {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+/* adding a file from the rail: a pad to drop on with a chooser in it, then a note that holds Undo */
+.sky-rail-attach {
+  padding: 8px 0 2px;
+}
+
+.sky-rail-pad {
+  border: 1.5px dashed color-mix(in srgb, var(--sky-dim) 50%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--sky-dim);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.sky-rail-pad[data-over] {
+  border-color: var(--sky-blue-deep);
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-rail-pad[data-busy] {
+  border-style: solid;
+  color: var(--sky-blue-deep);
+}
+
+.sky-rail-choose,
+.sky-rail-undo {
+  border: 0;
+  background: transparent;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sky-rail-problem {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--mantine-color-red-7);
+}
+
+.sky-rail-note {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--sky-dim);
+}
+
+.sky-rail-note span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* the dialog behind "choose files…": what is beside the document, and a way in from this Mac */
+.sky-attach-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0 -8px;
+}
+
+.sky-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 15.5px;
+  cursor: pointer;
+}
+
+.sky-attach-row:hover {
+  background: var(--sky-hover);
+}
+
+.sky-attach-row[data-listed] {
+  color: var(--sky-dim);
+  cursor: default;
+}
+
+.sky-attach-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-attach-empty {
+  margin: 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+.sky-attach-dialog .sky-confirm-actions > :first-child {
+  margin-right: auto;
+}
+
+/* without a pointer there is nothing to drop: the pad is the chooser */
+@media (hover: none) {
+  .sky-rail-pad {
+    border-style: solid;
+  }
+
+  .sky-rail-drop-words {
+    display: none;
+  }
+
+  .sky-rail-choose {
+    display: inline-block;
+  }
+
+  .sky-rail-choose::first-letter {
+    text-transform: uppercase;
+  }
+}
+
+.sky-backlinks,
+.sky-outline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sky-backlink {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 0;
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+
+.sky-backlink:hover .sky-backlink-label {
+  text-decoration: underline;
+}
+
+.sky-backlink-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-backlink-date {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  color: var(--sky-dim);
+}
+
+.sky-outline li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--sky-text-2);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-outline li.l2 button {
+  padding-left: 12px;
+}
+
+.sky-outline li.l3 button,
+.sky-outline li.l4 button {
+  padding-left: 24px;
+}
+
+.sky-outline li.on button {
+  color: var(--sky-blue-deep);
+}
+
+@media (max-width: 640px) {
+  .sky-rail {
+    width: 100%;
+  }
+}

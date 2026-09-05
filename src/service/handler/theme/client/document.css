@@ -1,0 +1,260 @@
+/* Shared reader/editor typography, markdown blocks, and syntax highlighting. */
+
+/* Reading and editing use the app's sans-serif family and the day's content size.
+   The reader's text-size preference (--sky-doc-scale) scales content without enlarging the chrome. */
+.sky-doc {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 36px 48px 96px;
+  font-family: var(--mantine-font-family);
+  font-size: calc(var(--sky-content-font-size) * var(--sky-doc-scale, 1));
+  line-height: 1.7;
+  color: var(--sky-text);
+}
+
+.sky-doc-meta {
+  margin: 0 0 22px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+}
+
+.sky-doc-meta summary {
+  cursor: pointer;
+}
+
+.sky-doc-meta pre {
+  margin: 8px 0 0;
+  padding: 12px 16px;
+  border-radius: 11px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.sky-doc-empty {
+  color: var(--sky-dim);
+}
+
+.sky-doc-body > :first-child {
+  margin-top: 0;
+}
+
+.sky-doc-body p,
+.sky-doc-body ul,
+.sky-doc-body ol,
+.sky-doc-body blockquote {
+  max-width: 72ch;
+}
+
+.sky-doc-body p {
+  margin: 0 0 1.1em;
+}
+
+.sky-doc-body h1,
+.sky-doc-body h2,
+.sky-doc-body h3,
+.sky-doc-body h4,
+.sky-doc-body h5,
+.sky-doc-body h6 {
+  margin: 1.4em 0 0.5em;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--sky-text);
+}
+
+.sky-doc-body h1 {
+  font-size: 1.9em;
+}
+
+.sky-doc-body h2 {
+  font-size: 1.45em;
+}
+
+.sky-doc-body h3 {
+  font-size: 1.17em;
+}
+
+.sky-doc-body h4,
+.sky-doc-body h5,
+.sky-doc-body h6 {
+  font-size: 1em;
+}
+
+.sky-doc-body ul,
+.sky-doc-body ol {
+  margin: 0 0 1.1em;
+  padding-left: 1.4em;
+}
+
+.sky-doc-body li {
+  margin: 3px 0;
+}
+
+.sky-doc-body li > p {
+  margin: 0;
+}
+
+.sky-doc-body blockquote {
+  margin: 0 0 1.1em;
+  padding: 0 0 0 18px;
+  border-left: 3px solid var(--sky-border-soft);
+  color: var(--sky-text-2);
+  font-style: italic;
+}
+
+.sky-doc-body a {
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+
+.sky-doc-body a:hover {
+  text-decoration: underline;
+}
+
+.sky-doc-body code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--sky-s2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.86em;
+}
+
+.sky-doc-body pre {
+  margin: 0 0 1.1em;
+  padding: 14px 18px;
+  border-radius: 11px;
+  background: var(--sky-s2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.8em;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.sky-doc-body pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.sky-doc-body table {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 1.1em;
+  border-collapse: collapse;
+  font-size: 0.89em;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.sky-doc-body th,
+.sky-doc-body td {
+  padding: 8px 14px 8px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sky-doc-body th {
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.sky-doc-body hr {
+  margin: 2em 0;
+  border: 0;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-doc-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.sky-doc-body input[type='checkbox'] {
+  margin-right: 8px;
+}
+
+.sky-doc-body del {
+  color: var(--sky-dim);
+}
+
+@media (max-width: 900px) {
+  .sky-doc {
+    padding: 18px 14px 72px;
+  }
+
+  .sky-doc-body h1 {
+    font-size: 1.65em;
+  }
+
+  .sky-doc-body h2 {
+    font-size: 1.35em;
+  }
+}
+
+/* code tokens (FEN-1), in the editor's fences and a document's code blocks alike: the theme's own colors, quietly */
+.sky-doc-body .hljs-comment,
+.sky-doc-body .hljs-quote {
+  color: var(--sky-dim);
+  font-style: italic;
+}
+
+.sky-doc-body .hljs-keyword,
+.sky-doc-body .hljs-selector-tag,
+.sky-doc-body .hljs-doctag,
+.sky-doc-body .hljs-meta,
+.sky-doc-body .hljs-meta-keyword,
+.sky-doc-body .hljs-template-tag {
+  color: var(--sky-code-keyword);
+}
+
+.sky-doc-body .hljs-string,
+.sky-doc-body .hljs-meta-string,
+.sky-doc-body .hljs-regexp,
+.sky-doc-body .hljs-addition,
+.sky-doc-body .hljs-link {
+  color: var(--sky-code-string);
+}
+
+.sky-doc-body .hljs-number,
+.sky-doc-body .hljs-literal,
+.sky-doc-body .hljs-symbol,
+.sky-doc-body .hljs-bullet {
+  color: var(--sky-code-number);
+}
+
+.sky-doc-body .hljs-title,
+.sky-doc-body .hljs-section,
+.sky-doc-body .hljs-name,
+.sky-doc-body .hljs-selector-id,
+.sky-doc-body .hljs-selector-class {
+  color: var(--sky-code-title);
+}
+
+.sky-doc-body .hljs-built_in,
+.sky-doc-body .hljs-builtin-name,
+.sky-doc-body .hljs-type,
+.sky-doc-body .hljs-attr,
+.sky-doc-body .hljs-attribute,
+.sky-doc-body .hljs-variable,
+.sky-doc-body .hljs-template-variable,
+.sky-doc-body .hljs-selector-attr,
+.sky-doc-body .hljs-selector-pseudo {
+  color: var(--sky-code-type);
+}
+
+.sky-doc-body .hljs-deletion {
+  color: var(--sky-code-deletion);
+}
+
+.sky-doc-body .hljs-emphasis {
+  font-style: italic;
+}
+
+.sky-doc-body .hljs-strong {
+  font-weight: 600;
+}

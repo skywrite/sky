@@ -1,0 +1,232 @@
+/* Editing status, visible markdown syntax, editable blocks, and table tools. */
+
+/* The document in one editable root: every block is its element, every syntax character is in the
+   DOM inside a hidden span, and the construct under the caret shows its markdown. Its chrome —
+   status, the conflict choice, done — sits on the header line; the blocks wear the reading view's
+   type. */
+.sky-head-count[data-state='loading'],
+.sky-head-count[data-state='dirty'],
+.sky-head-count[data-state='saving'] {
+  color: var(--sky-text-2);
+}
+
+.sky-head-count[data-state='conflict'],
+.sky-head-count[data-state='error'] {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-wysiwyg {
+  /* room below the last block, so a click under the document lands on the editor (NAV-13) */
+  padding-bottom: 30vh;
+  outline: none;
+  caret-color: var(--sky-blue-deep);
+}
+
+.sky-wysiwyg .end-block {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* a construct's syntax and its url or title: hidden, until the caret is inside the construct */
+.sky-wysiwyg .syntax,
+.sky-wysiwyg .content {
+  display: none;
+}
+
+.sky-wysiwyg .expanded .syntax,
+.sky-wysiwyg .expanded .content {
+  display: inline;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.88em;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg .expanded .content {
+  color: var(--sky-blue-deep);
+}
+
+/* a hard break shows where it is; raw html reads as code */
+.sky-wysiwyg [data-inline='hardbreak']::before {
+  content: '↵';
+  font-size: 0.8em;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg [data-inline='html'] {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.86em;
+  color: var(--sky-text-2);
+}
+
+.sky-wysiwyg [data-inline='html'].comment {
+  color: var(--sky-dim);
+}
+
+/* a paragraph previewing a block: its marker muted, a heading already set in the heading's type */
+.sky-wysiwyg .block-syntax {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.88em;
+  font-style: italic;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg p[data-looks-like^='h'] {
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.sky-wysiwyg p[data-looks-like='h1'] {
+  font-size: 1.9em;
+}
+
+.sky-wysiwyg p[data-looks-like='h2'] {
+  font-size: 1.45em;
+}
+
+.sky-wysiwyg p[data-looks-like='h3'] {
+  font-size: 1.17em;
+}
+
+/* an image is an island: its source shows while the caret is on it */
+.sky-wysiwyg [data-inline='image'] {
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* verbatim blocks: fences, raw html, front matter, definitions */
+.sky-wysiwyg pre.verbatim {
+  white-space: pre-wrap;
+}
+
+.sky-wysiwyg pre.fence {
+  position: relative;
+  padding-right: 84px;
+}
+
+/* the fence's language box: chrome in the block's corner, typed into on its own */
+.sky-wysiwyg .fence-lang {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  user-select: text;
+}
+
+.sky-wysiwyg .fence-lang > span {
+  display: inline-block;
+  min-width: 3em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  outline: none;
+}
+
+.sky-wysiwyg .fence-lang > span:focus {
+  background: var(--sky-card);
+  box-shadow: 0 0 0 1px var(--sky-border-soft);
+  color: var(--sky-text);
+}
+
+.sky-wysiwyg .fence-lang > span:empty::before {
+  content: 'language';
+  opacity: 0.6;
+}
+
+/* an image written as an html tag shows as one */
+.sky-wysiwyg [data-inline='html'].img {
+  display: inline-block;
+  max-width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.sky-wysiwyg pre.frontmatter {
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+
+.sky-wysiwyg pre.frontmatter::before {
+  content: 'Frontmatter';
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+}
+
+.sky-wysiwyg pre.definition,
+.sky-wysiwyg pre.html {
+  color: var(--sky-text-2);
+}
+
+/* task items: the box sits in the margin */
+.sky-wysiwyg li.task {
+  position: relative;
+  list-style: none;
+}
+
+.sky-wysiwyg li.task > input {
+  position: absolute;
+  top: 0.45em;
+  left: -1.5em;
+  margin: 0;
+}
+
+/* a rule selected as a whole */
+.sky-wysiwyg .atom.selected hr {
+  border-top-color: var(--sky-blue-deep);
+  box-shadow: 0 0 0 3px var(--sky-blue-soft);
+}
+
+/* tables: each cell is its own editable; the focused table wears its tools above it */
+.sky-wysiwyg figure {
+  position: relative;
+  margin: 0 0 1.1em;
+}
+
+.sky-wysiwyg .table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-family: var(--mantine-font-family);
+  font-size: 12.5px;
+  color: var(--sky-dim);
+  user-select: none;
+}
+
+.sky-wysiwyg .table-tools span {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.sky-wysiwyg .table-tools button {
+  padding: 2px 7px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 6px;
+  background: var(--sky-card);
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sky-wysiwyg .table-tools button:hover {
+  background: var(--sky-hover);
+}
+
+.sky-wysiwyg td > .end-block,
+.sky-wysiwyg th > .end-block {
+  display: block;
+  min-height: 1.4em;
+  outline: none;
+}

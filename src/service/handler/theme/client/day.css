@@ -1,0 +1,456 @@
+/* Today plan items, reminders, streaks, day record, swipe deletion, and undo. */
+
+.sky-rec-line {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: var(--sky-content-font-size);
+}
+
+/* a range (`11:00 - 11:45`) needs more room than a stamp */
+.sky-rec-when {
+  width: 120px;
+}
+
+.sky-rec-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-rec-txt a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-rec-txt a:hover {
+  text-decoration: underline;
+}
+
+.sky-rec-sub {
+  margin-left: 12px;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+.sky-filed {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 18px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-filed:hover span:nth-child(2) {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  /* a timed row stacks: the time above what happened */
+  .sky-rec-line {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+
+  .sky-rec-when {
+    flex-basis: 100%;
+    width: auto;
+  }
+}
+
+.sky-day {
+  position: relative;
+}
+
+.sky-prow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: var(--sky-content-font-size);
+  overflow: hidden;
+  transition:
+    grid-template-rows 0.35s ease,
+    opacity 0.3s ease,
+    padding 0.35s ease;
+}
+
+.sky-prow[data-phase='gone'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  padding: 0;
+}
+
+.sky-prow[data-soft] {
+  font-size: calc(var(--sky-content-font-size) - 1px);
+}
+
+.sky-check {
+  border: 0;
+  background: none;
+  padding: 6px;
+  margin: -6px 0 -6px -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-check-box {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1.5px solid var(--mantine-color-gray-4);
+  background: var(--sky-card);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sky-check:hover .sky-check-box {
+  border-color: var(--sky-dim);
+}
+
+.sky-check-box[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+}
+
+[data-mantine-color-scheme='dark'] .sky-check-box {
+  border-color: var(--mantine-color-dark-3);
+  background: transparent;
+}
+
+[data-mantine-color-scheme='dark'] .sky-check-box[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+  color: var(--mantine-color-dark-8);
+}
+
+.sky-scheck {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--mantine-color-gray-4);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex: none;
+}
+
+.sky-scheck[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+}
+
+[data-mantine-color-scheme='dark'] .sky-scheck {
+  border-color: var(--mantine-color-dark-3);
+}
+
+[data-mantine-color-scheme='dark'] .sky-scheck[data-on='true'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+  color: var(--mantine-color-dark-8);
+}
+
+.sky-when {
+  width: 52px;
+  flex: none;
+  font-size: 15px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-when[data-tone='next'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+
+.sky-when[data-tone='late'] {
+  color: var(--sky-amber);
+  font-weight: 600;
+}
+
+.sky-late {
+  flex: none;
+  font-size: 13.5px;
+  color: var(--sky-amber);
+}
+
+.sky-ptext {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-ptext[data-done='true'] {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-ptext[data-dim] {
+  color: var(--sky-dim);
+}
+
+.sky-ptext a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-ptext a:hover {
+  text-decoration: underline;
+}
+
+.sky-pchip {
+  flex: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-alldone {
+  padding: 8px 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+/* the day-so-far gutter: same column, plain type */
+.sky-dat {
+  width: 116px;
+  flex: none;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-medium {
+  margin-left: auto;
+  flex: none;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-done-text {
+  color: var(--sky-text-2);
+}
+
+.sky-undo {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 118px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--sky-card);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  padding: 12px 18px 14px;
+  max-width: 620px;
+  overflow: hidden;
+}
+
+[data-mantine-color-scheme='dark'] .sky-undo {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+}
+
+.sky-undo-tick {
+  flex: none;
+  display: flex;
+  color: var(--sky-green);
+}
+
+.sky-undo-text {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-undo-btn {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  flex: none;
+}
+
+.sky-undo-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--sky-blue-soft);
+}
+
+.sky-undo-fill {
+  display: block;
+  height: 3px;
+  background: var(--sky-blue-deep);
+  animation: sky-undo-drain 8s linear forwards;
+}
+
+@keyframes sky-undo-drain {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@media (max-width: 900px) {
+  .sky-rec-line .sky-dat {
+    width: 100%;
+  }
+
+  .sky-undo {
+    left: 14px;
+    right: 14px;
+    transform: none;
+    max-width: none;
+  }
+}
+
+/* Done today: a bare tick is the day's own record; a boxed tick can be put back */
+.sky-done-tick {
+  width: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  color: var(--sky-green);
+}
+
+.sky-check:hover .sky-check-box[data-on='true'] {
+  opacity: 0.7;
+}
+
+/* An item leaves the day: the × a hover shows, or a swipe left on the phone */
+.sky-irow {
+  /* The row grows with wrapped text; its grid track still collapses when it leaves. */
+  display: grid;
+  grid-template-rows: 1fr;
+  align-items: stretch;
+  position: relative;
+  touch-action: pan-y;
+}
+
+.sky-irow-front {
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.22s ease;
+}
+
+.sky-irow-front[data-dragging] {
+  transition: none;
+}
+
+/* the pane the row slides off: as wide as the pull, Delete inside once there is room */
+.sky-irow-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--mantine-color-red-8);
+  color: #ffffff;
+}
+
+.sky-irow-delete {
+  border: 0;
+  background: none;
+  padding: 0;
+  min-width: 88px;
+  height: 100%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* the ×: inline, right after the item's last word */
+.sky-x {
+  border: 0;
+  background: none;
+  padding: 6px;
+  margin: -6px 0 -6px 2px;
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--sky-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.sky-irow:hover .sky-x,
+.sky-x:focus-visible {
+  opacity: 1;
+}
+
+.sky-x:hover {
+  color: var(--mantine-color-red-7);
+  background: var(--sky-s2);
+}
+
+.sky-irow[data-phase] .sky-x {
+  visibility: hidden;
+}
+
+/* a deleted row collapses without a strike */
+.sky-prow[data-phase='removed'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  padding: 0;
+}
+
+.sky-undo-tick[data-how='deleted'] {
+  color: var(--sky-dim);
+}
+
+/* without a hover there is no ×: the swipe is the way */
+@media (hover: none) {
+  .sky-x {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-prow,
+  .sky-irow-front {
+    transition: none;
+  }
+}

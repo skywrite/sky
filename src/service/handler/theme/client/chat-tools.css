@@ -1,0 +1,233 @@
+/* Tool activity, folded output, usage summaries, and approval prompts. */
+
+/* A tool at work: its chip, the last thing it said while it runs, every line on request */
+.sky-tool-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.sky-tool-run {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.sky-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  border: 0;
+  font: inherit;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.sky-tool-chip[aria-expanded] {
+  cursor: pointer;
+}
+
+.sky-tool-meta {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  opacity: 0.75;
+}
+
+/* What the call was about, after the tool's name: the query, the page, the mission */
+.sky-tool-subject {
+  min-width: 0;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+
+.sky-tool-subject::before {
+  content: '· ';
+}
+
+.sky-tool-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: sky-blink 1s steps(2, start) infinite;
+}
+
+.sky-tool-last,
+.sky-tool-line {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+  overflow-wrap: anywhere;
+}
+
+.sky-tool-last {
+  margin-top: 6px;
+}
+
+.sky-tool-lines {
+  align-self: stretch;
+  margin-top: 6px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--sky-s2);
+}
+
+/* An ended run, folded to one line: caret, name, what it did. */
+.sky-tool-fold {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sky-tool-caret {
+  flex: none;
+  width: 1em;
+  font-family: var(--mantine-font-family-monospace);
+  color: var(--sky-dim);
+}
+
+.sky-tool-fold-name {
+  flex: none;
+  font-weight: 500;
+}
+
+.sky-tool-fold-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sky-dim);
+}
+
+.sky-tool-fold-summary::before {
+  content: '— ';
+}
+
+.sky-tool-run[data-status='error'] .sky-tool-chip,
+.sky-tool-run[data-status='fail'] .sky-tool-chip,
+.sky-tool-run[data-status='error'] .sky-tool-fold-name,
+.sky-tool-run[data-status='fail'] .sky-tool-fold-name {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-condensed {
+  text-align: center;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  padding: 2px 0;
+}
+
+/* What the reply cost, in tokens: dim, under the reply, in the record's voice. */
+.sky-usage {
+  margin-top: 8px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  color: var(--sky-dim);
+}
+
+.sky-fate {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  margin-top: 5px;
+}
+
+.sky-condensed[data-tone='done'] {
+  color: var(--sky-green);
+}
+
+.sky-condensed[data-tone='failed'] {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 72ch;
+  padding: 18px 24px 16px;
+  border-radius: 18px;
+  background: var(--sky-side);
+}
+
+[data-mantine-color-scheme='dark'] .sky-ask {
+  background: var(--mantine-color-dark-6);
+}
+
+.sky-ask-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-ask-body {
+  margin: 0;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sky-ask-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.sky-ask-view {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.sky-ask[data-answered] .sky-ask-body {
+  color: var(--sky-text-2);
+}
+
+.sky-ask[data-answered='true'] .sky-ask-head > span:nth-child(2) {
+  color: var(--sky-green);
+}
+
+.sky-ask-body.sky-rendered p {
+  margin: 0 0 8px;
+  max-width: none;
+}
+
+.sky-ask-body.sky-rendered p:last-child {
+  margin-bottom: 0;
+}
+
+.sky-ask-body.sky-rendered ul,
+.sky-ask-body.sky-rendered ol {
+  max-width: none;
+}
+
+.sky-condensed a {
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+
+.sky-condensed a:hover {
+  text-decoration: underline;
+}
