@@ -8,8 +8,9 @@
   border: none;
   background: none;
   border-radius: 8px;
-  font-family: var(--mantine-font-family-monospace);
+  font-family: var(--mantine-font-family);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   line-height: 1.5;
   color: var(--sky-dim);
   text-align: right;

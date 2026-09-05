@@ -70,6 +70,9 @@ Document prose, headings, and table headings inherit the app's system
 sans-serif family in both reading and editing. Code and markdown syntax
 retain their monospace font.
 
+The sidebar clock also uses the app's sans-serif family, with tabular
+digits so changing the time does not shift the digits around.
+
 The shell's 18px UI base stays separate so navigation, buttons, metadata,
 and the user's appearance setting keep their existing scale. Explorer's
 text-size control multiplies the content size and keeps its saved preference.
