@@ -56,3 +56,34 @@ test({ name: "turnErrorMessage - a provider's own reason stands, and so does any
     expected: ['prompt is too long: 9 tokens > 8 maximum', 'Cannot connect to API: fetch failed', 'boom', 'a string'],
   })
 })
+
+test({ name: 'turnErrorMessage - a reason the SDK did not read is quoted with the host and the status' }, async () => {
+  const cerebras =
+    '{"message":"Please reduce the length of the messages or completion. Current length is 196699 while limit is 131072",' +
+    '"type":"invalid_request_error","param":"messages","code":"context_length_exceeded","id":""}'
+  assert({
+    given:
+      "a Cerebras 400 whose reason sits at the body's top, an OpenAI-shaped 429 the SDK reduced to its status text, and a 400 whose body is an HTML page",
+    should:
+      'name the host and the status and quote the reason where there is one, and keep the SDK message where there is none',
+    actual: [
+      turnErrorMessage(
+        call({ statusCode: 400, responseBody: cerebras, url: 'https://api.cerebras.ai/v1/chat/completions' }),
+      ),
+      turnErrorMessage(
+        call({
+          statusCode: 429,
+          responseBody: '{"error":{"message":"Rate limit reached for qwen-3.8-27b","type":"rate_limit_error"}}',
+          message: 'Too Many Requests',
+          url: 'https://api.cerebras.ai/v1/chat/completions',
+        }),
+      ),
+      turnErrorMessage(call({ statusCode: 400, responseBody: '<html><body>400 Bad Request</body></html>' })),
+    ],
+    expected: [
+      'api.cerebras.ai answered 400: Please reduce the length of the messages or completion. Current length is 196699 while limit is 131072',
+      'api.cerebras.ai answered 429: Rate limit reached for qwen-3.8-27b',
+      'Bad Request',
+    ],
+  })
+})

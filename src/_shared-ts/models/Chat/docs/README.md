@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-04
+updated: 2026-09-05
 ---
 
 # Chat model — the pieces under every chat host
@@ -20,3 +20,4 @@ updated: 2026-09-04
 - [2026-09-01 — blessed files skip the approval round](2026-09-01-dynamic-tool-approval.md)
 - [2026-09-03 — the cache tail moves on every tool step](../../../ai/docs/2026-09-03-cache-tail-every-step.md)
 - [2026-09-04 — an answer with no body is named, not echoed](2026-09-04-an-answer-with-no-body.md)
+- [2026-09-05 — a reason the SDK did not read is quoted, not dropped](2026-09-05-a-reason-the-sdk-did-not-read.md)
