@@ -233,7 +233,9 @@ function Canvas() {
                 onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
               >
                 <span>{d.label}</span>
-                <span className="sky-meta">{d.meta}</span>
+                <time className="sky-meta" dateTime={d.ymd} title={d.ymd}>
+                  {d.ymd.slice(5)}
+                </time>
               </button>
             ))}
 

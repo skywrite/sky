@@ -76,6 +76,12 @@ text-size control multiplies the content size and keeps its saved preference.
 
 ## Today's hierarchy
 
+The sidebar keeps Today and Yesterday as relative labels; older days use
+full weekday names. Each row shows `MM-DD` in aligned digits, with the
+full `YYYY-MM-DD` available on hover and in its semantic `time` element.
+The compact display comes directly from the day key, without converting
+it through a timezone. Navigation still uses the full date.
+
 Most important is the day's one filled card, including its all-done state.
 The other plan sections and the day record sit directly on the page, with
 less padding and subtle dividers between neighboring sections. The group

@@ -101,6 +101,10 @@ body {
   color: var(--sky-dim);
 }
 
+.sky-thread time.sky-meta {
+  font-variant-numeric: tabular-nums;
+}
+
 .sky-main {
   flex: 1;
   display: flex;
