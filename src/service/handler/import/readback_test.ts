@@ -5,6 +5,7 @@ import {
   lengthLabel,
   readAudio,
   readImage,
+  readSrt,
   readText,
   readTranscript,
   readUnknown,
@@ -26,12 +27,27 @@ Alex Chen: Morning. Shall we start with pricing?
 Jane Doe: Yes. The floor moves to the usage tier.
 `
 
+const SRT = `1
+00:00:01,000 --> 00:00:04,000
+Jane Doe: Morning, everyone.
+
+2
+00:00:04,500 --> 00:00:09,000
+Alex Chen: Morning. Shall we start with pricing?
+
+3
+00:00:09,500 --> 00:12:20,000
+Jane Doe: Yes. The floor moves to the usage tier.
+`
+
 test('sourceOf', () => {
   assert({
     given: 'file names of each kind',
     should: 'point at the door family, or nowhere',
-    actual: ['call.VTT', 'notes.txt', 'memo.m4a', 'song.MP3', 'chat.png', 'photo.HEIC', 'deck.pdf'].map(sourceOf),
-    expected: ['transcript', 'text', 'audio', 'audio', 'image', 'image', null],
+    actual: ['call.VTT', 'talk.srt', 'notes.txt', 'memo.m4a', 'song.MP3', 'chat.png', 'photo.HEIC', 'deck.pdf'].map(
+      sourceOf,
+    ),
+    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'image', 'image', null],
   })
 })
 
@@ -62,6 +78,36 @@ test('readTranscript', () => {
     should: 'refuse in a sentence',
     actual: readTranscript('hello there', 'x.vtt').refusal,
     expected: 'x.vtt is not a WebVTT transcript.',
+  })
+})
+
+test('readSrt', () => {
+  const back = readSrt(SRT, 'atlas-walkthrough.srt')
+  assert({
+    given: "a video's .srt",
+    should: 'read its length, turns and speakers, say nothing of the clock, and offer it as a video',
+    actual: [back.summary, back.detail, back.durationMinutes, back.clockStartSeconds, back.kinds, back.refusal],
+    expected: ['Transcript · 12 minutes · 3 turns', 'Jane Doe, Alex Chen', 12, null, ['video'], null],
+  })
+  assert({
+    given: 'a WebVTT body in an .srt, and an SRT body under the other two extensions',
+    should: 'send each to its own door',
+    actual: [
+      readSrt(VTT, 'talk.srt').refusal,
+      readTranscript(SRT, 'talk.vtt').refusal,
+      readText(SRT, 'talk.txt').refusal,
+    ],
+    expected: [
+      'talk.srt is a WebVTT transcript — save it as .vtt.',
+      'talk.vtt is an SRT transcript — save it as .srt.',
+      'talk.txt is an SRT transcript — save it as .srt.',
+    ],
+  })
+  assert({
+    given: 'an .srt that is not SubRip',
+    should: 'refuse in a sentence',
+    actual: readSrt('hello there', 'x.srt').refusal,
+    expected: 'x.srt is not an SRT transcript.',
   })
 })
 
@@ -141,7 +187,7 @@ test('lengthLabel and readUnknown', () => {
     should: 'say so and name what it does take',
     actual: readUnknown('deck.pdf').refusal,
     expected:
-      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
   })
 })
 

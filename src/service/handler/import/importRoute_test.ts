@@ -6,7 +6,7 @@ import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
-import { readAudio, readTranscript, readUnknown } from './readback.ts'
+import { readAudio, readSrt, readTranscript, readUnknown } from './readback.ts'
 
 // The routes over a scripted world: the read-back is real (it is pure), the
 // listen, the calendar and the run are scripted.
@@ -20,6 +20,19 @@ Jane Doe: Morning, everyone.
 2
 00:00:04.500 --> 00:46:30.000
 Alex Chen: Shall we start with pricing?
+`
+
+const SRT = `1
+00:00:01,000 --> 00:00:04,000
+Jane Doe: Morning, everyone.
+
+2
+00:00:04,500 --> 00:00:09,000
+Alex Chen: Morning. Shall we start with pricing?
+
+3
+00:00:09,500 --> 00:12:20,000
+Jane Doe: Yes. The floor moves to the usage tier.
 `
 
 const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pricing-sync.md'
@@ -45,6 +58,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
     journalTypes: ['Reflection', 'Mood'],
     read: async ({ path: filePath, name, size }) => {
       if (name.endsWith('.vtt')) return readTranscript(await readFile(filePath, 'utf8'), name)
+      if (name.endsWith('.srt')) return readSrt(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.m4a')) return readAudio(size, 252)
       return readUnknown(name)
     },
@@ -255,12 +269,44 @@ test('POST /import refuses a file sky does not take, and start refuses it too', 
     actual: [job.state, job.error, start.status],
     expected: [
       'failed',
-      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
       400,
     ],
   })
   const empty = await app.request('/import', { method: 'POST', body: upload('empty.vtt', '') })
   assert({ given: 'an empty file', should: 'be refused outright', actual: empty.status, expected: 400 })
+})
+
+test("POST /import reads a video's .srt, offers it as a video only, and starts it as one", async () => {
+  const w = await world()
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const response = await app.request('/import', { method: 'POST', body: upload('atlas-walkthrough.srt', SRT) })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const meeting = await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  const refused = (await meeting.json()) as { message: string }
+  const video = await postJson(app, `/import/${job.id}/start`, { kind: 'video', when: '2026-01-27 09:31' })
+  assert({
+    given: 'an .srt dropped',
+    should: 'read it as a transcript, offer a video, refuse a meeting, and start as a video',
+    actual: {
+      state: job.state,
+      summary: job.readback.summary,
+      kinds: job.readback.kinds,
+      title: job.title,
+      meeting: [meeting.status, refused.message],
+      video: video.status,
+      started: w.runs.map((run) => run.fields?.kind),
+    },
+    expected: {
+      state: 'new',
+      summary: 'Transcript · 12 minutes · 3 turns',
+      kinds: ['video'],
+      title: 'atlas-walkthrough',
+      meeting: [400, 'this file cannot be filed as a meeting'],
+      video: 200,
+      started: ['video'],
+    },
+  })
 })
 
 test('a recording is heard and matched to the calendar before it starts', async () => {

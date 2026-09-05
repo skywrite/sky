@@ -78,6 +78,33 @@ test('startArgs() — the other doors', () => {
   })
 })
 
+test("startArgs() — a video's transcript", () => {
+  const video = startArgs({ ...memo, source: 'srt' }, fields({ kind: 'video' }), '/tmp/talk.srt')
+  assert({
+    given: 'an .srt filed as a video, when left as proposed',
+    should:
+      'run video:new by its own door with the record key, the proposal as the default and as the clock, and nothing stated',
+    actual: {
+      command: video.command,
+      source: video.args.fromSrt,
+      when: String(video.args.when),
+      clock: video.args.clock,
+      run: video.args.run,
+      category: video.args.category,
+      rawArgs: video.rawArgs,
+    },
+    expected: {
+      command: 'video:new',
+      source: '/tmp/talk.srt',
+      when: PROPOSED,
+      clock: PROPOSED,
+      run: 'abc123',
+      category: 'Professional Complete',
+      rawArgs: { _: [] },
+    },
+  })
+})
+
 test('startArgs() — a screenshot', () => {
   const shot = startArgs({ ...memo, source: 'image' }, fields({ kind: 'message' }), '/tmp/chat.png')
   const memoMessage = startArgs(memo, fields({ kind: 'message' }), '/tmp/memo.m4a')

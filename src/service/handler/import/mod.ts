@@ -139,7 +139,7 @@ const WHEN = /^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/
 function parseStart(body: unknown, readback: ReadBack): StartFields | string {
   const b = (body ?? {}) as Record<string, unknown>
   const kind = typeof b.kind === 'string' ? b.kind : ''
-  if (!KINDS.includes(kind as StartFields['kind'])) return 'kind must be one of meeting, journal, note, message, event'
+  if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
   if (!readback.kinds.includes(kind as StartFields['kind'])) return `this file cannot be filed as a ${kind}`
   const when = typeof b.when === 'string' ? b.when.trim() : ''
   if (!WHEN.test(when)) return 'when must be YYYY-MM-DD HH:MM'

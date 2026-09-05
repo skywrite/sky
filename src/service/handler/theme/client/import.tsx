@@ -31,24 +31,25 @@ import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
- * Meeting from a file. A transcript, a recording or a screenshot dropped on
- * the day becomes an import: the dialog says what sky read in it and
- * settles what it is and when; the Running block shows it working; its own
- * page shows the work as it happens and the questions it stops to ask.
+ * Meeting from a file. A transcript, a recording, a screenshot or a video's
+ * .srt dropped on the day becomes an import: the dialog says what sky read
+ * in it and settles what it is and when; the Running block shows it working;
+ * its own page shows the work as it happens and the questions it stops to
+ * ask.
  */
 
 // -----------------------------------------------------------------------------
 // What the service says
 // -----------------------------------------------------------------------------
 
-export type ImportKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
+export type ImportKind = 'meeting' | 'journal' | 'note' | 'message' | 'event' | 'video'
 export type ImportState = 'new' | 'running' | 'needs-you' | 'done' | 'failed' | 'cancelled'
 
 export interface ImportJob {
   id: string
   file: { name: string; size: number; lastModified: number | null }
   readback: {
-    source: 'transcript' | 'text' | 'audio' | 'image'
+    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -171,6 +172,7 @@ export const KIND_LABEL: Record<ImportKind, string> = {
   note: 'Note',
   message: 'Message',
   event: 'Event',
+  video: 'Video',
 }
 
 /** What a row says a running import is doing, by the command inside. */
@@ -321,7 +323,7 @@ const TRANSCRIBE_CAP = 25 * 1024 * 1024
 const IMAGE_CAP = 7.5 * 1024 * 1024
 
 export function acceptsImports(): string {
-  return ['.vtt', '.txt', ...RECORDING_EXTS, ...IMAGE_EXTS, 'audio/*', 'image/*'].join(',')
+  return ['.vtt', '.srt', '.txt', ...RECORDING_EXTS, ...IMAGE_EXTS, 'audio/*', 'image/*'].join(',')
 }
 
 /** A recording or a screenshot over its cap is refused before its bytes go up, in the read-back's words. */
@@ -397,8 +399,8 @@ export function DropOverlay() {
         </div>
         <div className="sky-drop-title">Drop it on the day</div>
         <div className="sky-drop-sub">
-          Sky files it: a transcript (.vtt), a voice memo, a notetaker's text (.txt), or a screenshot of a conversation.
-          To keep a file with the day as it is, open Files and drop it on the pad.
+          Sky files it: a transcript (.vtt), a video's transcript (.srt), a voice memo, a notetaker's text (.txt), or a
+          screenshot of a conversation. To keep a file with the day as it is, open Files and drop it on the pad.
         </div>
       </div>
     </div>
@@ -558,6 +560,8 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], jou
       return `${heard}, and files it as a message under the day.`
     case 'event':
       return `${heard}, and files it as an event under the day.`
+    case 'video':
+      return `${heard}, writes the video up, and files it under the day with the transcript.`
   }
 }
 

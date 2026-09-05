@@ -4,7 +4,8 @@
  *
  * A recording can be filed as any kind; each door takes it as --from-audio,
  * the meeting door as --from-voice-memo. A transcript and a notetaker's
- * text are meetings. A screenshot is a message, by --from-image.
+ * text are meetings. A screenshot is a message, by --from-image. An .srt is
+ * a video, by --from-srt.
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
  * a value the person changed. Only the second is theirs. It goes as a raw
@@ -19,7 +20,7 @@ import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
 
 export interface StartContext {
-  /** What was staged: a recording, a transcript, a notetaker's text, or a screenshot */
+  /** What was staged: a recording, a transcript, a video's .srt, a notetaker's text, or a screenshot */
   source: ReadBack['source']
   /** The pipeline's record key for the file; null when the host keeps none */
   runKey: string | null
@@ -81,5 +82,18 @@ export function startArgs(job: StartContext, fields: StartFields, filePath: stri
       }
     case 'event':
       return { command: 'event:new', args: { fromAudio: filePath, category, when, fresh }, rawArgs }
+    case 'video':
+      return {
+        command: 'video:new',
+        args: {
+          fromSrt: filePath,
+          category,
+          when,
+          fresh,
+          run: job.runKey ?? undefined,
+          ...(stated ? {} : { clock: fields.when }),
+        },
+        rawArgs,
+      }
   }
 }

@@ -25,14 +25,15 @@ import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { CalendarMatch, ImportJob, ImportRoutesOptions, Listen, RunOutcome, StagedFile } from './mod.ts'
 import {
-  type ImportKind,
-  KINDS,
   type ReadBack,
   readAudio,
   readImage,
+  readSrt,
   readText,
   readTranscript,
   readUnknown,
+  RECORDING_KINDS,
+  type RecordingKind,
   sourceOf,
 } from './readback.ts'
 import { startArgs } from './startArgs.ts'
@@ -42,7 +43,7 @@ import { startOnSavedDay } from './startOnSavedDay.ts'
 const LISTEN_SECONDS = 45
 const OPENING_CHARS = 200
 
-const GUESS: Record<ImportKind, string> = {
+const GUESS: Record<RecordingKind, string> = {
   meeting: 'Sounds like a meeting recap.',
   journal: 'Sounds like a journal entry.',
   note: 'Sounds like a note to keep.',
@@ -59,7 +60,7 @@ function opening(text: string): string {
 }
 
 /** One word from a small model: which door the opening words point at. */
-async function classify(text: string): Promise<ImportKind> {
+async function classify(text: string): Promise<RecordingKind> {
   const result = await generateText({
     ...aiModel('fast'),
     prompt: `Someone recorded a voice memo. Here is how it starts:
@@ -79,7 +80,7 @@ Which of these is it? Answer with exactly one word.
     .trim()
     .toLowerCase()
     .replace(/[^a-z]/g, '')
-  return KINDS.includes(word as ImportKind) ? (word as ImportKind) : 'note'
+  return RECORDING_KINDS.includes(word as RecordingKind) ? (word as RecordingKind) : 'note'
 }
 
 function minutesOf(hhmm: string): number {
@@ -113,6 +114,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     const source = sourceOf(name)
     if (source === null) return readUnknown(name)
     if (source === 'transcript') return readTranscript(await readTextFile(filePath), name)
+    if (source === 'srt') return readSrt(await readTextFile(filePath), name)
     if (source === 'text') return readText(await readTextFile(filePath), name)
     if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
     const info = await probeMedia(filePath).catch(() => null)
@@ -145,8 +147,9 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   }
 
   const calendar = async (when: string, readback: ReadBack): Promise<CalendarMatch | null> => {
-    // A screenshot is a conversation, not a meeting: the calendar has nothing to say about it.
-    if (readback.source === 'image') return null
+    // A screenshot is a conversation and an .srt is a video, not a meeting:
+    // the calendar has nothing to say about either.
+    if (readback.source === 'image' || readback.source === 'srt') return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)

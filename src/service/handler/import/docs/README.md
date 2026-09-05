@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # Meeting from a file — the import
@@ -10,15 +10,16 @@ Design notes for `src/service/handler/import/` and the page that fronts it,
 
 ## What is built
 
-A transcript, a recording or a screenshot dropped on the day page becomes
-an **import job**: the upload is staged under `<user-data>/imports/<id>/`,
+A transcript, a recording, a screenshot or a video's `.srt` dropped on the
+day page becomes an **import job**: the upload is staged under `<user-data>/imports/<id>/`,
 read back at once, and, on Start, the matching command runs inside the
 service the way the terminal runs it. Everything the job says travels as
 server-sent events.
 
 - `readback.ts` — what a file is, before anything runs. A `.vtt` is parsed
-  for its length, speakers and turns; a `.txt` for its stamped turns; a
-  recording for its size (its length comes from the container, probed by
+  for its length, speakers and turns, and an `.srt` the same way (its cues
+  count from zero, so it says nothing about the clock); a `.txt` for its
+  stamped turns; a recording for its size (its length comes from the container, probed by
   the host); a screenshot for its size and its pixels (`lib/media/image`
   reads the header). A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
@@ -41,6 +42,7 @@ One door for every file kind. The kind picks the command:
 | Dropped | Door |
 | --- | --- |
 | `.vtt` | `meeting:new --from-zoom-vtt` |
+| `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | `.txt` | `meeting:new --from-text` |
 | audio | the kind chosen in the dialog: `meeting:new --from-voice-memo`, or `journal:new`, `notes:new`, `message:new`, `event:new` with `--from-audio` |
 | image | `message:new --from-image` — a screenshot of a conversation |
@@ -48,7 +50,9 @@ One door for every file kind. The kind picks the command:
 The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
 checked against the calendar within the meeting check's fifteen minutes;
-for a screenshot, when it was taken, and the calendar is not asked).
+for a screenshot, when it was taken, and the calendar is not asked; for an
+`.srt`, from the file's time and length, and the calendar is not asked
+either — a video is not a meeting).
 A when the person changed is passed as a stated argument, which the
 command keeps over anything the words say; left as proposed, it is passed
 as the file's clock, which the pipeline resolves the words against and
@@ -139,6 +143,8 @@ the command's own plan.
   in the pipeline commands.
 - `2026-09-03-a-screenshot-is-a-message.md` — the image door: the read-back,
   and what it took for `message:new` to run from the page.
+- `2026-09-05-a-video-from-its-transcript.md` — the `.srt` door: the
+  read-back, and what it took for `video:new` to run from the page.
 - `commands/all/meeting/docs/2026-09-03-action-items-land-on-days.md` — the
   action-item step: a when on every row instead of everything to Next.
 

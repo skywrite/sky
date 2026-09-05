@@ -1,12 +1,13 @@
 /**
  * What a dropped file is, read before anything runs: instant and local.
  *
- * A transcript is parsed for its length, speakers and turns; a notetaker's
- * text for its stamped turns; a recording only for its size here — its
- * length comes from the file's own container, which the host probes; a
- * screenshot for its size and the pixels its header states. The result is
- * what the confirm dialog says back, and the refusals are the sentences a
- * file that cannot be imported gets instead of a wait.
+ * A transcript — a Zoom .vtt, or a video's .srt — is parsed for its length,
+ * speakers and turns; a notetaker's text for its stamped turns; a recording
+ * only for its size here — its length comes from the file's own container,
+ * which the host probes; a screenshot for its size and the pixels its
+ * header states. The result is what the confirm dialog says back, and the
+ * refusals are the sentences a file that cannot be imported gets instead of
+ * a wait.
  */
 
 import * as path from 'node:path'
@@ -14,10 +15,14 @@ import { isRtf, stampedDurationMinutes, turnStamps } from '#commands/all/audio/t
 import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
 
-export type ImportKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
-export type ImportSource = 'transcript' | 'text' | 'audio' | 'image'
+/** The kinds a recording may be filed as: every door that takes audio. */
+export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
+/** Those, and a video, which comes in as its transcript. */
+export type ImportKind = RecordingKind | 'video'
+export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image'
 
-export const KINDS: ImportKind[] = ['meeting', 'journal', 'note', 'message', 'event']
+export const RECORDING_KINDS: RecordingKind[] = ['meeting', 'journal', 'note', 'message', 'event']
+export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
 
 export const AUDIO_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
 
@@ -50,6 +55,7 @@ export interface ReadBack {
 export function sourceOf(name: string): ImportSource | null {
   const ext = path.extname(name).toLowerCase()
   if (ext === '.vtt') return 'transcript'
+  if (ext === '.srt') return 'srt'
   if (ext === '.txt') return 'text'
   if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
@@ -82,7 +88,7 @@ function refused(source: ImportSource, refusal: string): ReadBack {
 /** A .vtt: Zoom's transcript, or a captioner's headerless one, read for what the confirm dialog says back. */
 export function readTranscript(text: string, name: string): ReadBack {
   if (!ZoomVTT.isVtt(text)) {
-    const why = SRT.isSrt(text) ? 'is an SRT file, which sky does not take yet' : 'is not a WebVTT transcript'
+    const why = SRT.isSrt(text) ? 'is an SRT transcript — save it as .srt' : 'is not a WebVTT transcript'
     return refused('transcript', `${name} ${why}.`)
   }
   const vtt = ZoomVTT.parse(text)
@@ -103,10 +109,35 @@ export function readTranscript(text: string, name: string): ReadBack {
   }
 }
 
+/**
+ * An .srt: a video's transcript — a Loom's, a caption file's — read the way a
+ * .vtt is, and offered as a video. Its cues count from the start of the
+ * recording, so it says nothing about the clock.
+ */
+export function readSrt(text: string, name: string): ReadBack {
+  if (ZoomVTT.isVtt(text)) return refused('srt', `${name} is a WebVTT transcript — save it as .vtt.`)
+  if (!SRT.isSrt(text)) return refused('srt', `${name} is not an SRT transcript.`)
+  const srt = SRT.parse(text)
+  const minutes = srt.durationMinutes
+  const speakers = srt.speakers
+  const length = minutes === null ? null : lengthLabel(minutes * 60)
+  const parts = ['Transcript', length, `${srt.turns().length} turns`]
+  return {
+    source: 'srt',
+    kinds: ['video'],
+    summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
+    detail: speakers.length > 0 ? speakers.join(', ') : null,
+    durationMinutes: minutes,
+    clockStartSeconds: null,
+    speakers,
+    refusal: null,
+  }
+}
+
 /** A .txt: a notetaker's copy of speaker lines, and nothing wrapped. */
 export function readText(text: string, name: string): ReadBack {
   if (ZoomVTT.isVtt(text)) return refused('text', `${name} is a WebVTT transcript — save it as .vtt.`)
-  if (SRT.isSrt(text)) return refused('text', `${name} is an SRT file, which sky does not take yet.`)
+  if (SRT.isSrt(text)) return refused('text', `${name} is an SRT transcript — save it as .srt.`)
   if (isRtf(text)) return refused('text', `${name} is RTF, not plain text. Convert it to .txt first.`)
   if (!text.trim()) return refused('text', `${name} is empty.`)
   const stamps = turnStamps(text)
@@ -134,7 +165,7 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null): Re
   const length = lengthLabel(durationSeconds)
   return {
     source: 'audio',
-    kinds: [...KINDS],
+    kinds: [...RECORDING_KINDS],
     summary: ['Voice memo', length].filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
     durationMinutes: durationSeconds === null ? null : Math.round((durationSeconds / 60) * 10) / 10,
@@ -168,6 +199,6 @@ export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a Zoom transcript (.vtt), a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
+    `Sky doesn't take ${ext} files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
   )
 }

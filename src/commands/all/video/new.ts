@@ -1,19 +1,25 @@
 import { copyFile, mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
-import * as p from '@clack/prompts'
 import colors from 'picocolors'
 import { desktopFilesByExt } from '#commands/all/audio/transcript/lib/desktopFiles.ts'
-import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
+import { clockLabel, runOptionsFor, TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { ArgOrFlag, categoryComplete, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
+import {
+  ArgOrFlag,
+  categoryComplete,
+  Command,
+  CommandPlatform,
+  CommandResult,
+  Flag,
+  whenNBTime,
+} from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import { isTerminal } from '#shared/sys/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -27,9 +33,15 @@ const params = {
   when: whenNBTime(),
   category: categoryComplete(),
   fresh: Flag.bool('Start over: forget what an earlier run of the transcript already produced', { default: false }),
+  run: Flag.string('Run record key, passed by a host that keyed the file itself', { optional: true, hidden: true }),
+  clock: Flag.string(
+    "The start the file's clock gives, in notebook time, passed by a host that read the file; sky's reading, not the caller's, so a time the transcript states wins over it",
+    { optional: true, hidden: true },
+  ),
 }
 
 type Params = InferParams<typeof params>
+/** The video's absolute path: the day it went under is the pipeline's to settle, not the caller's */
 type Result = { filePath: string }
 
 const VIDEO_MEDIUMS = ['Loom', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
@@ -54,8 +66,8 @@ export default class VideoNewTask extends Command {
     let body: string | undefined
     let rel: string[] | undefined
     let srtSourcePath: string | null = null
-    /** The pipeline's run record, forgotten once the video is filed */
-    let runKey: string | null = null
+    /** The pipeline's run record for the transcript, forgotten once the video is filed */
+    let run: TranscriptRun | null = null
 
     // --from-srt pipeline: clean + summarize the transcript via audio:transcript:summary.
     // The 'audio-message' template is the one-way-communication shape (from/to rather
@@ -66,18 +78,49 @@ export default class VideoNewTask extends Command {
       srtSourcePath = resolved.path
       output.log(colors.cyan(`Using transcript: ${path.basename(srtSourcePath)}`))
 
+      // The run record for the transcript: what an earlier run of it already
+      // produced, picked up rather than paid for again. Keyed by the file, or
+      // by a host that keyed it at upload — a filed run has moved the file
+      // into the attachments, and the key still finds the record.
+      const runOptions = runOptionsFor(context)
+      run = await TranscriptRun.resolve(args.run, srtSourcePath, runOptions)
+      if (args.fresh) {
+        await run.clear()
+        output.log('Starting over.')
+      } else {
+        const resume = await run.resume()
+        if (resume) {
+          const escape = context.platform === CommandPlatform.Console ? ' Pass --fresh to start over.' : ''
+          output.log(
+            `Picking up the run from ${clockLabel(resume.started, runOptions.now())} at ${resume.step}.${escape}`,
+          )
+        }
+      }
+
+      // The steps ahead, in the words a person reads; the transcript pipeline
+      // reports the first two by the same ids as it reaches them.
+      output.plan([
+        { id: 'names', label: 'Checking names' },
+        { id: 'writeup', label: 'Writing it up' },
+        { id: 'file', label: 'Filing' },
+      ])
+
       const summaryResult = await tasks.run('audio:transcript:summary', {
         fromSrt: srtSourcePath,
         template: 'audio-message',
+        run: run.key,
         fresh: args.fresh,
+        // The start the caller stated goes with it, so the write-up and its check
+        // say it; a host's reading of the file's clock goes as just that.
         when: rawArgs.when !== undefined ? args.when.toString() : undefined,
+        clock: args.clock,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
       }
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       const data = summaryResult.data
-      runKey = data.run
 
       // Explicit flags win over anything the model inferred.
       if (!from) from = data.from ?? undefined
@@ -91,16 +134,14 @@ export default class VideoNewTask extends Command {
       body = `${data.body}\n\n## Transcript\n\n${data.cleanedText}`
 
       // The extract prompt is tuned for calls and messages, so it offers mediums like
-      // "Phone" that make no sense for a recording. Ask instead of guessing.
-      if (!medium && isTerminal()) {
-        const selected = await p.select({
+      // "Phone" that make no sense for a recording. Ask instead of guessing, when
+      // someone is there to answer: the terminal through clack, the page through its form.
+      if (!medium && context.prompt.interactive) {
+        const selected = await context.prompt.select({
           message: 'Which video platform?',
           options: VIDEO_MEDIUMS.map((m) => ({ value: m, label: m })),
         })
-        if (p.isCancel(selected)) {
-          p.cancel('Cancelled.')
-          return CommandResult.fail('Cancelled')
-        }
+        if (selected === null) return CommandResult.fail('Cancelled')
         medium = selected
       }
 
@@ -144,6 +185,7 @@ export default class VideoNewTask extends Command {
     // to fill in, so this is deliberately looser than the Attachment type.
     let attachments: Array<{ file: string | null }> = [{ file: null }]
     if (srtSourcePath) {
+      output.stage('file', 'Filing')
       const sourcePath = srtSourcePath
       const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(whenDate))
       const attachmentFile = `${whenDate}_${mediumValue}_${partialSlug}${path.extname(sourcePath)}`
@@ -185,13 +227,19 @@ export default class VideoNewTask extends Command {
     const dayItem = dayItemParts.join(' ')
     await writeDayItems(whenDate, category, dayItem)
 
-    await openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
+    const fullPath = path.join(ddfw.fullDir, filePath)
 
-    if (runKey) await clearTranscriptRun(runKey)
+    // The terminal opens the file to read; any other host has its own way to show it.
+    if (context.platform === CommandPlatform.Console) {
+      await openEditor([{ file: fullPath, line: data.split('\n').length }])
+    }
+
+    // The run is complete: nothing of it outlives the video on disk.
+    if (run) await run.clear()
 
     output.log(`\n  Successfully created ${filePath}.\n`)
 
-    return CommandResult.success({ filePath })
+    return CommandResult.success({ filePath: fullPath })
   }
 
   /**
