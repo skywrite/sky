@@ -160,10 +160,21 @@ the Files pad's job, never this dialog's: `../../day/docs/README.md`.
 
 ## Dropping on a meeting
 
+The Meetings section also takes unscheduled meetings. Its heading and the
+blank space below the rows, before Chats, light the whole section blue.
+The space is padding inside Meetings, with no separate box or label, so
+a drop there belongs to Meetings. The area remains
+available while the calendar loads, when there are no meetings, or when
+the calendar cannot be read. A drop selects Meeting, keeps the viewed
+day, and takes only the clock time from the file's proposal. That time
+stays editable in the shared dialog. Start treats the confirmed date and
+time as explicit, so the file cannot move it to another day.
+
 The day's Details rail accepts a transcript or recording on a timed past
 meeting marked `no record`. The row turns blue and says `drop to import`;
 leaving it or dropping clears the highlight. It owns the drop, so the
-page's overlay stays out of the way and the file enters the queue once.
+section highlight and page overlay stay out of the way and the file
+enters the queue once. Moving back to the section restores its highlight.
 
 Each queued file carries the selected slot's title and full date/time.
 The shared dialog opens with Meeting selected and that time filled in,
@@ -176,3 +187,4 @@ pipeline keeps it over times mentioned in the recording. A stopped
 import retains those fields when opened again.
 
 Narrative: [2026-09-05 — a file dropped on its meeting](2026-09-05-a-file-dropped-on-its-meeting.md).
+The section target is described in [2026-09-05 — an unscheduled meeting belongs to a day](2026-09-05-an-unscheduled-meeting-belongs-to-a-day.md).

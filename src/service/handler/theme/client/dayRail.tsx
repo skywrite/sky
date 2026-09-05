@@ -92,9 +92,25 @@ function lengthWords(start: string, end: string): string {
 // Sections
 // -----------------------------------------------------------------------------
 
-function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+function Section({
+  title,
+  count,
+  children,
+  drop,
+}: {
+  title: string
+  count?: number
+  children: ReactNode
+  drop?: ReturnType<typeof useFileDrop>
+}) {
   return (
-    <section className="sky-rail-sec" data-section={title.toLowerCase().replace(/\s+/g, '-')}>
+    <section
+      className="sky-rail-sec"
+      data-section={title.toLowerCase().replace(/\s+/g, '-')}
+      data-meetings-drop={drop ? true : undefined}
+      data-dragging={drop?.dragging || undefined}
+      {...drop?.handlers}
+    >
       <h2 className="sky-rail-sec-h">
         <span>{title}</span>
         {count !== undefined && count > 0 ? <span className="sky-rail-count">{count}</span> : null}
@@ -165,24 +181,12 @@ function ScheduleSection({
   ymd: string
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
 }) {
-  if (!schedule) return <Section title="Meetings">{null}</Section>
-  if (!schedule.read) {
-    return (
-      <Section title="Meetings">
-        <p className="sky-rail-empty">Calendar not read.</p>
-      </Section>
-    )
-  }
-  if (schedule.meetings.length === 0) {
-    return (
-      <Section title="Meetings">
-        <p className="sky-rail-empty">Nothing on the calendar.</p>
-      </Section>
-    )
-  }
+  const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
   return (
-    <Section title="Meetings" count={schedule.meetings.length}>
-      {schedule.meetings.map((m, i) => (
+    <Section title="Meetings" count={schedule?.meetings.length} drop={onImportMeeting ? drop : undefined}>
+      {schedule && !schedule.read && <p className="sky-rail-empty">Calendar not read.</p>}
+      {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
+      {schedule?.meetings.map((m, i) => (
         <Fragment key={`${ymd}-${m.start}-${i}`}>
           <MeetingRow meeting={m} ymd={ymd} onImportMeeting={onImportMeeting} />
         </Fragment>

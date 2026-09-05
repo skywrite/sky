@@ -348,13 +348,16 @@ function refusedBeforeUpload(file: File): string | null {
   return null
 }
 
-/** A page or meeting row owns its drop; nested meeting rows and the Files pad handle their own. */
+/** The nearest drop target owns the file: page, Meetings section, individual meeting, or Files pad. */
 export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) {
   const [dragging, setDragging] = useState(false)
   const depth = useRef(0)
   const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
   const ownsDrop = (event: DragEvent) => {
-    const target = event.target instanceof Element ? event.target.closest('[data-drop-pad], [data-meeting-drop]') : null
+    const target =
+      event.target instanceof Element
+        ? event.target.closest('[data-drop-pad], [data-meeting-drop], [data-meetings-drop]')
+        : null
     return !target || target === event.currentTarget
   }
   const onDragEnter = (event: DragEvent) => {
@@ -422,11 +425,8 @@ export function DropOverlay() {
 // The confirm: upload, read-back, what and when, Start
 // -----------------------------------------------------------------------------
 
-/** A slot the person chose by dropping a transcript or recording onto its row. */
-export interface MeetingImport {
-  title: string
-  when: string
-}
+/** A calendar slot, or just the day chosen by dropping on the Meetings section. */
+export type MeetingImport = { title: string; when: string; day?: never } | { day: string; title?: never; when?: never }
 
 interface QueuedImport {
   file: File
@@ -618,11 +618,14 @@ function ConfirmBody({
   const live = feed.job ?? job
   const kinds = live?.readback.kinds ?? []
   const meeting = pending?.meeting
+  // A section drop chooses the day; the file supplies only the editable clock time.
+  const proposedWhen =
+    meeting?.when ?? (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen)
   const whenStated = Boolean(meeting || job?.fields?.whenStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const [fields, setFields] = useState<Fields>({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
-    when: meeting?.when ?? job?.fields?.when ?? live?.suggestedWhen ?? '',
+    when: job?.fields?.when ?? proposedWhen ?? '',
     category: job?.fields?.category ?? 'Professional',
     journalType: job?.fields?.journalType ?? options?.journalTypes[0] ?? 'Reflection',
     fresh: false,
@@ -635,12 +638,12 @@ function ConfirmBody({
     if (!live) return
     setFields((f) => ({
       ...f,
-      when: f.when || live.suggestedWhen,
+      when: f.when || proposedWhen || live.suggestedWhen,
       kind: touched
         ? f.kind
         : (live.listen?.kind ?? (live.readback.kinds.includes(f.kind) ? f.kind : (live.readback.kinds[0] ?? f.kind))),
     }))
-  }, [live, touched])
+  }, [live, touched, proposedWhen])
 
   const uploading = pending && !pending.job && !pending.error
   const refusal = live?.readback.refusal ?? pending?.error ?? null
@@ -725,14 +728,16 @@ function ConfirmBody({
               onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
             />
             <span className="sky-when-note">
-              {whenNote(
-                source,
-                !whenStated && fields.when === live.suggestedWhen,
-                whenLabel(live.suggestedWhen, todayYmd),
-              )}
+              {meeting?.day && fields.when === proposedWhen
+                ? 'Time suggested from the file; adjust if needed.'
+                : whenNote(
+                    source,
+                    !whenStated && fields.when === live.suggestedWhen,
+                    whenLabel(live.suggestedWhen, todayYmd),
+                  )}
             </span>
           </div>
-          {meeting && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
+          {meeting?.when && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
           {calendar && (
             <div className="sky-when-cal">
               {calendar.relation === 'matches' ? 'Matches' : 'Just after'} “{calendar.title}” on your calendar

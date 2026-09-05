@@ -65,7 +65,9 @@ its foot is anchored.
   "Calendar not read", never as an empty day.
   A timed past meeting marked `no record` takes a transcript or recording
   drop: the row lights blue and opens the shared import dialog for that
-  slot. See [the import's meeting-slot flow](../../import/docs/README.md#dropping-on-a-meeting).
+  slot. The section heading and the blank space below its rows, before Chats, import an
+  unscheduled meeting on the viewed day, with an editable suggested time;
+  hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).
 - **Chats** — the chats filed under the day, with time and turn count, and
   the live threads that started on it, marked with a dot.
 - **Working** — import jobs in hand: running, waiting for the person, or
