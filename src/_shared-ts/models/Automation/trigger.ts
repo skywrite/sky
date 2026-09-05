@@ -286,3 +286,15 @@ export function dueFiring(
 export function isDue(trigger: Trigger, clocks: { now: PlainDateTime; lastRun?: PlainDateTime }): boolean {
   return dueFiring(trigger, clocks) !== null
 }
+
+/** The trigger as written — "every 5m", or the at: entries joined */
+export function describeTrigger(trigger: Trigger): string {
+  if (trigger.kind === 'every') return `every ${trigger.raw}`
+  return trigger.times.map((time) => time.raw).join(', ')
+}
+
+/** The clock a trigger reads: "elapsed" for every:, else the zone or "local" */
+export function frameOf(trigger: Trigger): string {
+  if (trigger.kind === 'every') return 'elapsed'
+  return trigger.zone ?? 'local'
+}

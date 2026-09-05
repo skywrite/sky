@@ -164,6 +164,82 @@ test('AutomationStateStore - a corrupt stamp reads as never run', async () => {
   }
 })
 
+test('AutomationStateStore - the ledger keeps runs newest first, through the file', async () => {
+  const { dir, file } = await tempFile()
+
+  try {
+    const store = await AutomationStateStore.load(file)
+    store.record('brief', {
+      utc: new PlainDateTime('07:01', '2026-08-24'),
+      clock: new PlainDateTime('07:01', '2026-08-24'),
+      outcome: 'nothing',
+    })
+    store.record('brief', {
+      utc: new PlainDateTime('07:02', '2026-08-25'),
+      clock: new PlainDateTime('07:02', '2026-08-25'),
+      outcome: 'acted',
+    })
+    await store.save()
+
+    const reloaded = await AutomationStateStore.load(file)
+
+    assert({
+      given: 'two recorded runs, saved and loaded again',
+      should: 'list both, newest first, agreeing with last()',
+      actual: [reloaded.runsFor('brief').map((run) => run.clock), reloaded.last('brief')?.clock],
+      expected: [['2026-08-25 07:02', '2026-08-24 07:01'], '2026-08-25 07:02'],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('AutomationStateStore - the ledger is bounded, dropping the oldest', async () => {
+  const { dir, file } = await tempFile()
+
+  try {
+    const store = await AutomationStateStore.load(file)
+    for (let i = 0; i < 55; i++) {
+      const stamp = new PlainDateTime(
+        `${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`,
+        '2026-08-24',
+      )
+      store.record('busy', { utc: stamp, clock: stamp, outcome: 'nothing' })
+    }
+
+    const runs = store.runsFor('busy')
+    assert({
+      given: '55 recorded runs against a 50-run ledger',
+      should: 'keep the newest 50',
+      actual: [runs.length, runs[0]?.clock, runs.at(-1)?.clock],
+      expected: [50, '2026-08-24 00:54', '2026-08-24 00:05'],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('AutomationStateStore - a pre-ledger file reads as an empty ledger', async () => {
+  const contents = JSON.stringify({
+    version: 1,
+    runs: { 'old-timer': { utc: '2026-08-24 10:00', clock: '2026-08-24 10:00', outcome: 'acted' } },
+  })
+  const { dir, file } = await tempFile(contents)
+
+  try {
+    const store = await AutomationStateStore.load(file)
+
+    assert({
+      given: 'a state file written before the ledger existed',
+      should: 'keep the last run and answer no history',
+      actual: [store.last('old-timer')?.outcome, store.runsFor('old-timer')],
+      expected: ['acted', []],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('AutomationStateStore - saving leaves no temporary file behind', async () => {
   const { dir, file } = await tempFile()
 

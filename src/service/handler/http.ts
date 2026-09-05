@@ -18,6 +18,7 @@ import type { Store } from '../store.ts'
 import type { KeepOptions } from './attachments/keep.ts'
 import { attachmentCandidates } from './attachments/mod.ts'
 import { createAttachmentRoutes } from './attachments/routes.ts'
+import { type AutomationsRoutesOptions, createAutomationRoutes } from './automations/mod.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
@@ -73,6 +74,8 @@ export interface HttpHandlerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The automations page's host; absent, /automations/_api is not served */
+  automations?: AutomationsRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
@@ -98,6 +101,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     voice,
     settings,
     clock,
+    automations,
     week,
     imports,
     userDataDir,
@@ -160,6 +164,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
   if (clock) {
     app.route('/clock/_api', createClockRoutes(clock))
+  }
+
+  // The automations page's data: the status report. The page itself is /automations, below.
+  if (automations) {
+    app.route('/automations/_api', createAutomationRoutes(automations))
   }
 
   // A file dropped on the day: the upload, its read-back, the run, its questions.
@@ -532,6 +541,17 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.get('/week/*', (c) => {
     // A data path with no chat host stays a 404, not a page.
     if (c.req.path.startsWith('/week/_api')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // Automations: the machine's own jobs — the overview, or one of them by name.
+  // Its data lives under /automations/_api/….
+  app.get('/automations', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  app.get('/automations/*', (c) => {
+    // A data path with no automations host stays a 404, not a page.
+    if (c.req.path.startsWith('/automations/_api/')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
     return c.html(renderAppHtml('sky'))
   })
 

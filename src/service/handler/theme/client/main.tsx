@@ -4,6 +4,7 @@ import { Button, MantineProvider } from '@mantine/core'
 import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AuditionMain } from './audition.tsx'
+import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations.tsx'
 import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
@@ -69,6 +70,12 @@ function Canvas() {
   // /week is this week, /week/<id> another.
   const weekId = weekIdOf(path)
   const isWeek = weekId !== null
+  // /automations is the overview, /automations/new the create flow,
+  // /automations/<name> one charter's page.
+  const isNewAutomation = path === '/automations/new'
+  const automationName =
+    path.startsWith('/automations/') && !isNewAutomation ? decodeURIComponent(path.slice('/automations/'.length)) : null
+  const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const day = useDay(dayYmd)
@@ -93,6 +100,7 @@ function Canvas() {
     !isAudition &&
     !isSettings &&
     !isClock &&
+    !isAutomations &&
     !isWeek &&
     explorerFile === null
 
@@ -172,6 +180,29 @@ function Canvas() {
               </button>
             ))}
           </>
+        ) : isAutomations ? (
+          <>
+            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+              <span>‹ Today</span>
+            </button>
+            <div className="sky-side-label">Automations</div>
+            <AutomationsSideNav
+              overviewActive={automationName === null && !isNewAutomation}
+              activeName={automationName}
+              onOverview={() => navigate('/automations')}
+              onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
+            />
+            <div className="sky-side-foot">
+              <Button
+                className="sky-newchat"
+                fullWidth
+                justify="flex-start"
+                onClick={() => navigate('/automations/new')}
+              >
+                ＋ New automation
+              </Button>
+            </div>
+          </>
         ) : (
           <>
             <Button className="sky-newchat" fullWidth justify="flex-start" onClick={newChat}>
@@ -195,6 +226,7 @@ function Canvas() {
                   !isVoice &&
                   !isSettings &&
                   !isClock &&
+                  !isAutomations &&
                   !isWeek &&
                   (offset === 0 ? isToday : dayYmd === d.ymd)
                 }
@@ -235,6 +267,9 @@ function Canvas() {
 
             {/* The way out of the day and into the files, at the foot of the list. */}
             <div className="sky-side-foot">
+              <button type="button" className="sky-thread" onClick={() => navigate('/automations')}>
+                <span>Automations</span>
+              </button>
               <button type="button" className="sky-thread" onClick={() => navigate('/explorer')}>
                 <span>Explorer</span>
               </button>
@@ -262,6 +297,22 @@ function Canvas() {
         />
       ) : isClock ? (
         <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
+      ) : isNewAutomation ? (
+        <NewAutomation
+          back={{ label: 'Automations', onClick: () => navigate('/automations') }}
+          onCreated={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
+        />
+      ) : automationName ? (
+        <AutomationDetail
+          name={automationName}
+          back={{ label: 'Automations', onClick: () => navigate('/automations') }}
+        />
+      ) : isAutomations ? (
+        <AutomationsMain
+          back={{ label: 'Today', onClick: () => navigate('/') }}
+          onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
+          onNew={() => navigate('/automations/new')}
+        />
       ) : settingsSection ? (
         <SettingsMain section={settingsSection} back={{ label: 'Today', onClick: () => navigate('/') }} />
       ) : isAudition ? (

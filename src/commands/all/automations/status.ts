@@ -1,10 +1,11 @@
+import * as path from 'node:path'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import AutomationStateStore, { type AutomationRun } from '#shared/models/Automation/state.ts'
-import { dueFiring, resolveNow, type Trigger } from '#shared/models/Automation/trigger.ts'
+import { describeTrigger, dueFiring, frameOf, resolveNow } from '#shared/models/Automation/trigger.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -22,6 +23,12 @@ type StatusRow = {
   lastRun?: AutomationRun
   due: boolean
   unknownKeys: string[]
+  /** The charter body, verbatim — what this automation is for */
+  brief: string
+  /** The charter's path relative to the automations directory */
+  file: string
+  /** Recent runs, newest first, from the bounded ledger */
+  runs: AutomationRun[]
 }
 
 type Result = {
@@ -37,16 +44,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
       result: Result
     }
   }
-}
-
-function describeTrigger(trigger: Trigger): string {
-  if (trigger.kind === 'every') return `every ${trigger.raw}`
-  return trigger.times.map((time) => time.raw).join(', ')
-}
-
-function frameOf(trigger: Trigger): string {
-  if (trigger.kind === 'every') return 'elapsed'
-  return trigger.zone ?? 'local'
 }
 
 function describeLastRun(run: AutomationRun | undefined): string {
@@ -79,7 +76,7 @@ export default class AutomationsStatusTask extends Command {
     const today = systemNow.normalize().plainDateTime.plainDate
 
     const rows: StatusRow[] = []
-    for (const [name, { automation }] of [...byName].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [name, { automation, path: charterPath }] of [...byName].sort(([a], [b]) => a.localeCompare(b))) {
       const { trigger } = automation
       const runnable = automation.isRunnable(today)
       const now = resolveNow(trigger, systemNow)
@@ -91,6 +88,9 @@ export default class AutomationsStatusTask extends Command {
         state: automation.status === 'paused' ? 'paused' : runnable ? 'active' : 'expired',
         due: runnable && dueFiring(trigger, { now, lastRun: state.lastRunFor(name, trigger) }) !== null,
         unknownKeys: automation.unknownKeys,
+        brief: automation.brief,
+        file: path.relative(DIR_AUTOMATIONS, charterPath),
+        runs: state.runsFor(name),
       }
       const last = state.last(name)
       if (last) row.lastRun = last
@@ -114,8 +114,7 @@ export default class AutomationsStatusTask extends Command {
         output.log(`  ${colors.yellow('keys')}  nothing reads: ${row.unknownKeys.join(', ')}`)
       }
       if (args.verbose) {
-        const brief = byName.get(row.name)?.automation.brief ?? ''
-        const firstLine = brief.split('\n').find((line) => line.trim()) ?? colors.dim('(no brief)')
+        const firstLine = row.brief.split('\n').find((line) => line.trim()) ?? colors.dim('(no brief)')
         output.log(`  ${colors.dim('brief')} ${firstLine}`)
       }
     }

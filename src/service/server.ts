@@ -37,6 +37,7 @@ import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createYogaInstance } from './graphql/schema.ts'
+import type { AutomationsRoutesOptions } from './handler/automations/mod.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
@@ -84,6 +85,8 @@ export interface ServerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The automations page's host; absent, /automations/_api is not served */
+  automations?: AutomationsRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host; absent, /import is not served */
@@ -169,6 +172,7 @@ export function createServer(options: ServerOptions): Server {
     voice,
     settings,
     clock,
+    automations,
     week,
     referenceDate,
     markdownStoreConfig,
@@ -250,6 +254,7 @@ export function createServer(options: ServerOptions): Server {
       voice,
       settings,
       clock,
+      automations,
       week,
       imports: options.imports,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,

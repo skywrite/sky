@@ -9,6 +9,7 @@ import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
@@ -141,6 +142,7 @@ const server = createServer({
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
   clock: createClockHost(config, env.toObject()),
+  automations: createAutomationsHost(config, env.toObject()),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,

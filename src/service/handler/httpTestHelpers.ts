@@ -3,6 +3,7 @@ import type { YogaServerInstance } from 'graphql-yoga'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { Store } from '../store.ts'
 import type { KeepOptions } from './attachments/keep.ts'
+import type { AutomationsRoutesOptions } from './automations/mod.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
 import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
@@ -28,6 +29,7 @@ export function createTestHttpApp(
     voice?: VoiceRoutesOptions
     settings?: SettingsRoutesOptions
     clock?: ClockRoutesOptions
+    automations?: AutomationsRoutesOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
     /** Where a dropped file's original is looked for; a test points this at its own folders, Spotlight off */
@@ -45,6 +47,7 @@ export function createTestHttpApp(
     voice: options.voice,
     settings: options.settings,
     clock: options.clock,
+    automations: options.automations,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),

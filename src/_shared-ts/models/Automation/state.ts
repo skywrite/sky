@@ -48,9 +48,18 @@ export type AutomationRun = {
 type StateFile = {
   version: number
   runs: Record<string, AutomationRun>
+  /** Recent runs per charter, newest first — absent in files written before the ledger */
+  history?: Record<string, AutomationRun[]>
 }
 
 const STATE_VERSION = 1
+
+/**
+ * Runs kept per charter. Enough for a page of recent history on any sane
+ * cadence; a five-minute charter wraps in hours, which is fine — the ledger
+ * answers "how has this been going", not "what happened in March".
+ */
+const HISTORY_KEEP = 50
 
 function format(dt: PlainDateTime): string {
   return `${dt.date} ${dt.time}`
@@ -72,24 +81,41 @@ export default class AutomationStateStore {
   /** Set when the file existed but could not be used; the store starts empty */
   readonly loadError: string | undefined
   private readonly runs: Map<string, AutomationRun>
+  private readonly history: Map<string, AutomationRun[]>
 
-  private constructor(path: string, runs: Map<string, AutomationRun>, loadError: string | undefined) {
+  private constructor(
+    path: string,
+    runs: Map<string, AutomationRun>,
+    history: Map<string, AutomationRun[]>,
+    loadError: string | undefined,
+  ) {
     this.path = path
     this.runs = runs
+    this.history = history
     this.loadError = loadError
   }
 
   static async load(path: string): Promise<AutomationStateStore> {
-    if (!(await exists(path))) return new AutomationStateStore(path, new Map(), undefined)
+    if (!(await exists(path))) return new AutomationStateStore(path, new Map(), new Map(), undefined)
 
     try {
       const parsed = JSON.parse(await readTextFile(path)) as StateFile
       if (parsed?.version !== STATE_VERSION) {
-        return new AutomationStateStore(path, new Map(), `unrecognized state version ${String(parsed?.version)}`)
+        return new AutomationStateStore(
+          path,
+          new Map(),
+          new Map(),
+          `unrecognized state version ${String(parsed?.version)}`,
+        )
       }
-      return new AutomationStateStore(path, new Map(Object.entries(parsed.runs ?? {})), undefined)
+      return new AutomationStateStore(
+        path,
+        new Map(Object.entries(parsed.runs ?? {})),
+        new Map(Object.entries(parsed.history ?? {})),
+        undefined,
+      )
     } catch (err) {
-      return new AutomationStateStore(path, new Map(), err instanceof Error ? err.message : String(err))
+      return new AutomationStateStore(path, new Map(), new Map(), err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -103,6 +129,11 @@ export default class AutomationStateStore {
   /** The whole record, for reporting rather than deciding */
   last(name: string): AutomationRun | undefined {
     return this.runs.get(name)
+  }
+
+  /** Recent runs, newest first — the ledger behind a charter's history */
+  runsFor(name: string): AutomationRun[] {
+    return this.history.get(name) ?? []
   }
 
   names(): string[] {
@@ -130,6 +161,7 @@ export default class AutomationStateStore {
     if (fields.lateMinutes !== undefined) run.lateMinutes = fields.lateMinutes
     if (fields.message !== undefined) run.message = fields.message
     this.runs.set(name, run)
+    this.history.set(name, [run, ...this.runsFor(name)].slice(0, HISTORY_KEEP))
   }
 
   /**
@@ -139,12 +171,15 @@ export default class AutomationStateStore {
    */
   async save(): Promise<void> {
     const runs: Record<string, AutomationRun> = {}
+    const history: Record<string, AutomationRun[]> = {}
     for (const name of this.names()) {
       const run = this.runs.get(name)
       if (run) runs[name] = run
+      const kept = this.history.get(name)
+      if (kept?.length) history[name] = kept
     }
 
-    const contents = `${JSON.stringify({ version: STATE_VERSION, runs } satisfies StateFile, null, 2)}\n`
+    const contents = `${JSON.stringify({ version: STATE_VERSION, runs, history } satisfies StateFile, null, 2)}\n`
     const temp = `${this.path}.tmp`
     await outputFile(temp, contents)
     await rename(temp, this.path)

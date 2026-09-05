@@ -1,0 +1,241 @@
+/* The automations page: one row per charter, in the day's own type. */
+
+.sky-auto-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 18px;
+}
+
+.sky-auto-row:last-child {
+  border-bottom: none;
+}
+
+.sky-auto-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-auto-name {
+  font-weight: 550;
+}
+
+.sky-auto-sub {
+  display: block;
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sky-auto-note {
+  color: var(--sky-text-2);
+}
+
+.sky-auto-warn {
+  color: var(--sky-amber);
+}
+
+.sky-auto-when {
+  flex: none;
+  max-width: 40%;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  text-align: right;
+  line-height: 1.45;
+}
+
+.sky-auto-last {
+  display: block;
+  font-size: 13.5px;
+}
+
+.sky-auto-last[data-tone='failed'] {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-auto-empty {
+  padding: 6px 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+/* the overview row's text is a button: same type, hand cursor, no chrome */
+button.sky-auto-txt {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.sky-auto-txt:hover .sky-auto-name {
+  text-decoration: underline;
+}
+
+/* ============ one automation ============ */
+.sky-auto-schedule {
+  font-size: 18px;
+  font-weight: 550;
+}
+
+.sky-auto-due {
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--sky-blue-deep);
+}
+
+/* the brief wears the reply type; its headings stay modest */
+.sky-auto-brief {
+  max-width: 72ch;
+}
+
+.sky-auto-briefraw {
+  margin: 0;
+  max-width: 72ch;
+  white-space: pre-wrap;
+}
+
+.sky-auto-runline {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 17px;
+}
+
+.sky-auto-at {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-dim);
+  width: 104px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-auto-runtxt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-auto-runline[data-tone='nothing'] {
+  color: var(--sky-dim);
+}
+
+.sky-auto-runline[data-tone='failed'] .sky-auto-outcome {
+  color: var(--mantine-color-red-7);
+}
+
+.sky-auto-runline[data-tone='acted'] .sky-auto-outcome {
+  font-weight: 550;
+}
+
+/* the page's quiet footing: where the files live, when sky sleeps */
+.sky-auto-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+
+.sky-auto-foot a {
+  color: inherit;
+}
+
+.sky-auto-foot a:hover {
+  color: var(--sky-blue-deep);
+}
+
+/* ============ new automation & proposals ============ */
+.sky-auto-hero {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  max-width: 30ch;
+  text-wrap: balance;
+}
+
+.sky-auto-herosub {
+  margin: 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+  max-width: 58ch;
+}
+
+.sky-auto-spec {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 17px;
+}
+
+.sky-auto-spec[data-last='true'] {
+  border-bottom: none;
+}
+
+.sky-auto-spec-key {
+  width: 62px;
+  flex: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--sky-dim);
+  position: relative;
+  top: -1px;
+}
+
+.sky-auto-file {
+  margin: 8px 0 0;
+  padding: 14px 18px;
+  border-radius: 11px;
+  background: var(--sky-s2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.sky-auto-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.sky-auto-problem {
+  font-size: 14.5px;
+  color: var(--mantine-color-red-7);
+}
+
+/* the ask row: the composer's look, stretched to its column */
+.sky-auto-ask {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+}
+
+.sky-auto-adjust {
+  max-width: 640px;
+}
+
+@media (max-width: 900px) {
+  .sky-auto-when {
+    display: none;
+  }
+}
