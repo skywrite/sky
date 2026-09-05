@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
+import type { ModelProfile } from '#shared/ai/models.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 
 // ── The configuration view (the Advanced pane) ──────────────────────
@@ -489,6 +490,21 @@ export function prettyModel(id: string): string {
     })
     .join(' ')
   return joined.replace(/ (\d+) (\d+)$/, ' $1.$2')
+}
+
+/**
+ * A profile's line where models are listed: the model's name, and when another profile
+ * runs the same model, the effort that tells them apart — `Claude Fable 5.1 · xhigh`
+ * beside `Claude Fable 5.1 · high`. A model only one profile runs keeps its bare name.
+ */
+export function choiceLabel(name: string, all: Record<string, ModelProfile>): string {
+  const profile = all[name]
+  const model = prettyModel(profile.model)
+  const twins = Object.values(all).filter((p) => p.provider === profile.provider && p.model === profile.model)
+  if (twins.length < 2) return model
+  const options = (profile.options ?? {}) as { effort?: string; reasoningEffort?: string }
+  const effort = options.effort ?? options.reasoningEffort
+  return `${model} · ${effort ?? name}`
 }
 
 export const PROVIDER_LABEL: Record<string, string> = {

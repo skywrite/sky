@@ -12,7 +12,7 @@ import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
 import {
   type ModelRow,
   PROVIDER_LABEL,
-  prettyModel,
+  choiceLabel,
   type RevealTarget,
   ROLE_LABEL,
   SETTABLE_KEYS,
@@ -53,7 +53,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
         return {
           role,
           label: ROLE_LABEL[role] ?? role,
-          value: `${prettyModel(profile.model)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`,
+          value: `${choiceLabel(profileName, PROFILES)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`,
           profile: profileName,
         }
       }),

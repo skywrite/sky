@@ -2,7 +2,14 @@ import type { SkyConfig } from '#shared/config/types.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
-import type { ConfigSnapshot, ProfileInput, SettableKey, SettingsData, SettingsRoutesOptions } from './mod.ts'
+import {
+  choiceLabel,
+  type ConfigSnapshot,
+  type ProfileInput,
+  type SettableKey,
+  type SettingsData,
+  type SettingsRoutesOptions,
+} from './mod.ts'
 
 // The routes are what is under test: the host is scripted, never the machine.
 
@@ -332,5 +339,35 @@ test({ name: 'settings route - deleting removes yours and refuses the built-ins'
     should: 'remove the first, refuse the others',
     actual: [gone.status, builtin.status, unknown.status, withOwn.profileDeletes],
     expected: [200, 400, 404, ['scout']],
+  })
+})
+
+test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone one keeps the bare name' }, () => {
+  const all = {
+    'default-fable-5.1': {
+      provider: 'anthropic',
+      model: 'claude-fable-5-1',
+      options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
+    },
+    'default-fable-5.1-high': {
+      provider: 'anthropic',
+      model: 'claude-fable-5-1',
+      options: { effort: 'high', thinking: { type: 'adaptive' } },
+    },
+    'default-opus-5': { provider: 'anthropic', model: 'claude-opus-5', options: { effort: 'xhigh' } },
+    'default-gpt-5.5': { provider: 'openai', model: 'gpt-5.5', options: { reasoningEffort: 'xhigh' } },
+    mine: { provider: 'openai', model: 'gpt-5.5' },
+  } as unknown as Parameters<typeof choiceLabel>[1]
+  assert({
+    given: 'a catalog where Fable 5.1 appears twice, once at each effort, and Opus 5 once',
+    should: 'tell the twins apart by effort and leave the lone model bare',
+    actual: Object.keys(all).map((name) => choiceLabel(name, all)),
+    expected: [
+      'Claude Fable 5.1 · xhigh',
+      'Claude Fable 5.1 · high',
+      'Claude Opus 5',
+      'GPT 5.5 · xhigh',
+      'GPT 5.5 · mine',
+    ],
   })
 })
