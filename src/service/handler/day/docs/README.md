@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -43,6 +43,9 @@ The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 
 Narrative: [2026-09-03 — an item can leave the day](2026-09-03-an-item-can-leave-the-day.md).
+
+Rows grow to fit wrapped text and collapse through a grid track, with no fixed
+height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
 
 ## The rail
 

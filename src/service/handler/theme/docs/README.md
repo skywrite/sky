@@ -1,3 +1,8 @@
+---
+created: 2026-09-03
+updated: 2026-09-05
+---
+
 # The web app's shell and client
 
 Notes for `src/service/handler/theme/`. This is the code that serves the
@@ -19,6 +24,18 @@ web app's page and builds its client.
   automations, a week. `theme.ts` is the Mantine theme. `shell.css` is the layout.
 - `http.ts`, one level up, mounts the shell at `/`, at a day's date, and at
   the page paths. `/_assets/:name` serves the bundle.
+
+## Typography
+
+Today and Explorer share `--sky-content-font-size`: 19px on desktop, 18px
+at the existing 900px narrow layout. Reminders are one pixel smaller.
+Document prose, headings, and table headings inherit the app's system
+sans-serif family in both reading and editing. Code and markdown syntax
+retain their monospace font.
+
+The shell's 18px UI base stays separate so navigation, buttons, metadata,
+and the user's appearance setting keep their existing scale. Explorer's
+text-size control multiplies the content size and keeps its saved preference.
 
 ## There is no reference page
 

@@ -2,6 +2,7 @@
    Tokens map onto Mantine's palette vars so the scheme switch just works. */
 
 :root {
+  --sky-content-font-size: 19px;
   --sky-bg: var(--mantine-color-body);
   --sky-side: var(--mantine-color-gray-0);
   --sky-s2: var(--mantine-color-gray-1);
@@ -465,7 +466,7 @@ body {
   gap: 16px;
   align-items: baseline;
   padding: 6px 0;
-  font-size: 18px;
+  font-size: var(--sky-content-font-size);
 }
 
 /* a range (`11:00 - 11:45`) needs more room than a stamp */
@@ -804,6 +805,10 @@ a.sky-thread {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --sky-content-font-size: 18px;
+  }
+
   /* The sidebar is a drawer: off-canvas until asked for, over a scrim. */
   .sky-side {
     position: fixed;
@@ -1179,14 +1184,14 @@ a.sky-thread {
   color: var(--sky-dim);
 }
 
-/* The file itself: pixyll's type a size down — serif prose, sans headings, room to breathe.
-   Everything inside scales from the reader's text size (--sky-doc-scale, set from the ⋯ menu). */
+/* Reading and editing use the app's sans-serif family and the day's content size.
+   The reader's text-size preference (--sky-doc-scale) scales content without enlarging the chrome. */
 .sky-doc {
   max-width: 1000px;
   margin: 0 auto;
   padding: 36px 48px 96px;
-  font-family: 'Merriweather', 'PT Serif', Georgia, serif;
-  font-size: calc(18px * var(--sky-doc-scale, 1));
+  font-family: var(--mantine-font-family);
+  font-size: calc(var(--sky-content-font-size) * var(--sky-doc-scale, 1));
   line-height: 1.7;
   color: var(--sky-text);
 }
@@ -1239,7 +1244,7 @@ a.sky-thread {
 .sky-doc-body h5,
 .sky-doc-body h6 {
   margin: 1.4em 0 0.5em;
-  font-family: 'Lato', 'Helvetica Neue', Helvetica, sans-serif;
+  font-family: inherit;
   font-weight: 700;
   line-height: 1.2;
   color: var(--sky-text);
@@ -1338,7 +1343,7 @@ a.sky-thread {
 }
 
 .sky-doc-body th {
-  font-family: 'Lato', 'Helvetica Neue', Helvetica, sans-serif;
+  font-family: inherit;
   font-weight: 700;
 }
 
@@ -1364,7 +1369,6 @@ a.sky-thread {
 @media (max-width: 900px) {
   .sky-doc {
     padding: 18px 14px 72px;
-    font-size: calc(17px * var(--sky-doc-scale, 1));
   }
 
   .sky-dir {
@@ -1455,7 +1459,7 @@ a.sky-thread {
 }
 
 .sky-wysiwyg p[data-looks-like^='h'] {
-  font-family: 'Lato', 'Helvetica Neue', Helvetica, sans-serif;
+  font-family: inherit;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -2417,23 +2421,22 @@ a.sky-thread {
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  font-size: 18px;
-  max-height: 64px;
+  font-size: var(--sky-content-font-size);
   overflow: hidden;
   transition:
-    max-height 0.35s ease,
+    grid-template-rows 0.35s ease,
     opacity 0.3s ease,
     padding 0.35s ease;
 }
 
 .sky-prow[data-phase='gone'] {
-  max-height: 0;
+  grid-template-rows: 0fr;
   opacity: 0;
   padding: 0;
 }
 
 .sky-prow[data-soft] {
-  font-size: 17px;
+  font-size: calc(var(--sky-content-font-size) - 1px);
 }
 
 .sky-check {
@@ -2730,12 +2733,17 @@ a.sky-thread {
 
 /* An item leaves the day: the × a hover shows, or a swipe left on the phone */
 .sky-irow {
-  display: block;
+  /* The row grows with wrapped text; its grid track still collapses when it leaves. */
+  display: grid;
+  grid-template-rows: 1fr;
+  align-items: stretch;
   position: relative;
   touch-action: pan-y;
 }
 
 .sky-irow-front {
+  min-height: 0;
+  overflow: hidden;
   position: relative;
   display: flex;
   align-items: center;
@@ -2811,7 +2819,7 @@ a.sky-thread {
 
 /* a deleted row collapses without a strike */
 .sky-prow[data-phase='removed'] {
-  max-height: 0;
+  grid-template-rows: 0fr;
   opacity: 0;
   padding: 0;
 }
@@ -2828,6 +2836,7 @@ a.sky-thread {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .sky-prow,
   .sky-irow-front {
     transition: none;
   }

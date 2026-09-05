@@ -19,7 +19,7 @@ export const PAGE_CSS = `
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(20, 99, 86, 0.12), transparent 32rem),
     linear-gradient(180deg, #faf8f4 0%, var(--page-bg) 100%);
@@ -630,7 +630,7 @@ a {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-family: inherit;
   font-size: 1.02rem;
   line-height: 1.72;
 }
