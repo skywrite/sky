@@ -47,6 +47,7 @@ import {
   vocabularyOf,
 } from './vocabulary/mod.ts'
 import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
+import { createWeekRoutes, type WeekCommands } from './week/mod.ts'
 
 /**
  * Options for creating the HTTP app.
@@ -72,6 +73,8 @@ export interface HttpHandlerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
+  week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
   imports?: ImportRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
@@ -95,6 +98,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     voice,
     settings,
     clock,
+    week,
     imports,
     userDataDir,
     keep,
@@ -137,6 +141,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         schedule: createDayScheduleHost({ timeDir: chat.timeDir, markdownBaseDir }),
       }),
     )
+    // The week the days live in: its days, its plan, what waits for the next one. The page itself is /week, below.
+    app.route('/week/_api', createWeekRoutes({ markdownBaseDir, timeDir: chat.timeDir, commands: week }))
   }
 
   // Voice over the web: the browser holds the call; the service mints its
@@ -517,6 +523,16 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // The clock: notebook time against the world's. Its data lives under /clock/_api/….
   app.get('/clock', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+
+  // The week: this week at /week, another by its id — /week/2026-W36. Its data lives under /week/_api/….
+  app.get('/week', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  app.get('/week/*', (c) => {
+    // A data path with no chat host stays a 404, not a page.
+    if (c.req.path.startsWith('/week/_api')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
     return c.html(renderAppHtml('sky'))
   })
 

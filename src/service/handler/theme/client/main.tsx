@@ -13,6 +13,7 @@ import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, 
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
+import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
 
 /**
  * /theme — the living style guide.
@@ -87,10 +88,15 @@ function Canvas() {
   const settingsSection = settingsSectionOf(path)
   const isSettings = settingsSection !== null
   const isClock = path === '/clock'
+  // /week is this week, /week/<id> another.
+  const weekId = weekIdOf(path)
+  const isWeek = weekId !== null
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const day = useDay(dayYmd)
   const clock = useClockNow()
+  // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
+  const { view: thisWeek, reload: reloadWeek } = useWeek('')
   const threads = useThreads()
   const [notes, setNotes] = useState<Note[]>([])
   // Files dropped on the day: each one uploaded, confirmed, started — then its own page.
@@ -109,6 +115,7 @@ function Canvas() {
     !isAudition &&
     !isSettings &&
     !isClock &&
+    !isWeek &&
     explorerFile === null
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
@@ -153,6 +160,7 @@ function Canvas() {
         onClick={() => setMenu((open) => !open)}
       >
         {menu ? '×' : '≡'}
+        {!menu && thisWeek?.due && <span className="sky-menu-dot" />}
       </button>
       {menu && <div className="sky-scrim" onClick={() => setMenu(false)} />}
       <nav className="sky-side" data-open={menu}>
@@ -209,6 +217,7 @@ function Canvas() {
                   !isVoice &&
                   !isSettings &&
                   !isClock &&
+                  !isWeek &&
                   (offset === 0 ? isToday : dayYmd === d.ymd)
                 }
                 onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
@@ -217,6 +226,34 @@ function Canvas() {
                 <span className="sky-meta">{d.meta}</span>
               </button>
             ))}
+
+            {/* The two horizons: this week, with the day waiting to start, and the next. */}
+            <div className="sky-side-label">Week</div>
+            <button
+              type="button"
+              className="sky-thread"
+              data-active={isWeek && (weekId === '' || weekId === thisWeek?.id)}
+              onClick={() => navigate('/week')}
+            >
+              <span>
+                This week
+                {thisWeek?.due && <span className="sky-wdot" />}
+              </span>
+              <span className="sky-meta">
+                {thisWeek?.due ? `${thisWeek.due.weekday} not started` : thisWeek ? thisWeek.id.slice(5) : ''}
+              </span>
+            </button>
+            {thisWeek && (
+              <button
+                type="button"
+                className="sky-thread"
+                data-active={isWeek && weekId === thisWeek.next.id}
+                onClick={() => navigate(weekHref(thisWeek.next.id))}
+              >
+                <span>Next week</span>
+                <span className="sky-meta">{thisWeek.next.planned ? 'planned' : 'no plan yet'}</span>
+              </button>
+            )}
 
             {/* The way out of the day and into the files, at the foot of the list. */}
             <div className="sky-side-foot">
@@ -238,6 +275,13 @@ function Canvas() {
 
       {explorerFile !== null ? (
         <DocView file={explorerFile} />
+      ) : isWeek ? (
+        <WeekMain
+          id={weekId}
+          onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
+          onOpenWeek={(id) => navigate(weekHref(id))}
+          onChanged={reloadWeek}
+        />
       ) : isClock ? (
         <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
       ) : settingsSection ? (

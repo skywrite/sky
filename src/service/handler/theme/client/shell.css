@@ -3440,3 +3440,289 @@ a.sky-thread {
 .sky-dr-work[data-state='failed'] .sky-dr-work-line {
   color: var(--mantine-color-red-7);
 }
+
+/* ============ the week ============ */
+/* Day rows, the plan's goals with their check-in chips, and what waits for next week. */
+
+.sky-wrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 8px 0;
+  font-size: 18px;
+}
+
+.sky-wday {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--sky-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sky-wday:hover {
+  text-decoration: underline;
+}
+
+.sky-wday[data-today] {
+  font-weight: 550;
+}
+
+.sky-wday:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+
+.sky-wdate {
+  margin-left: 10px;
+  font-size: 15px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-wstate {
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+.sky-wstate[data-tone='warn'] {
+  color: var(--sky-amber);
+}
+
+.sky-wstate[data-tone='ok'] {
+  color: var(--sky-green);
+}
+
+.sky-wstate[data-tone='up'] {
+  color: var(--mantine-color-gray-5);
+}
+
+.sky-pri {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 18px;
+}
+
+.sky-num {
+  width: 22px;
+  flex: none;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a goal is a bullet: the mark in its own column, the text wrapping beside it, the chip on the text's last line */
+.sky-goal {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: baseline;
+  padding: 7px 0;
+  font-size: 18px;
+}
+
+.sky-bullet {
+  color: var(--sky-dim);
+}
+
+.sky-goal-text {
+  min-width: 0;
+}
+
+.sky-goal [data-done] {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-goal-text .sky-status {
+  display: inline-block;
+  margin-left: 12px;
+  vertical-align: 2px;
+}
+
+.sky-status {
+  flex: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-status[data-tone='ok'] {
+  background: rgba(43, 138, 62, 0.12);
+  color: var(--sky-green);
+}
+
+.sky-status[data-tone='risk'] {
+  background: rgba(232, 89, 12, 0.12);
+  color: var(--sky-amber);
+}
+
+.sky-status[data-tone='track'] {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-verdict {
+  font-size: 18px;
+  padding: 4px 0 10px;
+}
+
+.sky-qrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 0;
+  font-size: 18px;
+}
+
+.sky-qrow a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sky-qrow a:hover {
+  text-decoration: underline;
+}
+
+.sky-from {
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-qx {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--mantine-color-gray-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sky-qx:hover {
+  color: var(--sky-text);
+  background: var(--sky-hover);
+}
+
+.sky-mv {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--sky-blue-deep);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sky-addrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding: 10px 0 2px;
+}
+
+.sky-addfield {
+  flex: 1;
+  min-width: 240px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--sky-card);
+  box-shadow: var(--sky-card-shadow);
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 18px;
+  color: var(--sky-text);
+}
+
+.sky-addfield::placeholder {
+  color: var(--sky-dim);
+}
+
+.sky-addfield:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sky-blue-soft);
+}
+
+.sky-seg {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sky-seg button {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+
+.sky-seg button[data-on='true'] {
+  background: var(--sky-blue-soft);
+  color: var(--sky-blue-deep);
+}
+
+.sky-seg[data-days] button {
+  padding: 3px 9px;
+  min-width: 30px;
+  text-align: center;
+}
+
+.sky-addhint {
+  flex-basis: 100%;
+  padding: 4px 0 0;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-wempty {
+  padding: 6px 0;
+  font-size: 16px;
+  color: var(--sky-dim);
+}
+
+.sky-wnote {
+  font-size: 15px;
+  color: var(--sky-amber);
+}
+
+.sky-igroup[data-tone='warn'] {
+  color: var(--sky-amber);
+}
+
+/* the week's dot: a day is waiting to be started */
+.sky-wdot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 9px;
+  border-radius: 50%;
+  background: var(--mantine-color-blue-6);
+  vertical-align: middle;
+}
+
+.sky-menu-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mantine-color-blue-6);
+}

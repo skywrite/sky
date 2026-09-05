@@ -152,7 +152,7 @@ function minutesOf(time: string | null): number | null {
 }
 
 /** `09:30` reads as `9:30`; ranges keep both ends readable. */
-function clock(when: string): string {
+export function clock(when: string): string {
   return when.replace(/\b0(\d:\d\d)/g, '$1')
 }
 
@@ -333,7 +333,7 @@ function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
 }
 
-function Tick() {
+export function Tick() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path
@@ -347,7 +347,7 @@ function Tick() {
   )
 }
 
-function Cross() {
+export function Cross() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -355,7 +355,7 @@ function Cross() {
   )
 }
 
-function Block({ head, mini, children }: { head: string; mini?: string; children: ReactNode }) {
+export function Block({ head, mini, children }: { head: string; mini?: string; children: ReactNode }) {
   return (
     <div className="sky-block">
       <div className="sky-block-head sky-bhead">

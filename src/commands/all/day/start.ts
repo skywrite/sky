@@ -1,10 +1,12 @@
+import * as path from 'node:path'
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { PORT_SERVER, DAY_START_COMMANDS } from '#config'
+import { DAY_START_COMMANDS, DIR_TIME, PORT_SERVER } from '#config'
 import { dayFileExists } from '#lib/nbfs/mod.ts'
 import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { exists } from '#shared/fs/mod.ts'
+import { readDay, weekDir, writeDay } from '#shared/nbfs/mod.ts'
+import { PlainDate, PlainDateTime, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 interface UpdateStartOptions {
   tz?: string
@@ -54,6 +56,21 @@ async function reconcileStreaks(targetDay: PlainDate) {
   const dayModel = await readDay(targetDay)
   const stamped = stampStreaksList(dayModel, active, targetDay, counts)
   if (stamped !== dayModel) await writeDay(stamped)
+}
+
+/**
+ * The morning check-in: the week graded against its plan from the record so
+ * far, appended to checkins.md. Only a week with a plan is graded, and a
+ * check-in that fails never holds up the day. The editor stays closed — the
+ * entry is read on the week page, or in the file.
+ */
+async function checkinOnWeek(tasks: CommandArgs['tasks'], day: PlainDate) {
+  const week = Week.of(day)
+  if (!(await exists(path.join(DIR_TIME, weekDir(week.startInYear), 'week.md')))) return
+  const result = await tasks
+    .run('week:checkin', { open: false })
+    .catch((err: Error) => CommandResult.error(err, 'week:checkin failed'))
+  if (!result.ok) console.warn(`  [day:start] week:checkin: ${result.message}`)
 }
 
 const params = {
@@ -132,6 +149,9 @@ export default class DayStartTask extends Command {
     if (!tz) {
       await tasks.run('day:timezone').catch(() => {})
     }
+
+    // The day has begun: grade the week so far against its plan, when it has one
+    await checkinOnWeek(tasks, targetDay)
 
     // Create journal files if requested
     if (journal && tasks) {

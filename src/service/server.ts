@@ -44,6 +44,7 @@ import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
+import type { WeekCommands } from './handler/week/mod.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
 import { createScanners } from './scanner/scan.ts'
 import { scanDirectories, scanFiles } from './scanner/walkDirs.ts'
@@ -83,6 +84,8 @@ export interface ServerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
+  week?: WeekCommands
   /** The file-import host; absent, /import is not served */
   imports?: ImportRoutesOptions
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
@@ -166,6 +169,7 @@ export function createServer(options: ServerOptions): Server {
     voice,
     settings,
     clock,
+    week,
     referenceDate,
     markdownStoreConfig,
   } = options
@@ -246,6 +250,7 @@ export function createServer(options: ServerOptions): Server {
       voice,
       settings,
       clock,
+      week,
       imports: options.imports,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })

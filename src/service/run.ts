@@ -15,6 +15,7 @@ import { createImportHost } from './handler/import/createImportHost.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
+import { createWeekHost } from './handler/week/createWeekHost.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
 import { createJsonResponse } from './response.ts'
@@ -140,6 +141,7 @@ const server = createServer({
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
   clock: createClockHost(config, env.toObject()),
+  week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs

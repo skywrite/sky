@@ -32,6 +32,25 @@ the render also judges each meeting against the notebook clock (upcoming,
 in progress, not logged). See
 [2026-08-30 — the meeting check reaches the chat and the voice](2026-08-30-meeting-check-in-chat-and-voice.md).
 
+## The morning check-in
+
+`day:start` ends by grading the week: once the day's started stamp is
+written, it runs `week:checkin` for the day's week when that week has a
+`week.md`, with the editor kept closed. The entry lands in `checkins.md`
+next to the plan and the web's week page shows it. A week without a plan
+is not graded, and a check-in that fails prints a warning and never holds
+up the start. See `src/service/handler/week/docs/README.md`.
+
+## The day's lists as tools — day:items
+
+`day:items`, `day:items:add`, and `day:items:done` read, extend, and
+strike the day's lists — the voice assistant's "what's on my
+commitments", "add X", "mark X done", and chat tools of the same names.
+One add door for todos/commitments/reminders, substring matching that
+refuses ambiguity, strike-in-place with links preserved. Design and the
+two `ListDocument` facts they lean on:
+[2026-08-30 — day:items](2026-08-30-day-items-voice-trio.md).
+
 ## Carrying unfinished items to another day
 
 Three list families on a day file hold planned work. Each has its own
