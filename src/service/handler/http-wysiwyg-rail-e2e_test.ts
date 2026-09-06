@@ -35,7 +35,8 @@ const DAY = new PlainDate('2026-08-05')
 const DAY_DOC = path.posix.join('time', dayDir(DAY), 'meeting_atlas-sync.md')
 const PEOPLE = {
   'people/Jane-Doe.md': '---\nname: Jane Doe\norg: Acme\ntitle: Head of Ops\n---\n\nRuns operations.\n',
-  'people/Jamal-Reyes.md': '---\nname: Jamal Reyes\norg: Atlas\n---\n',
+  'people/Jamal-Reyes.md':
+    '---\nname: Jamal Reyes\norg: Atlas\ntitle: Head of Product Partnerships and Customer Strategy\n---\n',
 }
 
 test(
@@ -181,7 +182,7 @@ test(
             'a person picked on the identity line, a tag typed in the rail, Up from the start of the body, Backspace there and one undo',
           should:
             'write people on one line and tags on one, take Up into the identity line, leave the body alone, and undo the tag',
-          actual: [hiddenBlock, optionHeight < 44, upIntoIdentity, withPerson, withTag, undone, errors],
+          actual: [hiddenBlock, optionHeight <= 64, upIntoIdentity, withPerson, withTag, undone, errors],
           expected: [
             true,
             true,
@@ -257,7 +258,7 @@ test(
 
 test(
   {
-    name: 'rail — narrow screens get the rail as an overlay from Details; a phone never scrolls sideways',
+    name: 'rail — narrow screens get the rail as an overlay from the chevron; a phone never scrolls sideways',
     timeout: 40000,
   },
   async (t) => {
@@ -269,7 +270,7 @@ test(
         await page.goto(`${origin}/explorer/notes/preview.md`)
         await page.waitForSelector('.sky-identity[data-readonly]')
         const hiddenAtFirst = await page.evaluate(() => document.querySelector('.sky-rail') === null)
-        await page.getByRole('button', { name: 'Details', exact: true }).click()
+        await page.getByRole('button', { name: 'Show details', exact: true }).click()
         await page.waitForSelector('.sky-rail')
         const overlay = await page.evaluate(() => {
           const rail = document.querySelector('.sky-rail')!
@@ -279,7 +280,7 @@ test(
         await page.keyboard.press('Escape')
         await page.waitForSelector('.sky-rail', { state: 'detached' })
         await page.setViewportSize({ width: 390, height: 844 })
-        await page.getByRole('button', { name: 'Details', exact: true }).click()
+        await page.getByRole('button', { name: 'Show details', exact: true }).click()
         await page.waitForSelector('.sky-rail')
         const phone = await page.evaluate(() => {
           const root = document.documentElement
@@ -289,7 +290,7 @@ test(
             railFits: rail.left >= 0 && rail.right <= root.clientWidth,
           }
         })
-        await page.click('.sky-rail-close')
+        await page.getByRole('button', { name: 'Hide details', exact: true }).click()
         await page.waitForSelector('.sky-rail', { state: 'detached' })
         await openEditor(page, origin)
         const phoneEdit = await page.evaluate(() => {
@@ -308,7 +309,7 @@ test(
         assert({
           given: 'a 1000px window, then a 390px one, reading and editing',
           should:
-            'hide the rail until Details, show it as an overlay that Esc closes, fit the phone, and stack the identity fields',
+            'hide the rail until Show details, show it as an overlay that Esc closes, fit the phone, and stack the identity fields',
           actual: [hiddenAtFirst, overlay, phone, phoneEdit, errors],
           expected: [true, true, { overflow: false, railFits: true }, { overflow: false, stacked: true }, []],
         })

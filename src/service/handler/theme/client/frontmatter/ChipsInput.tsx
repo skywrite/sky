@@ -65,12 +65,16 @@ export function ChipsInput({
   useEffect(() => {
     if (search.length > 0 && rows.length > 0) {
       combobox.openDropdown()
-      combobox.selectFirstOption()
     } else {
       combobox.closeDropdown()
     }
     // The store's functions are stable; the list and the search decide.
   }, [optionsKey, search.length > 0]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // Select after the portal is visible so reopening also scrolls back to the first result.
+    if (combobox.dropdownOpened) combobox.selectFirstOption()
+  }, [combobox.dropdownOpened, optionsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const add = (raw: string) => {
     const value = raw.trim()
@@ -84,7 +88,17 @@ export function ChipsInput({
       store={combobox}
       withinPortal
       shadow="md"
-      width="max-content"
+      width={440}
+      position="bottom-start"
+      middlewares={{
+        shift: { padding: 12 },
+        size: {
+          padding: 12,
+          apply: ({ availableHeight, elements }) => {
+            elements.floating.style.setProperty('--sky-props-available-height', `${Math.max(0, availableHeight)}px`)
+          },
+        },
+      }}
       onOptionSubmit={(value) => {
         add(value)
         combobox.closeDropdown()
@@ -135,7 +149,11 @@ export function ChipsInput({
       <Combobox.Dropdown className="sky-props-dropdown">
         <Combobox.Options>
           {rows.map(({ key, option }) => (
-            <Combobox.Option value={option.value} key={key}>
+            <Combobox.Option
+              value={option.value}
+              key={key}
+              title={[option.label ?? option.value, option.hint].filter(Boolean).join('\n')}
+            >
               {renderOption(option)}
             </Combobox.Option>
           ))}

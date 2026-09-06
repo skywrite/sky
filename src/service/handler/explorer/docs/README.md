@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # Explorer — the notebook's files as pages
@@ -45,6 +45,11 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   while the rail is folded — belong to a file. A directory's page has none.
 
 ## Verified
+
+2026-09-06: completion names and hints occupy separate lines in a bounded,
+scrollable menu, with a soft selection highlight and full text on hover.
+Selection happens after the menu opens so the first result is visible on
+reopening. See `2026-09-06-completion-rows-keep-their-shape.md`.
 
 2026-08-30: directory pages added — a dir URL had answered "There is no
 file at…". Route tests (`explorerRoute_test.ts`), typecheck and lint,
