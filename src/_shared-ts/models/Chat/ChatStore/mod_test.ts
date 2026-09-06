@@ -1,13 +1,13 @@
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { setUserSpeakerLabel } from '../document/mod.ts'
-import { listDayChats, loadResumeSession } from './mod.ts'
+import { ancestorsOf, listDayChats, loadResumeSession } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
 
 const CHATS_DIR = path.join(import.meta.dirname!, 'fixtures', 'ai-chats')
 
-test('listDayChats - lists a day newest first, markdown only', async () => {
+test('listDayChats - lists a day newest first, markdown only, branches from the folders beside their parents', async () => {
   const rows = await listDayChats(CHATS_DIR)
 
   assert({
@@ -30,6 +30,12 @@ test('listDayChats - lists a day newest first, markdown only', async () => {
         name: '14-15_Nimbus-Escrow-Timeline.md',
         time: '14:15',
         summary: 'Nimbus Escrow Timeline',
+        exchanges: 1,
+      },
+      {
+        name: '10-05_Board-Prep-Instead.md',
+        time: '10:05',
+        summary: 'Board Prep Instead',
         exchanges: 1,
       },
       {
@@ -158,5 +164,69 @@ test('loadResumeSession - a pre-log transcript resumes with no recorded context'
     should: 'still reseed both turns, unstamped',
     actual: session.state.conversation.map((m) => m.when),
     expected: [undefined, undefined],
+  })
+})
+
+test('listDayChats - a branch row carries its parent key; a chat that began on its own carries none', async () => {
+  const rows = await listDayChats(CHATS_DIR)
+  assert({
+    given: 'the day with one branch filed beside its parent',
+    should: 'mark the branch with its parent and turn, and nothing else',
+    actual: rows.map((r) => [path.basename(r.path), r.parent]),
+    expected: [
+      ['16-45_Vendor-Landscape-Review.md', null],
+      ['14-15_Nimbus-Escrow-Timeline.md', null],
+      ['10-05_Board-Prep-Instead.md', { chat: 'ai-chats/09-30_Atlas-Launch-Planning.md', turn: 1 }],
+      ['09-30_Atlas-Launch-Planning.md', null],
+    ],
+  })
+})
+
+test("loadResumeSession - a branch loads as the whole thread: its parent's prefix, then its own turns", async () => {
+  const branch = path.join(CHATS_DIR, '09-30_Atlas-Launch-Planning', '10-05_Board-Prep-Instead.md')
+  const whole = await loadResumeSession(branch, { baseDir: path.dirname(CHATS_DIR) })
+  const alone = await loadResumeSession(branch)
+  const snapshot = await loadResumeSession(branch, { baseDir: path.dirname(CHATS_DIR), snapshot: true })
+
+  assert({
+    given: 'a branch left after turn 1 of a two-turn parent, loaded with, without, and as a snapshot',
+    should:
+      'join the first exchange to its own with the parent among its ancestors; stand alone without a root; count from the key as a snapshot',
+    actual: {
+      roles: whole.state.conversation.map((m) => m.role),
+      inherited: whole.inherited,
+      turns: whole.state.contextLog.map((e) => e.turn),
+      ownMessages: whole.own.conversation.length,
+      ancestors: whole.ancestors.map((a) => path.basename(a)),
+      parent: whole.parent,
+      aloneInherited: alone.inherited,
+      aloneMessages: alone.state.conversation.length,
+      snapshotInherited: snapshot.inherited,
+    },
+    expected: {
+      roles: ['user', 'assistant', 'user', 'assistant'],
+      inherited: 2,
+      turns: [1, 2],
+      ownMessages: 2,
+      ancestors: ['09-30_Atlas-Launch-Planning.md'],
+      parent: { chat: 'ai-chats/09-30_Atlas-Launch-Planning.md', turn: 1 },
+      aloneInherited: 0,
+      aloneMessages: 2,
+      snapshotInherited: 2,
+    },
+  })
+})
+
+test('ancestorsOf - walks the parent keys up, nearest first, and stops where a file is missing', async () => {
+  const branch = path.join(CHATS_DIR, '09-30_Atlas-Launch-Planning', '10-05_Board-Prep-Instead.md')
+  const root = path.join(CHATS_DIR, '09-30_Atlas-Launch-Planning.md')
+  assert({
+    given: 'a branch and its root',
+    should: 'name the root above the branch and nothing above the root',
+    actual: {
+      branch: (await ancestorsOf(branch, path.dirname(CHATS_DIR))).map((a) => path.basename(a)),
+      root: await ancestorsOf(root, path.dirname(CHATS_DIR)),
+    },
+    expected: { branch: ['09-30_Atlas-Launch-Planning.md'], root: [] },
   })
 })

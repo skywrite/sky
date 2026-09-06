@@ -18,6 +18,18 @@ export interface ChatTurn {
 }
 
 /**
+ * Where a branch came from: the parent chat, relative to the notebook root,
+ * and the turn it left after. A branch file holds only its own turns; the
+ * turns up to `turn` are the parent's, read from its file when the thread
+ * is assembled. `turn` counts the whole lineage's turns, so a branch of a
+ * branch names the turn in its parent's assembled thread.
+ */
+export interface ChatParent {
+  chat: string
+  turn: number
+}
+
+/**
  * The assistant's speaker label — Sky, the same name as the product. Every
  * assistant heading written today carries it.
  */
@@ -127,6 +139,7 @@ export default class ChatDocument extends SectionDocument {
     'provider',
     'model',
     'turns',
+    'parent',
     'rel',
     'tags',
     'attachments',
@@ -151,6 +164,16 @@ export default class ChatDocument extends SectionDocument {
   /** Number of turns from YAML */
   get turnCount(): number {
     return (this.yaml['turns'] as number) ?? 0
+  }
+
+  /** The chat this one branched from, or null for a chat that began on its own. */
+  get parent(): ChatParent | null {
+    const raw = this.yaml['parent']
+    if (!raw || typeof raw !== 'object') return null
+    const { chat, turn } = raw as { chat?: unknown; turn?: unknown }
+    if (typeof chat !== 'string' || !chat || typeof turn !== 'number' || !Number.isInteger(turn) || turn < 0)
+      return null
+    return { chat, turn }
   }
 
   /** Approval keys (`tool:fileId`) the user blessed durably — created files and "always" answers. */
@@ -230,6 +253,8 @@ export default class ChatDocument extends SectionDocument {
     attachments?: Attachment[]
     /** Durable approval keys; the key is absent when there are none */
     approvals?: string[]
+    /** The chat this one branched from; the key is absent for a chat that began on its own */
+    parent?: ChatParent | null
   }): ChatDocument {
     const turnCount = Math.floor(input.messages.length / 2)
     const yaml: Record<string, unknown> = {
@@ -242,6 +267,7 @@ export default class ChatDocument extends SectionDocument {
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
       tags: input.tags && input.tags.length > 0 ? input.tags.join('; ') : null,
     }
+    if (input.parent) yaml.parent = { chat: input.parent.chat, turn: input.parent.turn }
     if (input.attachments && input.attachments.length > 0) yaml.attachments = attachmentsToYaml(input.attachments)
     if (input.approvals && input.approvals.length > 0) yaml.approvals = [...input.approvals]
     const markdown = ChatDocument.buildMarkdown(input)

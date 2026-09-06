@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { ContextPanel } from './context.tsx'
@@ -46,6 +47,8 @@ export interface Turn {
   time?: string
   /** The reply rendered as HTML once it finished streaming */
   html?: string
+  /** Web addresses the reply drew on, folded under it; the saved transcript carries them as a trailing list */
+  sources?: string[]
   /** The gather that preceded this reply, kept as its provenance */
   note?: string
   /** What the reply cost, in tokens, every step summed */
@@ -98,10 +101,25 @@ export interface Note {
 
 type Phase = 'idle' | 'busy' | 'saving'
 
+/** Where a thread came from: the parent's file, the turn it left after, the live parent when there is one. */
+export interface ThreadParent {
+  chat: string
+  turn: number
+  id: string | null
+  /** The parent's name, when the service knows it */
+  title: string | null
+}
+
 export interface ThreadState {
   id: string
   turns: Turn[]
   phase: Phase
+  /** Messages at the head of `turns` that are the parent's — shown dimmed, the branch's own follow */
+  inherited: number
+  /** The chat this thread branched from; null for one that began on its own */
+  parent: ThreadParent | null
+  /** The saved chat this thread continues, relative to the notebook root; null for one with no file yet */
+  saved: string | null
   /** The thread has been read back from the service (or found not to exist there) */
   loaded: boolean
   /** The gather line while it runs */
@@ -140,6 +158,9 @@ type Action =
       answered?: Answered[]
       runs?: Run[]
       queries?: TurnQueries[]
+      inherited?: number
+      parent?: ThreadParent | null
+      saved?: string | null
     }
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
   | {
@@ -164,7 +185,15 @@ type Action =
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
   | { type: 'run-summary'; id: string; tool: string; at: number; text: string }
-  | { type: 'finished'; id: string; content: string; usage?: TokenUsage; model?: string; timing?: string }
+  | {
+      type: 'finished'
+      id: string
+      content: string
+      sources?: string[]
+      usage?: TokenUsage
+      model?: string
+      timing?: string
+    }
   | { type: 'failed'; id: string; message: string; timing?: string }
   | { type: 'rendered'; id: string; index: number; html: string }
   | { type: 'saving'; id: string }
@@ -194,6 +223,9 @@ function initial(id: string): ThreadState {
     id,
     turns: [],
     phase: 'idle',
+    inherited: 0,
+    parent: null,
+    saved: null,
     loaded: false,
     gather: null,
     provenance: null,
@@ -235,6 +267,9 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         turns: action.turns,
         documents: action.documents,
         loaded: true,
+        inherited: action.inherited ?? 0,
+        parent: action.parent ?? null,
+        saved: action.saved ?? null,
         approvals,
         answered: action.answered ?? [],
         runs: action.runs ?? [],
@@ -359,6 +394,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         turns: withReply(state.turns, (r) => ({
           ...r,
           content: action.content,
+          sources: action.sources ?? r.sources,
           note: r.note ?? state.provenance ?? undefined,
           usage: action.usage ?? r.usage,
           timing: action.timing ?? r.timing,
@@ -422,10 +458,11 @@ function titleOf(toolName: string): string {
   return humanize(toolName).replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 }
 
-/** First words of the first message — how a thread is named until it is saved. */
-export function threadTitle(turns: Turn[]): string | null {
-  const first = turns.find((t) => t.role === 'user')
-  return first ? first.content.split(/\s+/).slice(0, 8).join(' ') : null
+/** First words of the first own message — how a thread is named until it is saved; a branch skips what it inherited. */
+export function threadTitle(turns: Turn[], inherited = 0): string | null {
+  const first = turns.slice(inherited).find((t) => t.role === 'user')
+  const words = first ? first.content.split(/\s+/).slice(0, 8).join(' ') : ''
+  return words || null
 }
 
 // -----------------------------------------------------------------------------
@@ -438,6 +475,9 @@ interface ThreadBody {
   documents: number
   kept: number | null
   busy?: boolean
+  inherited?: number
+  parent?: ThreadParent | null
+  saved?: string | null
   pending?: Approval[]
   answered?: Answered[]
   runs?: Run[]
@@ -449,15 +489,19 @@ interface ThreadBody {
 
 function turnsOf(body: ThreadBody): Turn[] {
   const usageAt = new Map((body.usage ?? []).map(({ at, model, ...usage }) => [at, { usage, model }]))
-  return body.turns.map((t, i) => ({
-    role: t.role,
-    content: t.content,
-    time: t.when?.slice(11),
-    html: t.role === 'assistant' ? (renderMarkdown(t.content) ?? undefined) : undefined,
-    usage: usageAt.get(i)?.usage,
-    model: usageAt.get(i)?.model,
-    timing: body.timings?.find((entry) => entry.at === i)?.text,
-  }))
+  return body.turns.map((t, i) => {
+    const { body: text, sources } = t.role === 'assistant' ? splitSources(t.content) : { body: t.content, sources: [] }
+    return {
+      role: t.role,
+      content: text,
+      sources: sources.length > 0 ? sources : undefined,
+      time: t.when?.slice(11),
+      html: t.role === 'assistant' ? (renderMarkdown(text) ?? undefined) : undefined,
+      usage: usageAt.get(i)?.usage,
+      model: usageAt.get(i)?.model,
+      timing: body.timings?.find((entry) => entry.at === i)?.text,
+    }
+  })
 }
 
 export function useChat(id: string) {
@@ -490,6 +534,9 @@ export function useChat(id: string) {
           answered: body.answered ?? [],
           runs: body.runs ?? [],
           queries: body.queries ?? [],
+          inherited: body.inherited ?? 0,
+          parent: body.parent ?? null,
+          saved: body.saved ?? null,
         })
       })
       .catch(() => {
@@ -715,20 +762,20 @@ export function useChat(id: string) {
               if (typeof d.error === 'string') {
                 dispatch({ id, type: 'failed', message: d.error, timing: d.timingText as string | undefined })
               } else {
-                const text = d.text as string
-                const sources = (d.sourceUrls as string[]) ?? []
-                const content = sources.length
-                  ? `${text}\n\nSources:\n${sources.map((u) => `- ${u}`).join('\n')}`
-                  : text
+                // The reply may name sources of its own; with the pages the searches read they are one list, the one the transcript keeps.
+                const { body: text, sources } = splitSources(
+                  withSources(d.text as string, (d.sourceUrls as string[]) ?? []),
+                )
                 dispatch({
                   id,
                   type: 'finished',
-                  content,
+                  content: text,
+                  sources: sources.length > 0 ? sources : undefined,
                   usage: d.usage as TokenUsage | undefined,
                   timing: d.timingText as string | undefined,
                   model: d.model as string | undefined,
                 })
-                const html = renderMarkdown(content)
+                const html = renderMarkdown(text)
                 if (html) dispatch({ id, type: 'rendered', index: replyIndex, html })
               }
               break
@@ -755,6 +802,29 @@ export function useChat(id: string) {
       followSummaries(id, dispatch)
     },
     [state.id, state.phase, state.turns.length, state.settings],
+  )
+
+  // A new chat from here: the service makes a thread that keeps this one's
+  // first `turn` turns. Nothing is written; the caller turns the page to it.
+  // A refusal comes back in words, so the page can say why nothing happened.
+  const branch = useCallback(
+    async (turn: number): Promise<{ id: string } | { error: string }> => {
+      if (!state.id) return { error: 'No thread to branch from.' }
+      if (state.phase !== 'idle') return { error: 'Wait for the turn to finish, then branch.' }
+      const response = await fetch(`/chat/${state.id}/branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turn }),
+      }).catch(() => null)
+      if (!response) return { error: "Couldn't reach sky — is the service running?" }
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string }
+        return { error: body.message ?? `The service answered ${response.status}.` }
+      }
+      const body = (await response.json()) as { id: string }
+      return { id: body.id }
+    },
+    [state.id, state.phase],
   )
 
   // Ending a thread files it through the same gate as ai:chat (or drops
@@ -822,6 +892,7 @@ export function useChat(id: string) {
     setContextTokens,
     setSaves,
     answer,
+    branch,
   }
 }
 
@@ -987,7 +1058,8 @@ function RunView({ run }: { run: Run }) {
   )
 }
 
-function RunList({ runs }: { runs: Run[] }) {
+/** Runs shown as they are: one chip each, watched as they work. */
+function RunRows({ runs }: { runs: Run[] }) {
   return (
     <div className="sky-tool-runs">
       {runs.map((run, i) => (
@@ -995,6 +1067,88 @@ function RunList({ runs }: { runs: Run[] }) {
           <RunView run={run} />
         </Fragment>
       ))}
+    </div>
+  )
+}
+
+/** Runs that fold to one line once the reply is done — never fewer than this many. */
+const FOLD_RUNS_FROM = 3
+
+/** `web search · 15`, or `Tools · 17` when more than one kind ran. */
+function runsLabel(runs: Run[]): string {
+  const kinds = new Set(runs.map((run) => run.tool))
+  const name = kinds.size === 1 ? humanize(runs[0].tool) : 'Tools'
+  return `${name} · ${runs.length}`
+}
+
+/**
+ * The tools a reply ran. While the reply is being made every call shows as
+ * it happens — that is the part worth watching. Once the reply is done, a
+ * handful of calls or more fold to one line, a caret and a count, and open
+ * again on a click.
+ */
+function RunList({ runs, folded = false }: { runs: Run[]; folded?: boolean }) {
+  const [open, setOpen] = useState(false)
+  if (!folded || runs.length < FOLD_RUNS_FROM) return <RunRows runs={runs} />
+  return (
+    <div className="sky-tool-group">
+      <button
+        type="button"
+        className="sky-tool-fold"
+        data-act="true"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className="sky-tool-caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="sky-tool-fold-name">{runsLabel(runs)}</span>
+      </button>
+      {open && <RunRows runs={runs} />}
+    </div>
+  )
+}
+
+/** A web address as it reads: the site and the start of its path, the whole address on hover. */
+function sourceLabel(url: string): string {
+  try {
+    const u = new URL(url)
+    const path = u.pathname.replace(/\/$/, '')
+    const shown = path.length > 42 ? `${path.slice(0, 41)}…` : path
+    return `${u.hostname.replace(/^www\./, '')}${shown}`
+  } catch {
+    return url
+  }
+}
+
+/** The addresses a reply drew on, folded to one line under it; a click lists them. */
+function SourcesFold({ sources }: { sources: string[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="sky-sources">
+      <button
+        type="button"
+        className="sky-tool-fold"
+        data-act="true"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className="sky-tool-caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="sky-tool-fold-name">Sources · {sources.length}</span>
+      </button>
+      {open && (
+        <ul className="sky-sources-list">
+          {sources.map((url) => (
+            <li key={url}>
+              <a href={url} target="_blank" rel="noopener noreferrer" title={url}>
+                {sourceLabel(url)}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -1066,10 +1220,73 @@ export function NoteLine({ note }: { note: Note }) {
   )
 }
 
-/** The thread's turns, the gather line while it runs, the saving line. No header, no composer. */
-export function ThreadColumn({ chat }: { chat: Chat }) {
-  const { state, answer } = chat
+/** A branch that left this thread, as the page marks it between the turns. */
+export interface BranchMark {
+  id: string
+  title: string | null
+  turn: number
+}
+
+/**
+ * The thread's turns, the gather line while it runs, the saving line. No
+ * header, no composer. A branch shows the turns it inherited dimmed, then
+ * the line that says where it came from; a thread that branches left
+ * carries a line where each left. A reply offers "New chat from here" when
+ * the page can turn to the new thread.
+ */
+export function ThreadColumn({
+  chat,
+  branches = [],
+  onBranched,
+}: {
+  chat: Chat
+  /** Live threads that branched from this one */
+  branches?: BranchMark[]
+  /** Turns this page to a new thread — the fallback when a new tab is blocked; absent, replies offer no branching */
+  onBranched?: (id: string) => void
+}) {
+  const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
+  const leftAt = (turn: number) => branches.filter((b) => b.turn === turn)
+  // Why a branch did not open, said under the turns for a moment; and which
+  // turn's branch is being made, so its button says so meanwhile.
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [branching, setBranching] = useState<number | null>(null)
+  useEffect(() => {
+    if (!refusal) return
+    const timer = window.setTimeout(() => setRefusal(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [refusal])
+  // The branch opens in a new tab and this chat stays where it is: the two
+  // are meant to run side by side, and swapping this page for one that
+  // looks almost the same only confuses. The tab is opened at once, inside
+  // the click, since a browser lets a page open a tab only on the person's
+  // gesture — then pointed at the branch once the service has made it. A
+  // blocked tab falls back to turning this page.
+  const branchFrom = onBranched
+    ? async (turn: number) => {
+        if (branching !== null) return
+        const tab = window.open('', '_blank')
+        if (tab) tab.document.title = 'New chat…'
+        setBranching(turn)
+        try {
+          const made = await branch(turn)
+          if ('id' in made) {
+            if (tab) tab.location.href = `/thread/${made.id}`
+            else onBranched(made.id)
+          } else {
+            tab?.close()
+            setRefusal(`Couldn't start a new chat from here — ${made.error}`)
+          }
+        } catch (err) {
+          // Whatever went wrong on the page itself is said, never swallowed.
+          tab?.close()
+          setRefusal(`Couldn't start a new chat from here — ${(err as Error).message ?? String(err)}`)
+        } finally {
+          setBranching(null)
+        }
+      }
+    : undefined
   // A tool at work speaks for the wait; the quiet line would only say "thinking" over it.
   const running = state.runs.some((run) => run.status === null)
   const lastUser = state.turns.findLastIndex((turn) => turn.role === 'user')
@@ -1094,6 +1311,13 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
             cards={turn.role === 'assistant' ? settled(i) : undefined}
             runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
             labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
+            shared={i < state.inherited}
+            onBranch={
+              branchFrom && !busy && turn.role === 'assistant' && i % 2 === 1
+                ? () => void branchFrom((i + 1) / 2)
+                : undefined
+            }
+            branching={branching !== null && branching === (i + 1) / 2}
           />
           {turn.role === 'user' && (
             <Fragment key={`${state.id}-${i}`}>
@@ -1103,6 +1327,29 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
                 queries={state.queries.find((entry) => entry.turn === Math.floor(i / 2) + 1)?.queries}
               />
             </Fragment>
+          )}
+          {state.parent && state.inherited > 0 && i === state.inherited - 1 && (
+            <div className="sky-condensed">
+              — continues{' '}
+              {state.parent.id ? (
+                <a href={`/thread/${state.parent.id}`}>{state.parent.title ?? 'the chat it left'}</a>
+              ) : (
+                <a href={`/explorer/${state.parent.chat}`}>{state.parent.title ?? 'the chat it left'}</a>
+              )}{' '}
+              from turn {state.parent.turn} —
+            </div>
+          )}
+          {turn.role === 'assistant' && leftAt((i + 1) / 2).length > 0 && (
+            <div className="sky-condensed">
+              — {leftAt((i + 1) / 2).length === 1 ? 'a branch left here: ' : 'branches left here: '}
+              {leftAt((i + 1) / 2).map((b, k) => (
+                <Fragment key={b.id}>
+                  {k > 0 && ', '}
+                  <a href={`/thread/${b.id}`}>{b.title ?? 'a new chat'}</a>
+                </Fragment>
+              ))}{' '}
+              —
+            </div>
           )}
         </Fragment>
       ))}
@@ -1123,6 +1370,7 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
       ))}
       {/* Runs for a reply that has not begun sit where it will land. */}
       {coming.length > 0 && <RunList runs={coming} />}
+      {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
     </>
   )
@@ -1253,11 +1501,17 @@ export function ChatMain({
   title,
   back,
   onEnd,
+  branches,
+  onBranched,
 }: {
   chat: Chat
   title: string
   back: { label: string; onClick: () => void }
   onEnd: () => void
+  /** Live threads that branched from this one */
+  branches?: BranchMark[]
+  /** The page turns to a new branch */
+  onBranched?: (id: string) => void
 }) {
   const { state } = chat
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -1273,6 +1527,7 @@ export function ChatMain({
           ‹ {back.label}
         </Button>
         <span className="sky-title">{title}</span>
+        {state.saved && <span className="sky-head-count">saved</span>}
         <nav className="sky-tabs">
           {state.documents !== null && (
             <Button size="sm" onClick={() => setPanel((open) => !open)} data-active={panel}>
@@ -1302,12 +1557,12 @@ export function ChatMain({
               </div>
             ) : (
               <div className="sky-col">
-                <ThreadColumn chat={chat} />
+                <ThreadColumn chat={chat} branches={branches} onBranched={onBranched} />
               </div>
             )}
           </div>
 
-          <Composer chat={chat} placeholder="Message sky…" hints={KEY_HINTS} />
+          <Composer chat={chat} placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'} hints={KEY_HINTS} />
         </div>
         {panel && (
           <ContextPanel
@@ -1328,6 +1583,9 @@ export function TurnView({
   streaming,
   cards,
   runs,
+  shared = false,
+  onBranch,
+  branching = false,
   labelOf,
 }: {
   turn: Turn
@@ -1336,13 +1594,19 @@ export function TurnView({
   cards?: ReactNode
   /** The tools this reply ran, with what each said */
   runs?: Run[]
+  /** The turn is the parent's, inherited by this branch — drawn dimmed */
+  shared?: boolean
+  /** "New chat from here": a branch that keeps the thread through this reply */
+  onBranch?: () => void
+  /** The branch from this reply is being made */
+  branching?: boolean
   /** The settings' label for a profile name, for the usage line; the name itself when absent */
   labelOf?: (profile: string) => string
 }) {
   if (turn.role === 'user') {
     // What the person typed, verbatim — an address in it is a link out.
     return (
-      <div className="sky-turn sky-turn-user">
+      <div className="sky-turn sky-turn-user" data-shared={shared || undefined}>
         <div className="sky-bubble">
           {splitLinks(turn.content).map((run, i) =>
             run.url ? (
@@ -1362,8 +1626,10 @@ export function TurnView({
     <>
       {turn.note && <div className="sky-condensed">— {turn.note} —</div>}
       {cards}
-      <div className="sky-turn">
-        <span className="sky-who">sky{turn.time ? ` · ${turn.time}` : ''}</span>
+      <div className="sky-turn" data-shared={shared || undefined}>
+        <span className="sky-who">
+          <span>sky{turn.time ? ` · ${turn.time}` : ''}</span>
+        </span>
         {turn.html ? (
           <div className="sky-body sky-rendered" dangerouslySetInnerHTML={{ __html: turn.html }} />
         ) : (
@@ -1382,14 +1648,30 @@ export function TurnView({
             )}
           </div>
         )}
-        {runs && runs.length > 0 && <RunList runs={runs} />}
+        {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
+        {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
-        {!streaming && (
-          <ReplyDetails
-            usage={turn.usage}
-            model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
-            timing={turn.timing}
-          />
+        {!streaming && (turn.usage || turn.timing || onBranch) && (
+          <div className="sky-reply-foot">
+            <ReplyDetails
+              usage={turn.usage}
+              model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
+              timing={turn.timing}
+            />
+            {onBranch && (
+              <div className="sky-reply-acts">
+                <button
+                  type="button"
+                  className="sky-act"
+                  onClick={onBranch}
+                  disabled={branching}
+                  data-busy={branching || undefined}
+                >
+                  {branching ? 'Starting…' : 'New chat from here…'}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </>

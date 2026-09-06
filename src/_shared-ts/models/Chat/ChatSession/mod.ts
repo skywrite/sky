@@ -15,15 +15,18 @@
  * how a tool gets approved, and the rendered system prompt.
  */
 
+import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
 import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { currentTimingSpan, thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
+import { withSources } from '#universal/ai/sources.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type ExternalFileRef, recordExternalFiles } from '../artifactRel.ts'
 import ChatContext, {
@@ -43,8 +46,10 @@ import ChatEngine, {
   TurnError,
 } from '../ChatEngine/mod.ts'
 import { clearChatAutosave, writeChatAutosave } from '../ChatStore/autosave.ts'
-import type { ResumeSession } from '../ChatStore/mod.ts'
-import { type SaveChatReport, type SaveEnricher, type SaveProgress, saveChat } from '../ChatStore/save.ts'
+import { loadResumeSession, type ResumeSession } from '../ChatStore/mod.ts'
+import { chatFilePath, type SaveChatReport, type SaveEnricher, type SaveProgress, saveChat } from '../ChatStore/save.ts'
+import { inheritedMessages, prefixOf } from '../document/lineage.ts'
+import type { ChatParent } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
 
@@ -107,6 +112,20 @@ export interface ChatSessionOptions {
   summaryBaseline?: boolean
   /** The transcript being continued, or null for a new chat */
   resume: ResumeSession | null
+  /**
+   * A conversation to pick up that has no file yet — a crash snapshot the
+   * host read back, or the turns a branch inherits. The session seeds and
+   * restores from it exactly as from a resume, but files as a new chat when
+   * it ends. Ignored when `resume` is set.
+   */
+  restore?: ResumeState
+  /**
+   * For a new branch: the chat it left and the turn it left after. The
+   * inherited turns are `restore`; the file the session writes holds only
+   * what follows, in the folder beside the parent. A resumed branch
+   * carries its parent on the resume instead.
+   */
+  parent?: ChatParent | null
   /** Spread into every model invocation */
   model: ResolvedModel
   /** What the transcript records as provider and model */
@@ -142,7 +161,7 @@ export interface TurnReport {
   context: TurnContextReport
   /** The reply; absent when the turn failed */
   text?: string
-  /** Deduplicated web-search sources, already appended to the saved turn */
+  /** Deduplicated web-search sources; the saved turn ends in one Sources list holding these and any the reply named itself */
   sourceUrls: string[]
   approvalRoundsExhausted: boolean
   /** The turn's token counts, every model step summed; absent when the turn failed */
@@ -164,11 +183,6 @@ export interface EndOptions {
 }
 
 const MAX_ERROR_CHARS = 2000
-
-function withSources(text: string, urls: string[]): string {
-  if (urls.length === 0) return text
-  return `${text}\n\nSources:\n${urls.map((u) => `- ${u}`).join('\n')}`
-}
 
 // -----------------------------------------------------------------------------
 // ChatSession
@@ -193,6 +207,10 @@ export default class ChatSession {
   private contextPrompt = ''
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
   private profile: { provider: string; model: string }
+  /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
+  private resumeSession: ResumeSession | null
+  /** A title pinned before the save: a branch names its family on the parent so the folder is known. */
+  private pinnedTitle: string | null = null
   private firstTurnPending = true
   /** The baseline universe exists, gathered or restored — a closed start leaves it for the first open turn. */
   private seeded = false
@@ -202,6 +220,12 @@ export default class ChatSession {
   constructor(opts: ChatSessionOptions) {
     this.opts = opts
     this.profile = opts.profile
+    this.resumeSession = opts.resume
+    // The conversation is the host's to show from the first moment — a
+    // thread read back from a snapshot, or a branch, has turns before its
+    // next message.
+    const seed = this.seed
+    if (seed) this.turns.push(...seed.conversation)
     this.now = opts.now ?? (async () => (await fetchNow()).plainDateTime)
     this.logError = opts.logError ?? logAIError
     this.context = new ChatContext({
@@ -211,6 +235,10 @@ export default class ChatSession {
       maxTokens: opts.contextTokens,
       summaryBaseline: opts.summaryBaseline,
       ownChatPath: opts.resume?.filePath ?? null,
+      // A branch's lineage is its own conversation already; a fresh branch's
+      // parent may have no file yet, and its path keeps out of retrieval too.
+      ancestors:
+        opts.resume?.ancestors ?? (opts.parent ? [path.join(path.dirname(opts.timeDir), opts.parent.chat)] : []),
       producers: opts.producers,
       onProgress: (event) => this.emit(event),
       fetchContext: opts.fetchContext,
@@ -243,13 +271,81 @@ export default class ChatSession {
     return null
   }
 
+  /** The file this session writes back to, or null for a chat that has none yet. */
   get resume(): ResumeSession | null {
-    return this.opts.resume
+    return this.resumeSession
   }
 
   /** When the session started — the day it files under, and the key of its snapshot. */
   get startTime(): PlainDateTime {
     return this.opts.startTime
+  }
+
+  /** The chat this one branched from, or null for a chat that began on its own. */
+  get parent(): ChatParent | null {
+    return this.resumeSession?.parent ?? this.opts.parent ?? null
+  }
+
+  /** Messages at the head of `turns` that are the parent's — a branch shows them, its file leaves them out. */
+  get inherited(): number {
+    if (this.resumeSession) return this.resumeSession.inherited
+    if (this.opts.parent)
+      return Math.min(inheritedMessages(this.opts.parent.turn), this.opts.restore?.conversation.length ?? 0)
+    return 0
+  }
+
+  /** The title pinned on this session, if a branch named its family. */
+  get title(): string | null {
+    return this.pinnedTitle
+  }
+
+  /**
+   * Pin the title the session files under. A branch pins its family's name
+   * on the parent so the parent's filename — the branch folder's name — is
+   * known before either saves. Pinned once; the first name stands.
+   */
+  pinTitle(title: string): void {
+    if (this.pinnedTitle === null && title.trim()) this.pinnedTitle = title.trim()
+  }
+
+  /**
+   * Where this session's file is, or will be: the file it writes back to,
+   * else the path a save would choose now — which needs a title, pinned or
+   * given, since the slug is the title. Null when there is nothing to name
+   * it by yet.
+   */
+  filePath(title?: string): string | null {
+    if (this.resumeSession) return this.resumeSession.filePath
+    const summary = this.pinnedTitle ?? title?.trim()
+    if (!summary) return null
+    return chatFilePath({
+      timeDir: this.opts.timeDir,
+      day: this.opts.today,
+      startTime: this.opts.startTime,
+      summary,
+      parent: this.opts.parent ?? null,
+    })
+  }
+
+  /**
+   * The thread as it stands through `turn`, as a branch would inherit it —
+   * or the whole thread when no turn is given. Pure derivation over what
+   * the session holds; nothing is read or written.
+   */
+  stateAt(turn?: number): ResumeState {
+    const whole: ResumeState = {
+      conversation: [...this.turns],
+      universePaths: [],
+      queries: [],
+      lastTurn: 0,
+      contextLog: [...this.context.log],
+    }
+    return prefixOf(whole, turn ?? Math.floor(this.turns.length / 2))
+  }
+
+  /** The state a session picks up from, whether it writes back to a file or not; null for a fresh chat. */
+  private get seed(): ResumeState | null {
+    return this.opts.resume?.state ?? this.opts.restore ?? null
   }
 
   /** True once a message was sent this session — a resumed chat with none leaves its file untouched. */
@@ -258,22 +354,20 @@ export default class ChatSession {
   }
 
   /**
-   * Seed the session: a resumed conversation reseeds the history, and a
+   * Seed the session: a resumed or restored conversation reseeds the model's
+   * history (the turns themselves were seeded at construction), and a
    * transcript with a context log restores its recorded universe exactly
    * (new documents enter only through the evolve path afterward). Anything
    * else — a new chat, or a pre-log transcript — gathers a fresh baseline.
    * The system prompt renders concurrently; both are service round-trips.
    */
   async start(): Promise<StartReport> {
-    const { resume } = this.opts
-    if (resume) {
-      this.turns.push(...resume.state.conversation)
-      this.engine.seedConversation(resume.state.conversation)
-    }
+    const seed = this.seed
+    if (seed) this.engine.seedConversation(seed.conversation)
 
     const prompt = this.opts.systemPrompt()
-    if (resume && resume.state.contextLog.length > 0) {
-      const [restored, rendered] = await Promise.all([this.context.restore(resume.state), prompt])
+    if (seed && seed.contextLog.length > 0) {
+      const [restored, rendered] = await Promise.all([this.context.restore(seed), prompt])
       this.systemPrompt = rendered
       this.firstTurnPending = false
       this.seeded = true
@@ -454,6 +548,7 @@ export default class ChatSession {
       // the turn changed no context and so recorded nothing else.
       this.context.recordTurnTools(result.toolRecords)
       this.context.recordTurnUsage(result.usage)
+      this.context.recordTurnModel(this.profile.model)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const assistant: ConversationMessage = { role: 'assistant', content: withSources(result.text, sourceUrls) }
@@ -487,18 +582,46 @@ export default class ChatSession {
    * on disk (saved, or parked as a recovery copy) or deliberately dropped.
    */
   async end(opts: EndOptions): Promise<SaveChatReport | null> {
-    const { resume } = this.opts
+    const resume = this.resumeSession
     // A resumed session with no new messages leaves its file untouched.
-    const wanted = opts.save && this.turns.length > 0 && (!resume || this.newMessages)
+    const wanted = opts.save && this.turns.length > this.inherited && (!resume || this.newMessages)
     if (!wanted) {
       await this.clearSnapshot()
       return null
     }
 
-    const saved = await saveChat({
+    const saved = await this.save(opts)
+    await this.clearSnapshot()
+    return saved
+  }
+
+  /**
+   * File the conversation now and go on talking: what a branch asks of a
+   * parent that has no file yet, since the branch's own file goes in the
+   * folder beside its parent's. A light save — the pinned title, no tags,
+   * rel, memory or profile work; those come at the real end — after which
+   * the session writes back to that file like a resumed chat. Already filed,
+   * it answers with where. Returns null when there is nothing to file.
+   */
+  async fileNow(): Promise<SaveChatReport | null> {
+    if (this.resumeSession) return null
+    if (this.turns.length <= this.inherited) return null
+    const saved = await this.save({ save: true, autoTag: false, autoRel: false, memoryDir: null, people: false })
+    if (!saved.aborted) {
+      this.resumeSession = await loadResumeSession(saved.path, { baseDir: path.dirname(this.opts.timeDir) })
+      this.newMessages = false
+    }
+    return saved
+  }
+
+  private async save(opts: EndOptions): Promise<SaveChatReport> {
+    return saveChat({
       turns: this.turns,
       contextLog: this.context.log,
-      resume,
+      resume: this.resumeSession,
+      parent: this.opts.parent ?? null,
+      inherited: this.inherited,
+      title: this.pinnedTitle ?? undefined,
       timeDir: this.opts.timeDir,
       day: this.opts.today,
       startTime: this.opts.startTime,
@@ -516,8 +639,6 @@ export default class ChatSession {
       onProgress: (event) => this.emit(event),
       enricher: opts.enricher,
     })
-    await this.clearSnapshot()
-    return saved
   }
 
   /**
@@ -532,7 +653,8 @@ export default class ChatSession {
       await writeChatAutosave(this.opts.autosavePath, {
         turns: this.turns,
         contextLog: this.context.log,
-        resume: this.opts.resume,
+        resume: this.resumeSession,
+        parent: this.parent,
         startTime: this.opts.startTime,
         provider: this.profile.provider,
         model: this.profile.model,

@@ -78,6 +78,45 @@ a person can see and touch:
 - **What the model sees now**, below the story, folded: every document in
   context with its tokens, what was left out and why, and the hand on it
   (pin, drop, let back, pin a file by path). As before.
+- **A thread outlives a restart.** Every completed turn snapshots the thread
+  to the state directory, as the terminal does. When the service starts it
+  reads its own snapshots back — a thread id in the name, never a
+  terminal's pid — and every one becomes a thread again: in the day's list
+  and the rail with its turns on the page at once, its context restored at
+  its next message, filed under the day it started when it is ended. Only
+  ending a thread removes its snapshot; a stop mid-turn loses that turn
+  and nothing before it.
+- **A new chat from here.** Every reply offers it. The branch is a thread
+  that keeps the turns through that reply and goes its own way after them;
+  on its page the inherited turns read dimmed, then a line says where it
+  came from and from which turn, and the thread it left carries a line
+  where the branch left. Branching writes nothing: the branch is a thread
+  like any other until it is ended. What it does pin is the family's name
+  on the thread it left — the titler over the shared turns, or the name
+  the thread already had — so the folder the branch will file into is
+  known; the parent keeps that name when it saves. `POST /chat/:id/branch`
+  `{ turn }` answers the new thread's id and the parent key it carries.
+  When a branch is ended and saved, a parent that has no file yet is filed
+  first, lightly (its pinned title, no tag, rel or memory work), and goes
+  on talking into that file; the branch then files beside it, in the
+  folder carrying the parent's name, holding only its own turns and its
+  parent key. The rail lists a day's branches under the chat each left.
+- **A saved chat opens to continue.** A chat in the rail opens as a thread
+  whose session writes back to its file — `POST /chat/open` `{ chat }`
+  with the path relative to the notebook root; opening the same file again
+  finds the same thread. Its turns are on the page at once, its title is
+  the saved one, the composer reads "Continue this chat…", and a branch
+  from one of its replies is the retroactive case: a new chat from a
+  morning's conversation, this afternoon.
+- **A name for the thread.** Until its first exchange is in, a thread goes
+  by the first words of its first message, or "New chat" when the message
+  had none. Once the first reply has landed, the terminal's one-shot titler
+  runs off the turn's critical path — the fast model, a topic in a few
+  words over the first two turns — and the thread carries that name in the
+  day's list, the rail, and the page header from their next read (a
+  `title` frame goes down the stream when one is still open). The saved
+  file's `summary:` is still chosen at save, independently, as in the
+  terminal. A titler that fails leaves the first words standing.
 - **A tool call that needs a go.** The page offers every tool the terminal
   offers, gated the same way: the decorator's `needsApproval` is the source
   of truth. When the model calls a gated tool — post to Slack, build a
@@ -177,7 +216,8 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   pasted into a message blesses that file for the process; a file a tool
   reports as created is blessed for good; "Allow for this file" on a card
   is a durable go. The tool approval config consults it, so a blessed call
-  runs inline with no card. A tool may also exempt calls outright
+  runs inline with no card. Durable keys ride the thread's snapshot and
+  come back with a restored thread. A tool may also exempt calls outright
   (`needsApprovalFor`) — `google_agent` runs create-only missions without
   asking on every surface ([2026-09-03](2026-09-03-the-go-you-already-gave.md)).
 
@@ -214,6 +254,10 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 
 ## Verified
 
+- 2026-09-06 — one Sources list: a saved chat whose reply named its own
+  sources and had the searched pages appended shows the body without either
+  list and one "Sources · 20" fold, on reload and as the reply finishes
+  ([the note](../../../../_shared-ts/models/Chat/docs/2026-09-06-one-sources-list.md)).
 - 2026-09-05 — each message carries its model, reading budget, and save
   preference: new and existing threads use them before the model runs;
   restored threads keep the conversation and honor the next request's
@@ -224,15 +268,6 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   and an in-flight selection, preserves unsent text while waiting, and
   retries a failed connection with an identical message and settings.
 
-- 2026-09-05 — the budget slider: on the real page, a slow click, a quick
-  click, a drag and an arrow key each post their stop once, in order, and
-  the strip follows; the Cerebras Qwen profile ends the slider at 50k with
-  the stops past it grayed. Route tests: the window rides on the choice, a
-  300k choice on the small-window model drops to 50k while 25k stays, the
-  wide model takes 300k again, and a live thread switched to the
-  small-window model has its budget lowered and its context reassembled
-  within it. Shared helper tests: the stops, the nearest stop, the cap
-  behind a window (131,072 → 79,257) and the fit.
 - 2026-09-05 — the usage line: a scripted model that reports usage over two
   approval rounds sums into the turn's counts (engine test); the turn frame
   carries the counts and the profile, and the thread reads them back by turn

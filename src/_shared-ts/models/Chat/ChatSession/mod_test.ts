@@ -11,7 +11,7 @@ import type { ProducerResult } from '../ChatContext/mod.ts'
 import type { ModelInvoker } from '../ChatEngine/mod.ts'
 import { loadResumeSession } from '../ChatStore/mod.ts'
 import type { SaveEnricher } from '../ChatStore/save.ts'
-import { setUserSpeakerLabel } from '../document/mod.ts'
+import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import ChatSession, { type ChatSessionEvent, type ChatSessionOptions } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -478,5 +478,153 @@ test('ChatSession.start - resuming restores the conversation and the recorded co
     should: 'write back to the same file with both exchanges',
     actual: { path: written?.path, resumed: written?.resumed, exchanges: written?.exchanges },
     expected: { path: saved!.path, resumed: true, exchanges: 2 },
+  })
+})
+
+test('ChatSession - a restored conversation is on hand before it starts, and files as a new chat', async () => {
+  const first = await makeSession()
+  await first.session.start()
+  await first.session.send('What should I focus on?')
+  const saved = await first.session.end({ save: true, enricher: stubEnricher })
+  const { state } = await loadResumeSession(saved!.path)
+
+  // A restored thread keeps its own start — here a later one, so its file is its own.
+  const second = await makeSession({
+    restore: state,
+    timeDir: first.tmp,
+    startTime: new PlainDateTime('2026-01-27 09:45'),
+  })
+  const turnsBeforeStart = second.session.turns.length
+  const started = await second.session.start()
+  const written = await second.session.end({ save: true, enricher: stubEnricher })
+
+  assert({
+    given: 'a session built from a snapshot state with no file to write back to',
+    should: 'show the conversation at once, restore the recorded context on start, and file as a new chat when ended',
+    actual: {
+      turnsBeforeStart,
+      restored: started.restored !== undefined,
+      resumed: written?.resumed,
+      exchanges: written?.exchanges,
+      newFile: written !== null && written.path !== saved!.path,
+    },
+    expected: { turnsBeforeStart: 2, restored: true, resumed: false, exchanges: 1, newFile: true },
+  })
+})
+
+test('ChatSession - a branch inherits the turns through a reply, files beside its parent, and keeps its lineage out of retrieval', async () => {
+  const parentSession = await makeSession()
+  await parentSession.session.start()
+  await parentSession.session.send('What should I focus on?')
+  await parentSession.session.send('And after that?')
+  // The branch leaves after turn 1: the state at that turn is what it inherits.
+  const prefix = parentSession.session.stateAt(1)
+  const inheritedTiming = JSON.stringify(prefix.contextLog[0]?.timing)
+  parentSession.session.pinTitle('Focus for the week')
+  // The parent is filed before the branch saves, as the routes do when a branch ends.
+  const parentPath = (await parentSession.session.fileNow())!.path
+  const parentChat = path.relative(path.dirname(parentSession.tmp), parentPath)
+
+  const branch = await makeSession({
+    restore: prefix,
+    parent: { chat: parentChat, turn: 1 },
+    timeDir: parentSession.tmp,
+    startTime: new PlainDateTime('2026-01-27 09:45'),
+  })
+  const inheritedBefore = branch.session.inherited
+  const turnsBeforeStart = branch.session.turns.length
+  await branch.session.start()
+  await branch.session.send('Let us do the board prep instead.')
+  const written = await branch.session.end({ save: true, enricher: stubEnricher })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(written!.path))
+
+  assert({
+    given: 'the timing history inherited by a branch and the branch file on disk',
+    should: 'preserve the parent timing and file only the new turn timing with its own trace',
+    actual: {
+      inherited: JSON.stringify(branch.session.contextLog[0]?.timing) === inheritedTiming,
+      ownTurns: doc.contextLog.filter((entry) => entry.timing).map((entry) => entry.turn),
+      ownTrace: doc.contextLog[0]?.timing?.traceId !== prefix.contextLog[0]?.timing?.traceId,
+    },
+    expected: { inherited: true, ownTurns: [2], ownTrace: true },
+  })
+
+  assert({
+    given: 'a two-turn parent, a branch at turn 1 with one exchange of its own, ended',
+    should:
+      'show the two inherited messages, file its own exchange in the folder beside the parent with the parent key',
+    actual: {
+      prefixMessages: prefix.conversation.length,
+      prefixTurns: prefix.contextLog.map((e) => e.turn),
+      inheritedBefore,
+      turnsBeforeStart,
+      filedBeside: written!.path.startsWith(parentPath.replace(/\.md$/, '/')),
+      ownRoles: doc.conversation.map((m) => m.role),
+      parent: doc.parent,
+      exchanges: written!.exchanges,
+    },
+    expected: {
+      prefixMessages: 2,
+      prefixTurns: [1],
+      inheritedBefore: 2,
+      turnsBeforeStart: 2,
+      filedBeside: true,
+      ownRoles: ['user', 'assistant'],
+      parent: { chat: parentChat, turn: 1 },
+      exchanges: 1,
+    },
+  })
+})
+
+test('ChatSession.fileNow - a parent with no file gets one and goes on talking into it', async () => {
+  const s = await makeSession()
+  await s.session.start()
+  await s.session.send('What should I focus on?')
+  s.session.pinTitle('Focus for the week')
+  const filed = await s.session.fileNow()
+  const again = await s.session.fileNow()
+  await s.session.send('And after that?')
+  const ended = await s.session.end({ save: true, enricher: stubEnricher })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(ended!.path))
+
+  assert({
+    given: 'a live session filed mid-life under its pinned title, then given another exchange and ended',
+    should:
+      'file once under the pinned name, answer null the second time, and write the ending back to the same file with both exchanges',
+    actual: {
+      filedName: path.basename(filed!.path),
+      filedTwice: again,
+      resumedAfter: s.session.resume?.filePath === filed!.path,
+      endedPath: ended!.path === filed!.path,
+      endedResumed: ended!.resumed,
+      exchanges: doc.turnCount,
+      summary: doc.summary,
+    },
+    expected: {
+      filedName: '09-30_Focus-for-the-week.md',
+      filedTwice: null,
+      resumedAfter: true,
+      endedPath: true,
+      endedResumed: true,
+      exchanges: 2,
+      summary: 'Focus for the week',
+    },
+  })
+})
+
+test('ChatSession - each turn logs the model that answered it', async () => {
+  const s = await makeSession()
+  await s.session.start()
+  await s.session.send('What should I focus on?')
+  s.session.setModel({} as ResolvedModel, { provider: 'claude', model: 'claude-haiku-4-5' })
+  await s.session.send('And after that?')
+  assert({
+    given: 'two turns, the second on another model',
+    should: "name each turn's model on its log entry",
+    actual: s.session.contextLog.filter((e) => e.model).map((e) => [e.turn, e.model]),
+    expected: [
+      [1, 'claude-opus-4-6'],
+      [2, 'claude-haiku-4-5'],
+    ],
   })
 })

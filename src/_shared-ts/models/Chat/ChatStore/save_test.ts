@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { MemoryEntry } from '#shared/models/Memory/mod.ts'
@@ -176,6 +177,101 @@ test('saveChat - artifact links join rel as titled entries', async () => {
     should: 'record it in rel as a titled link',
     actual: [...doc.rel],
     expected: ['[Atlas Launch Brief](https://docs.example.com/d/atlas-brief)'],
+  })
+})
+
+test('saveChat - referenced notebook records join entity and artifact relationships', async () => {
+  const meeting = '2026-01-23/actions/meetings/10-00_Atlas-Review'
+  const turns = [msg('user', `${'Some background. '.repeat(800)}About my meeting with Jane…`, '2026-01-27 09:30')]
+  let received: unknown
+  const { report } = await saveNew({
+    turns,
+    autoRel: true,
+    contextLog: [{ turn: 1, queries: [], universe: [{ path: `${meeting}.md`, tokens: 200 }] }],
+    externalFiles: new Map([['https://docs.example.com/brief', 'Brief']]),
+    enricher: stubEnricher({
+      chooseRel: async () => ['projects/Atlas'],
+      chooseDocumentRel: async (input) => {
+        received = { turns: input.turns, contextPaths: input.contextPaths, today: input.today }
+        return [meeting]
+      },
+    }),
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'a notebook reference late in a long message',
+    should: 'resolve against the complete conversation and its known paths',
+    actual: received,
+    expected: { turns, contextPaths: [`${meeting}.md`], today: '2026-01-27' },
+  })
+  assert({
+    given: 'a chat discussing a meeting, an entity, and an external artifact',
+    should: 'save the meeting ref without its extension alongside the other relationships',
+    actual: { rel: [...doc.rel], reported: report.autoRel },
+    expected: {
+      rel: ['projects/Atlas', '[Brief](https://docs.example.com/brief)', meeting],
+      reported: ['projects/Atlas', meeting],
+    },
+  })
+})
+
+test('saveChat - a resume adds newly referenced documents despite existing rel', async () => {
+  const meeting = '2026-01-23/actions/meetings/10-00_Atlas-Review'
+  const later = '2026-01-26/actions/notes/Atlas-Budget'
+  const { report: first, timeDir } = await saveNew({
+    autoRel: true,
+    enricher: stubEnricher({ chooseRel: async () => ['projects/Atlas', meeting.slice(8)] }),
+  })
+  const resume = await loadResumeSession(first.path)
+  const report = await saveChat({
+    turns: [...TURNS, msg('user', 'Compare the meeting with the budget note.', '2026-01-27 10:30')],
+    contextLog: [],
+    resume,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    autoRel: true,
+    enricher: {
+      ...neverCalled,
+      chooseDocumentRel: async (input) => {
+        assert({
+          given: 'a resumed chat',
+          should: 'exclude its own saved file from candidates',
+          actual: input.excludePaths,
+          expected: [first.path],
+        })
+        return [meeting, later]
+      },
+    },
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'an existing project rel and a hand-written short meeting ref',
+    should: 'keep those entries and append the new note once',
+    actual: { rel: [...doc.rel], aborted: report.aborted },
+    expected: { rel: ['projects/Atlas', meeting.slice(8), later], aborted: undefined },
+  })
+})
+
+test('saveChat - disabling auto-rel also disables conversational document lookup', async () => {
+  let called = false
+  await saveNew({
+    autoRel: false,
+    enricher: stubEnricher({
+      chooseDocumentRel: async () => {
+        called = true
+        return []
+      },
+    }),
+  })
+  assert({
+    given: 'a save with auto-rel disabled',
+    should: 'perform no document-reference lookup',
+    actual: called,
+    expected: false,
   })
 })
 
@@ -802,5 +898,183 @@ test('saveChat - balanced bodies save without a seal', async () => {
     should: 'write exactly the fence lines the conversation contains',
     actual: fenceLines.length,
     expected: 1,
+  })
+})
+
+test('saveChat - a branch files beside its parent, holding only its own turns and its parent key', async () => {
+  const timeDir = await tmpNotebook()
+  const parentChat = `time/${dayDir(DAY)}/actions/ai-chats/09-00_Help-with-the-week.md`
+  // The parent is a file already, as a branch's parent is by the time the branch saves.
+  const parentPath = path.join(path.dirname(timeDir), parentChat)
+  await mkdir(path.dirname(parentPath), { recursive: true })
+  await writeTextFile(parentPath, '---\nsummary: Help with the week\nturns: 1\n---\n\n# Help with the week\n')
+  const report = await saveChat({
+    turns: [
+      msg('user', 'I need help with the week.', '2026-01-27 09:00'),
+      msg('assistant', 'Finances, board prep, hiring.', '2026-01-27 09:01'),
+      msg('user', 'Let us do the board prep instead.', '2026-01-27 09:30'),
+      msg('assistant', 'Three things by Thursday.', '2026-01-27 09:31'),
+    ],
+    contextLog: [
+      { turn: 1, queries: ['week'], universe: [{ path: 'goals/2026.md', tokens: 10 }] },
+      { turn: 2, queries: ['board'], diff: [{ path: 'projects/Board/Pack.md', tokens: 40 }] },
+    ],
+    resume: null,
+    parent: { chat: parentChat, turn: 1 },
+    inherited: 2,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: stubEnricher({
+      summarize: async (transcript) => (transcript.includes('week.') ? 'WRONG' : 'Board Prep Instead'),
+    }),
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+
+  assert({
+    given: 'a branch left after turn 1 with one exchange of its own',
+    should: 'file in the folder beside the parent, keep its own exchange and log entry only, and record the parent',
+    actual: {
+      path: path.relative(path.dirname(timeDir), report.path),
+      exchanges: report.exchanges,
+      turns: doc.turnCount,
+      roles: doc.conversation.map((m) => m.role),
+      logTurns: doc.contextLog.map((e) => e.turn),
+      parent: doc.parent,
+      summary: doc.summary,
+    },
+    expected: {
+      path: `time/${dayDir(DAY)}/actions/ai-chats/09-00_Help-with-the-week/09-30_Board-Prep-Instead.md`,
+      exchanges: 1,
+      turns: 1,
+      roles: ['user', 'assistant'],
+      logTurns: [2],
+      parent: { chat: parentChat, turn: 1 },
+      summary: 'Board Prep Instead',
+    },
+  })
+})
+
+test('saveChat - a pinned title names the file over the titler', async () => {
+  const { report } = await saveNew({ title: 'Help with the week', enricher: neverCalled })
+  assert({
+    given: 'a save with a pinned title and an enricher that must not be asked',
+    should: 'file under the pinned title',
+    actual: { name: path.basename(report.path), summary: report.summary },
+    expected: { name: '09-30_Help-with-the-week.md', summary: 'Help with the week' },
+  })
+})
+
+test('saveChat - a resumed branch writes back its own turns only, with its parent key kept', async () => {
+  // File a parent, then a branch beside it; resume the branch, add an exchange, save again.
+  const { timeDir, report: parentReport } = await saveNew({
+    enricher: stubEnricher({ summarize: async () => 'Help with the week' }),
+  })
+  const parentChat = path.relative(path.dirname(timeDir), parentReport.path)
+  const branch = await saveChat({
+    turns: [
+      ...TURNS,
+      msg('user', 'Board prep instead.', '2026-01-27 09:40'),
+      msg('assistant', 'Three things.', '2026-01-27 09:41'),
+    ],
+    contextLog: [{ turn: 2, queries: ['board'] }],
+    resume: null,
+    parent: { chat: parentChat, turn: 1 },
+    inherited: 2,
+    timeDir,
+    day: DAY,
+    startTime: new PlainDateTime('2026-01-27 09:40'),
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: stubEnricher({ summarize: async () => 'Board Prep Instead' }),
+  })
+  const resume = await loadResumeSession(branch.path, { baseDir: path.dirname(timeDir) })
+  const again = await saveChat({
+    turns: [
+      ...resume.state.conversation,
+      msg('user', 'And the hiring update?', '2026-01-27 09:50'),
+      msg('assistant', 'Two paragraphs.', '2026-01-27 09:51'),
+    ],
+    contextLog: [...resume.state.contextLog, { turn: 3, queries: ['board', 'hiring'] }],
+    resume,
+    timeDir,
+    day: DAY,
+    startTime: new PlainDateTime('2026-01-27 09:40'),
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: neverCalled,
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(again.path))
+
+  assert({
+    given: 'a branch resumed as the whole thread and saved with one more exchange',
+    should: 'write back to the same file with two own exchanges, the parent key, and the log from its own turns on',
+    actual: {
+      samePath: again.path === branch.path,
+      aborted: again.aborted ?? null,
+      roles: doc.conversation.map((m) => m.role),
+      logTurns: doc.contextLog.map((e) => e.turn),
+      parent: doc.parent,
+      resumedInherited: resume.inherited,
+    },
+    expected: {
+      samePath: true,
+      aborted: null,
+      roles: ['user', 'assistant', 'user', 'assistant'],
+      logTurns: [2, 3],
+      parent: { chat: parentChat, turn: 1 },
+      resumedInherited: 2,
+    },
+  })
+})
+
+test('saveChat - a branch whose parent was never kept files whole, as a chat of its own', async () => {
+  const timeDir = await tmpNotebook()
+  const report = await saveChat({
+    turns: [
+      msg('user', 'I need help with the week.', '2026-01-27 09:00'),
+      msg('assistant', 'Finances, board prep, hiring.', '2026-01-27 09:01'),
+      msg('user', 'Let us do the board prep instead.', '2026-01-27 09:30'),
+      msg('assistant', 'Three things by Thursday.', '2026-01-27 09:31'),
+    ],
+    contextLog: [
+      { turn: 1, queries: ['week'] },
+      { turn: 2, queries: ['board'] },
+    ],
+    resume: null,
+    parent: { chat: `time/${dayDir(DAY)}/actions/ai-chats/09-00_Never-filed.md`, turn: 1 },
+    inherited: 2,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    provider: 'claude',
+    model: 'claude-opus-4-6',
+    enricher: stubEnricher({ summarize: async () => 'Board Prep Instead' }),
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+
+  assert({
+    given: 'a branch saved after its parent was discarded without ever being filed',
+    should: 'keep every turn, file under the day like any chat, and carry no parent key',
+    actual: {
+      path: path.relative(path.dirname(timeDir), report.path),
+      roles: doc.conversation.map((m) => m.role),
+      logTurns: doc.contextLog.map((e) => e.turn),
+      parent: doc.parent,
+      exchanges: report.exchanges,
+    },
+    expected: {
+      path: `${path.basename(timeDir)}/${dayDir(DAY)}/actions/ai-chats/09-30_Board-Prep-Instead.md`,
+      roles: ['user', 'assistant', 'user', 'assistant'],
+      logTurns: [1, 2],
+      parent: null,
+      exchanges: 2,
+    },
   })
 })

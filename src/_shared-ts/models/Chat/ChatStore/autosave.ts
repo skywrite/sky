@@ -8,10 +8,14 @@
  * A snapshot is written in the exact shape of a saved transcript — the
  * same ChatDocument body with the same trailing context log — so
  * loadResumeSession reads one like any archived chat and a lost session
- * can be continued instead of retyped. What a snapshot never does is
- * enrich: no titling, no tag/rel choosers, no memory ops. Those are
- * save-time decisions (save.ts); this is a dumb serialization of state
- * the session already holds, cheap enough to run on every turn.
+ * can be continued instead of retyped. One difference from a saved
+ * branch: a snapshot holds the WHOLE thread, parent turns included, with
+ * the parent key beside them — a parent may not have a file yet when the
+ * snapshot is written, and insurance must not depend on it. What a
+ * snapshot never does is enrich: no titling, no tag/rel choosers, no
+ * memory ops. Those are save-time decisions (save.ts); this is a dumb
+ * serialization of state the session already holds, cheap enough to run
+ * on every turn.
  *
  * Host-neutral like the rest of the store: hosts pass their state
  * directory in (the CLI passes DIR_STATE_AI_CHATS), and writes go through
@@ -24,10 +28,10 @@ import * as path from 'node:path'
 import { mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { exists, readDir, writeTextFile } from '#shared/fs/mod.ts'
 import { type Attachment, mergeAttachments } from '#shared/models/Markdown/Document/attachment.ts'
-import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { type PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
-import ChatDocument, { firstWordsSummary } from '../document/mod.ts'
+import ChatDocument, { type ChatParent, firstWordsSummary } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
 
@@ -41,6 +45,50 @@ const MAX_AGE_DAYS = 30
  */
 export function chatAutosaveFilename(startTime: PlainDateTime, session: number | string): string {
   return `${startTime.plainDate.ymd}_${startTime.time.replace(':', '-')}_${session}.md`
+}
+
+/** A snapshot on disk: where it is, when its session started, and whose it is. */
+export interface ChatAutosaveRef {
+  path: string
+  startTime: PlainDateTime
+  /** The discriminator the host passed: a pid for the terminal, a thread id for the service */
+  session: string
+}
+
+const SNAPSHOT_NAME = /^(\d{4}-\d{2}-\d{2})_(\d{1,3})-(\d{2})_(.+)\.md$/
+
+/** The name's three parts, or null for a file that is not a snapshot of ours. Extended hours read back as written. */
+export function parseChatAutosaveFilename(name: string): { startTime: PlainDateTime; session: string } | null {
+  const m = name.match(SNAPSHOT_NAME)
+  if (!m) return null
+  try {
+    return { startTime: new PlainDateTime(`${m[1]} ${m[2]}:${m[3]}`), session: m[4] }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The snapshots in `dir`, oldest start first — the sessions that were live
+ * when their host last ran. A service reads its own back at start so a
+ * restart never loses a thread; the terminal's (a pid) are another host's.
+ * A missing directory is an empty one.
+ */
+export async function listChatAutosaves(dir: string): Promise<ChatAutosaveRef[]> {
+  if (!(await exists(dir))) return []
+  const refs: ChatAutosaveRef[] = []
+  for await (const entry of readDir(dir)) {
+    if (!entry.isFile || entry.name.startsWith('.')) continue
+    const parsed = parseChatAutosaveFilename(entry.name)
+    if (parsed) refs.push({ path: path.join(dir, entry.name), ...parsed })
+  }
+  // `YYYY-MM-DD HH:MM` sorts as text, late hours included.
+  return refs.sort((a, b) => a.startTime.toString().localeCompare(b.startTime.toString()))
+}
+
+/** Whether a snapshot's discriminator is a thread id rather than a terminal's pid. */
+export function isThreadSnapshot(ref: ChatAutosaveRef): boolean {
+  return !/^\d+$/.test(ref.session)
 }
 
 export interface ChatAutosaveInput {
@@ -60,6 +108,8 @@ export interface ChatAutosaveInput {
   attachments?: readonly Attachment[]
   /** Durable approval keys the session holds (already seeded from any resume) */
   approvals?: readonly string[]
+  /** The chat this one branched from, recorded so the snapshot reads back as a branch */
+  parent?: ChatParent | null
 }
 
 /**
@@ -88,6 +138,7 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     // Union with the file's own keys so a host that never wires approvals
     // snapshots a resumed session without erasing what the file recorded.
     approvals: [...new Set([...(input.resume?.approvals ?? []), ...(input.approvals ?? [])])],
+    parent: input.parent ?? input.resume?.parent ?? null,
   })
   const markdown = doc.toMarkdown() + serializeContextLog(input.contextLog)
 

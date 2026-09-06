@@ -28,33 +28,41 @@ export interface ResumeState {
   contextLog: ContextTurnLog[]
 }
 
-export function reconstructResumeState(doc: ChatDocument): ResumeState {
-  const contextLog = doc.contextLog
-
-  // Pruned snapshots repeat universe paths by design (a cut doc stays in
-  // the collection), and a hand-edited file might repeat anything — dedupe
-  // so the universe fetch stays clean.
+/**
+ * The universe a run of log entries records, first-seen order. Pruned
+ * snapshots repeat universe paths by design (a cut doc stays in the
+ * collection), and a hand-edited file might repeat anything — dedupe so
+ * the universe fetch stays clean.
+ */
+export function universeOf(entries: ContextTurnLog[]): string[] {
   const universe = new Set<string>()
-  for (const entry of contextLog) {
+  for (const entry of entries) {
     for (const r of entry.universe ?? []) universe.add(r.path)
     for (const r of entry.diff ?? []) universe.add(r.path)
     for (const r of entry.pruned ?? []) universe.add(r.path)
   }
+  return [...universe]
+}
 
+/** The state a run of log entries leaves: the query set and turn of its highest-turn entry. */
+export function stateOfLog(conversation: ConversationMessage[], contextLog: ContextTurnLog[]): ResumeState {
   // Every entry records the full query set at that turn (evolve replaces the
   // list wholesale), so the highest-turn entry carries the current state.
   let lastEntry: ContextTurnLog | undefined
   for (const entry of contextLog) {
     if (!lastEntry || entry.turn > lastEntry.turn) lastEntry = entry
   }
-
   return {
-    conversation: doc.conversation,
-    universePaths: [...universe],
+    conversation,
+    universePaths: universeOf(contextLog),
     queries: lastEntry ? [...lastEntry.queries] : [],
     lastTurn: lastEntry?.turn ?? 0,
     contextLog,
   }
+}
+
+export function reconstructResumeState(doc: ChatDocument): ResumeState {
+  return stateOfLog(doc.conversation, doc.contextLog)
 }
 
 export type ResumeWriteCheck = { ok: true } | { ok: false; reason: string }

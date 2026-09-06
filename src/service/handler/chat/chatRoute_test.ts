@@ -5,7 +5,7 @@ import { generateText, jsonSchema } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { withCommandRun } from '#commands/lib/core/commandLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
-import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
@@ -93,6 +93,8 @@ const settingsHost: ChatSettingsHost = {
     if (!CHOICES.some((c) => c.name === name)) throw new Error(`Unknown model profile: "${name}"`)
     return { model: {} as ResolvedModel, profile: { provider: 'test', model: name } }
   },
+  // The test profiles are named after their models, so a logged model is its own profile.
+  profileFor: (model) => (CHOICES.some((c) => c.name === model) ? model : undefined),
 }
 
 /** The catalog with a model whose host serves 131,072 tokens a request — Qwen on Cerebras. */
@@ -117,26 +119,28 @@ async function testHost(
     initialQuery?: string
     /** Hands the test the host's report channel — what a tool's command output would reach */
     capture?: (report: (event: ChatSessionEvent | ToolOutputEvent) => void) => void
-    /** Another catalog behind the settings routes */
-    settings?: ChatSettingsHost
     /** The key every card carries — a go can then stand for the session */
     sessionKey?: string
     /** Collects the decisions the host's approval handler returns */
     decisions?: Array<{ approved: boolean; always?: boolean }>
+    /** Another catalog behind the settings routes */
+    settings?: ChatSettingsHost
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
-  const createSession: ChatSessionFactory = (id, onEvent, prefs, ask) =>
+  const createSession: ChatSessionFactory = (id, onEvent, prefs, ask, restore) =>
     Promise.resolve(
       (over.capture?.(onEvent),
       new ChatSession({
         today: TODAY,
-        startTime: START,
+        startTime: restore?.startTime ?? START,
         days: 7,
         baseDir: BASE_DIR,
         timeDir: tmp,
         contextTokens: prefs.contextTokens,
-        resume: null,
+        resume: restore?.resume ?? null,
+        restore: restore?.resume ? undefined : restore?.state,
+        parent: restore?.resume ? null : (restore?.parent ?? null),
         model: {} as ResolvedModel,
         profile: { provider: 'claude', model: prefs.profile ?? 'claude-opus-4-6' },
         producers: {
@@ -975,6 +979,41 @@ test('chat route - missing or invalid message settings never invoke a model or c
   })
 })
 
+test('chat route - a browser carries its choices through a server restart', async () => {
+  const host = await testHost()
+  const beforeRestart = appWith(host)
+  const prefs = { profile: 'test-quick', contextTokens: 5000, saves: true }
+  await (
+    await post(beforeRestart, 'http://localhost/chat/restarted/messages', { message: 'Plan the demo.', ...prefs })
+  ).text()
+  const { state } = await loadResumeSession(path.join(host.tmp, 'restarted.autosave.md'))
+  const afterRestart = appWith({
+    ...host,
+    snapshots: async () => [{ id: 'restarted', startTime: START, state }],
+  })
+  // No settings POST on the new server. The browser still has its choices.
+  const frames = parseSSE(
+    await (
+      await post(afterRestart, 'http://localhost/chat/restarted/messages', {
+        message: 'Continue.',
+        ...prefs,
+      })
+    ).text(),
+  )
+  const settings = await getJson(afterRestart, 'http://localhost/chat/restarted/settings')
+  const thread = await getJson(afterRestart, 'http://localhost/chat/restarted')
+  assert({
+    given: 'a restored thread whose service restarted with defaults',
+    should: 'continue the conversation using the settings in the browser’s next message',
+    actual: {
+      model: frames.find((f) => f.event === 'turn')?.data?.model,
+      settings: [settings.model.current, settings.contextTokens, settings.saves],
+      turns: thread.turns.length,
+    },
+    expected: { model: 'test-quick', settings: ['test-quick', 5000, true], turns: 4 },
+  })
+})
+
 test('chat route - construction reserves the turn against competing messages and settings', async () => {
   const host = await testHost()
   const create = host.createSession
@@ -1421,6 +1460,266 @@ test({ name: 'chat route - a declined call tells the model so, and the turn goes
   })
 })
 
+test({ name: 'chat route - the first exchange names the thread, off the turn' }, async () => {
+  const asked: number[] = []
+  const host = await testHost()
+  const app = appWith({
+    ...host,
+    title: (turns) => {
+      asked.push(turns.length)
+      return Promise.resolve('Demo focus for the week')
+    },
+  })
+  const response = await send(app, 'http://localhost/chat/n1/messages', { message: 'What should I focus on today?' })
+  const frames = parseSSE(await response.text())
+
+  const named = await until(
+    () => getJson(app, 'http://localhost/chat'),
+    (list) => (list.threads as ThreadSummary[])[0]?.title === 'Demo focus for the week',
+  )
+  const thread = await getJson(app, 'http://localhost/chat/n1')
+
+  assert({
+    given: 'a host with a titler and one finished exchange',
+    should: 'name the thread from the first two turns once the turn is over, in the list and on the thread',
+    actual: {
+      asked,
+      listTitle: (named.threads as ThreadSummary[])[0].title,
+      threadTitle: thread.title,
+      turnCameFirst: frames.some((f) => f.event === 'turn'),
+    },
+    expected: {
+      asked: [2],
+      listTitle: 'Demo focus for the week',
+      threadTitle: 'Demo focus for the week',
+      turnCameFirst: true,
+    },
+  })
+})
+
+test({ name: 'chat route - without a titler a thread goes by its first words' }, async () => {
+  const app = appWith(await testHost())
+  await (
+    await send(app, 'http://localhost/chat/w1/messages', { message: 'What should I focus on today please' })
+  ).text()
+  const list = (await getJson(app, 'http://localhost/chat')).threads as ThreadSummary[]
+
+  assert({
+    given: 'no titler and one finished exchange',
+    should: 'title the thread by the first words of its first message',
+    actual: list.find((t) => t.id === 'w1')?.title,
+    expected: 'What should I focus on today please',
+  })
+})
+
+test({ name: 'chat route - the threads the last run left behind come back from their snapshots' }, async () => {
+  const host = await testHost()
+  const app = appWith({
+    ...host,
+    snapshots: () =>
+      Promise.resolve([
+        {
+          id: 'r1',
+          startTime: START,
+          state: {
+            conversation: [
+              {
+                role: 'user' as const,
+                content: 'What should I focus on for the Atlas launch?',
+                when: '2026-01-27 09:30',
+              },
+              {
+                role: 'assistant' as const,
+                content: 'The demo script and the pricing page copy.',
+                when: '2026-01-27 09:31',
+              },
+            ],
+            universePaths: [],
+            queries: [],
+            lastTurn: 1,
+            // The log carries what the turn cost and how long it took; the page's details read them back.
+            contextLog: [
+              {
+                turn: 1,
+                queries: [],
+                usage: { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0 } as never,
+                timing: { total: 4200 } as never,
+                model: 'test-quick',
+              },
+            ],
+          },
+        },
+      ]),
+  })
+
+  const list = (await getJson(app, 'http://localhost/chat')).threads as ThreadSummary[]
+  const before = await getJson(app, 'http://localhost/chat/r1')
+  const response = await send(app, 'http://localhost/chat/r1/messages', { message: 'And after that?' })
+  const frames = parseSSE(await response.text())
+  const after = await getJson(app, 'http://localhost/chat/r1')
+
+  assert({
+    given: 'a host with one snapshot from the last run',
+    should: 'list the thread with its turns before any message, and carry on the conversation from there',
+    actual: {
+      listed: list.map((t) => `${t.id} ${t.state} ${t.turns} turns · ${t.title}`),
+      turnsBefore: before.turns.length,
+      statsBefore: {
+        usageAt: before.usage.map((u: { at: number }) => u.at),
+        timingsAt: before.timings.map((x: { at: number }) => x.at),
+        model: before.usage[0]?.model,
+      },
+      streamedTurn: frames.some((f) => f.event === 'turn'),
+      turnsAfter: after.turns.length,
+      lastRole: after.turns.at(-1)?.role,
+    },
+    expected: {
+      listed: ['r1 done 2 turns · What should I focus on for the Atlas'],
+      turnsBefore: 2,
+      statsBefore: { usageAt: [1], timingsAt: [1], model: 'test-quick' },
+      streamedTurn: true,
+      turnsAfter: 4,
+      lastRole: 'assistant',
+    },
+  })
+})
+
+test({ name: 'chat route - "allow for this file" reaches the host only when the card carried a key' }, async () => {
+  const answerWith = async (sessionKey: string | undefined) => {
+    const decisions: Array<{ approved: boolean; always?: boolean }> = []
+    const app = appWith(await testHost({ invokeModel: askingModel(), sessionKey, decisions }))
+    const body = send(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' }).then((r) => r.text())
+    const thread = await until(
+      () => getJson(app, 'http://localhost/chat/a1'),
+      (t) => Array.isArray(t.pending) && t.pending.length > 0,
+    )
+    const card = thread.pending[0] as { id: string; sessionKey?: string }
+    await post(app, `http://localhost/chat/a1/approvals/${card.id}`, { approved: true, always: true })
+    await body
+    return { cardKey: card.sessionKey, decision: decisions[0] }
+  }
+  assert({
+    given: 'a card scoped to a file, answered "always", then one with no key answered the same way',
+    should: 'carry the key to the page and the standing go to the host for the first only',
+    actual: [await answerWith('doc-1'), await answerWith(undefined)],
+    expected: [
+      { cardKey: 'doc-1', decision: { approved: true, reason: 'User approved', always: true } },
+      { cardKey: undefined, decision: { approved: true, reason: 'User approved', always: false } },
+    ],
+  })
+})
+
+test(
+  { name: 'chat route - a new chat from here inherits the turns through that reply and files beside its parent' },
+  async () => {
+    const host = await testHost()
+    const app = appWith(host)
+    await (await send(app, 'http://localhost/chat/p1/messages', { message: 'What should I focus on today?' })).text()
+
+    const made = await post(app, 'http://localhost/chat/p1/branch', { turn: 1 })
+    const { id: branchId, parent } = (await made.json()) as { id: string; parent: { chat: string; turn: number } }
+    const branchBefore = await getJson(app, `http://localhost/chat/${branchId}`)
+    const rows = (await getJson(app, 'http://localhost/chat')).threads as ThreadSummary[]
+    await (
+      await send(app, `http://localhost/chat/${branchId}/messages`, { message: 'And the board prep instead?' })
+    ).text()
+    const branchAfter = await getJson(app, `http://localhost/chat/${branchId}`)
+
+    const ended = (await (await post(app, `http://localhost/chat/${branchId}/end`, { save: true })).json()) as {
+      saved: { path: string; exchanges: number }
+    }
+    const parentRow = (await getJson(app, 'http://localhost/chat/p1')) as { saved: string | null; turns: unknown[] }
+    const base = path.dirname(host.tmp)
+    const parentFile = path.join(base, parent.chat)
+    const branchDoc = await readTextFile(ended.saved.path)
+
+    assert({
+      given: 'a thread with one exchange, branched after turn 1, given one exchange of its own, then ended',
+      should:
+        'start the branch with the parent turns inherited and marked, list it under its live parent, keep the parent going, and file both — the parent first, the branch beside it holding its own turns',
+      actual: {
+        created: made.status,
+        parentTurn: parent.turn,
+        parentNamed: parent.chat.endsWith('/actions/ai-chats/09-30_What-should-I-focus-on-today.md'),
+        inherited: branchBefore.inherited,
+        turnsBefore: branchBefore.turns.length,
+        branchParent: branchBefore.parent,
+        listedUnderParent: rows.find((t) => t.id === branchId)?.parent?.id,
+        parentTitlePinned: rows.find((t) => t.id === 'p1')?.title,
+        turnsAfter: branchAfter.turns.length,
+        branchExchanges: ended.saved.exchanges,
+        branchBesideParent: ended.saved.path.startsWith(parentFile.replace(/\.md$/, '/')),
+        branchHoldsOwnOnly: (branchDoc.match(/^## /gm) ?? []).length,
+        branchRecordsParent: branchDoc.includes(`chat: ${parent.chat}`) && branchDoc.includes('turn: 1'),
+        parentFiled: await exists(parentFile),
+        parentStillLive: parentRow.turns.length,
+        parentSaved: parentRow.saved,
+      },
+      expected: {
+        created: 201,
+        parentTurn: 1,
+        parentNamed: true,
+        inherited: 2,
+        turnsBefore: 2,
+        branchParent: { chat: parent.chat, turn: 1, id: 'p1', title: 'What should I focus on today?' },
+        listedUnderParent: 'p1',
+        parentTitlePinned: 'What should I focus on today?',
+        turnsAfter: 4,
+        branchExchanges: 1,
+        branchBesideParent: true,
+        branchHoldsOwnOnly: 2,
+        branchRecordsParent: true,
+        parentFiled: true,
+        parentStillLive: 2,
+        parentSaved: parent.chat,
+      },
+    })
+  },
+)
+
+test({ name: 'chat route - a saved chat opens as a thread to continue, once' }, async () => {
+  const host = await testHost()
+  const base = path.dirname(host.tmp)
+  const app = appWith({
+    ...host,
+    openSaved: async (chat) => {
+      const file = path.join(base, chat)
+      if (!(await exists(file))) return null
+      return { resume: await loadResumeSession(file, { baseDir: base }), startTime: START }
+    },
+  })
+  await (await send(app, 'http://localhost/chat/s1/messages', { message: 'What should I focus on today?' })).text()
+  const { saved } = (await (await post(app, 'http://localhost/chat/s1/end', { save: true })).json()) as {
+    saved: { path: string; summary: string }
+  }
+  const chat = path.relative(base, saved.path)
+
+  const first = await post(app, 'http://localhost/chat/open', { chat })
+  const { id } = (await first.json()) as { id: string }
+  const second = (await (await post(app, 'http://localhost/chat/open', { chat })).json()) as {
+    id: string
+    opened: boolean
+  }
+  const thread = await getJson(app, `http://localhost/chat/${id}`)
+  const missing = await post(app, 'http://localhost/chat/open', {
+    chat: 'time/nowhere/actions/ai-chats/09-00_Nothing.md',
+  })
+
+  assert({
+    given: 'a chat saved and ended, then opened twice by its path, and a path with no chat',
+    should: 'make one thread with the saved turns and title, find it the second time, and refuse the missing one',
+    actual: {
+      created: first.status,
+      sameThread: second.id === id && second.opened === false,
+      turns: thread.turns.length,
+      title: thread.title,
+      saved: thread.saved,
+      missing: missing.status,
+    },
+    expected: { created: 201, sameThread: true, turns: 2, title: saved.summary, saved: chat, missing: 404 },
+  })
+})
+
 test(
   { name: "chat route - a model's window caps the budget, before the first message and on a live thread" },
   async () => {
@@ -1465,28 +1764,3 @@ test(
     })
   },
 )
-
-test({ name: 'chat route - "allow for this file" reaches the host only when the card carried a key' }, async () => {
-  const answerWith = async (sessionKey: string | undefined) => {
-    const decisions: Array<{ approved: boolean; always?: boolean }> = []
-    const app = appWith(await testHost({ invokeModel: askingModel(), sessionKey, decisions }))
-    const body = send(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' }).then((r) => r.text())
-    const thread = await until(
-      () => getJson(app, 'http://localhost/chat/a1'),
-      (t) => Array.isArray(t.pending) && t.pending.length > 0,
-    )
-    const card = thread.pending[0] as { id: string; sessionKey?: string }
-    await post(app, `http://localhost/chat/a1/approvals/${card.id}`, { approved: true, always: true })
-    await body
-    return { cardKey: card.sessionKey, decision: decisions[0] }
-  }
-  assert({
-    given: 'a card scoped to a file, answered "always", then one with no key answered the same way',
-    should: 'carry the key to the page and the standing go to the host for the first only',
-    actual: [await answerWith('doc-1'), await answerWith(undefined)],
-    expected: [
-      { cardKey: 'doc-1', decision: { approved: true, reason: 'User approved', always: true } },
-      { cardKey: undefined, decision: { approved: true, reason: 'User approved', always: false } },
-    ],
-  })
-})

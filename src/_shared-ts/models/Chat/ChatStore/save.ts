@@ -21,6 +21,12 @@ import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
 import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
+import {
+  type DocumentRelInput,
+  documentTimeRef,
+  mergeDocumentRel,
+  resolveDocumentRel,
+} from '#lib/notebook/enrich/documentRel.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
@@ -37,12 +43,13 @@ import {
   type PersonSubjectRef,
   type UnlistedPerson,
 } from '#shared/models/Person/write.ts'
-import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { dayAIChatsDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
-import ChatDocument, { firstWordsSummary, userSpeakerLabel } from '../document/mod.ts'
-import { verifyResumeCandidate } from '../document/resume.ts'
+import { branchDir } from '../document/lineage.ts'
+import ChatDocument, { type ChatParent, firstWordsSummary, userSpeakerLabel } from '../document/mod.ts'
+import { universeOf, verifyResumeCandidate } from '../document/resume.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '../enrich.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
@@ -67,6 +74,8 @@ export interface SaveEnricher {
   summarize(transcript: string): Promise<string | undefined>
   chooseTags(subject: EnrichSubject): Promise<string | undefined>
   chooseRel(subject: EnrichSubject): Promise<string[] | undefined>
+  /** Ground overt conversational references to notebook files, including on resume. */
+  chooseDocumentRel?(input: DocumentRelInput): Promise<string[] | undefined>
   /**
    * Distill cross-session memories (ai/memory/ ops) from the finished
    * conversation. Optional: a host that passes no memoryDir never invokes
@@ -94,6 +103,7 @@ export const corpusEnricher: SaveEnricher = {
   summarize: (transcript) => summarizeTranscript(transcript, { kind: CHAT_ENRICH.kind }),
   chooseTags: (subject) => autoTagMessage(subject, CHAT_ENRICH),
   chooseRel: (subject) => autoRelMessage(subject, CHAT_ENRICH),
+  chooseDocumentRel: resolveDocumentRel,
   distillMemories: (transcript, memories) => distillMemories({ transcript, memories, kind: CHAT_ENRICH.kind }),
   // Discovery + distill live in the lib (shared with meeting:new): subjects
   // resolve through the service's people index, so people/ vs people-old/
@@ -135,17 +145,50 @@ export function chatFilename(startTime: PlainDateTime, summary: string): string 
   return `${startTime.time.replace(':', '-')}_${slugify(summary)}.md`
 }
 
+/**
+ * Where a new chat files: in its day's chats folder, or — for a branch —
+ * in the folder beside its parent, carrying the parent's name. The
+ * notebook root is the time directory's parent, the footing parent keys
+ * are written on.
+ */
+export function chatFilePath(input: {
+  timeDir: string
+  day: PlainDate
+  startTime: PlainDateTime
+  summary: string
+  parent?: ChatParent | null
+}): string {
+  const name = chatFilename(input.startTime, input.summary)
+  if (input.parent) return path.join(branchDir(path.join(path.dirname(input.timeDir), input.parent.chat)), name)
+  return path.join(input.timeDir, dayAIChatsDir(input.day), name)
+}
+
 // -----------------------------------------------------------------------------
 // Save
 // -----------------------------------------------------------------------------
 
 export interface SaveChatInput {
-  /** The full conversation, oldest first */
+  /** The full conversation, oldest first — a branch's parent turns included */
   turns: ConversationMessage[]
   /** Per-turn context log, including entries a resume carried forward */
   contextLog: ContextTurnLog[]
   /** The session being written back, or null for a chat that has no file yet */
   resume: ResumeSession | null
+  /**
+   * For a new branch: the chat it left and the turn it left after. The
+   * file holds only what follows — the shared turns stay in the parent's
+   * file — and it lands in the folder beside the parent. A resumed branch
+   * carries this on its resume instead.
+   */
+  parent?: ChatParent | null
+  /** Messages at the head of `turns` that are the parent's; left out of the file. A resume carries its own count. */
+  inherited?: number
+  /**
+   * A title chosen before the save — a branch pins its family's name on
+   * the parent so the folder is known. Wins over the saved summary and
+   * the titler alike.
+   */
+  title?: string
   /** Notebook time root — a new chat files under its day directory */
   timeDir: string
   /** The day the chat files under (--when can shift this off the start stamp) */
@@ -164,7 +207,7 @@ export interface SaveChatInput {
   approvals?: readonly string[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
-  /** Choose rel from the entity graph when the chat has none */
+  /** Suggest entities when rel is empty, and add explicitly referenced notebook records on every save */
   autoRel?: boolean
   /** Record the chat as a day-file complete item (new chats only) */
   logToDay?: { category: string } | null
@@ -219,28 +262,42 @@ export interface SaveChatReport {
 }
 
 export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
-  const { turns, contextLog, resume, timeDir, day, startTime, endTime } = input
+  const { resume, timeDir, day, startTime, endTime } = input
   const enricher = input.enricher ?? corpusEnricher
+
+  // A branch writes only its own turns and its own log entries: the turns
+  // it inherited are its parent's, in the parent's file. A chat that began
+  // on its own writes everything — and so does a new branch whose parent
+  // never got a file (discarded before the branch saved): the shared turns
+  // have nowhere else to live, so the branch becomes a chat of its own,
+  // whole, filed under its day, with no parent to point at.
+  let parent = resume ? resume.parent : (input.parent ?? null)
+  if (parent && !resume && !(await exists(path.join(path.dirname(timeDir), parent.chat)))) parent = null
+  const inherited = parent ? (resume ? resume.inherited : (input.inherited ?? 0)) : 0
+  const turns = input.turns.slice(inherited)
+  const contextLog = parent ? input.contextLog.filter((entry) => entry.turn > parent.turn) : input.contextLog
   const exchanges = Math.floor(turns.length / 2)
 
-  // A resumed chat keeps its saved summary verbatim (filled only when the
-  // file lacks one); a new chat is titled here from the packed transcript,
-  // whose head-biased packing anchors the title to the opening topic
-  // rather than the latest exchange.
-  const priorSummary = resume?.summary || undefined
+  // A pinned title wins; a resumed chat keeps its saved summary verbatim
+  // (filled only when the file lacks one); a new chat is titled here from
+  // the packed transcript of its own turns, whose head-biased packing
+  // anchors the title to the opening topic rather than the latest exchange.
+  const priorSummary = input.title?.trim() || resume?.summary || undefined
   const firstWords = firstWordsSummary(turns)
 
-  // Hand-written values always win: auto-enrichment fills tags and rel only
-  // when the chat (or the file a resume carries forward) has none.
+  // Existing tags and entity relationships win. Referenced notebook records
+  // are additive on every save, including when an earlier session had rel.
   const priorTags = resume && resume.tags.length > 0 ? resume.tags : undefined
   const priorRel = resume && resume.rel.length > 0 ? resume.rel : undefined
   const wantTags = !priorTags && input.autoTag === true
   const wantRel = !priorRel && input.autoRel === true
+  const wantDocumentRel = input.autoRel === true && Boolean(enricher.chooseDocumentRel)
+  const baseDir = path.dirname(timeDir)
 
-  if (wantTags || wantRel) {
+  if (wantTags || wantRel || wantDocumentRel) {
     const choosing: Array<'tags' | 'rel'> = []
     if (wantTags) choosing.push('tags')
-    if (wantRel) choosing.push('rel')
+    if (wantRel || wantDocumentRel) choosing.push('rel')
     input.onProgress?.({ type: 'enriching', choosing })
   }
 
@@ -250,10 +307,24 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
   const distillTranscript =
     wantMemory || wantPeople ? buildChatTranscript(turns, { maxChars: DISTILL_TRANSCRIPT_CHARS }) : ''
-  const [autoSummary, autoTags, autoRel, memoryOps, personDistill] = await Promise.all([
+  const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel ? enricher.chooseRel(subject) : Promise.resolve(undefined),
+    wantDocumentRel
+      ? enricher.chooseDocumentRel!({
+          turns,
+          today: endTime.plainDate.ymd,
+          baseDir,
+          // A branch can refer to a record its parent had in context, but
+          // only its own conversation supplies references to be filed.
+          contextPaths: universeOf(input.contextLog),
+          excludePaths: resume ? [resume.filePath] : [],
+        }).catch(async (err) => {
+          await logAIError({ source: 'ai:chat', stage: 'rel:documents', message: (err as Error).message })
+          return undefined
+        })
+      : Promise.resolve(undefined),
     // A distillation failure must never fail the save — abstain instead,
     // logged: this catch covers the store read (the distiller logs its own
     // model failures before returning undefined).
@@ -282,11 +353,11 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // (day-file links and the chats resolver depend on the filename).
     savePath = resume.filePath
   } else {
-    const chatsDir = path.join(timeDir, dayAIChatsDir(day))
+    savePath = chatFilePath({ timeDir, day, startTime, summary, parent })
+    const chatsDir = path.dirname(savePath)
     if (!(await exists(chatsDir))) {
       await mkdir(chatsDir, { recursive: true })
     }
-    savePath = path.join(chatsDir, chatFilename(startTime, summary))
   }
 
   const doc = ChatDocument.create({
@@ -299,7 +370,12 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // Artifact links ride alongside whichever rel won (hand-written,
     // resumed, or auto) — a session that touched a Google file always
     // records it, deduped against entries already carrying the URL.
-    rel: mergeRel(priorRel ?? autoRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
+    rel: mergeDocumentRel(
+      mergeRel(priorRel ?? autoRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
+      documentRel,
+      baseDir,
+      (resume && documentTimeRef(resume.filePath, baseDir)?.slice(0, 10)) || day.ymd,
+    ),
     tags: priorTags ?? autoTags?.split('; '),
     // Files read into the session join whatever the resumed file already
     // listed — a document is recorded once however many sessions read it.
@@ -307,6 +383,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // Union with the file's own keys so a host that never wires approvals
     // writes a resumed session back without erasing what the file recorded.
     approvals: [...new Set([...(resume?.approvals ?? []), ...(input.approvals ?? [])])],
+    parent,
   })
 
   // Memory and profile ops apply before the transcript serializes so this
@@ -361,11 +438,13 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   const report: SaveChatReport = { path: savePath, exchanges, resumed: resume !== null, summary }
   if (autoTags) report.autoTags = autoTags
-  if (autoRel) report.autoRel = autoRel
+  const chosenRel = mergeRel(autoRel, documentRel)
+  if (chosenRel) report.autoRel = chosenRel
   if (memoryOutcomes && memoryOutcomes.length > 0) report.memoryOps = memoryOutcomes
   if (personOutcomes && personOutcomes.length > 0) report.personOps = personOutcomes
 
   if (resume) {
+    // The gate compares the file's own turns, never the joined thread a branch is.
     const refusal = await refuseWriteBack(resume, markdown)
     if (refusal) {
       report.path = await writeRecoveryCopy(markdown, endTime, input.recoveryDir)
@@ -400,7 +479,7 @@ async function refuseWriteBack(resume: ResumeSession, markdown: string): Promise
   if (!resume.frontmatterHealthy) {
     return 'its frontmatter is malformed and a rewrite would lose data'
   }
-  const check = verifyResumeCandidate(markdown, resume.state)
+  const check = verifyResumeCandidate(markdown, resume.own)
   return check.ok ? null : `the write-back self-check failed (${check.reason})`
 }
 
@@ -435,7 +514,10 @@ async function logChatToDay(input: {
   if (input.resumed) return { logged: false, reason: 'resume' }
 
   try {
-    const relativePath = `${ACTIONS_DIR}/${AI_CHATS_DIR}/${path.basename(input.savePath)}`
+    // A branch's file lives beside its parent, which may be another day's;
+    // the link is relative to the day the item is on either way.
+    const dayDirPath = path.dirname(path.join(input.savePath.split('/actions/')[0], 'day.md'))
+    const relativePath = path.relative(dayDirPath, input.savePath)
     const key = `${input.startTime.time} > AI Chat`
     const value = `[${input.summary}](${relativePath})`
 

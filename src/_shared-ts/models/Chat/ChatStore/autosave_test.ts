@@ -5,7 +5,15 @@ import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
-import { chatAutosaveFilename, clearChatAutosave, sweepChatAutosaves, writeChatAutosave } from './autosave.ts'
+import {
+  chatAutosaveFilename,
+  clearChatAutosave,
+  isThreadSnapshot,
+  listChatAutosaves,
+  parseChatAutosaveFilename,
+  sweepChatAutosaves,
+  writeChatAutosave,
+} from './autosave.ts'
 import { loadResumeSession, type ResumeSession } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -142,6 +150,10 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
     approvals: [],
     frontmatterHealthy: true,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+    parent: null,
+    inherited: 0,
+    own: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+    ancestors: [],
   }
   const externalFiles = new Map([['https://example.com/doc/atlas-plan', 'Launch Plan']])
   await writeChatAutosave(filePath, autosaveInput({ resume, externalFiles }))
@@ -174,6 +186,10 @@ test('writeChatAutosave - files read this session join the resumed file’s atta
     approvals: [],
     frontmatterHealthy: true,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+    parent: null,
+    inherited: 0,
+    own: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+    ancestors: [],
   }
   await writeChatAutosave(
     filePath,
@@ -235,3 +251,55 @@ test('sweepChatAutosaves - a missing directory is an empty one', async () => {
     expected: 0,
   })
 })
+
+test({ name: 'autosave - a snapshot name reads back as its start and its session, extended hours kept' }, () => {
+  const web = parseChatAutosaveFilename('2026-01-27_09-30_8873a130-b9aa-4ea3-82d6-d96c68de3da6.md')
+  const late = parseChatAutosaveFilename('2026-01-27_25-10_80251.md')
+
+  assert({
+    given: 'a thread snapshot and a late-night terminal one',
+    should: 'give each its start and discriminator, and refuse a stranger',
+    actual: {
+      web: web && { start: web.startTime.toString(), session: web.session },
+      late: late && { start: late.startTime.toString(), session: late.session },
+      stranger: parseChatAutosaveFilename('notes.md'),
+      temp: parseChatAutosaveFilename('.2026-01-27_09-30_80251.md.tmp'),
+    },
+    expected: {
+      web: { start: '2026-01-27 09:30', session: '8873a130-b9aa-4ea3-82d6-d96c68de3da6' },
+      late: { start: '2026-01-27 25:10', session: '80251' },
+      stranger: null,
+      temp: null,
+    },
+  })
+})
+
+test(
+  { name: "autosave - the directory lists its snapshots oldest first, and tells a thread's from a terminal's" },
+  async () => {
+    const dir = await tmpStateDir()
+    await writeChatAutosave(
+      path.join(dir, chatAutosaveFilename(new PlainDateTime('2026-01-27 11:00'), 'day-2026-01-27')),
+      autosaveInput(),
+    )
+    await writeChatAutosave(path.join(dir, chatAutosaveFilename(START, 80251)), autosaveInput())
+    await writeChatAutosave(
+      path.join(dir, chatAutosaveFilename(new PlainDateTime('2026-01-27 10:15'), 'b7c1')),
+      autosaveInput(),
+    )
+    await writeTextFile(path.join(dir, 'notes.txt'), 'not ours')
+
+    const refs = await listChatAutosaves(dir)
+    const missing = await listChatAutosaves(path.join(dir, 'nowhere'))
+
+    assert({
+      given: 'three snapshots, a stray file, and a missing directory',
+      should: 'list the snapshots in start order with the threads told apart, and read the missing directory as empty',
+      actual: {
+        order: refs.map((r) => `${r.startTime.time} ${r.session} ${isThreadSnapshot(r) ? 'thread' : 'terminal'}`),
+        missing,
+      },
+      expected: { order: ['09:30 80251 terminal', '10:15 b7c1 thread', '11:00 day-2026-01-27 thread'], missing: [] },
+    })
+  },
+)

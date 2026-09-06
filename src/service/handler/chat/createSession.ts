@@ -27,17 +27,29 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
+import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
+import { exists } from '#shared/fs/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
-import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
+import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
+import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
-import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ModelChoice, ToolOutputEvent } from './mod.ts'
+import type {
+  ChatRoutesOptions,
+  ChatSessionFactory,
+  ChatSettingsHost,
+  ModelChoice,
+  ThreadRestore,
+  ToolOutputEvent,
+} from './mod.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
 const WEB_CHAT = { days: 7, contextTokens: 300_000 }
@@ -202,6 +214,12 @@ export function createChatSettingsHost(): ChatSettingsHost {
     defaultModel: ROLES.reasoning,
     defaultContextTokens: WEB_CHAT.contextTokens,
     choices: modelChoices,
+    // A logged model id back to a profile name: the thread's own when it is that model, else the first that is.
+    profileFor: (model, current) => {
+      const all = getAllProfiles()
+      if (all[current]?.model === model) return current
+      return Object.entries(all).find(([, profile]) => profile.model === model)?.[0]
+    },
     resolve: (name) => {
       const profile = getProfile(name)
       return {
@@ -228,9 +246,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return held
   }
 
-  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask) => {
+  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore) => {
     const context = CommandContext.server(config, env)
     const blessed = blessingsFor(id)
+    if (restore?.approvals) blessed.restoreDurable(restore.approvals)
     const tasks = new CommandService(context)
     // The tools' own command service hears its output: every line a tool
     // prints in the terminal goes to the page instead of a buffer nobody
@@ -238,7 +257,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     const toolTasks = new CommandService(
       context.fork({ output: new EventOutput(toolOutputSink(onEvent, summarizeToolRun)) }),
     )
-    const startTime = context.notebookNow.plainDateTime
+    // A restored thread keeps the start it had: its day, and the snapshot it writes.
+    const startTime = restore?.startTime ?? context.notebookNow.plainDateTime
     const today = startTime.plainDate
     const profile = getProfile(prefs.profile ?? ROLES.reasoning)
     const clock = {
@@ -257,7 +277,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
       contextTokens: fitBudget(prefs.contextTokens ?? WEB_CHAT.contextTokens, profile.contextWindow),
-      resume: null,
+      resume: restore?.resume ?? null,
+      // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
+      restore: restore?.resume ? undefined : restore?.state,
+      parent: restore?.resume ? null : (restore?.parent ?? null),
       model: resolveProfile(profile),
       profile: { provider: profile.provider, model: profile.model },
       producers: contextProducers(tasks),
@@ -313,6 +336,45 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     })
   }
 
+  // The threads the last run left behind: the service's own snapshots (a
+  // thread id, never a terminal's pid), read back as the state each held.
+  const snapshots = async (): Promise<ThreadRestore[]> => {
+    const refs = (await listChatAutosaves(config.DIR_STATE_AI_CHATS)).filter(isThreadSnapshot)
+    const restores: ThreadRestore[] = []
+    for (const ref of refs) {
+      try {
+        // A snapshot holds the whole thread, parent turns included; the key says which are inherited.
+        const { state, approvals, parent } = await loadResumeSession(ref.path, {
+          baseDir: config.DIR_BASE,
+          snapshot: true,
+        })
+        if (state.conversation.length > 0) {
+          restores.push({ id: ref.session, startTime: ref.startTime, state, approvals, parent })
+        }
+      } catch {
+        // An unreadable snapshot stays for the sweep; it must not stop the others.
+      }
+    }
+    return restores
+  }
+
+  // A saved chat by its notebook-relative path, as a thread to continue. The
+  // path must be a chat under the time tree; its start is the file's day and
+  // the time key its name leads with.
+  const openSaved = async (chat: string): Promise<{ resume: ResumeSession; startTime: PlainDateTime } | null> => {
+    const abs = path.resolve(config.DIR_BASE, chat)
+    const timeRoot = path.resolve(config.DIR_TIME)
+    if (!abs.startsWith(`${timeRoot}${path.sep}`) || !isAIChatPath(abs) || !abs.endsWith('.md')) return null
+    if (!(await exists(abs))) return null
+    const resume = await loadResumeSession(abs, { baseDir: config.DIR_BASE })
+    const info = parseTimePath(abs)
+    const time = path.basename(abs).match(/^(\d{1,3})-(\d{2})_/)
+    const day = info?.kind === 'day' ? info.date.ymd : resume.created
+    if (!day) return null
+    const startTime = new PlainDateTime(`${day} ${time ? `${time[1]}:${time[2]}` : '00:00'}`)
+    return { resume, startTime }
+  }
+
   return {
     createSession,
     // A pasted Google file reference is permission to work on that file —
@@ -321,6 +383,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       for (const fileId of harvestFileRefs(message)) blessingsFor(id).blessMention(fileId)
     },
     snapshotPath,
+    snapshots,
+    openSaved,
+    // The terminal's one-shot titler, over the first exchange: a topic in a few words from the fast model.
+    title: (turns) => summarizeTranscript(buildChatTranscript(turns), { kind: CHAT_ENRICH.kind }),
     settings: createChatSettingsHost(),
     endDefaults: { autoTag: true, autoRel: true, memoryDir: config.DIR_AI_MEMORY, people: true },
     timeDir: config.DIR_TIME,

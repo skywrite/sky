@@ -30,6 +30,7 @@ import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { isAIChatPath, parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { ancestorsOf } from '../ChatStore/mod.ts'
 import {
   type ContextDocRecord,
   type ContextTurnLog,
@@ -169,6 +170,12 @@ export interface ChatContextOptions {
    */
   ownChatPath?: string | null
   /**
+   * The files above this session's chat in its lineage — a branch's parent
+   * and its parents. Their turns are already the conversation's own, so
+   * they are kept out of retrieval the way the own transcript is.
+   */
+  ancestors?: readonly string[]
+  /**
    * Opt-in lean baseline: previous days before yesterday seed from their
    * summary.md — or the day.md ledger alone when no summary exists —
    * instead of every raw file. Today and yesterday seed whole, minus
@@ -235,6 +242,8 @@ export default class ChatContext {
   private readonly baseDir: string
   private maxTokens: number
   private readonly ownChatPath: string | null
+  /** The session's own transcript and its lineage, never retrieved into its own context. */
+  private readonly ownPaths: ReadonlySet<string>
   private readonly summaryBaseline: boolean
   private readonly producers: ContextProducers
   private readonly onProgress?: (event: ContextProgressEvent) => void
@@ -276,6 +285,7 @@ export default class ChatContext {
     this.baseDir = opts.baseDir
     this.maxTokens = opts.maxTokens ?? 300_000
     this.ownChatPath = opts.ownChatPath ?? null
+    this.ownPaths = new Set([...(opts.ownChatPath ? [opts.ownChatPath] : []), ...(opts.ancestors ?? [])])
     this.summaryBaseline = opts.summaryBaseline ?? false
     this.producers = opts.producers
     this.onProgress = opts.onProgress
@@ -523,7 +533,7 @@ export default class ChatContext {
         this.onProgress?.({ type: 'context-queries', turn: this.turnNumber, queries: [...this.queries] })
       }
       if (produced.ok && produced.value.paths.length > 0) {
-        const fetched = this.excludeOwnChat(produced.value.paths)
+        const fetched = await this.withLineage(this.excludeOwnChat(produced.value.paths))
         // Selectivity from the raw result size — excluding the own chat
         // doesn't change how targeted the query was.
         this.recordRetrieval(fetched, produced.value.paths.length)
@@ -594,7 +604,7 @@ export default class ChatContext {
               this.onProgress?.({ type: 'truncated', items: executed.value.truncations })
             }
             if (executed.ok && executed.value.paths.length > 0) {
-              const fetched = this.excludeOwnChat(executed.value.paths)
+              const fetched = await this.withLineage(this.excludeOwnChat(executed.value.paths))
               this.recordRetrieval(fetched, executed.value.paths.length)
               allNewPaths.push(...fetched)
               this.collection = await mergePathsIntoCollection(fetched, this.collection)
@@ -691,6 +701,13 @@ export default class ChatContext {
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
   }
 
+  /** The model that answered the turn, on its log entry — a thread may switch models between turns. */
+  recordTurnModel(model: string): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.model = model
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], model })
+  }
+
   /** Every turn keeps an entry, even when no context changed and no tool ran. */
   recordTurnTools(turnTools: ToolCallRecord[]): void {
     if (turnTools.length > 0) {
@@ -757,7 +774,26 @@ export default class ChatContext {
   // ---------------------------------------------------------------------------
 
   private excludeOwnChat(paths: string[]): string[] {
-    return this.ownChatPath ? paths.filter((p) => p !== this.ownChatPath) : paths
+    return this.ownPaths.size > 0 ? paths.filter((p) => !this.ownPaths.has(p)) : paths
+  }
+
+  /**
+   * A branch admitted into context stands on its parent's turns, which its
+   * file does not hold — so the parents come in with it, once each, the
+   * session's own lineage aside. Anything that is not a chat passes through.
+   */
+  private async withLineage(paths: string[]): Promise<string[]> {
+    const out = [...paths]
+    const seen = new Set(paths)
+    for (const p of paths) {
+      if (!isAIChatPath(p)) continue
+      for (const above of await ancestorsOf(p, this.baseDir)) {
+        if (seen.has(above) || this.ownPaths.has(above)) continue
+        seen.add(above)
+        out.push(above)
+      }
+    }
+    return out
   }
 
   /** Absolute path of the current week's plan — pinned whenever the universe has it. */

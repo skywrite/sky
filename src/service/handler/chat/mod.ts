@@ -10,6 +10,7 @@
  * session does, and this host renders nothing.
  */
 
+import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -20,6 +21,9 @@ import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
+import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
+import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
+import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
@@ -94,12 +98,45 @@ export interface ToolRun {
   subject?: string
 }
 
-/** Builds a session for a thread; the host's wiring of producers, tools, prompt, and model. */
+/**
+ * What a thread starts from when it does not start empty: a crash snapshot
+ * read back, a saved chat opened to continue, or the turns a branch
+ * inherits from the thread it left.
+ */
+export interface ThreadRestore {
+  id: string
+  /** When the thread started; absent, it starts now — a fresh branch does */
+  startTime?: PlainDateTime
+  /** The conversation and context the thread begins with */
+  state: ResumeState
+  /** The durable approval keys the snapshot carried (`tool:fileId`) */
+  approvals?: readonly string[]
+  /** A saved chat being continued: the session writes back to its file */
+  resume?: ResumeSession
+  /** A branch: the chat it left, and the turn it left after */
+  parent?: ChatParent | null
+  /** The live thread a branch left, when it is one */
+  parentId?: string | null
+}
+
+/** Where a branch came from, as a thread carries it: the parent's file, the turn, the live thread when there is one, and its name. */
+export interface ThreadParent extends ChatParent {
+  id: string | null
+  /** The parent's name as the page shows it; null when nothing knows it */
+  title: string | null
+}
+
+/**
+ * Builds a session for a thread; the host's wiring of producers, tools,
+ * prompt, and model. With `restore`, the session picks up that state and
+ * starts where it did.
+ */
 export type ChatSessionFactory = (
   id: string,
   onEvent: (event: ChatSessionEvent | ToolOutputEvent) => void,
   prefs: ThreadPrefs,
   ask: AskApproval,
+  restore?: ThreadRestore,
 ) => Promise<ChatSession>
 
 /** One model a thread may think with, as the picker lists it. */
@@ -136,6 +173,12 @@ export interface ChatSettingsHost {
   choices(): ModelChoice[]
   /** A choice as a session takes it; throws on a name it doesn't know */
   resolve(name: string): { model: ResolvedModel; profile: { provider: string; model: string }; contextWindow?: number }
+  /**
+   * The profile a model id answers to, for a turn read back from a log —
+   * the thread's current profile when it is that model, else the first
+   * profile on it; undefined when no profile has it.
+   */
+  profileFor?(model: string, current: string): string | undefined
 }
 
 export interface ChatRoutesOptions {
@@ -146,11 +189,30 @@ export interface ChatRoutesOptions {
    */
   snapshotPath?: (id: string, startTime: PlainDateTime) => string
   /**
+   * Names a thread from its first exchange — the one-shot titler the
+   * terminal runs for its tab. Absent, a thread goes by its first words.
+   */
+  title?: (turns: ConversationMessage[]) => Promise<string | undefined>
+  /**
    * How often a turn's stream carries a heartbeat frame while nothing else
    * is said — the page reads silence past it as a lost connection. Ten
    * seconds unless set.
    */
   heartbeatMs?: number
+  /**
+   * The threads that were live when the service last ran, from their crash
+   * snapshots, oldest start first. Read once at start so a restart never
+   * loses a thread: every snapshot becomes a thread again, its conversation
+   * on the page at once and its context restored at its next message.
+   */
+  snapshots?: () => Promise<ThreadRestore[]>
+  /**
+   * A saved chat, by its path relative to the notebook root, as a thread to
+   * continue: the session that writes back to it, and when it started.
+   * Null for a path that is not a saved chat. Absent, saved chats cannot be
+   * opened as threads.
+   */
+  openSaved?: (chat: string) => Promise<{ resume: ResumeSession; startTime: PlainDateTime } | null>
   /** The models to choose from and the budget's default — absent, a thread cannot be tuned */
   settings?: ChatSettingsHost
   /** Hears each message before the turn runs — a pasted file reference is a go for that file */
@@ -174,7 +236,7 @@ export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'waitin
 /** A thread as the day lists it: enough to show a row, never the transcript. */
 export interface ThreadSummary {
   id: string
-  /** First words of the first message; null before any */
+  /** The titler's name once the first exchange is in; first words of the first message before; null before any */
   title: string | null
   state: ThreadState
   /** The reply so far while streaming, the last reply when done, the error when failed */
@@ -187,6 +249,12 @@ export interface ThreadSummary {
   busy: boolean
   /** False for a thread that will not be kept — the list says so */
   saves: boolean
+  /** The chat this thread branched from; null for one that began on its own */
+  parent: ThreadParent | null
+  /** Messages at the head of the thread that are its parent's */
+  inherited: number
+  /** The saved chat this thread continues, relative to the notebook root; null for one with no file yet */
+  saved: string | null
 }
 
 /** What travels the turn's stream: the session's events, and what the routes add around them — approvals and tool runs. */
@@ -199,9 +267,14 @@ type WireEvent =
   | { type: 'tool-line'; tool: string; at: number; text: string; level: 'log' | 'error' }
   | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error' }
   | { type: 'tool-summary'; tool: string; at: number; text: string }
+  | { type: 'title'; title: string }
 
 interface Thread {
   session: ChatSession
+  /** The titler's name for the thread; null until the first exchange has been named */
+  title: string | null
+  /** The chat this thread branched from, with the live thread it left when there is one */
+  parent: ThreadParent | null
   started: boolean
   /** One turn at a time: a second message while one runs is refused, not queued */
   busy: boolean
@@ -232,6 +305,8 @@ interface Thread {
 }
 
 const LINE_CHARS = 140
+/** How long a branch waits for the titler to name the family before the first words stand in. */
+const NAMING_PATIENCE_MS = 4000
 const TITLE_WORDS = 8
 /** Lines kept per tool run — a mission narrates for an hour; the newest lines are the ones that matter */
 const RUN_LINES = 400
@@ -241,10 +316,12 @@ function head(text: string, chars = LINE_CHARS): string {
   return flat.length > chars ? `${flat.slice(0, chars - 1)}…` : flat
 }
 
+/** First words of the first message — how a thread goes before it is named; null when there are none. */
 function threadTitle(turns: ConversationMessage[]): string | null {
   const first = turns.find((t) => t.role === 'user')
   if (!first) return null
-  return head(first.content.split(/\s+/).slice(0, TITLE_WORDS).join(' '), 80)
+  const words = head(first.content.split(/\s+/).slice(0, TITLE_WORDS).join(' '), 80)
+  return words || null
 }
 
 /** The state a session event puts its thread in, if any. */
@@ -336,7 +413,7 @@ function recordToolCall(thread: Thread, tool: string, subject: string | undefine
   thread.runs.push({ tool, at, started: Date.now(), lines: [], status: 'success', subject })
 }
 
-function summarize(id: string, thread: Thread): ThreadSummary {
+function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
   const { session, state } = thread
   const lastReply = [...session.turns].reverse().find((t) => t.role === 'assistant')
   const running = thread.busy ? runningOf(thread) : undefined
@@ -348,7 +425,8 @@ function summarize(id: string, thread: Thread): ThreadSummary {
   else if (state === 'failed') line = thread.partial || null
   return {
     id,
-    title: threadTitle(session.turns),
+    // A branch goes by its own first words, never its parent's.
+    title: thread.title ?? threadTitle(session.turns.slice(session.inherited)),
     state,
     line,
     when: session.turns.at(-1)?.when?.slice(11) ?? null,
@@ -356,7 +434,16 @@ function summarize(id: string, thread: Thread): ThreadSummary {
     turns: session.turns.length,
     busy: thread.busy,
     saves: thread.saves,
+    parent: thread.parent,
+    inherited: session.inherited,
+    saved: savedOf(thread, baseDir),
   }
+}
+
+/** The file a thread writes back to, relative to the notebook root; null before it has one. */
+function savedOf(thread: Thread, baseDir: string): string | null {
+  const file = thread.session.resume?.filePath
+  return file ? path.relative(baseDir, file) : null
 }
 
 /**
@@ -383,6 +470,8 @@ const HEARTBEAT_MS = 10_000
 
 export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const threads = new Map<string, Thread>()
+  // Parent keys are written relative to the notebook root, the time directory's parent.
+  const baseDir = path.dirname(options.timeDir)
   const opening = new Map<string, Promise<Thread>>()
   // Reserve a turn before awaiting restoration or construction, including its settings.
   const accepting = new Set<string>()
@@ -393,9 +482,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // activity first" true where a clock would tie.
   let tick = 0
 
-  // A thread exists from its first message. Two first messages racing for
-  // the same id share one session rather than each building their own.
-  const open = (id: string): Promise<Thread> => {
+  // A thread exists from its first message — or from the snapshot it left
+  // behind. Two first messages racing for the same id share one session
+  // rather than each building their own.
+  const open = (id: string, restore?: ThreadRestore): Promise<Thread> => {
     const existing = threads.get(id)
     if (existing) return Promise.resolve(existing)
     let building = opening.get(id)
@@ -452,10 +542,20 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           },
           prefs,
           ask,
+          restore,
         )
         .then((session) => {
           const thread: Thread = {
             session,
+            // A continued chat goes by its saved title from the start.
+            title: restore?.resume?.summary || null,
+            parent: restore?.parent
+              ? {
+                  ...restore.parent,
+                  id: restore.parentId ?? null,
+                  title: (restore.parentId ? threads.get(restore.parentId)?.title : null) ?? null,
+                }
+              : null,
             started: false,
             busy: false,
             sink: null,
@@ -467,11 +567,28 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             timings: new Map(),
             // Kept unless told otherwise before the first message.
             saves: prefs.saves ?? true,
-            state: 'new',
+            // A restored thread's last turn is complete; a new one has none.
+            state: restore ? 'done' : 'new',
             partial: '',
             updatedAt: ++tick,
             context: null,
             profile: prefs.profile ?? options.settings?.defaultModel ?? '',
+          }
+          // A thread read back from a snapshot or a saved chat carries each
+          // turn's token counts and timing in its context log; the reply they
+          // belong to is the assistant message that closed that turn.
+          if (restore) {
+            // The state's own log: the session takes it up at its first message, so it is not on the session yet.
+            for (const entry of restore.state.contextLog) {
+              const at = entry.turn * 2 - 1
+              if (at < 0 || at >= session.turns.length) continue
+              if (entry.usage) {
+                const model =
+                  (entry.model && options.settings?.profileFor?.(entry.model, thread.profile)) || thread.profile
+                thread.usage.set(at, { ...entry.usage, model })
+              }
+              if (entry.timing) thread.timings.set(at, timingLine(entry.timing))
+            }
           }
           threads.set(id, thread)
           pending.delete(id)
@@ -482,6 +599,49 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
     return building
   }
+
+  // The first exchange names the thread, once, off the turn's critical path:
+  // the reply is already on the page when the name lands, and the list, the
+  // rail and the header pick it up on their next read (or the stream, when
+  // one is still open). A titler that fails or answers nothing leaves the
+  // first words standing.
+  const name = (id: string, thread: Thread) => {
+    // A branch is named from its own first exchange, past the turns it inherited.
+    const from = thread.session.inherited
+    if (!options.title || thread.title !== null || thread.session.turns.length < from + 2) return
+    void options
+      .title(thread.session.turns.slice(from, from + 2))
+      .then((named) => {
+        const title = named?.trim()
+        if (!title || threads.get(id) !== thread || thread.title !== null) return
+        thread.title = title
+        thread.updatedAt = ++tick
+        thread.sink?.({ type: 'title', title })
+      })
+      .catch(() => {})
+  }
+
+  // The threads the last run left behind come back first, in start order,
+  // so the newest ends up newest in the list. A snapshot that will not
+  // build is skipped, never fatal — the rest of the day must still open.
+  const restored = (async () => {
+    if (!options.snapshots) return
+    let refs: ThreadRestore[]
+    try {
+      refs = await options.snapshots()
+    } catch {
+      return
+    }
+    for (const ref of refs) {
+      if (threads.has(ref.id)) continue
+      try {
+        const thread = await open(ref.id, ref)
+        name(ref.id, thread)
+      } catch {
+        // Left where it is for a later run to try again.
+      }
+    }
+  })()
 
   // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
   const windowOf = (host: ChatSettingsHost, profile: string) =>
@@ -565,17 +725,18 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     let thread: Thread | undefined
     try {
       thread = await timing.run(async () => {
+        await restored
         await opening.get(id)
         if (!threads.has(id)) pending.set(id, prefs)
         return open(id)
       })
-      options.onMessage?.(id, message)
       thread.busy = true
       thread.session.setModel(chosen.model, chosen.profile)
       thread.profile = prefs.profile
       if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
       thread.saves = prefs.saves
       if (!thread.saves) await dropSnapshot(id, thread)
+      options.onMessage?.(id, message)
     } catch (error) {
       if (thread) thread.busy = false
       release()
@@ -629,6 +790,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.updatedAt = ++tick
           frame('turn', { ...(wireTurn(turn) as object), model: thread.profile })
           await chain
+          if (!turn.error) name(id, thread)
         } catch (error) {
           timing.finish(thrownOutcome(error))
           throw error
@@ -647,19 +809,25 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   })
 
   // The day's view of its threads: newest activity first.
-  app.get('/', (c) => {
+  app.get('/', async (c) => {
+    await restored
     const list = [...threads.entries()]
       .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
-      .map(([id, thread]) => summarize(id, thread))
+      .map(([id, thread]) => summarize(id, thread, baseDir))
     return c.json({ threads: list })
   })
 
-  app.get('/:id', (c) => {
+  app.get('/:id', async (c) => {
+    await restored
     const id = c.req.param('id')
     const thread = threads.get(id)
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     return c.json({
       id,
+      title: thread.title ?? threadTitle(thread.session.turns.slice(thread.session.inherited)),
+      parent: thread.parent,
+      inherited: thread.session.inherited,
+      saved: savedOf(thread, baseDir),
       turns: thread.session.turns,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
@@ -727,6 +895,69 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
   }
 
+  // A saved chat opened to continue: a thread whose session writes back to
+  // the file. One thread per file — opening it again finds the same one.
+  app.post('/open', async (c) => {
+    await restored
+    if (!options.openSaved) return c.json({ message: 'this host does not open saved chats' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { chat?: unknown } | null
+    const chat = typeof body?.chat === 'string' ? body.chat.trim() : ''
+    if (!chat) return c.json({ message: 'chat is required — a path relative to the notebook root' }, 400)
+    for (const [id, thread] of threads) if (savedOf(thread, baseDir) === chat) return c.json({ id, opened: false })
+    const found = await options.openSaved(chat)
+    if (!found) return c.json({ message: `no saved chat at ${chat}` }, 404)
+    const id = crypto.randomUUID()
+    await open(id, {
+      id,
+      startTime: found.startTime,
+      state: found.resume.state,
+      resume: found.resume,
+      parent: found.resume.parent,
+      parentId: null,
+    })
+    return c.json({ id, opened: true }, 201)
+  })
+
+  // A new chat from here: a branch that keeps the thread's first `turn`
+  // turns and goes its own way after them. Nothing is written — the branch
+  // is a thread like any other until it is ended. What branching does pin
+  // is the family's name on the thread it left, so the folder the branch
+  // will file into is known: the parent keeps that name when it saves.
+  app.post('/:id/branch', async (c) => {
+    await restored
+    const id = c.req.param('id')
+    const source = threads.get(id)
+    if (!source) return c.json({ message: 'no such thread' }, 404)
+    if (source.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
+    const body = (await c.req.json().catch(() => null)) as { turn?: unknown } | null
+    const turn = body?.turn
+    const turns = Math.floor(source.session.turns.length / 2)
+    if (!(typeof turn === 'number' && Number.isInteger(turn) && turn >= 1 && turn <= turns)) {
+      return c.json({ message: `turn must be a whole number from 1 to ${turns}` }, 400)
+    }
+    // The family's name: what the thread is called, else the titler over the
+    // shared turns — given a few seconds, no more, since the person is waiting
+    // on the click; past that the first words stand and the titler's later
+    // answer names the thread on the page only.
+    let title = source.title ?? source.session.title
+    if (!title && options.title) {
+      const named = options.title(source.session.turns.slice(0, turn * 2)).catch(() => undefined)
+      const patience = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), NAMING_PATIENCE_MS))
+      title = (await Promise.race([named, patience]))?.trim() || null
+    }
+    title ??= threadTitle(source.session.turns)
+    if (!title) return c.json({ message: 'the thread has nothing to be named by yet' }, 409)
+    source.title ??= title
+    source.session.pinTitle(title)
+    const parentPath = source.session.filePath(title)
+    if (!parentPath) return c.json({ message: 'the thread has no file to branch beside' }, 409)
+    const parent: ChatParent = { chat: path.relative(baseDir, parentPath), turn }
+    const branchId = crypto.randomUUID()
+    await open(branchId, { id: branchId, state: source.session.stateAt(turn), parent, parentId: id })
+    source.updatedAt = ++tick
+    return c.json({ id: branchId, parent }, 201)
+  })
+
   app.get('/:id/settings', (c) => {
     const settings = settingsOf(c.req.param('id'))
     return settings ? c.json(settings) : c.json({ message: 'this host has no settings' }, 404)
@@ -747,6 +978,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       contextTokens?: unknown
       saves?: unknown
     } | null
+    await restored
     if (accepting.has(id)) return c.json({ message: 'a turn is still running on this thread' }, 409)
     const profile = body?.profile
     const tokens = body?.contextTokens
@@ -841,6 +1073,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   })
 
   app.post('/:id/end', async (c) => {
+    await restored
     const id = c.req.param('id')
     const thread = threads.get(id)
     if (!thread) return c.json({ message: 'no such thread' }, 404)
@@ -848,6 +1081,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const body = (await c.req.json().catch(() => null)) as { save?: unknown } | null
     // The thread's own setting decides; a caller may still say so outright.
     const save = typeof body?.save === 'boolean' ? body.save : thread.saves
+
+    // A branch files beside its parent, so a parent that has no file yet
+    // gets one first — a light save it goes on talking after. A parent
+    // still working cannot be filed mid-turn.
+    const parentThread = thread.parent?.id ? threads.get(thread.parent.id) : undefined
+    if (save && parentThread && !parentThread.session.resume) {
+      if (parentThread.busy) return c.json({ message: 'the chat this one branched from is still working' }, 409)
+      await parentThread.session.fileNow()
+      parentThread.updatedAt = ++tick
+    }
 
     // The thread stays until the end succeeds, so a failed save can be retried.
     thread.busy = true

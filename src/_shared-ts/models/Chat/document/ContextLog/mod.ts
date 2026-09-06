@@ -144,6 +144,8 @@ export interface ContextTurnLog {
   usage?: TokenUsage
   /** Prompt-to-result elapsed time and individual calls; independent of transcript minute stamps. */
   timing?: TimingDetail
+  /** The model that answered this turn (the provider's id, as the frontmatter's `model:` names the last one) — a thread may switch between turns */
+  model?: string
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -165,6 +167,7 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
+    if (entry.model) fields.push(`      "model": ${JSON.stringify(entry.model)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })
