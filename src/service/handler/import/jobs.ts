@@ -94,6 +94,8 @@ export interface ImportJob {
   error: string | null
   /** ISO, when the file arrived */
   created: string
+  /** ISO, when the job last settled — filed, failed, or cancelled; a refused file settles on arrival */
+  settled?: string
 }
 
 export type PromptOnWire = { id: string } & PromptRequest
@@ -116,6 +118,14 @@ const SETTLED: ReadonlySet<ImportState> = new Set(['done', 'failed', 'cancelled'
 
 export function isSettled(state: ImportState): boolean {
   return SETTLED.has(state)
+}
+
+/** How long a filed import or a refused file stays after it settles: long enough for the dialog that watched it to show what was filed, or why the file was refused. */
+export const SETTLED_RETENTION_MS = 10 * 60 * 1000
+
+/** Whether a job has nothing left to offer: it was filed, or its file was refused. A failed or cancelled run stays — a Start can pick it up. */
+export function isDisposable(job: ImportJob): boolean {
+  return job.state === 'done' || (job.readback.refusal !== null && isSettled(job.state))
 }
 
 /** The job as a list row and as the dialog's data. */
@@ -177,6 +187,12 @@ export class JobStore {
         // A directory without a readable job.json is not a job.
         continue
       }
+      // A filed import, or a refused file, had its moment before the restart;
+      // it leaves now, upload and all, rather than staying on disk for good.
+      if (isDisposable(job)) {
+        await rm(path.join(this.dir, id), { recursive: true, force: true }).catch(() => {})
+        continue
+      }
       if (job.state === 'running' || job.state === 'needs-you') {
         // A question the pipeline asked is answered through a resolver held in
         // memory, so a restart ends the run either way. The file stays, and the
@@ -212,6 +228,8 @@ export class JobStore {
   }
 
   async add(job: ImportJob): Promise<JobRecord> {
+    // A job that arrives settled — a refused file — is settled from its arrival.
+    if (isSettled(job.state) && !job.settled) job.settled = job.created
     const record: JobRecord = {
       job,
       events: [],
@@ -240,6 +258,23 @@ export class JobStore {
     await rm(this.jobDir(id), { recursive: true, force: true })
   }
 
+  /**
+   * Filed imports and refused files leave once their moment has passed —
+   * the row was gone from the rail already, and the dialog has shown what
+   * was filed or why the file was refused. Failed and cancelled runs stay:
+   * a Start picks them up. Returns the ids that left.
+   */
+  async sweep(now = Date.now()): Promise<string[]> {
+    const gone: string[] = []
+    for (const { job } of [...this.records.values()]) {
+      if (!isDisposable(job)) continue
+      if (now - Date.parse(job.settled ?? job.created) < SETTLED_RETENTION_MS) continue
+      await this.remove(job.id)
+      gone.push(job.id)
+    }
+    return gone
+  }
+
   emit(record: JobRecord, event: ImportEventBody): ImportEvent {
     const full: ImportEvent = { ...event, seq: ++record.seq }
     record.events.push(full)
@@ -251,6 +286,7 @@ export class JobStore {
   /** A state change: recorded on the job, told to listeners, written to disk. */
   async setState(record: JobRecord, state: ImportState, patch: Partial<ImportJob> = {}): Promise<void> {
     Object.assign(record.job, patch, { state })
+    if (isSettled(state)) record.job.settled = new Date().toISOString()
     this.emit(record, {
       type: 'state',
       state,

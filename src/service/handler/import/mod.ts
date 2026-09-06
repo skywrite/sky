@@ -55,6 +55,8 @@ export type { RunEvent } from '#commands/lib/core/runCommand.ts'
 export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string }
 
 export interface ImportRoutesOptions {
+  /** The clock the sweep of finished imports reads — a test seam; the wall clock otherwise */
+  now?: () => number
   /** Where uploads and their job files live */
   dir: string
   /** What a staged file is, read locally before anything runs */
@@ -242,6 +244,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
 
   app.get('/', async (c) => {
     await loaded
+    // Finished imports leave at the next look, once their moment has passed.
+    await store.sweep(options.now?.())
     return c.json({ imports: store.list().map(summarize) })
   })
 

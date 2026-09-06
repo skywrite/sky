@@ -585,3 +585,61 @@ test('a run that stopped is looked at again when the job is opened', async () =>
     expected: [null, { step: 'Checking names', started: '2026-01-27 09:31' }, 'k-atlas-pricing-sync.vtt', false],
   })
 })
+
+test('a filed import and a refused file leave after their moment, and at a restart; a stopped run stays', async () => {
+  const w = await world()
+  let offset = 0
+  w.options.now = () => Date.now() + offset
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const stage = async (name: string, body: string) =>
+    ((await (await app.request('/import', { method: 'POST', body: upload(name, body) })).json()) as { job: ImportJob })
+      .job
+  const run = async (job: ImportJob, until: ImportJob['state']) => {
+    await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+    await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'state' && e.state === until)
+  }
+  const filed = await stage('atlas.vtt', VTT)
+  await run(filed, 'done')
+  const refused = await stage('notes.xyz', 'not a thing sky takes')
+  w.script.outcome = 'failed'
+  const stopped = await stage('second.vtt', VTT)
+  await run(stopped, 'failed')
+  const listed = async () =>
+    ((await (await app.request('/import')).json()) as { imports: ImportJob[] }).imports.map((j) => j.id).sort()
+  const dirs = async () => (await readdir(w.dir)).sort()
+
+  const soon = { listed: await listed(), dirs: await dirs() }
+  offset = 11 * 60 * 1000
+  const later = { listed: await listed(), dirs: await dirs() }
+
+  // Fresh ones, then a restart over the same directory.
+  const filedAgain = await stage('atlas.vtt', VTT)
+  w.script.outcome = 'filed'
+  await run(filedAgain, 'done')
+  const refusedAgain = await stage('later.xyz', 'still not a thing')
+  const restarted = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const afterRestart = ((await (await restarted.request('/import')).json()) as { imports: ImportJob[] }).imports.map(
+    (j) => j.id,
+  )
+
+  const all = [filed.id, refused.id, stopped.id].sort()
+  assert({
+    given: 'a filed import, a refused file, and a run that failed; eleven minutes; then fresh ones and a restart',
+    should:
+      'list and keep all three at first, then only the failed run — upload and all — and drop the fresh filed and refused ones at the restart',
+    actual: {
+      soon,
+      later,
+      settledStamped: typeof refused.settled,
+      afterRestart,
+      onDiskAfterRestart: (await dirs()).includes(filedAgain.id) || (await dirs()).includes(refusedAgain.id),
+    },
+    expected: {
+      soon: { listed: all, dirs: all },
+      later: { listed: [stopped.id], dirs: [stopped.id] },
+      settledStamped: 'string',
+      afterRestart: [stopped.id],
+      onDiskAfterRestart: false,
+    },
+  })
+})

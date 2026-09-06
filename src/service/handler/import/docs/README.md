@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # Meeting from a file — the import
@@ -24,7 +24,10 @@ server-sent events.
   reads the header). A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
   so a restart still knows what was there (a job that was running when the
-  service died reads as failed, with the file kept). `JobPrompter` is how a
+  service died reads as failed, with the file kept). A filed import and a
+  refused file leave the store ten minutes after they settle, at the next
+  look, upload and all; a restart clears them at once. Failed and cancelled
+  runs stay, for a Start to pick up. `JobPrompter` is how a
   running command's question reaches the browser: parked on the job until
   an answer comes back.
 - `mod.ts` — the routes, over a host of seams so tests script the world.
@@ -139,6 +142,8 @@ the command's own plan.
 
 ## Narrative
 
+- `2026-09-06-finished-imports-leave.md` — what a filed import and a
+  refused file leave behind, and when they go.
 - `2026-09-01-meeting-from-a-file.md` — the design, the seams, what changed
   in the pipeline commands.
 - `2026-09-03-a-screenshot-is-a-message.md` — the image door: the read-back,
