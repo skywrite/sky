@@ -1,0 +1,164 @@
+// Run with `bun test service/handler/http-day-record-e2e_test.ts` (a real browser).
+import { writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
+import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
+import { dayAIChatsDir, dayDir, dayFile } from '#shared/nbfs/mod.ts'
+import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import type { ThreadSummary } from './theme/client/day.tsx'
+
+setUserSpeakerLabel('Jane')
+
+const DAY = new PlainDate('2026-01-27')
+const CHAT_DIR = path.posix.join('time', dayAIChatsDir(DAY))
+const ROOT = `${CHAT_DIR}/09-00_Atlas-planning.md`
+const BRANCH = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline.md`
+const LEAF = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline/11-00_Budget-questions.md`
+const VIDEO = path.posix.join('time', dayDir(DAY), 'actions/videos/Loom_Atlas.md')
+const VIDEO_MD = `---
+from: Jane Doe
+to: Atlas Team
+when: 2026-01-27 15:00 - 15:10
+medium: Loom
+summary: Atlas launch walkthrough
+---
+
+# Loom
+
+## Summary
+
+The recording walks through the launch checklist and next steps.
+`
+
+function chat(title: string, parent?: { chat: string; turn: number }): string {
+  return `---
+created: 2026-01-27
+summary: ${title}
+turns: 1
+${parent ? `parent:\n  chat: ${parent.chat}\n  turn: ${parent.turn}\n` : ''}---
+
+# ${title}
+
+## Jane
+
+Help me plan the next steps.
+
+## Sky
+
+Start with a short checklist and assign each action.
+`
+}
+
+test(
+  { name: 'day shows videos and every chat branch in the main column and keeps the rail consistent', timeout: 30000 },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: `---\ndate: ${DAY.ymd}\n---\n\n# **${DAY.ymd}**\n\n## Professional Todos\n\n-\n`,
+        tempPrefix: 'day-record-',
+        file: path.posix.join('time', dayFile(DAY)),
+        day: true,
+        files: {
+          [ROOT]: chat('Atlas planning'),
+          [BRANCH]: chat('Board outline', { chat: ROOT, turn: 1 }),
+          [LEAF]: chat('Budget questions', { chat: BRANCH, turn: 2 }),
+          [VIDEO]: VIDEO_MD,
+        },
+      },
+      async ({ page, origin, file, errors }) => {
+        let threads: ThreadSummary[] = []
+        await page.route('**/chat', (route) => route.fulfill({ json: { threads } }))
+        await page.setViewportSize({ width: 1500, height: 1000 })
+        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.waitForSelector('.sky-day-chat:has-text("Budget questions")')
+        const rows = () =>
+          page.locator('.sky-day-chat').evaluateAll((elements) =>
+            elements.map((element) => ({
+              title: element.querySelector('button')?.textContent,
+              depth: element.getAttribute('data-depth'),
+              detail: element.querySelector('.sky-day-chat-meta')?.textContent,
+            })),
+          )
+        assert({
+          given: 'a saved chat, its branch, and a branch nested another directory deep',
+          should: 'show all three under their parents with their own turn counts and branch points',
+          actual: await rows(),
+          expected: [
+            { title: 'Atlas planning', depth: '0', detail: '1 turn' },
+            { title: 'Board outline', depth: '1', detail: '1 new turn · from turn 1 of Atlas planning' },
+            { title: 'Budget questions', depth: '2', detail: '1 new turn · from turn 2 of Board outline' },
+          ],
+        })
+        assert({
+          given: 'the Details rail beside the day',
+          should: 'show the same hierarchy',
+          actual: await page
+            .locator('.sky-rail [data-depth]')
+            .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-depth'))),
+          expected: ['0', '1', '2'],
+        })
+        const videoLink = page.getByRole('link', { name: 'Atlas launch walkthrough', exact: true })
+        assert({
+          given: 'a saved video headed only Loom',
+          should: 'show its summary and link to the video record from the main day column',
+          actual: await videoLink.getAttribute('href'),
+          expected: `/explorer/${VIDEO}`,
+        })
+
+        threads = [
+          {
+            id: 'live-parent',
+            title: 'Atlas continued',
+            day: DAY.ymd,
+            when: '12:00',
+            state: 'done',
+            line: null,
+            turns: 4,
+            inherited: 0,
+            saved: ROOT,
+            parent: null,
+            busy: false,
+          },
+        ]
+        await page.waitForSelector('.sky-day-chat-open:has-text("Atlas continued")')
+        assert({
+          given: 'the parent now open as a live conversation',
+          should: 'replace its saved row while retaining both saved descendants',
+          actual: (await rows()).map((row) => [row.title, row.depth]),
+          expected: [
+            ['Atlas continued', '0'],
+            ['Board outline', '1'],
+            ['Budget questions', '2'],
+          ],
+        })
+
+        await writeFile(
+          path.join(path.dirname(file), 'actions/ai-chats/13-00_Atlas-follow-up.md'),
+          chat('Atlas follow-up chat'),
+        )
+        threads = []
+        await page.waitForSelector('.sky-day-chat-open:has-text("Atlas follow-up chat")')
+
+        await videoLink.click()
+        await page.waitForURL(`${origin}/explorer/${VIDEO}`)
+        await writeFile(
+          path.join(path.dirname(file), 'actions/videos/Loom_followup.md'),
+          VIDEO_MD.replace('Atlas launch walkthrough', 'Atlas follow-up'),
+        )
+        await page.goBack()
+        await page.getByRole('link', { name: 'Atlas follow-up', exact: true }).waitFor({ state: 'visible' })
+
+        await page.setViewportSize({ width: 430, height: 900 })
+        assert({
+          given: 'the day on a phone with Details closed',
+          should: 'keep all chat branches in the main column',
+          actual: await page.locator('.sky-day-chat').count(),
+          expected: 4,
+        })
+        assert({ given: 'the video and chat day view', should: 'raise no page errors', actual: errors, expected: [] })
+      },
+    )
+  },
+)

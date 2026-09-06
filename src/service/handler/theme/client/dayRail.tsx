@@ -1,6 +1,7 @@
 import { Button, FileButton } from '@mantine/core'
 import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
 import type { DayData, ThreadSummary } from './day.tsx'
+import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
 import { fileHref } from './explorer.tsx'
 import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
 import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
@@ -200,11 +201,6 @@ function ScheduleSection({
   )
 }
 
-/** A live thread's word for the rail's right column. */
-function threadWord(thread: ThreadSummary): string {
-  return thread.state === 'new' || thread.state === 'done' ? 'live' : thread.state
-}
-
 /**
  * The day's chats: the ones filed under it and the live threads that
  * started on it, each branch under the chat it left. A saved chat opens
@@ -225,57 +221,41 @@ function ChatsSection({
   onOpenThread: (id: string) => void
   onOpenSaved: (chat: string) => void
 }) {
-  // The day's own live threads: the ones that started on it, the day's own conversation aside.
-  const live = threads.filter((t) => t.day === ymd && !t.id.startsWith('day-'))
-  const continued = new Set(live.map((t) => t.saved).filter((s): s is string => s !== null))
-  const saved = chats.filter((c) => !continued.has(c.path))
-  const total = saved.length + live.length
-  if (total === 0) {
+  const rows = dayChatRows(ymd, chats, threads)
+  if (rows.length === 0) {
     return (
       <Section title="Chats">
         <p className="sky-rail-empty">No chats yet.</p>
       </Section>
     )
   }
-  const savedRow = (c: DayData['chats'][number], branch: boolean) => (
-    <div className="sky-dr-item" data-branch={branch || undefined} key={c.path}>
-      <span className="sky-dr-time">{c.time}</span>
-      <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenSaved(c.path)}>
-        {c.summary || c.path}
-      </button>
-      <span className="sky-dr-mark">
-        {branch && c.parent ? `from turn ${c.parent.turn}` : `${c.exchanges} turn${c.exchanges === 1 ? '' : 's'}`}
-      </span>
-    </div>
-  )
-  const liveRow = (t: ThreadSummary, branch: boolean) => (
-    <div className="sky-dr-item" data-live="true" data-branch={branch || undefined} key={t.id}>
-      <span className="sky-dr-time">{t.when ?? ''}</span>
-      <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenThread(t.id)}>
-        {t.title ?? (t.parent ? 'New branch' : 'New chat')}
-      </button>
-      <span className="sky-dr-mark">{branch && t.parent ? `from turn ${t.parent.turn}` : threadWord(t)}</span>
-    </div>
-  )
-  // Roots first, each with its branches beneath: saved branches by the parent's path, live ones by the parent's id or path.
-  const savedRoots = saved.filter((c) => !c.parent || !saved.some((o) => o.path === c.parent?.chat))
-  const liveRoots = live.filter(
-    (t) => !t.parent || !(live.some((o) => o.id === t.parent?.id) || saved.some((c) => c.path === t.parent?.chat)),
-  )
   return (
-    <Section title="Chats" count={total}>
-      {savedRoots.map((c) => (
-        <Fragment key={c.path}>
-          {savedRow(c, false)}
-          {saved.filter((b) => b.parent?.chat === c.path).map((b) => savedRow(b, true))}
-          {live.filter((t) => t.parent?.chat === c.path && !t.parent.id).map((t) => liveRow(t, true))}
-        </Fragment>
-      ))}
-      {liveRoots.map((t) => (
-        <Fragment key={t.id}>
-          {liveRow(t, false)}
-          {live.filter((b) => b.parent?.id === t.id).map((b) => liveRow(b, true))}
-        </Fragment>
+    <Section title="Chats" count={rows.length}>
+      {rows.map((row) => (
+        <div
+          className="sky-dr-item"
+          data-live={row.target.kind === 'live' || undefined}
+          data-branch={Boolean(row.parent) || undefined}
+          data-depth={row.depth}
+          key={row.key}
+        >
+          <span className="sky-dr-time">{row.time}</span>
+          <button
+            type="button"
+            className="sky-dr-label sky-dr-open"
+            style={{ paddingInlineStart: row.depth * 14 }}
+            title={row.title}
+            onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
+          >
+            {row.title}
+          </button>
+          <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
+          {row.parent && (
+            <span className="sky-dr-who" title={`From turn ${row.parent.turn} of ${row.parent.title}`}>
+              {row.state !== null && `${chatTurnCount(row)} · `}from turn {row.parent.turn} of {row.parent.title}
+            </span>
+          )}
+        </div>
       ))}
     </Section>
   )

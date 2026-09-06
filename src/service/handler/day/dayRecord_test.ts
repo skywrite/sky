@@ -254,3 +254,43 @@ test({ name: 'day record - a day with no file yet has an empty plan, not an erro
     expected: { items: 0, filed: 0 },
   })
 })
+
+test('day record includes video summaries, participants, and times from the day’s video files', async () => {
+  const { base, timeDir, dayDirPath } = await notebook()
+  const videos = path.join(dayDirPath, 'actions', 'videos')
+  await mkdir(videos)
+  await writeFile(
+    path.join(videos, 'Loom_Atlas-update.md'),
+    `---
+from: Jane Doe
+to: Atlas Team
+when: 2026-01-27 15:00 - 15:10
+medium: Loom
+summary: Atlas launch walkthrough
+---
+
+# Loom
+
+## Summary
+
+The recording walks through the launch checklist and next steps.
+`,
+  )
+  const record = await buildDayRecord({ day: TODAY, timeDir, dayDirPath, markdownBaseDir: base, ownerNames: OWNER })
+  assert({
+    given: 'a video whose heading is only its platform name',
+    should: 'list the recording by its saved summary with its notebook link and communication metadata',
+    actual: record.videos,
+    expected: [
+      {
+        title: 'Atlas launch walkthrough',
+        path: path.join('time', dayDir(TODAY), 'actions/videos/Loom_Atlas-update.md'),
+        when: '15:00 - 15:10',
+        summary: 'Atlas launch walkthrough',
+        from: 'Jane Doe',
+        to: 'Atlas Team',
+        medium: 'Loom',
+      },
+    ],
+  })
+})

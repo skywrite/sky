@@ -119,6 +119,9 @@ The other plan sections and the day record sit directly on the page, with
 less padding and subtle dividers between neighboring sections. "The day so
 far" introduces the record after the plan.
 
+Videos and Chats remain in the main column when Details is closed; both
+chat lists follow the [day's hierarchy rules](../../day/docs/README.md#videos-and-chats-in-the-days-record).
+
 `day.css` scopes these rules to the day's own blocks. `sky-day-priority`
 marks Most important explicitly, so an absent priority list never makes
 another section look like the priority. Shared cards elsewhere retain

@@ -51,6 +51,12 @@ export interface MessageRow extends DayDocRow {
   medium: string | null
 }
 
+export interface VideoRow extends DayDocRow {
+  from: string | null
+  to: string | null
+  medium: string | null
+}
+
 export interface DayRecord {
   mostImportant: DayItem[]
   commitments: DayItem[]
@@ -58,6 +64,7 @@ export interface DayRecord {
   reminders: DayItem[]
   done: DayItem[]
   meetings: MeetingRow[]
+  videos: VideoRow[]
   messages: {
     /** Threads the owner took part in */
     involved: MessageRow[]
@@ -184,6 +191,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     reminders: [],
     done: [],
     meetings: [],
+    videos: [],
     messages: { involved: [], archive: [] },
     notes: [],
     journals: [],
@@ -228,6 +236,15 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       }
       if (isParticipant(entry.doc, input.ownerNames)) record.messages.involved.push(message)
       else record.messages.archive.push(message)
+    } else if (isActionPath('video', entry.path)) {
+      record.videos.push({
+        ...row,
+        // Video files use the platform as their H1; the summary names the recording.
+        title: row.summary ?? row.title,
+        from: text(entry.doc.yaml['from']),
+        to: text(entry.doc.yaml['to']),
+        medium: text(entry.doc.yaml['medium']),
+      })
     } else if (isActionPath('note', entry.path)) record.notes.push(row)
   }
 

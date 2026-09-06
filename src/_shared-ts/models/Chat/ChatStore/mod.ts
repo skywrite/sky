@@ -13,7 +13,7 @@
  */
 
 import * as path from 'node:path'
-import { exists, readDir, readTextFile } from '#shared/fs/mod.ts'
+import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { inheritedMessages, joinLineage, prefixOf } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent } from '../document/mod.ts'
@@ -73,21 +73,16 @@ export interface LoadResumeOptions {
 /**
  * The day's saved chats, newest filename first (the names lead with the
  * `HH-MM` time key, so lexical order is chronological). A folder beside a
- * chat holds its branches; those list too, each with its parent key, so a
- * host can nest them. A missing directory is a day with no chats, not an
- * error.
+ * chat holds its branches, including further branches nested beneath
+ * them; each lists with its parent key so a host can nest them. A missing
+ * directory is a day with no chats, not an error.
  */
 export async function listDayChats(chatsDir: string): Promise<SavedChatRef[]> {
   if (!(await exists(chatsDir))) return []
 
   const files: string[] = []
-  for await (const entry of readDir(chatsDir)) {
-    if (entry.isFile && entry.name.endsWith('.md')) files.push(path.join(chatsDir, entry.name))
-    else if (entry.isDirectory) {
-      for await (const inner of readDir(path.join(chatsDir, entry.name))) {
-        if (inner.isFile && inner.name.endsWith('.md')) files.push(path.join(chatsDir, entry.name, inner.name))
-      }
-    }
+  for await (const entry of walk(chatsDir, { includeDirs: false, exts: ['.md'] })) {
+    files.push(entry.path)
   }
   files.sort((a, b) => path.basename(b).localeCompare(path.basename(a)))
 

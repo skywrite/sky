@@ -1,6 +1,7 @@
 import { ActionIcon, Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
+import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayRail } from './dayRail.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
@@ -78,6 +79,7 @@ export interface DayRecord {
   reminders: DayItem[]
   done: DayItem[]
   meetings: Array<DayDocRow & { who: string | null }>
+  videos: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
   messages: {
     involved: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
     archive: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
@@ -110,11 +112,15 @@ export interface ThreadSummary {
 }
 
 /** The day named by `ymd`, or today when null. */
-export function useDay(ymd: string | null): DayData | null {
+export function useDay(ymd: string | null, refreshKey?: string): DayData | null {
   const [day, setDay] = useState<DayData | null>(null)
+  const requestedDay = useRef(ymd)
   useEffect(() => {
     let alive = true
-    setDay(null)
+    if (requestedDay.current !== ymd) {
+      requestedDay.current = ymd
+      setDay(null)
+    }
     fetch(ymd ? `/day/${ymd}` : '/day')
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => alive && setDay(body as DayData | null))
@@ -122,7 +128,7 @@ export function useDay(ymd: string | null): DayData | null {
     return () => {
       alive = false
     }
-  }, [ymd])
+  }, [ymd, refreshKey])
   return day
 }
 
@@ -641,6 +647,44 @@ function DocLine({ when, tag, children }: { when: string | null; tag?: string | 
   )
 }
 
+function ChatsCard({
+  rows,
+  onOpenThread,
+  onOpenSaved,
+}: {
+  rows: DayChatRow[]
+  onOpenThread: (id: string) => void
+  onOpenSaved: (path: string) => void
+}) {
+  if (rows.length === 0) return null
+  return (
+    <Block head="Chats" mini={count(rows.length, 'chat')}>
+      {rows.map((row) => (
+        <div
+          className="sky-day-chat"
+          key={row.key}
+          data-depth={row.depth}
+          style={{ marginInlineStart: row.depth * 18 }}
+        >
+          <DocLine when={row.time} tag={chatState(row)}>
+            <button
+              type="button"
+              className="sky-day-chat-open"
+              onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
+            >
+              {row.title}
+            </button>
+            <span className="sky-day-chat-meta">
+              {chatTurnCount(row)}
+              {row.parent && ` · from turn ${row.parent.turn} of ${row.parent.title}`}
+            </span>
+          </DocLine>
+        </div>
+      ))}
+    </Block>
+  )
+}
+
 /** Long blocks show a few rows and the rest on request — the day stays scannable. */
 function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: number) => ReactNode; limit?: number }) {
   const [open, setOpen] = useState(false)
@@ -660,7 +704,7 @@ function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: n
   )
 }
 
-/** The archive, folded to a line: the conversations filed for reference. The day's chats are the rail's. */
+/** The archive, folded to a line: the conversations filed for reference. */
 function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
   const [showArchive, setShowArchive] = useState(false)
   if (archive.length === 0) return null
@@ -750,6 +794,8 @@ export function DayView({
   const rail = useRail(view?.day.ymd ?? null)
   const section = view?.section ?? null
   const record = view?.record ?? null
+  const chats = view ? dayChatRows(view.day.ymd, view.chats, threads) : []
+  const videos = record?.videos ?? []
   const isToday = view ? view.day.ymd === view.today.ymd : false
   // The day file's directory: the items in it link to files from there.
   const at = view?.day.dayRelativePath ? view.day.dayRelativePath.split('/').slice(0, -1).join('/') : ''
@@ -770,6 +816,8 @@ export function DayView({
   const hasDayFar =
     record !== null &&
     (record.meetings.length > 0 ||
+      videos.length > 0 ||
+      chats.length > 0 ||
       record.messages.involved.length > 0 ||
       doneToday.length > 0 ||
       record.journals.length + record.notes.length > 0 ||
@@ -883,6 +931,24 @@ export function DayView({
                       />
                     </Block>
                   )}
+
+                  {videos.length > 0 && (
+                    <Block head="Videos" mini={String(videos.length)}>
+                      <Fold
+                        rows={videos}
+                        render={(video: DayRecord['videos'][number]) => (
+                          <DocLine when={video.when} tag={mediumLabel(video.medium)}>
+                            <a href={fileHref(video.path)}>{video.title}</a>
+                            {(video.from || video.to) && (
+                              <span className="sky-rec-sub">{[video.from, video.to].filter(Boolean).join(' → ')}</span>
+                            )}
+                          </DocLine>
+                        )}
+                      />
+                    </Block>
+                  )}
+
+                  <ChatsCard rows={chats} onOpenThread={onOpen} onOpenSaved={onOpenSaved} />
 
                   {doneToday.length > 0 && (
                     <Block head="Done today" mini={String(doneToday.length)}>

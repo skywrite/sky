@@ -1,4 +1,6 @@
+import { copyFile, mkdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
+import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { setUserSpeakerLabel } from '../document/mod.ts'
 import { ancestorsOf, listDayChats, loadResumeSession } from './mod.ts'
@@ -62,6 +64,24 @@ test('listDayChats - a day with no chats is empty, not an error', async () => {
     actual: await listDayChats(path.join(import.meta.dirname!, 'fixtures', 'no-such-day')),
     expected: [],
   })
+})
+
+test('listDayChats includes branches nested more than one folder deep', async () => {
+  const dir = await makeTempDir({ prefix: 'sky-chat-depth-' })
+  try {
+    const nested = path.join(dir, '09-00_Atlas', '10-00_Board')
+    await mkdir(nested, { recursive: true })
+    const file = path.join(nested, '11-00_Budget.md')
+    await copyFile(path.join(CHATS_DIR, '09-30_Atlas-Launch-Planning', '10-05_Board-Prep-Instead.md'), file)
+    assert({
+      given: 'a saved chat inside a branch’s own folder',
+      should: 'include it in the day’s list with its recorded parent',
+      actual: (await listDayChats(dir)).map((row) => [row.path, row.parent]),
+      expected: [[file, { chat: 'ai-chats/09-30_Atlas-Launch-Planning.md', turn: 1 }]],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('loadResumeSession - carries the frontmatter the save path must preserve', async () => {

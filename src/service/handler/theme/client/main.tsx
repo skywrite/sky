@@ -84,14 +84,20 @@ function Canvas() {
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
-  const day = useDay(dayYmd)
+  const threads = useThreads()
+  // Files dropped on the day: each one uploaded, confirmed, started — then its own page.
+  const imports = useImports()
+  // A saved/ended chat or a finished import changes the files behind the day's record.
+  const dayRefreshKey = [
+    path,
+    ...threads.map((thread) => `${thread.id}:${thread.saved ?? ''}`).sort(),
+    ...imports.map((job) => `${job.id}:${job.state}`).sort(),
+  ].join('\u0000')
+  const day = useDay(dayYmd, dayRefreshKey)
   const clock = useClockNow()
   // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
   const { view: thisWeek, reload: reloadWeek } = useWeek('')
-  const threads = useThreads()
   const [notes, setNotes] = useState<Note[]>([])
-  // Files dropped on the day: each one uploaded, confirmed, started — then its own page.
-  const imports = useImports()
   const importRows = imports.filter((j) => j.state !== 'cancelled')
 
   // A day's own conversation is a thread whose id is the day; the day's rail lists the others.

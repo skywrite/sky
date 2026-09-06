@@ -50,6 +50,30 @@ Reminder completion: [2026-09-06 — completing a reminder deletes it](2026-09-0
 Rows grow to fit wrapped text and collapse through a grid track, with no fixed
 height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
 
+## Videos and chats in the day's record
+
+The main column lists Videos and Chats under **The day so far**, including
+when Details is closed. Video rows come from `actions/videos/`: their
+saved summary names the recording, with its time, sender, recipients, and
+platform. The row opens the notebook's video record and transcript.
+
+The Chats block and the rail use one hierarchy (`theme/client/dayChats.ts`).
+Each branch sits below its parent, at any depth, and says which turn it
+left from. Counts on branches name only their **new turns**; shared turns
+remain in the parent and are assembled when the chat opens. Saved files
+open to continue, and a live continuation replaces its saved row while
+keeping the branches below it. Parent lookup uses the live id when it is
+available and falls back to the saved path. A parent outside the day is
+still named beside the branch point.
+
+The chat store walks every level of the day's chat directory so further
+splits remain visible. Returning to the day from a chat or document reads
+the day again, bringing in newly filed videos and conversations. Changes
+to the live chat list or import state also refresh the record while it is
+open; the existing day stays visible during the read.
+
+Narrative: [2026-09-06 — videos and chat branches in the day](2026-09-06-videos-and-chat-branches.md).
+
 ## The rail
 
 A day has the Details rail a document has (`theme/client/rail.ts` holds the
@@ -72,11 +96,9 @@ scrolls; its foot is anchored.
   slot. The section heading and the blank space below its rows, before Chats, import an
   unscheduled meeting on the viewed day, with an editable suggested time;
   hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).
-- **Chats** — the chats filed under the day, with time and turn count, and
-  the live threads that started on it, marked with a dot. A branch sits
-  under the chat it left with the turn it left from. A saved chat opens as
-  a thread to continue; a live thread that continues a saved chat stands in
-  for the file.
+- **Chats** — the main column's chat hierarchy in compact rows, with time,
+  turn count, and live state. A branch names its parent and the turn it
+  left from; the main column keeps those details readable at full width.
 - **Working** — import jobs in hand: running, waiting for the person, or
   stopped where a start could pick them up, with Review or Open. A filed
   import is on the day already and leaves the rail; a file sky refused was

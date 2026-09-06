@@ -192,11 +192,6 @@
   color: var(--mantine-color-red-7);
 }
 
-/* A branch sits under the chat it left, in the rail. */
-.sky-dr-item[data-branch] .sky-dr-label {
-  padding-left: 14px;
-}
-
 /* Browse, at the File Attachments heading's right edge: a link in the page's type, not the heading's */
 .sky-rail-sec-h .sky-rail-browse {
   margin-left: auto;

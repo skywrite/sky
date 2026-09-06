@@ -32,6 +32,7 @@ entity suggestions. External artifact relationships retain their own path.
 
 ## Notes
 
+- [2026-09-06 — nested chat files and the day's shared branch hierarchy](../../../../service/handler/day/docs/2026-09-06-videos-and-chat-branches.md)
 - [2026-09-06 — conversational references become document relationships](2026-09-06-conversational-document-rel.md)
 - [2026-09-06 — one Sources list under a reply, its own and the searched pages merged](2026-09-06-one-sources-list.md)
 - [2026-09-05 — the chats folder is named once, in nbfs](../../../nbfs/docs/2026-09-05-the-chats-folder-is-named-once.md)

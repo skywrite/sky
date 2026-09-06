@@ -33,6 +33,27 @@
   color: var(--sky-dim);
 }
 
+.sky-day-chat-open {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sky-day-chat-open:hover {
+  text-decoration: underline;
+}
+
+.sky-day-chat-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+
 .sky-filed {
   display: flex;
   gap: 16px;
