@@ -109,9 +109,11 @@ brings it back. A document's rail folds the same way. The note
 button went.
 
 Most important is the day's one filled card, including its all-done state.
+The plan starts directly below the header, with 24px of top padding on
+desktop and 12px on narrow screens, without an extra introductory heading.
 The other plan sections and the day record sit directly on the page, with
-less padding and subtle dividers between neighboring sections. The group
-headings separate the plan from the record.
+less padding and subtle dividers between neighboring sections. "The day so
+far" introduces the record after the plan.
 
 `day.css` scopes these rules to the day's own blocks. `sky-day-priority`
 marks Most important explicitly, so an absent priority list never makes

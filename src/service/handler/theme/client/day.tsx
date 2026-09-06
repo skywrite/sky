@@ -749,13 +749,6 @@ export function DayView({
   const completedTasks = doneToday.length
   const totalTasks = completedTasks + tasks.filter((item) => !item.done).length
 
-  const hasPlan =
-    record !== null &&
-    (record.mostImportant.length > 0 ||
-      record.commitments.length > 0 ||
-      record.todos.length > 0 ||
-      record.reminders.length > 0 ||
-      (section !== null && (section.streaks.length > 0 || section.mostImportant.length > 0)))
   const hasDayFar =
     record !== null &&
     (record.meetings.length > 0 ||
@@ -805,8 +798,6 @@ export function DayView({
 
               {record && (
                 <>
-                  {hasPlan && <div className="sky-sect">What needs to get done</div>}
-
                   <PlanCard
                     head="Most important"
                     className="sky-day-priority"

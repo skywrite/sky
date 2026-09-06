@@ -101,7 +101,15 @@
   color: var(--sky-dim);
 }
 
+.sky-day .sky-col {
+  padding-top: 24px;
+}
+
 @media (max-width: 900px) {
+  .sky-day .sky-col {
+    padding-top: 12px;
+  }
+
   .sky-day .sky-head {
     padding-left: 14px;
     padding-right: 14px;
