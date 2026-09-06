@@ -4,7 +4,7 @@ import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
  * Build the day-relative path for a message document.
  *
  * Named `HH-MM_<medium>_<slug>.md`, using the same time prefix that
- * `actions/ai-chats/` already uses, so the directory lists in the order the
+ * the day's chats folder already uses, so the directory lists in the order the
  * day actually happened — the same order as the day file's Complete list.
  * Without the prefix the directory sorts by medium and then sender, which
  * says nothing about the shape of the day: on a thirty-message day the

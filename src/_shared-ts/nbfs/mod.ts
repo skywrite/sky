@@ -6,6 +6,8 @@ export {
 export { default as dayDir } from './dayDir.ts'
 export { default as dayFile } from './dayFile.ts'
 export { default as dayAttachmentsDir } from './dayAttachmentsDir.ts'
+export { default as dayAIChatsDir, ACTIONS_DIR, AI_CHATS_DIR } from './dayAIChatsDir.ts'
+export { default as isAIChatPath } from './isAIChatPath.ts'
 export { default as dayTimezone } from './dayTimezone.ts'
 export { default as fetchNowSync, type FetchNowOptions } from './fetchNowSync.ts'
 export { default as fetchNow } from './fetchNow.ts'

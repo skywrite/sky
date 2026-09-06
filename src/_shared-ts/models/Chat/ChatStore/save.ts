@@ -37,7 +37,7 @@ import {
   type PersonSubjectRef,
   type UnlistedPerson,
 } from '#shared/models/Person/write.ts'
-import { dayDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
@@ -282,7 +282,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // (day-file links and the chats resolver depend on the filename).
     savePath = resume.filePath
   } else {
-    const chatsDir = path.join(timeDir, dayDir(day), 'actions', 'ai-chats')
+    const chatsDir = path.join(timeDir, dayAIChatsDir(day))
     if (!(await exists(chatsDir))) {
       await mkdir(chatsDir, { recursive: true })
     }
@@ -435,7 +435,7 @@ async function logChatToDay(input: {
   if (input.resumed) return { logged: false, reason: 'resume' }
 
   try {
-    const relativePath = `actions/ai-chats/${path.basename(input.savePath)}`
+    const relativePath = `${ACTIONS_DIR}/${AI_CHATS_DIR}/${path.basename(input.savePath)}`
     const key = `${input.startTime.time} > AI Chat`
     const value = `[${input.summary}](${relativePath})`
 

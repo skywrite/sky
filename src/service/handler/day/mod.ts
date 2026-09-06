@@ -9,7 +9,7 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { exists } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
-import { dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/today.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
@@ -90,7 +90,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   const dayDirPath = path.join(options.timeDir, dayDir(day))
   const [section, saved, record] = await Promise.all([
     isToday ? buildTodaySection(options.markdownBaseDir) : null,
-    listDayChats(path.join(dayDirPath, 'actions', 'ai-chats')),
+    listDayChats(path.join(options.timeDir, dayAIChatsDir(day))),
     buildDayRecord({
       day,
       timeDir: options.timeDir,

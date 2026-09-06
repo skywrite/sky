@@ -4,7 +4,7 @@ import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
  * Build the day-relative path for a meeting document.
  *
  * Named `HH-MM_<medium>_<who>_<summary>.md`, carrying the same time prefix
- * `actions/messages/` and `actions/ai-chats/` already use, so every action
+ * `actions/messages/` and the chats folder already use, so every action
  * directory in a day lists in the order the day happened. Without it
  * `actions/meetings/` sorts by medium and then attendee — every Zoom ahead of
  * every phone call — which is the one ordering the day never happened in, and

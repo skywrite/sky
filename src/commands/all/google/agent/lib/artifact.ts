@@ -12,7 +12,7 @@ export function artifactMedium(kind?: string): string {
   return 'gdoc'
 }
 
-/** Day-relative artifact path, chronological like actions/messages and actions/ai-chats. */
+/** Day-relative artifact path, chronological like messages and chats. */
 export function docArtifactFileName(time: string, title: string, medium = 'gdoc'): string {
   const slug = slugify(title, { preserveCase: true, suggestedLength: 40 })
   return `actions/docs/${time.replace(':', '-')}_${medium}_${slug}.md`

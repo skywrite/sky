@@ -31,7 +31,7 @@ import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/mod
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { formatPersonOpLine } from '#shared/models/Person/write.ts'
-import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
@@ -208,7 +208,7 @@ export default class AiChatTask extends Command {
       '- Price data (BTC, SPY, EXOD)',
       '',
       'The conversation continues until you press Ctrl+C or submit empty input.',
-      'Chats are saved by default to the {day}/actions/ai-chats/ folder —',
+      `Chats are saved by default to the {day}/${ACTIONS_DIR}/${AI_CHATS_DIR}/ folder —`,
       'toggle saving off with Ctrl+S (or /nosave), or start ephemeral with -E.',
       'Day-file logging stays opt-in (Ctrl+L or /log).',
       'Crash insurance: every completed turn also snapshots the session under',
@@ -306,7 +306,7 @@ export default class AiChatTask extends Command {
     // recorded context universe restored, and the same file updated on exit.
     let resumeSession: ResumeSession | null = null
     if (resume) {
-      const chats = await listDayChats(path.join(timeDir, dayDir(today), 'actions', 'ai-chats'))
+      const chats = await listDayChats(path.join(timeDir, dayAIChatsDir(today)))
 
       const OLDER = '__older__'
       let filePath: string

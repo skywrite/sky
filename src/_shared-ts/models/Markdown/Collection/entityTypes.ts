@@ -7,6 +7,8 @@
  * - Type hints when creating collections
  */
 
+import { isAIChatPath } from '#shared/nbfs/mod.ts'
+
 /** Entity type for collection items */
 export type CollectionEntityType =
   | 'org'
@@ -102,7 +104,8 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/videos/'), type: 'video' },
   { pattern: (p) => p.includes('/recaps/'), type: 'recap' },
   { pattern: (p) => p.includes('/journal/'), type: 'journal' },
-  { pattern: (p) => p.includes('/ai-chats/'), type: 'chat' },
+  // Saved chats: the folder is named once, in nbfs, and the check lives beside the name.
+  { pattern: isAIChatPath, type: 'chat' },
   { pattern: (p) => p.endsWith('/day.md') || p.endsWith('/_day.md'), type: 'day' },
 ]
 

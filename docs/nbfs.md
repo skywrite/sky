@@ -69,6 +69,10 @@ and `ai:chat` all depend on it.
     ai-chats/                  # saved sky ai:chat conversations
 ```
 
+The chats folder is named once. `dayAIChatsDir(date)` builds it and `isAIChatPath(path)`
+recognises one; every writer and reader goes through those two, so renaming a kind folder
+is one string plus a notebook move.
+
 Commands write into these paths through `DayDirFileWriter`, which resolves the day
 directory, creates parents as needed, and de-duplicates a colliding filename by appending
 `-2`, `-3`, and so on. It returns the path *relative to the day directory* — which is
@@ -220,6 +224,8 @@ layout — the examples show the default:
 | `dayDir(date)` | `2026/W14/03-31` |
 | `dayFile(date)` | `2026/W14/03-31/day.md` |
 | `dayAttachmentsDir(date)` | `2026/03/31` |
+| `dayAIChatsDir(date)` | `2026/W14/03-31/actions/ai-chats` — where the day's saved chats file |
+| `isAIChatPath(path)` | Whether a path lies in a chats folder, absolute or day-relative — the collection's `chat` type asks this |
 | `parseDateFromDayPath(path)` | `PlainDate` — the inverse of `dayFile` |
 | `parseTimePath(path)` | The year, week, or day span a time-tree path covers, or `null` |
 | `toTimeRef(path)` | `YYYY-MM-DD/subpath` — a path in *any* historical layout, reduced to its identity |

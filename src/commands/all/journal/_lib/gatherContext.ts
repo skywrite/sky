@@ -34,6 +34,7 @@ import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { isAIChatPath } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData } from '../../summary/_health.ts'
 
@@ -109,7 +110,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
     if (summarizedDay) {
       // Day has a summary — only keep journals, AI chats, and the summary itself
       const rel = filePath.slice(summarizedDay.length + 1)
-      if (rel.startsWith('journal/') || rel.startsWith('actions/ai-chats/') || rel === 'summary.md') {
+      if (rel.startsWith('journal/') || isAIChatPath(rel) || rel === 'summary.md') {
         filteredPaths.add(filePath)
       }
     } else {

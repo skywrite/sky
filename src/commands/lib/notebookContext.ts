@@ -11,7 +11,7 @@ import * as path from 'node:path'
 import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayAIChatsDir, dayDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** Most-important files live under a day's most-important/ directory as
@@ -80,10 +80,10 @@ export async function readDayMostImportant(day: PlainDate): Promise<ContextFile[
   return readMatching(path.join(DIR_TIME, dayDir(day), 'most-important'), (f) => MI_FILE.test(f))
 }
 
-/** A day's AI chats: time/<day>/actions/ai-chats/*.md. The conversation rides;
+/** A day's AI chats: every .md in its chats folder. The conversation rides;
  * machine HTML comments (e.g. the CONTEXT-LOG turn record) are stripped. */
 export async function readDayChats(day: PlainDate): Promise<ContextFile[]> {
-  const files = await readMatching(path.join(DIR_TIME, dayDir(day), 'actions', 'ai-chats'), (f) => f.endsWith('.md'))
+  const files = await readMatching(path.join(DIR_TIME, dayAIChatsDir(day)), (f) => f.endsWith('.md'))
   return files.map((f) => ({ ...f, body: stripHtmlComments(f.body) }))
 }
 

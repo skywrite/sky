@@ -120,7 +120,7 @@ function classify(relPath: string): DayDocKind {
 
 /**
  * Chronological sort key in minutes. Sources, in order: an HH-MM_ filename
- * prefix (messages, ai-chats), else the first HH:MM in the `when:`
+ * prefix (messages, chats), else the first HH:MM in the `when:`
  * frontmatter — its start time (meetings).
  */
 function timeKeyOf(relPath: string, doc: Document): number {

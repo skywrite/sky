@@ -17,6 +17,7 @@ updated: 2026-09-05
 
 ## Notes
 
+- [2026-09-05 — the chats folder is named once, in nbfs](../../../nbfs/docs/2026-09-05-the-chats-folder-is-named-once.md)
 - [2026-09-05 — per-turn timing is saved before autosave, with millisecond timestamps](../../../timing/docs/README.md)
 
 - [2026-09-05 — shared timings cover complete replies and nested research](../../../timing/docs/README.md)

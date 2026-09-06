@@ -12,7 +12,7 @@
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
 import { type ContextDocRecord, splitContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayAIChatsDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** Log paths are notebook-relative — no leading slash, unlike MEMORY_PATH_SEGMENT. */
@@ -34,7 +34,7 @@ export interface MemoryUsageReport {
 
 /**
  * Scan the last `days` days of saved chats for memory-doc ships. A day with
- * no ai-chats dir contributes nothing; an unreadable chat is skipped — the
+ * no chats folder contributes nothing; an unreadable chat is skipped — the
  * telemetry is advisory and must never fail a consolidation run.
  */
 export async function gatherMemoryUsage(opts: {
@@ -47,8 +47,8 @@ export async function gatherMemoryUsage(opts: {
 
   for (let back = 0; back < opts.days; back++) {
     const day = opts.today.addDays(-back)
-    const chatsDir = path.join(opts.timeDir, dayDir(day), 'actions', 'ai-chats')
-    for await (const entry of walk(chatsDir, { includeDirs: false, exts: ['.md'] })) {
+    const dir = path.join(opts.timeDir, dayAIChatsDir(day))
+    for await (const entry of walk(dir, { includeDirs: false, exts: ['.md'] })) {
       try {
         const { entries } = splitContextLog(await readTextFile(entry.path))
         if (entries.length === 0) continue

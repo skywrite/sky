@@ -27,7 +27,7 @@ import type { QueryTruncation } from '#shared/models/DomainCollection/query/reso
 import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTypes.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
-import { parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
+import { isAIChatPath, parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
@@ -374,7 +374,7 @@ export default class ChatContext {
         // context the summary doesn't (mirrors journal:new's gatherContext)
         prevDocs.push(
           ...files.filter(
-            (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || f.path.includes('/ai-chats/'),
+            (f) => f.path.endsWith('/summary.md') || f.path.includes('/journal/') || isAIChatPath(f.path),
           ),
         )
       } else if (this.summaryBaseline && !exempt) {

@@ -7,7 +7,7 @@
  *   - goals, pending decisions, the current week's week.md, active streaks
  *   - health tracking lines (last 5 days)
  * PER DAY, last 7 days incl. today:
- *   - AI chats (actions/ai-chats/*.md)
+ *   - AI chats (the day's chats folder)
  *   - most-important files (n/MI*.md)
  *   - summary.md if it has content, else day.md
  * PER DAY, last 14 days incl. today:

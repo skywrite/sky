@@ -13,7 +13,7 @@ import type { RealtimeFunctionTool } from 'openai/resources/realtime/realtime'
 import type { CommandService } from '#commands/mod.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { toTimeRef } from '#shared/nbfs/mod.ts'
+import { AI_CHATS_DIR, toTimeRef } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 
 /** Total notebook text handed to the delegate model (~40k tokens). */
@@ -98,7 +98,7 @@ const KIND_LABELS: Record<string, string> = {
   journal: 'Journal',
   meetings: 'Meeting',
   messages: 'Message',
-  'ai-chats': 'AI chat',
+  [AI_CHATS_DIR]: 'AI chat',
   notes: 'Note',
   events: 'Event',
   decisions: 'Decision',
