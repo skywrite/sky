@@ -10,11 +10,12 @@ import {
   useRef,
   useState,
 } from 'react'
-import { type TokenUsage, usageLine } from '#universal/ai/tokenUsage.ts'
+import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
+import { ReplyDetails } from './replyDetails.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { awaitReturn, frames } from './turnStream.ts'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -1382,13 +1383,14 @@ export function TurnView({
           </div>
         )}
         {runs && runs.length > 0 && <RunList runs={runs} />}
-        {turn.usage && !streaming && (
-          <div className="sky-usage">
-            {usageLine(turn.usage, turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined)}
-          </div>
-        )}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
-        {turn.timing && !streaming && <div className="sky-usage">{turn.timing}</div>}
+        {!streaming && (
+          <ReplyDetails
+            usage={turn.usage}
+            model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
+            timing={turn.timing}
+          />
+        )}
       </div>
     </>
   )

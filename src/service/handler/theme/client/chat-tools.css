@@ -133,11 +133,102 @@
   padding: 2px 0;
 }
 
-/* What the reply cost, in tokens: dim, under the reply, in the record's voice. */
-.sky-usage {
-  margin-top: 8px;
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 12.5px;
+/* Reply metadata is quiet until opened, with the model, tokens, and time grouped inside. */
+.sky-reply-details {
+  min-width: 0;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.sky-reply-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  min-height: 32px;
+  list-style: none;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+
+.sky-reply-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sky-reply-details > summary:hover,
+.sky-reply-details[open] > summary {
+  color: var(--sky-blue-deep);
+}
+
+.sky-reply-details > summary:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.sky-reply-details[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.sky-reply-details-body {
+  max-width: 640px;
+  margin-top: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+}
+
+.sky-reply-details-body > * + * {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-reply-model {
+  margin: 0;
+}
+
+.sky-reply-model dt,
+.sky-reply-details h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sky-dim);
+}
+
+.sky-reply-model dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.sky-reply-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.sky-reply-metrics dt {
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-reply-metrics dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.sky-reply-details-note {
+  margin: 10px 0 0;
+  font-size: 12px;
   color: var(--sky-dim);
 }
 

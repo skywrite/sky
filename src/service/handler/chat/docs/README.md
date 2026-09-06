@@ -146,11 +146,13 @@ a person can see and touch:
   turn's steps and approval rounds; the session puts it on the turn report
   and the turn's context-log entry (`usage`). The routes keep each reply's
   counts with the thread (`usage` on `GET /chat/:id`, by turn index) and
-  send them on the `turn` frame with the profile that answered; the page
-  shows one dim line under the reply — `312k in · 298k from cache · 4.1k
-  out · Claude Opus 5` — and the terminal prints the same after each
-  reply. Every model call also lands in the usage log, under the command
-  making it; `sky ai:usage` rolls the day up
+  send them on the `turn` frame with the profile that answered. The page
+  keeps the model, token usage, and timing under **Reply details**, closed
+  by default beneath each completed reply. Opening it shows labeled
+  values grouped into Tokens and Time; cached input is identified as part
+  of total input. Errors remain visible beside the reply. The terminal
+  prints its usage line after each reply. Every model call also lands in
+  the usage log, under the command making it; `sky ai:usage` rolls the day up
   ([2026-09-05](../../../_shared-ts/ai/docs/2026-09-05-usage-meter.md)).
 - **Whether the thread is kept.** `Saves to today ▾` sits with the model and
   the budget, two stops: saves to today, or not saved. Set before the first
