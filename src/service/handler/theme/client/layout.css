@@ -40,14 +40,18 @@ body {
 
 .sky-side-top {
   display: flex;
+  flex: none;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 14px;
+  gap: 4px;
+  padding: 14px 10px 22px;
 }
 
 .sky-brand {
-  font-weight: 650;
-  font-size: 18px;
+  font-weight: 750;
+  font-size: 40px;
+  line-height: 1.05;
+  letter-spacing: -0.05em;
 }
 
 /* The sidebar is a flex column that scrolls; the button is the one child that
@@ -232,11 +236,6 @@ a.sky-thread {
   .sky-side[data-open='true'] {
     transform: none;
     box-shadow: 12px 0 32px rgba(0, 0, 0, 0.14);
-  }
-
-  /* the brand row makes room for the menu button that floats over it */
-  .sky-side-top {
-    padding-left: 46px;
   }
 
   .sky-menu {

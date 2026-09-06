@@ -1,6 +1,6 @@
 /* ============ clock — notebook time against the world's ============ */
 
-/* the ambient clock beside the brand — the way into /clock */
+/* the ambient clock below the brand — the way into /clock */
 .sky-ambient {
   display: block;
   margin: 0;
@@ -9,11 +9,11 @@
   background: none;
   border-radius: 8px;
   font-family: var(--mantine-font-family);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
   color: var(--sky-dim);
-  text-align: right;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -27,8 +27,7 @@
 }
 
 .sky-ambient b {
-  font-weight: 600;
-  color: var(--sky-text);
+  font-weight: 500;
 }
 
 .sky-ambient-warn {

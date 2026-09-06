@@ -70,8 +70,10 @@ Document prose, headings, and table headings inherit the app's system
 sans-serif family in both reading and editing. Code and markdown syntax
 retain their monospace font.
 
-The sidebar clock also uses the app's sans-serif family, with tabular
-digits so changing the time does not shift the digits around.
+The sidebar centers a 40px sky wordmark above a muted 12px clock. Both use
+the app's sans-serif family. The clock keeps tabular digits so changing
+the time does not shift the digits around, with the system-time warning
+on a second centered line when it differs from notebook time.
 
 The shell's 18px UI base stays separate so navigation, buttons, metadata,
 and the user's appearance setting keep their existing scale. Explorer's
