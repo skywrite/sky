@@ -372,7 +372,7 @@ test(
   async (t) => {
     await runWysiwygE2e(
       t,
-      { initialMarkdown: DOC, tempPrefix: 'wysiwyg-rail-files-', file: DAY_DOC, files: PEOPLE, store: true },
+      { initialMarkdown: DOC, tempPrefix: 'wysiwyg-rail-files-', file: DAY_DOC, files: PEOPLE, store: true, day: true },
       async ({ page, origin, file, relativePath, userDataDir, downloads, errors }) => {
         await page.setViewportSize({ width: 1400, height: 900 })
         await openEditor(page, origin, relativePath)
@@ -467,6 +467,97 @@ test(
             DOC.replace(listed(''), listed(chart + notes)),
             [],
           ],
+        })
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'rail — attachment groups use every note in the day, while selection belongs to this document',
+    timeout: 40000,
+  },
+  async (t) => {
+    const otherNote = path.posix.join(path.posix.dirname(DAY_DOC), 'notes', 'review.md')
+    const nextDayNote = path.posix.join('time', dayDir(new PlainDate('2026-08-06')), 'review.md')
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: DOC,
+        tempPrefix: 'wysiwyg-rail-file-groups-',
+        file: DAY_DOC,
+        files: {
+          [otherNote]: '---\nattachments:\n  - file: a-other.pdf\n---\n\n# Budget review\n',
+          [nextDayNote]: '---\nattachments:\n  - file: z-other-day.png\n---\n\n# Next review\n',
+        },
+        store: true,
+        day: true,
+      },
+      async ({ page, origin, relativePath, userDataDir, errors }) => {
+        const dayFilesDir = path.join(userDataDir, 'attachments', dayAttachmentsDir(DAY))
+        await mkdir(dayFilesDir, { recursive: true })
+        for (const name of ['a-other.pdf', 'report.pdf', 'z-other-day.png', 'z-recording.mp4']) {
+          await writeFile(path.join(dayFilesDir, name), `Mock bytes for ${name}`)
+        }
+        await page.setViewportSize({ width: 1400, height: 900 })
+        await openEditor(page, origin, relativePath)
+        const openPicker = async () => {
+          await page.click('.sky-rail-choose')
+          await page.waitForSelector('.sky-attach-row')
+        }
+        await openPicker()
+        const groups = await page.evaluate(() =>
+          [...document.querySelectorAll('.sky-attach-group')].map((group) => ({
+            title: group.getAttribute('aria-label'),
+            count: group.querySelector('.sky-attach-count')?.textContent,
+            files: [...group.querySelectorAll('.sky-attach-row')].map((row) => {
+              const input = row.querySelector('input')!
+              return {
+                name: row.querySelector('.sky-attach-name')?.textContent,
+                note: row.querySelector('.sky-attach-note')?.textContent ?? null,
+                checked: input.checked,
+                disabled: input.disabled,
+              }
+            }),
+          })),
+        )
+        assert({
+          given:
+            'a current attachment, one referenced by a nested note today, two loose files, and a reference tomorrow',
+          should: 'put files no note today references first, and allow selecting the file attached to another note',
+          actual: groups,
+          expected: [
+            {
+              title: 'Not Attached',
+              count: '2',
+              files: [
+                { name: 'z-other-day.png', note: null, checked: false, disabled: false },
+                { name: 'z-recording.mp4', note: null, checked: false, disabled: false },
+              ],
+            },
+            {
+              title: 'Attached',
+              count: '2',
+              files: [
+                { name: 'a-other.pdf', note: 'Attached to Budget review', checked: false, disabled: false },
+                { name: 'report.pdf', note: null, checked: true, disabled: true },
+              ],
+            },
+          ],
+        })
+        await page.getByRole('checkbox', { name: 'a-other.pdf', exact: true }).check()
+        await page.getByRole('checkbox', { name: 'z-recording.mp4', exact: true }).check()
+        await page.getByRole('button', { name: 'Add 2 files', exact: true }).click()
+        await waitForAutosave(page)
+        await openPicker()
+        const counts = await page.locator('.sky-attach-count').allTextContents()
+        const attached = await page.locator('.sky-attach-row[data-listed] .sky-attach-name').allTextContents()
+        assert({
+          given: 'a loose recording and a file attached to another note added to this document',
+          should: 'leave the remaining loose file first and mark all three current attachments checked and disabled',
+          actual: [counts, attached, await page.locator('.sky-attach-row input:checked:disabled').count(), errors],
+          expected: [['1', '3'], ['a-other.pdf', 'report.pdf', 'z-recording.mp4'], 3, []],
         })
       },
     )

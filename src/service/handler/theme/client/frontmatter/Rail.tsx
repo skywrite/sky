@@ -190,6 +190,7 @@ export function DocumentRail({
           {canAttach ? (
             <AttachFiles
               file={file}
+              day={day}
               listed={files.flatMap((r) => (Array.isArray(r.value) ? r.value : []))}
               onAdd={(name) => state.update((body) => addAttachment(body, name))}
               onRemove={(name) => state.update((body) => removeAttachment(body, name))}

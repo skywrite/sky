@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -180,6 +180,9 @@ A path inside the day's files is clean segments only (`cleanRelativePath`):
 no way up, nothing hidden. The `listedBy` mark comes from reading the day's
 notes for their `attachments:` (the routes are given the notebook's time
 root for it; without one, nothing is marked).
+
+The document attachment picker shares these marks; see the
+[Explorer design](../../explorer/docs/README.md) for its grouping and selection rules.
 
 `files.ts` holds the routes. The look, the move, the undo and the directory
 listing live in `../attachments/keep.ts`, shared with a document's

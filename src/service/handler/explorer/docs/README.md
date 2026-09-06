@@ -33,6 +33,16 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   way in from this Mac; a brought-in file's original moves in when this
   Mac has it — see `2026-09-02-add-a-file-from-the-rail.md`.
 
+The Add files dialog puts **Not Attached** first and **Attached** below it,
+with a count in each heading and alphabetical order within each section.
+For a day document, Not Attached means no note in that day references the
+file: the dialog uses the same `readListing` response and `listedBy` marks
+as the day's Files page. Files attached elsewhere show the referring note
+and remain selectable; only files already on the current document are
+checked and disabled. Local additions count as attached before autosave.
+Other documents use their own attachment list. Headings stay visible while
+scrolling their section. See `2026-09-06-attachment-groups-use-the-whole-day.md`.
+
 ## The rules it lives by
 
 - Nothing walks the whole notebook: a directory is listed when it is

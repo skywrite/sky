@@ -192,6 +192,37 @@
   margin: 0 -8px;
 }
 
+.sky-attach-group + .sky-attach-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-attach-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  background: var(--sky-bg);
+  color: var(--sky-text-2);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.sky-attach-count {
+  color: var(--sky-dim);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-attach-group > .sky-attach-empty {
+  padding: 8px;
+}
+
 .sky-attach-row {
   display: flex;
   align-items: center;
@@ -211,10 +242,21 @@
   cursor: default;
 }
 
-.sky-attach-name {
+.sky-attach-description {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.sky-attach-name,
+.sky-attach-note {
+  display: block;
+}
+
+.sky-attach-note {
+  margin-top: 2px;
+  color: var(--sky-dim);
+  font-size: 14px;
 }
 
 .sky-attach-empty {

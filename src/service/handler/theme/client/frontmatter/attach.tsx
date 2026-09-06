@@ -9,6 +9,7 @@
 import { Button, Checkbox, Drawer, FileButton, Modal } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { type DragEvent, useEffect, useState } from 'react'
+import { type DayFile, readListing } from '../files.tsx'
 import { type ListedFile, type Locate, type Located, post, sizeLabel, uploadBytes } from '../keep.ts'
 
 /** What adding did — the note's words, and what Undo reverses. */
@@ -25,8 +26,9 @@ function api(route: 'attach' | 'attach-locate' | 'attach-move', file: string): s
   return `/docs/_api/${route}/${file.split('/').map(encodeURIComponent).join('/')}`
 }
 
-/** The files beside the document, as the service lists its directory. */
-export async function listBeside(doc: string): Promise<ListedFile[]> {
+/** Day documents share the Files page's listing, including references from every note in the day. */
+export async function listBeside(doc: string, day?: string | null): Promise<DayFile[]> {
+  if (day) return (await readListing(day)).files
   const r = await fetch(api('attach', doc))
   const body = (await r.json().catch(() => ({}))) as { files?: ListedFile[]; message?: string }
   if (!r.ok) throw new Error(body.message ?? `${r.status}`)
@@ -99,11 +101,12 @@ function extChip(file: ListedFile): string {
 }
 
 /**
- * The dialog behind "choose files…": what is beside the document already, the listed ones
- * marked, the rest there to tick — and a way in from this Mac. A sheet on a phone.
+ * The dialog behind "choose files…": files no note in the day attaches come first,
+ * then files attached anywhere in the day. Only this document's files are disabled.
  */
 function AttachDialog({
   file,
+  day,
   listed,
   opened,
   onClose,
@@ -111,6 +114,7 @@ function AttachDialog({
   onBring,
 }: {
   file: string
+  day?: string | null
   /** The names the document lists already */
   listed: string[]
   opened: boolean
@@ -121,7 +125,7 @@ function AttachDialog({
   onBring: (files: File[]) => void
 }) {
   const phone = useMediaQuery('(max-width: 900px)') ?? false
-  const [beside, setBeside] = useState<ListedFile[] | null>(null)
+  const [beside, setBeside] = useState<DayFile[] | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   useEffect(() => {
@@ -130,7 +134,7 @@ function AttachDialog({
     setBeside(null)
     setPicked(new Set())
     setProblem(null)
-    listBeside(file)
+    listBeside(file, day)
       .then((files) => alive && setBeside(files))
       .catch((err: Error) => {
         if (!alive) return
@@ -140,7 +144,7 @@ function AttachDialog({
     return () => {
       alive = false
     }
-  }, [opened, file])
+  }, [opened, file, day])
   const toggle = (name: string) =>
     setPicked((previous) => {
       const next = new Set(previous)
@@ -148,6 +152,11 @@ function AttachDialog({
       else next.add(name)
       return next
     })
+  const attachedNames = new Set([...listed, ...(beside ?? []).filter((f) => f.listedBy).map((f) => f.name)])
+  const groups = [
+    { title: 'Not Attached', attached: false, files: beside?.filter((f) => !attachedNames.has(f.name)) ?? [] },
+    { title: 'Attached', attached: true, files: beside?.filter((f) => attachedNames.has(f.name)) ?? [] },
+  ]
   const body = (
     <div className={`sky-confirm sky-attach-dialog${phone ? ' sky-sheet' : ''}`}>
       {phone ? <div className="sky-sheet-handle" /> : null}
@@ -158,22 +167,41 @@ function AttachDialog({
         <p className="sky-attach-empty">Nothing beside the document yet.</p>
       ) : (
         <div className="sky-attach-list">
-          {beside.map((f) => {
-            const on = listed.includes(f.name)
-            return (
-              <label key={f.name} className="sky-attach-row" data-listed={on ? '' : undefined}>
-                <Checkbox
-                  checked={on || picked.has(f.name)}
-                  disabled={on}
-                  onChange={() => toggle(f.name)}
-                  aria-label={f.name}
-                />
-                <span className="sky-file-ext">{extChip(f)}</span>
-                <span className="sky-attach-name">{f.name}</span>
-                <span className="sky-file-size">{on ? 'listed' : sizeLabel(f.size)}</span>
-              </label>
-            )
-          })}
+          {groups.map(({ title, attached, files }) =>
+            attached && files.length === 0 ? null : (
+              <section key={title} className="sky-attach-group" aria-label={title}>
+                <h3 className="sky-attach-group-title">
+                  {title}
+                  <span className="sky-attach-count">{files.length}</span>
+                </h3>
+                {files.length === 0 ? (
+                  <p className="sky-attach-empty">All files here are already attached.</p>
+                ) : (
+                  files.map((f) => {
+                    const on = listed.includes(f.name)
+                    return (
+                      <label key={f.name} className="sky-attach-row" data-listed={on ? '' : undefined}>
+                        <Checkbox
+                          checked={on || picked.has(f.name)}
+                          disabled={on}
+                          onChange={() => toggle(f.name)}
+                          aria-label={f.name}
+                        />
+                        <span className="sky-file-ext">{extChip(f)}</span>
+                        <span className="sky-attach-description">
+                          <span className="sky-attach-name">{f.name}</span>
+                          {!on && f.listedBy ? (
+                            <span className="sky-attach-note">Attached to {f.listedBy.title}</span>
+                          ) : null}
+                        </span>
+                        <span className="sky-file-size">{on ? 'Attached' : sizeLabel(f.size)}</span>
+                      </label>
+                    )
+                  })
+                )}
+              </section>
+            ),
+          )}
         </div>
       )}
       {problem ? <p className="sky-rail-problem">{problem}</p> : null}
@@ -206,7 +234,7 @@ function AttachDialog({
         radius="lg"
         styles={{
           inner: { alignItems: 'flex-end' },
-          content: { height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
+          content: { width: '100%', height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
         }}
       >
         {body}
@@ -228,12 +256,14 @@ const NOTE_MS = 8000
  */
 export function AttachFiles({
   file,
+  day,
   listed,
   onAdd,
   onRemove,
 }: {
   /** The document's notebook path */
   file: string
+  day?: string | null
   /** The names the document lists already */
   listed: string[]
   /** A file is beside the document now: list it */
@@ -339,6 +369,7 @@ export function AttachFiles({
       ) : null}
       <AttachDialog
         file={file}
+        day={day}
         listed={listed}
         opened={dialog}
         onClose={() => setDialog(false)}
