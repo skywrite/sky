@@ -85,6 +85,18 @@ full `YYYY-MM-DD` available on hover and in its semantic `time` element.
 The compact display comes directly from the day key, without converting
 it through a timezone. Navigation still uses the full date.
 
+Below the day's heading, a muted task count uses the existing Done today
+record for completed work and adds open Most important, Commitments, and
+To-dos to the total. Reminders and streaks stay separate. The count follows
+the saved view after completion, deletion, or Undo, and is hidden when the
+day has no tasks.
+
+The header lives inside the day column and shares its 1000px maximum width
+and side padding. The date and progress align with the content's left edge;
+Details aligns with its right edge as the rail opens or closes. On phones,
+the controls sit above the full date and progress so the menu button does
+not push the heading away from the content.
+
 A small page icon right after the date opens the day file. The words "Day
 file" stay as its hover hint and accessible name, so Details is the header's
 one button. The note `2026-09-05-the-day-file-becomes-an-icon.md` tells why

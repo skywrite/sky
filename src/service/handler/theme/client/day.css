@@ -64,6 +64,17 @@
   position: relative;
 }
 
+.sky-day .sky-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 3px;
+  max-width: 1000px;
+}
+
+.sky-day .sky-tabs {
+  grid-area: 1 / 2;
+}
+
 /* The date carries the day file as a small icon; the label is a hover hint. */
 .sky-day .sky-title {
   display: flex;
@@ -80,6 +91,30 @@
 
 .sky-day .sky-day-file:hover {
   color: var(--sky-text);
+}
+
+.sky-day-progress {
+  grid-column: 1 / -1;
+  font-size: 14px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--sky-dim);
+}
+
+@media (max-width: 900px) {
+  .sky-day .sky-head {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .sky-day .sky-title {
+    grid-area: 2 / 1 / auto / -1;
+    white-space: normal;
+  }
+
+  .sky-day .sky-tabs {
+    grid-area: 1 / 1 / auto / -1;
+  }
 }
 
 /* Most important is the day's one card. The other sections share the page. */

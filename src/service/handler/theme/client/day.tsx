@@ -734,6 +734,7 @@ export function DayView({
   const isToday = view ? view.day.ymd === view.today.ymd : false
   // The day file's directory: the items in it link to files from there.
   const at = view?.day.dayRelativePath ? view.day.dayRelativePath.split('/').slice(0, -1).join('/') : ''
+  const tasks = record ? [...record.mostImportant, ...record.commitments, ...record.todos] : []
 
   // What got done, wherever it was promised: struck plan items join the Complete
   // lists. A struck plan item can be put back (its list still holds it); a
@@ -741,11 +742,11 @@ export function DayView({
   const doneToday: Array<{ item: DayItem; undoable: boolean }> = record
     ? [
         ...record.done.map((item) => ({ item, undoable: false })),
-        ...[...record.mostImportant, ...record.commitments, ...record.todos]
-          .filter((i) => i.done)
-          .map((item) => ({ item, undoable: true })),
+        ...tasks.filter((i) => i.done).map((item) => ({ item, undoable: true })),
       ].sort((a, b) => (minutesOf(a.item.time) ?? NO_TIME) - (minutesOf(b.item.time) ?? NO_TIME))
     : []
+  const completedTasks = doneToday.length
+  const totalTasks = completedTasks + tasks.filter((item) => !item.done).length
 
   const hasPlan =
     record !== null &&
@@ -764,39 +765,44 @@ export function DayView({
 
   return (
     <div className="sky-main sky-day">
-      <header className="sky-head">
-        <span className="sky-title">
-          {view?.day.dateLabel ?? 'Today'}
-          {view?.day.dayRelativePath && (
-            <ActionIcon
-              component="a"
-              href={fileHref(view.day.dayRelativePath)}
-              size="sm"
-              radius="sm"
-              className="sky-day-file"
-              aria-label="Day file"
-              title="Day file"
-            >
-              <DayFileIcon />
-            </ActionIcon>
-          )}
-        </span>
-        <nav className="sky-tabs">
-          <Button
-            size="sm"
-            variant={rail.open ? 'light' : 'subtle'}
-            disabled={!view}
-            onClick={rail.toggle}
-            data-active={rail.open}
-            aria-pressed={rail.open}
-          >
-            Details
-          </Button>
-        </nav>
-      </header>
-
       <div className="sky-split">
         <div className="sky-split-main">
+          <header className="sky-head">
+            <span className="sky-title">
+              {view?.day.dateLabel ?? 'Today'}
+              {view?.day.dayRelativePath && (
+                <ActionIcon
+                  component="a"
+                  href={fileHref(view.day.dayRelativePath)}
+                  size="sm"
+                  radius="sm"
+                  className="sky-day-file"
+                  aria-label="Day file"
+                  title="Day file"
+                >
+                  <DayFileIcon />
+                </ActionIcon>
+              )}
+            </span>
+            {totalTasks > 0 && (
+              <span className="sky-day-progress" role="status" aria-atomic="true">
+                {completedTasks} of {count(totalTasks, 'task')} complete
+              </span>
+            )}
+            <nav className="sky-tabs">
+              <Button
+                size="sm"
+                variant={rail.open ? 'light' : 'subtle'}
+                disabled={!view}
+                onClick={rail.toggle}
+                data-active={rail.open}
+                aria-pressed={rail.open}
+              >
+                Details
+              </Button>
+            </nav>
+          </header>
+
           <div className="sky-scroll" ref={scrollRef}>
             <div className="sky-col">
               {notes.map((note, i) => (
