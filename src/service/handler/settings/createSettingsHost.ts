@@ -9,6 +9,7 @@ import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
+import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
   type ModelRow,
   PROVIDER_LABEL,
@@ -36,7 +37,7 @@ function aboutBuild(): Promise<{ version: string | null; date: string | null }> 
   return build
 }
 
-/** The settings page over the real machine: the file, the keychainless preferences, git, Finder. */
+/** The settings page over the real machine: the file, the preferences, the keychain, git, Finder. */
 export function createSettingsHost(): SettingsRoutesOptions {
   return {
     load: () => ({
@@ -93,6 +94,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
       setConfigValue([...SETTABLE_KEYS[key]], value)
       return Promise.resolve()
     },
+    connections: createConnectionsHost(),
     reveal: async (target: RevealTarget) => {
       if (process.platform !== 'darwin') throw new Error('Reveal works on macOS only for now.')
       const config = loadSkyConfig()

@@ -4,7 +4,9 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import {
   AccountResolutionError,
+  GOOGLE_CLOUD_SETUP_STEPS,
   GOOGLE_SCOPES,
+  GOOGLE_UNVERIFIED_APP_NOTE,
   buildAuthUrl,
   deleteAccountTokens,
   exchangeCode,
@@ -36,24 +38,18 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-const SETUP_WALKTHROUGH = `
-One-time Google Cloud setup (~10 minutes, once ever)
-
-  1. https://console.cloud.google.com — create a project (e.g. "sky")
-  2. APIs & Services > Library — enable four APIs:
-     Google Drive API, Google Docs API, Google Sheets API, Google Slides API
-  3. APIs & Services > OAuth consent screen — External, app name "sky",
-     your email. Save. Skip every optional field; add no scopes here.
-  4. Publish the app to Production (testing status expires refresh tokens
-     after 7 days).
-  5. Credentials > Create credentials > OAuth client ID — type "Desktop app".
-  6. Run sky google:auth and paste the client ID and secret when prompted.
-     They are stored in the OS keychain (google/client), never in files.
-
-Authorizing an account shows Google's "unverified app" warning once —
-Advanced > Continue is expected for your own client. Repeat sky google:auth
-for each additional Google account.
-`
+const SETUP_WALKTHROUGH = [
+  '',
+  'One-time Google Cloud setup (~10 minutes, once ever)',
+  '',
+  ...GOOGLE_CLOUD_SETUP_STEPS.map((step, index) => `  ${index + 1}. ${step}`),
+  `  ${GOOGLE_CLOUD_SETUP_STEPS.length + 1}. Run sky google:auth and paste the client ID and secret when prompted.`,
+  '     They are stored in the OS keychain (google/client), never in files.',
+  '',
+  GOOGLE_UNVERIFIED_APP_NOTE,
+  'Repeat sky google:auth for each additional Google account.',
+  '',
+].join('\n')
 
 export default class GoogleAuthTask extends Command {
   static override description: CommandDescription = {

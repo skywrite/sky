@@ -1,5 +1,5 @@
-import { type AgentSlackAuthStatus, parseAuthTest } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
-import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
+import type { AgentSlackAuthStatus } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
+import { IMPORT_REQUIREMENTS, reimportSlackFromBrave, slackAuthStatus } from '#commands/all/slack/lib/authStatus.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { SLACK_WORKSPACE } from '#config'
@@ -27,13 +27,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
     }
   }
 }
-
-const IMPORT_REQUIREMENTS = [
-  'Importing browser credentials requires:',
-  '  - Brave running with a logged-in Slack tab for your workspace',
-  '  - Brave: View → Developer → Allow JavaScript from Apple Events enabled',
-  'Using another browser? Run agent-slack auth import-chrome / import-firefox / import-desktop directly.',
-].join('\n')
 
 export default class SlackAuthCommand extends Command {
   static override description: CommandDescription = {
@@ -63,7 +56,7 @@ export default class SlackAuthCommand extends Command {
       output.log('Set it via sky init, or add `"slack": { "workspace": "https://yourteam.slack.com" }` to the config.')
     }
 
-    const status = await testAuth()
+    const status = await slackAuthStatus()
     if (status.ok) {
       logStatus(output, status, { repaired: false })
       return CommandResult.success({
@@ -82,14 +75,11 @@ export default class SlackAuthCommand extends Command {
     }
 
     output.log(`Slack credentials invalid (${status.error}) — re-importing from Brave...`)
-    const imported = await runAgentSlack(['auth', 'import-brave'])
-    if (!imported.success) {
-      const detail = (imported.stderr.trim() || imported.stdout.trim() || `exit code ${imported.code}`).trim()
-      return CommandResult.fail(`agent-slack auth import-brave failed: ${detail}\n${IMPORT_REQUIREMENTS}`)
-    }
-    if (imported.stdout.trim()) output.log(imported.stdout.trim())
+    const imported = await reimportSlackFromBrave()
+    if (!imported.ok) return CommandResult.fail(imported.error)
+    if (imported.output) output.log(imported.output)
 
-    const retested = await testAuth()
+    const retested = await slackAuthStatus()
     if (!retested.ok) {
       return CommandResult.fail(`Credentials still invalid after re-import: ${retested.error}\n${IMPORT_REQUIREMENTS}`)
     }
@@ -103,12 +93,6 @@ export default class SlackAuthCommand extends Command {
       user: retested.user,
     })
   }
-}
-
-async function testAuth(): Promise<AgentSlackAuthStatus> {
-  const testArgs = ['auth', 'test', ...(SLACK_WORKSPACE ? ['--workspace', SLACK_WORKSPACE] : [])]
-  const result = await runAgentSlack(testArgs)
-  return parseAuthTest(result.stdout, result.stderr)
 }
 
 function logStatus(

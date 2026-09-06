@@ -296,3 +296,47 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── connections: what a grant covers, a quiet state, the sign-in wait, the setup steps ── */
+.sky-set-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.sky-set-chip {
+  font-size: 13px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-set-off {
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+.sky-set-wait {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+
+.sky-set-wait a {
+  color: var(--sky-blue-deep);
+}
+
+.sky-set-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 4px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}

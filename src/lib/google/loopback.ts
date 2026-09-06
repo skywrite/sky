@@ -5,7 +5,7 @@ const CALLBACK_PATH = '/oauth/callback'
 
 const RESPONSE_HTML = `<!doctype html><title>Sky</title>
 <body style="font-family: system-ui; display: flex; justify-content: center; margin-top: 20vh;">
-  <p>Authorized — you can close this tab and return to the terminal.</p>`
+  <p>Authorized — you can close this tab and return to Sky.</p>`
 
 export interface LoopbackServer {
   redirectUri: string

@@ -17,6 +17,8 @@ export type { OAuthClient, PkcePair, TokenResponse } from './oauth.ts'
 export { startLoopback } from './loopback.ts'
 export type { LoopbackServer } from './loopback.ts'
 
+export { GOOGLE_CLOUD_SETUP_STEPS, GOOGLE_UNVERIFIED_APP_NOTE } from './setup.ts'
+
 export {
   CLIENT_ENTRY_NAME,
   GOOGLE_SECRETS_CATEGORY,

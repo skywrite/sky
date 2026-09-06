@@ -1,11 +1,12 @@
 /**
  * Settings — the app's preferences as a page, one section at a time.
  *
- * The page is mainstream-shaped: Appearance, Voice, AI, Notebook,
- * Advanced, About. What a person changes here is written back to
- * ~/.sky/config.jsonc (comments preserved); what is shown is read fresh
- * on every request. Connections — accounts and API keys — is deferred
- * until the keychain rung.
+ * The page is mainstream-shaped: Appearance, Voice, AI, Connections,
+ * Notebook, Advanced, About. What a person changes here is written back
+ * to ~/.sky/config.jsonc (comments preserved); what is shown is read
+ * fresh on every request. Connections — accounts and keys — is the
+ * keychain's page, in connections.ts: presence in, presence out, never
+ * a value.
  *
  * Advanced keeps the earlier configuration view: every key with its
  * value and where it came from — the file, a default, or an environment
@@ -16,6 +17,7 @@ import { Hono } from 'hono'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
+import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
 
 // ── The configuration view (the Advanced pane) ──────────────────────
 
@@ -274,6 +276,8 @@ export interface SettingsHost {
   write: (key: SettableKey, value: string) => Promise<void>
   /** Opens a folder, or the config file, on this machine */
   reveal: (target: RevealTarget) => Promise<void>
+  /** Accounts and keys over the keychain; absent, /connections is not served */
+  connections?: ConnectionsHost
 }
 
 export type SettingsRoutesOptions = SettingsHost
@@ -335,6 +339,9 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
 
 export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   const app = new Hono()
+
+  // Accounts and keys — the keychain's page, routes of its own.
+  if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))
 
   // Everything the page shows, read afresh per request.
   app.get('/settings', async (c) => {
@@ -512,6 +519,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
   ollama: 'Ollama',
   'lm-studio': 'LM Studio',
+  cerebras: 'Cerebras',
 }
 
 export const ROLE_LABEL: Record<string, string> = {

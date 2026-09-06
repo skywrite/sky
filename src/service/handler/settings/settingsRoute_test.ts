@@ -1,3 +1,5 @@
+import { createSecret } from '#lib/secrets/marshal.ts'
+import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -339,6 +341,39 @@ test({ name: 'settings route - deleting removes yours and refuses the built-ins'
     should: 'remove the first, refuse the others',
     actual: [gone.status, builtin.status, unknown.status, withOwn.profileDeletes],
     expected: [200, 400, 404, ['scout']],
+  })
+})
+
+test({ name: 'settings route - connections ride along when the host has a keychain' }, async () => {
+  const { host } = hostWith()
+  const bare = await appWith(host)
+  const missing = await bare.request('http://localhost/settings/_api/connections')
+
+  const secrets = new TestSecretsProvider({ 'notion/main': createSecret('ntn-secret') })
+  const app = await appWith({
+    ...host,
+    connections: {
+      secrets,
+      providers: () => [],
+      google: { connect: () => Promise.resolve(null), connection: () => null },
+      slack: {
+        status: () => Promise.resolve({ installed: false }),
+        reconnect: () => Promise.resolve({ installed: false }),
+      },
+    },
+  })
+  const response = await app.request('http://localhost/settings/_api/connections')
+  const text = await response.text()
+  assert({
+    given: 'a settings host without, then with, a connections host',
+    should: '404 the first and answer the second with names only',
+    actual: [
+      missing.status,
+      response.status,
+      (JSON.parse(text) as { secrets: unknown }).secrets,
+      text.includes('ntn-secret'),
+    ],
+    expected: [404, 200, [{ category: 'notion', name: 'main', type: 'secret', label: 'notion', sub: 'Secret' }], false],
   })
 })
 

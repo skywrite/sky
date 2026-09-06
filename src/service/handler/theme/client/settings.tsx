@@ -6,12 +6,14 @@
  * ~/.sky/config.jsonc through the service and applied on the spot:
  * theme and text size to this page, the voice to the next call. The
  * Advanced pane keeps the whole file readable — every key, its value,
- * and where it came from. Accounts and API keys arrive with the
- * keychain rung.
+ * and where it came from. Connections is the keychain's page — accounts
+ * and keys, presence only — in settingsConnections.tsx.
  */
 
 import { Button, SegmentedControl, Select, Textarea, TextInput, useMantineColorScheme } from '@mantine/core'
-import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
+import { ConnectionsPane } from './settingsConnections.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
 import './settings.css'
@@ -79,6 +81,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'voice', label: 'Voice' },
   { id: 'ai', label: 'AI' },
+  { id: 'connections', label: 'Connections' },
   { id: 'notebook', label: 'Notebook' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'about', label: 'About' },
@@ -99,8 +102,6 @@ export function settingsHref(section: SettingsSection): string {
 
 // ── Talking to the service ──────────────────────────────────────────
 
-const UNREACHABLE = "Couldn't reach sky — is the service running?"
-
 /** One preference into the file. Resolves to null, or to what went wrong. */
 export async function saveSetting(key: string, value: string): Promise<string | null> {
   const r = await fetch('/settings/_api/set', {
@@ -108,10 +109,7 @@ export async function saveSetting(key: string, value: string): Promise<string | 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key, value }),
   }).catch(() => null)
-  if (!r) return UNREACHABLE
-  if (r.ok) return null
-  const body = (await r.json().catch(() => ({}))) as { message?: string }
-  return body.message ?? `The service answered ${r.status}.`
+  return refusalOf(r)
 }
 
 function reveal(target: 'dir' | 'userDataDir' | 'config'): void {
@@ -184,34 +182,6 @@ function useSettings() {
 
   return { data, note, change, reload }
 }
-
-// ── Building blocks ─────────────────────────────────────────────────
-
-function Block({ head, note, children }: { head?: string; note?: string; children: ReactNode }) {
-  return (
-    <div className="sky-block">
-      {head && <div className="sky-block-head">{head}</div>}
-      <div className="sky-block-pad">
-        {note && <p className="sky-set-note">{note}</p>}
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, sub, children, last }: { label: string; sub?: string; children?: ReactNode; last?: boolean }) {
-  return (
-    <div className="sky-set-row" data-last={last}>
-      <div className="sky-set-txt">
-        <div>{label}</div>
-        {sub && <div className="sky-set-sub">{sub}</div>}
-      </div>
-      <div className="sky-set-ctl">{children}</div>
-    </div>
-  )
-}
-
-const mono = (text: string) => <span className="sky-set-mono">{text}</span>
 
 // ── Hear a voice: the audition's call, one row at a time ────────────
 
@@ -891,6 +861,8 @@ export function SettingsMain({
               <VoicePane data={data} change={change} />
             ) : section === 'ai' ? (
               <AIPane data={data} reload={reload} />
+            ) : section === 'connections' ? (
+              <ConnectionsPane />
             ) : section === 'notebook' ? (
               <NotebookPane data={data} change={change} />
             ) : section === 'advanced' ? (
