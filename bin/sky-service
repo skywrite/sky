@@ -29,14 +29,28 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 SKY_ROOT="$SCRIPT_DIR/.."
 
-# Log directory and timestamped files
+# Log directory; each start of the service gets its own timestamped pair
 LOG_DIR="/tmp/sky-service"
 mkdir -p "$LOG_DIR"
-TIMESTAMP=$(date +"%Y-%m-%dT%H-%M-%S")
-STDOUT_LOG="$LOG_DIR/$TIMESTAMP.stdout.log"
-STDERR_LOG="$LOG_DIR/$TIMESTAMP.stderr.log"
-
-echo "Sky service logs: $STDOUT_LOG"
 
 cd "$SKY_ROOT/src"
-bun --env-file=.env run --watch commands/all/service/start.ts > "$STDOUT_LOG" 2> "$STDERR_LOG"
+
+# The service watches its own source and leaves with this code when it wants
+# to start again — a change it waited to land until nothing was running, its
+# twelve hours up, the person asking (src/service/reload.ts). A fresh process
+# each time, so nothing carries over. Any other exit ends this loop, and
+# launchd's KeepAlive starts the launcher over.
+RELOAD=3
+
+while :; do
+  TIMESTAMP=$(date +"%Y-%m-%dT%H-%M-%S")
+  STDOUT_LOG="$LOG_DIR/$TIMESTAMP.stdout.log"
+  STDERR_LOG="$LOG_DIR/$TIMESTAMP.stderr.log"
+  echo "Sky service logs: $STDOUT_LOG"
+
+  bun --env-file=.env run commands/all/service/start.ts >> "$STDOUT_LOG" 2>> "$STDERR_LOG"
+  code=$?
+  if [ "$code" -ne "$RELOAD" ]; then
+    exit "$code"
+  fi
+done

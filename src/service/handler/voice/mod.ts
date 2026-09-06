@@ -14,6 +14,7 @@ import { Hono } from 'hono'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 import { logger } from '#shared/log.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { touch } from '../../activity.ts'
 
 const log = logger('voice')
 
@@ -34,6 +35,8 @@ export const CANCEL_ACTION = 'cancel_action'
 
 /** How long a parked call waits for its yes. */
 const APPROVAL_TTL_MS = 2 * 60 * 1000
+/** A conversation holds the process this long past its last request — the browser talks to the model directly, and the service hears only its tool calls */
+const VOICE_HOLD_MS = 2 * 60 * 1000
 
 /** The gate's own tools — every voice session with a gated tool carries them. */
 export const APPROVAL_TOOLS: RealtimeFunctionTool[] = [
@@ -211,6 +214,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   // lives on past the secret's expiry.
   app.post('/:id/session', async (c) => {
     const thread = await open(c.req.param('id'))
+    touch(`voice:${c.req.param('id')}`, 'voice', VOICE_HOLD_MS)
     let secret: ClientSecret
     try {
       secret = await options.mint(thread.session)
@@ -238,6 +242,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     if (typeof body?.name !== 'string') return c.json({ message: 'expected { name, arguments }' }, 400)
     const id = c.req.param('id')
     const thread = await open(id)
+    touch(`voice:${id}`, 'voice', VOICE_HOLD_MS)
 
     let input: Record<string, unknown> = {}
     if (typeof body.arguments === 'string') {
@@ -295,6 +300,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
 
   // The page is done with the thread; nothing is filed yet.
   app.post('/:id/end', (c) => {
+    touch(`voice:${c.req.param('id')}`, 'voice', 0)
     approvalsByThread.delete(c.req.param('id'))
     if (!threads.delete(c.req.param('id'))) return c.json({ message: 'no such voice thread' }, 404)
     return c.json({ ended: true })

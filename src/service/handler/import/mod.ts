@@ -18,6 +18,7 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
+import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
 import {
   type CalendarMatch,
@@ -315,6 +316,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     job.line = 'Starting…'
     record.events = record.events.filter((e) => e.type === 'listen' || e.type === 'calendar')
     await store.setState(record, 'running')
+    const release = hold('import')
 
     const abort = new AbortController()
     record.abort = abort
@@ -335,6 +337,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         (err): RunOutcome => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
       )
       .then(async (outcome) => {
+        release()
         record.reply = null
         record.abort = null
         // A cancelled job ignores whatever its abandoned command came back with.

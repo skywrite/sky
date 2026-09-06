@@ -25,6 +25,7 @@ import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { hold } from '../../activity.ts'
 import { callSubject } from './callSubject.ts'
 import { timelineOf } from './timeline.ts'
 
@@ -549,6 +550,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return c.json({ message: 'a turn is already running on this thread' }, 409)
     }
     accepting.add(id)
+    const release = hold('chat turn')
 
     // Start at acceptance of a valid prompt, before thread construction or initial context.
     const timing = new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
@@ -567,6 +569,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       if (!thread.saves) await dropSnapshot(id, thread)
     } catch (error) {
       if (thread) thread.busy = false
+      release()
       timing.finish(thrownOutcome(error))
       throw error
     } finally {
@@ -625,6 +628,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           clearInterval(beat)
           thread.sink = null
           thread.busy = false
+          release()
         }
       },
       async (err, stream) => {
@@ -830,11 +834,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     // The thread stays until the end succeeds, so a failed save can be retried.
     thread.busy = true
     thread.state = 'saving'
+    const release = hold('chat save')
     try {
       const saved = await thread.session.end({ ...options.endDefaults, save })
       threads.delete(id)
       return c.json({ saved })
     } finally {
+      release()
       thread.busy = false
       if (threads.has(id)) thread.state = 'done'
     }

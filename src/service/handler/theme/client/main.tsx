@@ -12,6 +12,7 @@ import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
+import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
@@ -159,6 +160,7 @@ function Canvas() {
           <span className="sky-brand">sky</span>
           <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
         </div>
+        <RestartPending />
         {explorerFile !== null ? (
           <>
             <button type="button" className="sky-thread" onClick={() => navigate('/')}>

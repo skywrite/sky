@@ -54,6 +54,20 @@ body {
   letter-spacing: -0.05em;
 }
 
+/* A restart waiting for the machine to go quiet; a click on it is "now" */
+.sky-restart {
+  align-self: flex-start;
+  margin: -6px 10px 10px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--sky-blue-deep);
+  background: var(--sky-blue-soft);
+  cursor: pointer;
+}
+
 /* The sidebar is a flex column that scrolls; the button is the one child that
    could shrink (Mantine clips it), so it says no or it collapses when the
    list outgrows the window. */

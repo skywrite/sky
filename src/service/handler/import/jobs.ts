@@ -178,8 +178,14 @@ export class JobStore {
         continue
       }
       if (job.state === 'running' || job.state === 'needs-you') {
+        // A question the pipeline asked is answered through a resolver held in
+        // memory, so a restart ends the run either way. The file stays, and the
+        // dialog offers to pick the run up where it was.
+        const waited = job.state === 'needs-you'
         job.state = 'failed'
-        job.error = 'Sky restarted while this was running. The file is still here.'
+        job.error = waited
+          ? 'Sky restarted while this waited for you. The file is still here.'
+          : 'Sky restarted while this was running. The file is still here.'
         job.line = job.error
         // The job is known either way; the write only records what a restart already knows.
         await this.persist(job).catch(() => {})

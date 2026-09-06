@@ -1,3 +1,4 @@
+import * as path from 'node:path'
 import process from 'node:process'
 import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -10,6 +11,7 @@ import { beginEvent, configureLogging, logger } from '#shared/log.ts'
 import { env, exit } from '#shared/sys/mod.ts'
 import { configureTiming } from '#shared/timing/log.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { hold } from './activity.ts'
 import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
@@ -20,6 +22,7 @@ import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
 import { createWeekHost } from './handler/week/createWeekHost.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
+import { createReloadGate } from './reload.ts'
 import { createJsonResponse } from './response.ts'
 import { processFileUpdate } from './scanner/walkDirs.ts'
 import { createServer } from './server.ts'
@@ -53,29 +56,26 @@ function reportAutomationProblemOnce(key: string, report: () => void): void {
 // with a one-line stderr notice instead of stack traces in the service log.
 routeAISDKWarningsToLog()
 
-// Recycle the process before its descriptor table fills up. Bun 1.4's
-// `--watch` reload re-execs in place and leaves the previous incarnation's
-// watcher directory handles open (oven-sh/bun#40706) — one full set per
-// code save — and once a process holds more than OPEN_MAX (10,240)
-// descriptors, macOS posix_spawn fails with EBADF: every child (agent-slack,
-// ioreg, …) dies instantly while the server itself looks healthy. The 12h
-// interval below cannot catch this, because a reload restarts it too.
-// Measuring the process is immune to reloads; exiting hands launchd
-// (KeepAlive) a clean PID at the same cost as the reload that just happened.
-const FD_RECYCLE_LIMIT = 4096
+// Restarts wait for idle. The service watches its own source — the launcher
+// no longer runs it under `--watch`, whose in-place re-exec leaked a set of
+// watcher descriptors per save until the process had to recycle itself. A
+// change marks a restart pending; the process leaves once nothing is held (a
+// chat turn, an import, a voice conversation, a heartbeat tick), however long
+// that takes, and the launcher starts it again on the reload code, a fresh
+// process each time. The twelve-hour refresh, and a descriptor table past
+// its limit, ask for a restart the same way.
+const logReload = logger('reload')
+const reload = createReloadGate({ root: path.resolve(import.meta.dirname, '..'), exit, log: logReload })
 const openFds = openFdCount()
-if (openFds !== null && openFds > FD_RECYCLE_LIMIT) {
-  logServer.warn('Recycling: {openFds} open descriptors exceed {limit}', {
-    event: 'recycle',
-    openFds,
-    limit: FD_RECYCLE_LIMIT,
-  })
-  exit(0)
-}
-
-// kill every 12 hours; for some reason the
-// macOS service configuation isn't killing as expected
-setInterval(() => exit(0), 12 * 60 * 60 * 1000)
+const FD_LIMIT = 4096
+setInterval(
+  () => {
+    const count = openFdCount()
+    if (count !== null && count > FD_LIMIT) reload.request(`${count} open descriptors exceed ${FD_LIMIT}`)
+  },
+  10 * 60 * 1000,
+)
+setInterval(() => reload.request('twelve hours up'), 12 * 60 * 60 * 1000)
 
 // Track the system timezone and adopt changes in place. The JS engine
 // resolves the host zone once per process, so a long-lived service goes
@@ -126,6 +126,22 @@ customRoutes.set('/site-html', async (req: Request) => {
   }
 })
 
+// The service's own state for the shell: a restart waiting for idle and what
+// it waits on. A POST to restart is the person saying "now".
+customRoutes.set('/service/status', (req: Request) =>
+  Promise.resolve(
+    req.method === 'GET'
+      ? createJsonResponse(jsend.success(reload.status()))
+      : new Response('Method not allowed', { status: 405 }),
+  ),
+)
+customRoutes.set('/service/restart', (req: Request) => {
+  if (req.method !== 'POST') return Promise.resolve(new Response('Method not allowed', { status: 405 }))
+  // The answer leaves first; the process follows.
+  setTimeout(() => reload.restartNow('asked from the page'), 100)
+  return Promise.resolve(createJsonResponse(jsend.success({ restarting: true })))
+})
+
 // Create server using factory
 const server = createServer({
   port: config.PORT_SERVER as number,
@@ -158,6 +174,7 @@ export default async function run() {
   // lands in the /tmp crash-catcher.
   const boot = beginEvent(logServer, 'boot')
   boot.set({ openFds })
+  const booting = hold('boot')
   logServer.info('Notebook server is starting')
 
   const scanStarted = performance.now()
@@ -197,6 +214,7 @@ export default async function run() {
   setInterval(async () => {
     if (heartbeatRunning) return
     heartbeatRunning = true
+    const release = hold('heartbeat')
     // One wide event per tick, at debug so steady-state stays quiet; anything
     // that actually happens gets its own info/error record below.
     const tick = beginEvent(logHeartbeat, 'tick', { level: 'debug' })
@@ -420,6 +438,7 @@ export default async function run() {
       return
     } finally {
       heartbeatRunning = false
+      release()
     }
     tick.emit()
   }, HEARTBEAT_INTERVAL_MS)
@@ -436,6 +455,7 @@ export default async function run() {
   // Start file watcher AFTER server is listening —
   // chokidar's initial directory scan competes for I/O with buildMarkdownStore()
   watchFiles()
+  booting()
 }
 
 // Entity/score stores are add-only during incremental updates, so removals
