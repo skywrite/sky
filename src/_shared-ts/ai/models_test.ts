@@ -146,23 +146,6 @@ test('default-opus-5 profile resolves to opus 5 with effort/thinking options', (
   })
 })
 
-// Kept addressable by name after the reasoning role moved to opus 5.
-test('default-opus-4.8 profile resolves to opus 4.8 with effort/thinking options', () => {
-  const resolved = aiModelByProfile('default-opus-4.8')
-  assert({
-    given: 'the default-opus-4.8 profile',
-    should: 'resolve to claude-opus-4-8',
-    actual: modelId(resolved.model),
-    expected: 'claude-opus-4-8',
-  })
-  assert({
-    given: 'its effort option',
-    should: 'land under providerOptions.anthropic',
-    actual: resolved.providerOptions?.['anthropic']?.['effort'],
-    expected: 'xhigh',
-  })
-})
-
 test('default-fable-5 profile resolves to fable 5 with effort/thinking options', () => {
   const resolved = aiModelByProfile('default-fable-5')
   assert({
@@ -223,21 +206,23 @@ test('default-fable-5.1-high profile resolves to fable 5.1 at effort high', () =
   })
 })
 
-test('default-gpt-5.5 routes openai options under providerOptions.openai', () => {
-  const resolved = aiModelByProfile('default-gpt-5.5')
-  assert({
-    given: 'the default-gpt-5.5 profile',
-    should: 'resolve to gpt-5.5',
-    actual: modelId(resolved.model),
-    expected: 'gpt-5.5',
+for (const effort of ['high', 'xhigh'] as const) {
+  test(`default-gpt-6-astra-${effort} routes openai options under providerOptions.openai`, () => {
+    const resolved = aiModelByProfile(`default-gpt-6-astra-${effort}`)
+    assert({
+      given: `the default-gpt-6-astra-${effort} profile`,
+      should: 'resolve to gpt-6-astra',
+      actual: modelId(resolved.model),
+      expected: 'gpt-6-astra',
+    })
+    assert({
+      given: 'its reasoningEffort + serviceTier options',
+      should: 'land under providerOptions.openai',
+      actual: resolved.providerOptions?.['openai'],
+      expected: { reasoningEffort: effort, serviceTier: 'priority' },
+    })
   })
-  assert({
-    given: 'its reasoningEffort + serviceTier options',
-    should: 'land under providerOptions.openai',
-    actual: resolved.providerOptions?.['openai'],
-    expected: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
-  })
-})
+}
 
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # Model registry — roles, profiles, providers
@@ -52,8 +52,13 @@ most; a profile with no window declared is not capped.
 - Adding a profile makes it addressable (`--reasoning default-x`,
   `sky ai:profiles`, the settings pane). Only repointing a role in `ROLES`
   changes what runs by default.
-- Superseded profiles stay in the catalog: a person's config or a command
-  flag may still name them.
+- Superseded profiles stay in the catalog unless explicitly retired: a
+  person's config or a command flag may still name them. The retired
+  built-ins are Opus 4.6/4.8, Sonnet 4.6, GPT-4o, and GPT-5.5.
+- GPT-6 Astra has `default-gpt-6-astra-high` and
+  `default-gpt-6-astra-xhigh`, both using priority processing. The model
+  id and reasoning efforts follow the
+  [OpenAI model documentation](https://developers.openai.com/api/docs/models/gpt-6-astra).
 - Repointing `reasoning` also changes the VS Code command-palette titles.
   Run `node scripts/syncTitles.ts` in `extensions/vscode`; `dev:check`
   fails until they are in sync.

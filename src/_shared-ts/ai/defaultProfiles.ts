@@ -8,10 +8,10 @@ import { defineProfile, type ModelProfile } from './models.ts'
  * only makes it *available* — it goes live when a role points at it (see ROLES in
  * models.ts) or you address it directly via aiModelByProfile(name).
  *
- * Model ids stay in their canonical API form (claude-opus-5, gpt-5.5); the profile
+ * Model ids stay in their canonical API form (claude-opus-5, gpt-6-astra); the profile
  * key is just a label. Sampling params (temperature/topP) belong only on profiles
- * whose model accepts them — thinking/reasoning models (Fable 5/5.1, Opus 5, Opus 4.7/4.8,
- * Sonnet 5, GPT-5.x) 400 on them, so those carry effort/thinking instead.
+ * whose model accepts them — thinking/reasoning models (Fable 5/5.1, Opus 5,
+ * Sonnet 5, GPT-6 Astra) 400 on them, so those carry effort/thinking instead.
  */
 export const PROFILES = {
   // Fable 5.1 thinks unconditionally (no `disabled`, no budget) and rejects forced tool
@@ -42,20 +42,17 @@ export const PROFILES = {
     model: 'claude-opus-5',
     options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
   }),
-  'default-opus-4.8': defineProfile({
-    provider: 'anthropic',
-    model: 'claude-opus-4-8',
-    options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
-  }),
-  'default-opus-4.6': defineProfile({ provider: 'anthropic', model: 'claude-opus-4-6' }),
   'default-sonnet-5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
-  'default-sonnet-4.6': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-4-6' }),
   'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
-  'default-gpt-4o': defineProfile({ provider: 'openai', model: 'gpt-4o' }),
-  'default-gpt-5.5': defineProfile({
+  'default-gpt-6-astra-xhigh': defineProfile({
     provider: 'openai',
-    model: 'gpt-5.5',
+    model: 'gpt-6-astra',
     options: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+  }),
+  'default-gpt-6-astra-high': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6-astra',
+    options: { reasoningEffort: 'high', serviceTier: 'priority' },
   }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
