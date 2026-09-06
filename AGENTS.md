@@ -132,6 +132,10 @@ After solving a problem whose reasoning isn't visible in the resulting code, add
 
 ## Key Conventions
 
+### HTML Mocks
+
+**All HTML mocks and mockups must be created in a temporary folder outside the repository**, such as a directory created with `mktemp -d /tmp/sky-html-mock.XXXXXX`. Keep their supporting CSS, JavaScript, images, and preview artifacts in that temporary folder too. Never create them in the repo root or any repo subdirectory, including gitignored folders.
+
 ### Imports
 
 Use subpath imports with `#` prefix (configured in `package.json`):
