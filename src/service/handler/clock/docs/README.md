@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-06
 ---
 
 # Clock — notebook time against the world's
@@ -44,8 +44,28 @@ clocks under it, then a list of common regions.
 - The region list is a fixed set in the client for now. Deriving rows
   from people, meetings, or travel was mocked and parked; see the
   session's design artifacts before growing this.
+- A requested place and its IANA timezone are separate data. The converter
+  keeps `targetName` in its command result and JSON output; the clock host
+  carries it as `target.place`, beside `target.timezone`. The page uses the
+  place for the answer label and the full IANA ID in its own column, between
+  Place and Day. Answer, pinned, and common region rows share these columns;
+  every row includes its timezone, including UTC. A timezone never supplies
+  an inferred city label. Client
+  and route share the wire types, and normalization preserves the place.
+  Narrow screens scroll the table horizontally, keeping all six columns
+  available and leaving the input at the screen's width.
+
+## Notes
+
+- [2026-09-06 — The clock keeps the requested place](2026-09-06-the-clock-keeps-the-requested-place.md).
 
 ## Verified
+
+2026-09-06: clock route and conversion tests, the timezone arithmetic tests,
+`bun run dev:check`, and a headless browser with synthetic conversions on
+desktop and narrow layouts. Two places sharing a zone retain their names;
+both a supplied time and a current-time query display the requested place.
+The IANA column aligns across all rows and remains available on narrow screens.
 
 2026-08-30: route tests (`clockRoute_test.ts`), `bun run dev:check`,
 plus a live run — `/clock/_api/now` against the running service, one

@@ -1,6 +1,9 @@
 import { Button, Loader, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { ClockReading, ClockSnapshot, ConvertAnswer } from '../../clock/mod.ts'
 import './clock.css'
+
+export type { ClockReading, ClockSnapshot, ConvertAnswer } from '../../clock/mod.ts'
 
 /**
  * The clock — notebook time against the world's.
@@ -22,25 +25,6 @@ import './clock.css'
 // -----------------------------------------------------------------------------
 // What the service knows about the clocks
 // -----------------------------------------------------------------------------
-
-export interface ClockReading {
-  /** `YYYY-MM-DD` — for the notebook, the day it is still on */
-  date: string
-  /** `HH:MM`; notebook hours may exceed 23 */
-  time: string
-  timezone: string
-}
-
-export interface ClockSnapshot {
-  notebook: ClockReading
-  system: ClockReading
-}
-
-export interface ConvertAnswer {
-  local: ClockReading
-  target: ClockReading
-  utc: ClockReading
-}
 
 /** The snapshot, refreshed on focus and every few minutes. */
 export function useClockNow(): ClockSnapshot | null {
@@ -273,11 +257,6 @@ const REGIONS: Region[] = [
   { name: 'Auckland', tz: 'Pacific/Auckland', aliases: ['nz', 'new zealand'] },
 ]
 
-/** A friendly name for a zone: the region's, else the IANA city segment. */
-function zoneName(tz: string): string {
-  return REGIONS.find((region) => region.tz === tz)?.name ?? tz.split('/').pop()?.replace(/_/g, ' ') ?? tz
-}
-
 /** The regions a line narrows to — a convert-looking line filters by its trailing "in <place>". */
 function matchRegions(text: string, at: Date): Region[] {
   const raw = text.trim().toLowerCase()
@@ -343,7 +322,7 @@ type Tone = 'plain' | 'pinned' | 'answer' | 'warn'
 function Row({
   time,
   name,
-  zone,
+  timezone,
   rel,
   offset,
   change,
@@ -351,7 +330,7 @@ function Row({
 }: {
   time: string
   name: string
-  zone?: string
+  timezone: string
   rel: string
   offset: string
   change: string
@@ -365,9 +344,9 @@ function Row({
         {shown.main}
         {shown.suffix && <span className="sky-clock-ampm">{shown.suffix}</span>}
       </span>
-      <span className="sky-clock-name">
-        {name}
-        {zone && zone !== name && <span className="sky-clock-zone">{zone}</span>}
+      <span className="sky-clock-name">{name}</span>
+      <span className="sky-clock-zone" title={timezone}>
+        {timezone}
       </span>
       <span className="sky-clock-rel">{rel}</span>
       <span className="sky-clock-off">{offset}</span>
@@ -393,7 +372,7 @@ function AnswerRows({ answer, anchor }: { answer: ConvertAnswer; anchor: ZonePar
     <Row
       time={reading.time}
       name={name}
-      zone={zoneName(reading.timezone)}
+      timezone={reading.timezone}
       rel={relDay(ymdParts(reading.date), anchor)}
       offset={offsetLabel(offsetMinutes(instant, reading.timezone))}
       change={changeLabel(reading.timezone, instant)}
@@ -405,7 +384,7 @@ function AnswerRows({ answer, anchor }: { answer: ConvertAnswer; anchor: ZonePar
   return (
     <div className="sky-clock-group" data-kind="answer">
       {!nowish && row(answer.local, 'Local', 'plain')}
-      {row(answer.target, zoneName(answer.target.timezone), 'answer')}
+      {row(answer.target, answer.target.place ?? answer.target.timezone, 'answer')}
       {!nowish && row(answer.utc, 'UTC', 'plain')}
     </div>
   )
@@ -542,7 +521,13 @@ export function ClockMain({
                 answer appears as you pause.
               </p>
 
-              <div className="sky-clock-table" data-busy={busy}>
+              <div
+                className="sky-clock-table"
+                data-busy={busy}
+                role="region"
+                aria-label="Clock comparison"
+                tabIndex={0}
+              >
                 <div className="sky-clock-row" data-head="true">
                   <button
                     type="button"
@@ -554,6 +539,7 @@ export function ClockMain({
                     Time <span className="sky-clock-hmode">{hour12 ? 'am/pm' : '24h'}</span>
                   </button>
                   <span className="sky-clock-h">Place</span>
+                  <span className="sky-clock-h">IANA timezone</span>
                   <span className="sky-clock-h">Day</span>
                   <span className="sky-clock-h sky-clock-h-right">Offset</span>
                   <span className="sky-clock-h sky-clock-h-right sky-clock-chg">DST</span>
@@ -567,7 +553,7 @@ export function ClockMain({
                       <Row
                         time={notebook.time}
                         name="Notebook"
-                        zone={zoneName(snap.notebook.timezone)}
+                        timezone={snap.notebook.timezone}
                         rel={relDay(ymdParts(snap.notebook.date), anchor)}
                         offset={offsetLabel(offsetMinutes(at, snap.notebook.timezone))}
                         change={changeLabel(snap.notebook.timezone, at)}
@@ -577,7 +563,7 @@ export function ClockMain({
                         <Row
                           time={`${pad(system.h)}:${pad(system.mi)}`}
                           name="System"
-                          zone={zoneName(snap.system.timezone)}
+                          timezone={snap.system.timezone}
                           rel="today"
                           offset={offsetLabel(offsetMinutes(at, snap.system.timezone))}
                           change={changeLabel(snap.system.timezone, at)}
@@ -587,6 +573,7 @@ export function ClockMain({
                       <Row
                         time={`${pad(utc.h)}:${pad(utc.mi)}`}
                         name="UTC"
+                        timezone="UTC"
                         rel={relDay(utc, anchor)}
                         offset="+0"
                         change=""
@@ -612,6 +599,7 @@ export function ClockMain({
                           tone={picked?.tz === region.tz ? 'answer' : 'plain'}
                           time={`${pad(p.h)}:${pad(p.mi)}`}
                           name={region.name}
+                          timezone={region.tz}
                           rel={relDay(p, anchor)}
                           offset={offsetLabel(offsetMinutes(at, region.tz))}
                           change={changeLabel(region.tz, at)}

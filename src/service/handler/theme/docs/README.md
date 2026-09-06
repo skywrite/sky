@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # The web app's shell and client
@@ -55,6 +55,8 @@ Keep changes with the feature they affect, including its responsive rules:
 
 `automations.css`, `clock.css`, `import.css`, `settings.css`, and `voice.css`
 remain imported by their existing components and join the same bundle.
+
+Clock place labels and timezone metadata follow the [clock design](../../clock/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

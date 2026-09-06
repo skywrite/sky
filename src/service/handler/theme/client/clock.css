@@ -49,12 +49,26 @@
 
 .sky-clock-table {
   margin-top: 18px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.sky-clock-table:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.sky-clock-table > .sky-clock-row,
+.sky-clock-group,
+.sky-clock-list {
+  min-width: 816px;
 }
 
 .sky-clock-row {
   display: grid;
-  grid-template-columns: 96px minmax(120px, 1fr) 92px 52px 110px;
-  gap: 14px;
+  grid-template-columns: 96px minmax(140px, 1fr) minmax(232px, 1.35fr) 80px 52px 100px;
+  gap: 16px;
   align-items: baseline;
   padding: 8px 18px;
 }
@@ -69,13 +83,12 @@
 
 .sky-clock-name {
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .sky-clock-zone {
-  margin-left: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   color: var(--sky-dim);
 }
@@ -168,25 +181,6 @@
   border-top: 1px solid var(--sky-border-soft);
 }
 
-@media (max-width: 900px) {
-  .sky-clock-row {
-    grid-template-columns: 78px 1fr 84px 44px;
-    gap: 10px;
-  }
-
-  .sky-clock-time {
-    font-size: 19px;
-  }
-
-  .sky-clock-chg {
-    display: none;
-  }
-
-  .sky-clock-zone {
-    display: none;
-  }
-}
-
 /* a new ask in flight: the standing answer dims until replaced */
 .sky-clock-table[data-busy='true'] .sky-clock-group[data-kind='answer'] {
   opacity: 0.45;
@@ -234,7 +228,7 @@
   padding: 0;
   border: none;
   background: none;
-  font: inherit;
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
 }

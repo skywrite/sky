@@ -13,7 +13,7 @@ const SNAPSHOT: ClockSnapshot = {
 
 const ANSWER: ConvertAnswer = {
   local: { date: '2026-08-31', time: '16:00', timezone: 'America/New_York' },
-  target: { date: '2026-09-01', time: '04:00', timezone: 'Asia/Hong_Kong' },
+  target: { date: '2026-09-01', time: '04:00', timezone: 'Asia/Hong_Kong', place: 'Harbor City' },
   utc: { date: '2026-08-31', time: '20:00', timezone: 'UTC' },
 }
 
@@ -58,13 +58,13 @@ test({ name: 'clock route - convert relays the raw line and the three rows' }, a
   const response = await app.request('http://localhost/clock/_api/convert', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: '3pm tomorrow in Hong Kong' }),
+    body: JSON.stringify({ query: '3pm tomorrow in Harbor City' }),
   })
   assert({
     given: 'a query',
-    should: 'hand the raw line to the converter and answer with its rows',
+    should: 'hand the raw line to the converter and preserve the place separately from its timezone',
     actual: [response.status, seen, (await response.json()) as ConvertAnswer],
-    expected: [200, ['3pm tomorrow in Hong Kong'], ANSWER],
+    expected: [200, ['3pm tomorrow in Harbor City'], ANSWER],
   })
 })
 

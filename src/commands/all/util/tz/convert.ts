@@ -28,6 +28,7 @@ type Result = {
   local: ZonedDateTime
   utc: ZonedDateTime
   target: ZonedDateTime
+  targetName: string
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -64,7 +65,11 @@ const TimezoneParseSchema = z.object({
     .default('')
     .describe("kind=wallClock only: IANA timezone the supplied time is in; empty for the user's own timezone"),
   targetTimezone: z.string().describe('IANA timezone to display the result in (e.g., Asia/Bangkok)'),
-  targetName: z.string().describe('Friendly name for the target location (e.g., "Bangkok", "France", "Tokyo")'),
+  targetName: z
+    .string()
+    .trim()
+    .min(1)
+    .describe('The place the user asked about; preserve its name even when the IANA timezone names another city'),
   targetUses24Hour: z.boolean().describe('Whether the target location typically uses 24-hour time format'),
 })
 
@@ -258,6 +263,7 @@ export default class UtilTzConvertTask extends Command {
           local: toTemporal(local),
           utc: toTemporal(utc),
           target: toTemporal(target),
+          targetName: parsed.targetName,
         }),
       )
     } else {
@@ -269,6 +275,6 @@ export default class UtilTzConvertTask extends Command {
       printTable(output, rows)
     }
 
-    return CommandResult.success({ local, utc, target })
+    return CommandResult.success({ local, utc, target, targetName: parsed.targetName })
   }
 }

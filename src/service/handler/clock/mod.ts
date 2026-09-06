@@ -30,7 +30,10 @@ export interface ClockSnapshot {
 /** util:tz:convert's three rows, as the CLI prints them. */
 export interface ConvertAnswer {
   local: ClockReading
-  target: ClockReading
+  target: ClockReading & {
+    /** The requested place, independent of the city named by the IANA timezone. */
+    place: string
+  }
   utc: ClockReading
 }
 

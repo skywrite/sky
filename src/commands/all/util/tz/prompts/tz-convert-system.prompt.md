@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-22
-updated: 2026-07-28
+updated: 2026-09-06
 description: System prompt for parsing natural language timezone queries
 ---
 
@@ -35,7 +35,9 @@ they name is a DISPLAY target, never a source.
 - `targetTimezone` — the IANA zone to display the answer in. Any valid IANA zone is fine;
   resolve city, country and region names yourself (Bangkok → Asia/Bangkok, Lagos →
   Africa/Lagos, France → Europe/Paris).
-- `targetName` — a short friendly label for that place ("Bangkok", "France", "Tokyo").
+- `targetName` — the place the user asked about, with natural capitalization. Preserve
+  the named city, country, or region even when its IANA timezone names a different city.
+  This is the displayed place label; `targetTimezone` separately supplies the clock rules.
 - `targetUses24Hour` — true by default. Most of the world writes 24-hour time. Set it
   false only for the holdouts: the US, Canada, Mexico, Colombia, the UK, Ireland,
   Australia, New Zealand, India, Pakistan, Bangladesh, the Philippines, Malaysia and
