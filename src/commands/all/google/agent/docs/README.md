@@ -9,7 +9,9 @@ A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` (Qwen 3.8
 on Cerebras, on trial since [2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cerebras-provider.md))
 with the agent tools — or the profile named by `--reasoning`, e.g.
 `default-opus-5` for the deep run — up to `MAX_STEPS = 48` steps, final
-text = the report. Two properties of
+text = the report. A create-only mission runs without a go; a mission on an
+existing file, or an import, asks once per file per chat
+(`lib/approval.ts`). Two properties of
 that loop are non-obvious and load-bearing:
 
 - **A text-only turn ends the mission.** The loop continues only after tool

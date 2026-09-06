@@ -58,3 +58,12 @@ export type FormatApprovalFn = (input: Record<string, unknown>, output: OutputHa
  * inputs that should always prompt.
  */
 export type ApprovalSessionKeyFn = (input: Record<string, unknown>) => string | undefined
+
+/**
+ * Type for the optional static needsApprovalFor method on task classes.
+ * A gated tool may declare that SOME calls need no go at all — a mission
+ * that creates a new document, say, where nothing of the person's is
+ * touched. Return false for such a call and it runs without asking, on
+ * every surface; return true and the usual gate applies.
+ */
+export type NeedsApprovalForFn = (input: Record<string, unknown>) => boolean

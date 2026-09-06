@@ -11,7 +11,7 @@ import { jsonSchema, tool } from 'ai'
 import colors from 'picocolors'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
-import type { ApprovalSessionKeyFn, FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
+import type { ApprovalSessionKeyFn, FormatApprovalFn, NeedsApprovalForFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
@@ -320,26 +320,51 @@ export interface ToolApprovalConfigOptions {
  * createNotebookTools(), which populates the registry.
  */
 export function createToolApprovalConfig(options: ToolApprovalConfigOptions = {}): ToolApprovalConfig {
-  const { isBlessed, onAutoApproved } = options
   const config: ToolApprovalConfig = {}
   for (const entry of discoveredTools) {
     if (!entry.needsApproval) continue
-    const sessionKey = entry.commandClass.approvalSessionKey as ApprovalSessionKeyFn | undefined
-    if (!isBlessed || !sessionKey) {
-      config[entry.toolName] = 'user-approval'
-      continue
-    }
-    const toolName = entry.toolName
-    config[toolName] = (input) => {
-      const key = sessionKey(input)
-      if (key !== undefined && isBlessed(toolName, key)) {
-        onAutoApproved?.(toolName, key)
-        return 'approved'
-      }
-      return 'user-approval'
-    }
+    config[entry.toolName] = toolApprovalPolicy(
+      {
+        toolName: entry.toolName,
+        sessionKey: entry.commandClass.approvalSessionKey as ApprovalSessionKeyFn | undefined,
+        needsApprovalFor: entry.commandClass.needsApprovalFor as NeedsApprovalForFn | undefined,
+      },
+      options,
+    )
   }
   return config
+}
+
+/** The statics a gated tool may declare about when it needs a go. */
+export interface ToolApprovalStatics {
+  toolName: string
+  sessionKey?: ApprovalSessionKeyFn
+  needsApprovalFor?: NeedsApprovalForFn
+}
+
+/**
+ * One gated tool's policy: a call the tool itself exempts runs; a call
+ * whose key the session blessed runs; everything else asks. A tool with
+ * neither static, or a host with no blessings and a tool with no
+ * exemption, gets the plain static gate.
+ */
+export function toolApprovalPolicy(
+  tool: ToolApprovalStatics,
+  options: ToolApprovalConfigOptions = {},
+): ToolApprovalConfig[string] {
+  const { isBlessed, onAutoApproved } = options
+  const { toolName, sessionKey, needsApprovalFor } = tool
+  const blessable = Boolean(isBlessed && sessionKey)
+  if (!blessable && !needsApprovalFor) return 'user-approval'
+  return (input) => {
+    if (needsApprovalFor && !needsApprovalFor(input)) return 'approved'
+    const key = sessionKey?.(input)
+    if (key !== undefined && isBlessed?.(toolName, key)) {
+      onAutoApproved?.(toolName, key)
+      return 'approved'
+    }
+    return 'user-approval'
+  }
 }
 
 /** Tools whose approval scopes to a stable per-file key — the ones session blessings can cover. */

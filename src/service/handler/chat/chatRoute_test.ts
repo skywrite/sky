@@ -118,6 +118,10 @@ async function testHost(
     capture?: (report: (event: ChatSessionEvent | ToolOutputEvent) => void) => void
     /** Another catalog behind the settings routes */
     settings?: ChatSettingsHost
+    /** The key every card carries — a go can then stand for the session */
+    sessionKey?: string
+    /** Collects the decisions the host's approval handler returns */
+    decisions?: Array<{ approved: boolean; always?: boolean }>
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
@@ -142,7 +146,11 @@ async function testHost(
         ambient: AMBIENT,
         systemPrompt: () => Promise.resolve('You are a test assistant.'),
         tools: () => Promise.resolve({ tools: {}, toolApproval: {} }),
-        approvalHandler: ({ toolName, input }) => ask({ toolName, lines: approvalCard(toolName, input) }),
+        approvalHandler: async ({ toolName, input }) => {
+          const decision = await ask({ toolName, lines: approvalCard(toolName, input), sessionKey: over.sessionKey })
+          over.decisions?.push(decision)
+          return decision
+        },
         autosavePath: path.join(tmp, `${id}.autosave.md`),
         onEvent,
         invokeModel: over.invokeModel ?? streamingModel(['Focus on ', 'the demo.']),
@@ -1409,3 +1417,28 @@ test(
     })
   },
 )
+
+test({ name: 'chat route - "allow for this file" reaches the host only when the card carried a key' }, async () => {
+  const answerWith = async (sessionKey: string | undefined) => {
+    const decisions: Array<{ approved: boolean; always?: boolean }> = []
+    const app = appWith(await testHost({ invokeModel: askingModel(), sessionKey, decisions }))
+    const body = send(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' }).then((r) => r.text())
+    const thread = await until(
+      () => getJson(app, 'http://localhost/chat/a1'),
+      (t) => Array.isArray(t.pending) && t.pending.length > 0,
+    )
+    const card = thread.pending[0] as { id: string; sessionKey?: string }
+    await post(app, `http://localhost/chat/a1/approvals/${card.id}`, { approved: true, always: true })
+    await body
+    return { cardKey: card.sessionKey, decision: decisions[0] }
+  }
+  assert({
+    given: 'a card scoped to a file, answered "always", then one with no key answered the same way',
+    should: 'carry the key to the page and the standing go to the host for the first only',
+    actual: [await answerWith('doc-1'), await answerWith(undefined)],
+    expected: [
+      { cardKey: 'doc-1', decision: { approved: true, reason: 'User approved', always: true } },
+      { cardKey: undefined, decision: { approved: true, reason: 'User approved', always: false } },
+    ],
+  })
+})

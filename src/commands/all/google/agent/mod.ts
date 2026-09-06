@@ -31,6 +31,7 @@ import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
+import { missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
 import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
 import { formatTiming, type MissionTiming } from './lib/timing.ts'
@@ -122,10 +123,14 @@ export default class GoogleAgentTask extends Command {
     output.log(`  Account: ${input.account ? String(input.account) : '(default)'}`)
   }
 
-  /** Missions targeting the same file can be session-approved once; create missions always prompt. */
+  /** A create-only mission runs without a go; one aimed at an existing file, or importing one, asks. */
+  static needsApprovalFor(input: Record<string, unknown>): boolean {
+    return missionNeedsApproval(input)
+  }
+
+  /** A go for a targeted mission covers its file id for the session. */
   static approvalSessionKey(input: Record<string, unknown>): string | undefined {
-    if (typeof input.file !== 'string') return undefined
-    return resolveFileRef(input.file)?.fileId
+    return missionApprovalKey(input)
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {

@@ -11,11 +11,14 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
+import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
 import { createFileTools } from '#commands/lib/chat/fileTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
   getApprovalFormatter,
+  getApprovalSessionKey,
+  sessionKeyToolNames,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
@@ -215,8 +218,19 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
 
+  // Which (tool, file) pairs a thread may run without asking — the same
+  // ledger the terminal keeps: a pasted file reference for the process, a
+  // file the thread created or an "allow for this file" answer for good.
+  const blessings = new Map<string, SessionBlessings>()
+  const blessingsFor = (id: string): SessionBlessings => {
+    let held = blessings.get(id)
+    if (!held) blessings.set(id, (held = new SessionBlessings()))
+    return held
+  }
+
   const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask) => {
     const context = CommandContext.server(config, env)
+    const blessed = blessingsFor(id)
     const tasks = new CommandService(context)
     // The tools' own command service hears its output: every line a tool
     // prints in the terminal goes to the page instead of a buffer nobody
@@ -266,13 +280,34 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
           // A browser has no shell directory, so a relative path resolves from home.
           ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
-          ...(await createNotebookTools(toolTasks, { onExternalFiles: (_toolName, files) => onExternalFiles(files) })),
+          ...(await createNotebookTools(toolTasks, {
+            onExternalFiles: (_toolName, files) => {
+              // A file this thread created is blessed: editing it again is
+              // the same intent that created it.
+              for (const file of files) {
+                if (file.action !== 'created' || !file.id) continue
+                for (const tool of sessionKeyToolNames()) blessed.blessDurably(tool, file.id)
+              }
+              onExternalFiles(files)
+            },
+          })),
         },
-        toolApproval: createToolApprovalConfig(),
+        toolApproval: createToolApprovalConfig({ isBlessed: (toolName, key) => blessed.has(toolName, key) }),
       }),
-      // The card is the tool's own description of the call; the answer is the person's, from the page.
-      approvalHandler: ({ toolName, input }) =>
-        ask({ toolName, lines: approvalCard(toolName, input, getApprovalFormatter(toolName)) }),
+      // The card is the tool's own description of the call; the answer is the
+      // person's, from the page. A card scoped to a file offers "allow for
+      // this file"; that answer blesses the file for the thread.
+      approvalHandler: async ({ toolName, input }) => {
+        const sessionKey = getApprovalSessionKey(toolName)?.(input as Record<string, unknown>)
+        const decision = await ask({
+          toolName,
+          lines: approvalCard(toolName, input, getApprovalFormatter(toolName)),
+          sessionKey,
+        })
+        if (decision.approved && decision.always && sessionKey) blessed.blessDurably(toolName, sessionKey)
+        return decision
+      },
+      approvals: () => blessed.serializeDurable(),
       autosavePath: snapshotPath(id, startTime),
       onEvent,
     })
@@ -280,6 +315,11 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    // A pasted Google file reference is permission to work on that file —
+    // for this process; a paste is not a standing grant.
+    onMessage: (id, message) => {
+      for (const fileId of harvestFileRefs(message)) blessingsFor(id).blessMention(fileId)
+    },
     snapshotPath,
     settings: createChatSettingsHost(),
     endDefaults: { autoTag: true, autoRel: true, memoryDir: config.DIR_AI_MEMORY, people: true },

@@ -60,6 +60,8 @@ export interface Approval {
   toolName: string
   /** The call as the tool describes it, line by line */
   lines: string[]
+  /** Set when a go can stand for the session — the card offers "allow for this file" */
+  sessionKey?: string
 }
 
 /** A call the person answered — kept in the thread as the record of what was allowed. */
@@ -512,13 +514,13 @@ export function useChat(id: string) {
   // The person's answer to a held call. The stream carries the same news
   // back; either arrival clears the card.
   const answer = useCallback(
-    async (approvalId: string, approved: boolean) => {
+    async (approvalId: string, approved: boolean, always = false) => {
       if (!state.id) return
       const id = state.id
       const response = await fetch(`/chat/${id}/approvals/${approvalId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved }),
+        body: JSON.stringify({ approved, always }),
       }).catch(() => null)
       if (!response?.ok) return
       const body = (await response.json()) as { approved: boolean; at: number }
@@ -1005,7 +1007,7 @@ function ApprovalCard({
   approval: Approval
   /** How it was answered, when it was */
   answered?: boolean
-  onAnswer?: (approved: boolean) => void
+  onAnswer?: (approved: boolean, always?: boolean) => void
 }) {
   const [raw, setRaw] = useState(false)
   const text = approval.lines.join('\n')
@@ -1036,6 +1038,11 @@ function ApprovalCard({
           <Button variant="light" color="blue" size="sm" onClick={() => onAnswer(true)}>
             Allow
           </Button>
+          {approval.sessionKey && (
+            <Button variant="subtle" color="blue" size="sm" onClick={() => onAnswer(true, true)}>
+              Allow for this file
+            </Button>
+          )}
           <Button size="sm" onClick={() => onAnswer(false)}>
             Not now
           </Button>
@@ -1092,7 +1099,10 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
         ))}
       {state.approvals.map((approval) => (
         <Fragment key={approval.id}>
-          <ApprovalCard approval={approval} onAnswer={(approved) => void answer(approval.id, approved)} />
+          <ApprovalCard
+            approval={approval}
+            onAnswer={(approved, always) => void answer(approval.id, approved, always)}
+          />
         </Fragment>
       ))}
       {/* Runs for a reply that has not begun sit where it will land. */}

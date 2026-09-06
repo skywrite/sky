@@ -71,7 +71,7 @@ a person can see and touch:
   Google Doc, create a decision — the turn holds, a card appears in the
   thread with the call as the tool describes it (its own `formatApproval`,
   else the input's fields), and two buttons: Allow, Not now. The answer
-  goes to `POST /chat/:id/approvals/:approvalId` `{ approved }`; the turn
+  goes to `POST /chat/:id/approvals/:approvalId` `{ approved, always? }`; the turn
   resumes with it — an approved call runs, a declined one is reported to
   the model as declined and recorded in the story as such. The card stays
   in the thread once answered, settled (allowed or declined), before the
@@ -156,6 +156,15 @@ gathered (the deduplicated universe, never the raw sweep sizes); a grown entry l
 included, marked) and the documents kept before that the budget cuts now;
 a quiet turn carries the previous cuts forward, so a document cut two
 turns ago is not pushed out again; a broken turn keeps its errors.
+
+- **A go you already gave is not asked for again.** The web host keeps the
+  terminal's ledger per thread (`SessionBlessings`): a Google file reference
+  pasted into a message blesses that file for the process; a file a tool
+  reports as created is blessed for good; "Allow for this file" on a card
+  is a durable go. The tool approval config consults it, so a blessed call
+  runs inline with no card. A tool may also exempt calls outright
+  (`needsApprovalFor`) — `google_agent` runs create-only missions without
+  asking on every surface ([2026-09-03](2026-09-03-the-go-you-already-gave.md)).
 
 ## The rules it lives by
 

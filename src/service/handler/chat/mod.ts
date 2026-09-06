@@ -44,6 +44,8 @@ export interface ApprovalCard {
   toolName: string
   /** The call as the tool describes it — its own formatter's lines, or the input's fields */
   lines: string[]
+  /** The file the call is scoped to, when a go can stand for the session ("allow for this file") */
+  sessionKey?: string
 }
 
 export interface PendingApproval extends ApprovalCard {
@@ -61,7 +63,7 @@ export interface AnsweredApproval extends PendingApproval {
  * Puts a tool call to the person and resolves with their answer — the
  * routes' half of the session's approval handler. The turn waits on it.
  */
-export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision>
+export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision & { always?: boolean }>
 
 /**
  * A tool's own words as it works, as the host hears them from the
@@ -151,6 +153,8 @@ export interface ChatRoutesOptions {
   heartbeatMs?: number
   /** The models to choose from and the budget's default — absent, a thread cannot be tuned */
   settings?: ChatSettingsHost
+  /** Hears each message before the turn runs — a pasted file reference is a go for that file */
+  onMessage?: (id: string, message: string) => void
   /** How a thread files when the client ends it — the host's saving policy */
   endDefaults?: Omit<EndOptions, 'save'>
   /** Notebook time root — the day view lists the day's saved chats from it */
@@ -204,7 +208,7 @@ interface Thread {
   /** Where the running turn's events go; null between turns */
   sink: ((event: WireEvent) => void) | null
   /** Tool calls held for the person's go, by approval id */
-  pending: Map<string, PendingApproval & { resolve: (decision: ApprovalDecision) => void }>
+  pending: Map<string, PendingApproval & { resolve: (decision: ApprovalDecision & { always?: boolean }) => void }>
   /** The calls answered so far, oldest first */
   answered: AnsweredApproval[]
   /** Every tool run so far, oldest first — the running one is the last without a status */
@@ -561,6 +565,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         if (!threads.has(id)) pending.set(id, prefs)
         return open(id)
       })
+      options.onMessage?.(id, message)
       thread.busy = true
       thread.session.setModel(chosen.model, chosen.profile)
       thread.profile = prefs.profile
@@ -655,10 +660,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       documents: thread.session.paths.length,
       kept: keptOf(thread),
       busy: thread.busy,
-      pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines }) => ({
+      pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines, sessionKey }) => ({
         id: approvalId,
         toolName,
         lines,
+        sessionKey,
       })),
       answered: thread.answered,
       runs: thread.runs,
@@ -674,8 +680,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     const approval = thread.pending.get(c.req.param('approvalId'))
     if (!approval) return c.json({ message: 'no such approval — it may have been answered already' }, 404)
-    const body = (await c.req.json().catch(() => null)) as { approved?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as { approved?: unknown; always?: unknown } | null
     if (typeof body?.approved !== 'boolean') return c.json({ message: 'expected { approved: true | false }' }, 400)
+    // "Allow for this file": a go that stands for the session, when the card offered one.
+    const always = body.approved && body.always === true && approval.sessionKey !== undefined
 
     thread.pending.delete(approval.id)
     // The message that asked is the last turn; the reply lands after it.
@@ -687,7 +695,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     thread.sink?.({ type: 'approval-answered', id: approval.id, approved: body.approved, at })
     resolve(
       body.approved
-        ? { approved: true, reason: 'User approved' }
+        ? { approved: true, reason: 'User approved', always }
         : { approved: false, reason: 'User declined. Do not request this tool again.' },
     )
     return c.json({ id: approval.id, approved: body.approved, at, waiting: thread.pending.size })

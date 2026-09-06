@@ -220,3 +220,44 @@ test('extractExternalFiles - lifts id and action when a tool reports them', () =
     ],
   })
 })
+
+test('toolApprovalPolicy - who asks, who runs', async (t) => {
+  const { toolApprovalPolicy } = await import('./notebookTools.ts')
+  const blessed = new Set(['google_agent:doc-1'])
+  const options = { isBlessed: (tool: string, key: string) => blessed.has(`${tool}:${key}`) }
+  const statics = {
+    toolName: 'google_agent',
+    sessionKey: (input: Record<string, unknown>) => (typeof input.file === 'string' ? input.file : undefined),
+    needsApprovalFor: (input: Record<string, unknown>) => typeof input.file === 'string',
+  }
+  const decide = (policy: ReturnType<typeof toolApprovalPolicy>, input: Record<string, unknown>) =>
+    typeof policy === 'function' ? policy(input) : policy
+
+  await t.step('a call the tool exempts runs, on a host with no blessings too', () => {
+    assert({
+      given: 'a create mission on a host that cannot bless',
+      should: 'be approved without asking',
+      actual: decide(toolApprovalPolicy(statics), { mission: 'Create a doc' }),
+      expected: 'approved',
+    })
+  })
+  await t.step('a targeted call asks unless its file is blessed', () => {
+    assert({
+      given: 'a mission on a file nobody blessed, then one on a blessed file',
+      should: 'ask for the first and run the second',
+      actual: [
+        decide(toolApprovalPolicy(statics, options), { file: 'doc-9' }),
+        decide(toolApprovalPolicy(statics, options), { file: 'doc-1' }),
+      ],
+      expected: ['user-approval', 'approved'],
+    })
+  })
+  await t.step('a tool with neither static keeps the plain gate', () => {
+    assert({
+      given: 'a gated tool declaring nothing',
+      should: 'statically ask',
+      actual: toolApprovalPolicy({ toolName: 'slack_post' }, options),
+      expected: 'user-approval',
+    })
+  })
+})
