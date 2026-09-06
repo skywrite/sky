@@ -1,7 +1,7 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { loadImageForAI } from './loadImage.ts'
 
@@ -162,7 +162,7 @@ export async function extractMessageFromImage(
     }),
   )
 
-  const promptContent = await readTextFile(PROMPT_FILE)
+  const promptContent = await readPromptFile(PROMPT_FILE)
   let { output: prompt } = renderPromptFile(promptContent, 'extract-from-image.prompt.md', {
     user: { now: now ?? '(unknown)' },
   })

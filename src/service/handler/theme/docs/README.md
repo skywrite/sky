@@ -137,3 +137,7 @@ The app is its own reference. A `/theme` page once held the concept mock
 the theme was drawn from, with sample days, horizons and topics. It fell
 behind the app it was meant to guide and was retired on 2026-09-03. See
 `2026-09-03-the-reference-page-retires.md`.
+
+The prompt page is in `client/settingsPrompts.tsx`, with styles in
+`settingsPrompts.css`. It reuses the Markdown editor in a local mode with explicit
+Save. See the [prompt library design](../../../../_shared-ts/prompts/docs/README.md).

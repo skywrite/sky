@@ -14,6 +14,7 @@ import { type Kept, undoKeep } from './files.tsx'
 import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
+import { usePromptDraftGuard } from './settingsPrompts.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
@@ -56,6 +57,7 @@ function Canvas() {
   const [menu, setMenu] = useState(false)
   // The saved appearance — theme and text size — lands once, at start.
   useAppearanceBoot()
+  usePromptDraftGuard()
   // On a phone the sidebar is a drawer; any navigation closes it.
   const navigate = (to: string) => {
     setMenu(false)
@@ -325,7 +327,12 @@ function Canvas() {
           onNew={() => navigate('/automations/new')}
         />
       ) : settingsSection ? (
-        <SettingsMain section={settingsSection} back={{ label: 'Today', onClick: () => navigate('/') }} />
+        <SettingsMain
+          section={settingsSection}
+          path={path}
+          navigate={navigate}
+          back={{ label: 'Today', onClick: () => navigate('/') }}
+        />
       ) : isAudition ? (
         <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
       ) : isVoice ? (

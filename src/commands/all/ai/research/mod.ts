@@ -1,3 +1,4 @@
+import colors from 'picocolors'
 /**
  * ai:research — a fresh-context research subagent over the notebook.
  *
@@ -12,8 +13,6 @@
  * ladder, and nothing to save, so the session wrapper's producers and
  * persistence would all be stubs here.
  */
-
-import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -21,6 +20,7 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine, type TimingSummary } from '#shared/timing/summary.ts'
@@ -94,7 +94,7 @@ export default class AiResearchTask extends Command {
     const { config, output } = context
     const { question, purpose } = args
 
-    const [template, schema] = await Promise.all([readTextFile(PROMPT_FILE), readTextFile(SCHEMA_FILE)])
+    const [template, schema] = await Promise.all([readPromptFile(PROMPT_FILE), readTextFile(SCHEMA_FILE)])
     const { output: systemPrompt } = renderPromptFile(template, 'research.prompt.md', {
       context: {
         notebookDate: context.notebookNow.date,

@@ -14,6 +14,7 @@ import { Button, SegmentedControl, Select, Textarea, TextInput, useMantineColorS
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
+import { PromptsMain } from './settingsPrompts.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
 import './settings.css'
@@ -81,6 +82,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'voice', label: 'Voice' },
   { id: 'ai', label: 'AI' },
+  { id: 'prompts', label: 'Prompts' },
   { id: 'connections', label: 'Connections' },
   { id: 'notebook', label: 'Notebook' },
   { id: 'advanced', label: 'Advanced' },
@@ -92,6 +94,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
 /** The open section, or null when the path is not settings at all. */
 export function settingsSectionOf(pathname: string): SettingsSection | null {
   if (!pathname.startsWith('/settings')) return null
+  if (pathname === '/settings/prompts' || pathname.startsWith('/settings/prompts/')) return 'prompts'
   const id = pathname.match(/^\/settings\/([a-z]+)$/)?.[1]
   return SETTINGS_SECTIONS.some((section) => section.id === id) ? (id as SettingsSection) : 'appearance'
 }
@@ -834,13 +837,18 @@ function AboutPane({ data }: { data: SettingsData }) {
 
 export function SettingsMain({
   section,
+  path,
+  navigate,
   back,
 }: {
   section: SettingsSection
+  path: string
+  navigate: (to: string) => void
   back: { label: string; onClick: () => void }
 }) {
   const { data, note, change, reload } = useSettings()
   const label = SETTINGS_SECTIONS.find((candidate) => candidate.id === section)?.label ?? 'Settings'
+  if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
 
   return (
     <div className="sky-main">

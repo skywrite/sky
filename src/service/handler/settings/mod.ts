@@ -17,7 +17,9 @@ import { Hono } from 'hono'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
+import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
+import { createPromptRoutes } from './prompts.ts'
 
 // ── The configuration view (the Advanced pane) ──────────────────────
 
@@ -278,6 +280,7 @@ export interface SettingsHost {
   reveal: (target: RevealTarget) => Promise<void>
   /** Accounts and keys over the keychain; absent, /connections is not served */
   connections?: ConnectionsHost
+  prompts?: PromptCatalog
 }
 
 export type SettingsRoutesOptions = SettingsHost
@@ -342,6 +345,7 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
 
   // Accounts and keys — the keychain's page, routes of its own.
   if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))
+  if (options.prompts) app.route('/prompts', createPromptRoutes(options.prompts))
 
   // Everything the page shows, read afresh per request.
   app.get('/settings', async (c) => {

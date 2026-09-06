@@ -1,8 +1,8 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import type { JournalContext } from '../lib/gatherContext.ts'
 
@@ -29,7 +29,7 @@ const QuestionSchema = z.object({
  * Each question is assigned to a journal type.
  */
 export async function generateQuestions(context: JournalContext): Promise<GeneratedQuestion[]> {
-  const promptContent = await readTextFile(PROMPT_FILE)
+  const promptContent = await readPromptFile(PROMPT_FILE)
   const { output: prompt } = renderPromptFile(promptContent, 'generate-questions.prompt.md', {
     journal: {
       date: context.today.date,
@@ -61,7 +61,7 @@ export async function generateQuestionsForTypes(
 ): Promise<GeneratedQuestion[]> {
   if (types.length === 0) return []
 
-  const promptContent = await readTextFile(TYPE_PROMPT_FILE)
+  const promptContent = await readPromptFile(TYPE_PROMPT_FILE)
   const { output: prompt } = renderPromptFile(promptContent, 'generate-type-questions.prompt.md', {
     journal: {
       date: context.today.date,

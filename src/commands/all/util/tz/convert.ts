@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
 import { currentTimezoneIANA, timezoneToOffsetString } from '#universal/dates/timezones/mod.ts'
@@ -211,7 +211,7 @@ export default class UtilTzConvertTask extends Command {
     }
 
     // Load and render system prompt
-    const promptContent = await readTextFile(SYSTEM_PROMPT_FILE)
+    const promptContent = await readPromptFile(SYSTEM_PROMPT_FILE)
     const renderInput: RenderInput = {
       context: {
         notebookDate: context.notebookNow.date,

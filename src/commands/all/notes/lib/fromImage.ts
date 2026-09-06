@@ -8,8 +8,9 @@ import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { exists, readTextFile, rename } from '#shared/fs/mod.ts'
+import { exists, rename } from '#shared/fs/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -314,7 +315,7 @@ export async function extractNoteFromImage(
     }),
   )
 
-  const promptContent = await readTextFile(EXTRACT_PROMPT_FILE)
+  const promptContent = await readPromptFile(EXTRACT_PROMPT_FILE)
   let { output: prompt } = renderPromptFile(promptContent, 'extract-from-image.prompt.md', {
     user: { referenceDate: referenceDate ?? '(unknown)' },
   })
@@ -341,7 +342,7 @@ export interface CorrectionsContext {
 }
 
 export async function parseNoteCorrections(ctx: CorrectionsContext): Promise<z.infer<typeof CorrectionsSchema>> {
-  const promptContent = await readTextFile(CORRECTIONS_PROMPT_FILE)
+  const promptContent = await readPromptFile(CORRECTIONS_PROMPT_FILE)
   const renderInput: RenderInput = {
     user: {
       summary: ctx.summary,

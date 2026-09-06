@@ -1,7 +1,7 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 const PROMPT_FILE = new URL('../prompts/parse-corrections.prompt.md', import.meta.url).pathname
@@ -47,7 +47,7 @@ export interface CorrectionsContext {
 }
 
 export async function parseCorrections(ctx: CorrectionsContext): Promise<ParsedCorrections> {
-  const promptContent = await readTextFile(PROMPT_FILE)
+  const promptContent = await readPromptFile(PROMPT_FILE)
   const renderInput: RenderInput = {
     user: {
       from: ctx.from ?? 'null',

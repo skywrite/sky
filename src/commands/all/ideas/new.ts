@@ -11,9 +11,9 @@ import slugify from '#lib/string/slugify.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { SlugCollisionError, writeIdea } from './lib/write.ts'
 
@@ -162,7 +162,7 @@ export default class IdeasNewTask extends Command {
     // Step 5: Format the idea with AI
     spinner.start('Formatting your idea...')
 
-    const formatContent = await readTextFile(FORMAT_FILE)
+    const formatContent = await readPromptFile(FORMAT_FILE)
 
     const formatInput: RenderInput = {
       idea: {

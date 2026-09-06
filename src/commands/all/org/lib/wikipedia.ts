@@ -7,7 +7,7 @@ import {
   type WikipediaSearchResult,
 } from '#lib/apis/wikipedia.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 /** Hard ceiling on the article select/disambiguate/validate calls — see categorize.ts for why. */
@@ -104,7 +104,7 @@ async function selectBestArticleAI(
     .join('\n\n')
 
   // Load and render the prompt template
-  const promptContent = await readTextFile(SELECT_PROMPT_FILE)
+  const promptContent = await readPromptFile(SELECT_PROMPT_FILE)
   const input: RenderInput = {
     search: {
       term: searchTerm,
@@ -213,7 +213,7 @@ async function resolveDisambiguationPage(
   const optionsText = disambiguationOptions.map((opt, i) => `[${i + 1}] ${opt}`).join('\n')
 
   // Load and render the prompt template
-  const promptContent = await readTextFile(DISAMBIGUATE_PROMPT_FILE)
+  const promptContent = await readPromptFile(DISAMBIGUATE_PROMPT_FILE)
   const input: RenderInput = {
     search: {
       term: searchTerm,
@@ -268,7 +268,7 @@ async function validateArticleMatch(
   }
 
   // Load and render the prompt template
-  const promptContent = await readTextFile(VALIDATE_PROMPT_FILE)
+  const promptContent = await readPromptFile(VALIDATE_PROMPT_FILE)
   const input: RenderInput = {
     search: {
       term: searchTerm,

@@ -1,7 +1,7 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { WebFetchResult } from './webFetch.ts'
 import type { WikipediaSelectionResult } from './wikipedia.ts'
@@ -75,7 +75,7 @@ export async function categorizeOrganization(
   sources: CategorizationSources,
 ): Promise<OrgCategorizationResult> {
   // Load and render the prompt template
-  const promptContent = await readTextFile(CATEGORIZE_PROMPT_FILE)
+  const promptContent = await readPromptFile(CATEGORIZE_PROMPT_FILE)
 
   const input: RenderInput = {
     taxonomy: {

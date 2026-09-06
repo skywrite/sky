@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/render.ts'
 import { Week } from '#universal/dates/nbdt/mod.ts'
 import { buildPlanUserPrompt, type InterviewAnswers } from './draftWeek.ts'
@@ -33,7 +33,7 @@ export async function generateRefineQuestions(args: {
   createdYmd: string
 }): Promise<string[]> {
   try {
-    const { output: system } = renderPromptFile(await readTextFile(PROMPT_FILE), 'refine.prompt.md')
+    const { output: system } = renderPromptFile(await readPromptFile(PROMPT_FILE), 'refine.prompt.md')
     const result = await generateText({ ...aiModel('reasoning'), system, prompt: buildPlanUserPrompt(args) })
     return parseRefineQuestions(result.text)
   } catch {

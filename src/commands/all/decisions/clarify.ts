@@ -4,8 +4,8 @@ import { gatherNotebookContext, runPromptJson } from '#commands/lib/interview.ts
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -108,7 +108,7 @@ export default class DecisionsClarifyTask extends Command {
     try {
       const now = await fetchNow()
       const draft = await runPromptJson({
-        promptContent: await readTextFile(DRAFT_FILE),
+        promptContent: await readPromptFile(DRAFT_FILE),
         promptName: 'decisions-draft.prompt.md',
         input: {
           context: { notebookDate: now.plainDateTime.date },

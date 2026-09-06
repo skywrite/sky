@@ -12,9 +12,10 @@ import { slugify } from '#lib/string/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
+import { exists, outputFile } from '#shared/fs/mod.ts'
 import ProjectDocument from '#shared/models/Project/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 // -----------------------------------------------------------------------------
@@ -275,7 +276,7 @@ export default class ProjectsNewTask extends Command {
       // Step 7: Synthesize the overview sections
       spinner.start('Formatting your project...')
 
-      const formatContent = await readTextFile(FORMAT_FILE)
+      const formatContent = await readPromptFile(FORMAT_FILE)
 
       const formatInput: RenderInput = {
         context: { notebookDate: when.date },

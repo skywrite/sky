@@ -41,6 +41,12 @@ Sections at `/settings` and `/settings/<section>`:
   registry's `AI_PROFILES` is read at process start, so the service's
   own calls see a new profile after a restart, while every CLI run
   sees it at once.
+- **Prompts** — `/settings/prompts`: a searchable list of real prompt files and
+  their source references. Visual/Markdown editing, saved template links, sample
+  variables, and a live rendered preview share one page. Saves create notebook
+  customizations used by the runtime loader. New prompt and Restore built-in are
+  available. See the [prompt library design](../../../../_shared-ts/prompts/docs/README.md)
+  for storage, references, conflict handling, and runtime behavior.
 - **Connections** — the keychain's page (`connections.ts`, its host in
   `createConnectionsHost.ts`, the pane in `theme/client/settingsConnections.tsx`).
   Two cards. Accounts: Slack as agent-slack reports it (its test, and a

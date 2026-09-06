@@ -17,6 +17,7 @@ import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/subjects.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
@@ -347,7 +348,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     }
 
     // 2. Load and render summary prompt
-    const promptContent = await readTextFile(prompts.summary)
+    const promptContent = await readPromptFile(prompts.summary)
 
     const renderInput: RenderInput = {
       context: {
@@ -459,7 +460,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     } else {
       output.log(colors.cyan('Extracting metadata...'))
 
-      const extractPromptContent = await readTextFile(prompts.extract)
+      const extractPromptContent = await readPromptFile(prompts.extract)
       const { output: extractPrompt } = renderPromptFile(extractPromptContent, 'transcript-summary-extract.prompt.md', {
         ...renderInput,
         user: { input: summary },

@@ -5,8 +5,9 @@ import { z } from 'zod'
 import type { CommandContext } from '#commands/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
 import { miFrontmatter, toSingleLine } from '#shared/models/MostImportant/frontmatter.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { CONTEXT_TOKENS_TRIPWIRE, gatherContext } from './gatherContext.ts'
@@ -92,7 +93,7 @@ async function clarifyMI(
   spinner: ReturnType<typeof p.spinner>,
   notebookContext?: string,
 ): Promise<ClarifyResult | null> {
-  const clarifierContent = await readTextFile(PROMPT_CLARIFY)
+  const clarifierContent = await readPromptFile(PROMPT_CLARIFY)
   let currentInput = initialInput
   let conversationHistory = `User's initial MI: "${initialInput}"`
   let lastWasUserEdit = false
@@ -280,7 +281,7 @@ async function synthesizeMI(opts: {
 
   spinner.start('Enriching your answers...')
 
-  const synthContent = await readTextFile(PROMPT_SYNTHESIZE)
+  const synthContent = await readPromptFile(PROMPT_SYNTHESIZE)
   const synthInput: RenderInput = {
     synthesizer: {
       statement,
@@ -361,7 +362,7 @@ export async function suggestMostImportant(opts: SuggestOptions): Promise<Sugges
 
   // 2. Load and render prompt template
   output.log('Generating suggestions...')
-  const promptTemplate = await readTextFile(PROMPT_FILE)
+  const promptTemplate = await readPromptFile(PROMPT_FILE)
   const renderResult = renderPromptFile(promptTemplate, 'suggest-mi.prompt.md', {
     context: {
       notebookDate: miContext.today.date,

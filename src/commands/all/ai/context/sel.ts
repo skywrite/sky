@@ -1,10 +1,9 @@
+import { generateText } from 'ai'
 /**
  * AI Context Selector - AI writes GraphQL to gather context for a question.
  *
  * Usage: sky ai:context:sel "What did I discuss with Alice last week?"
  */
-
-import { generateText } from 'ai'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -21,6 +20,7 @@ import {
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
 import { loadMemories, renderVocabularyBlock } from '#shared/models/Memory/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -92,7 +92,7 @@ export default class AIContextSelectorTask extends Command {
 
     // Load prompt, schema, entity context, and learned vocabulary in parallel
     const [promptContent, schema, entityCtx, memories] = await Promise.all([
-      readTextFile(PROMPT_FILE),
+      readPromptFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
       gatherEntityContext(config as Record<string, unknown>),
       loadMemories(DIR_AI_MEMORY),

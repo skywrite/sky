@@ -10,6 +10,7 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import Automation from '#shared/models/Automation/mod.ts'
 import { describeTrigger, frameOf } from '#shared/models/Automation/trigger.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 
 const SYSTEM_PROMPT_FILE = new URL('./prompts/draft.prompt.md', import.meta.url).pathname
@@ -139,7 +140,7 @@ export default class AutomationsDraftTask extends Command {
       },
     }
     const { output: systemPrompt } = renderPromptFile(
-      await readTextFile(SYSTEM_PROMPT_FILE),
+      await readPromptFile(SYSTEM_PROMPT_FILE),
       'draft.prompt.md',
       renderInput,
     )

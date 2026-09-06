@@ -4,7 +4,7 @@ import { gatherNotebookContext, runPromptJson } from '#commands/lib/interview.ts
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -95,7 +95,7 @@ export default class IdeasClarifyTask extends Command {
 
     try {
       const draft = await runPromptJson({
-        promptContent: await readTextFile(DRAFT_FILE),
+        promptContent: await readPromptFile(DRAFT_FILE),
         promptName: 'ideas-draft.prompt.md',
         input: {
           idea: {

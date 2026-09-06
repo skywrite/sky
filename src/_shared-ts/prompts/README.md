@@ -1,9 +1,12 @@
 ---
 created: 2026-01-12
-updated: 2026-01-26
+updated: 2026-09-05
 ---
 
 # Prompt System
+
+The [prompt library design](docs/README.md) covers Settings → Prompts, notebook
+customizations, shared templates, previews, and the runtime loader.
 
 A templating system for AI prompts using Handlebars and Markdown.
 

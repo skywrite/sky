@@ -2,7 +2,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { ClaudeSession } from './claudeCode.ts'
@@ -144,7 +144,7 @@ export async function digestSessions(
   day: PlainDate,
   timezone: string,
 ): Promise<Array<SessionDigest | null>> {
-  const content = await readTextFile(PROMPT_FILE)
+  const content = await readPromptFile(PROMPT_FILE)
   const { output: instructions } = renderPromptFile(content, 'claude-code-session.prompt.md')
   return Promise.all(sessions.map((session) => digestSession(session, profile, day, timezone, instructions)))
 }

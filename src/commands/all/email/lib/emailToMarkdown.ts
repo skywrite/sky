@@ -1,6 +1,6 @@
 import { generateText } from 'ai'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { EmailMessage } from './imap-client.ts'
 import { sanitizeEmailHtml } from './sanitizeEmailHtml.ts'
@@ -160,7 +160,7 @@ export async function emailToMarkdown(
 
   // AI failures propagate: the caller skips the message and leaves its thread
   // in the inbox, so the next sync retries the conversion from scratch.
-  const promptContent = await readTextFile(PROMPT_FILE)
+  const promptContent = await readPromptFile(PROMPT_FILE)
 
   // Convert to completion, window by window. A generation that stops at the
   // output ceiling is resumed: the partial output goes back as a prior

@@ -15,6 +15,7 @@ import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
 import { dayDir, isActionPath } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -338,7 +339,7 @@ export default class SummaryDayTask extends Command {
   }
 
   private async loadPromptTemplate(): Promise<string> {
-    const content = await readTextFile(PROMPT_FILE)
+    const content = await readPromptFile(PROMPT_FILE)
     const { output } = renderPromptFile(content, 'day.prompt.md')
     return output
   }

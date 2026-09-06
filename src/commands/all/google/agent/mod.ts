@@ -25,6 +25,7 @@ import { aiModel, ROLES } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
@@ -239,10 +240,10 @@ export default class GoogleAgentTask extends Command {
 
     if (!import.meta.dirname) return CommandResult.error('Cannot locate the agent prompt directory')
     const promptDir = path.join(import.meta.dirname, 'prompts')
-    const systemPrompt = await readTextFile(path.join(promptDir, 'agent.prompt.md'))
-    const critiquePrompt = await readTextFile(path.join(promptDir, 'slide-critique.prompt.md'))
-    const deckCritiquePrompt = await readTextFile(path.join(promptDir, 'deck-critique.prompt.md'))
-    const docCritiquePrompt = await readTextFile(path.join(promptDir, 'doc-critique.prompt.md'))
+    const systemPrompt = await readPromptFile(path.join(promptDir, 'agent.prompt.md'))
+    const critiquePrompt = await readPromptFile(path.join(promptDir, 'slide-critique.prompt.md'))
+    const deckCritiquePrompt = await readPromptFile(path.join(promptDir, 'deck-critique.prompt.md'))
+    const docCritiquePrompt = await readPromptFile(path.join(promptDir, 'doc-critique.prompt.md'))
 
     const state = createMissionState()
     state.onFileTracked = (missionFile) => openInBrowser(missionFile.url)

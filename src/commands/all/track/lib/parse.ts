@@ -1,3 +1,4 @@
+import { generateText } from 'ai'
 /**
  * Free-text tracking entries → record column values.
  *
@@ -7,14 +8,12 @@
  * model call that maps the sentence onto the definition's declared columns
  * ("3 mile run in the park at 6:30 am" → miles, time, notes).
  */
-
-import { generateText } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import type { TrackingColumn, TrackingDocument } from '#shared/models/Tracking/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 
 const PROMPT_FILE = new URL('../prompts/parse-entry.prompt.md', import.meta.url).pathname
@@ -73,7 +72,7 @@ export async function parseEntry(
   now: { date: string; time: string },
 ): Promise<Record<string, string> | null> {
   try {
-    const content = await readTextFile(PROMPT_FILE)
+    const content = await readPromptFile(PROMPT_FILE)
     const columns = def.columns.map((c) => `- ${c.name} (${c.type}${c.unit ? `, unit: ${c.unit}` : ''})`).join('\n')
 
     const { output } = renderPromptFile(content, 'parse-entry.prompt.md', {

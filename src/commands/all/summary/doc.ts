@@ -5,8 +5,9 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { loadDocument, type LoadedDocument, loadLabel } from '#lib/documents/loadDocument.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { env } from '#shared/sys/mod.ts'
 
 const PROMPT_FILE = new URL('./prompts/doc.prompt.md', import.meta.url).pathname
@@ -144,7 +145,7 @@ export default class SummaryDocTask extends Command {
   }
 
   private async loadPromptTemplate(): Promise<string> {
-    const content = await readTextFile(PROMPT_FILE)
+    const content = await readPromptFile(PROMPT_FILE)
     const { markdown } = splitYamlMarkdown(content)
     return markdown.trim()
   }

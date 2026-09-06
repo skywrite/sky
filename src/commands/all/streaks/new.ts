@@ -13,9 +13,9 @@ import { textSpinner, type TextSpinner } from '#lib/tui/textSpinner.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import type { StreakSchedule } from '#shared/models/Streak/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import * as dateFns from '#universal/dates/dateFns/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
@@ -110,7 +110,7 @@ async function clarifyHabit(
   capturedBlocks: string[],
   notebookContext?: string,
 ): Promise<string | null> {
-  const promptContent = await readTextFile(CLARIFIER_FILE)
+  const promptContent = await readPromptFile(CLARIFIER_FILE)
   let currentInput = initialInput
   let conversationHistory = `User's initial description: "${initialInput}"`
 
@@ -213,7 +213,7 @@ async function reviewDetails(habit: string, schedule: string, details: string, s
 
   let review: z.infer<typeof reviewSchema>
   try {
-    const reviewContent = await readTextFile(REVIEW_FILE)
+    const reviewContent = await readPromptFile(REVIEW_FILE)
     const { output: rendered } = renderPromptFile(reviewContent, 'streaks-review.prompt.md', {
       review: { habit, schedule, details },
     })
@@ -513,7 +513,7 @@ export default class StreaksNewTask extends Command {
     // Step 9: Format with AI - title, slug, why
     spinner.start('Formatting your streak...')
 
-    const formatContent = await readTextFile(FORMAT_FILE)
+    const formatContent = await readPromptFile(FORMAT_FILE)
     const formatInput: RenderInput = {
       streak: {
         description: clarifiedHabit,

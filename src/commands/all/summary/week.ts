@@ -9,6 +9,7 @@ import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { dayDir, fetchNow, weekDir } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
@@ -336,7 +337,7 @@ export default class SummaryWeekTask extends Command {
   }
 
   private async loadPromptTemplate(): Promise<string> {
-    const content = await readTextFile(PROMPT_FILE)
+    const content = await readPromptFile(PROMPT_FILE)
     const { output } = renderPromptFile(content, 'week.prompt.md')
     return output
   }

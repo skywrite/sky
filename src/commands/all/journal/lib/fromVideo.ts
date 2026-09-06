@@ -11,10 +11,11 @@ import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { exists, readTextFile, rename } from '#shared/fs/mod.ts'
+import { exists, rename } from '#shared/fs/mod.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { desktopFilesByExt } from '../../audio/transcript/lib/desktopFiles.ts'
@@ -126,7 +127,7 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
 
   // 5. Headings and a summary over the words, without touching the words.
   output.log('Organizing into sections...')
-  const { output: prompt } = renderPromptFile(await readTextFile(PROMPT_FILE), 'video-sections.prompt.md', {
+  const { output: prompt } = renderPromptFile(await readPromptFile(PROMPT_FILE), 'video-sections.prompt.md', {
     journal: { date: when.date, transcript: clean.cleanedText },
   })
   const { text } = await generateText({ ...aiModel('reasoning'), prompt })

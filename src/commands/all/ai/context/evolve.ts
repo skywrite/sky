@@ -1,3 +1,4 @@
+import { generateObject, generateText } from 'ai'
 /**
  * AI Context Evolve - Evolves GraphQL queries based on conversation direction.
  *
@@ -7,8 +8,6 @@
  *
  * Usage: sky ai:context:evolve "What are the financial implications?" --queries '["{ meetings... }"]'
  */
-
-import { generateObject, generateText } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -25,6 +24,7 @@ import {
   normalizeGraphQLQuery,
 } from '#shared/models/DomainCollection/query/normalize.ts'
 import { loadMemories, renderVocabularyBlock } from '#shared/models/Memory/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { formatEntityContext, gatherEntityContext } from './_entityContext.ts'
@@ -99,7 +99,7 @@ export default class AIContextEvolveTask extends Command {
 
     // Load prompt, schema, entity context, and learned vocabulary in parallel
     const [promptContent, graphqlSchema, entityCtx, memories] = await Promise.all([
-      readTextFile(PROMPT_FILE),
+      readPromptFile(PROMPT_FILE),
       readTextFile(SCHEMA_FILE),
       gatherEntityContext(config as Record<string, unknown>),
       loadMemories(DIR_AI_MEMORY),

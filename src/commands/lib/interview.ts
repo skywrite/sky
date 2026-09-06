@@ -1,3 +1,4 @@
+import * as path from 'node:path'
 /**
  * Shared building blocks for AI-guided "new document" interview commands
  * (projects:new, decisions:new, ideas:new; streaks:new uses the round judge
@@ -6,8 +7,6 @@
  * The single-round judge (runClarifierRound) is transport-free so the clack
  * loop here and the ai:chat tools can run the same prompts identically.
  */
-
-import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import colors from 'picocolors'
@@ -23,6 +22,7 @@ import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { toTimeRef } from '#shared/nbfs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
@@ -330,7 +330,7 @@ export async function runClarifierLoop(
   initialInput: string,
   opts: ClarifierLoopOptions,
 ): Promise<ClarifyResult | null> {
-  const promptContent = await readTextFile(opts.promptFile)
+  const promptContent = await readPromptFile(opts.promptFile)
   let currentInput = initialInput
   let conversationHistory = initialInput ? `${opts.seedLabel ?? "User's initial description"}: "${initialInput}"` : ''
 

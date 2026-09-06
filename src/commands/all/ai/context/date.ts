@@ -1,3 +1,4 @@
+import { generateObject } from 'ai'
 /**
  * AI Context Date - Extracts temporal information from a natural language prompt.
  *
@@ -5,13 +6,11 @@
  *
  * Usage: sky ai:context:date "Look at my conversations with James from Feb 18 and Feb 24"
  */
-
-import { generateObject } from 'ai'
 import { z } from 'zod'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { resolveWindow } from './lib/widenSince.ts'
@@ -89,7 +88,7 @@ export default class AIContextDateTask extends Command {
     const { output } = context
     const { message, json } = args
 
-    const promptContent = await readTextFile(PROMPT_FILE)
+    const promptContent = await readPromptFile(PROMPT_FILE)
     const renderInput: RenderInput = {
       context: {
         notebookDate: context.notebookNow.date,

@@ -21,7 +21,11 @@ export function parsePromptFile(content: string, filename: string): ParsedPrompt
   const { yaml: yamlContent, markdown: body } = splitYamlMarkdown(content)
 
   // Parse YAML using project's yaml module (npm:yaml keeps dates as strings)
-  const rawFrontmatter = (yamlContent ? parseYaml(yamlContent) : {}) as Record<string, unknown>
+  const parsedYaml: unknown = yamlContent ? parseYaml(yamlContent) : {}
+  const rawFrontmatter =
+    parsedYaml && typeof parsedYaml === 'object' && !Array.isArray(parsedYaml)
+      ? (parsedYaml as Record<string, unknown>)
+      : {}
 
   // Check version compatibility (file version must not exceed system version)
   const schema = typeof rawFrontmatter.schema === 'string' ? rawFrontmatter.schema : PROMPT_SCHEMA_VERSION

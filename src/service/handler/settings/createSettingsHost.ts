@@ -9,6 +9,7 @@ import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
+import { createPromptCatalog } from '#shared/prompts/load.ts'
 import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
   type ModelRow,
@@ -95,6 +96,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
       return Promise.resolve()
     },
     connections: createConnectionsHost(),
+    prompts: createPromptCatalog(),
     reveal: async (target: RevealTarget) => {
       if (process.platform !== 'darwin') throw new Error('Reveal works on macOS only for now.')
       const config = loadSkyConfig()

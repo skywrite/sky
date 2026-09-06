@@ -4,7 +4,8 @@ import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { resolveFileRef } from '#lib/google/mod.ts'
-import { exists, readTextFile } from '#shared/fs/mod.ts'
+import { exists } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { IMPORT_EXTENSIONS, resolveImportSource } from '../google/agent/lib/importFile.ts'
 import type { MissionFile } from '../google/agent/lib/tools.ts'
@@ -99,7 +100,7 @@ export default class LegalReviewTask extends Command {
 
     if (!import.meta.dirname) return CommandResult.error('Cannot locate the legal prompt directory')
     const promptPath = path.join(import.meta.dirname, 'prompts', PROMPT_NAME)
-    const { output: mission } = renderPromptFile(await readTextFile(promptPath), PROMPT_NAME, {
+    const { output: mission } = renderPromptFile(await readPromptFile(promptPath), PROMPT_NAME, {
       review: { focus: focus?.trim() },
     })
 

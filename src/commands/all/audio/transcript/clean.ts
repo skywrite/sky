@@ -14,6 +14,7 @@ import { extractJson } from '#shared/ai/extractJson.ts'
 import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
@@ -461,7 +462,7 @@ export default class AudioTranscriptCleanTask extends Command {
     }
 
     // 3. Load and render analysis prompt
-    const analysisPromptContent = await readTextFile(ANALYSIS_PROMPT_FILE)
+    const analysisPromptContent = await readPromptFile(ANALYSIS_PROMPT_FILE)
 
     const renderInput: RenderInput = {
       context: {

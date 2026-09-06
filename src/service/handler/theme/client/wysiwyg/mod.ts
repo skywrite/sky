@@ -76,11 +76,15 @@ export interface EditorState {
   resolveImage?: (src: string) => string
   /** The front matter belongs to the properties panel: its block is not rendered, its text goes through the handle. */
   hideFrontmatter?: boolean
+  /** The host owns Save; no file API, polling, or autosave in this mode. */
+  local?: boolean
 }
 
 export type EditorStatusKind = 'saved' | 'dirty' | 'saving' | 'conflict' | 'error'
 
 export interface EditorHooks {
+  /** Current Markdown after local edits, without waiting for a disk save. */
+  onChange?(content: string): void
   onStatus(kind: EditorStatusKind, text: string): void
   onConflict(visible: boolean): void
   /** The front matter text changed by any path but the handle — undo, a reload, typing `---`; null when the block is gone. */
@@ -89,7 +93,11 @@ export interface EditorHooks {
   onReachTop?(): void
 }
 
+export type EditorFormat = 'bold' | 'italic' | 'heading' | 'paragraph' | 'bullets' | 'undo' | 'redo'
+
 export interface EditorHandle {
+  content(): string
+  format(command: EditorFormat): void
   /** Drop local changes and show the file as it is on disk. */
   reload(): void
   /** Save over a file that changed on disk. */
@@ -117,6 +125,8 @@ const TYPING_WINDOW_MS = 3000
 export function mountEditor(root: HTMLElement, state: EditorState, hooks: EditorHooks): EditorHandle {
   const editor = new Editor(root, state, hooks)
   return {
+    content: () => editor.content(),
+    format: (command) => editor.format(command),
     reload: () => void editor.reloadFromDisk('Reloaded disk version'),
     overwrite: () => void editor.save(true),
     frontmatter: () => editor.frontmatterText(),
@@ -196,7 +206,7 @@ class Editor {
   private repaintTimer: number | null = null
   private saveTimer: number | null = null
   private expandFrame: number | null = null
-  private readonly pollTimer: number
+  private readonly pollTimer: number | null
   private readonly listeners: Listener[] = []
 
   constructor(
@@ -244,7 +254,7 @@ class Editor {
       if (leaf && target instanceof Element && target.closest('.fence-lang')) this.commitLanguage(leaf, 'stay')
     })
     this.listen(root, 'change', (event) => this.onChange(event))
-    this.pollTimer = window.setInterval(() => void this.poll(), POLL_MS)
+    this.pollTimer = state.local ? null : window.setInterval(() => void this.poll(), POLL_MS)
     hooks.onStatus('saved', 'Saved')
   }
 
@@ -2127,7 +2137,31 @@ class Editor {
 
   // --- saving and the file on disk -------------------------------------------------------------
 
+  content(): string {
+    // Flush through the normal repaint path so reading a draft cannot suppress re-lexing.
+    this.flushAll()
+    return serializeDocument(this.doc)
+  }
+
+  format(command: EditorFormat) {
+    this.root.focus({ preventScroll: true })
+    if (!bookmarkFromSelection(this.root)) this.focusStart()
+    if (command === 'bold') this.toggleInline(STYLES.strong)
+    else if (command === 'italic') this.toggleInline(STYLES.em)
+    else if (command === 'heading') this.heading(2)
+    else if (command === 'paragraph') this.heading(null)
+    else if (command === 'bullets') this.listCommand('ul')
+    else if (command === 'undo') this.undo()
+    else this.redo()
+  }
+
   private markDirty() {
+    if (this.state.local) {
+      // Some structural commands finish updating the model after marking it dirty.
+      queueMicrotask(() => {
+        if (!this.destroyed) this.hooks.onChange?.(this.content())
+      })
+    }
     if (!this.dirty) {
       this.dirty = true
       this.hooks.onStatus('dirty', 'Unsaved')
@@ -2136,6 +2170,7 @@ class Editor {
   }
 
   private scheduleSave(delay: number) {
+    if (this.state.local) return
     this.clearSaveTimer()
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null
@@ -2149,6 +2184,10 @@ class Editor {
   }
 
   async save(force: boolean) {
+    if (this.state.local) {
+      this.hooks.onChange?.(this.content())
+      return
+    }
     if (this.saving) {
       this.scheduleSave(SAVE_IDLE_MS)
       return
@@ -2205,6 +2244,7 @@ class Editor {
 
   /** Shows the file as it is on disk, keeping the caret in the same block where possible (MODE-5). */
   async reloadFromDisk(status: string) {
+    if (this.state.local) return
     const snapshot = await fetchSnapshot(this.state.apiPath, false)
     if (this.destroyed) return
     this.replaceDocument(snapshot.content ?? '', snapshot.version)
@@ -2259,12 +2299,12 @@ class Editor {
   destroy() {
     if (this.destroyed) return
     this.destroyed = true
-    window.clearInterval(this.pollTimer)
+    if (this.pollTimer !== null) window.clearInterval(this.pollTimer)
     if (this.repaintTimer !== null) window.clearTimeout(this.repaintTimer)
     if (this.expandFrame !== null) window.cancelAnimationFrame(this.expandFrame)
     this.clearSaveTimer()
     for (const { target, type, handler } of this.listeners) target.removeEventListener(type, handler)
-    if (this.dirty && !this.conflict && !this.saving) void this.save(false)
+    if (!this.state.local && this.dirty && !this.conflict && !this.saving) void this.save(false)
   }
 }
 

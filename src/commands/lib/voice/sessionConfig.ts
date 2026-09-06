@@ -1,3 +1,4 @@
+import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 /**
  * What a voice session is, apart from how its audio travels: the persona
  * rendered with the session-start clocks, a random opening line, the
@@ -9,10 +10,8 @@
  * around it, where the audio format is WebRTC's to negotiate and so is
  * not declared at all.
  */
-
-import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 import { loadSkyConfig } from '#shared/config/loader.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
+import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prompts/mod.ts'
 import { pickGreeting } from './greetings.ts'
 
@@ -107,12 +106,12 @@ export async function renderVoicePrompts(input: VoicePromptInput, random?: () =>
   const { calendar, ...clock } = input
   const renderInput: RenderInput = { context: { ...clock }, calendar: { block: calendar ?? '' } }
   const { output: instructions } = renderPromptFile(
-    await readTextFile(VOICE_PROMPT_FILE),
+    await readPromptFile(VOICE_PROMPT_FILE),
     'voice.prompt.md',
     renderInput,
   )
   const { output: askPrompt } = renderPromptFile(
-    await readTextFile(ASK_PROMPT_FILE),
+    await readPromptFile(ASK_PROMPT_FILE),
     'ask-notebook.prompt.md',
     renderInput,
   )
