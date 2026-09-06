@@ -3,6 +3,12 @@
  * transcript review, replayed into every future analysis run so settled terms
  * are corrected at HIGH confidence (or left alone) instead of re-asked.
  *
+ * Two kinds of ruling enter it: the person's answers at review, and the
+ * high-confidence name fixes that landed on a contact (lib/contactNames.ts) —
+ * a mishearing of a known person's name, fixed once, is fixed for good and
+ * reaches the transcriber's vocabulary. Every other auto-fix is applied once
+ * and forgotten.
+ *
  * Lives as hand-editable JSON under DIR_STATE (machine state, not the
  * notebook); editing or deleting the file is the unlearn path. A malformed
  * file loads as null and is never overwritten — a bad hand-edit must not cost

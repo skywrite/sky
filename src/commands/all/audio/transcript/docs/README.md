@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-05
 ---
 
 # The transcript pipeline
@@ -66,6 +66,30 @@ Such a file's length runs from its first cue, not from zero, and that cue
 is also when the meeting began, which the web import proposes as the start.
 A numbered cue with no header is an SRT.
 
+## A name matched is a name corrected
+
+The analysis returns the people — who was there, who was discussed, each
+matched to a contact — and, separately, the issues to fix in the text. The
+two used to be independent: the model could match a misheard first name to
+its contact for the rel list and raise no issue for the spelling, and the
+transcript kept the mishearing, on into the write-up, whose prompt trusts
+the transcript's names. Now every person carries the spellings the
+transcript got wrong for them, and `lib/misheardNames.ts` turns each into a
+high-confidence correction the replacer applies with the rest: a one-word
+mishearing lands on the one token of the contact's name it stands for, a
+longer one on the full name. The match is the evidence; the correction
+follows from it in code.
+
+A high-confidence name fix that lands on a contact — the full name or one
+token of it, `lib/contactNames.ts` — enters the glossary as a confirmed
+correction, so it replays without being re-derived and its right side
+guides the transcriber next time. Other auto-fixes are applied once and
+forgotten, as before: a wrong fix cemented is a wrong fix forever.
+
+Not covered: a person matched for who/rel whose name never appears in the
+transcript in any spelling the model listed. That needs a review question
+of a new shape ("which word is this person?") and is not built.
+
 ## Picking up a run
 
 A run of the pipeline costs minutes of model time and, for a recording, a
@@ -112,6 +136,9 @@ Start runs the same command, which finds the record on its own.
 
 ## Narrative
 
+- `2026-09-05-a-match-owes-the-text-a-correction.md` — the rel list named
+  the right contact while the write-up kept the transcriber's misspelling;
+  why the two outputs diverged, and what now ties them.
 - `2026-09-02-picking-up-a-run.md` — why the record exists, what it keys
   on, and the cases that shaped it.
 - `2026-09-02-a-transcript-without-a-header.md` — the captioner dialect

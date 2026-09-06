@@ -17,6 +17,7 @@ import { logger } from '#shared/log.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
+import { contactNameSet, landsOnContact } from './lib/contactNames.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { fetchOrgs, fetchPeople, fetchProjects } from './lib/entityLists.ts'
@@ -30,6 +31,7 @@ import {
   saveGlossary,
   touchLastSeen,
 } from './lib/glossary.ts'
+import { misheardCorrections, toPersonMatches } from './lib/misheardNames.ts'
 import { isRtf, stampedDurationMinutes, turnStamps } from './lib/plainText.ts'
 import SRT from './lib/SRT/mod.ts'
 import { clockLabel, type ReviewCorrection, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
@@ -132,6 +134,11 @@ const TRANSCRIPT_MODEL = ROLES.reasoning
 // No-op until the CLI process family configures logging (see #shared/log.ts).
 const log = logger('transcript')
 
+// A person as the analysis returns them — a bare name, or the name with the
+// spellings the transcript got wrong for it (lib/misheardNames.ts). Both parse,
+// so a run record kept before the misheard list existed still restores.
+const PersonMatchSchema = z.union([z.string(), z.object({ name: z.string(), misheard: z.array(z.string()).nullish() })])
+
 // Zod schema for structured AI response
 const TranscriptIssueSchema = z.object({
   issues: z.array(
@@ -148,8 +155,14 @@ const TranscriptIssueSchema = z.object({
     }),
   ),
   summary: z.string(),
-  who: z.array(z.string()).default([]).describe('People who are present/participating in the conversation'),
-  rel: z.array(z.string()).default([]).describe('People who are discussed/mentioned but not present'),
+  who: z
+    .array(PersonMatchSchema)
+    .default([])
+    .describe("People present in the conversation, with the transcript's misspellings of each"),
+  rel: z
+    .array(PersonMatchSchema)
+    .default([])
+    .describe("People discussed but not present, with the transcript's misspellings of each"),
 })
 
 type TranscriptIssue = z.infer<typeof TranscriptIssueSchema>['issues'][number]
@@ -529,20 +542,48 @@ export default class AudioTranscriptCleanTask extends Command {
       output.log(colors.gray(`Merged ${rawIssueCount - analysis.issues.length} duplicate issues`))
     }
 
+    // The people, in either shape the model returned them, and what the text
+    // owes them: a spelling the model matched to a contact is corrected to that
+    // contact's name, whether or not the model also raised it as an issue.
+    const who = toPersonMatches(analysis.who)
+    const rel = toPersonMatches(analysis.rel)
+    const misheard = misheardCorrections(
+      [...who, ...rel],
+      transcript,
+      analysis.issues.map((issue) => issue.originalText),
+    )
+    for (const fix of misheard) {
+      analysis.issues.push({
+        type: 'name',
+        confidence: 'high',
+        occurrences: fix.occurrences,
+        originalText: fix.originalText,
+        contexts: [],
+        suggestedFix: fix.suggestedFix,
+        options: [],
+      })
+    }
+
     // Separate high-confidence (auto-apply) from medium/low (need review)
     const autoFixIssues = analysis.issues.filter((i) => i.confidence === 'high')
     const reviewIssues = analysis.issues.filter((i) => i.confidence !== 'high')
 
     output.log(colors.gray(`Summary: ${analysis.summary}\n`))
 
-    // Display extracted people
-    if (analysis.who.length > 0) {
-      output.log(colors.cyan(`Participants (who): `) + analysis.who.join(', '))
+    // Display extracted people, and the spellings the text owed them
+    const whoNames = who.map((person) => person.name)
+    const relNames = rel.map((person) => person.name)
+    if (whoNames.length > 0) {
+      output.log(colors.cyan(`Participants (who): `) + whoNames.join(', '))
     }
-    if (analysis.rel.length > 0) {
-      output.log(colors.cyan(`Mentioned (rel): `) + analysis.rel.join(', '))
+    if (relNames.length > 0) {
+      output.log(colors.cyan(`Mentioned (rel): `) + relNames.join(', '))
     }
-    if (analysis.who.length > 0 || analysis.rel.length > 0) {
+    if (misheard.length > 0) {
+      const fixes = misheard.map((fix) => `"${fix.originalText}" → "${fix.suggestedFix}" (${fix.person})`)
+      output.log(colors.cyan(`Matched spellings: `) + fixes.join(', '))
+    }
+    if (whoNames.length > 0 || relNames.length > 0) {
       output.log('')
     }
 
@@ -576,7 +617,24 @@ export default class AudioTranscriptCleanTask extends Command {
       // Persist the user's rulings, plus lastSeen touches from this transcript,
       // so future runs stop asking about settled terms.
       if (glossary !== null) {
-        const rulings = buildRulings(reviewIssues, reviewCorrections)
+        // Two kinds of ruling: the person's answers, and the high-confidence
+        // name fixes that landed on a contact — a profile the notebook knows is
+        // the safest ruling to keep, and the one fix worth never re-deriving.
+        const contacts = contactNameSet(knownPeople)
+        const landed = autoFixIssues.filter(
+          (issue) => issue.type === 'name' && landsOnContact(issue.suggestedFix, contacts),
+        )
+        const rulings = [
+          ...buildRulings(reviewIssues, reviewCorrections),
+          ...buildRulings(
+            landed,
+            landed.map((issue, i) => ({
+              issueIndex: i,
+              correction: issue.suggestedFix ?? '',
+              action: 'accept' as const,
+            })),
+          ),
+        ]
         if (rulings.length > 0) applyRulings(glossary, rulings, context.notebookNow.date)
         if (rulings.length > 0 || glossaryTouched > 0) {
           const changes = [
@@ -668,8 +726,8 @@ export default class AudioTranscriptCleanTask extends Command {
     const skippedCount = corrections.length - appliedCount
 
     // Format people arrays for YAML (use flow style for compact output)
-    const whoYaml = analysis.who.length > 0 ? `[${analysis.who.map((n) => `"${n}"`).join(', ')}]` : '[]'
-    const relYaml = analysis.rel.length > 0 ? `[${analysis.rel.map((n) => `"${n}"`).join(', ')}]` : '[]'
+    const whoYaml = whoNames.length > 0 ? `[${whoNames.map((n) => `"${n}"`).join(', ')}]` : '[]'
+    const relYaml = relNames.length > 0 ? `[${relNames.map((n) => `"${n}"`).join(', ')}]` : '[]'
 
     const content = `---
 title: ${title}
@@ -707,8 +765,8 @@ ${cleanedTranscript}
       appliedCount,
       skippedCount,
       summary: analysis.summary,
-      who: analysis.who,
-      rel: analysis.rel,
+      who: whoNames,
+      rel: relNames,
       audioFilePath: audioSourcePath,
       transcriptFilePath: transcriptSourcePath,
       durationMinutes: cueDurationMinutes,

@@ -50,7 +50,8 @@ export interface ApplyCorrectionsResult {
   totalReplacements: number
 }
 
-const MIN_NEEDLE_LENGTH = 3
+/** Needles shorter than this are refused: too promiscuous to replace blind. */
+export const MIN_NEEDLE_LENGTH = 3
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -68,6 +69,16 @@ function patternsFor(needle: string, removal: boolean): RegExp[] {
   const flexible = bounded(needle.trim().split(/\s+/).map(escapeRegex).join('[^\\S\\n]+'), needle)
   const sources = flexible === exact ? [exact] : [exact, flexible]
   return sources.map((source) => new RegExp(source + suffix, 'gi'))
+}
+
+/**
+ * How often a needle occurs in the text, by the boundary and case rules a
+ * correction is applied with — so a count taken here is the count the
+ * replacer will report. Zero for a needle the replacer would refuse.
+ */
+export function countOccurrences(text: string, needle: string): number {
+  if (needle.trim().length < MIN_NEEDLE_LENGTH) return 0
+  return text.match(patternsFor(needle, false)[0])?.length ?? 0
 }
 
 export function applyCorrections(text: string, corrections: CorrectionInput[]): ApplyCorrectionsResult {

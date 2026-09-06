@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { applyCorrections } from './applyCorrections.ts'
+import { applyCorrections, countOccurrences } from './applyCorrections.ts'
 import type { CorrectionInput } from './applyCorrections.ts'
 
 function make(originalText: string, correction: string, occurrences = 1): CorrectionInput {
@@ -156,5 +156,21 @@ test('applyCorrections() - unmatched and empty input', () => {
     should: 'return the text untouched with empty buckets',
     actual: applyCorrections('As is.', []),
     expected: { text: 'As is.', applied: [], dropped: [], totalReplacements: 0 },
+  })
+})
+
+test('countOccurrences()', () => {
+  const text = 'Novack called. novack again — the Novacks too, and "Novack" quoted.'
+  assert({
+    given: 'a needle present in several cases, once as a longer word',
+    should: 'count the bounded, case-insensitive matches the replacer would land',
+    actual: countOccurrences(text, 'Novack'),
+    expected: 3,
+  })
+  assert({
+    given: 'a needle under the replacer minimum',
+    should: 'count nothing, as the replacer would refuse it',
+    actual: countOccurrences(text, 'No'),
+    expected: 0,
   })
 })

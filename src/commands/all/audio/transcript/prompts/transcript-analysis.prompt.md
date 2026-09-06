@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-13
-updated: 2026-08-16
+updated: 2026-09-05
 description: Analyze transcript for transcription errors and clean-up opportunities
 ---
 
@@ -104,7 +104,12 @@ In addition to issues, extract two lists of people:
 
 2. **rel**: People who are MENTIONED or DISCUSSED but were NOT present in the meeting. These are people talked about during the meeting.
 
-Match names against the Known Contacts list when possible. Use the full name from the contacts list (e.g., if "Tanesha" is mentioned and "Tanisha Patel" is in contacts, use "Tanisha Patel").
+Each entry is an object with two fields:
+
+- **name**: Match against the Known Contacts list when possible and use the full name from it (e.g., if "Tanesha" is mentioned and "Tanisha Patel" is in contacts, use "Tanisha Patel"). A person matching no contact keeps the name as the transcript spells it.
+- **misheard**: Every spelling in the transcript that is a mishearing of this person's name — "Tanesha" for Tanisha Patel — each distinct misspelling once, exactly as written, the name only (no possessive, no punctuation). Short forms and nicknames the person actually goes by ("Matt" for Matthew) are not mishearings. Empty when the transcript spells the person right.
+
+A person you matched to a contact under a different spelling MUST have that spelling in `misheard`, whether or not you also raised it as an issue above: the misheard list is what corrects the transcript.
 
 If no participants or mentioned people can be identified, use empty arrays. Do NOT make up names.
 
@@ -124,8 +129,8 @@ If no participants or mentioned people can be identified, use empty arrays. Do N
     }
   ],
   "summary": "Brief 1-2 sentence description of what this transcript is about",
-  "who": ["Person A", "Person B"],
-  "rel": ["Person C", "Person D"]
+  "who": [{ "name": "Tanisha Patel", "misheard": ["Tanesha"] }, { "name": "Person B", "misheard": [] }],
+  "rel": [{ "name": "Person C", "misheard": [] }]
 }
 ```
 
