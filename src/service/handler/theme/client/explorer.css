@@ -1,4 +1,23 @@
-/* File tree, directory listings, and path breadcrumbs. */
+/* File tree, directory listings, document headers, and path breadcrumbs. */
+
+/* The document header shares the reader/editor's width and side padding. */
+.sky-doc-column > .sky-head {
+  max-width: 1000px;
+}
+
+.sky-doc-column > .sky-head > .sky-tabs {
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  max-width: 70%;
+  row-gap: 6px;
+}
+
+.sky-doc-column > .sky-head .sky-head-count {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* The tree: one row per entry, a directory unfolds in place. */
 .sky-tree {
@@ -146,6 +165,26 @@
 }
 
 @media (max-width: 900px) {
+  /* Keep the controls clear of the menu; the path gets the document's full width. */
+  .sky-doc-column > .sky-head:has(> .sky-tabs) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .sky-doc-column > .sky-head:has(> .sky-tabs) > .sky-title {
+    grid-row: 2;
+  }
+
+  .sky-doc-column > .sky-head > .sky-tabs {
+    grid-row: 1;
+    margin-left: 46px;
+    max-width: none;
+    min-height: 40px;
+  }
+
   .sky-dir {
     padding: 14px 8px 72px;
   }

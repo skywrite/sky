@@ -44,7 +44,7 @@ Keep changes with the feature they affect, including its responsive rules:
 | `composer.css` | Message input, composer controls, reading budget |
 | `chat-tools.css` | Tool activity, output, usage, approval prompts |
 | `context.css` | Chat context panel, files in context, turn timeline |
-| `explorer.css` | File tree, directory listings, breadcrumbs |
+| `explorer.css` | File tree, directory listings, document headers, breadcrumbs |
 | `document.css` | Reader/editor typography, markdown blocks, code highlighting |
 | `editor.css` | Editing status, visible markdown syntax, editable blocks, table tools |
 | `frontmatter.css` | Properties, completion, YAML, identity, property overrides in Details |
@@ -121,6 +121,15 @@ far" introduces the record after the plan.
 marks Most important explicitly, so an absent priority list never makes
 another section look like the priority. Shared cards elsewhere retain
 their existing appearance.
+
+## Explorer's document header
+
+The header uses the same 1000px maximum width and side padding as the
+reader and editor. Breadcrumbs align with the document's left edge and
+the controls with its right edge, with the save status vertically centered
+beside them. Long status messages and conflict actions can wrap. On phones,
+the controls leave room for the menu button, with the path on a full-width
+line below, aligned with the document text.
 
 ## There is no reference page
 
