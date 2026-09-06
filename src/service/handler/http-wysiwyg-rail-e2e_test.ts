@@ -201,6 +201,52 @@ test(
   },
 )
 
+test({ name: 'rail — projects/ completes a project in Links and saves a working link', timeout: 40000 }, async (t) => {
+  const projectPath = 'projects/open/Widget-V2/_project/overview.md'
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: DOC,
+      tempPrefix: 'wysiwyg-rail-project-',
+      files: {
+        ...PEOPLE,
+        [projectPath]: '---\nname: Team Survey\nstatus: open\n---\n',
+        'projects/completed/2025/Atlas/_project/overview.md': '---\nname: Atlas\nstatus: completed\n---\n',
+        'projects/hold/Held-Atlas/_project/overview.md': '---\nname: Held Atlas\nstatus: hold\n---\n',
+        'projects/open/.Hidden-Atlas/_project/overview.md': '---\nname: Hidden Atlas\nstatus: open\n---\n',
+      },
+      store: true,
+    },
+    async ({ page, origin, file, errors }) => {
+      await page.setViewportSize({ width: 1400, height: 900 })
+      await openEditor(page, origin)
+      const input = page.locator('.sky-rail .sky-prop[data-key="rel"] input')
+      await input.fill('projects/')
+      await page.getByRole('option', { name: /Widget-V2/ }).waitFor()
+      const offered = await page.getByRole('option').locator('.sky-prop-option-label').allTextContents()
+      await input.fill('projects/widget')
+      await page.getByRole('option', { name: /Widget-V2/ }).waitFor()
+      await input.press('Enter')
+      await waitForAutosave(page)
+      const saved = await readMarkdownFromDisk(file)
+      await page.goto(`${origin}/explorer/notes/preview.md`)
+      const link = page.locator('.sky-rail .sky-prop[data-key="rel"] a').filter({ hasText: 'projects/Widget-V2' })
+      await link.waitFor()
+      assert({
+        given: 'projects/ followed by a partial project name in Links, selected with Enter',
+        should: 'offer only the visible open folder, save projects/Folder, and link to its overview after reload',
+        actual: [offered, saved, await link.getAttribute('href'), errors],
+        expected: [
+          ['Widget-V2'],
+          DOC.replace('  - Jane Doe\n', '  - Jane Doe\n  - projects/Widget-V2\n'),
+          `/explorer/${projectPath}`,
+          [],
+        ],
+      })
+    },
+  )
+})
+
 test(
   { name: 'rail — add a property, pick a value, remove a key, and edit the YAML face', timeout: 40000 },
   async (t) => {

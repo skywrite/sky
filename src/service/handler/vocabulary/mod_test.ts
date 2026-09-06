@@ -30,7 +30,7 @@ test({ name: 'vocabulary - a match ranks by how the query sits in the candidate'
 
 test({ name: 'vocabulary - people, linked documents, keys, values and tags complete from the store' }, async () => {
   const store = await storePromise
-  const vocabulary = vocabularyOf(store, FIXTURES_DIR)
+  const vocabulary = await vocabularyOf(store, FIXTURES_DIR)
   assert({
     given: 'a person, an org and a day document by a few letters of their names',
     should: 'come back typed, with their paths and a hint',
@@ -82,7 +82,7 @@ test({ name: 'vocabulary - people, linked documents, keys, values and tags compl
   assert({
     given: 'names as a document writes them, one unknown',
     should: 'resolve each to its type and path, or null',
-    actual: resolveNames(store, FIXTURES_DIR, ['Alex Rivera', 'Acme Corp', 'Nobody Here']),
+    actual: await resolveNames(store, FIXTURES_DIR, ['Alex Rivera', 'Acme Corp', 'Nobody Here']),
     expected: {
       'Alex Rivera': { type: 'person', path: 'people/Alex-Rivera.md' },
       'Acme Corp': { type: 'org', path: 'orgs/Acme-Corp.md' },
@@ -111,6 +111,94 @@ test({ name: 'vocabulary - the routes answer the panel' }, async () => {
     ],
     expected: [['Alex Rivera'], { resolved: { 'Acme Corp': { type: 'org', path: 'orgs/Acme-Corp.md' } } }, 400],
   })
+})
+
+test({ name: 'vocabulary - project completions use the VS Code extension folder rules' }, async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'vocabulary-projects-'))
+  try {
+    const files = {
+      'projects/open/Widget-V2/_project/overview.md': '---\nname: Team Survey\nstatus: completed\n---\n',
+      'projects/open/Widget-V2/nested/_project/overview.md': '---\nname: Nested Project\nstatus: open\n---\n',
+      'projects/open/.Hidden-Atlas/_project/overview.md': '---\nname: Hidden Atlas\nstatus: open\n---\n',
+      'projects/open/Notes.md': '# Notes\n',
+      'projects/completed/2025/Atlas/_project/overview.md': '---\nname: Atlas\nstatus: completed\n---\n',
+      'projects/hold/Held-Atlas/_project/overview.md': '---\nname: Held Atlas\nstatus: open\n---\n',
+      'projects/canceled/Canceled-Atlas/_project/overview.md': '---\nname: Canceled Atlas\nstatus: open\n---\n',
+      'projects/whiteboard/Whiteboard-Atlas/_project/overview.md': '---\nname: Whiteboard Atlas\nstatus: open\n---\n',
+      'people/Jane-Doe.md': '---\nname: Jane Doe\n---\n',
+    }
+    for (const [relative, content] of Object.entries(files)) {
+      const file = path.join(base, relative)
+      await mkdir(path.dirname(file), { recursive: true })
+      await writeFile(file, content)
+    }
+    await mkdir(path.join(base, 'projects/open/No-Overview'))
+    const store = await MarkdownStore.build({
+      peopleDirs: [`${base}/people`],
+      orgDirs: [],
+      timeDirs: [],
+      projectsDir: `${base}/projects`,
+    })
+    const vocabulary = await vocabularyOf(store, base)
+    const expectedProject = {
+      value: 'projects/Widget-V2',
+      label: 'Widget-V2',
+      type: 'project' as const,
+      path: 'projects/open/Widget-V2/_project/overview.md',
+      hint: 'Open project',
+    }
+    assert({
+      given: 'an open folder whose overview has a different name and completed status',
+      should: 'complete the folder name, as the extension does, and insert projects/Folder',
+      actual: ['widget v2', 'projects/widget', 'PROJECTS/WIDGET-V2'].map(
+        (query) => complete(vocabulary, { kind: 'rel', query })[0],
+      ),
+      expected: [expectedProject, expectedProject, expectedProject],
+    })
+    const projects = complete(vocabulary, { kind: 'rel', query: 'projects/' })
+    assert({
+      given: 'open folders, a hidden folder, a file, a nested overview and projects in every other status directory',
+      should: 'offer only visible direct folders under open, even without an overview',
+      actual: projects.map((item) => item.value),
+      expected: ['projects/No-Overview', 'projects/Widget-V2'],
+    })
+    assert({
+      given: 'a second slash, an overview name, or the name of a completed project',
+      should: 'offer no project suggestions',
+      actual: ['projects/Widget-V2/', 'projects/open/', 'team survey', 'projects/Atlas'].map((query) =>
+        complete(vocabulary, { kind: 'projects', query }),
+      ),
+      expected: [[], [], [], []],
+    })
+    assert({
+      given: 'selected folder references plus an existing completed project reference',
+      should: 'link to the overview or bare folder and preserve historical project resolution',
+      actual: await resolveNames(store, base, ['projects/Widget-V2', 'projects/No-Overview', 'projects/Atlas']),
+      expected: {
+        'projects/Widget-V2': { type: 'project', path: 'projects/open/Widget-V2/_project/overview.md' },
+        'projects/No-Overview': { type: 'project', path: 'projects/open/No-Overview' },
+        'projects/Atlas': { type: 'project', path: 'projects/completed/2025/Atlas/_project/overview.md' },
+      },
+    })
+    const app = createTestHttpApp([`${base}/people`, `${base}/projects`], { markdownStore: store })
+    const response = await app.request('http://localhost/docs/_api/complete?kind=rel&q=projects%2Fwidget&limit=1')
+    assert({
+      given: 'the Links completion route with a project prefix, and the dedicated project picker',
+      should: 'return the same folder completion',
+      actual: [await response.json(), complete(vocabulary, { kind: 'projects', query: 'widget' })],
+      expected: [{ items: [expectedProject] }, [expectedProject]],
+    })
+    await mkdir(path.join(base, 'projects/open/Fresh-Atlas'))
+    const refreshed = await vocabularyOf(store, base)
+    assert({
+      given: 'a new empty project folder without a Markdown store update',
+      should: 'include it in the next completion request',
+      actual: complete(refreshed, { kind: 'rel', query: 'projects/fresh' }).map((item) => item.value),
+      expected: ['projects/Fresh-Atlas'],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
 })
 
 test({ name: 'vocabulary - linked from: the documents that name a person or an org, newest first' }, async () => {
@@ -146,7 +234,7 @@ test({ name: 'vocabulary - linked from: the documents that name a person or an o
 
 test({ name: 'vocabulary - the notebook score orders a tie, and the hint says how long ago' }, async () => {
   const store = await storePromise
-  const vocabulary = vocabularyOf(store, FIXTURES_DIR)
+  const vocabulary = await vocabularyOf(store, FIXTURES_DIR)
   const scoring = new ScoringStore()
   const today = new PlainDate('2026-01-20')
   scoring.recordPersonInteraction('Chen Wei', '2026-01-19', 10, today)
@@ -188,7 +276,7 @@ test({ name: 'vocabulary - a person with several names completes once, under any
       projectsDir: `${base}/projects`,
       timeDirs: [`${base}/time`],
     })
-    const vocabulary = vocabularyOf(store, base)
+    const vocabulary = await vocabularyOf(store, base)
     assert({
       given: 'one person file listing three names, searched by each of them',
       should: 'complete as one row every time, and count her tag once',

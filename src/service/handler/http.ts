@@ -289,7 +289,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // What the front matter panel completes from: people, orgs, projects, places and documents by
   // name, tags with counts, and — per top-level directory — the keys in use and a key's values.
-  app.get('/docs/_api/complete', (c) => {
+  app.get('/docs/_api/complete', async (c) => {
     if (!markdownStore) return c.json({ items: [] })
     const kind = c.req.query('kind') ?? ''
     if (!COMPLETION_KINDS.has(kind)) return c.json({ message: 'Unknown completion kind' }, 400)
@@ -304,7 +304,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       today = undefined
     }
     const items = complete(
-      vocabularyOf(markdownStore, path.resolve(markdownBaseDir)),
+      await vocabularyOf(markdownStore, path.resolve(markdownBaseDir)),
       {
         kind: kind as CompletionKind,
         query: c.req.query('q') ?? '',
@@ -338,7 +338,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     const base = path.resolve(markdownBaseDir)
     const source =
       typeof body?.path === 'string' && !path.isAbsolute(body.path) ? path.resolve(base, body.path) : undefined
-    return c.json({ resolved: resolveNames(markdownStore, base, names, source) })
+    return c.json({ resolved: await resolveNames(markdownStore, base, names, source) })
   })
 
   // A file beside a document — in the notebook, in the media mirror of the document's directory,

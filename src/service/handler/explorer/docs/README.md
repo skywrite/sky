@@ -46,6 +46,11 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
 
 ## Verified
 
+2026-09-06: Links shares the VS Code extension's project source: visible
+folders directly under `projects/open`, named by folder, including ones
+without an overview. Other statuses are excluded, and completion stops
+after a second slash. See `2026-09-06-project-completion-uses-open-folders.md`.
+
 2026-09-06: completion names and hints occupy separate lines in a bounded,
 scrollable menu, with a soft selection highlight and full text on hover.
 Selection happens after the menu opens so the first result is visible on

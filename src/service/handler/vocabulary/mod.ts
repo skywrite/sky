@@ -1,11 +1,13 @@
 /**
  * What the front matter panel completes from: the notebook's people, orgs, projects, places and
  * documents by name; its tags with counts; and, per top-level directory, the keys in use and the
- * values a key already has. Built once per store version, matched per request.
+ * values a key already has. Store data is built once per version; project folders are read per request.
  */
 
+import * as path from 'node:path'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import openProjectNames from '#shared/nbfs/openProjectNames.ts'
 import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import type { OrgScore, PersonScore, TagScore } from '../../scoring/ScoringStore.ts'
 import { toNotebookRelativePath } from '../markdown-preview/request.ts'
@@ -57,8 +59,6 @@ interface Entity {
   hint?: string
   /** A day document's day, for ordering newest first */
   date?: string
-  /** A project still open — ahead of closed ones */
-  open?: boolean
 }
 
 /** The notebook's interaction scores — what the VS Code extension orders its completions by — keyed by lowercased name. */
@@ -73,8 +73,6 @@ export function scoresFrom(people: PersonScore[], orgs: OrgScore[], tags: TagSco
     new Map(items.map((item) => [item.name.toLowerCase(), item]))
   return { people: byName(people), orgs: byName(orgs), tags: byName(tags) }
 }
-
-const CLOSED_STATUSES = new Set(['closed', 'done', 'archived', 'cancelled', 'canceled'])
 
 /** Days since the civil epoch for a calendar date — plain arithmetic, no clock. */
 function epochDays(year: number, month: number, day: number): number {
@@ -224,9 +222,6 @@ function entityOf(type: EntityType, value: string, path: string, doc: Document, 
     case 'org':
       hint = asString(yaml['sector'])
       break
-    case 'project':
-      hint = asString(yaml['status'])
-      break
     default:
       hint = path.split('/').slice(0, -1).join('/')
   }
@@ -246,11 +241,6 @@ export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary 
   }
   for (const profile of profilesOf(store.people)) entities.push(named('person', profile))
   for (const profile of profilesOf(store.orgs)) entities.push(named('org', profile))
-  for (const profile of profilesOf(store.projects)) {
-    const entity = named('project', profile)
-    entity.open = !CLOSED_STATUSES.has((asString(profile.doc.yaml['status']) ?? '').toLowerCase())
-    entities.push(entity)
-  }
   for (const profile of profilesOf(store.places)) entities.push(named('place', profile))
   for (const [type, s] of [
     ['library', store.library],
@@ -288,13 +278,31 @@ export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary 
 
 const cache = new WeakMap<MarkdownStore, Vocabulary>()
 
-/** The vocabulary for the store as it is now — rebuilt when the store's version moved. */
-export function vocabularyOf(store: MarkdownStore, base: string): Vocabulary {
-  const cached = cache.get(store)
-  if (cached && cached.version === store.version) return cached
-  const built = buildVocabulary(store, base)
-  cache.set(store, built)
-  return built
+/** Same folders and names as the VS Code extension, including projects with no overview yet. */
+async function openProjects(store: MarkdownStore, base: string): Promise<Entity[]> {
+  const names = await openProjectNames(path.join(base, 'projects', 'open'))
+  return names.map((name) => {
+    const folder = `projects/open/${name}`
+    const overview = `${folder}/_project/overview.md`
+    return {
+      type: 'project',
+      value: `projects/${name}`,
+      label: name,
+      aliases: [],
+      path: store.findByPath(path.join(base, overview)) ? overview : folder,
+      hint: 'Open project',
+    }
+  })
+}
+
+/** Store data is cached by version; a folder can appear or move without a markdown change. */
+export async function vocabularyOf(store: MarkdownStore, base: string): Promise<Vocabulary> {
+  let cached = cache.get(store)
+  if (!cached || cached.version !== store.version) {
+    cached = buildVocabulary(store, base)
+    cache.set(store, cached)
+  }
+  return { ...cached, entities: [...cached.entities, ...(await openProjects(store, base))] }
 }
 
 /**
@@ -358,7 +366,7 @@ const KINDS_TO_TYPES: Partial<Record<CompletionKind, EntityType[]>> = {
 /**
  * The completions for a request, best first: by how the query sits in the name, then — like the
  * VS Code extension — by the notebook's interaction score, then by recency; day documents newest
- * first, open projects before closed ones, people before projects, orgs, places and documents.
+ * first, people before projects, orgs, places and documents. Projects come only from open folders.
  */
 export function complete(
   vocabulary: Vocabulary,
@@ -385,7 +393,11 @@ export function complete(
   }
   const types = KINDS_TO_TYPES[request.kind]
   if (!types) return []
-  const pool = vocabulary.entities.filter((entity) => types.includes(entity.type))
+  const projectQuery = query.trim().toLowerCase().startsWith('projects/')
+  const nestedProjectQuery = projectQuery && query.trim().slice('projects/'.length).includes('/')
+  const pool = vocabulary.entities.filter(
+    (entity) => types.includes(entity.type) && (!projectQuery || (entity.type === 'project' && !nestedProjectQuery)),
+  )
   const scoreOf = (entity: Entity): { score: number; last: string } => {
     const hit =
       entity.type === 'person'
@@ -405,7 +417,6 @@ export function complete(
         sb.score - sa.score ||
         sb.last.localeCompare(sa.last) ||
         (b.date ?? '').localeCompare(a.date ?? '') ||
-        Number(b.open ?? false) - Number(a.open ?? false) ||
         ENTITY_ORDER[a.type] - ENTITY_ORDER[b.type] ||
         (a.label ?? a.value).localeCompare(b.label ?? b.value)
       )
@@ -439,14 +450,20 @@ function typeOfResolved(type: string, path: string): EntityType | null {
 }
 
 /** Where each name points, for the chips of a document: null when the notebook has no such thing. */
-export function resolveNames(
+export async function resolveNames(
   store: MarkdownStore,
   base: string,
   names: string[],
   sourcePath?: string,
-): Record<string, { type: EntityType; path: string } | null> {
+): Promise<Record<string, { type: EntityType; path: string } | null>> {
   const out: Record<string, { type: EntityType; path: string } | null> = {}
+  const projects = names.some((name) => name.startsWith('projects/')) ? await openProjects(store, base) : []
   for (const name of names) {
+    const project = projects.find((entity) => entity.value === name)
+    if (project) {
+      out[name] = { type: 'project', path: project.path }
+      continue
+    }
     const ref = store.resolve(name, sourcePath ? { sourceFilePath: sourcePath } : undefined)
     if (!('path' in ref) || typeof ref.path !== 'string') {
       out[name] = null
