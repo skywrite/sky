@@ -163,3 +163,134 @@
     visibility: visible;
   }
 }
+
+/* Turn activity stays beside its query disclosure as the reply arrives. */
+.sky-chat-activity {
+  min-width: 0;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+
+.sky-chat-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.sky-chat-pulse {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky-blue-deep);
+  animation: sky-chat-breathe 1.8s ease-in-out infinite;
+}
+
+.sky-chat-elapsed {
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sky-queries {
+  min-width: 0;
+  font-size: 14px;
+}
+
+.sky-queries-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--sky-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sky-queries-toggle:hover,
+.sky-queries-toggle[aria-expanded='true'] {
+  color: var(--sky-blue-deep);
+}
+
+.sky-queries-toggle svg[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.sky-queries-body {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  background: var(--sky-side);
+}
+
+.sky-queries-body > p {
+  margin: 0 0 12px;
+  color: var(--sky-dim);
+  line-height: 1.5;
+}
+
+.sky-query + .sky-query {
+  margin-top: 16px;
+}
+
+.sky-query-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-query-copy {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sky-query-copy:hover {
+  color: var(--sky-blue-deep);
+  text-decoration: underline;
+}
+
+.sky-query pre {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--sky-card);
+  color: var(--sky-text-2);
+  font: 13px / 1.6 var(--mantine-font-family-monospace);
+  white-space: pre;
+  tab-size: 2;
+}
+
+.sky-queries-toggle:focus-visible,
+.sky-query pre:focus-visible,
+.sky-query-copy:focus-visible {
+  outline: 2px solid var(--sky-blue-deep);
+  outline-offset: 3px;
+}
+
+@keyframes sky-chat-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-chat-pulse {
+    animation: none;
+  }
+}

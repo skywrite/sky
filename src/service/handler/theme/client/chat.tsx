@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { type TokenUsage, usageLine } from '#universal/ai/tokenUsage.ts'
+import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
@@ -118,6 +119,7 @@ export interface ThreadState {
   answered: Answered[]
   /** Tool runs this thread, oldest first — a running one has no status yet */
   runs: Run[]
+  queries: TurnQueries[]
 }
 
 /**
@@ -136,6 +138,7 @@ type Action =
       approvals?: Approval[]
       answered?: Answered[]
       runs?: Run[]
+      queries?: TurnQueries[]
     }
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
   | {
@@ -147,10 +150,12 @@ type Action =
       approvals: Approval[]
       answered: Answered[]
       runs: Run[]
+      queries?: TurnQueries[]
     }
   | { type: 'approval'; id: string; approval: Approval }
   | { type: 'answered'; id: string; approvalId: string; approved: boolean; at: number }
   | { type: 'sent'; id: string; content: string }
+  | { type: 'queries'; id: string; turn: number; queries: string[] }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
   | { type: 'tool'; id: string; name: string; subject?: string }
@@ -197,6 +202,7 @@ function initial(id: string): ThreadState {
     approvals: [],
     answered: [],
     runs: [],
+    queries: [],
   }
 }
 
@@ -231,6 +237,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         approvals,
         answered: action.answered ?? [],
         runs: action.runs ?? [],
+        queries: action.queries ?? [],
         phase: busy ? 'busy' : state.phase,
         gather: busy ? (approvals.length > 0 ? WAITING : 'still working') : state.gather,
       }
@@ -243,6 +250,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         approvals: action.approvals,
         answered: action.answered,
         runs: action.runs,
+        queries: action.queries ?? state.queries,
         phase: action.busy ? 'busy' : 'idle',
         gather: action.busy ? (action.approvals.length > 0 ? WAITING : 'still working') : null,
         contextVersion: action.busy ? state.contextVersion : state.contextVersion + 1,
@@ -266,13 +274,21 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         phase: 'busy',
         gather:
-          state.turns.length === 0
-            ? state.settings?.contextTokens === 0
-              ? 'not reading your notebook'
-              : 'reading your notebook'
-            : null,
+          state.settings?.contextTokens === 0
+            ? 'not reading your notebook'
+            : state.turns.length === 0
+              ? 'reading your notebook'
+              : 'finding what matters for this',
         provenance: null,
         turns: [...state.turns, { role: 'user', content: action.content, time: clock() }],
+      }
+    case 'queries':
+      return {
+        ...state,
+        queries: [
+          ...state.queries.filter((entry) => entry.turn !== action.turn),
+          { turn: action.turn, queries: action.queries },
+        ],
       }
     case 'gather':
       return {
@@ -424,6 +440,7 @@ interface ThreadBody {
   pending?: Approval[]
   answered?: Answered[]
   runs?: Run[]
+  queries?: TurnQueries[]
   /** Each reply's counts and the profile that answered, by turn index */
   usage?: Array<TokenUsage & { at: number; model: string }>
   timings?: Array<{ at: number; text: string }>
@@ -471,6 +488,7 @@ export function useChat(id: string) {
           approvals: body.pending ?? [],
           answered: body.answered ?? [],
           runs: body.runs ?? [],
+          queries: body.queries ?? [],
         })
       })
       .catch(() => {
@@ -501,6 +519,7 @@ export function useChat(id: string) {
             approvals: body.pending ?? [],
             answered: body.answered ?? [],
             runs: body.runs ?? [],
+            queries: body.queries ?? [],
           })
         })
         .catch(() => {})
@@ -644,6 +663,12 @@ export function useChat(id: string) {
               break
             case 'context-gathering':
               dispatch({ id, type: 'gather', text: 'finding what matters for this' })
+              break
+            case 'context-queries':
+              dispatch({ id, type: 'queries', turn: d.turn as number, queries: d.queries as string[] })
+              break
+            case 'queries-changed':
+              dispatch({ id, type: 'gather', text: 'searching your notebook' })
               break
             case 'context-rebuilt': {
               const report = d.report as { collectionSize: number; stats?: { kept: number } }
@@ -848,6 +873,7 @@ async function reattach(id: string, replyIndex: number, dispatch: (action: Actio
     approvals: body.pending ?? [],
     answered: body.answered ?? [],
     runs: body.runs ?? [],
+    queries: body.queries ?? [],
   })
 }
 
@@ -973,27 +999,6 @@ function RunList({ runs }: { runs: Run[] }) {
 }
 
 /**
- * The line that stands in for a reply that hasn't started. A large prompt
- * takes the model ten seconds or more to answer; once the wait is long
- * enough to notice, the line counts it, so quiet reads as working, not stuck.
- */
-function QuietLine({ text }: { text: string }) {
-  const [seconds, setSeconds] = useState(0)
-  useEffect(() => {
-    setSeconds(0)
-    const started = Date.now()
-    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
-    return () => clearInterval(timer)
-  }, [text])
-  return (
-    <div className="sky-condensed">
-      — {text}
-      {seconds >= 3 ? ` · ${seconds}s` : ''} —
-    </div>
-  )
-}
-
-/**
  * A tool call held for the person: what it would do, and the go or the
  * no. Once answered the card stays as the record, settled. The call reads
  * as it will land — a Slack message in Slack's own marks rendered, any
@@ -1066,6 +1071,7 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
   const busy = state.phase !== 'idle'
   // A tool at work speaks for the wait; the quiet line would only say "thinking" over it.
   const running = state.runs.some((run) => run.status === null)
+  const lastUser = state.turns.findLastIndex((turn) => turn.role === 'user')
   const coming = state.runs.filter((run) => run.at >= state.turns.length)
   // An answered card sits before the reply it preceded; past the last turn while that reply is still coming.
   const settled = (at: number) =>
@@ -1088,6 +1094,15 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
             runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
             labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
           />
+          {turn.role === 'user' && (
+            <Fragment key={`${state.id}-${i}`}>
+              <ChatActivity
+                active={state.phase === 'busy' && i === lastUser}
+                text={state.approvals.length > 0 || running ? null : state.gather}
+                queries={state.queries.find((entry) => entry.turn === Math.floor(i / 2) + 1)?.queries}
+              />
+            </Fragment>
+          )}
         </Fragment>
       ))}
       {state.answered
@@ -1107,8 +1122,7 @@ export function ThreadColumn({ chat }: { chat: Chat }) {
       ))}
       {/* Runs for a reply that has not begun sit where it will land. */}
       {coming.length > 0 && <RunList runs={coming} />}
-      {state.gather && state.approvals.length === 0 && !running && <QuietLine text={state.gather} />}
-      {state.phase === 'saving' && <QuietLine text="saving" />}
+      {state.phase === 'saving' && <ChatActivity active text="saving" />}
     </>
   )
 }

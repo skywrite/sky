@@ -1,12 +1,16 @@
 ---
 created: 2026-08-15
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # ChatContext admission — one scorer, question-conditioned policy
 
 Per-turn timing is stored with the context log by the session; see
 [shared timing](../../../../timing/docs/README.md) for measurement and persistence semantics.
+
+Full query sets also travel as `context-queries` progress events, including
+initial queries with zero matches. The web presentation and read-back
+contract live in the [chat HTTP notes](../../../../../service/handler/chat/docs/2026-09-06-queries-beside-the-wait.md).
 
 ChatContext decides the candidate pool; `ContextAssembler` decides what
 fits the budget. Between them sits the **admission policy** — how scored

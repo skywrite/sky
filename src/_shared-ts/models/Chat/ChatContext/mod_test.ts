@@ -500,6 +500,41 @@ test('ChatContext.restore - distinct recorded executions accumulate the multi-hi
 // evolveTurn
 // ---------------------------------------------------------------------------
 
+test('ChatContext - empty query results remain inspectable and new queries surface before execution', async () => {
+  const query = '{ people(name: "Jane Doe") { path } }'
+  const next = '{ projects(name: "Atlas") { path } }'
+  const seen: Array<{ turn: number; queries: string[] }> = []
+  let atExecution: string[] = []
+  const { context } = makeContext({
+    onProgress: (event) => {
+      if (event.type === 'context-queries') seen.push({ turn: event.turn, queries: event.queries })
+    },
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ query, paths: [] })),
+      evolveQueries: () => Promise.resolve(ok({ queries: [query, next], changed: true })),
+      executeQuery: () => {
+        atExecution = seen.at(-1)?.queries ?? []
+        return Promise.resolve(fail('Query failed'))
+      },
+    },
+  })
+  await context.firstTurn('Find Jane Doe')
+  await context.evolveTurn('And Atlas?', [])
+  assert({
+    given: 'an initial query with zero matches and a later query that fails',
+    should: 'keep both full query sets and announce the new set before executing it',
+    actual: { seen, atExecution, saved: context.log.map((entry) => entry.queries) },
+    expected: {
+      seen: [
+        { turn: 1, queries: [query] },
+        { turn: 2, queries: [query, next] },
+      ],
+      atExecution: [query, next],
+      saved: [[query], [query, next]],
+    },
+  })
+})
+
 test('ChatContext.evolveTurn', async () => {
   const executed: string[] = []
   const progress: string[] = []
@@ -533,7 +568,7 @@ test('ChatContext.evolveTurn', async () => {
     },
     expected: {
       executed: ['q2'],
-      progress: ['queries-changed'],
+      progress: ['context-queries', 'queries-changed', 'context-queries'],
       turn: 2,
       queries: ['q1', 'q2'],
       diff: ['projects/Atlas/Roadmap.md'],

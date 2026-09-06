@@ -32,6 +32,8 @@ export interface TimelineEntry {
   kind: TimelineKind
   /** Queries new this turn */
   searches: number
+  /** Full query set behind this turn's context, including queries carried forward. */
+  queries: string[]
   stats?: TurnStats
   /** Turn 1: how many documents the baseline gathered, shipped and cut alike */
   found?: number
@@ -90,6 +92,7 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
       when: stamps[entry.turn - 1] ?? null,
       kind,
       searches,
+      queries: entry.stats?.budget === 0 ? [] : [...entry.queries],
       added,
       pushedOut,
       tools: entry.tools ?? [],

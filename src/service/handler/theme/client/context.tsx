@@ -1,6 +1,7 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
 import { humanize } from './chat.tsx'
+import { GraphQLQueries } from './chatActivity.tsx'
 import { fileHref } from './explorer.tsx'
 
 /**
@@ -48,6 +49,7 @@ export interface TimelineEntry {
   when: string | null
   kind: 'seed' | 'grew' | 'same' | 'closed' | 'failed'
   searches: number
+  queries?: string[]
   stats?: TurnStats
   found?: number
   added: ContextDoc[]
@@ -218,6 +220,7 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
         </div>
         {line && <div className="sky-tl-txt">{line}</div>}
         {searches && <div className="sky-tl-sub">{searches}</div>}
+        <GraphQLQueries queries={entry.queries ?? []} />
         {entry.errors.map((error, i) => (
           <div key={i} className="sky-tl-fate">
             {error}

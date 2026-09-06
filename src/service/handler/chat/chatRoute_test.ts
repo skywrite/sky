@@ -114,6 +114,7 @@ const smallWindowHost: ChatSettingsHost = {
 async function testHost(
   over: {
     invokeModel?: ModelInvoker
+    initialQuery?: string
     /** Hands the test the host's report channel — what a tool's command output would reach */
     capture?: (report: (event: ChatSessionEvent | ToolOutputEvent) => void) => void
     /** Another catalog behind the settings routes */
@@ -139,7 +140,7 @@ async function testHost(
         model: {} as ResolvedModel,
         profile: { provider: 'claude', model: prefs.profile ?? 'claude-opus-4-6' },
         producers: {
-          produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap] })),
+          produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap], query: over.initialQuery })),
           evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
           executeQuery: () => Promise.resolve(ok({ paths: [] as string[] })),
         },
@@ -366,6 +367,53 @@ test('chat route - web tool and command timings persist automatically across rep
     })
   } finally {
     setTimingSink(() => {})
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat route - full GraphQL queries stream before the reply and survive read-back and reuse', async () => {
+  const query = 'query Context {\n  projects(name: "Atlas") { path }\n}'
+  let app: App
+  let whileWorking: unknown
+  const host = await testHost({
+    initialQuery: query,
+    invokeModel: async (args) => {
+      whileWorking = (await getJson(app, 'http://localhost/chat/queries')).queries
+      args.sink.write('Here is the context.')
+      return EMPTY
+    },
+  })
+  app = appWith(host)
+  try {
+    const first = parseSSE(
+      await (await send(app, 'http://localhost/chat/queries/messages', { message: 'Find Atlas' })).text(),
+    )
+    const second = parseSSE(
+      await (await send(app, 'http://localhost/chat/queries/messages', { message: 'Tell me more' })).text(),
+    )
+    const thread = await getJson(app, 'http://localhost/chat/queries')
+    const context = await getJson(app, 'http://localhost/chat/queries/context')
+    assert({
+      given: 'a full query, followed by a turn that reuses its context',
+      should: 'expose exact text in the stream, the busy thread, the reloaded thread, and the context panel',
+      actual: {
+        frames: [first, second].map((frames) => frames.find((frame) => frame.event === 'context-queries')?.data),
+        beforeReply:
+          first.findIndex((frame) => frame.event === 'context-queries') <
+          first.findIndex((frame) => frame.event === 'model-start'),
+        whileWorking,
+        reloaded: thread.queries,
+        panel: context.log.map((entry: { queries: string[] }) => entry.queries),
+      },
+      expected: {
+        frames: [1, 2].map((turn) => ({ type: 'context-queries', turn, queries: [query] })),
+        beforeReply: true,
+        whileWorking: [1, 2].map((turn) => ({ turn, queries: [query] })),
+        reloaded: [1, 2].map((turn) => ({ turn, queries: [query] })),
+        panel: [[query], [query]],
+      },
+    })
+  } finally {
     await rm(host.tmp, { recursive: true, force: true })
   }
 })

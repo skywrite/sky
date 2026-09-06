@@ -136,6 +136,7 @@ export interface RestoreReport {
 
 /** Mid-turn signals a host may surface while a turn's context work runs. */
 export type ContextProgressEvent =
+  | { type: 'context-queries'; turn: number; queries: string[] }
   | { type: 'queries-changed' }
   | { type: 'no-new-queries' }
   // Evolve-turn queries run through markdown:sel composed (which prints
@@ -517,8 +518,11 @@ export default class ChatContext {
           ...(produced.value.start ? { start: produced.value.start } : {}),
         }
       }
+      if (produced.ok && produced.value.query) {
+        this.queries.push(produced.value.query)
+        this.onProgress?.({ type: 'context-queries', turn: this.turnNumber, queries: [...this.queries] })
+      }
       if (produced.ok && produced.value.paths.length > 0) {
-        if (produced.value.query) this.queries.push(produced.value.query)
         const fetched = this.excludeOwnChat(produced.value.paths)
         // Selectivity from the raw result size — excluding the own chat
         // doesn't change how targeted the query was.
@@ -572,6 +576,7 @@ export default class ChatContext {
         this.onProgress?.({ type: 'queries-changed' })
         const prevQuerySet = new Set(this.queries)
         this.queries = evolved.value.queries
+        this.onProgress?.({ type: 'context-queries', turn: this.turnNumber, queries: [...this.queries] })
 
         // Only execute queries that are actually new or modified
         const newQueries = evolved.value.queries.filter((q) => !prevQuerySet.has(q))
@@ -621,7 +626,11 @@ export default class ChatContext {
           .reverse()
         this.topicTerms = extractTopicTerms([userMessage, ...recentUser].join('\n'), this.queries)
         rebuilt = this.rebuild(allNewPaths, true)
-      } else if (!evolved.ok) {
+      } else if (evolved.ok) {
+        if (this.queries.length > 0) {
+          this.onProgress?.({ type: 'context-queries', turn: this.turnNumber, queries: [...this.queries] })
+        }
+      } else {
         this.turnErrors.push(evolved.message)
         await this.logError({
           source: 'ai:chat',

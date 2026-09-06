@@ -213,6 +213,8 @@ interface Thread {
   answered: AnsweredApproval[]
   /** Every tool run so far, oldest first — the running one is the last without a status */
   runs: ToolRun[]
+  /** The query set currently being gathered, before its context log entry exists. */
+  liveQueries: { turn: number; queries: string[] } | null
   /** Whether ending files the thread; a false one keeps no crash copy at rest */
   saves: boolean
   /** Each reply's token counts and the profile that answered, by the reply's turn index */
@@ -444,6 +446,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             if (event.type === 'model-start') thread.partial = ''
             if (event.type === 'text-delta') thread.partial += event.text
             if (event.type === 'context-rebuilt') thread.context = event.report
+            if (event.type === 'context-queries') thread.liveQueries = { turn: event.turn, queries: event.queries }
             thread.updatedAt = ++tick
             thread.sink?.(event)
           },
@@ -459,6 +462,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             pending: new Map(),
             answered: [],
             runs: [],
+            liveQueries: null,
             usage: new Map(),
             timings: new Map(),
             // Kept unless told otherwise before the first message.
@@ -668,6 +672,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       })),
       answered: thread.answered,
       runs: thread.runs,
+      queries: [
+        ...thread.session.contextLog
+          .filter((entry) => entry.turn !== thread.liveQueries?.turn)
+          .map((entry) => ({ turn: entry.turn, queries: entry.stats?.budget === 0 ? [] : entry.queries })),
+        ...(thread.liveQueries ? [thread.liveQueries] : []),
+      ],
       usage: [...thread.usage].map(([at, usage]) => ({ at, ...usage })),
       timings: [...thread.timings].map(([at, text]) => ({ at, text })),
     })

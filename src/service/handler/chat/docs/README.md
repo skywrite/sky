@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -19,6 +19,19 @@ message is a POST whose response is the turn's event stream; the page
 renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
+- **Progress and the queries behind a reply.** A compact activity row sits
+  below the message while context is gathered and the reply is prepared.
+  Its wording follows the stage; quiet reading and thinking waits vary
+  their wording every eight seconds, with elapsed time across the turn.
+  Tool output and approval cards speak for their own waits. **GraphQL
+  queries** opens the full context query set, with selectable code and a
+  Copy query action. The disclosure stays open through streaming and turn
+  completion, and is also available in the Context timeline. The session's
+  `context-queries` event carries the set as soon as it is known; the thread
+  read-back merges that live set with saved context-log entries. Reused
+  queries are labeled as context carried forward, not new executions.
+  Queries returning no files remain recorded. See
+  [2026-09-06](2026-09-06-queries-beside-the-wait.md).
 - **The model a thread thinks with and how much it reads.** Both sit under
   the composer, beside the files-in-context count: `Opus 5 ▾` opens the
   configurations from Settings › AI grouped by provider, with the role
