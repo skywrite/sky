@@ -14,6 +14,7 @@ import { useOutline } from './frontmatter/outline.ts'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { useRail } from './rail.ts'
+import { RailToggle } from './railToggle.tsx'
 import { highlightCodeBlocks } from './wysiwyg/highlight.ts'
 import { type EditorHandle, type EditorStatusKind, mountEditor } from './wysiwyg/mod.ts'
 
@@ -538,7 +539,7 @@ export function DocView({ file }: { file: string }) {
         }
       : undefined,
   )
-  const { narrow, open: railOpen, toggle: toggleRail, close: closeRail } = useRail(file)
+  const { open: railOpen, toggle: toggleRail } = useRail(file)
   const outline = useOutline(scrollRef, [doc?.path, doc?.html, editing])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
@@ -616,15 +617,7 @@ export function DocView({ file }: { file: string }) {
                   Edit
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant={railOpen ? 'light' : 'subtle'}
-                onClick={toggleRail}
-                data-active={railOpen}
-                aria-pressed={railOpen}
-              >
-                Details
-              </Button>
+              {!railOpen && <RailToggle open={false} onClick={toggleRail} />}
               <Menu position="bottom-end" shadow="md" width={220}>
                 <Menu.Target>
                   <ActionIcon size="lg" aria-label="More">
@@ -692,13 +685,7 @@ export function DocView({ file }: { file: string }) {
         </div>
       </div>
       {file && !missing && railOpen && (editing || doc) ? (
-        <DocumentRail
-          state={frontmatter}
-          file={file}
-          day={doc?.day ?? null}
-          outline={outline}
-          onClose={narrow ? closeRail : undefined}
-        />
+        <DocumentRail state={frontmatter} file={file} day={doc?.day ?? null} outline={outline} onToggle={toggleRail} />
       ) : null}
     </div>
   )

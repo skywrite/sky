@@ -36,37 +36,33 @@
   }
 }
 
+/* The rail's corner holds its one control; the chevron's box overhangs the
+   padding so the glyph sits on the text's left edge. */
 .sky-rail-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 6px 0 8px;
+  margin: 6px 0 8px -6px;
 }
 
-.sky-rail-title {
-  flex: 1;
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+/* The chevron points at the edge the rail folds into. Folded, the same
+   chevron waits at the header's end and points back. */
+.sky-rail-toggle {
   color: var(--sky-dim);
 }
 
-.sky-rail-close {
-  border: 0;
-  background: transparent;
-  color: var(--sky-dim);
-  font: inherit;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.sky-rail-close:hover {
-  background: var(--sky-hover);
+.sky-rail-toggle:hover {
   color: var(--sky-text);
+}
+
+.sky-rail-toggle[data-open='false'] svg {
+  transform: scaleX(-1);
+}
+
+/* On a phone the menu button floats over the overlay's corner; the chevron steps aside for it. */
+@media (max-width: 900px) {
+  .sky-rail-head {
+    margin-left: 40px;
+  }
 }
 
 .sky-rail-sec {

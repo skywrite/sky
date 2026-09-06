@@ -6,6 +6,7 @@ import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
 import { DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
 import { useRail } from './rail.ts'
+import { RailToggle } from './railToggle.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
 /**
@@ -790,16 +791,7 @@ export function DayView({
               </span>
             )}
             <nav className="sky-tabs">
-              <Button
-                size="sm"
-                variant={rail.open ? 'light' : 'subtle'}
-                disabled={!view}
-                onClick={rail.toggle}
-                data-active={rail.open}
-                aria-pressed={rail.open}
-              >
-                Details
-              </Button>
+              {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
             </nav>
           </header>
 
@@ -967,7 +959,7 @@ export function DayView({
             onOpenImport={onOpenImport}
             onImportMeeting={onImportMeeting}
             onKept={onKept}
-            onClose={rail.narrow ? rail.close : undefined}
+            onToggle={rail.toggle}
           />
         )}
       </div>

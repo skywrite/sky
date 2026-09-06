@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-02
+updated: 2026-09-05
 ---
 
 # Explorer — the notebook's files as pages
@@ -41,8 +41,8 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   root and the configured directories before anything is read.
 - A directory's rows are plain links. The app turns the page in place;
   a middle click still opens a tab.
-- The buttons in the header — Edit, Details, the ⋯ menu — belong to a
-  file. A directory's page has none.
+- The buttons in the header — Edit, the ⋯ menu, and the rail's chevron
+  while the rail is folded — belong to a file. A directory's page has none.
 
 ## Verified
 

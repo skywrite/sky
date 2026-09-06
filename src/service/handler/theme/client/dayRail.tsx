@@ -4,6 +4,7 @@ import type { DayData, ThreadSummary } from './day.tsx'
 import { fileHref } from './explorer.tsx'
 import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
 import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
+import { RailToggle } from './railToggle.tsx'
 
 /**
  * The rail beside a day: what is around the day rather than in its
@@ -404,7 +405,7 @@ export function DayRail({
   onOpenImport,
   onImportMeeting,
   onKept,
-  onClose,
+  onToggle,
 }: {
   ymd: string
   /** Chats filed under the day */
@@ -418,19 +419,14 @@ export function DayRail({
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files the pad kept — the toast's words, and what Undo reverses */
   onKept: (kept: Kept[]) => void
-  /** Set when the rail is an overlay that can be dismissed */
-  onClose?: () => void
+  /** Folds the rail away — the chevron in its corner */
+  onToggle: () => void
 }) {
   const schedule = useSchedule(ymd)
   return (
     <aside className="sky-rail" data-day="" aria-label="Details">
       <div className="sky-rail-head">
-        <span className="sky-rail-title">Details</span>
-        {onClose ? (
-          <button type="button" className="sky-rail-close" aria-label="Close details" onClick={onClose}>
-            ×
-          </button>
-        ) : null}
+        <RailToggle open onClick={onToggle} />
       </div>
       <div className="sky-rail-body">
         <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />

@@ -3,15 +3,16 @@ import { useEffect, useState } from 'react'
 /**
  * The rail beside a page — a document's Details, a day's — and how it
  * opens: a third column on a wide window, remembered across visits; an
- * overlay from the header on a narrow one, closed by Escape or by turning
- * the page. One rule for every rail, so the explorer and the day agree.
+ * overlay on a narrow one, opened from the chevron at the header's end and
+ * closed by the rail's own chevron, by Escape, or by turning the page. One
+ * rule for every rail, so the explorer and the day agree.
  */
 
 const RAIL_KEY = 'sky-rail'
 const NARROW = '(max-width: 1180px)'
 
 /** Whether the window is too narrow for a third column — then the rail is an overlay. */
-export function useNarrow(): boolean {
+function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
   useEffect(() => {
     const query = window.matchMedia(NARROW)
@@ -32,11 +33,9 @@ function railRemembered(): boolean {
 }
 
 export interface Rail {
-  narrow: boolean
   open: boolean
+  /** Folds the rail or brings it back: the overlay on a narrow window, the remembered column on a wide one. */
   toggle: () => void
-  /** Closes the overlay; on a wide window the column stays as chosen. */
-  close: () => void
 }
 
 /**
@@ -62,7 +61,6 @@ export function useRail(resetKey: unknown): Rail {
       })
     }
   }
-  const close = () => setOverlay(false)
   useEffect(() => {
     if (!narrow || !overlay) return
     const onKey = (event: KeyboardEvent) => {
@@ -74,5 +72,5 @@ export function useRail(resetKey: unknown): Rail {
   useEffect(() => {
     setOverlay(false)
   }, [resetKey])
-  return { narrow, open, toggle, close }
+  return { open, toggle }
 }

@@ -51,8 +51,9 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 
 A day has the Details rail a document has (`theme/client/rail.ts` holds the
 one rule for opening it: a third column on a wide window, remembered; an
-overlay from the header's Details button below 1180px). Its body scrolls;
-its foot is anchored.
+overlay below 1180px). It folds from the chevron in its top-left corner;
+folded, the chevron waits at the header's end and brings it back. Its body
+scrolls; its foot is anchored.
 
 - **Meetings** — the calendar's meetings for the day, from the same read the
   meeting check makes (`schedule.ts`, `GET /day/:ymd/schedule`). Each row

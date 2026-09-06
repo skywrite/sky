@@ -1,10 +1,12 @@
 /**
  * The rail beside a document: what is about it rather than part of it — tags, the documents it
  * links to and the ones that link here, its files, its outline, and the kept dates with the raw
- * YAML behind a switch. Editable in place; below 1180px it is an overlay opened from the header.
+ * YAML behind a switch. Editable in place; below 1180px it is an overlay, opened from the chevron
+ * at the header's end.
  */
 
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
+import { RailToggle } from '../railToggle.tsx'
 import { AttachFiles } from './attach.tsx'
 import { type Backlink, fetchBacklinks } from './complete.ts'
 import { homeOf, kindOf, railSectionOf, TYPE_MARKS } from './kinds.ts'
@@ -97,15 +99,15 @@ export function DocumentRail({
   file,
   day,
   outline,
-  onClose,
+  onToggle,
 }: {
   state: FrontmatterState
   file: string
   /** The day a document under time/ belongs to, when it does */
   day?: string | null
   outline: OutlineItem[]
-  /** Set when the rail is an overlay that can be dismissed */
-  onClose?: () => void
+  /** Folds the rail away — the chevron in its corner. Absent where the rail sits inline, under a heading of its own. */
+  onToggle?: () => void
 }) {
   const dir = file.split('/')[0] ?? ''
   const [face, setFace] = useState<Face>(rememberedFace)
@@ -146,14 +148,11 @@ export function DocumentRail({
 
   return (
     <aside className="sky-rail" data-readonly={readOnly ? 'true' : undefined} aria-label="Details">
-      <div className="sky-rail-head">
-        <span className="sky-rail-title">Details</span>
-        {onClose ? (
-          <button type="button" className="sky-rail-close" aria-label="Close details" onClick={onClose}>
-            ×
-          </button>
-        ) : null}
-      </div>
+      {onToggle ? (
+        <div className="sky-rail-head">
+          <RailToggle open onClick={onToggle} />
+        </div>
+      ) : null}
       {tags.length > 0 || !readOnly ? (
         <Section title="Tags">
           {tags.length > 0 ? tags.map(row) : <p className="sky-rail-empty">No tags yet.</p>}
