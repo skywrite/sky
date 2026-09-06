@@ -1,4 +1,4 @@
-import { Button } from '@mantine/core'
+import { ActionIcon, Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
 import { DayRail } from './dayRail.tsx'
@@ -351,6 +351,17 @@ export function Cross() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** A page with a folded corner: the day's own file, beside its date. */
+function DayFileIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 1.75h5.25L13 5.5v8.75H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M9.25 1.75V5.5H13" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M6.25 8.5h4.5M6.25 11h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   )
 }
@@ -754,13 +765,23 @@ export function DayView({
   return (
     <div className="sky-main sky-day">
       <header className="sky-head">
-        <span className="sky-title">{view?.day.dateLabel ?? 'Today'}</span>
-        <nav className="sky-tabs">
+        <span className="sky-title">
+          {view?.day.dateLabel ?? 'Today'}
           {view?.day.dayRelativePath && (
-            <Button size="sm" component="a" href={fileHref(view.day.dayRelativePath)}>
-              Day file
-            </Button>
+            <ActionIcon
+              component="a"
+              href={fileHref(view.day.dayRelativePath)}
+              size="sm"
+              radius="sm"
+              className="sky-day-file"
+              aria-label="Day file"
+              title="Day file"
+            >
+              <DayFileIcon />
+            </ActionIcon>
           )}
+        </span>
+        <nav className="sky-tabs">
           <Button
             size="sm"
             variant={rail.open ? 'light' : 'subtle'}

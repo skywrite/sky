@@ -64,6 +64,24 @@
   position: relative;
 }
 
+/* The date carries the day file as a small icon; the label is a hover hint. */
+.sky-day .sky-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: normal;
+  overflow: visible;
+}
+
+.sky-day .sky-day-file {
+  flex: none;
+  color: var(--sky-dim);
+}
+
+.sky-day .sky-day-file:hover {
+  color: var(--sky-text);
+}
+
 /* Most important is the day's one card. The other sections share the page. */
 .sky-day .sky-col > .sky-block:not(.sky-day-priority) {
   background: transparent;

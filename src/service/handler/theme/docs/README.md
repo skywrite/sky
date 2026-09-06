@@ -85,6 +85,11 @@ full `YYYY-MM-DD` available on hover and in its semantic `time` element.
 The compact display comes directly from the day key, without converting
 it through a timezone. Navigation still uses the full date.
 
+A small page icon right after the date opens the day file. The words "Day
+file" stay as its hover hint and accessible name, so Details is the header's
+one button. The note `2026-09-05-the-day-file-becomes-an-icon.md` tells why
+the link left the button row.
+
 Most important is the day's one filled card, including its all-done state.
 The other plan sections and the day record sit directly on the page, with
 less padding and subtle dividers between neighboring sections. The group
