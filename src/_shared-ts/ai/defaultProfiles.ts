@@ -65,4 +65,15 @@ export const PROFILES = {
     provider: 'lm-studio',
     model: 'google/gemma-4-e4b',
   }),
+  // Qwen 3.8 27B on Cerebras: ~1500 tok/s, reasoning on (`high` is the host's default;
+  // stated so a glance at the profile says what runs). The model's own window is 262K;
+  // Cerebras serves 131,072 tokens a request on the paid tier (64K free), so a chat's
+  // reading budget is fitted to that. The key is the keychain entry cerebras/main —
+  // see llm/cerebrasProvider.ts.
+  'default-cerebras-qwen-3.8': defineProfile({
+    provider: 'cerebras',
+    model: 'qwen-3.8-27b',
+    contextWindow: 131_072,
+    options: { reasoningEffort: 'high' },
+  }),
 } satisfies Record<string, ModelProfile>

@@ -1,9 +1,16 @@
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
-import { createOpenAI, openai, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
+import {
+  createOpenAI,
+  openai,
+  type OpenAILanguageModelChatOptions,
+  type OpenAIResponsesProviderOptions,
+} from '@ai-sdk/openai'
 import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { AI_PROFILES } from '#config'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
+import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
+import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { installTimingTelemetry } from '#shared/timing/sdk.ts'
@@ -34,7 +41,7 @@ import { PROFILES } from './defaultProfiles.ts'
  * so it is intentionally absent from the roles below.
  */
 
-export type Provider = 'anthropic' | 'openai' | 'ollama' | 'lm-studio'
+export type Provider = 'anthropic' | 'openai' | 'ollama' | 'lm-studio' | 'cerebras'
 
 /** Provider-agnostic AI-SDK call settings. */
 export interface CommonOptions {
@@ -51,6 +58,7 @@ interface ProviderOptionsByProvider {
   openai: OpenAIResponsesProviderOptions
   ollama: Record<string, JSONValue>
   'lm-studio': Record<string, JSONValue>
+  cerebras: OpenAILanguageModelChatOptions
 }
 
 /** A named model configuration: identity (`provider` + `model`) plus a per-model `options` bag. */
@@ -100,6 +108,19 @@ export const ROLES = {
 
 const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', 'topK', 'maxRetries'])
 
+/**
+ * Where a provider's model reads its options. The OpenAI chat model reads
+ * `providerOptions.openai` whatever the provider is named, so an
+ * OpenAI-compatible host files its options under that key.
+ */
+const PROVIDER_OPTIONS_KEY: Record<Provider, string> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  ollama: 'ollama',
+  'lm-studio': 'lm-studio',
+  cerebras: 'openai',
+}
+
 let _lmStudioProvider: { baseUrl: string; provider: ReturnType<typeof createOpenAI> } | null = null
 
 function getLmStudioProvider(): ReturnType<typeof createOpenAI> {
@@ -132,6 +153,10 @@ function providerModelFor(profile: ModelProfile) {
       return getLmStudioProviderWith(profile.baseUrl ?? process.env.LM_STUDIO_BASE_URL ?? 'http://localhost:1234/v1')(
         profile.model,
       )
+    case 'cerebras':
+      // Cerebras takes exactly one system message, first; the cache helpers
+      // split instructions into several. Fold them before the request is built.
+      return wrapLanguageModel({ model: cerebras().chat(profile.model), middleware: singleSystemMessageMiddleware })
     case 'anthropic':
     default:
       return anthropic(profile.model)
@@ -184,7 +209,7 @@ export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions)
   }
 
   if (Object.keys(providerOptions).length > 0) {
-    resolved.providerOptions = { [profile.provider]: providerOptions }
+    resolved.providerOptions = { [PROVIDER_OPTIONS_KEY[profile.provider]]: providerOptions }
   }
 
   return resolved
@@ -215,7 +240,7 @@ export function aiModelId(role: Role): string {
 export { generateText, streamText } from 'ai'
 
 /** Every provider the registry can build, as a list — the settings page offers these. */
-export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'ollama', 'lm-studio']
+export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'ollama', 'lm-studio', 'cerebras']
 
 const PROVIDERS = new Set<string>(KNOWN_PROVIDERS)
 

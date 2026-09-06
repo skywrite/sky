@@ -5,8 +5,11 @@ updated: 2026-09-05
 
 # google:agent — the mission loop and its reliability ladder
 
-A mission is one `streamText` run (`mod.ts`): Opus with the agent tools,
-up to `MAX_STEPS = 48` steps, final text = the report. Two properties of
+A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` (Qwen 3.8
+on Cerebras, on trial since [2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cerebras-provider.md))
+with the agent tools — or the profile named by `--reasoning`, e.g.
+`default-opus-5` for the deep run — up to `MAX_STEPS = 48` steps, final
+text = the report. Two properties of
 that loop are non-obvious and load-bearing:
 
 - **A text-only turn ends the mission.** The loop continues only after tool
@@ -92,3 +95,8 @@ watchdog abort logs `google:agent / stream-stall` with the completed-step
 count, the last **visible** event, and how many raw frames arrived after it
 — the discriminator between a dead transport (raw = 0) and a killed think
 (raw climbing).
+A model request the host refuses logs `google:agent / model-error` with the
+line the chat engine's `turnErrorMessage` builds — the host, the status and
+the host's own reason, read from the body even when the SDK did not — and
+the mission fails with that line, so a mission and a chat say the same
+thing about the same refusal.

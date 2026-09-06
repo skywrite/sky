@@ -21,9 +21,10 @@ import {
 } from '#lib/google/mod.ts'
 import type { DriveFile } from '#lib/google/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel, ROLES } from '#shared/ai/models.ts'
+import { getProfile, type ModelProfile, resolveProfile } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
+import { turnErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
@@ -37,6 +38,9 @@ import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
 
 const MAX_STEPS = 48
+
+/** The profile a mission runs on unless `--reasoning` says otherwise (Qwen on Cerebras, on trial). */
+const MISSION_PROFILE = 'default-cerebras-qwen-3.8'
 /**
  * The watchdog counts EVERY stream frame: includeRawChunks surfaces the
  * provider's raw SSE events, so Anthropic's keep-alive pings re-arm it even
@@ -65,6 +69,10 @@ const params = {
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  reasoning: Flag.string('Model profile that runs the mission (e.g. default-cerebras-qwen-3.8, default-opus-5)', {
+    short: 'r',
+    default: () => MISSION_PROFILE,
+  }),
   noOpen: Flag.bool('Do not open touched files in the browser', { default: false }),
 }
 
@@ -122,6 +130,17 @@ export default class GoogleAgentTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
+
+    // The mission's model is a profile, picked per run. The default is the
+    // fast Cerebras profile while it is on trial for missions;
+    // `--reasoning default-opus-5` is the deep run. An unknown name fails
+    // here, before any Google work.
+    let missionProfile: ModelProfile
+    try {
+      missionProfile = getProfile(args.reasoning)
+    } catch (err) {
+      return CommandResult.fail((err as Error).message)
+    }
     const { mission, file, account, import: importPath } = args
 
     if (!mission?.trim()) {
@@ -275,7 +294,7 @@ export default class GoogleAgentTask extends Command {
       .filter(Boolean)
       .join('\n\n')
 
-    log(`Mission started (${client.email})`)
+    log(`Mission started (${client.email} · ${args.reasoning})`)
 
     const abort = new AbortController()
     const missionSpan = new TimingSpan({ kind: 'generation', name: 'google:mission' })
@@ -286,7 +305,7 @@ export default class GoogleAgentTask extends Command {
         streamText({
           // A mission is expensive to lose — ride out 429/529 bursts with more
           // patience than the SDK's default 2 retries.
-          ...aiModel('reasoning', { maxRetries: 4 }),
+          ...resolveProfile(missionProfile, { maxRetries: 4 }),
           instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
           messages: [{ role: 'user', content: missionMessage }],
           tools,
@@ -312,6 +331,9 @@ export default class GoogleAgentTask extends Command {
       let report = ''
       let steps = 0
       let finishedSteps = 0
+      // The SDK delivers a failed request as an `error` part and then throws a
+      // generic "no output" from the text promise; the part is the real reason.
+      let modelError: string | undefined
       let lastEvent = 'none'
       let rawSinceVisible = 0
       let lastVisibleAt = Date.now()
@@ -342,11 +364,16 @@ export default class GoogleAgentTask extends Command {
           lastVisibleAt = Date.now()
           lastEvent = part.type
           if (part.type === 'finish-step') finishedSteps++
+          if (part.type === 'error') {
+            modelError = turnErrorMessage(part.error)
+            log(`Model error: ${modelError}`)
+            await logAIError({ source: 'google:agent', stage: 'model-error', message: modelError })
+          }
         }
         report = (await stream.text).trim()
         steps = (await stream.steps).length
       } catch (err) {
-        if (!stalled) throw err
+        if (!stalled) throw modelError ? new Error(`The model request failed: ${modelError}`) : err
         log(`No stream activity for ${STREAM_STALL_MS / 60_000} minutes — mission aborted as stalled`)
         await logAIError({
           source: 'google:agent',
@@ -372,8 +399,8 @@ export default class GoogleAgentTask extends Command {
       }
 
       // The mission's last word on itself: what ran, how long, where the time went.
-      missionSpan.finish(stalled ? 'aborted' : 'success')
-      const timing: MissionTiming = { ...timingSummary(missionSpan), profile: ROLES.reasoning, steps }
+      missionSpan.finish(stalled ? 'aborted' : modelError ? 'error' : 'success')
+      const timing: MissionTiming = { ...timingSummary(missionSpan), profile: args.reasoning, steps }
       log(formatTiming(timing))
 
       let artifact: string | undefined

@@ -13,12 +13,14 @@ updated: 2026-09-05
   The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
 - **provider** — the AI-SDK provider the profile resolves through
-  (`anthropic`, `openai`, `ollama`, `lm-studio`).
+  (`anthropic`, `openai`, `ollama`, `lm-studio`, `cerebras`).
 
 `resolveProfile` demuxes a profile's options: generic call settings hoist
 to the top level, provider-specific ones (effort, thinking) namespace under
-`providerOptions[provider]`. Sampling overrides are dropped on thinking
-profiles because those models reject them with a 400.
+the key the provider's model reads (`PROVIDER_OPTIONS_KEY` — an
+OpenAI-compatible host such as Cerebras files under `openai`). Sampling
+overrides are dropped on thinking profiles because those models reject them
+with a 400.
 
 A profile may declare `contextWindow` — the tokens its host serves in one
 request, when that is less than a chat may ask to read. A chat's reading
@@ -27,6 +29,19 @@ when it fits, else drops to the highest stop that leaves room for the
 prompt, the tools, the reply and the estimate's slack. Cerebras serves
 Qwen 3.8 at 131,072 tokens on the paid tier, so a chat there reads 50k at
 most; a profile with no window declared is not capped.
+
+## Providers and their keys
+
+- `anthropic` and `openai` read their keys from the environment
+  (`src/.env`, loaded by both launchers).
+- `cerebras` (`llm/cerebrasProvider.ts`) reads its key from the OS keychain
+  entry `cerebras/main` on the first request and holds it for the process.
+  Store it with `sky secrets:set cerebras main`; no restart needed. It is
+  the OpenAI provider pointed at `api.cerebras.ai` through `.chat()`, since
+  Cerebras serves chat completions only. Its model is wrapped in
+  `llm/singleSystemMessage.ts`: the host takes one system message, first,
+  and the cache helpers split instructions into several.
+- `lm-studio` and `ollama` are local and need no key.
 
 ## Catalog policy
 
@@ -71,6 +86,9 @@ Tokens only; the invoice prices them.
   token counts; every chat turn shows its own; `sky ai:usage` rolls up.
 - [2026-09-03](2026-09-03-cache-tail-every-step.md) — the cache tail moves
   on every loop step; a mission's history is read from cache, not re-sent.
+- [2026-09-03](2026-09-03-cerebras-provider.md) — Cerebras joins the
+  providers with Qwen 3.8 27B; the key lives in the keychain, and
+  `google:agent --reasoning` picks the profile a mission runs on.
 - [2026-09-01](2026-09-01-fable-5-1-profile.md) — Fable 5.1 joins the
   catalog; there is no Opus 5.1, so `reasoning` stays on Opus 5. A
   `-high` variant followed on 2026-09-02.
