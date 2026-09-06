@@ -69,9 +69,10 @@ and `ai:chat` all depend on it.
     ai-chats/                  # saved sky ai:chat conversations
 ```
 
-The chats folder is named once. `dayAIChatsDir(date)` builds it and `isAIChatPath(path)`
-recognises one; every writer and reader goes through those two, so renaming a kind folder
-is one string plus a notebook move.
+Every kind folder under `actions/` is named once, in `ACTION_KIND_DIRS`. `dayActionDir(kind, date)`
+and `actionKindRel(kind)` build the paths and `isActionPath(kind, path)` recognises one; every writer
+and reader goes through those, so renaming a kind folder is one entry plus a notebook move. The
+chats folder also answers to its own names, `dayAIChatsDir(date)` and `isAIChatPath(path)`.
 
 Commands write into these paths through `DayDirFileWriter`, which resolves the day
 directory, creates parents as needed, and de-duplicates a colliding filename by appending
@@ -224,8 +225,10 @@ layout — the examples show the default:
 | `dayDir(date)` | `2026/W14/03-31` |
 | `dayFile(date)` | `2026/W14/03-31/day.md` |
 | `dayAttachmentsDir(date)` | `2026/03/31` |
-| `dayAIChatsDir(date)` | `2026/W14/03-31/actions/ai-chats` — where the day's saved chats file |
-| `isAIChatPath(path)` | Whether a path lies in a chats folder, absolute or day-relative — the collection's `chat` type asks this |
+| `dayActionDir(kind, date)` | `2026/W14/03-31/actions/recaps` — a day's folder for one kind of record |
+| `actionKindRel(kind)` | `actions/recaps` — day-relative, the form the day file links with |
+| `isActionPath(kind, path)` | Whether a path lies in that kind's folder, absolute or day-relative — the collection's types ask this |
+| `dayAIChatsDir(date)` / `isAIChatPath(path)` | The chats folder by its own names, over the same table |
 | `parseDateFromDayPath(path)` | `PlainDate` — the inverse of `dayFile` |
 | `parseTimePath(path)` | The year, week, or day span a time-tree path covers, or `null` |
 | `toTimeRef(path)` | `YYYY-MM-DD/subpath` — a path in *any* historical layout, reduced to its identity |

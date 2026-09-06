@@ -6,6 +6,7 @@ import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { isCommandAvailable } from '#lib/sys/command.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
 import { activityInstants, clampActivity, renderGithubRecap } from './lib/github.ts'
@@ -42,7 +43,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class RecapGithubTask extends Command {
   static override description: CommandDescription = {
     name: 'recap:github',
-    description: "Recap the day's GitHub activity into actions/recaps/",
+    description: `Recap the day's GitHub activity into ${actionKindRel('recap')}/`,
     descriptionLong: [
       'Digests your GitHub activity into one recap doc for the day: per-repo',
       'commits (authored times), PRs opened/merged, reviews and issue activity,',

@@ -14,7 +14,7 @@ import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayDir, isActionPath } from '#shared/nbfs/mod.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -163,7 +163,7 @@ export default class SummaryDayTask extends Command {
     // marked and the summary reads as before.
     const ownerNames = await this.loadOwnerNames(<string>config.FILE_ABOUT_ME)
     const archivalPaths = new Set(
-      docs.filter((d) => d.path.includes('/actions/messages/') && !isParticipant(d.doc, ownerNames)).map((d) => d.path),
+      docs.filter((d) => isActionPath('message', d.path) && !isParticipant(d.doc, ownerNames)).map((d) => d.path),
     )
 
     // Location metadata from the already-gathered day.md

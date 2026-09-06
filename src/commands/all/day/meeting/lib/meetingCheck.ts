@@ -18,7 +18,7 @@ import type { CalendarEvent } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayActionDir } from '#shared/nbfs/mod.ts'
 import { type PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import hasEndOrLength from './hasEndOrLength.ts'
 
@@ -70,7 +70,7 @@ export interface MeetingCheckSources {
   calendar: { timeZone: string | null; meetings: CalendarEvent[]; errors: string[] }
   /** The notebook's meetings, or null when the service could not answer */
   notebook: NotebookMeeting[] | null
-  /** Start-only records from the day's actions/events/ */
+  /** Start-only records from the day's events folder */
   events: Endless[]
 }
 
@@ -157,13 +157,13 @@ async function fetchNotebookMeetings(ymd: string): Promise<NotebookMeeting[] | n
 }
 
 /**
- * Start-only records from the day's actions/events/ — calendar-sourced
+ * Start-only records from the day's events folder — calendar-sourced
  * events aren't queryable on the service yet, and this is a frontmatter
  * completeness read of one bounded directory, not record matching (which
  * stays on GraphQL). Any failure reads as "no events".
  */
 async function fetchEndlessEvents(timeDir: string, day: PlainDate): Promise<Endless[]> {
-  const eventsDir = path.join(timeDir, dayDir(day), 'actions', 'events')
+  const eventsDir = path.join(timeDir, dayActionDir('event', day))
   const endless: Endless[] = []
   try {
     for await (const entry of readDir(eventsDir)) {

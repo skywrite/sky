@@ -20,6 +20,7 @@ import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -157,7 +158,7 @@ export default class VideoNewTask extends Command {
     const whoSlug = from ? slugify(from, { preserveCase: true }) : to ? slugify(to, { preserveCase: true }) : ''
     const summarySlug = slugify(summary || '', { preserveCase: true, suggestedLength: 40 })
     const partialSlug = whoSlug && summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug || summarySlug
-    const fileName = `actions/videos/${mediumValue}_${partialSlug}.md`
+    const fileName = `${actionKindRel('video')}/${mediumValue}_${partialSlug}.md`
 
     const ddfw = new DayDirFileWriter(whenDate)
 

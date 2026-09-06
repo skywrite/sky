@@ -7,6 +7,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import EventDocument from '#shared/models/Event/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -80,7 +81,7 @@ export default class EventNewTask extends Command {
     const entryWhen = when.time
     const whatSlug = slugify(what, { suggestedLength: 60, preserveCase: true })
 
-    const eventFileName = `actions/events/${whatSlug}.md`
+    const eventFileName = `${actionKindRel('event')}/${whatSlug}.md`
 
     const ddfw = new DayDirFileWriter(whenDate)
     const whoVal = Array.isArray(who) && who.length > 4 ? who : Array.isArray(who) ? who.join(', ') : who

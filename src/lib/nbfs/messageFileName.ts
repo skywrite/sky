@@ -1,3 +1,4 @@
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 /**
@@ -14,5 +15,5 @@ import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
  * writing, so a backfilled message still files in its own place in the day.
  */
 export default function messageFileName(when: PlainDateTime, medium: string, slug: string): string {
-  return `actions/messages/${when.time.replace(':', '-')}_${medium}_${slug}.md`
+  return `${actionKindRel('message')}/${when.time.replace(':', '-')}_${medium}_${slug}.md`
 }

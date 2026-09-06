@@ -7,6 +7,7 @@ import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { getProfile } from '#shared/ai/models.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import scanClaudeSessions, { renderClaudeCodeRecap } from './lib/claudeCode.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
@@ -55,7 +56,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class RecapClaudeCodeTask extends Command {
   static override description: CommandDescription = {
     name: 'recap:claude-code',
-    description: "Recap the day's Claude Code sessions into actions/recaps/",
+    description: `Recap the day's Claude Code sessions into ${actionKindRel('recap')}/`,
     descriptionLong: [
       'Digests Claude Code session transcripts into one recap doc for the day.',
       'Each session becomes a block: span, an AI-extracted title/about plus',

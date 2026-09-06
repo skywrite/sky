@@ -58,3 +58,26 @@ recorded them.
 - Full unit suite: 4156 pass, 0 fail. `bun run dev:check` green.
 - The service restarted under the edits; its 13 kept web threads came
   back from their snapshots, none busy.
+
+## Every kind, the same day
+
+The chats folder was the one asked about, but recaps, events, meetings,
+messages, notes, videos, docs, and images had the same shape: path joins
+and template strings spelling `actions/<kind>/` wherever a file was
+written, and substring checks in the day record, the day summary, the
+scanner, and the type registry wherever one was read.
+
+- `ACTION_KIND_DIRS` names every kind folder once. `dayActionDir(kind,
+  date)` and `actionKindRel(kind)` build the paths; `isActionPath(kind,
+  path)` recognises one. A folder may span segments, so a later
+  `ai/chats` is one entry, and the voice delegate labels a document by a
+  kind of any depth.
+- `dayAIChatsDir` and `isAIChatPath` stay as the chat kind by its own
+  names, over the same table.
+- Twenty-three files stopped spelling a folder. What still does, on
+  purpose: the summary prompt and two command docs, which describe the
+  real layout to a reader, and comments that quote a ledger line as an
+  example.
+
+Verified the same way: `bun run dev:check` green, full unit suite 4167
+pass, 0 fail, service restarted under the edits with its threads intact.

@@ -24,6 +24,7 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, ROLES } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
@@ -90,7 +91,7 @@ export default class GoogleAgentTask extends Command {
       'read/leave/reply-to comments, suggest tracked edits in Docs, and build',
       'spreadsheets with live formulas, styling and native charts embeddable',
       'into decks as linked charts. Progress streams as it works; touched',
-      'files are recorded in the notebook under actions/docs/.',
+      `files are recorded in the notebook under ${actionKindRel('doc')}/.`,
     ],
     usage: [
       'sky google:agent "Create a doc titled Atlas Q3 Plan with: ..."',

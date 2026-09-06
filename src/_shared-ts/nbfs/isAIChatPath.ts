@@ -1,11 +1,9 @@
-import { AI_CHATS_DIR } from './dayAIChatsDir.ts'
+import { isActionPath } from './actionKinds.ts'
 
 /**
- * Whether a path lies inside a chats folder, at any depth. A branch files
- * in a folder beside its parent, still under the day's chats, so depth
- * does not matter. Absolute or day-relative; only folder segments count,
- * so a file that merely carries the folder's name is not a chat.
+ * Whether a path lies inside a chats folder, at any depth, absolute or
+ * day-relative — the chat kind by its own name.
  */
 export default function isAIChatPath(filePath: string): boolean {
-  return filePath.split('/').slice(0, -1).includes(AI_CHATS_DIR)
+  return isActionPath('chat', filePath)
 }

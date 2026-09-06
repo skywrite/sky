@@ -12,7 +12,7 @@ import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
-import { readDay } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, isActionPath, readDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
@@ -122,7 +122,7 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
  * filter runs: a commitment may promise `… Slack -> weekly update`.
  */
 function isCaptureLog(item: DayItem): boolean {
-  return /\s->\s/.test(item.text) || (item.link?.path.startsWith('actions/') ?? false)
+  return /\s->\s/.test(item.text) || (item.link?.path.startsWith(`${ACTIONS_DIR}/`) ?? false)
 }
 
 function categoryOf(heading: string): string | null {
@@ -217,9 +217,9 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
   for (const entry of docs) {
     const row = rowOf(entry.doc, entry.path, input.markdownBaseDir)
     if (entry.kind === 'journal') record.journals.push(journalRow(row))
-    else if (entry.path.includes('/actions/meetings/')) {
+    else if (isActionPath('meeting', entry.path)) {
       record.meetings.push({ ...row, who: text(entry.doc.yaml['who']) })
-    } else if (entry.path.includes('/actions/messages/')) {
+    } else if (isActionPath('message', entry.path)) {
       const message: MessageRow = {
         ...row,
         from: text(entry.doc.yaml['from']),
@@ -228,7 +228,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       }
       if (isParticipant(entry.doc, input.ownerNames)) record.messages.involved.push(message)
       else record.messages.archive.push(message)
-    } else if (entry.path.includes('/actions/notes/')) record.notes.push(row)
+    } else if (isActionPath('note', entry.path)) record.notes.push(row)
   }
 
   return record

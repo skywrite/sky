@@ -7,7 +7,7 @@
  * - Type hints when creating collections
  */
 
-import { isAIChatPath } from '#shared/nbfs/mod.ts'
+import { isAIChatPath, isActionPath } from '#shared/nbfs/mod.ts'
 
 /** Entity type for collection items */
 export type CollectionEntityType =
@@ -99,12 +99,12 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/tracking/') && !p.includes('/data/'), type: 'tracking' },
   { pattern: (p) => p.includes('/ideas/'), type: 'idea' },
   { pattern: (p) => p.includes('/places/'), type: 'place' },
-  { pattern: (p) => p.includes('/messages/') || p.includes('/slack/') || p.includes('/email/'), type: 'message' },
-  { pattern: (p) => p.includes('/meeting/') || p.includes('/meetings/'), type: 'meeting' },
-  { pattern: (p) => p.includes('/videos/'), type: 'video' },
-  { pattern: (p) => p.includes('/recaps/'), type: 'recap' },
+  { pattern: (p) => isActionPath('message', p) || p.includes('/slack/') || p.includes('/email/'), type: 'message' },
+  { pattern: (p) => p.includes('/meeting/') || isActionPath('meeting', p), type: 'meeting' },
+  { pattern: (p) => isActionPath('video', p), type: 'video' },
+  { pattern: (p) => isActionPath('recap', p), type: 'recap' },
   { pattern: (p) => p.includes('/journal/'), type: 'journal' },
-  // Saved chats: the folder is named once, in nbfs, and the check lives beside the name.
+  // Saved chats: the kind folders are named once, in nbfs, and the checks live beside the names.
   { pattern: isAIChatPath, type: 'chat' },
   { pattern: (p) => p.endsWith('/day.md') || p.endsWith('/_day.md'), type: 'day' },
 ]

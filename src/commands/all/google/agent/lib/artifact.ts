@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import DayDirFileWriter from '#lib/nbfs/DayDirFileWriter.ts'
 import { slugify } from '#lib/string/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type MissionTiming, timingLines } from './timing.ts'
 import type { MissionFile } from './tools.ts'
@@ -15,7 +16,7 @@ export function artifactMedium(kind?: string): string {
 /** Day-relative artifact path, chronological like messages and chats. */
 export function docArtifactFileName(time: string, title: string, medium = 'gdoc'): string {
   const slug = slugify(title, { preserveCase: true, suggestedLength: 40 })
-  return `actions/docs/${time.replace(':', '-')}_${medium}_${slug}.md`
+  return `${actionKindRel('doc')}/${time.replace(':', '-')}_${medium}_${slug}.md`
 }
 
 /**

@@ -4,7 +4,7 @@ import { When } from '#universal/dates/nbdt/mod.ts'
 
 /**
  * A recap: the daily digest of activity in one connected app (GitHub,
- * Claude Code, ...), filed under the day's `actions/recaps/`.
+ * Claude Code, ...), filed in the day's recaps folder.
  *
  * Unlike captures, a recap is not the record — the app is. Recaps are
  * regenerated from the app's own event stream, so they are safe to

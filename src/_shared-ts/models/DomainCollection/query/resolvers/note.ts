@@ -26,7 +26,7 @@ export interface NoteFilter extends DatedFilter, TagFilter, TextFilter, Involves
 /**
  * A note is anything declaring `type: Notes` in its frontmatter.
  *
- * Current captures live under actions/notes/, but earlier eras filed notes
+ * Current captures live in the day's notes folder, but earlier eras filed notes
  * directly in their day dirs and a few landed in library/ and project
  * folders — the frontmatter marker is the one constant across eras, and no
  * other document kind declares a `type:` that collides with it.

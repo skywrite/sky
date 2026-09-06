@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import { DIR_TIME } from '#config'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayActionDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** The two hand-curated slots on a recap, as the file on disk carries them. */
@@ -30,7 +30,7 @@ export default async function readRecapCuration(
   app: string,
   timeDir = DIR_TIME,
 ): Promise<RecapCuration> {
-  const dir = path.join(timeDir, dayDir(day), 'actions', 'recaps')
+  const dir = path.join(timeDir, dayActionDir('recap', day))
   const existing = await findExisting(dir, app)
   if (!existing) return {}
 

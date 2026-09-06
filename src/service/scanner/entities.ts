@@ -5,6 +5,7 @@
  */
 
 import * as path from 'node:path'
+import { isActionPath } from '#shared/nbfs/mod.ts'
 import { INTERACTION_WEIGHTS } from '../store.ts'
 
 /**
@@ -104,7 +105,7 @@ export function getInteractionWeight(filePath: string): number {
   }
 
   // Events folder counts as meetings regardless of filename
-  if (filePath.includes('/events/')) {
+  if (isActionPath('event', filePath)) {
     return INTERACTION_WEIGHTS.meeting
   }
 

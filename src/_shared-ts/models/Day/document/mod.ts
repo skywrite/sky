@@ -2,6 +2,7 @@ import * as marked from 'marked'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import ListDocument, { type ModificationOptions } from '#shared/models/Markdown/ListDocument/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { parse as parseYAML } from '#shared/yaml/mod.ts'
 import durationStringToHours from '#universal/dates/durationStringToHours.ts'
 import { hoursToDurationString } from '#universal/dates/mod.ts'
@@ -156,7 +157,7 @@ export default class DayDocument extends ListDocument {
    * Matches items like: `12:00 > ... -> [Title](actions/meetings/file.md)`
    */
   get meetingRefs(): DocumentRef[] {
-    return this.extractDocumentRefs('actions/meetings/')
+    return this.extractDocumentRefs(`${actionKindRel('meeting')}/`)
   }
 
   /**
@@ -164,7 +165,7 @@ export default class DayDocument extends ListDocument {
    * Matches items like: `10:20 > ... -> [Title](actions/messages/file.md)`
    */
   get messageRefs(): DocumentRef[] {
-    return this.extractDocumentRefs('actions/messages/')
+    return this.extractDocumentRefs(`${actionKindRel('message')}/`)
   }
 
   /**
@@ -172,7 +173,7 @@ export default class DayDocument extends ListDocument {
    * Matches items like: `09:00 > ... -> [Title](actions/notes/file.md)`
    */
   get noteRefs(): DocumentRef[] {
-    return this.extractDocumentRefs('actions/notes/')
+    return this.extractDocumentRefs(`${actionKindRel('note')}/`)
   }
 
   /**

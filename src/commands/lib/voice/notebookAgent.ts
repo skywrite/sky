@@ -13,7 +13,7 @@ import type { RealtimeFunctionTool } from 'openai/resources/realtime/realtime'
 import type { CommandService } from '#commands/mod.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import { AI_CHATS_DIR, toTimeRef } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, ACTION_KIND_DIRS, AI_CHATS_DIR, toTimeRef } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 
 /** Total notebook text handed to the delegate model (~40k tokens). */
@@ -96,13 +96,19 @@ export async function askNotebook(
 
 const KIND_LABELS: Record<string, string> = {
   journal: 'Journal',
-  meetings: 'Meeting',
-  messages: 'Message',
+  [ACTION_KIND_DIRS.meeting]: 'Meeting',
+  [ACTION_KIND_DIRS.message]: 'Message',
   [AI_CHATS_DIR]: 'AI chat',
-  notes: 'Note',
-  events: 'Event',
+  [ACTION_KIND_DIRS.note]: 'Note',
+  [ACTION_KIND_DIRS.event]: 'Event',
   decisions: 'Decision',
   ideas: 'Idea',
+}
+
+/** The kind folder a day-relative path under actions/ starts with, or its first segment. */
+function actionKindDirOf(segments: string[]): string {
+  const rest = segments.join('/')
+  return Object.values(ACTION_KIND_DIRS).find((dir) => rest === dir || rest.startsWith(`${dir}/`)) ?? segments[0] ?? ''
 }
 
 /**
@@ -126,7 +132,7 @@ export function describeNotebookPath(path: string): string {
     try {
       const ref = toTimeRef(parts.slice(timeIdx).join('/'))
       const [ymd, ...sub] = ref.split('/')
-      const kindDir = sub[0] === 'actions' ? (sub[1] ?? '') : (sub[0] ?? '')
+      const kindDir = sub[0] === ACTIONS_DIR ? actionKindDirOf(sub.slice(1)) : (sub[0] ?? '')
       const kind = KIND_LABELS[kindDir] ?? (kindDir ? kindDir.charAt(0).toUpperCase() + kindDir.slice(1) : 'Document')
       return `${kind} — ${ymd} — ${file}`
     } catch {

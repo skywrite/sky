@@ -19,6 +19,7 @@ import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { notesFromImage } from './lib/fromImage.ts'
 
@@ -171,7 +172,7 @@ export default class NotesNewTask extends Command {
     const whenDate = when.plainDate
     const summarySlug = slugify(summary, { suggestedLength: 40, preserveCase: true })
 
-    const fileName = `actions/notes/${summarySlug}.md`
+    const fileName = `${actionKindRel('note')}/${summarySlug}.md`
 
     const ddfw = new DayDirFileWriter(whenDate)
     const entryWhen = when.time

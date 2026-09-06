@@ -12,6 +12,7 @@ import { DIR_OUTPUT } from '#config'
 import { slugify } from '#lib/string/mod.ts'
 import { formatAIWarning, logAIError } from '#shared/ai/errorLog.ts'
 import { exists } from '#shared/fs/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { writeImageArtifact } from './lib/artifact.ts'
 import {
@@ -83,7 +84,7 @@ export default class AiImageTask extends Command {
     descriptionLong: [
       'Renders the prompt with gpt-image-2, saves the result to the Desktop',
       '(or --out), opens it in Preview, and records prompt + settings in the',
-      'notebook under actions/images/.',
+      `notebook under ${actionKindRel('image')}/.`,
       'With --refs the reference images are edited/combined instead of',
       'generating from scratch — the way to iterate on an earlier result',
       '(pass its saved path) or restyle an existing picture.',

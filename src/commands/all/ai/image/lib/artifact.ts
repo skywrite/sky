@@ -1,12 +1,13 @@
 import * as path from 'node:path'
 import DayDirFileWriter from '#lib/nbfs/DayDirFileWriter.ts'
 import { slugify } from '#lib/string/mod.ts'
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
-/** Day-relative artifact path, chronological like actions/docs and actions/messages. */
+/** Day-relative artifact path, chronological like docs and messages. */
 export function imageArtifactFileName(time: string, title: string): string {
   const slug = slugify(title, { preserveCase: true, suggestedLength: 40 })
-  return `actions/images/${time.replace(':', '-')}_image_${slug}.md`
+  return `${actionKindRel('image')}/${time.replace(':', '-')}_image_${slug}.md`
 }
 
 /** Human title for the artifact: the prompt collapsed and ellipsized at a word boundary. */

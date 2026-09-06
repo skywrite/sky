@@ -1,7 +1,8 @@
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import dayAIChatsDir, { ACTIONS_DIR, AI_CHATS_DIR } from './dayAIChatsDir.ts'
+import { ACTIONS_DIR } from './actionKinds.ts'
+import dayAIChatsDir, { AI_CHATS_DIR } from './dayAIChatsDir.ts'
 import dayDir from './dayDir.ts'
 
 test('dayAIChatsDir is the chats folder inside the day directory', () => {

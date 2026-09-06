@@ -1,12 +1,13 @@
+import { actionKindRel } from '#shared/nbfs/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 /**
  * Build the day-relative path for a meeting document.
  *
  * Named `HH-MM_<medium>_<who>_<summary>.md`, carrying the same time prefix
- * `actions/messages/` and the chats folder already use, so every action
+ * the messages and chats folders already use, so every action
  * directory in a day lists in the order the day happened. Without it
- * `actions/meetings/` sorts by medium and then attendee — every Zoom ahead of
+ * the meetings folder sorts by medium and then attendee — every Zoom ahead of
  * every phone call — which is the one ordering the day never happened in, and
  * it disagrees with the day file's Complete list, which is chronological.
  *
@@ -17,5 +18,5 @@ import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
  * Sibling of `messageFileName`: same convention, different directory.
  */
 export default function meetingFileName(when: PlainDateTime, slug: string): string {
-  return `actions/meetings/${when.time.replace(':', '-')}_${slug}.md`
+  return `${actionKindRel('meeting')}/${when.time.replace(':', '-')}_${slug}.md`
 }
