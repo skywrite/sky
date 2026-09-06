@@ -210,11 +210,10 @@ interface CheckOff {
 }
 
 /**
- * The checkbox flow: strike locally at once, write to the day file, and
- * let the row leave once both the animation and the write are done. The
- * file keeps everything — Undo just un-strikes. A delete is the same
- * shape without the strike: the row collapses, the line leaves the file,
- * and Undo puts it back where it was.
+ * Task checkboxes strike locally at once, write to the day file, and let
+ * the row leave once both the animation and the write are done. Undo
+ * un-strikes the task. Completing a reminder uses deletion: the row
+ * collapses, the line leaves the file, and Undo puts it back where it was.
  */
 function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff {
   const [phases, setPhases] = useState<Record<string, ItemPhase>>({})
@@ -262,6 +261,10 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
   }
 
   const check = (item: DayItem) => {
+    if (/^reminders$/i.test(item.list.trim())) {
+      remove(item, 'cleared')
+      return
+    }
     const key = itemKey(item)
     if (phases[key]) return
     gate.current[key] = { anim: false, resp: false }
@@ -279,12 +282,11 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
       }
       applyView(view)
       settle(key, 'resp')
-      const how: Leaving = /^reminders$/i.test(item.list.trim()) ? 'cleared' : 'done'
-      hold({ key, list: item.list, raw: item.raw, text: item.text, how, at: null })
+      hold({ key, list: item.list, raw: item.raw, text: item.text, how: 'done', at: null })
     })
   }
 
-  const remove = (item: DayItem) => {
+  const remove = (item: DayItem, how: 'cleared' | 'deleted' = 'deleted') => {
     const key = itemKey(item)
     if (phases[key]) return
     setPhases((p) => ({ ...p, [key]: 'removed' }))
@@ -299,7 +301,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
       }
       applyView(result.view)
       dropPhase(key)
-      hold({ key, list: item.list, raw: item.raw, text: item.text, how: 'deleted', at: result.at })
+      hold({ key, list: item.list, raw: item.raw, text: item.text, how, at: result.at })
     })
   }
 
@@ -309,7 +311,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
     if (undoTimer.current) clearTimeout(undoTimer.current)
     setUndo(null)
     const back =
-      held.how === 'deleted'
+      held.at !== null
         ? send<DayData>('/restore', { list: held.list, raw: held.raw, at: held.at })
         : post(held.list, held.raw, false)
     void back.then((view) => {

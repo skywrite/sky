@@ -16,10 +16,12 @@ back to the file through `item.ts`, and every write answers with the fresh
 view so the page shows what the file now says. The edits are the Day
 model's, beside `isItemDone`: one line changes, every other byte stays.
 
-- **The checkbox** strikes the item in the file (`~~task~~`, or for a timed
+- **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
   item `HH:MM > ~~task~~`, the time kept readable) and un-strikes it from
   Done today. A checked to-do or commitment slides into Done today; a
-  checked reminder just leaves.
+  checked reminder is deleted from the file through the same action as
+  the ×. Its row collapses without a strike, and the pill says "Reminder
+  cleared".
 - **The ×**, right after the item's text and shown when the pointer rests
   on the row, takes the item out of the file. On a phone, where nothing hovers, the row swipes left instead:
   a short pull bares Delete and holds it until it is tapped or anything
@@ -28,14 +30,14 @@ model's, beside `isItemDone`: one line changes, every other byte stays.
   under the heading — the template's own spelling for an empty list — so
   the heading stays a list and the next write into it lands there.
 - **Undo** follows either, in the pill at the foot, for eight seconds. An
-  un-check restores the line; a restore after a delete puts the line back
-  at the place the delete reported, byte for byte when the list has not
-  moved since.
+  un-check removes a task's strike; a restore after a delete or reminder
+  completion puts the line back at the place the delete reported, byte
+  for byte when the list has not moved since.
 
 | Route | Does |
 | --- | --- |
 | `POST /day/:ymd/item` | `{list, raw, done}` → strike or un-strike, answers the view |
-| `POST /day/:ymd/item/delete` | `{list, raw}` → the line leaves, answers `{at, view}` |
+| `POST /day/:ymd/item/delete` | `{list, raw}` → delete an item or complete a reminder, answers `{at, view}` |
 | `POST /day/:ymd/item/restore` | `{list, raw, at}` → the line returns at `at`, answers the view |
 
 A miss — the day changed under the page — is a 404 and writes nothing.
@@ -43,6 +45,7 @@ The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 
 Narrative: [2026-09-03 — an item can leave the day](2026-09-03-an-item-can-leave-the-day.md).
+Reminder completion: [2026-09-06 — completing a reminder deletes it](2026-09-06-completing-a-reminder-deletes-it.md).
 
 Rows grow to fit wrapped text and collapse through a grid track, with no fixed
 height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
