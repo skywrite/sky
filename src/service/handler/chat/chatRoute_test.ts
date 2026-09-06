@@ -923,7 +923,8 @@ test('chat route - every message applies its own settings before the model runs'
   const settings = await getJson(app, 'http://localhost/chat/request/settings')
   assert({
     given: 'explicit choices on a new thread, then different choices on the live thread',
-    should: 'construct and invoke with those choices, and remove a discarded snapshot before invoking',
+    should:
+      'construct and invoke with those choices, snapshot a kept thread before invoking, and remove a discarded one',
     actual: {
       createdWith,
       seen,
@@ -934,7 +935,7 @@ test('chat route - every message applies its own settings before the model runs'
     expected: {
       createdWith: [firstPrefs],
       seen: [
-        { model: 'test-quick', budget: 5000, snapshot: false },
+        { model: 'test-quick', budget: 5000, snapshot: true },
         { model: 'test-thinking', budget: 0, snapshot: false },
       ],
       models: ['test-quick', 'test-thinking'],
@@ -1011,6 +1012,59 @@ test('chat route - a browser carries its choices through a server restart', asyn
       turns: thread.turns.length,
     },
     expected: { model: 'test-quick', settings: ['test-quick', 5000, true], turns: 4 },
+  })
+})
+
+test("chat route - a kept thread's snapshot holds the message before the reply comes", async () => {
+  let midTurn: string[] | null = null
+  const host = await testHost({
+    invokeModel: async (args) => {
+      const snapshot = await loadResumeSession(path.join(host.tmp, 'kept.autosave.md')).catch(() => null)
+      midTurn = snapshot ? snapshot.state.conversation.map((m) => m.role) : null
+      args.sink.write('Done.')
+      return EMPTY
+    },
+  })
+  const app = appWith(host)
+  const prefs = { profile: 'test-quick', contextTokens: 0, saves: true }
+  await (await post(app, 'http://localhost/chat/kept/messages', { message: 'Plan the demo.', ...prefs })).text()
+  const after = await loadResumeSession(path.join(host.tmp, 'kept.autosave.md'))
+  assert({
+    given: 'a kept thread whose model reads the crash snapshot before answering',
+    should: 'find the message already there, and the reply beside it once the turn ends',
+    actual: { midTurn, after: after.state.conversation.map((m) => m.role) },
+    expected: { midTurn: ['user'], after: ['user', 'assistant'] },
+  })
+})
+
+test('chat route - a thread the service went down answering says so, and answers on the resend', async () => {
+  const host = await testHost()
+  const cut = {
+    id: 'cut',
+    startTime: START,
+    state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
+    interrupted: { message: 'Plan the demo.', when: '2026-01-27 09:31' },
+  }
+  const app = appWith({ ...host, snapshots: async () => [cut] })
+  const list = await getJson(app, 'http://localhost/chat')
+  const before = await getJson(app, 'http://localhost/chat/cut')
+  const prefs = { profile: 'test-quick', contextTokens: 0, saves: true }
+  await (await post(app, 'http://localhost/chat/cut/messages', { message: 'Plan the demo.', ...prefs })).text()
+  const after = await getJson(app, 'http://localhost/chat/cut')
+  assert({
+    given: 'a snapshot that ended on the person’s message, restored, then the message sent again',
+    should:
+      'list the thread as failed with the line and a title from the message, carry the message apart from the turns, and clear it once answered',
+    actual: {
+      listed: [list.threads[0].state, list.threads[0].line, String(list.threads[0].title).startsWith('Plan the demo')],
+      before: [before.turns.length, before.interrupted],
+      after: [after.turns.length, after.interrupted],
+    },
+    expected: {
+      listed: ['failed', 'sky restarted while replying — send it again', true],
+      before: [0, { message: 'Plan the demo.', when: '2026-01-27 09:31' }],
+      after: [2, null],
+    },
   })
 })
 

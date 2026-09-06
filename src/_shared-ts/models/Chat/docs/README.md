@@ -41,5 +41,6 @@ entity suggestions. External artifact relationships retain their own path.
 
 - [2026-09-05 — a reason the SDK did not read is quoted, not dropped](2026-09-05-a-reason-the-sdk-did-not-read.md)
 - [2026-09-04 — an answer with no body is named, not echoed](2026-09-04-an-answer-with-no-body.md)
+- 2026-09-06 — `ChatSession.snapshotOnSend`: a host that keeps the thread has the crash snapshot written as each turn begins too, so a restart mid-turn leaves a thread that knows what it was asked ([the message a restart took](../../../../service/handler/chat/docs/2026-09-06-the-message-a-restart-took.md))
 - [2026-09-03 — the cache tail moves on every tool step](../../../ai/docs/2026-09-03-cache-tail-every-step.md)
 - [2026-09-01 — blessed files skip the approval round](2026-09-01-dynamic-tool-approval.md)

@@ -167,6 +167,16 @@ a person can see and touch:
   that asked first is recorded before it runs, and the run that follows
   takes that record over. The chip shows it after the name: `web search ·
   atlas roadmap reviews`. Two searches in one step are two chips.
+- **The message a restart took.** A kept thread's snapshot is written as
+  each turn begins as well as when it ends (the session's `snapshotOnSend`,
+  set by the routes with the thread's keep setting), so a service that
+  dies answering comes back knowing what it was asked. On restore a
+  snapshot ending on the person's message has that message set apart
+  (`interrupted.ts`): the thread lists as failed with "sky restarted while
+  replying — send it again", `GET /chat/:id` carries it as `interrupted`,
+  the page shows it where the exchange would be with a Send again, and the
+  next message on the thread clears it. The model never sees the
+  unanswered turn; a resend is a fresh turn.
 - **The page waits through a restart.** A turn's stream carries a
   `heartbeat` frame every ten seconds when nothing else is said, so the
   page can tell a thinking model from a dead connection: silence past

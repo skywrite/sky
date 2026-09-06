@@ -31,6 +31,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { callSubject } from './callSubject.ts'
+import type { InterruptedTurn } from './interrupted.ts'
 import { timelineOf } from './timeline.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -117,6 +118,8 @@ export interface ThreadRestore {
   parent?: ChatParent | null
   /** The live thread a branch left, when it is one */
   parentId?: string | null
+  /** The message the thread was answering when the service went down — shown with the way to send it again, never given to the model */
+  interrupted?: InterruptedTurn | null
 }
 
 /** Where a branch came from, as a thread carries it: the parent's file, the turn, the live thread when there is one, and its name. */
@@ -293,6 +296,8 @@ interface Thread {
   /** Each reply's token counts and the profile that answered, by the reply's turn index */
   usage: Map<number, TokenUsage & { model: string }>
   timings: Map<number, string>
+  /** The message the service was answering when it went down, until the person sends again */
+  interrupted: InterruptedTurn | null
   state: ThreadState
   /** The reply as it streams, for the list's last line */
   partial: string
@@ -426,10 +431,10 @@ function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
   return {
     id,
     // A branch goes by its own first words, never its parent's.
-    title: thread.title ?? threadTitle(session.turns.slice(session.inherited)),
+    title: titleOf(thread),
     state,
     line,
-    when: session.turns.at(-1)?.when?.slice(11) ?? null,
+    when: (session.turns.at(-1)?.when ?? thread.interrupted?.when ?? undefined)?.slice(11) ?? null,
     day: session.startTime.plainDate.ymd,
     turns: session.turns.length,
     busy: thread.busy,
@@ -467,6 +472,18 @@ function wireTurn(turn: TurnReport): unknown {
 
 /** A turn's stream says something at least this often, so the page can tell a thinking model from a dead connection. */
 const HEARTBEAT_MS = 10_000
+
+/** What a restored thread says in the list when the service went down answering it */
+const INTERRUPTED_LINE = 'sky restarted while replying — send it again'
+
+/** A thread's name: the titler's, else its own first words, else the words of the message a restart took. */
+function titleOf(thread: Thread): string | null {
+  return (
+    thread.title ??
+    threadTitle(thread.session.turns.slice(thread.session.inherited)) ??
+    (thread.interrupted ? threadTitle([{ role: 'user', content: thread.interrupted.message }]) : null)
+  )
+}
 
 export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const threads = new Map<string, Thread>()
@@ -565,11 +582,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             liveQueries: null,
             usage: new Map(),
             timings: new Map(),
+            interrupted: restore?.interrupted ?? null,
             // Kept unless told otherwise before the first message.
             saves: prefs.saves ?? true,
-            // A restored thread's last turn is complete; a new one has none.
-            state: restore ? 'done' : 'new',
-            partial: '',
+            // A restored thread's last turn is complete — unless the service went
+            // down answering it, which the thread says until the person sends again.
+            state: restore?.interrupted ? 'failed' : restore ? 'done' : 'new',
+            partial: restore?.interrupted ? INTERRUPTED_LINE : '',
             updatedAt: ++tick,
             context: null,
             profile: prefs.profile ?? options.settings?.defaultModel ?? '',
@@ -735,6 +754,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       thread.profile = prefs.profile
       if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
       thread.saves = prefs.saves
+      // A kept thread's snapshot holds each message before its reply, so a
+      // restart mid-turn leaves a thread that knows what it was asked.
+      thread.session.snapshotOnSend = prefs.saves
       if (!thread.saves) await dropSnapshot(id, thread)
       options.onMessage?.(id, message)
     } catch (error) {
@@ -745,6 +767,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     } finally {
       accepting.delete(id)
     }
+    // Whatever the person sends now answers for the message a restart took — a resend or a new one.
+    thread.interrupted = null
     // The baseline gather before the first event is a read too.
     thread.state = 'reading'
     thread.partial = ''
@@ -824,11 +848,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     return c.json({
       id,
-      title: thread.title ?? threadTitle(thread.session.turns.slice(thread.session.inherited)),
+      title: titleOf(thread),
       parent: thread.parent,
       inherited: thread.session.inherited,
       saved: savedOf(thread, baseDir),
       turns: thread.session.turns,
+      interrupted: thread.interrupted,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
       busy: thread.busy,
@@ -1020,6 +1045,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       if (budgetChanges) thread.session.setContextTokens(budget)
       if (typeof saves === 'boolean') {
         thread.saves = saves
+        thread.session.snapshotOnSend = saves
         if (!saves) await dropSnapshot(id, thread)
       }
       thread.updatedAt = ++tick

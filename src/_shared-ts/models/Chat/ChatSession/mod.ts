@@ -524,6 +524,9 @@ export default class ChatSession {
       this.turns.push(turn)
     }
     this.engine.appendUserMessage(userMessage, turnWhen)
+    // The turn has begun: for a host that keeps the thread, the snapshot holds
+    // the message now, before the reply, in case the process dies answering.
+    if (this.snapshotOnSend) await this.snapshot()
 
     const report: TurnReport = { context, sourceUrls: [], approvalRoundsExhausted: false }
     try {
@@ -668,6 +671,14 @@ export default class ChatSession {
       await this.logError({ source: 'ai:chat', stage: 'autosave', message })
     }
   }
+
+  /**
+   * Whether the crash snapshot is also written as each turn begins, so a
+   * host that keeps the conversation gets it back knowing what it was asked
+   * if the service dies before the reply. A host that keeps nothing of the
+   * thread leaves this off: that snapshot would be a copy at rest.
+   */
+  snapshotOnSend = false
 
   private async clearSnapshot(): Promise<void> {
     if (this.opts.autosavePath) await clearChatAutosave(this.opts.autosavePath)

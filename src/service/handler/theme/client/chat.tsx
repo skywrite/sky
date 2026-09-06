@@ -93,6 +93,13 @@ export interface Run {
   subject?: string
 }
 
+/** The message the service was answering when it went down — shown where the exchange would be, with a way to send it again. */
+export interface Interrupted {
+  message: string
+  /** Notebook stamp `HH:MM` of the message */
+  time?: string
+}
+
 /** A line in the record's voice: what happened to a thread, not a message in it. */
 export interface Note {
   text: string
@@ -139,6 +146,8 @@ export interface ThreadState {
   /** Tool runs this thread, oldest first — a running one has no status yet */
   runs: Run[]
   queries: TurnQueries[]
+  /** The message a restart took before the reply, until the person sends again */
+  interrupted: Interrupted | null
 }
 
 /**
@@ -161,6 +170,7 @@ type Action =
       inherited?: number
       parent?: ThreadParent | null
       saved?: string | null
+      interrupted?: Interrupted | null
     }
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
   | {
@@ -173,6 +183,7 @@ type Action =
       answered: Answered[]
       runs: Run[]
       queries?: TurnQueries[]
+      interrupted?: Interrupted | null
     }
   | { type: 'approval'; id: string; approval: Approval }
   | { type: 'answered'; id: string; approvalId: string; approved: boolean; at: number }
@@ -236,6 +247,7 @@ function initial(id: string): ThreadState {
     answered: [],
     runs: [],
     queries: [],
+    interrupted: null,
   }
 }
 
@@ -274,6 +286,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         answered: action.answered ?? [],
         runs: action.runs ?? [],
         queries: action.queries ?? [],
+        interrupted: action.interrupted ?? null,
         phase: busy ? 'busy' : state.phase,
         gather: busy ? (approvals.length > 0 ? WAITING : 'still working') : state.gather,
       }
@@ -287,6 +300,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         answered: action.answered,
         runs: action.runs,
         queries: action.queries ?? state.queries,
+        interrupted: action.interrupted ?? null,
         phase: action.busy ? 'busy' : 'idle',
         gather: action.busy ? (action.approvals.length > 0 ? WAITING : 'still working') : null,
         contextVersion: action.busy ? state.contextVersion : state.contextVersion + 1,
@@ -316,6 +330,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
               ? 'reading your notebook'
               : 'finding what matters for this',
         provenance: null,
+        interrupted: null,
         turns: [...state.turns, { role: 'user', content: action.content, time: clock() }],
       }
     case 'queries':
@@ -485,6 +500,12 @@ interface ThreadBody {
   /** Each reply's counts and the profile that answered, by turn index */
   usage?: Array<TokenUsage & { at: number; model: string }>
   timings?: Array<{ at: number; text: string }>
+  interrupted?: { message: string; when?: string | null } | null
+}
+
+/** The message a restart took, as the page shows it — its stamp cut to the hour and minute. */
+function interruptedOf(body: ThreadBody): Interrupted | null {
+  return body.interrupted ? { message: body.interrupted.message, time: body.interrupted.when?.slice(11) } : null
 }
 
 function turnsOf(body: ThreadBody): Turn[] {
@@ -537,6 +558,7 @@ export function useChat(id: string) {
           inherited: body.inherited ?? 0,
           parent: body.parent ?? null,
           saved: body.saved ?? null,
+          interrupted: interruptedOf(body),
         })
       })
       .catch(() => {
@@ -568,6 +590,7 @@ export function useChat(id: string) {
             answered: body.answered ?? [],
             runs: body.runs ?? [],
             queries: body.queries ?? [],
+            interrupted: interruptedOf(body),
           })
         })
         .catch(() => {})
@@ -946,6 +969,7 @@ async function reattach(id: string, replyIndex: number, dispatch: (action: Actio
     answered: body.answered ?? [],
     runs: body.runs ?? [],
     queries: body.queries ?? [],
+    interrupted: interruptedOf(body),
   })
 }
 
@@ -1150,6 +1174,31 @@ function SourcesFold({ sources }: { sources: string[] }) {
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * The message the service was answering when it went down, restored from
+ * the snapshot written as the turn began. It stands where the exchange
+ * would be — the message as sent, and under it the reply that never came —
+ * with the one thing to do about it. A resend is a fresh turn.
+ */
+function InterruptedTurn({ interrupted, onResend }: { interrupted: Interrupted; onResend: (message: string) => void }) {
+  return (
+    <>
+      <div className="sky-turn sky-turn-user">
+        <div className="sky-bubble">{interrupted.message}</div>
+      </div>
+      <div className="sky-turn">
+        <span className="sky-who">
+          <span>sky{interrupted.time ? ` · ${interrupted.time}` : ''}</span>
+          <button type="button" className="sky-act" onClick={() => onResend(interrupted.message)}>
+            Send again
+          </button>
+        </span>
+        <span className="sky-fate">turn failed — sky restarted while replying.</span>
+      </div>
+    </>
   )
 }
 
@@ -1368,6 +1417,9 @@ export function ThreadColumn({
           />
         </Fragment>
       ))}
+      {state.interrupted && state.phase === 'idle' && (
+        <InterruptedTurn interrupted={state.interrupted} onResend={(message) => void chat.send(message)} />
+      )}
       {/* Runs for a reply that has not begun sit where it will land. */}
       {coming.length > 0 && <RunList runs={coming} />}
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}

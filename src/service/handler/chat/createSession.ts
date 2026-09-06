@@ -42,6 +42,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
+import { interruptedOf } from './interrupted.ts'
 import type {
   ChatRoutesOptions,
   ChatSessionFactory,
@@ -344,12 +345,12 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     for (const ref of refs) {
       try {
         // A snapshot holds the whole thread, parent turns included; the key says which are inherited.
-        const { state, approvals, parent } = await loadResumeSession(ref.path, {
-          baseDir: config.DIR_BASE,
-          snapshot: true,
-        })
-        if (state.conversation.length > 0) {
-          restores.push({ id: ref.session, startTime: ref.startTime, state, approvals, parent })
+        const loaded = await loadResumeSession(ref.path, { baseDir: config.DIR_BASE, snapshot: true })
+        // A snapshot ending on the person's message is a thread the service went down answering.
+        const { state, interrupted } = interruptedOf(loaded.state)
+        if (state.conversation.length > 0 || interrupted) {
+          const { approvals, parent } = loaded
+          restores.push({ id: ref.session, startTime: ref.startTime, state, approvals, parent, interrupted })
         }
       } catch {
         // An unreadable snapshot stays for the sweep; it must not stop the others.
