@@ -18,6 +18,7 @@ const WEIGHT = TrackingDocument.fromMarkdown(
   [
     '---',
     'name: weight',
+    'storage: weekly',
     'category: health',
     'columns:',
     '  - name: time',

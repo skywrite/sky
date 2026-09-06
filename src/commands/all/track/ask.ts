@@ -42,8 +42,8 @@ export default class TrackAskTask extends Command {
     descriptionLong: [
       'Walks the active tracking definitions (tracking/active/) that carry a',
       'question, skips any already answered today, and asks the rest one at a',
-      'time. Answers append to the current weekly tracking CSV exactly as a',
-      'hand edit would — same file, same day-letter row format, keyed to the',
+      'time. Answers append to the annual tracking CSV, keyed by full date',
+      '(or day letters for explicit legacy weekly storage), using the',
       "calendar day on the clock (today's row, even before day:start).",
       '',
       'Answers are plain language: a bare value ("180") writes directly, and',

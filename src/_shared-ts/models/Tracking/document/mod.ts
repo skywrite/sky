@@ -8,8 +8,7 @@ export type TrackingSchedule = 'daily' | 'weekdays' | 'manual'
 /**
  * Where records live: `weekly` = the time-tree shards
  * (time/YYYY/MM/{week}/_tracking/{category}/{slug}.csv, day-letter rows);
- * `yearly` = data/tracking/{year}/{slug}.csv with full-date rows — for sparse
- * metrics that don't belong to the week rhythm.
+ * `yearly` (default) = data/tracking/{year}/{slug}.csv with full-date rows.
  */
 export type TrackingStorage = 'weekly' | 'yearly'
 
@@ -32,7 +31,7 @@ export interface TrackingColumn {
 
 const DEFAULT_SCHEDULE: TrackingSchedule = 'daily'
 const DEFAULT_ASK: TrackingAsk = 'anytime'
-const DEFAULT_STORAGE: TrackingStorage = 'weekly'
+const DEFAULT_STORAGE: TrackingStorage = 'yearly'
 const COLUMN_TYPES: readonly TrackingColumnType[] = ['time', 'number', 'duration', 'range', 'word', 'text']
 const AGGREGATES: readonly TrackingAggregate[] = ['last', 'sum', 'mean', 'collect']
 
@@ -47,10 +46,9 @@ const AGGREGATES: readonly TrackingAggregate[] = ['last', 'sum', 'mean', 'collec
  * - /active/   → active
  * - /archived/ → archived (tracking definitions are never deleted, only archived)
  *
- * Records contract: rows live in the weekly tracking shards
- * ($SKY_DIR/time/YYYY/MM/{week}/_tracking/{category}/{slug}.csv), day-letter
- * format, in notebook wall time (no timezone, extended hours valid). Capture
- * appends exactly the row a hand edit would — same file, same shape. The
+ * Records contract: rows live in annual CSVs at
+ * $SKY_DIR/data/tracking/{year}/{slug}.csv, keyed by full date, in notebook
+ * wall time (no timezone, extended hours valid). Capture appends a row. The
  * slug is the join key between definition and records — renaming it orphans
  * the record files.
  */
@@ -112,9 +110,9 @@ export default class TrackingDocument extends Document {
     return s === 'weekdays' || s === 'manual' ? s : DEFAULT_SCHEDULE
   }
 
-  /** Where records live. Unknown values normalize to 'weekly'. */
+  /** Where records live. Explicit weekly storage supports legacy notebooks. */
   get storage(): TrackingStorage {
-    return this.yaml['storage'] === 'yearly' ? 'yearly' : DEFAULT_STORAGE
+    return this.yaml['storage'] === 'weekly' ? 'weekly' : DEFAULT_STORAGE
   }
 
   /** Informational grouping (health, execution, ...). */

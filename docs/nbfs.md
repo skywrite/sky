@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-26
+updated: 2026-09-05
 ---
 
 # Notebook time and the notebook filesystem
@@ -40,7 +40,6 @@ crosses a month self-describing:
 
 ```
 time/2026/W14/
-  _tracking/          # week-level tracking CSVs
   03-30/  day.md      # Mon
   03-31/  day.md      # Tue
   04-01/  day.md      # Wed — April, same week directory
@@ -89,8 +88,10 @@ someone — the links still resolve.
 ## Weeks are created ahead of time
 
 `sky week:new` materializes an entire week at once: seven `day.md` files pre-built with
-their empty section skeletons and the current active streaks already stamped, plus
-`_tracking/health/*.csv` copied from `src/tmpl/`. It refuses to run if the week directory
+their empty section skeletons and the current active streaks already stamped.
+Tracking records live in annual `data/tracking/<year>/<slug>.csv` files, created
+on first capture. See the [tracking design notes](../src/commands/all/track/docs/README.md)
+for migrating legacy weekly CSVs. It refuses to run if the week directory
 already exists — pass an explicit date to target a specific week.
 
 Pre-creating matters because it means you can write into a future day — move a todo to next

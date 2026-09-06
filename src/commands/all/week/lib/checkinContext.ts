@@ -81,7 +81,7 @@ export async function gatherCheckinContext(week: Week, today: PlainDate): Promis
 
   const healthCsvs = await gatherWeekHealthData(week.start, DIR_TIME)
   manifest.push(
-    `_tracking/health: ${healthCsvs.length ? healthCsvs.map((h) => h.name).join(', ') : colors.yellow('(none)')}`,
+    `Tracking: ${healthCsvs.length ? [...new Set(healthCsvs.map((h) => h.name))].join(', ') : colors.yellow('(none)')}`,
   )
 
   return { sections, healthCsvs, manifest }

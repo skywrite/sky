@@ -1,11 +1,9 @@
 /**
  * Tracking record-file helpers — append rows exactly the way a hand edit
  * would: same file, same format, same quoting habits, same carried header.
- * No storage change is hidden here.
- *
- * `storage: weekly` (default) writes the time-tree shards
+ * `storage: weekly` writes the legacy time-tree shards
  * ({timeDir}/{weekDir}/_tracking/{category}/{slug}.csv) with rows keyed by
- * day letter (M T W R F SA SU). `storage: yearly` writes sparse metrics to
+ * day letter (M T W R F SA SU). `storage: yearly` (default) writes metrics to
  * {dataTrackingDir}/{year}/{slug}.csv with rows keyed by full date. Both use
  * the quoted header style (`"day", "time", "lbs (lbs)", "notes"` — units in
  * parens).

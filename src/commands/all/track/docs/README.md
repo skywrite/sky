@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-05
 ---
 
 # Tracking commands
@@ -18,14 +18,55 @@ A tracking definition is a markdown file under `tracking/active/` (or
 Rows are written **exactly as a hand edit would write them**, to the file a
 hand edit would open:
 
-- `storage: weekly` (default) — `time/YYYY/MM/<week>/_tracking/<category>/<slug>.csv`,
+- `storage: yearly` (default) — `data/tracking/<year>/<slug>.csv`, first field the full date.
+- `storage: weekly` (explicit legacy option) — `time/<week>/_tracking/<category>/<slug>.csv`,
   one row per entry, first field the day letter (`M T W R F SA SU`).
-- `storage: yearly` — `data/tracking/<year>/<slug>.csv`, first field the full date.
 
 Both carry the quoted header style (`"day", "time", "lbs (lbs)", "notes"`).
 Prose-ish values (`range`, `word`, `text`) are quoted, numbers and times
 bare, trailing empty fields dropped. Always append; multiplicity is a
 query-time concern. Helpers: `lib/records.ts`.
+
+`week:new` creates day files; it no longer copies weekly tracking templates.
+Capture creates a record file with its header on the first entry. Health
+summaries and checkins read annual records filtered to their date range,
+including both years at New Year. They fall back to legacy weekly files
+only for years without an annual file for that metric. `data:tracking`
+uses the same reader and keeps the established `date,lbs` weight export.
+
+## Moving existing records (`track:migrate`)
+
+Run `sky track:migrate` to inspect the plan, then `sky track:migrate --execute`
+to apply it. All weekly CSV categories migrate, including historical metrics
+without a definition. Definitions switch to explicit `storage: yearly`.
+
+The converter resolves the true Monday through the historical NBFS layouts,
+replaces day letters with calendar dates, and groups each row by its own
+calendar year. It preserves times (including extended hours), placeholder
+values, notes, and repeated entries. It aligns evolving headers by name,
+using definition column order and units when available. Undeclared trailing
+fields survive as `extra_1`, `extra_2`, etc., with a warning. Migrated CSVs
+quote every field. Existing annual records cover matching legacy occurrences
+one for one; additional identical observations remain additional rows.
+
+Malformed interior quotes stop planning. Reviewed repairs can be supplied with
+`--repairs <file.json>`: an array of `{ path, before, after }`, where `path` is
+notebook-relative and each exact physical `before` line must occur once.
+A missing terminal quote can be closed without discarding the line's contents;
+this produces a warning. This follows tracking's one-entry-per-line contract,
+not general CSV with multiline cells.
+
+Execution checks source snapshots and backs up every original file under
+`data/.tracking-migration-backups/<id>/`, with a manifest. It writes and verifies
+annual files before removing weekly CSVs. Definition updates follow record
+writes. Non-CSV files stay in place; only empty tracking directories are removed.
+An unchanged rerun is a no-op. If execution is interrupted, originals remain in
+the backup and a new plan reconciles already-written annual rows. Exact repair
+files apply only to their original sources; omit completed repairs on a rerun.
+
+## Notes
+
+- [2026-09-05 — annual tracking migration](2026-09-05-annual-tracking.md)
 
 ## The capture loop (`track:ask`)
 

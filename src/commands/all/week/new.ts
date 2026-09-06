@@ -1,8 +1,7 @@
-import { cp } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Command, CommandResult, when as whenParam } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_CODE, DIR_TIME } from '#config'
+import { DIR_TIME } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import exists from '#shared/fs/exists.ts'
@@ -45,15 +44,6 @@ export default class WeekNewTask extends Command {
         output.log(`\n  ${bucket} already exists. Explicitly pass the date.`)
         return CommandResult.error('Week directory already exists')
       }
-    }
-
-    // Week-level files live in the week's first in-year bucket — the same
-    // place week:plan and summary:week read them from.
-    const weekFilesDir = path.join(DIR_TIME, weekDir(week.startInYear))
-    const tmplDir = path.join(DIR_CODE, 'src', 'tmpl')
-    for (const trackingDir of ['health']) {
-      const rel = path.join('_tracking', trackingDir)
-      await cp(path.join(tmplDir, rel), path.join(weekFilesDir, rel), { recursive: true })
     }
 
     const activeStreaks = (await loadStreaks('active')).map((loaded) => loaded.streak)

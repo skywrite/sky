@@ -66,6 +66,19 @@ test(`TrackingDocument defaults and lenient parsing`, () => {
   const bare = makeTracking(['name: mood'])
 
   assert({
+    given: 'a definition without a storage override',
+    should: 'use annual storage',
+    expected: 'yearly',
+    actual: bare.storage,
+  })
+  assert({
+    given: 'an explicitly weekly definition',
+    should: 'retain legacy storage',
+    expected: 'weekly',
+    actual: makeTracking(['name: hydration', 'storage: weekly']).storage,
+  })
+
+  assert({
     given: 'no question field',
     should: 'have undefined question (never prompted)',
     expected: undefined,
