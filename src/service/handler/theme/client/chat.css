@@ -130,7 +130,28 @@
   opacity: 0.58;
 }
 
-/* "New chat from here" sits at the reply's head, shown when the pointer is over the turn (always on touch). */
+/* The reply's foot is one row: its details toggle at the left, "New chat from here…" at the right, level with it. */
+.sky-reply-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.sky-reply-foot > .sky-reply-details {
+  flex: 1;
+  margin-top: 0;
+}
+
+/* "New chat from here…" stands as tall as the details row so the two read on one line; quiet until the pointer is over the turn. */
+.sky-reply-acts {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin-left: auto;
+}
+
 .sky-who {
   display: flex;
   align-items: baseline;
@@ -144,24 +165,25 @@
   font: inherit;
   font-size: 14px;
   font-weight: 500;
-  color: var(--sky-blue-deep);
+  color: var(--sky-dim);
   cursor: pointer;
-  visibility: hidden;
 }
 
+/* The offer brightens when the pointer is over the turn, and while the branch is being made. */
 .sky-turn:hover .sky-act,
-.sky-turn:focus-within .sky-act {
-  visibility: visible;
+.sky-turn:focus-within .sky-act,
+.sky-act[data-busy] {
+  color: var(--sky-blue-deep);
 }
 
 .sky-act:hover {
   text-decoration: underline;
 }
 
-@media (hover: none) {
-  .sky-act {
-    visibility: visible;
-  }
+.sky-act:disabled {
+  color: var(--sky-dim);
+  cursor: default;
+  text-decoration: none;
 }
 
 /* Turn activity stays beside its query disclosure as the reply arrives. */

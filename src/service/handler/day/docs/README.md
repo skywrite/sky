@@ -70,7 +70,10 @@ scrolls; its foot is anchored.
   unscheduled meeting on the viewed day, with an editable suggested time;
   hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).
 - **Chats** — the chats filed under the day, with time and turn count, and
-  the live threads that started on it, marked with a dot.
+  the live threads that started on it, marked with a dot. A branch sits
+  under the chat it left with the turn it left from. A saved chat opens as
+  a thread to continue; a live thread that continues a saved chat stands in
+  for the file.
 - **Working** — import jobs in hand: running, waiting for the person, or
   stopped where a start could pick them up, with Review or Open. A filed
   import is on the day already and leaves the rail; a file sky refused was

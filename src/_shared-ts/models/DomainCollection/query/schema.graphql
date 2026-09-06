@@ -316,11 +316,23 @@ type Chat {
   summary: String # Conversation summary
   provider: String # AI provider (claude, openai, etc.)
   model: String # Model name
-  turns: Int! # Number of conversation turns
+  turns: Int! # Number of conversation turns the file itself holds
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
-  markdown: String! # Full conversation transcript
+  markdown: String! # The file as written — a branch's own turns only
   path: String! # File path
+  parent: ChatParent # The chat this one branched from; null for a chat that began on its own
+  inherited: Int! # Messages at the head of the thread that are the parent's (two per inherited turn)
+  branches: [Chat!]! # The chats that branched from this one (one level; their own branches are not filled in)
+  thread: String! # The whole conversation a branch is: its parents' turns through the branch point, then its own
+}
+
+"""
+Where a branch came from.
+"""
+type ChatParent {
+  path: String! # The parent chat's path, relative to the notebook root
+  turn: Int! # The turn the branch left after
 }
 
 """

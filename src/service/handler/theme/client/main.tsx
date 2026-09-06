@@ -124,6 +124,18 @@ function Canvas() {
   }
   const dismissKept = useCallback(() => setKept([]), [])
   const newChat = () => openThread(crypto.randomUUID())
+  // A saved chat opened to continue: the service makes (or finds) its thread, and the page turns to it.
+  const openSaved = async (chat: string) => {
+    const response = await fetch('/chat/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat }),
+    }).catch(() => null)
+    if (!response?.ok) return
+    const body = (await response.json()) as { id: string }
+    openThread(body.id)
+  }
+  const branchesOf = (id: string) => others.filter((t) => t.parent?.id === id)
   // Back to the day at once. The save — enrichment included — finishes behind
   // the Running block, and its note lands in the day when it does.
   const endThread = () => {
@@ -349,9 +361,19 @@ function Canvas() {
         <Fragment key={threadId}>
           <ChatMain
             chat={chat}
-            title={threads.find((t) => t.id === threadId)?.title ?? threadTitle(chat.state.turns) ?? 'New chat'}
+            title={
+              threads.find((t) => t.id === threadId)?.title ??
+              threadTitle(chat.state.turns, chat.state.inherited) ??
+              (chat.state.parent ? 'New branch' : 'New chat')
+            }
             back={{ label: 'Today', onClick: () => navigate('/') }}
             onEnd={endThread}
+            branches={branchesOf(threadId).map((b) => ({
+              id: b.id,
+              title: b.title,
+              turn: b.parent?.turn ?? 0,
+            }))}
+            onBranched={openThread}
           />
         </Fragment>
       ) : (
@@ -362,6 +384,7 @@ function Canvas() {
           imports={isToday ? importRows : []}
           notes={notes}
           onOpen={openThread}
+          onOpenSaved={(chat) => void openSaved(chat)}
           onOpenImport={openImport}
           onImportMeeting={queue.take}
           dragging={drop.dragging}

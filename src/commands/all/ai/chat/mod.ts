@@ -323,8 +323,8 @@ export default class AiChatTask extends Command {
           options: [
             ...chats.map((c) => ({
               value: c.path,
-              label: `${c.time}  ${truncate(c.summary || path.basename(c.path), 70)}`,
-              hint: `${c.exchanges} exchange${c.exchanges === 1 ? '' : 's'}`,
+              label: `${c.time}  ${c.parent ? '  ' : ''}${truncate(c.summary || path.basename(c.path), 70)}`,
+              hint: `${c.parent ? `branch from turn ${c.parent.turn} · ` : ''}${c.exchanges} exchange${c.exchanges === 1 ? '' : 's'}`,
             })),
             { value: OLDER, label: 'Older…', hint: 'previous days' },
           ],
@@ -342,7 +342,8 @@ export default class AiChatTask extends Command {
         }
       }
 
-      resumeSession = await loadResumeSession(filePath)
+      // A branch loads as the whole thread it is: its parent's turns, then its own.
+      resumeSession = await loadResumeSession(filePath, { baseDir })
       if (resumeSession.state.conversation.length === 0) {
         return CommandResult.fail(`Nothing to resume: no conversation parsed from ${filePath}`)
       }

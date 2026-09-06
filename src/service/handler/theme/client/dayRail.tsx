@@ -205,20 +205,31 @@ function threadWord(thread: ThreadSummary): string {
   return thread.state === 'new' || thread.state === 'done' ? 'live' : thread.state
 }
 
+/**
+ * The day's chats: the ones filed under it and the live threads that
+ * started on it, each branch under the chat it left. A saved chat opens
+ * as a thread to continue; a live one is opened as it is. A live thread
+ * that continues a saved chat stands in for the file, so the two never
+ * list twice.
+ */
 function ChatsSection({
   ymd,
   chats,
   threads,
   onOpenThread,
+  onOpenSaved,
 }: {
   ymd: string
   chats: DayData['chats']
   threads: ThreadSummary[]
   onOpenThread: (id: string) => void
+  onOpenSaved: (chat: string) => void
 }) {
   // The day's own live threads: the ones that started on it, the day's own conversation aside.
   const live = threads.filter((t) => t.day === ymd && !t.id.startsWith('day-'))
-  const total = chats.length + live.length
+  const continued = new Set(live.map((t) => t.saved).filter((s): s is string => s !== null))
+  const saved = chats.filter((c) => !continued.has(c.path))
+  const total = saved.length + live.length
   if (total === 0) {
     return (
       <Section title="Chats">
@@ -226,32 +237,44 @@ function ChatsSection({
       </Section>
     )
   }
+  const savedRow = (c: DayData['chats'][number], branch: boolean) => (
+    <div className="sky-dr-item" data-branch={branch || undefined} key={c.path}>
+      <span className="sky-dr-time">{c.time}</span>
+      <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenSaved(c.path)}>
+        {c.summary || c.path}
+      </button>
+      <span className="sky-dr-mark">
+        {branch && c.parent ? `from turn ${c.parent.turn}` : `${c.exchanges} turn${c.exchanges === 1 ? '' : 's'}`}
+      </span>
+    </div>
+  )
+  const liveRow = (t: ThreadSummary, branch: boolean) => (
+    <div className="sky-dr-item" data-live="true" data-branch={branch || undefined} key={t.id}>
+      <span className="sky-dr-time">{t.when ?? ''}</span>
+      <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenThread(t.id)}>
+        {t.title ?? (t.parent ? 'New branch' : 'New chat')}
+      </button>
+      <span className="sky-dr-mark">{branch && t.parent ? `from turn ${t.parent.turn}` : threadWord(t)}</span>
+    </div>
+  )
+  // Roots first, each with its branches beneath: saved branches by the parent's path, live ones by the parent's id or path.
+  const savedRoots = saved.filter((c) => !c.parent || !saved.some((o) => o.path === c.parent?.chat))
+  const liveRoots = live.filter(
+    (t) => !t.parent || !(live.some((o) => o.id === t.parent?.id) || saved.some((c) => c.path === t.parent?.chat)),
+  )
   return (
     <Section title="Chats" count={total}>
-      {chats.map((c) => (
+      {savedRoots.map((c) => (
         <Fragment key={c.path}>
-          <div className="sky-dr-item">
-            <span className="sky-dr-time">{c.time}</span>
-            <span className="sky-dr-label">
-              <a href={fileHref(c.path)}>{c.summary || c.path}</a>
-            </span>
-            <span className="sky-dr-mark">
-              {c.exchanges} turn{c.exchanges === 1 ? '' : 's'}
-            </span>
-          </div>
+          {savedRow(c, false)}
+          {saved.filter((b) => b.parent?.chat === c.path).map((b) => savedRow(b, true))}
+          {live.filter((t) => t.parent?.chat === c.path && !t.parent.id).map((t) => liveRow(t, true))}
         </Fragment>
       ))}
-      {live.map((t) => (
+      {liveRoots.map((t) => (
         <Fragment key={t.id}>
-          <div className="sky-dr-item" data-live="true">
-            <span className="sky-dr-time">{t.when ?? ''}</span>
-            <button type="button" className="sky-dr-label sky-dr-open" onClick={() => onOpenThread(t.id)}>
-              {t.title ?? 'New chat'}
-            </button>
-            <span className="sky-dr-mark">
-              {[t.saves === false ? 'not saved' : null, threadWord(t)].filter(Boolean).join(' · ')}
-            </span>
-          </div>
+          {liveRow(t, false)}
+          {live.filter((b) => b.parent?.id === t.id).map((b) => liveRow(b, true))}
         </Fragment>
       ))}
     </Section>
@@ -402,6 +425,7 @@ export function DayRail({
   threads,
   imports,
   onOpenThread,
+  onOpenSaved,
   onOpenImport,
   onImportMeeting,
   onKept,
@@ -415,6 +439,8 @@ export function DayRail({
   /** Imports, when the day is today */
   imports: ImportJob[]
   onOpenThread: (id: string) => void
+  /** A saved chat, by its notebook-relative path, opened to continue */
+  onOpenSaved: (chat: string) => void
   onOpenImport: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files the pad kept — the toast's words, and what Undo reverses */
@@ -430,7 +456,7 @@ export function DayRail({
       </div>
       <div className="sky-rail-body">
         <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
-        <ChatsSection ymd={ymd} chats={chats} threads={threads} onOpenThread={onOpenThread} />
+        <ChatsSection ymd={ymd} chats={chats} threads={threads} onOpenThread={onOpenThread} onOpenSaved={onOpenSaved} />
         <WorkingSection imports={imports} onOpenImport={onOpenImport} />
       </div>
       <AttachmentsPad ymd={ymd} onKept={onKept} />

@@ -205,6 +205,31 @@ Give me marketing ideas.
 Here are three angles to consider.`),
       path: '/test/time/2026/W05/01-27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
     },
+    // A branch of the launch chat: its own turn only, and the key naming the chat it left.
+    {
+      doc: Document.fromMarkdown(`---
+created: 2026-02-03
+updated: 2026-02-03
+summary: First Cohort Size
+provider: claude
+model: claude-opus-4-6
+turns: 1
+parent:
+  chat: time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md
+  turn: 1
+---
+
+# First Cohort Size
+
+## Sam
+
+How many accounts in the first cohort?
+
+## AI Assistant
+
+Twenty, then double.`),
+      path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch/09-40_First-Cohort-Size.md',
+    },
   ]
 
   const notesData = [
@@ -714,9 +739,9 @@ test('resolvers - chats returns only ai-chat documents', () => {
 
   assert({
     given: 'no filter',
-    should: 'return both chats and nothing else from the time store',
+    should: 'return the three chats — the branch too — and nothing else from the time store',
     actual: result.length,
-    expected: 2,
+    expected: 3,
   })
 
   assert({
@@ -1613,5 +1638,42 @@ No time was ever recorded.`)
     should: 'yield null instead of failing the whole query',
     actual: docToMeeting(doc, MEETING_PATH).when,
     expected: null,
+  })
+})
+
+test('resolvers - a branch carries its parent, its parent lists it, and its thread reads whole', () => {
+  const store = createMockStore()
+  const resolvers = createDomainResolvers(store)
+
+  const chats = resolvers.chats({})
+  const launch = chats.find((c) => c.summary === 'Planning the Widget Launch')!
+  const branch = chats.find((c) => c.summary === 'First Cohort Size')!
+
+  assert({
+    given: 'a launch chat and a branch left after its first turn',
+    should:
+      'key the branch to its parent with two inherited messages, list it under the parent, and assemble the thread from the parent turn through the branch',
+    actual: {
+      parent: branch.parent,
+      inherited: branch.inherited,
+      parentBranches: launch.branches.map((b) => b.summary),
+      launchBranchesFilledIn: launch.branches[0]?.branches,
+      launchParent: launch.parent,
+      threadHasParentTurn: branch.thread.includes('How should we plan the widget launch?'),
+      threadHasOwnTurn: branch.thread.includes('How many accounts in the first cohort?'),
+      threadOrder: branch.thread.indexOf('widget launch') < branch.thread.indexOf('first cohort'),
+      ownMarkdownStandsAlone: !branch.markdown.includes('widget launch?'),
+    },
+    expected: {
+      parent: { path: 'time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md', turn: 1 },
+      inherited: 2,
+      parentBranches: ['First Cohort Size'],
+      launchBranchesFilledIn: [],
+      launchParent: null,
+      threadHasParentTurn: true,
+      threadHasOwnTurn: true,
+      threadOrder: true,
+      ownMarkdownStandsAlone: true,
+    },
   })
 })

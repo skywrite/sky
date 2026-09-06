@@ -40,7 +40,14 @@ export interface DayData {
     mostImportant: Array<{ label: string; relativePath: string }>
     streaks: Array<{ title: string; doneToday: boolean }>
   } | null
-  chats: Array<{ path: string; time: string; summary: string; exchanges: number }>
+  chats: Array<{
+    path: string
+    time: string
+    summary: string
+    exchanges: number
+    /** The chat this one branched from, and the turn it left after; null for one that began on its own */
+    parent: { chat: string; turn: number } | null
+  }>
   record: DayRecord
 }
 
@@ -94,6 +101,12 @@ export interface ThreadSummary {
   busy: boolean
   /** False for a thread that will not be kept */
   saves?: boolean
+  /** The chat this thread branched from, with the live thread it left when there is one */
+  parent: { chat: string; turn: number; id: string | null; title: string | null } | null
+  /** Messages at the head of the thread that are its parent's */
+  inherited: number
+  /** The saved chat this thread continues; null for one with no file yet */
+  saved: string | null
 }
 
 /** The day named by `ymd`, or today when null. */
@@ -691,6 +704,7 @@ export function DayView({
   imports = [],
   notes,
   onOpen,
+  onOpenSaved = () => {},
   onOpenImport = () => {},
   onImportMeeting,
   dragging = false,
@@ -707,6 +721,8 @@ export function DayView({
   imports?: ImportJob[]
   notes: Note[]
   onOpen: (id: string) => void
+  /** A saved chat, by its notebook-relative path, opened to continue */
+  onOpenSaved?: (chat: string) => void
   onOpenImport?: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files are held over the page */
@@ -947,6 +963,7 @@ export function DayView({
             threads={threads}
             imports={imports}
             onOpenThread={onOpen}
+            onOpenSaved={onOpenSaved}
             onOpenImport={onOpenImport}
             onImportMeeting={onImportMeeting}
             onKept={onKept}
