@@ -29,7 +29,15 @@ a person can see and touch:
   stops past it stay drawn, grayed, and a budget above them drops to that
   stop — on the page, in the routes, and behind `sky ai:chat
   --max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
-  Both apply from the next message. `GET /chat/:id/settings` answers the
+  Every message POST carries `{ message, profile, contextTokens, saves }`
+  captured from the composer, including connection retries. These choices
+  are required: an older client that omits them must reload, and an unknown
+  profile or incompatible budget is refused before context or model work.
+  The routes reserve the turn before restoration or construction, build a
+  new thread with its request's choices, and apply them to an existing or
+  restored thread before it starts. Server defaults cannot override the
+  message. Send waits while the composer loads or applies settings.
+  `GET /chat/:id/settings` answers the
   tuning — the thread's own, else what was chosen before its first
   message, else the host's defaults (the Thinking role, ai:chat's 300k).
   `POST /chat/:id/settings` with `{ profile?, contextTokens? }` changes it:
@@ -181,6 +189,16 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   routes, not the session, decide it does not stay.
 
 ## Verified
+
+- 2026-09-05 — each message carries its model, reading budget, and save
+  preference: new and existing threads use them before the model runs;
+  restored threads keep the conversation and honor the next request's
+  choices. Missing, malformed, unknown, and incompatible settings fail
+  before construction. Competing messages and settings changes cannot
+  replace the choices of a turn being constructed (route tests). An
+  isolated browser check confirms that Send waits for initial settings
+  and an in-flight selection, preserves unsent text while waiting, and
+  retries a failed connection with an identical message and settings.
 
 - 2026-09-05 — the budget slider: on the real page, a slow click, a quick
   click, a drag and an arrow key each post their stop once, in order, and

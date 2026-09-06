@@ -181,6 +181,17 @@ function post(app: App, url: string, body: unknown): Promise<Response> {
   )
 }
 
+/** A page reads its composer choices, then includes all of them with Send. */
+async function send(app: App, url: string, body: { message: string }): Promise<Response> {
+  const settings = await getJson(app, url.replace(/\/messages$/, '/settings'))
+  return post(app, url, {
+    ...body,
+    profile: settings.model.current,
+    contextTokens: settings.contextTokens,
+    saves: settings.saves,
+  })
+}
+
 interface Frame {
   event: string
   data: Record<string, unknown> | null
@@ -204,7 +215,7 @@ function parseSSE(text: string): Frame[] {
 
 test({ name: 'chat route - a message needs a body' }, async () => {
   const app = appWith(await testHost())
-  const response = await post(app, 'http://localhost/chat/t0/messages', { message: '   ' })
+  const response = await send(app, 'http://localhost/chat/t0/messages', { message: '   ' })
 
   assert({
     given: 'a blank message',
@@ -231,7 +242,7 @@ test('chat route - reply timing includes the first context load and survives a p
   const events: TimingEvent[] = []
   await withTimingEnvironment({ now: () => now, sink: (event) => events.push(event) }, async () => {
     const app = appWith(host)
-    const response = await post(app, 'http://localhost/chat/timing-test/messages', { message: 'Find the mock roadmap' })
+    const response = await send(app, 'http://localhost/chat/timing-test/messages', { message: 'Find the mock roadmap' })
     const frames = parseSSE(await response.text())
     const turn = frames.find((frame) => frame.event === 'turn')?.data
     const body = await getJson(app, 'http://localhost/chat/timing-test')
@@ -291,7 +302,7 @@ test('chat route - web tool and command timings persist automatically across rep
     configureTiming({ source: 'service', dir })
     const app = appWith(host)
     for (let i = 0; i < 2; i++) {
-      const response = await post(app, 'http://localhost/chat/logged-timing/messages', { message: 'Look up Atlas' })
+      const response = await send(app, 'http://localhost/chat/logged-timing/messages', { message: 'Look up Atlas' })
       await response.text()
     }
     // Read disk, not the thread's in-memory summary or an injected event collector.
@@ -353,7 +364,7 @@ test('chat route - web tool and command timings persist automatically across rep
 
 test({ name: 'chat route - the first message starts the session and streams the turn' }, async () => {
   const app = appWith(await testHost())
-  const response = await post(app, 'http://localhost/chat/t1/messages', { message: 'What should I focus on?' })
+  const response = await send(app, 'http://localhost/chat/t1/messages', { message: 'What should I focus on?' })
   const frames = parseSSE(await response.text())
 
   assert({
@@ -408,7 +419,7 @@ test({ name: 'chat route - the first message starts the session and streams the 
 
 test({ name: 'chat route - a thread can be read back, and an unknown one is 404' }, async () => {
   const app = appWith(await testHost())
-  await (await post(app, 'http://localhost/chat/t2/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t2/messages', { message: 'What should I focus on?' })).text()
 
   const known = await app.request('http://localhost/chat/t2')
   const body = (await known.json()) as { id: string; turns: Array<{ role: string }>; documents: number }
@@ -440,8 +451,8 @@ test({ name: 'chat route - one turn at a time per thread' }, async () => {
   const app = appWith(await testHost({ invokeModel: gated }))
 
   // The first response returns as soon as its stream opens; the turn is still running behind it.
-  const first = await post(app, 'http://localhost/chat/t3/messages', { message: 'first' })
-  const second = await post(app, 'http://localhost/chat/t3/messages', { message: 'second' })
+  const first = await send(app, 'http://localhost/chat/t3/messages', { message: 'first' })
+  const second = await send(app, 'http://localhost/chat/t3/messages', { message: 'second' })
   release()
   await first.text()
 
@@ -472,8 +483,8 @@ test({ name: 'chat route - the day lists its threads with what each is doing' },
   const app = appWith(await testHost({ invokeModel: gated }))
 
   releases[0]()
-  await (await post(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on today?' })).text()
-  const second = await post(app, 'http://localhost/chat/t7/messages', { message: 'And the pricing page?' })
+  await (await send(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on today?' })).text()
+  const second = await send(app, 'http://localhost/chat/t7/messages', { message: 'And the pricing page?' })
   await arrivals[1]
 
   const listed = (await (await app.request('http://localhost/chat')).json()) as { threads: ThreadSummary[] }
@@ -514,7 +525,7 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
   const host = await testHost()
   const app = appWith(host)
 
-  await (await post(app, 'http://localhost/chat/t4/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t4/messages', { message: 'What should I focus on?' })).text()
   const dropped = (await (await post(app, 'http://localhost/chat/t4/end', { save: false })).json()) as {
     saved: unknown
   }
@@ -525,7 +536,7 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
     expected: { saved: null, after: 404 },
   })
 
-  await (await post(app, 'http://localhost/chat/t5/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t5/messages', { message: 'What should I focus on?' })).text()
   const filed = (await (await post(app, 'http://localhost/chat/t5/end', {})).json()) as {
     saved: { path: string; exchanges: number } | null
   }
@@ -557,8 +568,8 @@ test(
 
     await post(app, 'http://localhost/chat/t8/settings', { saves: false })
     const before = await getJson(app, 'http://localhost/chat/t8/settings')
-    await (await post(app, 'http://localhost/chat/t8/messages', { message: 'What should I focus on?' })).text()
-    await (await post(app, 'http://localhost/chat/t9/messages', { message: 'What should I focus on?' })).text()
+    await (await send(app, 'http://localhost/chat/t8/messages', { message: 'What should I focus on?' })).text()
+    await (await send(app, 'http://localhost/chat/t9/messages', { message: 'What should I focus on?' })).text()
     const list = await getJson(app, 'http://localhost/chat')
     assert({
       given: 'a thread set not to save before its first message, beside one that saves',
@@ -586,12 +597,12 @@ test({ name: 'chat route - keeping can be turned off and on between turns' }, as
   const app = appWith(host)
   const copy = () => existsSync(path.join(host.tmp, 't10.autosave.md'))
 
-  await (await post(app, 'http://localhost/chat/t10/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t10/messages', { message: 'What should I focus on?' })).text()
   const kept = copy()
   await post(app, 'http://localhost/chat/t10/settings', { saves: false })
   const dropped = copy()
   await post(app, 'http://localhost/chat/t10/settings', { saves: true })
-  await (await post(app, 'http://localhost/chat/t10/messages', { message: 'And then?' })).text()
+  await (await send(app, 'http://localhost/chat/t10/messages', { message: 'And then?' })).text()
   assert({
     given: 'a saving thread turned off, then on again before its next turn',
     should: 'have its copy, lose it at once, and write it again with the next turn',
@@ -623,7 +634,7 @@ test({ name: 'chat route - a reply carries its token counts, on the stream and o
   }
   const app = appWith(await testHost({ invokeModel }))
   const frames = parseSSE(
-    await (await post(app, 'http://localhost/chat/t11/messages', { message: 'What should I focus on?' })).text(),
+    await (await send(app, 'http://localhost/chat/t11/messages', { message: 'What should I focus on?' })).text(),
   )
   const turn = frames.find((f) => f.event === 'turn')?.data as { usage?: unknown; model?: string }
   const thread = await getJson(app, 'http://localhost/chat/t11')
@@ -655,7 +666,7 @@ test({ name: 'chat route - the context can be read, and shaped by hand' }, async
     expected: 404,
   })
 
-  await (await post(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t6/messages', { message: 'What should I focus on?' })).text()
   const before = (await (await app.request(url)).json()) as ContextBody
   assert({
     given: 'a thread after one exchange',
@@ -756,7 +767,7 @@ test(
       expected: { status: 200, current: 'test-quick', contextTokens: 5000 },
     })
 
-    await (await post(app, 'http://localhost/chat/s1/messages', { message: 'What should I focus on?' })).text()
+    await (await send(app, 'http://localhost/chat/s1/messages', { message: 'What should I focus on?' })).text()
     const after = await getJson(app, 'http://localhost/chat/s1/settings')
     const context = await getJson(app, 'http://localhost/chat/s1/context')
     assert({
@@ -780,7 +791,7 @@ test(
       },
     })
 
-    await (await post(app, 'http://localhost/chat/s1/messages', { message: 'And then?' })).text()
+    await (await send(app, 'http://localhost/chat/s1/messages', { message: 'And then?' })).text()
     const again = await getJson(app, 'http://localhost/chat/s1/context')
     assert({
       given: 'a second message whose queries did not change',
@@ -806,9 +817,154 @@ test({ name: 'chat route - settings refuse what the host cannot take' }, async (
   })
 })
 
+test('chat route - every message applies its own settings before the model runs', async () => {
+  let session: ChatSession
+  const seen: Array<{ model: string; budget: number; snapshot: boolean }> = []
+  const host = await testHost({
+    invokeModel: async ({ sink }) => {
+      seen.push({
+        model: session.modelProfile.model,
+        budget: session.contextTokens,
+        snapshot: existsSync(path.join(host.tmp, 'request.autosave.md')),
+      })
+      sink.write('Done.')
+      return EMPTY
+    },
+  })
+  const create = host.createSession
+  const createdWith: unknown[] = []
+  host.createSession = async (...args) => {
+    createdWith.push({ ...args[2] })
+    session = await create(...args)
+    return session
+  }
+  const app = appWith(host)
+  // A stale setting on the service cannot override the next message.
+  await post(app, 'http://localhost/chat/request/settings', { profile: 'test-thinking', contextTokens: 300_000 })
+  const firstPrefs = { profile: 'test-quick', contextTokens: 5000, saves: true }
+  const first = parseSSE(
+    await (
+      await post(app, 'http://localhost/chat/request/messages', {
+        message: 'Plan the demo.',
+        ...firstPrefs,
+      })
+    ).text(),
+  )
+  const second = parseSSE(
+    await (
+      await post(app, 'http://localhost/chat/request/messages', {
+        message: 'Now close the notebook.',
+        profile: 'test-thinking',
+        contextTokens: 0,
+        saves: false,
+      })
+    ).text(),
+  )
+  const settings = await getJson(app, 'http://localhost/chat/request/settings')
+  assert({
+    given: 'explicit choices on a new thread, then different choices on the live thread',
+    should: 'construct and invoke with those choices, and remove a discarded snapshot before invoking',
+    actual: {
+      createdWith,
+      seen,
+      models: [first, second].map((frames) => frames.find((f) => f.event === 'turn')?.data?.model),
+      final: [settings.model.current, settings.contextTokens, settings.saves],
+      snapshot: existsSync(path.join(host.tmp, 'request.autosave.md')),
+    },
+    expected: {
+      createdWith: [firstPrefs],
+      seen: [
+        { model: 'test-quick', budget: 5000, snapshot: false },
+        { model: 'test-thinking', budget: 0, snapshot: false },
+      ],
+      models: ['test-quick', 'test-thinking'],
+      final: ['test-thinking', 0, false],
+      snapshot: false,
+    },
+  })
+})
+
+test('chat route - missing or invalid message settings never invoke a model or construct a thread', async () => {
+  let created = 0
+  const host = await testHost({ settings: smallWindowHost })
+  const create = host.createSession
+  host.createSession = (...args) => {
+    created++
+    return create(...args)
+  }
+  const app = appWith(host)
+  const valid = { profile: 'test-quick', contextTokens: 5000, saves: false }
+  const invalid = [
+    {},
+    { contextTokens: 5000, saves: false },
+    { profile: 'test-quick', saves: false },
+    { profile: 'test-quick', contextTokens: 5000 },
+    { ...valid, profile: 'unknown' },
+    { ...valid, profile: null },
+    { ...valid, contextTokens: -1 },
+    { ...valid, contextTokens: 0.5 },
+    { ...valid, contextTokens: '5000' },
+    { ...valid, saves: 'false' },
+    { ...valid, profile: 'test-small', contextTokens: 300_000 },
+  ]
+  const statuses: number[] = []
+  for (const prefs of invalid) {
+    statuses.push((await post(app, 'http://localhost/chat/invalid/messages', { message: 'Hello.', ...prefs })).status)
+  }
+  assert({
+    given: 'missing, malformed, unknown, or incompatible settings',
+    should: 'reject every message before context or model work',
+    actual: { statuses, created },
+    expected: { statuses: invalid.map(() => 400), created: 0 },
+  })
+})
+
+test('chat route - construction reserves the turn against competing messages and settings', async () => {
+  const host = await testHost()
+  const create = host.createSession
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const building = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  host.createSession = async (...args) => {
+    entered()
+    await gate
+    return create(...args)
+  }
+  const app = appWith(host)
+  const prefs = { profile: 'test-quick', contextTokens: 0, saves: false }
+  const first = post(app, 'http://localhost/chat/racing/messages', { message: 'First.', ...prefs })
+  await building
+  let statuses: number[]
+  try {
+    const second = await post(app, 'http://localhost/chat/racing/messages', {
+      message: 'Second.',
+      profile: 'test-thinking',
+      contextTokens: 5000,
+      saves: true,
+    })
+    const settings = await post(app, 'http://localhost/chat/racing/settings', { profile: 'test-thinking' })
+    statuses = [second.status, settings.status]
+  } finally {
+    release()
+  }
+  await (await first).text()
+  const settings = await getJson(app, 'http://localhost/chat/racing/settings')
+  assert({
+    given: 'a second message and a settings change while the first session is being constructed',
+    should: 'refuse both without changing the accepted message’s choices',
+    actual: { statuses, settings: [settings.model.current, settings.contextTokens, settings.saves] },
+    expected: { statuses: [409, 409], settings: ['test-quick', 0, false] },
+  })
+})
+
 test({ name: 'chat route - a smaller budget on a live thread reassembles its context at once' }, async () => {
   const app = appWith(await testHost())
-  await (await post(app, 'http://localhost/chat/s3/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/s3/messages', { message: 'What should I focus on?' })).text()
   const before = await getJson(app, 'http://localhost/chat/s3/context')
   const changed = await post(app, 'http://localhost/chat/s3/settings', { contextTokens: 1 })
   const body = (await changed.json()) as { kept: number | null }
@@ -844,7 +1000,7 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
   const app = appWith(await testHost())
   const closed = await post(app, 'http://localhost/chat/s4/settings', { contextTokens: 0 })
   const first = parseSSE(
-    await (await post(app, 'http://localhost/chat/s4/messages', { message: 'Draft a note.' })).text(),
+    await (await send(app, 'http://localhost/chat/s4/messages', { message: 'Draft a note.' })).text(),
   )
   const noContext = await app.request('http://localhost/chat/s4/context')
   const settings = await getJson(app, 'http://localhost/chat/s4/settings')
@@ -873,7 +1029,7 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
 
   const opened = await post(app, 'http://localhost/chat/s4/settings', { contextTokens: 5000 })
   const second = parseSSE(
-    await (await post(app, 'http://localhost/chat/s4/messages', { message: 'And with my notebook?' })).text(),
+    await (await send(app, 'http://localhost/chat/s4/messages', { message: 'And with my notebook?' })).text(),
   )
   const context = await getJson(app, 'http://localhost/chat/s4/context')
   assert({
@@ -923,7 +1079,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
     return EMPTY
   }
   const app = appWith(await testHost({ invokeModel, capture: (channel) => (report = channel) }))
-  const response = await post(app, 'http://localhost/chat/r1/messages', { message: 'Fix the fonts' })
+  const response = await send(app, 'http://localhost/chat/r1/messages', { message: 'Fix the fonts' })
   const body = response.text()
 
   const thread = await until(
@@ -1018,7 +1174,7 @@ test({ name: "chat route - a call's record says what it was about, and a quiet t
     return Promise.resolve(EMPTY)
   }
   const app = appWith(await testHost({ invokeModel, capture: (channel) => (report = channel) }))
-  const response = await post(app, 'http://localhost/chat/s1/messages', { message: 'Look into Atlas, fix the fonts' })
+  const response = await send(app, 'http://localhost/chat/s1/messages', { message: 'Look into Atlas, fix the fonts' })
   const frames = parseSSE(await response.text())
   const thread = await getJson(app, 'http://localhost/chat/s1')
   type Started = { run: { subject?: string } }
@@ -1060,7 +1216,7 @@ test({ name: 'chat route - a turn that says nothing for a while still carries a 
     return EMPTY
   }
   const app = appWith({ ...(await testHost({ invokeModel })), heartbeatMs: 20 })
-  const response = await post(app, 'http://localhost/chat/h1/messages', { message: 'Think about it' })
+  const response = await send(app, 'http://localhost/chat/h1/messages', { message: 'Think about it' })
   const body = response.text()
   await new Promise((resolve) => setTimeout(resolve, 150))
   release()
@@ -1112,7 +1268,7 @@ async function until<T>(read: () => Promise<T>, ok: (value: T) => boolean): Prom
 
 test({ name: 'chat route - a tool call that needs a go waits on the page and resumes with the answer' }, async () => {
   const app = appWith(await testHost({ invokeModel: askingModel() }))
-  const response = await post(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' })
+  const response = await send(app, 'http://localhost/chat/a1/messages', { message: 'Post hello for me' })
   const body = response.text()
 
   const thread = await until(
@@ -1186,7 +1342,7 @@ test({ name: 'chat route - a tool call that needs a go waits on the page and res
 
 test({ name: 'chat route - a declined call tells the model so, and the turn goes on' }, async () => {
   const app = appWith(await testHost({ invokeModel: askingModel() }))
-  const response = await post(app, 'http://localhost/chat/a2/messages', { message: 'Post hello for me' })
+  const response = await send(app, 'http://localhost/chat/a2/messages', { message: 'Post hello for me' })
   const body = response.text()
   const thread = await until(
     () => getJson(app, 'http://localhost/chat/a2'),
@@ -1237,7 +1393,7 @@ test(
       expected: { window: SMALL_WINDOW, small: ['test-small', 50_000], fits: 25_000, back: ['test-quick', 300_000] },
     })
 
-    await (await post(app, 'http://localhost/chat/s7/messages', { message: 'What should I focus on?' })).text()
+    await (await send(app, 'http://localhost/chat/s7/messages', { message: 'What should I focus on?' })).text()
     const lowered = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-small' })
     const loweredBody = (await lowered.json()) as { model: { current: string }; contextTokens: number }
     const context = await getJson(app, 'http://localhost/chat/s7/context')

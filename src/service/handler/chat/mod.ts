@@ -377,6 +377,8 @@ const HEARTBEAT_MS = 10_000
 export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const threads = new Map<string, Thread>()
   const opening = new Map<string, Promise<Thread>>()
+  // Reserve a turn before awaiting restoration or construction, including its settings.
+  const accepting = new Set<string>()
   // Tuning chosen before a thread's first message — applied when it is built.
   const pending = new Map<string, ThreadPrefs>()
   const app = new Hono()
@@ -511,26 +513,65 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
 
   app.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
-    const body = (await c.req.json().catch(() => null)) as { message?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as {
+      message?: unknown
+      profile?: unknown
+      contextTokens?: unknown
+      saves?: unknown
+    } | null
     const message = typeof body?.message === 'string' ? body.message.trim() : ''
     if (!message) return c.json({ message: 'message is required' }, 400)
+    // A message carries the choices visible when Send was pressed. Missing
+    // choices must never turn a restarted service's defaults into consent.
+    if (body?.profile === undefined || body.contextTokens === undefined || body.saves === undefined) {
+      return c.json({ message: 'Each message needs model, reading budget, and save settings. Reload the page.' }, 400)
+    }
+    if (typeof body.profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
+    if (
+      !(typeof body.contextTokens === 'number' && Number.isSafeInteger(body.contextTokens) && body.contextTokens >= 0)
+    ) {
+      return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
+    }
+    if (typeof body.saves !== 'boolean') return c.json({ message: 'saves must be true or false' }, 400)
+    const host = options.settings
+    if (!host) return c.json({ message: 'this host has no settings' }, 400)
+    let chosen: ReturnType<ChatSettingsHost['resolve']>
+    try {
+      chosen = host.resolve(body.profile)
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
+    if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
+      return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
+    }
+    const prefs = { profile: body.profile, contextTokens: body.contextTokens, saves: body.saves }
+    if (accepting.has(id) || threads.get(id)?.busy) {
+      return c.json({ message: 'a turn is already running on this thread' }, 409)
+    }
+    accepting.add(id)
 
     // Start at acceptance of a valid prompt, before thread construction or initial context.
     const timing = new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
-    let thread: Thread
+    let thread: Thread | undefined
     try {
       thread = await timing.run(async () => {
+        await opening.get(id)
+        if (!threads.has(id)) pending.set(id, prefs)
         return open(id)
       })
-      if (thread.busy) {
-        timing.finish('fail')
-        return c.json({ message: 'a turn is already running on this thread' }, 409)
-      }
+      thread.busy = true
+      thread.session.setModel(chosen.model, chosen.profile)
+      thread.profile = prefs.profile
+      if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
+      thread.saves = prefs.saves
+      if (!thread.saves) await dropSnapshot(id, thread)
     } catch (error) {
+      if (thread) thread.busy = false
       timing.finish(thrownOutcome(error))
       throw error
+    } finally {
+      accepting.delete(id)
     }
-    thread.busy = true
     // The baseline gather before the first event is a read too.
     thread.state = 'reading'
     thread.partial = ''
@@ -684,6 +725,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       contextTokens?: unknown
       saves?: unknown
     } | null
+    if (accepting.has(id)) return c.json({ message: 'a turn is still running on this thread' }, 409)
     const profile = body?.profile
     const tokens = body?.contextTokens
     const saves = body?.saves

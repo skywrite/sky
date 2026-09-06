@@ -442,6 +442,8 @@ function turnsOf(body: ThreadBody): Turn[] {
 
 export function useChat(id: string) {
   const [state, dispatch] = useReducer(reduce, id, initial)
+  const [tuning, setTuning] = useState(0)
+  const tuningCount = useRef(0)
   // True while this page reads a turn's stream — then the stream, not a poll, keeps the thread current.
   const attached = useRef(false)
 
@@ -545,13 +547,20 @@ export function useChat(id: string) {
     async (change: { profile?: string; contextTokens?: number; saves?: boolean }) => {
       if (!state.id) return
       const id = state.id
-      const response = await fetch(`/chat/${id}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(change),
-      }).catch(() => null)
-      if (!response?.ok) return
-      dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
+      tuningCount.current++
+      setTuning(tuningCount.current)
+      try {
+        const response = await fetch(`/chat/${id}/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(change),
+        }).catch(() => null)
+        if (!response?.ok) return
+        dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
+      } finally {
+        tuningCount.current--
+        setTuning(tuningCount.current)
+      }
     },
     [state.id],
   )
@@ -562,8 +571,15 @@ export function useChat(id: string) {
   const send = useCallback(
     async (content: string) => {
       const message = content.trim()
-      if (!message || !state.id || state.phase !== 'idle') return
+      if (!message || !state.id || state.phase !== 'idle' || !state.settings || tuningCount.current > 0) return
       const id = state.id
+      // Capture once: every retry carries exactly what the composer showed.
+      const body = JSON.stringify({
+        message,
+        profile: state.settings.model.current,
+        contextTokens: state.settings.contextTokens,
+        saves: state.settings.saves,
+      })
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
       attached.current = true
@@ -577,7 +593,7 @@ export function useChat(id: string) {
         fetch(`/chat/${id}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message }),
+          body,
         })
       let response: Response
       try {
@@ -710,7 +726,7 @@ export function useChat(id: string) {
       }
       followSummaries(id, dispatch)
     },
-    [state.id, state.phase, state.turns.length],
+    [state.id, state.phase, state.turns.length, state.settings],
   )
 
   // Ending a thread files it through the same gate as ai:chat (or drops
@@ -769,7 +785,16 @@ export function useChat(id: string) {
 
   // The reset for a new id lands in an effect, one render late. Until then the
   // store still holds the previous thread; the caller must never see it.
-  return { state: state.id === id ? state : initial(id), send, end, setModel, setContextTokens, setSaves, answer }
+  return {
+    state: state.id === id ? state : initial(id),
+    tuning: tuning > 0,
+    send,
+    end,
+    setModel,
+    setContextTokens,
+    setSaves,
+    answer,
+  }
 }
 
 export type Chat = ReturnType<typeof useChat>
@@ -1100,8 +1125,10 @@ export function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const busy = state.phase !== 'idle'
+  const canSend = !busy && !chat.tuning && state.settings !== null
 
   const submit = () => {
+    if (!canSend) return
     const el = inputRef.current
     if (!el) return
     const text = el.value
@@ -1154,7 +1181,7 @@ export function Composer({
             autoFocus
           />
         </div>
-        <ActionIcon variant="light" color="blue" aria-label="Send" onClick={submit} disabled={busy}>
+        <ActionIcon variant="light" color="blue" aria-label="Send" onClick={submit} disabled={!canSend}>
           ↑
         </ActionIcon>
       </div>
