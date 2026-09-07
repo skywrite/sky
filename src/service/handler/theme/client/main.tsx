@@ -374,12 +374,15 @@ function Canvas() {
             }
             back={{ label: 'Today', onClick: () => navigate('/') }}
             onEnd={endThread}
-            branches={branchesOf(threadId).map((b) => ({
-              id: b.id,
-              title: b.title,
-              turn: b.parent?.turn ?? 0,
-            }))}
+            branches={[
+              ...branchesOf(threadId).map((b) => ({ id: b.id, title: b.title, turn: b.parent?.turn ?? 0 })),
+              // Filed beside this thread's file and not live: their marks open them as threads.
+              ...chat.state.branches
+                .filter((b) => !others.some((t) => t.saved === b.chat))
+                .map((b) => ({ id: null, chat: b.chat, title: b.title, turn: b.turn })),
+            ]}
             onBranched={openThread}
+            onOpenSaved={(saved) => void openSaved(saved)}
           />
         </Fragment>
       ) : (

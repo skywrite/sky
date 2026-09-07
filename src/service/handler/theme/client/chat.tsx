@@ -117,6 +117,15 @@ export interface ThreadParent {
   title: string | null
 }
 
+/** A branch filed beside this thread's file, not live on this page */
+export interface SavedBranch {
+  /** The branch's file, relative to the notebook root */
+  chat: string
+  /** The turn it left after */
+  turn: number
+  title: string | null
+}
+
 export interface ThreadState {
   id: string
   turns: Turn[]
@@ -127,6 +136,8 @@ export interface ThreadState {
   parent: ThreadParent | null
   /** The saved chat this thread continues, relative to the notebook root; null for one with no file yet */
   saved: string | null
+  /** The branches filed beside that chat */
+  branches: SavedBranch[]
   /** The thread has been read back from the service (or found not to exist there) */
   loaded: boolean
   /** The gather line while it runs */
@@ -170,6 +181,7 @@ type Action =
       inherited?: number
       parent?: ThreadParent | null
       saved?: string | null
+      branches?: SavedBranch[]
       interrupted?: Interrupted | null
     }
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
@@ -237,6 +249,7 @@ function initial(id: string): ThreadState {
     inherited: 0,
     parent: null,
     saved: null,
+    branches: [],
     loaded: false,
     gather: null,
     provenance: null,
@@ -282,6 +295,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         inherited: action.inherited ?? 0,
         parent: action.parent ?? null,
         saved: action.saved ?? null,
+        branches: action.branches ?? [],
         approvals,
         answered: action.answered ?? [],
         runs: action.runs ?? [],
@@ -493,6 +507,7 @@ interface ThreadBody {
   inherited?: number
   parent?: ThreadParent | null
   saved?: string | null
+  branches?: SavedBranch[]
   pending?: Approval[]
   answered?: Answered[]
   runs?: Run[]
@@ -558,6 +573,7 @@ export function useChat(id: string) {
           inherited: body.inherited ?? 0,
           parent: body.parent ?? null,
           saved: body.saved ?? null,
+          branches: body.branches ?? [],
           interrupted: interruptedOf(body),
         })
       })
@@ -1270,8 +1286,12 @@ export function NoteLine({ note }: { note: Note }) {
 }
 
 /** A branch that left this thread, as the page marks it between the turns. */
+/** A branch that left this thread: live on the service, or filed beside its file. */
 export interface BranchMark {
-  id: string
+  /** The live thread; null for a branch that is saved only */
+  id: string | null
+  /** The saved file of a branch that is not live */
+  chat?: string
   title: string | null
   turn: number
 }
@@ -1287,12 +1307,15 @@ export function ThreadColumn({
   chat,
   branches = [],
   onBranched,
+  onOpenSaved,
 }: {
   chat: Chat
-  /** Live threads that branched from this one */
+  /** The branches that left this thread, live or saved */
   branches?: BranchMark[]
   /** Turns this page to a new thread — the fallback when a new tab is blocked; absent, replies offer no branching */
   onBranched?: (id: string) => void
+  /** Opens a saved branch as a thread to continue; absent, its mark links to the file */
+  onOpenSaved?: (chat: string) => void
 }) {
   const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
@@ -1392,9 +1415,17 @@ export function ThreadColumn({
             <div className="sky-condensed">
               — {leftAt((i + 1) / 2).length === 1 ? 'a branch left here: ' : 'branches left here: '}
               {leftAt((i + 1) / 2).map((b, k) => (
-                <Fragment key={b.id}>
+                <Fragment key={b.id ?? b.chat}>
                   {k > 0 && ', '}
-                  <a href={`/thread/${b.id}`}>{b.title ?? 'a new chat'}</a>
+                  {b.id !== null ? (
+                    <a href={`/thread/${b.id}`}>{b.title ?? 'a new chat'}</a>
+                  ) : onOpenSaved && b.chat ? (
+                    <button type="button" className="sky-link" onClick={() => onOpenSaved(b.chat!)}>
+                      {b.title ?? 'a saved chat'}
+                    </button>
+                  ) : (
+                    <a href={`/explorer/${b.chat}`}>{b.title ?? 'a saved chat'}</a>
+                  )}
                 </Fragment>
               ))}{' '}
               —
@@ -1555,15 +1586,18 @@ export function ChatMain({
   onEnd,
   branches,
   onBranched,
+  onOpenSaved,
 }: {
   chat: Chat
   title: string
   back: { label: string; onClick: () => void }
   onEnd: () => void
-  /** Live threads that branched from this one */
+  /** The branches that left this thread, live or saved */
   branches?: BranchMark[]
   /** The page turns to a new branch */
   onBranched?: (id: string) => void
+  /** A saved branch opens as a thread to continue */
+  onOpenSaved?: (chat: string) => void
 }) {
   const { state } = chat
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -1609,7 +1643,7 @@ export function ChatMain({
               </div>
             ) : (
               <div className="sky-col">
-                <ThreadColumn chat={chat} branches={branches} onBranched={onBranched} />
+                <ThreadColumn chat={chat} branches={branches} onBranched={onBranched} onOpenSaved={onOpenSaved} />
               </div>
             )}
           </div>

@@ -21,7 +21,8 @@ import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
-import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
+import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
+import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
@@ -123,6 +124,17 @@ export interface ThreadRestore {
 }
 
 /** Where a branch came from, as a thread carries it: the parent's file, the turn, the live thread when there is one, and its name. */
+/** A branch filed beside a thread's file. */
+export interface SavedBranch {
+  /** The branch's file, relative to the notebook root */
+  chat: string
+  /** The turn it left after */
+  turn: number
+  title: string | null
+  /** `HH:MM`, from its filename */
+  time: string
+}
+
 export interface ThreadParent extends ChatParent {
   id: string | null
   /** The parent's name as the page shows it; null when nothing knows it */
@@ -449,6 +461,25 @@ function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
 function savedOf(thread: Thread, baseDir: string): string | null {
   const file = thread.session.resume?.filePath
   return file ? path.relative(baseDir, file) : null
+}
+
+/**
+ * The branches filed beside a thread's file, each with the turn it left
+ * after, earliest turn first. A thread with no file has none: a branch
+ * files its parent before it files itself.
+ */
+async function savedBranchesOf(saved: string | null, baseDir: string): Promise<SavedBranch[]> {
+  if (!saved) return []
+  const rows = await listDayChats(branchDir(path.join(baseDir, saved))).catch(() => [])
+  return rows
+    .filter((row) => row.parent?.chat === saved)
+    .map((row) => ({
+      chat: path.relative(baseDir, row.path),
+      turn: row.parent!.turn,
+      title: row.summary || null,
+      time: row.time,
+    }))
+    .sort((a, b) => a.turn - b.turn || a.time.localeCompare(b.time))
 }
 
 /**
@@ -852,6 +883,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       parent: thread.parent,
       inherited: thread.session.inherited,
       saved: savedOf(thread, baseDir),
+      branches: await savedBranchesOf(savedOf(thread, baseDir), baseDir),
       turns: thread.session.turns,
       interrupted: thread.interrupted,
       documents: thread.session.paths.length,

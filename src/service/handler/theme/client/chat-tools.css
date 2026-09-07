@@ -314,12 +314,22 @@
   max-width: none;
 }
 
-.sky-condensed a {
+.sky-condensed .sky-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sky-condensed a,
+.sky-condensed .sky-link {
   color: var(--sky-blue-deep);
   text-decoration: none;
 }
 
-.sky-condensed a:hover {
+.sky-condensed a:hover,
+.sky-condensed .sky-link:hover {
   text-decoration: underline;
 }
 

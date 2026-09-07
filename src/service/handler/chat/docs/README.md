@@ -264,6 +264,10 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 
 ## Verified
 
+- 2026-09-06 — saved branches on the parent: after a branch files itself
+  beside its parent, the parent thread's body lists it with the turn it
+  left after, and the page marks it under that reply — a mark that opens
+  the saved chat as a thread (`chatRoute_test.ts`, the branch test).
 - 2026-09-06 — one Sources list: a saved chat whose reply named its own
   sources and had the searched pages appended shows the body without either
   list and one "Sources · 20" fold, on reload and as the reply finishes

@@ -1682,7 +1682,11 @@ test(
     const ended = (await (await post(app, `http://localhost/chat/${branchId}/end`, { save: true })).json()) as {
       saved: { path: string; exchanges: number }
     }
-    const parentRow = (await getJson(app, 'http://localhost/chat/p1')) as { saved: string | null; turns: unknown[] }
+    const parentRow = (await getJson(app, 'http://localhost/chat/p1')) as {
+      saved: string | null
+      turns: unknown[]
+      branches: Array<{ chat: string; turn: number; title: string | null; time: string }>
+    }
     const base = path.dirname(host.tmp)
     const parentFile = path.join(base, parent.chat)
     const branchDoc = await readTextFile(ended.saved.path)
@@ -1708,6 +1712,12 @@ test(
         parentFiled: await exists(parentFile),
         parentStillLive: parentRow.turns.length,
         parentSaved: parentRow.saved,
+        parentMarksBranch: parentRow.branches.map((b) => [
+          b.chat === path.relative(base, ended.saved.path),
+          b.turn,
+          typeof b.title,
+          /^\d\d:\d\d$/.test(b.time),
+        ]),
       },
       expected: {
         created: 201,
@@ -1726,6 +1736,7 @@ test(
         parentFiled: true,
         parentStillLive: 2,
         parentSaved: parent.chat,
+        parentMarksBranch: [[true, 1, 'string', true]],
       },
     })
   },
