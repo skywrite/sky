@@ -88,16 +88,25 @@ For `slack:unread` to work, your Slack app needs these User Token Scopes:
 
 ## Drafts
 
-`slack:draft:list`, `:clear`, `:reply`, and `:new` wrap `agent-slack message draft
-list | delete | create` — Slack-native drafts through the undocumented `drafts.*`
-client endpoints, in agent-slack since its July 2026 source (a February build
-predates them; run the checkout from source). What sky adds: readable rows with
-Grid-correct names and links, a clear-all that keeps scheduled sends, and the
-two ai:chat tools with approval cards. Facts the wrappers lean on:
+`slack:draft:list`, `:clear`, `:reply`, `:new`, and `:update` wrap `agent-slack
+message draft list | delete | create | update` — Slack-native drafts through the
+undocumented `drafts.*` client endpoints, in agent-slack since its July 2026
+source (a February build predates them; run the checkout from source). What sky
+adds: readable rows with Grid-correct names and links, a clear-all that keeps
+scheduled sends, and the draft ai:chat/voice tools with approval (`:update` is
+the revision loop: same draft, full replacement text). `slack:unread` is also a
+tool now, returning each message with a link `slack:draft:reply` accepts. Facts
+the wrappers lean on:
 
 - Drafts are organization-scoped on Enterprise Grid: a team URL answers
   `team_is_restricted`, so sky passes `slack.workspace` (the enterprise URL) as
   `--workspace`.
+- agent-slack cannot resolve channel *names* on a Grid — name targets (and
+  `channel list`) answer `enterprise_is_restricted`; conversation ids work.
+  `slack:draft:new` therefore resolves names itself over the user token
+  (`lib/resolveChannelName.ts`): a unique exact name resolves to its id, near
+  matches come back as a question ("close matches: … Say which one"), and
+  `slack:api:channels` (now a tool, rows carrying ids) is the lookup surface.
 - `drafts.list` caps at 100 with no cursor, and agent-slack has no paging either;
   `clear` re-lists after each page until nothing new comes back.
 - A thread reply is a draft whose destination carries `thread_ts`; `create` takes

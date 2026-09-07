@@ -1,4 +1,5 @@
 import { WebClient } from '@slack/web-api'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -18,6 +19,8 @@ const params = {
 type Params = InferParams<typeof params>
 
 interface ChannelInfo {
+  /** Conversation id (C…/G…) — what slack:draft:new takes as a target. */
+  id: string
   name: string
   type: 'public' | 'private'
   purpose: string
@@ -39,10 +42,14 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Command
 // -----------------------------------------------------------------------------
 
+@AIChatTool({ needsApproval: false })
 export default class SlackChannelsTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:api:channels',
-    description: 'List active Slack channels sorted by recent activity.',
+    description:
+      'List Slack channels by recent activity: id, name, public/private, purpose. Use it to resolve a spoken ' +
+      'channel name to its conversation id before drafting there — when several names are close, ask the user ' +
+      'which. Reads only.',
     descriptionLong: [
       'Fetches all joined channels and sorts by most recently updated.',
       'Uses the users.conversations API — no per-channel calls needed.',
@@ -123,6 +130,7 @@ export default class SlackChannelsTask extends Command {
       const channels: ChannelInfo[] = display.map((ch) => {
         const updated = ((ch as Record<string, unknown>).updated as number) || 0
         return {
+          id: ch.id || '',
           name: ch.name || ch.id || 'unknown',
           type: ch.is_private ? ('private' as const) : ('public' as const),
           purpose: ch.purpose?.value || '',

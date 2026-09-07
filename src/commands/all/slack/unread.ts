@@ -1,6 +1,8 @@
 import { WebClient } from '@slack/web-api'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { SLACK_WORKSPACE } from '#config'
 
 interface UnreadMessage {
   channel: string
@@ -10,6 +12,8 @@ interface UnreadMessage {
   text: string
   ts: string
   time: Date
+  /** Slack message link — what slack:draft:reply takes. */
+  link?: string
 }
 
 type UnreadConversation = {
@@ -20,6 +24,8 @@ type UnreadConversation = {
   text: string
   time: Date
   count: number
+  /** Slack conversation link. */
+  link?: string
 }
 
 type SearchChannelHint = {
@@ -41,10 +47,14 @@ const params = {
 
 type Params = InferParams<typeof params>
 
+@AIChatTool({ needsApproval: false })
 export default class SlackUnreadTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:unread',
-    description: 'List unread Slack messages across channels and DMs.',
+    description:
+      'List unread Slack messages across channels and DMs: sender, text, time, conversation id, and a message ' +
+      'link. The link is what slack:draft:reply takes; the conversation id (channel) is what slack:draft:new ' +
+      'takes. Reads only — nothing is marked read.',
     params,
   }
 
@@ -401,11 +411,20 @@ export default class SlackUnreadTask extends Command {
         output.log('No unread messages!')
       }
 
+      // Links ride on every row so a reply needs no URL assembly anywhere.
+      const workspace = SLACK_WORKSPACE?.replace(/\/$/, '')
+      const linked = workspace
+        ? allUnread.map((m) => ({ ...m, link: `${workspace}/archives/${m.channel}/p${m.ts.replace('.', '')}` }))
+        : allUnread
+      const linkedConversations = workspace
+        ? unreadConversations.map((s) => ({ ...s, link: `${workspace}/archives/${s.channel}` }))
+        : unreadConversations
+
       return CommandResult.success({
-        total: unreadConversations.length,
-        totalMessages: allUnread.length,
-        conversations: unreadConversations,
-        messages: allUnread,
+        total: linkedConversations.length,
+        totalMessages: linked.length,
+        conversations: linkedConversations,
+        messages: linked,
       })
     } catch (error) {
       return CommandResult.error(error as Error, 'Failed to fetch unread messages')
