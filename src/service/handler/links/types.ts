@@ -1,0 +1,36 @@
+export type LinkKind =
+  | 'video'
+  | 'meeting'
+  | 'chat'
+  | 'message'
+  | 'journal'
+  | 'note'
+  | 'day'
+  | 'person'
+  | 'org'
+  | 'project'
+  | 'place'
+  | 'library'
+
+/** A notebook reference, with enough context to choose the right record. */
+export interface LinkItem {
+  value: string
+  path: string
+  title: string
+  kind: LinkKind
+  date?: string
+  people?: string
+  summary?: string
+  parent?: { path: string; title: string; turn: number }
+}
+
+export interface LinkSearch {
+  items: LinkItem[]
+  total: number
+  today: string
+}
+
+export interface ImportLinksHost {
+  validate: (values: string[]) => Promise<void>
+  update: (file: string, add: string[], remove: string[]) => Promise<void>
+}

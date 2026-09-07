@@ -28,6 +28,7 @@ import { fileHref } from './explorer.tsx'
 import { sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
+import { LinksInput } from './links.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -66,6 +67,8 @@ export interface ImportJob {
     relation: 'matches' | 'just-after'
   } | null
   suggestedWhen: string
+  links?: string[]
+  linkError?: string | null
   /** What an earlier run of the same file left to pick up, when there is one */
   resume: { step: string; started: string } | null
   fields: {
@@ -158,6 +161,7 @@ type PromptOnWire = { id: string } & (
 )
 
 type ImportEvent = { seq: number } & (
+  | { type: 'links'; links: string[]; error: string | null }
   | { type: 'listen'; listen: NonNullable<ImportJob['listen']> }
   | { type: 'calendar'; calendar: NonNullable<ImportJob['calendar']> }
   | { type: 'plan'; steps: PlanStep[] }
@@ -293,6 +297,8 @@ export function useImportFeed(id: string | null): ImportFeed {
           prev ? { ...prev, state: event.state, line: event.line, result: event.result, error: event.error } : prev,
         )
         if (SETTLED.has(event.state)) source.close()
+      } else if (event.type === 'links') {
+        setJob((prev) => (prev ? { ...prev, links: event.links, linkError: event.error } : prev))
       } else if (event.type === 'listen') {
         setJob((prev) => (prev ? { ...prev, listen: event.listen } : prev))
       } else if (event.type === 'calendar') {
@@ -305,7 +311,19 @@ export function useImportFeed(id: string | null): ImportFeed {
         setJob((prev) => (prev ? { ...prev, tick: event.tick } : prev))
       }
     }
-    for (const type of ['listen', 'calendar', 'plan', 'stage', 'tick', 'line', 'text', 'prompt', 'answered', 'state']) {
+    for (const type of [
+      'links',
+      'listen',
+      'calendar',
+      'plan',
+      'stage',
+      'tick',
+      'line',
+      'text',
+      'prompt',
+      'answered',
+      'state',
+    ]) {
       source.addEventListener(type, onEvent as EventListener)
     }
     return () => {
@@ -597,6 +615,41 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], jou
   }
 }
 
+function ImportLinks({ job, onBusy }: { job: ImportJob; onBusy?: (busy: boolean) => void }) {
+  const [values, setValues] = useState(job.links ?? [])
+  const [linkError, setLinkError] = useState(job.linkError)
+  const key = (job.links ?? []).join('\n')
+  useEffect(() => {
+    setValues(job.links ?? [])
+    setLinkError(job.linkError)
+  }, [job.id, key, job.linkError]) // eslint-disable-line react-hooks/exhaustive-deps -- links is represented by key
+  const save = async (links: string[]) => {
+    onBusy?.(true)
+    try {
+      const result = await post<{ job: ImportJob }>(`/import/${job.id}/links`, { links })
+      setValues(result.job.links ?? [])
+      setLinkError(result.job.linkError)
+      if (result.job.linkError) throw new Error(result.job.linkError)
+    } finally {
+      onBusy?.(false)
+    }
+  }
+  return (
+    <section className="sky-import-links" aria-label="Import links">
+      <h3>Links</h3>
+      <LinksInput values={values} onChange={save} file={job.result?.file} />
+      {linkError && (
+        <p className="sky-rail-problem" role="alert">
+          {linkError}{' '}
+          <Button size="sm" onClick={() => void save(values).catch(() => {})}>
+            Try saving links again
+          </Button>
+        </p>
+      )}
+    </section>
+  )
+}
+
 function ConfirmBody({
   pending,
   job,
@@ -631,6 +684,7 @@ function ConfirmBody({
     fresh: false,
   })
   const [starting, setStarting] = useState(false)
+  const [linkBusy, setLinkBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // The read-back lands once the upload finishes; sky's guess a little later. Neither overrides a hand.
@@ -664,7 +718,7 @@ function ConfirmBody({
       : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
-    if (!live || starting) return
+    if (!live || starting || linkBusy) return
     setStarting(true)
     setError(null)
     try {
@@ -765,6 +819,7 @@ function ConfirmBody({
               onChange={(category) => setFields((f) => ({ ...f, category }))}
             />
           )}
+          <ImportLinks job={live} onBusy={setLinkBusy} />
           <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType)}</div>
           {live.resume && (
             <div className="sky-confirm-resume">
@@ -786,7 +841,7 @@ function ConfirmBody({
       <div className="sky-confirm-actions">
         <Button onClick={onCancel}>{refusal ? 'Remove' : 'Cancel'}</Button>
         {!refusal && (
-          <Button variant="light" color="blue" onClick={() => void start()} disabled={!live || starting}>
+          <Button variant="light" color="blue" onClick={() => void start()} disabled={!live || starting || linkBusy}>
             {starting ? 'Starting…' : 'Start'}
           </Button>
         )}
@@ -1914,6 +1969,7 @@ function Choice({
 /** The filed document's front matter, editable through the explorer's own rail. */
 function FiledDetails({ file }: { file: string }) {
   const [doc, setDoc] = useState<{ content: string; version: number } | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const encoded = file.split('/').map(encodeURIComponent).join('/')
   useEffect(() => {
     fetch(`/docs/_api/content/${encoded}`)
@@ -1924,16 +1980,23 @@ function FiledDetails({ file }: { file: string }) {
   const split = useMemo(() => splitFrontmatter(doc?.content ?? ''), [doc?.content])
   const save = async (text: string | null) => {
     if (!doc) return
+    setSaveError(null)
     const content = joinFrontmatter(text, split.body)
     const r = await fetch(`/docs/_api/content/${encoded}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ content, version: doc.version }),
     })
-    const b = (await r.json().catch(() => ({}))) as { version?: number }
-    setDoc({ content, version: b.version ?? doc.version + 1 })
+    const b = (await r.json().catch(() => ({}))) as { version?: number; message?: string }
+    if (!r.ok || b.version === undefined)
+      throw new Error(b.message ?? 'Could not save the changes. Open the record and try again.')
+    setDoc({ content, version: b.version })
   }
-  const state = useFrontmatter(doc ? split.frontmatter : null, file, doc ? (text) => void save(text) : undefined)
+  const state = useFrontmatter(
+    doc ? split.frontmatter : null,
+    file,
+    doc ? (text) => void save(text).catch((error: Error) => setSaveError(error.message)) : undefined,
+  )
   if (!doc) return null
   return (
     <Block head="Details" mini="the file's front matter">
@@ -1941,6 +2004,11 @@ function FiledDetails({ file }: { file: string }) {
         Fix what the transcript got wrong. Changes write to the file.
       </div>
       <DocumentRail state={state} file={file} outline={[]} />
+      {saveError && (
+        <p role="alert" className="sky-rail-problem">
+          {saveError}
+        </p>
+      )}
     </Block>
   )
 }
@@ -2072,6 +2140,7 @@ export function ImportMain({
       <div className="sky-scroll" ref={scrollRef}>
         <div className="sky-col" style={{ gap: 26 }}>
           {job && steps && <Ladder steps={steps} />}
+          {job && !job.readback.refusal && (job.state !== 'done' || job.linkError) && <ImportLinks job={job} />}
           {job?.state === 'new' && (
             <Block head="Not started" mini={job.readback.summary}>
               <div className="sky-lead">This file is waiting for a Start.</div>

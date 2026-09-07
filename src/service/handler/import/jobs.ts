@@ -80,6 +80,11 @@ export interface ImportJob {
   /** The earlier run to pick up, when there is one */
   resume: Resume | null
   fields: StartFields | null
+  /** Explicit links selected in the browser; independent of transcript analysis. */
+  links?: string[]
+  /** Selections already written to the result, for retrying a failed link save. */
+  linked?: string[]
+  linkError?: string | null
   state: ImportState
   /** The steps the command announced for this run, in the words a person reads */
   plan: PlanStep[] | null
@@ -101,6 +106,7 @@ export interface ImportJob {
 export type PromptOnWire = { id: string } & PromptRequest
 
 export type ImportEventBody =
+  | { type: 'links'; links: string[]; error: string | null }
   | { type: 'listen'; listen: Listen }
   | { type: 'calendar'; calendar: CalendarMatch }
   | { type: 'plan'; steps: PlanStep[] }
@@ -125,7 +131,7 @@ export const SETTLED_RETENTION_MS = 10 * 60 * 1000
 
 /** Whether a job has nothing left to offer: it was filed, or its file was refused. A failed or cancelled run stays — a Start can pick it up. */
 export function isDisposable(job: ImportJob): boolean {
-  return job.state === 'done' || (job.readback.refusal !== null && isSettled(job.state))
+  return (job.state === 'done' && !job.linkError) || (job.readback.refusal !== null && isSettled(job.state))
 }
 
 /** The job as a list row and as the dialog's data. */

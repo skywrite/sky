@@ -155,7 +155,7 @@ function Canvas() {
     if (event.defaultPrevented || event.button !== 0) return
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     const anchor = (event.target as Element).closest('a')
-    if (!anchor?.href) return
+    if (!anchor?.href || anchor.target === '_blank' || anchor.hasAttribute('download')) return
     const url = new URL(anchor.href)
     if (url.origin !== location.origin) return
     if (!url.pathname.startsWith('/explorer/') && filesRouteOf(url.pathname) === null) return

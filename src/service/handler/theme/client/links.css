@@ -1,0 +1,144 @@
+.sky-link-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sky-link-filters {
+  display: flex;
+  gap: 12px;
+}
+.sky-link-filters > * {
+  flex: 1;
+  min-width: 0;
+}
+.sky-link-results {
+  max-height: min(52dvh, 560px);
+  overflow-y: auto;
+}
+.sky-link-results h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sky-dim);
+  margin: 16px 0 6px;
+}
+.sky-link-results section:first-child h3 {
+  margin-top: 0;
+}
+.sky-link-result {
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-link-result-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sky-link-pick {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--sky-text);
+  padding: 14px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.sky-link-pick:hover,
+.sky-link-pick:focus-visible {
+  background: var(--sky-blue-soft);
+}
+.sky-link-pick:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.sky-link-title {
+  display: block;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.sky-link-meta {
+  display: block;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.sky-link-preview-button {
+  background: none;
+  border: 0;
+  color: var(--sky-blue-deep);
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 6px;
+  cursor: pointer;
+}
+.sky-link-preview {
+  padding: 14px;
+  background: var(--sky-side);
+  border-radius: 8px;
+  margin: 0 0 14px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 16px;
+}
+.sky-link-preview .sky-markdown {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.sky-link-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sky-links-input {
+  min-width: 0;
+}
+.sky-linked-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+}
+.sky-linked-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.sky-link-icon {
+  flex: none;
+  margin-top: 4px;
+  color: var(--sky-dim);
+}
+.sky-linked-label a {
+  min-width: 0;
+  color: var(--sky-blue-deep);
+  text-decoration: none;
+}
+.sky-linked-label a:hover {
+  text-decoration: underline;
+}
+.sky-import-links {
+  margin: 12px 0;
+}
+.sky-import-links h3 {
+  font-size: 16px;
+  color: var(--sky-text-2);
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+@media (max-width: 900px) {
+  .sky-link-results {
+    max-height: 55dvh;
+  }
+  .sky-link-title {
+    font-size: 17px;
+  }
+}

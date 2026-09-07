@@ -26,6 +26,7 @@ import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
+import { createLinks } from './links/mod.ts'
 import {
   decodeRoutePath,
   exportMarkdownPreviewPdf,
@@ -114,6 +115,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   } = options
 
   const app = new Hono()
+  const links = createLinks(markdownStore, markdownBaseDir, markdownDirs)
 
   // CORS middleware
   app.use(
@@ -179,9 +181,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (options.outbox) app.route('/outbox/_api', createOutboxRoutes(options.outbox))
 
   // A file dropped on the day: the upload, its read-back, the run, its questions.
-  // The page for one import is /import/<id>, below.
+  // A navigation opens the page; a fetch of the same path reads the job.
+  app.get('/import/:id{[0-9a-f-]+}', (c, next) =>
+    c.req.header('accept')?.includes('text/html') ? c.html(renderAppHtml('sky')) : next(),
+  )
   if (imports) {
-    app.route('/import', createImportRoutes(imports))
+    app.route('/import', createImportRoutes({ ...imports, links: links.host }))
   }
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
@@ -293,6 +298,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       return c.json({ message }, 500)
     }
   })
+
+  app.route('/docs/_api/links', links.routes)
 
   // What the front matter panel completes from: people, orgs, projects, places and documents by
   // name, tags with counts, and — per top-level directory — the keys in use and a key's values.
@@ -409,6 +416,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         payload.version as number | undefined,
         payload.force === true,
       )
+      markdownStore?.set(previewRequest.value.filePath, snapshot.content)
 
       return c.json({
         relativePath: previewRequest.value.relativePath,

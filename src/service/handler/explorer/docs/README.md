@@ -45,6 +45,9 @@ scrolling their section. See `2026-09-06-attachment-groups-use-the-whole-day.md`
 
 ## The rules it lives by
 
+The Links section uses the shared [record picker](../../links/docs/README.md)
+while editing, with readable titles, date/type filters and chat branch context.
+
 - Nothing walks the whole notebook: a directory is listed when it is
   opened, a file read when it is looked at.
 - Only what the roots allow: every path is checked against the notebook

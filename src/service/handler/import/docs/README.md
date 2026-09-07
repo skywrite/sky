@@ -40,6 +40,10 @@ server-sent events.
 
 ## The person's side
 
+The Links picker is available before Start and during review; after filing
+it lives in Details. Persistence and reference rules are documented in
+[Links between notebook records](../../links/docs/README.md).
+
 One door for every file kind. The kind picks the command:
 
 | Dropped | Door |

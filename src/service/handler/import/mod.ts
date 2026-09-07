@@ -20,6 +20,8 @@ import { streamSSE } from 'hono/streaming'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
 import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
+import { linkValues } from '../links/mod.ts'
+import type { ImportLinksHost } from '../links/types.ts'
 import {
   type CalendarMatch,
   type ImportJob,
@@ -55,6 +57,7 @@ export type { RunEvent } from '#commands/lib/core/runCommand.ts'
 export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string }
 
 export interface ImportRoutesOptions {
+  links?: ImportLinksHost
   /** The clock the sweep of finished imports reads — a test seam; the wall clock otherwise */
   now?: () => number
   /** Where uploads and their job files live */
@@ -163,6 +166,40 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
   const store = new JobStore(options.dir)
   const loaded = store.load()
   const app = new Hono()
+  const linkWrites = new Map<string, Promise<void>>()
+  // A selection arriving as the command finishes must land before or after filing, never between reads.
+  const withLinks = (id: string, action: () => Promise<void>): Promise<void> => {
+    const work = (linkWrites.get(id) ?? Promise.resolve()).catch(() => {}).then(action)
+    linkWrites.set(id, work)
+    void work
+      .finally(() => {
+        if (linkWrites.get(id) === work) linkWrites.delete(id)
+      })
+      .catch(() => {})
+    return work
+  }
+  const saveLinks = async (record: JobRecord) => {
+    const { job } = record
+    const desired = job.links ?? []
+    const linked = job.linked ?? []
+    if (!job.result) return
+    try {
+      if (desired.length > 0 || linked.length > 0) {
+        if (!options.links) throw new Error('Link saving is not available.')
+        await options.links.update(
+          job.result.file,
+          desired,
+          linked.filter((v) => !desired.includes(v)),
+        )
+      }
+      job.linked = [...desired]
+      job.linkError = null
+    } catch (error) {
+      // The record was filed. A failed metadata save must not rerun the import and create a duplicate.
+      job.linkError = `The record was saved, but its links could not be saved. ${(error as Error).message}`
+    }
+    store.emit(record, { type: 'links', links: desired, error: job.linkError ?? null })
+  }
 
   const notFound = (c: { json: (body: unknown, status: 404) => Response }) => c.json({ message: 'no such import' }, 404)
 
@@ -298,6 +335,29 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     })
   })
 
+  app.post('/:id/links', async (c) => {
+    await loaded
+    const record = store.get(c.req.param('id'))
+    if (!record) return notFound(c)
+    try {
+      const body = await c.req.json()
+      const values = linkValues(body.links)
+      await withLinks(record.job.id, async () => {
+        const added = values.filter((v) => !(record.job.links ?? []).includes(v))
+        if (!options.links) throw new Error('Link saving is not available.')
+        await options.links.validate(added)
+        record.job.links = values
+        record.job.linkError = null
+        if (record.job.result) await saveLinks(record)
+        else store.emit(record, { type: 'links', links: values, error: null })
+        await store.persist(record.job)
+      })
+      return c.json({ job: summarize(record.job) })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
+  })
+
   // Start, with the answers the dialog collected. Again after a failure.
   app.post('/:id/start', async (c) => {
     await loaded
@@ -316,6 +376,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     job.stage = null
     job.tick = null
     job.result = null
+    job.linked = []
+    job.linkError = null
     job.error = null
     job.line = 'Starting…'
     record.events = record.events.filter((e) => e.type === 'listen' || e.type === 'calendar')
@@ -341,23 +403,26 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         (err): RunOutcome => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
       )
       .then(async (outcome) => {
-        release()
         record.reply = null
         record.abort = null
         // A cancelled job ignores whatever its abandoned command came back with.
         if (record.job.state === 'cancelled') return
         record.job.tick = null
         if (outcome.ok) {
-          record.job.result = outcome.file ? { file: outcome.file } : null
-          record.job.line = outcome.file ? `Filed · ${path.basename(outcome.file).replace(/\.md$/, '')}` : 'Filed'
-          record.job.stage = null
-          await store.setState(record, 'done')
+          await withLinks(record.job.id, async () => {
+            record.job.result = outcome.file ? { file: outcome.file } : null
+            await saveLinks(record)
+            record.job.line = outcome.file ? `Filed · ${path.basename(outcome.file).replace(/\.md$/, '')}` : 'Filed'
+            record.job.stage = null
+            await store.setState(record, 'done')
+          })
         } else {
           record.job.error = outcome.message
           record.job.line = outcome.message
           await store.setState(record, 'failed')
         }
       })
+      .finally(release)
 
     return c.json({ job: summarize(job) })
   })

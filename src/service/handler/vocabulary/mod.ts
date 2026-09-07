@@ -557,7 +557,7 @@ export function backlinkIndex(store: MarkdownStore, base: string): Map<string, B
       list.push({
         path,
         type: typeOfDir(dir),
-        label: asString(doc.yaml['title']) ?? asString(doc.yaml['name']) ?? stem(path),
+        label: asString(doc.yaml['title']) ?? asString(doc.yaml['name']) ?? asString(doc.yaml['summary']) ?? stem(path),
         date: dateOf(path, doc),
         via,
       })

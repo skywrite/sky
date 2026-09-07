@@ -6,6 +6,7 @@
 import { Autocomplete, Textarea, TextInput } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { When } from '#universal/dates/nbdt/mod.ts'
+import { LinksInput } from '../links.tsx'
 import { ChipsInput } from './ChipsInput.tsx'
 import { type Completion, fetchCompletions, type Resolved, serves, timeZones } from './complete.ts'
 import { CHIP_KINDS, ENTITY_KINDS, type RowKind, suggestedKeys, TYPE_MARKS } from './kinds.ts'
@@ -151,6 +152,7 @@ export function ChipsRow({
   const entityKind = ENTITY_KINDS[row.kind] ?? null
   const [search, setSearch] = useState('')
   const items = useCompletions(readOnly ? null : entityKind, search, { dir })
+  if (row.kind === 'rel') return <LinksInput values={chips} file={file} readOnly={readOnly} onChange={onCommit} />
   if (readOnly || row.kind === 'files') {
     return (
       <div className="sky-prop-chips">

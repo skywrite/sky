@@ -6,11 +6,12 @@
  */
 
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
+import { LinksInput } from '../links.tsx'
 import { RailToggle } from '../railToggle.tsx'
 import { AttachFiles } from './attach.tsx'
 import { type Backlink, fetchBacklinks } from './complete.ts'
 import { homeOf, kindOf, railSectionOf, TYPE_MARKS } from './kinds.ts'
-import { addAttachment, addKey, isEmptyRow, removeAttachment } from './model.ts'
+import { addAttachment, addKey, isEmptyRow, removeAttachment, writeValue } from './model.ts'
 import { AddProperty, hrefOf, PropRow, YamlFace } from './rows.tsx'
 import type { FrontmatterState } from './useFrontmatter.ts'
 
@@ -160,7 +161,16 @@ export function DocumentRail({
       ) : null}
       {links.length > 0 || !readOnly ? (
         <Section title="Links" count={chipCount(links)}>
-          {links.length > 0 ? links.map(row) : <p className="sky-rail-empty">Nothing linked yet.</p>}
+          {links.length > 0 ? (
+            links.map(row)
+          ) : (
+            <LinksInput
+              values={[]}
+              file={file}
+              readOnly={readOnly}
+              onChange={(values) => state.update((body) => writeValue(body, 'rel', 'rel', values))}
+            />
+          )}
         </Section>
       ) : null}
       {backlinks.total > 0 ? (
