@@ -1,4 +1,4 @@
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Instant, type PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { wallClockParts } from './clock.ts'
 
 // A silence this long in the activity stream, resuming the next calendar
@@ -25,13 +25,13 @@ const MORNING_TO_HOUR = 12
  * not machine activity — an autonomous run churning overnight is not the
  * user's day continuing.
  */
-export default function findWakeCutoff(instants: Date[], day: PlainDate, timezone: string): Date | null {
+export default function findWakeCutoff(instants: Instant[], day: PlainDate, timezone: string): Instant | null {
   const gapMs = WAKE_GAP_HOURS * 3_600_000
 
   for (let i = 1; i < instants.length; i++) {
     const before = instants[i - 1]
     const after = instants[i]
-    if (after.getTime() - before.getTime() < gapMs) continue
+    if (after.epochMilliseconds - before.epochMilliseconds < gapMs) continue
 
     const wall = wallClockParts(after, timezone)
     if (wall.ymd <= day.ymd) continue
@@ -48,15 +48,20 @@ export default function findWakeCutoff(instants: Date[], day: PlainDate, timezon
  * marks the true start — everything before the gap was the previous day's
  * late night. Null when the ceremony start stands (no qualifying gap).
  */
-export function findWakeStart(instants: Date[], day: PlainDate, timezone: string, ceremonyStart: Date): Date | null {
+export function findWakeStart(
+  instants: Instant[],
+  day: PlainDate,
+  timezone: string,
+  ceremonyStart: Instant,
+): Instant | null {
   const gapMs = WAKE_GAP_HOURS * 3_600_000
-  let resumption: Date | null = null
+  let resumption: Instant | null = null
 
   for (let i = 1; i < instants.length; i++) {
     const before = instants[i - 1]
     const after = instants[i]
-    if (after.getTime() - before.getTime() < gapMs) continue
-    if (after >= ceremonyStart) break
+    if (after.epochMilliseconds - before.epochMilliseconds < gapMs) continue
+    if (Instant.compare(after, ceremonyStart) >= 0) break
 
     const wall = wallClockParts(after, timezone)
     if (wall.ymd !== day.ymd) continue

@@ -1,13 +1,46 @@
 ---
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-06
 ---
 
 # Recap commands
 
-Design notes for `src/commands/all/recap/`. The GitHub recap's discovery
-model is written up so far. Extend this file as other parts of the group
-need a mental model.
+Design notes for `src/commands/all/recap/`.
+
+## Coding sessions — recap:claude-code and recap:codex
+
+Both commands use `lib/recapCodingSessions.ts`: yesterday by default,
+wake-to-wake attribution, one recap per app and day, optional AI session
+digests, automatic tags/rel, and editor opening. `--dry-run` renders without
+writing; `--no-ai` skips every AI step; `--no-editor` writes unattended.
+`--model` selects the digest profile, with the same fast default for both.
+Re-running replaces the recap while retaining curated tags and relations.
+
+The source readers produce `CodingSession` records for the common renderer
+and digest prompt. Counts and first/last activity spans describe engagement;
+they do not estimate time worked. Failed digests retain the mechanical trail.
+
+`recap:codex` reads `sessions/**/*.jsonl` and `archived_sessions/**/*.jsonl`
+under `CODEX_HOME`, falling back to `~/.codex`. `--codex-dir` overrides that
+home directory. The reader:
+
+- Finds activity by each event's timestamp, including resumed sessions in
+  older date folders. File modification time is only a pre-filter.
+- Reads both older tool-call/result records and completed action records,
+  including shell commands and file changes invoked through code mode.
+- Counts typed prompts once across mirrored records; setup instructions,
+  reasoning, token bookkeeping, subagents, and noninteractive `exec` runs
+  do not count as user sessions. Archived copies deduplicate by session ID.
+- Keeps the final answer, successful edits and commit subjects, and the
+  command trail. A continuation can have activity without a new prompt.
+- Streams logs and skips malformed/truncated records. No raw transcripts
+  are copied into the repository.
+
+The shared timing helpers use nbdt's `Instant` adapter for exact event times
+and offset-aware comparisons. Notebook dates and extended-hour labels keep
+their existing meaning, including `25:15` for next-calendar-day activity.
+
+Narrative: [2026-09-06 — Codex rollout records](2026-09-06-codex-rollout-records.md).
 
 ## Finding the day's GitHub work — recap:github
 
@@ -56,7 +89,7 @@ the day's existing file. Its rules:
 - **Hand curation always wins.** A re-run keeps the file's existing
   `tags:` and `rel:`, and `--rel` is curation too. Enrichment fills only
   what is still empty. `--no-auto-tag` and `--no-auto-rel` close a slot;
-  `recap:claude-code --no-ai` closes both, since it promises no AI at all.
+  `--no-ai` on either coding recap closes both, since it promises no AI at all.
 - **The app is the recap's conversation.** The corpus (`recap` medium in
   `lib/notebook/enrich/corpus.ts`, fed by the service's `recaps` query)
   keys each recap on its `app:`, so a GitHub recap's prior is what earlier

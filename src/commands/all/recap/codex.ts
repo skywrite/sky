@@ -2,7 +2,8 @@ import * as path from 'node:path'
 import { Command, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, CommandResult, InferParams } from '#commands/mod.ts'
 import { DIR_HOME } from '#config'
-import scanClaudeSessions from './lib/claudeCode.ts'
+import { env } from '#shared/sys/mod.ts'
+import scanCodexSessions from './lib/codex.ts'
 import {
   codingRecapDescription,
   codingRecapParams,
@@ -12,8 +13,8 @@ import {
 
 const params = {
   ...codingRecapParams,
-  projectsDir: Flag.string('Claude Code projects directory', {
-    default: () => path.join(DIR_HOME, '.claude', 'projects'),
+  codexDir: Flag.string('Codex home directory containing sessions/ and archived_sessions/', {
+    default: () => env.get('CODEX_HOME') || path.join(DIR_HOME, '.codex'),
   }),
 }
 
@@ -21,21 +22,21 @@ type Params = InferParams<typeof params>
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'recap:claude-code': { params: Params; result: CodingRecapResult }
+    'recap:codex': { params: Params; result: CodingRecapResult }
   }
 }
 
-export default class RecapClaudeCodeTask extends Command {
+export default class RecapCodexTask extends Command {
   static override description: CommandDescription = {
-    ...codingRecapDescription('claude-code', 'Claude Code'),
+    ...codingRecapDescription('codex', 'Codex'),
     params,
   }
 
   async run(command: CommandArgs<Params>): Promise<CommandResult<CodingRecapResult>> {
     return recapCodingSessions(command, {
-      app: 'claude-code',
-      label: 'Claude Code',
-      scan: (window) => scanClaudeSessions(command.args.projectsDir, window),
+      app: 'codex',
+      label: 'Codex',
+      scan: (window) => scanCodexSessions(command.args.codexDir, window),
     })
   }
 }

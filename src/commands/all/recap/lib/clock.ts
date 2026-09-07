@@ -1,11 +1,9 @@
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import timezoneToUTCOffsetInHours from '#universal/dates/timezones/timezoneToUTCOffsetInHours.ts'
+import { type Instant, type PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
-/** Calendar days between two YMD strings — pure calendar math, no timezones. */
-function daysBetween(fromYmd: string, toYmd: string): number {
-  const [fy, fm, fd] = fromYmd.split('-').map(Number)
-  const [ty, tm, td] = toYmd.split('-').map(Number)
-  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
+/** Local wall-clock parts, using the zone's offset at this exact instant. */
+export function wallClockParts(instant: Instant, timezone: string): { ymd: string; hour: number; minute: number } {
+  const wall = instant.toZonedDateTimeISO(timezone)
+  return { ymd: wall.toPlainDate().toString(), hour: wall.hour, minute: wall.minute }
 }
 
 /**
@@ -15,20 +13,10 @@ function daysBetween(fromYmd: string, toYmd: string): number {
  * the next calendar date → "25:44") — never normalized to the next day,
  * matching how the notebook files late-night work.
  */
-/** Local wall-clock parts of an instant in a zone — explicit offset math
- * instead of the process timezone, which is known to wobble. */
-export function wallClockParts(instant: Date, timezone: string): { ymd: string; hour: number; minute: number } {
-  const offsetHours = timezoneToUTCOffsetInHours(timezone, instant)
-  const wall = new Date(instant.getTime() + offsetHours * 3_600_000)
-  const y = wall.getUTCFullYear()
-  const m = String(wall.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(wall.getUTCDate()).padStart(2, '0')
-  return { ymd: `${y}-${m}-${d}`, hour: wall.getUTCHours(), minute: wall.getUTCMinutes() }
-}
-
-export function dayClock(instant: Date, day: PlainDate, timezone: string): string {
+export function dayClock(instant: Instant, day: PlainDate, timezone: string): string {
   const wall = wallClockParts(instant, timezone)
-  const hours = wall.hour + daysBetween(day.ymd, wall.ymd) * 24
+  const dayHours = new PlainDateTime(day.ymd).until(new PlainDateTime(wall.ymd)).total('hours')
+  const hours = wall.hour + dayHours
   return `${String(hours).padStart(2, '0')}:${String(wall.minute).padStart(2, '0')}`
 }
 

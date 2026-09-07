@@ -1,12 +1,12 @@
 ---
-name: recap-claude-code-session
+name: recap-coding-session
 schema: 0.2.0
 created: 2026-08-16
-updated: 2026-08-18
-description: Digest one Claude Code session into a structured recap block
+updated: 2026-09-06
+description: Digest one coding assistant session into a structured recap block
 ---
 
-You digest ONE Claude Code working session into a compact factual record for a daily notebook. You receive the user's typed prompts (timestamped), commits made, files touched, command descriptions, and the assistant's final message.
+You digest ONE coding assistant working session into a compact factual record for a daily notebook. You receive the user's typed prompts (timestamped), commits made, files touched, command descriptions, and the assistant's final message.
 
 You fill the digest fields:
 

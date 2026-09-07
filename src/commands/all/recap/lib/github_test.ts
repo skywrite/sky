@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   type DiscoveredCommit,
   type GithubEvent,
@@ -11,7 +11,7 @@ import {
   renderGithubRecap,
 } from './github.ts'
 
-const WINDOW = { start: new Date('2026-02-08T06:00:00Z'), end: new Date('2026-02-09T04:00:00Z') }
+const WINDOW = { start: Instant.from('2026-02-08T06:00:00Z'), end: Instant.from('2026-02-09T04:00:00Z') }
 
 test('collectFromEvents folds the event feed into per-repo activity', () => {
   const events: GithubEvent[] = [
@@ -93,7 +93,7 @@ test('foldCommits merges both discovery sources by sha and dates each commit by 
     issueEventTimes: [],
   })
 
-  const morning = new Date('2026-02-08T09:15:00Z')
+  const morning = Instant.from('2026-02-08T09:15:00Z')
   const commits: DiscoveredCommit[] = [
     // Reported by search and by the sweep — one entry, subject from the first line
     {
@@ -115,23 +115,23 @@ test('foldCommits merges both discovery sources by sha and dates each commit by 
       repo: 'acme/atlas',
       sha: 'bbbb222',
       message: 'fix: rebased in',
-      authored: new Date('2026-02-07T20:00:00Z'),
-      committed: new Date('2026-02-08T08:00:00Z'),
+      authored: Instant.from('2026-02-07T20:00:00Z'),
+      committed: Instant.from('2026-02-08T08:00:00Z'),
     },
     // Both times outside the window — not this day's
     {
       repo: 'acme/atlas',
       sha: 'cccc333',
       message: 'chore: old',
-      authored: new Date('2026-02-07T10:00:00Z'),
-      committed: new Date('2026-02-07T10:00:00Z'),
+      authored: Instant.from('2026-02-07T10:00:00Z'),
+      committed: Instant.from('2026-02-07T10:00:00Z'),
     },
     // A fork the event feed never mentioned — the sweep found it
     {
       repo: 'acme/atlas-fork',
       sha: 'dddd444',
       message: 'feat: on the fork',
-      authored: new Date('2026-02-08T22:00:00Z'),
+      authored: Instant.from('2026-02-08T22:00:00Z'),
       committed: null,
     },
   ]
@@ -144,7 +144,7 @@ test('foldCommits merges both discovery sources by sha and dates each commit by 
     expected: 'bbbb222@2026-02-08T08:00:00.000Z aaaa111@2026-02-08T09:15:00.000Z',
     actual: repos
       .get('acme/atlas')
-      ?.commits.map((c) => `${c.sha}@${c.instant.toISOString()}`)
+      ?.commits.map((c) => `${c.sha}@${c.instant.toString({ smallestUnit: 'millisecond' })}`)
       .join(' '),
   })
 
@@ -171,15 +171,15 @@ test('renderGithubRecap renders repo sections with links and extended hours', ()
         {
           sha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
           subject: 'feat(widget): add the widget',
-          instant: new Date('2026-02-08T09:15:00Z'),
+          instant: Instant.from('2026-02-08T09:15:00Z'),
         },
         {
           sha: 'ffeeddccbbaa99887766554433221100aabbccdd',
           subject: 'fix(widget): late-night fix',
-          instant: new Date('2026-02-09T01:44:00Z'),
+          instant: Instant.from('2026-02-09T01:44:00Z'),
         },
       ],
-      prs: [{ number: 12, title: 'Add widget', action: 'opened', instant: new Date('2026-02-08T14:02:00Z') }],
+      prs: [{ number: 12, title: 'Add widget', action: 'opened', instant: Instant.from('2026-02-08T14:02:00Z') }],
       reviews: [],
       issueEvents: 0,
       issueEventTimes: [],
@@ -215,7 +215,7 @@ test('renderGithubRecap renders repo sections with links and extended hours', ()
     given: 'the day span',
     should: 'run first commit to last commit',
     expected: '2026-02-08T09:15:00.000Z -> 2026-02-09T01:44:00.000Z',
-    actual: `${rendered.first.toISOString()} -> ${rendered.last.toISOString()}`,
+    actual: `${rendered.first.toString({ smallestUnit: 'millisecond' })} -> ${rendered.last.toString({ smallestUnit: 'millisecond' })}`,
   })
 })
 
@@ -224,8 +224,8 @@ test('clampActivity drops out-of-window work and empty repos', () => {
     {
       repo: 'acme/atlas',
       commits: [
-        { sha: 'aaaa111', subject: 'feat: before', instant: new Date('2026-02-09T01:00:00Z') },
-        { sha: 'bbbb222', subject: 'feat: after wake', instant: new Date('2026-02-09T05:00:00Z') },
+        { sha: 'aaaa111', subject: 'feat: before', instant: Instant.from('2026-02-09T01:00:00Z') },
+        { sha: 'bbbb222', subject: 'feat: after wake', instant: Instant.from('2026-02-09T05:00:00Z') },
       ],
       prs: [],
       reviews: [],
@@ -234,7 +234,7 @@ test('clampActivity drops out-of-window work and empty repos', () => {
     },
     {
       repo: 'acme/wallet',
-      commits: [{ sha: 'cccc333', subject: 'fix: morning only', instant: new Date('2026-02-09T05:30:00Z') }],
+      commits: [{ sha: 'cccc333', subject: 'fix: morning only', instant: Instant.from('2026-02-09T05:30:00Z') }],
       prs: [],
       reviews: [],
       issueEvents: 0,
@@ -242,7 +242,7 @@ test('clampActivity drops out-of-window work and empty repos', () => {
     },
   ]
 
-  const clamped = clampActivity(repos, new Date('2026-02-08T06:00:00Z'), new Date('2026-02-09T01:20:00Z'))
+  const clamped = clampActivity(repos, Instant.from('2026-02-08T06:00:00Z'), Instant.from('2026-02-09T01:20:00Z'))
 
   assert({
     given: 'a wake-to-wake window ending at 01:20',

@@ -5,8 +5,8 @@ import { aiModelByProfile } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { ClaudeSession } from './claudeCode.ts'
 import { dayClock } from './clock.ts'
+import type { CodingSession } from './codingSession.ts'
 
 /** The structured substance of one session, extracted by the digest model. */
 export interface SessionDigest {
@@ -20,7 +20,7 @@ export interface SessionDigest {
   learned: string[]
 }
 
-const PROMPT_FILE = new URL('../prompts/claude-code-session.prompt.md', import.meta.url).pathname
+const PROMPT_FILE = new URL('../prompts/coding-session.prompt.md', import.meta.url).pathname
 
 const FILES_MAX = 60
 const PROMPTS_MAX = 120
@@ -45,7 +45,7 @@ const digestSchema = z.object({
 const AI_TIMEOUT_MS = 120_000
 
 /** Assemble the per-session material the digest model reads. */
-function materials(session: ClaudeSession, day: PlainDate, timezone: string): string {
+function materials(session: CodingSession, day: PlainDate, timezone: string): string {
   const parts: string[] = [`Repo: ${session.repo}`, '', '## Typed prompts (timestamped)']
   for (const prompt of session.promptLog.slice(0, PROMPTS_MAX)) {
     parts.push(`[${dayClock(prompt.instant, day, timezone)}] ${prompt.text}`)
@@ -100,11 +100,12 @@ export function normalizeDigest(raw: z.infer<typeof digestSchema>): SessionDiges
 }
 
 async function digestSession(
-  session: ClaudeSession,
+  session: CodingSession,
   profile: string,
   day: PlainDate,
   timezone: string,
   instructions: string,
+  source: string,
 ): Promise<SessionDigest | null> {
   try {
     const { object } = await generateObject({
@@ -117,7 +118,7 @@ async function digestSession(
     const digest = normalizeDigest(object)
     if (!digest) {
       await logAIError({
-        source: 'recap:claude-code',
+        source,
         stage: 'parse-digest',
         message: `blank digest for session ${session.sessionId}: ${JSON.stringify(object).slice(0, 200)}`,
       })
@@ -125,7 +126,7 @@ async function digestSession(
     return digest
   } catch (err) {
     await logAIError({
-      source: 'recap:claude-code',
+      source,
       stage: 'digest',
       message: err instanceof Error ? err.message : String(err),
     })
@@ -139,12 +140,13 @@ async function digestSession(
  * always written.
  */
 export async function digestSessions(
-  sessions: ClaudeSession[],
+  sessions: CodingSession[],
   profile: string,
   day: PlainDate,
   timezone: string,
+  source = 'recap:claude-code',
 ): Promise<Array<SessionDigest | null>> {
   const content = await readPromptFile(PROMPT_FILE)
-  const { output: instructions } = renderPromptFile(content, 'claude-code-session.prompt.md')
-  return Promise.all(sessions.map((session) => digestSession(session, profile, day, timezone, instructions)))
+  const { output: instructions } = renderPromptFile(content, 'coding-session.prompt.md')
+  return Promise.all(sessions.map((session) => digestSession(session, profile, day, timezone, instructions, source)))
 }

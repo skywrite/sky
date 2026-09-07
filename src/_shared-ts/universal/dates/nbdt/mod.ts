@@ -2,6 +2,7 @@
 // Domain-specific date/time handling for the Notebook system
 
 export { instantNow } from './instantNow.ts'
+export { default as Instant } from './Instant/mod.ts'
 export { calendarInstant, calendarInterval, calendarNow } from './calendar.ts'
 
 export { default as PlainDateTime } from './PlainDateTime/mod.ts'

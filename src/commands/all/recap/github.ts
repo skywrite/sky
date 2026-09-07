@@ -7,6 +7,7 @@ import openEditor from '#lib/shell/openEditor.ts'
 import { isCommandAvailable } from '#lib/sys/command.ts'
 import { RecapDocument } from '#shared/models/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
+import { Instant } from '#universal/dates/nbdt/mod.ts'
 import { clockPrefix, dayClock } from './lib/clock.ts'
 import dayWindow from './lib/dayWindow.ts'
 import { activityInstants, clampActivity, renderGithubRecap } from './lib/github.ts'
@@ -75,7 +76,7 @@ export default class RecapGithubTask extends Command {
     let repos
     try {
       repos = await fetchGithubActivity(
-        { start: new Date(window.start.getTime() - WAKE_LOOKBACK_MS), end: window.end },
+        { start: window.start.subtract({ milliseconds: WAKE_LOOKBACK_MS }), end: window.end },
         { warn: (message) => output.log(colors.yellow(`⚠ ${message}`)) },
       )
     } catch (err) {
@@ -85,7 +86,7 @@ export default class RecapGithubTask extends Command {
     const instants = activityInstants(repos)
     const start = findWakeStart(instants, day, window.timezone, window.start) ?? window.start
     const cutoff = findWakeCutoff(
-      instants.filter((instant) => instant >= start),
+      instants.filter((instant) => Instant.compare(instant, start) >= 0),
       day,
       window.timezone,
     )

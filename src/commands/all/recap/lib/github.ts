@@ -1,25 +1,26 @@
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { RenderedRecap, ScanWindow } from './claudeCode.ts'
+import { Instant, type PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dayClock, dayLabel } from './clock.ts'
+import type { RenderedRecap, ScanWindow } from './codingSession.ts'
+import { parseInstant } from './parseInstant.ts'
 
 export interface GithubCommit {
   sha: string
   subject: string
-  instant: Date
+  instant: Instant
 }
 
 export interface GithubPullRequest {
   number: number
   title: string
   action: 'opened' | 'merged' | 'closed'
-  instant: Date
+  instant: Instant
 }
 
 export interface GithubReview {
   prNumber: number
   prTitle: string
   state: string
-  instant: Date
+  instant: Instant
 }
 
 export interface GithubRepoActivity {
@@ -29,7 +30,7 @@ export interface GithubRepoActivity {
   reviews: GithubReview[]
   issueEvents: number
   /** Instants of issue activity — kept so issue-only repos still have a span. */
-  issueEventTimes: Date[]
+  issueEventTimes: Instant[]
 }
 
 export interface GithubEvent {
@@ -51,8 +52,8 @@ export interface DiscoveredCommit {
   repo: string
   sha: string
   message: string
-  authored: Date | null
-  committed: Date | null
+  authored: Instant | null
+  committed: Instant | null
 }
 
 function ensureActivity(repos: Map<string, GithubRepoActivity>, repo: string): GithubRepoActivity {
@@ -81,9 +82,9 @@ export function collectFromEvents(events: GithubEvent[], window: ScanWindow): Ma
 
   for (const event of events) {
     if (!event.created_at || !event.repo?.name) continue
-    const instant = new Date(event.created_at)
-    if (Number.isNaN(instant.getTime())) continue
-    if (instant < window.start || instant >= window.end) continue
+    const instant = parseInstant(event.created_at)
+    if (!instant) continue
+    if (Instant.compare(instant, window.start) < 0 || Instant.compare(instant, window.end) >= 0) continue
 
     const repo = event.repo.name
     const payload = event.payload ?? {}
@@ -138,7 +139,8 @@ export function foldCommits(
   commits: DiscoveredCommit[],
   window: ScanWindow,
 ): void {
-  const inWindow = (d: Date | null): d is Date => d !== null && d >= window.start && d < window.end
+  const inWindow = (d: Instant | null): d is Instant =>
+    d !== null && Instant.compare(d, window.start) >= 0 && Instant.compare(d, window.end) < 0
   const seen = new Set<string>()
 
   for (const found of commits) {
@@ -155,7 +157,7 @@ export function foldCommits(
   }
 
   for (const activity of repos.values()) {
-    activity.commits.sort((a, b) => a.instant.getTime() - b.instant.getTime())
+    activity.commits.sort((a, b) => a.instant.epochMilliseconds - b.instant.epochMilliseconds)
   }
 }
 
@@ -167,7 +169,7 @@ export function activeRepos(repos: Map<string, GithubRepoActivity>): GithubRepoA
 }
 
 /** Every authored instant in the day's activity, sorted — the presence signal. */
-export function activityInstants(repos: GithubRepoActivity[]): Date[] {
+export function activityInstants(repos: GithubRepoActivity[]): Instant[] {
   return repos
     .flatMap((r) => [
       ...r.commits.map((c) => c.instant),
@@ -175,12 +177,12 @@ export function activityInstants(repos: GithubRepoActivity[]): Date[] {
       ...r.reviews.map((v) => v.instant),
       ...r.issueEventTimes,
     ])
-    .sort((a, b) => a.getTime() - b.getTime())
+    .sort((a, b) => a.epochMilliseconds - b.epochMilliseconds)
 }
 
 /** Keep only activity inside the wake-to-wake window; empty repos drop entirely. */
-export function clampActivity(repos: GithubRepoActivity[], start: Date, end: Date): GithubRepoActivity[] {
-  const keep = (instant: Date) => instant >= start && instant <= end
+export function clampActivity(repos: GithubRepoActivity[], start: Instant, end: Instant): GithubRepoActivity[] {
+  const keep = (instant: Instant) => Instant.compare(instant, start) >= 0 && Instant.compare(instant, end) <= 0
   return repos
     .map((r) => {
       const issueEventTimes = r.issueEventTimes.filter(keep)
@@ -198,10 +200,10 @@ export function clampActivity(repos: GithubRepoActivity[], start: Date, end: Dat
 
 function firstInstant(activity: GithubRepoActivity): number {
   const instants = [
-    ...activity.commits.map((c) => c.instant.getTime()),
-    ...activity.prs.map((p) => p.instant.getTime()),
-    ...activity.reviews.map((r) => r.instant.getTime()),
-    ...activity.issueEventTimes.map((d) => d.getTime()),
+    ...activity.commits.map((c) => c.instant.epochMilliseconds),
+    ...activity.prs.map((p) => p.instant.epochMilliseconds),
+    ...activity.reviews.map((r) => r.instant.epochMilliseconds),
+    ...activity.issueEventTimes.map((d) => d.epochMilliseconds),
   ]
   return instants.length ? Math.min(...instants) : Number.MAX_SAFE_INTEGER
 }
@@ -224,14 +226,14 @@ export function renderGithubRecap(repos: GithubRepoActivity[], day: PlainDate, t
   const totalPrs = repos.reduce((sum, r) => sum + r.prs.length, 0)
   const totalReviews = repos.reduce((sum, r) => sum + r.reviews.length, 0)
 
-  const instants: Date[] = repos.flatMap((r) => [
+  const instants: Instant[] = repos.flatMap((r) => [
     ...r.commits.map((c) => c.instant),
     ...r.prs.map((p) => p.instant),
     ...r.reviews.map((v) => v.instant),
     ...r.issueEventTimes,
   ])
-  const first = instants.reduce((min, d) => (d < min ? d : min), instants[0])
-  const last = instants.reduce((max, d) => (d > max ? d : max), instants[0])
+  const first = instants.reduce((min, d) => (Instant.compare(d, min) < 0 ? d : min), instants[0])
+  const last = instants.reduce((max, d) => (Instant.compare(d, max) > 0 ? d : max), instants[0])
 
   const summary: string[] = []
   if (totalCommits) summary.push(plural(totalCommits, 'commit'))

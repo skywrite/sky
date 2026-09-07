@@ -1,12 +1,12 @@
 import { DIR_TIME } from '#config'
 import { dayTimezone, readDay } from '#shared/nbfs/mod.ts'
-import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { Instant, instantNow, PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 export interface DayWindow {
   /** Instant the day's activity begins: its day:start, or the fallback boundary. */
-  start: Date
+  start: Instant
   /** Instant it ends: the next day's start, or now while the day is still open. */
-  end: Date
+  end: Instant
   /** IANA timezone the day's wall clocks render in. */
   timezone: string
 }
@@ -16,13 +16,11 @@ export interface DayWindow {
 // hours (25:30-style), mirroring how fetchNow attributes the current time.
 const FALLBACK_START = '04:00'
 
-function toInstant(zdt: ZonedDateTime): Date {
-  const utc = zdt.toUTC()
-  const [h, m] = utc.time.split(':')
-  return new Date(`${utc.date}T${h.padStart(2, '0')}:${m.padStart(2, '0')}:00Z`)
+function toInstant(zdt: ZonedDateTime): Instant {
+  return Instant.fromEpochMilliseconds(zdt.epochMilliseconds)
 }
 
-async function startedInstant(day: PlainDate, timeDir: string): Promise<Date | null> {
+async function startedInstant(day: PlainDate, timeDir: string): Promise<Instant | null> {
   try {
     const started = (await readDay(day, timeDir)).started
     return started ? toInstant(started) : null
@@ -31,7 +29,7 @@ async function startedInstant(day: PlainDate, timeDir: string): Promise<Date | n
   }
 }
 
-async function fallbackInstant(day: PlainDate, timeDir: string): Promise<Date> {
+async function fallbackInstant(day: PlainDate, timeDir: string): Promise<Instant> {
   const tz = await dayTimezone(day, timeDir)
   return toInstant(new ZonedDateTime(`${day.ymd} ${FALLBACK_START}`, tz))
 }
@@ -51,7 +49,10 @@ export default async function dayWindow(day: PlainDate, timeDir = DIR_TIME): Pro
   const next = day.addDays(1)
   let end = await startedInstant(next, timeDir)
   if (!end) {
-    end = PlainDate.compare(next, new PlainDate()) >= 0 ? new Date() : await fallbackInstant(next, timeDir)
+    end =
+      PlainDate.compare(next, PlainDate.today()) >= 0
+        ? Instant.from(instantNow())
+        : await fallbackInstant(next, timeDir)
   }
 
   return { start, end, timezone }

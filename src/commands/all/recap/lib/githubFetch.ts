@@ -1,6 +1,7 @@
 import mapLimit from '#commands/all/slack/lib/mapLimit.ts'
 import { runCommand } from '#lib/sys/command.ts'
-import type { ScanWindow } from './claudeCode.ts'
+import { Instant } from '#universal/dates/nbdt/mod.ts'
+import type { ScanWindow } from './codingSession.ts'
 import {
   type DiscoveredCommit,
   type GithubEvent,
@@ -9,6 +10,7 @@ import {
   collectFromEvents,
   foldCommits,
 } from './github.ts'
+import { parseInstant } from './parseInstant.ts'
 
 // Per-repo listings run side by side: the sweep can cover dozens of repos.
 const LISTING_CONCURRENCY = 6
@@ -57,12 +59,6 @@ interface GithubRepoResponse {
   pushed_at?: string
 }
 
-function parseInstant(value?: string): Date | null {
-  if (!value) return null
-  const instant = new Date(value)
-  return Number.isNaN(instant.getTime()) ? null : instant
-}
-
 function toDiscoveredCommit(repo: string, response: GithubCommitResponse): DiscoveredCommit | null {
   if (!response.sha || !response.commit) return null
   return {
@@ -75,8 +71,8 @@ function toDiscoveredCommit(repo: string, response: GithubCommitResponse): Disco
 }
 
 /** Search date qualifiers take an ISO timestamp with an explicit offset. */
-function searchInstant(instant: Date): string {
-  return `${instant.toISOString().slice(0, 19)}+00:00`
+function searchInstant(instant: Instant): string {
+  return `${instant.toString({ smallestUnit: 'millisecond' }).slice(0, 19)}+00:00`
 }
 
 /**
@@ -117,7 +113,7 @@ export async function searchCommits(login: string, window: ScanWindow): Promise<
  * repo's pushed_at is the one signal that cannot miss it. The listing is
  * newest-push-first; paging stops once it runs past the window.
  */
-export async function fetchReposPushedSince(since: Date): Promise<string[]> {
+export async function fetchReposPushedSince(since: Instant): Promise<string[]> {
   const repos: string[] = []
   for (let page = 1; page <= MAX_REPO_PAGES; page++) {
     const batch = await ghJsonLines<GithubRepoResponse>([
@@ -130,7 +126,7 @@ export async function fetchReposPushedSince(since: Date): Promise<string[]> {
     for (const repo of batch) {
       const pushed = parseInstant(repo.pushed_at)
       if (!repo.full_name || !pushed) continue
-      if (pushed < since) {
+      if (Instant.compare(pushed, since) < 0) {
         ranPast = true
         break
       }
@@ -143,8 +139,8 @@ export async function fetchReposPushedSince(since: Date): Promise<string[]> {
 
 /** The user's commits on a repo's default branch inside the window. */
 async function listRepoCommits(repo: string, login: string, window: ScanWindow): Promise<DiscoveredCommit[]> {
-  const since = window.start.toISOString()
-  const until = window.end.toISOString()
+  const since = window.start.toString({ smallestUnit: 'millisecond' })
+  const until = window.end.toString({ smallestUnit: 'millisecond' })
   let responses: GithubCommitResponse[]
   try {
     responses = await ghJsonLines<GithubCommitResponse>([

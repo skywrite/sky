@@ -2,11 +2,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import scanClaudeSessions, { type ClaudeSession, renderClaudeCodeRecap, topDirs } from './claudeCode.ts'
+import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import scanClaudeSessions from './claudeCode.ts'
+import { type CodingSession, renderCodingRecap, topDirs } from './codingSession.ts'
 import type { SessionDigest } from './sessionDigest.ts'
 
-const WINDOW = { start: new Date('2026-02-08T06:00:00Z'), end: new Date('2026-02-09T04:00:00Z') }
+const WINDOW = { start: Instant.from('2026-02-08T06:00:00Z'), end: Instant.from('2026-02-09T04:00:00Z') }
 const DAY = PlainDate.from('2026-02-08')
 const CWD = '/home/jane/code/atlas'
 
@@ -28,13 +29,13 @@ async function writeFixtureProject(root: string, dirName: string, fileName: stri
   await writeFile(path.join(dir, fileName), lines.join('\n'))
 }
 
-function mkSession(overrides: Partial<ClaudeSession>): ClaudeSession {
+function mkSession(overrides: Partial<CodingSession>): CodingSession {
   return {
     sessionId: 'abc123',
     cwd: CWD,
     repo: 'atlas',
-    start: new Date('2026-02-08T09:02:00Z'),
-    end: new Date('2026-02-08T11:28:00Z'),
+    start: Instant.from('2026-02-08T09:02:00Z'),
+    end: Instant.from('2026-02-08T11:28:00Z'),
     prompts: 18,
     filesTouched: 0,
     gist: '',
@@ -132,7 +133,7 @@ test('scanClaudeSessions extracts the full session record', async () => {
     given: 'in-window events from 09:02 to 11:28',
     should: 'span first to last',
     expected: '2026-02-08T09:02:00.000Z -> 2026-02-08T11:28:00.000Z',
-    actual: `${session.start.toISOString()} -> ${session.end.toISOString()}`,
+    actual: `${session.start.toString({ smallestUnit: 'millisecond' })} -> ${session.end.toString({ smallestUnit: 'millisecond' })}`,
   })
 })
 
@@ -170,12 +171,12 @@ test('topDirs ranks work areas relative to the session cwd', () => {
   })
 })
 
-test('renderClaudeCodeRecap renders digest blocks and mechanical fallbacks', () => {
+test('renderCodingRecap renders digest blocks and mechanical fallbacks', () => {
   const sessions = [
     mkSession({ prompts: 18 }),
     mkSession({
-      start: new Date('2026-02-08T22:40:00Z'),
-      end: new Date('2026-02-09T01:10:00Z'),
+      start: Instant.from('2026-02-08T22:40:00Z'),
+      end: Instant.from('2026-02-09T01:10:00Z'),
       prompts: 5,
       gist: 'late-night fixes',
       files: [`${CWD}/src/x.ts`],
@@ -194,7 +195,7 @@ test('renderClaudeCodeRecap renders digest blocks and mechanical fallbacks', () 
     null,
   ]
 
-  const rendered = renderClaudeCodeRecap(sessions, DAY, 'UTC', digests)
+  const rendered = renderCodingRecap(sessions, 'Claude Code', DAY, 'UTC', digests)
 
   assert({
     given: 'a digested session',
