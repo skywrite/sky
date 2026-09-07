@@ -14,14 +14,14 @@ import { Hono } from 'hono'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 import { logger } from '#shared/log.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { touch } from '../../activity.ts'
+import { hold, touch } from '../../activity.ts'
 
 const log = logger('voice')
 
 export interface VoiceTool {
   definition: RealtimeFunctionTool
   /** Runs one call; the returned string goes back to the model verbatim. */
-  run: (input: Record<string, unknown>) => Promise<string>
+  run: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<string>
   /**
    * A call parks as pending instead of running: the model reads the
    * pending summary aloud, and only the user's spoken yes — relayed as a
@@ -82,6 +82,8 @@ function summarizeCall(name: string, input: Record<string, unknown>): string {
 /** One browser session's configuration and tools — the host's wiring. */
 export interface VoiceThread {
   session: RealtimeSessionCreateRequest
+  /** A separate receive-only call speaks deep research while the host keeps listening. */
+  researcher?: { name: string; session: RealtimeSessionCreateRequest }
   /** Instructions for the greeting response — see openingInstructions. */
   opening: string
   tools: Map<string, VoiceTool>
@@ -131,6 +133,8 @@ const MAX_TOOL_OUTPUT_ERROR_CHARS = 2000
 export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   const threads = new Map<string, VoiceThread>()
   const opening = new Map<string, Promise<VoiceThread>>()
+  const lifetimes = new Map<string, AbortController>()
+  const ended = new Set<string>()
   const approvalsByThread = new Map<string, Map<string, PendingApproval>>()
   const app = new Hono()
 
@@ -144,15 +148,25 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   }
 
   /** Run one tool call under the boundary rule: strings out, clamped errors. */
-  const execute = async (name: string, tool: VoiceTool, input: Record<string, unknown>): Promise<string> => {
+  const execute = async (
+    name: string,
+    tool: VoiceTool,
+    input: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string> => {
     const t0 = performance.now()
+    // Sunny may run longer than the browser conversation's timed hold.
+    const release = hold(`voice tool: ${name}`)
     let output: string
     try {
-      output = await tool.run(input)
+      signal.throwIfAborted()
+      output = await tool.run(input, signal)
     } catch (err) {
       // Failures cross this boundary as strings only, clamped — the same
       // rule ai:chat's tool runner enforces.
       output = truncate(`Tool failed: ${(err as Error).message}`, MAX_TOOL_OUTPUT_ERROR_CHARS)
+    } finally {
+      release()
     }
     log.info('tool {tool} · {ms}ms · {chars} chars', {
       tool: name,
@@ -169,13 +183,18 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     if (existing) return Promise.resolve(existing)
     let pending = opening.get(id)
     if (!pending) {
+      const lifetime = new AbortController()
+      lifetimes.set(id, lifetime)
       pending = options
         .createThread(id)
         .then((thread) => {
+          lifetime.signal.throwIfAborted()
           threads.set(id, thread)
           return thread
         })
-        .finally(() => opening.delete(id))
+        .finally(() => {
+          if (opening.get(id) === pending) opening.delete(id)
+        })
       opening.set(id, pending)
     }
     return pending
@@ -213,22 +232,45 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   // reconnect on the same thread mints again; the session it configures
   // lives on past the secret's expiry.
   app.post('/:id/session', async (c) => {
-    const thread = await open(c.req.param('id'))
-    touch(`voice:${c.req.param('id')}`, 'voice', VOICE_HOLD_MS)
-    let secret: ClientSecret
+    const id = c.req.param('id')
+    ended.delete(id)
     try {
-      secret = await options.mint(thread.session)
+      const thread = await open(id)
+      const lifetime = lifetimes.get(id)!
+      const [secret, researcherSecret] = await Promise.all([
+        options.mint(thread.session),
+        thread.researcher ? options.mint(thread.researcher.session) : undefined,
+      ])
+      if (lifetime.signal.aborted) return c.json({ message: 'Voice session ended while connecting.' }, 410)
+      touch(`voice:${id}`, 'voice', VOICE_HOLD_MS)
+      return c.json({
+        clientSecret: secret.value,
+        expiresAt: secret.expiresAt,
+        model: thread.session.model ?? null,
+        voice: thread.session.audio?.output?.voice ?? null,
+        opening: thread.opening,
+        tools: (thread.session.tools ?? []).flatMap((tool) =>
+          tool.type === 'function' && tool.name ? [tool.name] : [],
+        ),
+        ...(thread.researcher && researcherSecret
+          ? {
+              researcher: {
+                clientSecret: researcherSecret.value,
+                expiresAt: researcherSecret.expiresAt,
+                model: thread.researcher.session.model ?? null,
+                voice: thread.researcher.session.audio?.output?.voice ?? null,
+                name: thread.researcher.name,
+                instructions: thread.researcher.session.instructions ?? '',
+              },
+            }
+          : {}),
+      })
     } catch (err) {
-      return c.json({ message: (err as Error).message }, 502)
+      return c.json(
+        { message: ended.has(id) ? 'Voice session ended while connecting.' : (err as Error).message },
+        ended.has(id) ? 410 : 502,
+      )
     }
-    return c.json({
-      clientSecret: secret.value,
-      expiresAt: secret.expiresAt,
-      model: thread.session.model ?? null,
-      voice: thread.session.audio?.output?.voice ?? null,
-      opening: thread.opening,
-      tools: [...thread.tools.keys()],
-    })
   })
 
   // One tool call as the model made it: the arguments arrive as the JSON
@@ -241,7 +283,23 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     const body = (await c.req.json().catch(() => null)) as { name?: unknown; arguments?: unknown } | null
     if (typeof body?.name !== 'string') return c.json({ message: 'expected { name, arguments }' }, 400)
     const id = c.req.param('id')
-    const thread = await open(id)
+    if (ended.has(id)) return c.json({ output: 'This voice session has ended. Start a new call.' }, 410)
+    let thread: VoiceThread
+    try {
+      thread = await open(id)
+    } catch (err) {
+      return c.json(
+        {
+          output: ended.has(id)
+            ? 'This voice session has ended.'
+            : truncate(`Voice session unavailable: ${(err as Error).message}`, MAX_TOOL_OUTPUT_ERROR_CHARS),
+        },
+        ended.has(id) ? 410 : 502,
+      )
+    }
+    const lifetime = lifetimes.get(id)
+    if (!lifetime || lifetime.signal.aborted) return c.json({ output: 'This voice session has ended.' }, 410)
+    const signal = AbortSignal.any([lifetime.signal, c.req.raw.signal])
     touch(`voice:${id}`, 'voice', VOICE_HOLD_MS)
 
     let input: Record<string, unknown> = {}
@@ -268,7 +326,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
         log.info('tool {tool} cancelled', { tool: parked.tool.definition.name })
         return c.json({ output: `Cancelled — nothing was done. (${parked.summary})` })
       }
-      return c.json({ output: await execute(parked.tool.definition.name ?? 'tool', parked.tool, parked.input) })
+      return c.json({ output: await execute(parked.tool.definition.name ?? 'tool', parked.tool, parked.input, signal) })
     }
 
     const tool = thread.tools.get(body.name)
@@ -295,14 +353,19 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
       })
     }
 
-    return c.json({ output: await execute(body.name, tool, input) })
+    return c.json({ output: await execute(body.name, tool, input, signal) })
   })
 
   // The page is done with the thread; nothing is filed yet.
   app.post('/:id/end', (c) => {
-    touch(`voice:${c.req.param('id')}`, 'voice', 0)
-    approvalsByThread.delete(c.req.param('id'))
-    if (!threads.delete(c.req.param('id'))) return c.json({ message: 'no such voice thread' }, 404)
+    const id = c.req.param('id')
+    touch(`voice:${id}`, 'voice', 0)
+    approvalsByThread.delete(id)
+    ended.add(id)
+    lifetimes.get(id)?.abort()
+    lifetimes.delete(id)
+    const wasOpening = opening.delete(id)
+    if (!threads.delete(id) && !wasOpening) return c.json({ message: 'no such voice thread' }, 404)
     return c.json({ ended: true })
   })
 

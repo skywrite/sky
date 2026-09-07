@@ -18,6 +18,7 @@
 import process from 'node:process'
 import colors from 'picocolors'
 import { renderDayCalendar } from '#commands/all/day/meeting/lib/meetingCheck.ts'
+import { loadVoiceInitialContext } from '#commands/lib/voice/initialContext.ts'
 import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
 import {
   DEFAULT_VOICE_MODEL,
@@ -88,25 +89,24 @@ export default class AiVoiceTask extends Command {
       return CommandResult.fail((err as Error).message)
     }
 
-    // Both prompts carry the session-start clocks; the persona also holds
-    // today's calendar checked against the notebook. The greeting's name
-    // slot fills from the AboutMe profile and folds away without one.
+    // Both prompts carry the same notebook snapshot and session-start clocks.
     const { notebookNow, systemNow } = context
-    const calendar = await renderDayCalendar(
-      context.secrets,
-      notebookNow.plainDateTime.plainDate,
-      <string>context.config.DIR_TIME,
-      { date: notebookNow.date, time: notebookNow.time },
-    )
-    const prompts = await renderVoicePrompts({
+    const clock = {
       notebookDate: notebookNow.date,
       notebookTime: notebookNow.time,
       notebookTimezone: notebookNow.timezone,
       systemDate: systemNow.date,
       systemTime: systemNow.time,
       systemTimezone: systemNow.timezone,
-      calendar,
-    })
+    }
+    const [calendar, notebookContext] = await Promise.all([
+      renderDayCalendar(context.secrets, notebookNow.plainDateTime.plainDate, context.config.DIR_TIME, {
+        date: notebookNow.date,
+        time: notebookNow.time,
+      }),
+      loadVoiceInitialContext(context.config, clock),
+    ])
+    const prompts = await renderVoicePrompts({ ...clock, calendar, notebookContext })
 
     output.log(colors.bold('Voice session'))
     output.log(colors.dim(`  ${args.model} · voice ${args.voice} · delegate ${args.reasoning}`))

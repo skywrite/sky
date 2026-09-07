@@ -38,8 +38,17 @@
   font-weight: 600;
 }
 
+.sky-voice-research {
+  color: var(--sky-text-2);
+}
+
 .sky-turn[data-voice='sunny'] .sky-who {
   color: var(--sky-accent);
+}
+
+.sky-voice-interrupted {
+  color: var(--sky-text-2);
+  font-size: 0.85em;
 }
 
 .sky-voice-warn {

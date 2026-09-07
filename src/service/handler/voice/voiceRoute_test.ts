@@ -1,6 +1,7 @@
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
+import { holding, touch } from '../../activity.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { VoiceRoutesOptions, VoiceThread } from './mod.ts'
 
@@ -133,6 +134,141 @@ test({ name: 'voice route - a mint failure is reported, not thrown' }, async () 
   })
 })
 
+test('voice route - host and researcher receive distinct secrets with their own voices', async () => {
+  const { host, minted } = hostWith((session) =>
+    Promise.resolve({
+      value: session.audio?.output?.voice === 'ash' ? 'ek_host' : 'ek_researcher',
+      expiresAt: 1700000060,
+    }),
+  )
+  const create = host.createThread
+  host.createThread = async (id) => ({
+    ...(await create(id)),
+    session: { ...SESSION, audio: { output: { voice: 'ash' } } },
+    researcher: {
+      name: 'Sunny',
+      session: {
+        ...SESSION,
+        instructions: 'Speak supported research findings.',
+        audio: { output: { voice: 'marin' } },
+        tools: [],
+      },
+    },
+  })
+  const app = await appWith(host)
+  const response = await post(app, '/voice/duet/session')
+  const data = await response.json()
+  assert({
+    given: 'a thread with a host and a female researcher',
+    should: 'mint both sessions and return the speaking-only researcher configuration to the browser',
+    actual: [response.status, data.clientSecret, data.voice, data.researcher, minted.length],
+    expected: [
+      200,
+      'ek_host',
+      'ash',
+      {
+        clientSecret: 'ek_researcher',
+        expiresAt: 1700000060,
+        model: 'gpt-realtime-2.1',
+        voice: 'marin',
+        name: 'Sunny',
+        instructions: 'Speak supported research findings.',
+      },
+      2,
+    ],
+  })
+})
+
+test('voice route - ending a call aborts research and rejects late tool calls', async () => {
+  const { host } = hostWith()
+  const create = host.createThread
+  let markStarted = () => {}
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  let aborted = false
+  host.createThread = async (id) => {
+    const thread = await create(id)
+    thread.tools.set('research_notebook', {
+      definition: { ...ECHO, name: 'research_notebook' },
+      run: (_input, signal) =>
+        new Promise((_resolve, reject) => {
+          signal!.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              reject(new Error('Research cancelled.'))
+            },
+            { once: true },
+          )
+          markStarted()
+        }),
+    })
+    return thread
+  }
+  const app = await appWith(host)
+  const running = post(app, '/voice/duet/tools', { name: 'research_notebook', arguments: '{}' })
+  await started
+  touch('voice:duet', 'voice', 0)
+  assert({
+    given: 'research outlasting the browser conversation hold',
+    should: 'keep a service reload waiting until the tool settles',
+    actual: holding().includes('voice tool: research_notebook'),
+    expected: true,
+  })
+  const end = await post(app, '/voice/duet/end')
+  const result = await running
+  assert({
+    given: 'the research cancelled by ending the call',
+    should: 'release its independent service hold',
+    actual: holding().includes('voice tool: research_notebook'),
+    expected: false,
+  })
+  const late = await post(app, '/voice/duet/tools', { name: 'echo', arguments: '{}' })
+  assert({
+    given: 'research still running when the call ends',
+    should: 'abort the model/tool chain and prevent late callbacks from reopening the thread',
+    actual: [end.status, aborted, (await result.json()).output, late.status],
+    expected: [200, true, 'Tool failed: Research cancelled.', 410],
+  })
+  assert({
+    given: 'the user explicitly starts another call on the same page',
+    should: 'allow a new session after the previous call ended',
+    actual: (await post(app, '/voice/duet/session')).status,
+    expected: 200,
+  })
+})
+
+test('voice route - end during startup prevents a late session from becoming live', async () => {
+  const { host } = hostWith()
+  const create = host.createThread
+  let finish = () => {}
+  const release = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  let markStarted = () => {}
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  host.createThread = async (id) => {
+    markStarted()
+    await release
+    return create(id)
+  }
+  const app = await appWith(host)
+  const connecting = post(app, '/voice/duet/session')
+  await started
+  await post(app, '/voice/duet/end')
+  finish()
+  const late = await connecting
+  assert({
+    given: 'a cancelled call whose initial context finishes loading afterward',
+    should: 'return an ended session instead of minting a call',
+    actual: late.status,
+    expected: 410,
+  })
+})
+
 test({ name: 'voice route - tool calls run on the thread and answer as the model reads them' }, async () => {
   const { host, created } = hostWith()
   const app = await appWith(host)
@@ -179,6 +315,36 @@ test({ name: 'voice route - tool calls run on the thread and answer as the model
 
   const nameless = await post(app, '/voice/t1/tools', { arguments: '{}' })
   assert({ given: 'a call without a name', should: 'be 400', actual: nameless.status, expected: 400 })
+})
+
+test('voice route - ending during tool-triggered thread reconstruction returns an ended response', async () => {
+  const { host } = hostWith()
+  const create = host.createThread
+  let finish = () => {}
+  let markStarted = () => {}
+  const release = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  host.createThread = async (id) => {
+    markStarted()
+    await release
+    return create(id)
+  }
+  const app = await appWith(host)
+  const reconstructing = post(app, '/voice/rebuild/tools', { name: 'echo', arguments: '{}' })
+  await started
+  await post(app, '/voice/rebuild/end')
+  finish()
+  const response = await reconstructing
+  assert({
+    given: 'a tool rebuilding a lost thread when the user ends the call',
+    should: 'return a controlled ended response instead of an uncaught construction error',
+    actual: [response.status, await response.json()],
+    expected: [410, { output: 'This voice session has ended.' }],
+  })
 })
 
 test({ name: 'voice route - the audition describes itself and mints a speaking-only session per voice' }, async () => {

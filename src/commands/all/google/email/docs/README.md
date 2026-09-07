@@ -1,13 +1,15 @@
 ---
 created: 2026-08-30
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # google:email
 
 Gmail over the OAuth grant from `google:auth` (scope `gmail.modify`).
-Reads, labels, and drafts only — no send primitive exists anywhere in
-`lib/google/gmail.ts`, so nothing built on it can send mail.
+These commands read, label, and save drafts. They do not send mail.
+Gmail is draft-only across Sky, including workstream reports. All Google request
+methods reject Gmail send endpoints, with no separately authorized send bypass.
+Existing Gmail drafts still wait for the user to send them from Gmail.
 
 - `google:email:inbox:view` — threads in a label as data (threadId,
   sender, subject, date, snippet) plus the CLI table. An ai:chat/voice
@@ -33,5 +35,6 @@ by default. System labels are never synchronized by the listing helper.
 
 Dated narratives:
 
+- [2026-09-07 — Gmail stays draft-only](2026-09-07-draft-only.md)
 - [2026-09-06 — complete context and read-only listings](2026-09-06-read-limits-and-labels.md)
 - [2026-08-30 — reading threads and drafting replies](2026-08-30-read-and-reply-drafts.md)

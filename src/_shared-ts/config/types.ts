@@ -35,6 +35,8 @@ export interface SkyConfig {
   voice: {
     /** The voice Talk and ai:voice speak with; unset means the built-in default. */
     voice?: string
+    /** The separate notebook researcher's voice on Talk; unset means marin. */
+    researcherVoice?: string
   }
   ai: {
     models: {

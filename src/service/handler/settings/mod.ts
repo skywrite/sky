@@ -88,7 +88,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
     keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription'],
     groups: ['ai.profiles'],
   },
-  { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice'] },
+  { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
   { id: 'service', title: 'Service', keys: ['server.port'] },
 ]
@@ -231,7 +231,7 @@ export interface ProfileInput {
 export interface SettingsData {
   theme: Theme
   textSize: TextSize
-  voice: { current: string; groups: Record<'male' | 'female', readonly string[]> }
+  voice: { current: string; researcherCurrent: string; groups: Record<'male' | 'female', readonly string[]> }
   models: ModelRow[]
   /** Every model configuration: yours first, then the built-ins */
   profiles: ProfileRow[]
@@ -256,7 +256,7 @@ export interface SettingsData {
 export interface SettingsHost {
   /** The file and the configuration read from it, fresh for each request */
   load: () => ConfigSnapshot
-  /** The voices Talk offers and the one sessions use now */
+  /** The voices Talk offers and the host/researcher preferences sessions use now */
   voices: () => SettingsData['voice']
   /** The model roles as the AI pane shows them — read-only rows */
   models: () => ModelRow[]
@@ -290,6 +290,7 @@ export const SETTABLE_KEYS = {
   'web.theme': ['web', 'theme'],
   'web.textSize': ['web', 'textSize'],
   'voice.voice': ['voice', 'voice'],
+  'voice.researcherVoice': ['voice', 'researcherVoice'],
   editor: ['editor'],
 } as const
 
@@ -304,7 +305,8 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return (TEXT_SIZES as readonly string[]).includes(value)
         ? null
         : `text size must be one of ${TEXT_SIZES.join(', ')}`
-    case 'voice.voice': {
+    case 'voice.voice':
+    case 'voice.researcherVoice': {
       const { groups } = host.voices()
       return [...groups.male, ...groups.female].includes(value) ? null : `no such voice: ${value}`
     }

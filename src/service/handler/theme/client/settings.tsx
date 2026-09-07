@@ -59,7 +59,7 @@ export interface ConfigView {
 export interface SettingsData {
   theme: Theme
   textSize: TextSize
-  voice: { current: string; groups: { male: string[]; female: string[] } }
+  voice: { current: string; researcherCurrent: string; groups: { male: string[]; female: string[] } }
   models: ModelRow[]
   profiles: ProfileRow[]
   providers: string[]
@@ -204,10 +204,10 @@ function useHear() {
   }, [])
 
   const hear = useCallback(
-    async (voice: string) => {
+    async (voice: string, passage?: string, playbackKey = voice) => {
       stop()
       setError(null)
-      setPlaying(voice)
+      setPlaying(playbackKey)
       const pc = new RTCPeerConnection()
       callRef.current = pc
       const mine = () => callRef.current === pc
@@ -221,7 +221,7 @@ function useHear() {
         const minted = await fetch('/voice/_api/audition/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ voice }),
+          body: JSON.stringify({ voice, passage }),
         })
         const session = (await minted.json().catch(() => ({}))) as {
           clientSecret?: string
@@ -414,46 +414,77 @@ function VoicePane({ data, change }: { data: SettingsData; change: ReturnType<ty
     ['male', data.voice.groups.male],
     ['female', data.voice.groups.female],
   ] as const
-  const pick = (voice: string) =>
-    change('voice.voice', voice, (current) => ({ ...current, voice: { ...current.voice, current: voice } }))
+  const speakers = [
+    {
+      name: 'Sky',
+      key: 'voice.voice',
+      field: 'current',
+      note: 'The voice you talk with. A change speaks on your next call.',
+      passage: undefined,
+    },
+    {
+      name: 'Sunny',
+      key: 'voice.researcherVoice',
+      field: 'researcherCurrent',
+      note: 'Brings back notebook research while you keep talking with Sky. A change speaks on your next call.',
+      passage:
+        "Sunny here. I'll look through the notebook and bring back what matters. Keep talking with Sky while I work.",
+    },
+  ] as const
 
   return (
     <>
-      <Block head="Sky’s voice" note="The voice you talk with. A change speaks on your next call.">
-        <div className="sky-set-voices">
-          {groups.map(([group, voices]) => (
-            <div key={group}>
-              {voices.map((voice) => (
-                <div key={voice} className="sky-set-voice">
-                  <button
-                    type="button"
-                    className="sky-set-pick"
-                    aria-pressed={data.voice.current === voice}
-                    onClick={() => pick(voice)}
-                  >
-                    <span className="sky-set-radio" data-on={data.voice.current === voice} />
-                    <span className="sky-set-voice-name">{voice}</span>
-                  </button>
-                  <span className="sky-tag">{group}</span>
-                  <Button
-                    size="compact-sm"
-                    onClick={() => (playing === voice ? stop() : void hear(voice))}
-                    aria-label={playing === voice ? `Stop ${voice}` : `Hear ${voice}`}
-                  >
-                    {playing === voice ? '■ Stop' : '▸ Hear'}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-        {error && <p className="sky-set-warn">{error}</p>}
-        <div className="sky-set-foot">
-          <Button size="sm" component="a" href="/voice/audition">
-            Hear them all, one after another
-          </Button>
-        </div>
-      </Block>
+      {speakers.map((speaker) => (
+        <Block key={speaker.key} head={`${speaker.name}’s voice`} note={speaker.note}>
+          <div className="sky-set-voices">
+            {groups.map(([group, voices]) => (
+              <div key={group}>
+                {voices.map((voice) => (
+                  <div key={voice} className="sky-set-voice">
+                    <button
+                      type="button"
+                      className="sky-set-pick"
+                      aria-pressed={data.voice[speaker.field] === voice}
+                      aria-label={`${speaker.name}: ${voice}`}
+                      onClick={() =>
+                        change(speaker.key, voice, (current) => ({
+                          ...current,
+                          voice: { ...current.voice, [speaker.field]: voice },
+                        }))
+                      }
+                    >
+                      <span className="sky-set-radio" data-on={data.voice[speaker.field] === voice} />
+                      <span className="sky-set-voice-name">{voice}</span>
+                    </button>
+                    <span className="sky-tag">{group}</span>
+                    <Button
+                      size="compact-sm"
+                      onClick={() =>
+                        playing === `${speaker.key}:${voice}`
+                          ? stop()
+                          : void hear(voice, speaker.passage, `${speaker.key}:${voice}`)
+                      }
+                      aria-label={
+                        playing === `${speaker.key}:${voice}`
+                          ? `Stop ${speaker.name} with ${voice}`
+                          : `Hear ${speaker.name} with ${voice}`
+                      }
+                    >
+                      {playing === `${speaker.key}:${voice}` ? '■ Stop' : '▸ Hear'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          {error && <p className="sky-set-warn">{error}</p>}
+          <div className="sky-set-foot">
+            <Button size="sm" component="a" href="/voice/audition">
+              Hear them all, one after another
+            </Button>
+          </div>
+        </Block>
+      ))}
       <Block head="Devices" note="Remembered on this computer.">
         {devices.inputs.length === 0 && devices.outputs.length === 0 ? (
           <p className="sky-set-sub">Device names appear once a call has used the microphone.</p>

@@ -1,10 +1,8 @@
 /**
- * The service's wiring of a voice thread: ai:voice's persona, opening
- * line, and ask_notebook delegate, built from an in-process
- * CommandService, plus the notebook tools a browser may run without being
- * asked — the same default-deny set the web chat offers. Minting the
- * client secret is the only thing here that touches OpenAI; the browser
- * does the talking.
+ * Browser voice wiring: shared persona and starting context, quick Qwen
+ * lookup, background Astra research, and live command tools. Sky hosts
+ * the conversation; Sunny joins it and presents research through her own
+ * speech session. Audio travels directly between the browser and OpenAI.
  */
 
 import OpenAI from 'openai'
@@ -13,21 +11,38 @@ import { discoverAIChatTools, runToolCommand } from '#commands/lib/chat/notebook
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
-import { ASK_NOTEBOOK, ASK_NOTEBOOK_TOOL, askNotebook } from '#commands/lib/voice/notebookAgent.ts'
+import { createVoiceEmailTools } from '#commands/lib/voice/emailTools.ts'
+import { loadVoiceInitialContext } from '#commands/lib/voice/initialContext.ts'
+import {
+  createVoiceResearch,
+  LOOKUP_NOTEBOOK,
+  LOOKUP_NOTEBOOK_TOOL,
+  LOOKUP_WEB,
+  LOOKUP_WEB_TOOL,
+  RESEARCH_NOTEBOOK,
+  RESEARCH_NOTEBOOK_TOOL,
+  RESEARCH_WEB,
+  RESEARCH_WEB_TOOL,
+  RESUME_RESEARCH_TOOL,
+} from '#commands/lib/voice/research.ts'
 import {
   AUDITION_PASSAGE,
   auditionSessionConfig,
+  BROWSER_VOICE_EFFORT,
   DEFAULT_VOICE_MODEL,
+  DEFAULT_RESEARCHER_NAME,
+  INVITE_SUNNY_TOOL,
   preferredVoice,
+  preferredResearcherVoice,
   openingInstructions,
   renderVoicePrompts,
+  researcherSessionConfig,
   type Voice,
   VOICE_GROUPS,
   VOICES,
   type VoiceClock,
   voiceSessionConfig,
 } from '#commands/lib/voice/sessionConfig.ts'
-import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { renderTemplate } from '#shared/prompts/mod.ts'
 import type { AuditionHost, ClientSecretMinter, VoiceRoutesOptions, VoiceThreadFactory, VoiceTool } from './mod.ts'
@@ -77,26 +92,37 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
     const context = CommandContext.server(config, env)
     const tasks = new CommandService(context)
     const clock = clockOf(context)
-    // The calendar check is a Google round-trip; it runs beside the tool discovery.
-    const [calendar, entries] = await Promise.all([
+    // Prepare the notebook snapshot alongside calendar and tool discovery.
+    const [calendar, entries, notebookContext] = await Promise.all([
       renderDayCalendar(context.secrets, context.notebookNow.plainDateTime.plainDate, config.DIR_TIME, {
         date: clock.notebookDate,
         time: clock.notebookTime,
       }),
       discoverAIChatTools(),
+      loadVoiceInitialContext(config, clock),
     ])
-    const prompts = await renderVoicePrompts({ ...clock, calendar })
-    const delegate = resolveProfile(getProfile(ROLES.reasoning))
+    const prompts = await renderVoicePrompts({ ...clock, calendar, notebookContext, dualVoice: true })
+    const research = createVoiceResearch({ config, systemPrompt: prompts.askPrompt, webApiKey: env.PERPLEXITY_API_KEY })
 
-    const tools = new Map<string, VoiceTool>()
-    tools.set(ASK_NOTEBOOK, {
-      definition: ASK_NOTEBOOK_TOOL,
-      run: async (input) => {
-        const question = typeof input.question === 'string' ? input.question.trim() : ''
-        if (!question) return 'ask_notebook needs a question.'
-        return (await askNotebook(tasks, delegate, prompts.askPrompt, question)).answer
-      },
-    })
+    const tools = new Map<string, VoiceTool>(createVoiceEmailTools({ secrets: context.secrets }))
+    for (const [name, definition, run] of [
+      [LOOKUP_NOTEBOOK, LOOKUP_NOTEBOOK_TOOL, research.lookup],
+      [RESEARCH_NOTEBOOK, RESEARCH_NOTEBOOK_TOOL, research.research],
+      [LOOKUP_WEB, LOOKUP_WEB_TOOL, research.lookupWeb],
+      [RESEARCH_WEB, RESEARCH_WEB_TOOL, research.researchWeb],
+    ] as const) {
+      tools.set(name, {
+        definition,
+        run: async (input, signal) => {
+          const question = typeof input.question === 'string' ? input.question.trim() : ''
+          if (!question)
+            return JSON.stringify({ status: 'failed', answer: 'The research question is missing.', paths: [] })
+          const result = await run(question, signal)
+          // Preserve the outcome and evidence together; a partial answer is not a failed lookup.
+          return JSON.stringify(result)
+        },
+      })
+    }
     for (const entry of entries) {
       if (!VOICE_COMMANDS.has(entry.commandName)) continue
       tools.set(entry.toolName, {
@@ -116,10 +142,21 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
     return {
       session: voiceSessionConfig({
         model: DEFAULT_VOICE_MODEL,
+        effort: BROWSER_VOICE_EFFORT,
         voice: preferredVoice(),
         instructions: prompts.instructions,
-        tools: [...tools.values()].map((tool) => tool.definition).concat(gated ? APPROVAL_TOOLS : []),
+        tools: [...tools.values()]
+          .map((tool) => tool.definition)
+          .concat(INVITE_SUNNY_TOOL, RESUME_RESEARCH_TOOL, gated ? APPROVAL_TOOLS : []),
+        manualTurns: true,
       }),
+      researcher: {
+        name: DEFAULT_RESEARCHER_NAME,
+        session: researcherSessionConfig({
+          voice: preferredResearcherVoice(),
+          instructions: prompts.researcherInstructions,
+        }),
+      },
       opening: openingInstructions(prompts.instructions, prompts.greeting),
       tools,
     }

@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises'
 import * as os from 'node:os'
 import process from 'node:process'
 import { promisify } from 'node:util'
-import { preferredVoice, VOICE_GROUPS } from '#commands/lib/voice/sessionConfig.ts'
+import { preferredResearcherVoice, preferredVoice, VOICE_GROUPS } from '#commands/lib/voice/sessionConfig.ts'
 import { DIR_AI_MEMORY, DIR_CODE } from '#config'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
@@ -48,7 +48,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
       file: readSkyConfigFile(),
       env: process.env,
     }),
-    voices: () => ({ current: preferredVoice(), groups: VOICE_GROUPS }),
+    voices: () => ({ current: preferredVoice(), researcherCurrent: preferredResearcherVoice(), groups: VOICE_GROUPS }),
     models: (): ModelRow[] =>
       Object.entries(ROLES).map(([role, profileName]) => {
         const profile = PROFILES[profileName]

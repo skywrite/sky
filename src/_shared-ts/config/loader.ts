@@ -138,6 +138,7 @@ export function loadSkyConfig(): SkyConfig {
       config.web.textSize = parsed.web.textSize
     }
     if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
+    if (parsed.voice?.researcherVoice) config.voice.researcherVoice = parsed.voice.researcherVoice
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.server?.port) config.server.port = parsed.server.port

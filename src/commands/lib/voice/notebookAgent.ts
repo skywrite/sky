@@ -2,8 +2,9 @@
  * The ask_notebook delegate behind a voice session — a headless,
  * stateless slice of ai:chat's pipeline: select documents for one
  * question through the tuned ai:context:files producer, read them under a
- * byte budget, and answer with the reasoning model. The realtime voice
- * model narrates the wait, so this call is allowed to take its time. Both
+ * byte budget, and answer with the reasoning model. The prompt also carries
+ * the voice session's initial notebook context for orientation. The realtime
+ * voice model narrates the wait, so this call is allowed to take its time. Both
  * voice transports run it: ai:voice in its own process, the web page
  * through the service.
  */
@@ -38,11 +39,11 @@ export const ASK_NOTEBOOK_TOOL: RealtimeFunctionTool = {
   type: 'function',
   name: ASK_NOTEBOOK,
   description:
-    "Research the user's personal notebook and answer one question. Use it for ANY question touching " +
-    "the user's life, work, people, meetings, plans, journal, decisions, or history — never answer those " +
-    'from memory. It is slow (ten to thirty seconds): right before calling, tell the user in a few words ' +
-    'what you are checking, and stay conversational while it runs. The result is a spoken-ready answer; ' +
-    'relay it faithfully.',
+    "Research the user's personal notebook when a question needs missing or uncertain personal facts, " +
+    'source details, or deeper history. Answer directly when the supplied context or earlier conversation ' +
+    'already provides sufficient evidence. Before calling, briefly say what you are checking; research can ' +
+    'take time. Use the result to answer naturally, preserving source dates and uncertainty. A lookup that ' +
+    'finds nothing does not prove something never happened.',
   parameters: {
     type: 'object',
     properties: {
@@ -50,7 +51,8 @@ export const ASK_NOTEBOOK_TOOL: RealtimeFunctionTool = {
         type: 'string',
         description:
           "A complete, self-contained question in the user's words, with any context from earlier in the " +
-          'conversation folded in — the researcher sees nothing but this string.',
+          'conversation folded in, including relevant names, dates, corrections, and unresolved findings. ' +
+          'The researcher receives any initial context supplied to this session but does not see the full conversation.',
       },
     },
     required: ['question'],

@@ -1,8 +1,13 @@
 import { assert, test } from '#test'
 import {
   auditionSessionConfig,
+  DEFAULT_RESEARCHER_NAME,
+  DEFAULT_RESEARCHER_VOICE,
+  INVITE_SUNNY_TOOL,
   openingInstructions,
+  preferredResearcherVoice,
   renderVoicePrompts,
+  researcherSessionConfig,
   VOICE_GROUPS,
   VOICES,
   voiceSessionConfig,
@@ -70,6 +75,53 @@ test({ name: 'voice session config - a PCM transport declares its format, WebRTC
     actual: voiceSessionConfig({ ...spec, effort: 'low' }).reasoning,
     expected: { effort: 'low' },
   })
+  assert({
+    given: 'a browser call whose floor manager controls responses and interruptions',
+    should: 'keep speech detection but disable automatic turns only when requested',
+    actual: [
+      voiceSessionConfig({ ...spec, manualTurns: true }).audio?.input?.turn_detection,
+      voiceSessionConfig({ ...spec, manualTurns: false }).audio?.input?.turn_detection,
+    ],
+    expected: [{ type: 'semantic_vad', create_response: false, interrupt_response: false }, { type: 'semantic_vad' }],
+  })
+})
+
+test({ name: 'voice session config - Sunny speaks on explicit invitations and research turns' }, () => {
+  const session = researcherSessionConfig({ voice: 'marin', instructions: 'Present the supplied findings.' })
+  assert({
+    given: 'a researcher presentation session',
+    should: 'use a separate voice with no automatic listening, tools, or tracing',
+    actual: {
+      type: session.type,
+      model: session.model,
+      instructions: session.instructions,
+      modalities: session.output_modalities,
+      audio: session.audio,
+      tools: session.tools,
+      toolChoice: session.tool_choice,
+      tracing: session.tracing,
+    },
+    expected: {
+      type: 'realtime',
+      model: 'gpt-realtime-2.1',
+      instructions: 'Present the supplied findings.',
+      modalities: ['audio'],
+      audio: { input: { turn_detection: null }, output: { voice: 'marin' } },
+      tools: [],
+      toolChoice: 'none',
+      tracing: null,
+    },
+  })
+  assert({
+    given: 'a valid voice preference or an invalid/missing value',
+    should: 'honor valid preferences and fall back to Sunny’s default voice',
+    actual: [
+      DEFAULT_RESEARCHER_NAME,
+      DEFAULT_RESEARCHER_VOICE,
+      ...['sage', 'unknown', ''].map(preferredResearcherVoice),
+    ],
+    expected: ['Sunny', 'marin', 'sage', 'marin', 'marin'],
+  })
 })
 
 test({ name: 'voice session config - the groups cover every voice once, and an audition only speaks' }, () => {
@@ -107,12 +159,13 @@ test({ name: 'voice session config - the prompts render with the clocks and a gr
   const prompts = await renderVoicePrompts(CLOCK, () => 0)
   assert({
     given: 'the session-start clocks',
-    should: 'stamp both prompts with them',
+    should: 'stamp the host, engine, and research presenter prompts with them',
     actual: [
       prompts.instructions.includes('2026-01-27 09:30 (Europe/London)'),
       prompts.askPrompt.includes('2026-01-27 09:30 (Europe/London)'),
+      prompts.researcherInstructions.includes('2026-01-27 09:30 (Europe/London)'),
     ],
-    expected: [true, true],
+    expected: [true, true, true],
   })
   assert({
     given: 'a fixed draw',
@@ -125,6 +178,43 @@ test({ name: 'voice session config - the prompts render with the clocks and a gr
     should: 'render no calendar section',
     actual: prompts.instructions.includes("## Today's calendar"),
     expected: false,
+  })
+  assert({
+    given: 'no initial notebook context from the host',
+    should: 'omit its heading in all three prompts and resolve all template expressions',
+    actual: [prompts.instructions, prompts.askPrompt, prompts.researcherInstructions].map((prompt) => ({
+      hasContextHeading: prompt.includes('## Initial notebook context'),
+      hasTemplateExpression: prompt.includes('{{'),
+    })),
+    expected: [
+      { hasContextHeading: false, hasTemplateExpression: false },
+      { hasContextHeading: false, hasTemplateExpression: false },
+      { hasContextHeading: false, hasTemplateExpression: false },
+    ],
+  })
+})
+
+test({ name: 'voice session config - host and researcher receive the same initial notebook evidence' }, async () => {
+  const notebookContext = [
+    'Snapshot captured: 2026-01-27 09:30 (Europe/London).',
+    '',
+    '## Preferences — about/preferences.md — undated',
+    'Jane Doe prefers direct recommendations & a brief explanation.',
+    '',
+    '## Goals — goals.md — 2026-01-26',
+    'Ship Atlas <beta> after the review.',
+    '',
+    'Recent summaries were unavailable; this does not establish that there was no recent activity.',
+  ].join('\n')
+  const prompts = await renderVoicePrompts({ ...CLOCK, notebookContext }, () => 0)
+
+  assert({
+    given: 'dated source evidence, special characters, and a collection limitation from the host',
+    should: 'preserve the whole block under its heading in all three prompts',
+    actual: [prompts.instructions, prompts.askPrompt, prompts.researcherInstructions].map((prompt) =>
+      prompt.includes(`## Initial notebook context\n\n${notebookContext}\n`),
+    ),
+    expected: [true, true, true],
   })
 })
 
@@ -139,8 +229,102 @@ test(
       actual: [
         prompts.instructions.includes(`## Today's calendar\n\n${calendar}\n`),
         prompts.askPrompt.includes(calendar),
+        prompts.researcherInstructions.includes(calendar),
       ],
-      expected: [true, false],
+      expected: [true, false, false],
+    })
+  },
+)
+
+test(
+  { name: 'voice session config - only dual voice hosts receive Sunny and the browser notebook tools' },
+  async () => {
+    const calendar = 'No meetings on the calendar for 2026-01-27.'
+    const single = await renderVoicePrompts({ ...CLOCK, calendar }, () => 0)
+    const dual = await renderVoicePrompts({ ...CLOCK, calendar, dualVoice: true }, () => 0)
+    const toolNames = [
+      'ask_notebook',
+      'lookup_notebook',
+      'research_notebook',
+      'lookup_web',
+      'search_email',
+      'research_web',
+      'resume_research',
+      'invite_sunny',
+      'Sunny',
+    ]
+    assert({
+      given: 'the default single voice host, including its calendar instructions',
+      should: 'keep its existing research tool and avoid claiming the browser-only capabilities',
+      actual: toolNames.map((name) => single.instructions.includes(name)),
+      expected: [true, false, false, false, false, false, false, false, false],
+    })
+    assert({
+      given: 'an explicitly enabled dual voice host',
+      should: 'describe direct conversation, notebook and web lookup/research, and saved-report resumption with Sunny',
+      actual: toolNames.map((name) => dual.instructions.includes(name)),
+      expected: [false, true, true, true, true, true, true, true, true],
+    })
+    assert({
+      given: 'the same single and dual voice sessions',
+      should: 'describe public web evidence tools only for the browser research engine',
+      actual: [single, dual].map((prompts) => prompts.askPrompt.includes('read_web_page')),
+      expected: [false, true],
+    })
+    assert({
+      given: 'either host mode',
+      should: 'resolve the conditional template and still produce the researcher presentation instructions',
+      actual: [single, dual].map((prompts) => ({
+        unresolved: prompts.instructions.includes('{{'),
+        researcher: prompts.researcherInstructions.startsWith('You are Sunny'),
+      })),
+      expected: [
+        { unresolved: false, researcher: true },
+        { unresolved: false, researcher: true },
+      ],
+    })
+  },
+)
+
+test(
+  { name: 'voice session config - inviting Sunny requires a conversational request rather than research parameters' },
+  () => {
+    const session = voiceSessionConfig({
+      model: 'gpt-realtime-2.1',
+      voice: 'ash',
+      instructions: 'Let Sunny answer when invited.',
+      tools: [INVITE_SUNNY_TOOL],
+      manualTurns: true,
+    })
+    const invite = session.tools?.find((tool) => tool.type === 'function' && tool.name === 'invite_sunny')
+    const parameters = (invite?.type === 'function' ? invite.parameters : undefined) as
+      | {
+          properties?: Record<string, Record<string, unknown>>
+          required?: unknown
+          additionalProperties?: unknown
+        }
+      | undefined
+    const request = parameters?.properties?.request
+    assert({
+      given: 'the browser host offers a direct speaking invitation',
+      should: 'expose one bounded conversational request without requiring a research question or topic',
+      actual:
+        invite?.type === 'function'
+          ? {
+              name: invite.name,
+              required: parameters?.required,
+              fields: Object.keys((parameters?.properties ?? {}) as Record<string, unknown>),
+              request: { type: request?.type, minLength: request?.minLength, maxLength: request?.maxLength },
+              additionalProperties: parameters?.additionalProperties,
+            }
+          : undefined,
+      expected: {
+        name: 'invite_sunny',
+        required: ['request'],
+        fields: ['request'],
+        request: { type: 'string', minLength: 1, maxLength: 12_000 },
+        additionalProperties: false,
+      },
     })
   },
 )
