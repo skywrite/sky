@@ -34,6 +34,7 @@ import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog
 import ChatDocument, { type ChatParent, firstWordsSummary } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
+import type { ChatRecovery } from './recovery.ts'
 
 /** Snapshots older than this are nobody's lost session anymore. */
 const MAX_AGE_DAYS = 30
@@ -110,6 +111,8 @@ export interface ChatAutosaveInput {
   approvals?: readonly string[]
   /** The chat this one branched from, recorded so the snapshot reads back as a branch */
   parent?: ChatParent | null
+  /** Runtime state needed to continue an active session after a restart. */
+  recovery?: ChatRecovery
 }
 
 /**
@@ -140,6 +143,7 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     approvals: [...new Set([...(input.resume?.approvals ?? []), ...(input.approvals ?? [])])],
     parent: input.parent ?? input.resume?.parent ?? null,
   })
+  if (input.recovery) doc.yaml['recovery'] = input.recovery
   const markdown = doc.toMarkdown() + serializeContextLog(input.contextLog)
 
   // Atomic replace: a crash mid-write must never leave a truncated snapshot.

@@ -234,9 +234,8 @@ export function BudgetControl({ chat }: { chat: Chat }) {
 /**
  * Whether the chat is kept. Saves to today files the transcript under the
  * day's chats when the thread is closed, with what sky learned from it;
- * Not saved keeps nothing — no transcript, no day entry, no crash copy —
- * and the thread is gone when it is closed or when sky restarts. Set before
- * the first message it is an incognito chat; it can change until the close.
+ * Not saved skips filing and learning from the chat. Both settings keep a
+ * temporary recovery copy until the thread is explicitly closed.
  */
 export function SavesControl({ chat }: { chat: Chat }) {
   const { state, setSaves } = chat
@@ -274,7 +273,7 @@ export function SavesControl({ chat }: { chat: Chat }) {
         <p className="sky-ctl-note">
           {saves
             ? 'Filed under today’s chats when you close it, with what sky learned from it.'
-            : 'Nothing is kept: no transcript, no day entry, no crash copy. Gone when you close it or when sky restarts.'}
+            : 'No filed transcript, day entry, or memories. Recovers after a restart; Discard removes its temporary recovery copy.'}
         </p>
         <div className="sky-ctl-foot">Applies now.</div>
       </Popover.Dropdown>

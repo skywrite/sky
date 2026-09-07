@@ -45,3 +45,43 @@ test({ name: "interrupted - a conversation ending on the person's message sets t
     ],
   })
 })
+
+test('interrupted - the pending message leaves model history while earlier tool results remain', async () => {
+  const cut = state([
+    { role: 'user', content: 'Read the brief.' },
+    { role: 'assistant', content: 'Read it.' },
+    { role: 'user', content: 'Continue the plan.' },
+  ])
+  cut.modelMessages = [
+    { role: 'user', content: 'Read the brief.' },
+    { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'read', toolName: 'read_file', input: {} }] },
+    {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'read',
+          toolName: 'read_file',
+          output: { type: 'text', value: 'The budget is 42 credits.' },
+        },
+      ],
+    },
+    { role: 'assistant', content: 'Read it.' },
+    { role: 'user', content: 'Continue the plan.' },
+  ]
+  const restored = interruptedOf(cut)
+  assert({
+    given: 'an interrupted snapshot with a complete tool exchange before the pending user message',
+    should: 'remove only the pending message from both histories and preserve every earlier model message',
+    actual: {
+      conversation: restored.state.conversation,
+      messages: restored.state.modelMessages,
+      interrupted: restored.interrupted,
+    },
+    expected: {
+      conversation: cut.conversation.slice(0, -1),
+      messages: cut.modelMessages.slice(0, -1),
+      interrupted: { message: 'Continue the plan.', when: null },
+    },
+  })
+})

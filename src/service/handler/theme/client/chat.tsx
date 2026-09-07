@@ -692,6 +692,7 @@ export function useChat(id: string) {
         profile: state.settings.model.current,
         contextTokens: state.settings.contextTokens,
         saves: state.settings.saves,
+        continuing: state.turns.length > 0,
       })
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.

@@ -49,6 +49,7 @@ import type {
   ChatSessionFactory,
   ChatSettingsHost,
   ModelChoice,
+  ThreadPrefs,
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
@@ -353,7 +354,36 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         const { state, interrupted } = interruptedOf(loaded.state)
         if (state.conversation.length > 0 || interrupted) {
           const { approvals, parent } = loaded
-          restores.push({ id: ref.session, startTime: ref.startTime, state, approvals, parent, interrupted })
+          const recovery = loaded.recovery
+          const host = recovery?.host
+          const budget =
+            recovery?.contextTokens ??
+            state.contextLog.findLast((entry) => entry.stats?.budget !== undefined)?.stats?.budget
+          const priorModel = state.contextLog.findLast((entry) => entry.model)?.model
+          const profile =
+            typeof host?.profile === 'string'
+              ? host.profile
+              : Object.entries(getAllProfiles()).find(([, candidate]) => candidate.model === priorModel)?.[0]
+          const prefs: ThreadPrefs = {
+            saves: typeof host?.saves === 'boolean' ? host.saves : true,
+            ...(profile ? { profile } : {}),
+            ...(budget !== undefined ? { contextTokens: budget } : {}),
+          }
+          const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
+          restores.push({
+            id: ref.session,
+            startTime: ref.startTime,
+            state,
+            approvals,
+            parent,
+            interrupted,
+            prefs,
+            title: typeof host?.title === 'string' ? host.title : null,
+            parentId: typeof host?.parentId === 'string' ? host.parentId : null,
+            ...(saved
+              ? { resume: { ...saved.resume, state, rel: loaded.rel, attachments: loaded.attachments, approvals } }
+              : {}),
+          })
         }
       } catch {
         // An unreadable snapshot stays for the sweep; it must not stop the others.

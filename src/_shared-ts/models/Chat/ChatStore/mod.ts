@@ -18,6 +18,7 @@ import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { inheritedMessages, joinLineage, prefixOf } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent } from '../document/mod.ts'
 import { reconstructResumeState, type ResumeState } from '../document/resume.ts'
+import { readChatRecovery, type ChatRecovery } from './recovery.ts'
 
 /** One saved transcript as a listing row — no body, no formatting. */
 export interface SavedChatRef {
@@ -35,6 +36,8 @@ export interface SavedChatRef {
 
 /** Everything the save path needs to write a resumed chat back to its file. */
 export interface ResumeSession {
+  /** Present only when loading a recovery snapshot. */
+  recovery?: ChatRecovery
   filePath: string
   /** The transcript's own created date; null when it has none — the caller stamps it */
   created: string | null
@@ -124,6 +127,8 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
   const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
   const created = doc.yaml['created']
   const own = reconstructResumeState(doc)
+  const recovery = options.snapshot ? readChatRecovery(doc.yaml['recovery']) : undefined
+  if (recovery?.modelMessages) own.modelMessages = recovery.modelMessages
   const parent = doc.parent
 
   let state = own
@@ -146,6 +151,7 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
   }
 
   return {
+    ...(recovery ? { recovery } : {}),
     filePath,
     created: created === undefined || created === null ? null : String(created),
     summary: doc.summary,

@@ -219,6 +219,10 @@ export default class ChatSession {
   private seeded = false
   private toolsAnnounced = false
   private newMessages = false
+  private started = false
+  private snapshotWrite: Promise<void> = Promise.resolve()
+  /** The host's settings and identity, recorded with every recovery snapshot. */
+  snapshotHostState?: () => Record<string, unknown>
 
   constructor(opts: ChatSessionOptions) {
     this.opts = opts
@@ -229,6 +233,10 @@ export default class ChatSession {
     // next message.
     const seed = this.seed
     if (seed) this.turns.push(...seed.conversation)
+    // A recovered continuation may contain replies not yet filed in its original transcript.
+    if (opts.resume)
+      this.newMessages =
+        JSON.stringify(this.turns.slice(opts.resume.inherited)) !== JSON.stringify(opts.resume.own.conversation)
     this.now = opts.now ?? (async () => (await fetchNow()).plainDateTime)
     this.logError = opts.logError ?? logAIError
     this.context = new ChatContext({
@@ -253,6 +261,7 @@ export default class ChatSession {
       onEvent: (event) => this.emit(event),
       invokeModel: opts.invokeModel,
     })
+    if (seed) this.engine.seedConversation(seed.conversation, seed.modelMessages)
   }
 
   /** Absolute paths of the documents in the context universe. */
@@ -262,7 +271,7 @@ export default class ChatSession {
 
   /** The per-turn context log so far — what the context did each turn, as the transcript will record it. */
   get contextLog(): ContextTurnLog[] {
-    return this.context.log
+    return this.started ? this.context.log : (this.seed?.contextLog ?? this.context.log)
   }
 
   /** How many documents the model actually saw last turn — what "in context" means to a host. Null before any turn. */
@@ -341,7 +350,7 @@ export default class ChatSession {
       universePaths: [],
       queries: [],
       lastTurn: 0,
-      contextLog: [...this.context.log],
+      contextLog: [...this.contextLog],
     }
     return prefixOf(whole, turn ?? Math.floor(this.turns.length / 2))
   }
@@ -366,7 +375,6 @@ export default class ChatSession {
    */
   async start(): Promise<StartReport> {
     const seed = this.seed
-    if (seed) this.engine.seedConversation(seed.conversation)
 
     const prompt = this.opts.systemPrompt()
     if (seed && seed.contextLog.length > 0) {
@@ -374,6 +382,7 @@ export default class ChatSession {
       this.systemPrompt = rendered
       this.firstTurnPending = false
       this.seeded = true
+      this.started = true
       this.contextPrompt = buildContextPrompt(this.opts.ambient, restored.rebuild.activityMarkdown)
       return { restored }
     }
@@ -383,12 +392,14 @@ export default class ChatSession {
       // the model would read an empty activity block as an empty life.
       this.systemPrompt = await prompt
       this.contextPrompt = buildContextPrompt(this.opts.ambient, CLOSED_ACTIVITY)
+      this.started = true
       return { closed: true }
     }
 
     const [seeded, rendered] = await Promise.all([this.context.seedBaseline(), prompt])
     this.systemPrompt = rendered
     this.seeded = true
+    this.started = true
     return { seeded }
   }
 
@@ -624,7 +635,7 @@ export default class ChatSession {
   private async save(opts: EndOptions): Promise<SaveChatReport> {
     return saveChat({
       turns: this.turns,
-      contextLog: this.context.log,
+      contextLog: this.contextLog,
       resume: this.resumeSession,
       parent: this.opts.parent ?? null,
       inherited: this.inherited,
@@ -654,12 +665,20 @@ export default class ChatSession {
    * a crash may lose. Must never break the conversation: failures are
    * reported and logged, then the turn is over.
    */
-  private async snapshot(): Promise<void> {
+  snapshot(): Promise<void> {
+    this.snapshotWrite = this.snapshotWrite.then(
+      () => this.writeSnapshot(),
+      () => this.writeSnapshot(),
+    )
+    return this.snapshotWrite
+  }
+
+  private async writeSnapshot(): Promise<void> {
     if (!this.opts.autosavePath || this.turns.length === 0) return
     try {
       await writeChatAutosave(this.opts.autosavePath, {
         turns: this.turns,
-        contextLog: this.context.log,
+        contextLog: this.contextLog,
         resume: this.resumeSession,
         parent: this.parent,
         startTime: this.opts.startTime,
@@ -668,6 +687,12 @@ export default class ChatSession {
         externalFiles: this.externalFiles,
         attachments: [...this.attachments.values()],
         approvals: this.opts.approvals?.(),
+        recovery: {
+          version: 1,
+          modelMessages: this.engine.snapshotMessages(),
+          contextTokens: this.contextTokens,
+          host: this.snapshotHostState?.(),
+        },
       })
     } catch (err) {
       const message = (err as Error).message
@@ -678,13 +703,13 @@ export default class ChatSession {
 
   /**
    * Whether the crash snapshot is also written as each turn begins, so a
-   * host that keeps the conversation gets it back knowing what it was asked
-   * if the service dies before the reply. A host that keeps nothing of the
-   * thread leaves this off: that snapshot would be a copy at rest.
+   * host gets it back knowing what it was asked if the service dies before
+   * the reply. Independent of whether ending the session files a transcript.
    */
   snapshotOnSend = false
 
   private async clearSnapshot(): Promise<void> {
+    await this.snapshotWrite
     if (this.opts.autosavePath) await clearChatAutosave(this.opts.autosavePath)
   }
 

@@ -628,3 +628,51 @@ test('ChatSession - each turn logs the model that answered it', async () => {
     ],
   })
 })
+
+test('ChatSession - closing a recovered saved chat files replies made before the restart', async () => {
+  const original = await makeSession({ contextTokens: 0 })
+  await original.session.start()
+  await original.session.send('Plan the demo.')
+  const filed = await original.session.end({
+    save: true,
+    autoTag: false,
+    autoRel: false,
+    memoryDir: null,
+    people: false,
+    enricher: stubEnricher,
+  })
+  const resume = await loadResumeSession(filed!.path)
+  const active = await makeSession({ contextTokens: 0, resume })
+  await active.session.start()
+  await active.session.send('Add a pricing page.')
+  const copy = await loadResumeSession(path.join(active.tmp, 'autosave.md'), { snapshot: true })
+  const restored = await makeSession({ contextTokens: 0, resume: { ...resume, state: copy.state } })
+  // No start() or new message: Save & close must retain the recovered additions.
+  const saved = await restored.session.end({
+    save: true,
+    autoTag: false,
+    autoRel: false,
+    memoryDir: null,
+    people: false,
+    enricher: stubEnricher,
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(filed!.path))
+  assert({
+    given: 'a saved chat continued, snapshotted, restarted, and closed without sending another message',
+    should: 'write its recovered replies and context log to the same file without runtime recovery metadata',
+    actual: {
+      path: saved?.path,
+      aborted: Boolean(saved?.aborted),
+      turns: doc.conversation,
+      log: doc.contextLog.length,
+      recovery: doc.yaml['recovery'],
+    },
+    expected: {
+      path: filed!.path,
+      aborted: false,
+      turns: copy.state.conversation,
+      log: copy.state.contextLog.length,
+      recovery: undefined,
+    },
+  })
+})

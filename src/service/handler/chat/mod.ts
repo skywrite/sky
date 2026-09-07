@@ -20,7 +20,6 @@ import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
-import { clearChatAutosave } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
@@ -41,7 +40,7 @@ export interface ThreadPrefs {
   profile?: string
   /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens?: number
-  /** Whether ending files the thread. False is incognito: no transcript, no day entry, no crash copy at rest */
+  /** Whether ending files the thread. Active threads always keep a temporary recovery snapshot. */
   saves?: boolean
 }
 
@@ -109,6 +108,8 @@ export interface ToolRun {
  */
 export interface ThreadRestore {
   id: string
+  prefs?: ThreadPrefs
+  title?: string | null
   /** When the thread started; absent, it starts now — a fresh branch does */
   startTime?: PlainDateTime
   /** The conversation and context the thread begins with */
@@ -201,8 +202,7 @@ export interface ChatSettingsHost {
 export interface ChatRoutesOptions {
   createSession: ChatSessionFactory
   /**
-   * Where a thread's crash copy lives. A thread that does not save has it
-   * removed as each turn ends, so nothing of the thread rests on disk.
+   * Where a thread's temporary recovery snapshot lives.
    */
   snapshotPath?: (id: string, startTime: PlainDateTime) => string
   /**
@@ -305,7 +305,7 @@ interface Thread {
   runs: ToolRun[]
   /** The query set currently being gathered, before its context log entry exists. */
   liveQueries: { turn: number; queries: string[] } | null
-  /** Whether ending files the thread; a false one keeps no crash copy at rest */
+  /** Whether ending files the thread; both choices retain recovery while active. */
   saves: boolean
   /** Each reply's token counts and the profile that answered, by the reply's turn index */
   usage: Map<number, TokenUsage & { model: string }>
@@ -541,7 +541,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (existing) return Promise.resolve(existing)
     let building = opening.get(id)
     if (!building) {
-      const prefs = pending.get(id) ?? {}
+      const prefs = pending.get(id) ?? restore?.prefs ?? {}
       // A tool call held for the person: the card goes down the stream (and
       // waits on the thread for a page that opens later); the answer route
       // resolves it. The turn waits meanwhile.
@@ -599,7 +599,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           const thread: Thread = {
             session,
             // A continued chat goes by its saved title from the start.
-            title: restore?.resume?.summary || null,
+            title: restore?.title ?? (restore?.resume?.summary || null),
             parent: restore?.parent
               ? {
                   ...restore.parent,
@@ -644,6 +644,14 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             }
           }
           threads.set(id, thread)
+          session.snapshotOnSend = true
+          session.snapshotHostState = () => ({
+            saves: thread.saves,
+            profile: thread.profile,
+            title: thread.title,
+            parentId: thread.parent?.id ?? null,
+            saved: savedOf(thread, baseDir),
+          })
           pending.delete(id)
           return thread
         })
@@ -651,6 +659,15 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       opening.set(id, building)
     }
     return building
+  }
+
+  const snapshotThread = async (thread: Thread) => {
+    const release = hold('chat recovery')
+    try {
+      await thread.session.snapshot()
+    } finally {
+      release()
+    }
   }
 
   // The first exchange names the thread, once, off the turn's critical path:
@@ -664,12 +681,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!options.title || thread.title !== null || thread.session.turns.length < from + 2) return
     void options
       .title(thread.session.turns.slice(from, from + 2))
-      .then((named) => {
+      .then(async (named) => {
         const title = named?.trim()
         if (!title || threads.get(id) !== thread || thread.title !== null) return
         thread.title = title
         thread.updatedAt = ++tick
         thread.sink?.({ type: 'title', title })
+        if (!thread.busy) await snapshotThread(thread)
       })
       .catch(() => {})
   }
@@ -722,13 +740,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
   }
 
-  // A thread that is not kept leaves no copy at rest: the session writes
-  // its crash copy as a turn ends, and the routes remove it right after.
-  const dropSnapshot = async (id: string, thread: Thread) => {
-    const at = options.snapshotPath?.(id, thread.session.startTime)
-    if (at) await clearChatAutosave(at)
-  }
-
   // A pin, a drop, or a new budget reassembles between turns without a log
   // entry, so the latest assembly answers before the log does.
   const keptOf = (thread: Thread): number | null => thread.context?.stats?.kept ?? thread.session.kept
@@ -740,6 +751,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       profile?: unknown
       contextTokens?: unknown
       saves?: unknown
+      continuing?: unknown
     } | null
     const message = typeof body?.message === 'string' ? body.message.trim() : ''
     if (!message) return c.json({ message: 'message is required' }, 400)
@@ -755,6 +767,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
     }
     if (typeof body.saves !== 'boolean') return c.json({ message: 'saves must be true or false' }, 400)
+    if (body.continuing !== undefined && typeof body.continuing !== 'boolean')
+      return c.json({ message: 'continuing must be true or false' }, 400)
     const host = options.settings
     if (!host) return c.json({ message: 'this host has no settings' }, 400)
     let chosen: ReturnType<ChatSettingsHost['resolve']>
@@ -780,18 +794,23 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       thread = await timing.run(async () => {
         await restored
         await opening.get(id)
+        if (body.continuing === true && !threads.has(id)) return undefined
         if (!threads.has(id)) pending.set(id, prefs)
         return open(id)
       })
+      if (!thread) {
+        release()
+        timing.finish('error')
+        return c.json(
+          { message: 'This chat could not be restored. Keep this page open so its earlier messages remain available.' },
+          409,
+        )
+      }
       thread.busy = true
       thread.session.setModel(chosen.model, chosen.profile)
       thread.profile = prefs.profile
       if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
       thread.saves = prefs.saves
-      // A kept thread's snapshot holds each message before its reply, so a
-      // restart mid-turn leaves a thread that knows what it was asked.
-      thread.session.snapshotOnSend = prefs.saves
-      if (!thread.saves) await dropSnapshot(id, thread)
       options.onMessage?.(id, message)
     } catch (error) {
       if (thread) thread.busy = false
@@ -840,7 +859,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
           if (turn.timing && !turn.error) thread.timings.set(thread.session.turns.length - 1, timingLine(turn.timing))
           clearInterval(beat)
-          if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
           for (const run of thread.runs) {
             if (run.status !== null) continue
@@ -1022,14 +1040,15 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     return c.json({ id: branchId, parent }, 201)
   })
 
-  app.get('/:id/settings', (c) => {
+  app.get('/:id/settings', async (c) => {
+    await restored
     const settings = settingsOf(c.req.param('id'))
     return settings ? c.json(settings) : c.json({ message: 'this host has no settings' }, 404)
   })
 
   // Tune a thread: the model it thinks with, the reading budget, whether it
   // is kept. A live thread changes between turns — a new budget reassembles
-  // its context at once, keeping turned off removes its crash copy at once;
+  // its context at once. Filing preferences never disable restart recovery;
   // a thread not yet built keeps the choice for when it is. A budget of
   // zero keeps the notebook closed: nothing read, nothing queried, until a
   // budget opens it again.
@@ -1084,9 +1103,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       if (budgetChanges) thread.session.setContextTokens(budget)
       if (typeof saves === 'boolean') {
         thread.saves = saves
-        thread.session.snapshotOnSend = saves
-        if (!saves) await dropSnapshot(id, thread)
       }
+      await snapshotThread(thread)
       thread.updatedAt = ++tick
     } else {
       const prefs = held ?? {}

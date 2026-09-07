@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -14,8 +14,8 @@ first context load, and is saved on each turn through the
 
 ## What is built
 
-A thread is a ChatSession kept in memory for the life of the service. A
-message is a POST whose response is the turn's event stream; the page
+A thread is a ChatSession backed by a temporary recovery snapshot throughout
+its active life, including when it will not be filed. A message is a POST whose response is the turn's event stream; the page
 renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
@@ -83,9 +83,13 @@ a person can see and touch:
   reads its own snapshots back — a thread id in the name, never a
   terminal's pid — and every one becomes a thread again: in the day's list
   and the rail with its turns on the page at once, its context restored at
-  its next message, filed under the day it started when it is ended. Only
-  ending a thread removes its snapshot; a stop mid-turn loses that turn
-  and nothing before it.
+  its next message, and the same model, reading budget, and filing preference.
+  Recovery includes the full model history with tool calls and results; a
+  continued saved chat keeps its file identity. Only ending a thread removes
+  its snapshot. A stop mid-turn preserves the unanswered message and all
+  completed turns. A browser continuation whose thread cannot be restored
+  is refused before a new session can silently replace it. See
+  [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
 - **A new chat from here.** Every reply offers it. The branch is a thread
   that keeps the turns through that reply and goes its own way after them;
   on its page the inherited turns read dimmed, then a line says where it
@@ -169,9 +173,9 @@ a person can see and touch:
   that asked first is recorded before it runs, and the run that follows
   takes that record over. The chip shows it after the name: `web search ·
   atlas roadmap reviews`. Two searches in one step are two chips.
-- **The message a restart took.** A kept thread's snapshot is written as
-  each turn begins as well as when it ends (the session's `snapshotOnSend`,
-  set by the routes with the thread's keep setting), so a service that
+- **The message a restart took.** Every active thread's snapshot is written
+  as each turn begins as well as when it ends (the session's
+  `snapshotOnSend`, always enabled by the web host), so a service that
   dies answering comes back knowing what it was asked. On restore a
   snapshot ending on the person's message has that message set apart
   (`interrupted.ts`): the thread lists as failed with "sky restarted while
@@ -205,17 +209,17 @@ a person can see and touch:
   prints its usage line after each reply. Every model call also lands in
   the usage log, under the command making it; `sky ai:usage` rolls the day up
   ([2026-09-05](../../../_shared-ts/ai/docs/2026-09-05-usage-meter.md)).
-- **Whether the thread is kept.** `Saves to today ▾` sits with the model and
-  the budget, two stops: saves to today, or not saved. Set before the first
-  message it is an incognito chat; it can change until the close. The
-  setting rides the settings routes as `saves`; the end route follows it
-  unless the caller says `save` outright. A thread that is not kept leaves
-  no crash copy at rest — the routes remove the session's snapshot as each
-  turn ends and the moment the setting turns off (`snapshotPath` on the
-  host names it) — so it does not come back after a restart. Its end
-  button reads Discard, the list marks it "not saved", and its end writes
-  nothing: no transcript, no day entry, no memory or person facts
-  ([2026-09-03](2026-09-03-a-chat-you-do-not-keep.md)).
+- **Whether the thread is filed.** `Saves to today ▾` sits with the model and
+  the budget, with two stops: saves to today, or not saved. The preference
+  controls the final archive and save-time learning, and can change until
+  close. Both choices keep temporary recovery snapshots during the active
+  conversation. The settings routes carry `saves`; changing it updates the
+  snapshot immediately, and restoration keeps that choice. For Not saved,
+  the end button reads Discard, the list marks it "not saved", and ending
+  removes recovery without a transcript, day entry, memory, or person facts.
+  Discard is the explicit end of an active conversation; a server restart
+  is not. See [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
+
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
 gathered (the deduplicated universe, never the raw sweep sizes); a grown entry lists the documents its queries added (cut ones
@@ -260,11 +264,20 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   log's tool records stay the saved trail.
 - A run keeps its newest 400 lines; a mission narrates for an hour and
   the end of the story matters more than its middle.
-- Not saved is about what stays behind, never about what the thread may
-  read or do. The session writes its crash copy as every turn ends; the
-  routes, not the session, decide it does not stay.
+- Not saved is about what stays behind after Discard, never about what
+  the thread may read or do, or whether an active conversation survives
+  a restart. Snapshot writes are serialized; close waits for them before
+  removing the copy.
 
 ## Verified
+
+- 2026-09-07 — fresh route instances restore from real disk snapshots under
+  both filing settings, including exact model history with tool results and
+  provider metadata, conversation, notebook universe, model, and budget.
+  Changing settings on a restored thread before its first message preserves
+  its history through another restart. Discard removes the snapshot and
+  leaves no filed transcript. Missing browser continuations are refused;
+  interrupted snapshots remove only the pending message from model history.
 
 - 2026-09-06 — saved branches on the parent: after a branch files itself
   beside its parent, the parent thread's body lists it with the turn it
@@ -298,7 +311,8 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   small-window model has its budget lowered and its context reassembled
   within it. Shared helper tests: the stops, the nearest stop, the cap
   behind a window (131,072 → 79,257) and the fit.
-- 2026-09-03 — not saved: a thread set not to save before its first message
+- 2026-09-03 — historical Not saved behavior, superseded by the
+  2026-09-07 recovery rule: a thread set not to save before its first message
   answers the setting, keeps no crash copy after its turn while a saving
   thread beside it does, is listed as not saved, and ends with nothing
   saved and the thread gone; a saving thread turned off loses its copy at

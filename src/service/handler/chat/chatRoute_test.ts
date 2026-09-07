@@ -1,15 +1,17 @@
 import { existsSync } from 'node:fs'
 import { readFile, readdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
-import { generateText, jsonSchema } from 'ai'
+import { generateText, jsonSchema, type ModelMessage } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { withCommandRun } from '#commands/lib/core/commandLog.ts'
+import * as config from '#config'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
+import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import type { SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
@@ -21,6 +23,7 @@ import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import { approvalCard } from './approvalCard.ts'
+import { createChatHost } from './createSession.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -125,9 +128,12 @@ async function testHost(
     decisions?: Array<{ approved: boolean; always?: boolean }>
     /** Another catalog behind the settings routes */
     settings?: ChatSettingsHost
+    canonicalSnapshots?: boolean
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
+  const snapshotPath = (id: string, start: PlainDateTime) =>
+    path.join(tmp, over.canonicalSnapshots ? chatAutosaveFilename(start, id) : `${id}.autosave.md`)
   const createSession: ChatSessionFactory = (id, onEvent, prefs, ask, restore) =>
     Promise.resolve(
       (over.capture?.(onEvent),
@@ -156,7 +162,7 @@ async function testHost(
           over.decisions?.push(decision)
           return decision
         },
-        autosavePath: path.join(tmp, `${id}.autosave.md`),
+        autosavePath: snapshotPath(id, restore?.startTime ?? START),
         onEvent,
         invokeModel: over.invokeModel ?? streamingModel(['Focus on ', 'the demo.']),
         fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
@@ -166,7 +172,7 @@ async function testHost(
     )
   return {
     createSession,
-    snapshotPath: (id: string) => path.join(tmp, `${id}.autosave.md`),
+    snapshotPath,
     settings: over.settings ?? settingsHost,
     endDefaults: { enricher: stubEnricher },
     timeDir: tmp,
@@ -619,38 +625,35 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
   })
 })
 
-test(
-  { name: 'chat route - a thread that will not be kept leaves no crash copy and is dropped at its end' },
-  async () => {
-    const host = await testHost()
-    const app = appWith(host)
-    const copy = (id: string) => existsSync(path.join(host.tmp, `${id}.autosave.md`))
+test({ name: 'chat route - an unfiled thread keeps recovery until explicitly discarded' }, async () => {
+  const host = await testHost()
+  const app = appWith(host)
+  const copy = (id: string) => existsSync(path.join(host.tmp, `${id}.autosave.md`))
 
-    await post(app, 'http://localhost/chat/t8/settings', { saves: false })
-    const before = await getJson(app, 'http://localhost/chat/t8/settings')
-    await (await send(app, 'http://localhost/chat/t8/messages', { message: 'What should I focus on?' })).text()
-    await (await send(app, 'http://localhost/chat/t9/messages', { message: 'What should I focus on?' })).text()
-    const list = await getJson(app, 'http://localhost/chat')
-    assert({
-      given: 'a thread set not to save before its first message, beside one that saves',
-      should: 'answer the setting, keep no copy after its turn while the other keeps one, and say so in the list',
-      actual: {
-        saves: before.saves,
-        copies: { t8: copy('t8'), t9: copy('t9') },
-        listed: Object.fromEntries(list.threads.map((t: { id: string; saves: boolean }) => [t.id, t.saves])),
-      },
-      expected: { saves: false, copies: { t8: false, t9: true }, listed: { t8: false, t9: true } },
-    })
+  await post(app, 'http://localhost/chat/t8/settings', { saves: false })
+  const before = await getJson(app, 'http://localhost/chat/t8/settings')
+  await (await send(app, 'http://localhost/chat/t8/messages', { message: 'What should I focus on?' })).text()
+  await (await send(app, 'http://localhost/chat/t9/messages', { message: 'What should I focus on?' })).text()
+  const list = await getJson(app, 'http://localhost/chat')
+  assert({
+    given: 'a thread set not to save before its first message, beside one that saves',
+    should: 'keep recovery for both active threads while preserving their separate filing settings',
+    actual: {
+      saves: before.saves,
+      copies: { t8: copy('t8'), t9: copy('t9') },
+      listed: Object.fromEntries(list.threads.map((t: { id: string; saves: boolean }) => [t.id, t.saves])),
+    },
+    expected: { saves: false, copies: { t8: true, t9: true }, listed: { t8: false, t9: true } },
+  })
 
-    const ended = (await (await post(app, 'http://localhost/chat/t8/end', {})).json()) as { saved: unknown }
-    assert({
-      given: 'ending it with no say either way',
-      should: 'drop it: nothing saved, thread gone',
-      actual: { saved: ended.saved, after: (await app.request('http://localhost/chat/t8')).status },
-      expected: { saved: null, after: 404 },
-    })
-  },
-)
+  const ended = (await (await post(app, 'http://localhost/chat/t8/end', {})).json()) as { saved: unknown }
+  assert({
+    given: 'ending it with no say either way',
+    should: 'drop it: nothing saved, thread gone',
+    actual: { saved: ended.saved, after: (await app.request('http://localhost/chat/t8')).status, copy: copy('t8') },
+    expected: { saved: null, after: 404, copy: false },
+  })
+})
 
 test({ name: 'chat route - keeping can be turned off and on between turns' }, async () => {
   const host = await testHost()
@@ -665,9 +668,9 @@ test({ name: 'chat route - keeping can be turned off and on between turns' }, as
   await (await send(app, 'http://localhost/chat/t10/messages', { message: 'And then?' })).text()
   assert({
     given: 'a saving thread turned off, then on again before its next turn',
-    should: 'have its copy, lose it at once, and write it again with the next turn',
+    should: 'keep its recovery copy through both settings changes and the next turn',
     actual: { kept, dropped, again: copy() },
-    expected: { kept: true, dropped: false, again: true },
+    expected: { kept: true, dropped: true, again: true },
   })
   assert({
     given: 'a setting that is neither true nor false',
@@ -923,8 +926,7 @@ test('chat route - every message applies its own settings before the model runs'
   const settings = await getJson(app, 'http://localhost/chat/request/settings')
   assert({
     given: 'explicit choices on a new thread, then different choices on the live thread',
-    should:
-      'construct and invoke with those choices, snapshot a kept thread before invoking, and remove a discarded one',
+    should: 'construct and invoke with those choices, keeping recovery before invoking under either filing setting',
     actual: {
       createdWith,
       seen,
@@ -936,11 +938,11 @@ test('chat route - every message applies its own settings before the model runs'
       createdWith: [firstPrefs],
       seen: [
         { model: 'test-quick', budget: 5000, snapshot: true },
-        { model: 'test-thinking', budget: 0, snapshot: false },
+        { model: 'test-thinking', budget: 0, snapshot: true },
       ],
       models: ['test-quick', 'test-thinking'],
       final: ['test-thinking', 0, false],
-      snapshot: false,
+      snapshot: true,
     },
   })
 })
@@ -1830,3 +1832,133 @@ test(
     })
   },
 )
+
+for (const saves of [false, true]) {
+  test(`chat route - disk recovery preserves full model history and settings with saves=${saves}`, async () => {
+    const history: ModelMessage[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'read-brief', toolName: 'read_file', input: { path: 'brief.md' } }],
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'read-brief',
+            toolName: 'read_file',
+            output: { type: 'text', value: 'The Atlas launch budget is 42 credits.' },
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'I read the brief.' }],
+        providerOptions: { anthropic: { syntheticMetadata: 'preserved' } },
+      },
+    ]
+    const seen: unknown[][] = []
+    const host = await testHost({
+      canonicalSnapshots: true,
+      initialQuery: '{ markdown { paths } }',
+      invokeModel: async ({ messages, sink }) => {
+        seen.push(structuredClone(messages))
+        const first = seen.length === 1
+        sink.write(first ? 'I read the brief.' : 'The budget is 42 credits.')
+        return {
+          ...EMPTY,
+          responseMessages: first ? history : [{ role: 'assistant', content: 'The budget is 42 credits.' }],
+        }
+      },
+    })
+    const production = createChatHost(
+      { ...config, DIR_STATE_AI_CHATS: host.tmp, DIR_BASE: BASE_DIR, DIR_TIME: path.join(BASE_DIR, 'time') },
+      {},
+    )
+    host.snapshots = production.snapshots
+    const before = appWith(host)
+    const prefs = { profile: 'test-quick', contextTokens: 5000, saves }
+    const url = 'http://localhost/chat/recovery'
+    await (await post(before, `${url}/messages`, { message: 'Read the brief.', ...prefs })).text()
+    const snapshot = host.snapshotPath!('recovery', START)
+    const first = await loadResumeSession(snapshot, { snapshot: true })
+
+    // Two entirely new route instances, with no shared thread/session maps.
+    const after = appWith(host)
+    const restored = await getJson(after, url)
+    const settings = await getJson(after, `${url}/settings`)
+    await (await send(after, `${url}/messages`, { message: 'What was the budget?' })).text()
+    assert({
+      given: 'a fresh server restored exclusively from the prior server’s on-disk snapshot',
+      should: 'restore the conversation, tool result, provider metadata, model, budget, and filing preference',
+      actual: {
+        turns: restored.turns.map((m: { content: string }) => m.content),
+        settings: [settings.model.current, settings.contextTokens, settings.saves],
+        history: seen[1].slice(0, -1),
+        context: (await loadResumeSession(snapshot, { snapshot: true })).state.universePaths,
+      },
+      expected: {
+        turns: ['Read the brief.', 'I read the brief.'],
+        settings: ['test-quick', 5000, saves],
+        history: first.state.modelMessages,
+        context: first.state.universePaths,
+      },
+    })
+    const cold = appWith(host)
+    await getJson(cold, url)
+    // Changing settings before start() must not erase the restored history/log.
+    await post(cold, `${url}/settings`, { contextTokens: 0, saves: false })
+    const again = appWith(host)
+    const latest = await getJson(again, `${url}/settings`)
+    const all = await getJson(again, url)
+    await (await send(again, `${url}/messages`, { message: 'Keep that budget.' })).text()
+    await post(again, `${url}/end`, {})
+    const discarded = appWith(host)
+    assert({
+      given: 'another restart after changing a restored thread’s settings, followed by Discard',
+      should: 'keep every turn through the setting change, then remove recovery without filing anything',
+      actual: {
+        settings: [latest.model.current, latest.contextTokens, latest.saves],
+        turns: all.turns.length,
+        toolResult: JSON.stringify(seen[2]).includes('The Atlas launch budget is 42 credits.'),
+        exists: await exists(snapshot),
+        remaining: (await getJson(discarded, 'http://localhost/chat')).threads.length,
+        files: await readdir(host.tmp),
+      },
+      expected: {
+        settings: ['test-quick', 0, false],
+        turns: 4,
+        toolResult: true,
+        exists: false,
+        remaining: 0,
+        files: [],
+      },
+    })
+    await rm(host.tmp, { recursive: true, force: true })
+  })
+}
+
+test('chat route - a continuation never silently creates an empty replacement thread', async () => {
+  let creates = 0
+  const host = await testHost()
+  const original = host.createSession
+  host.createSession = (...args) => {
+    creates++
+    return original(...args)
+  }
+  const app = appWith(host)
+  const response = await post(app, 'http://localhost/chat/missing/messages', {
+    message: 'Continue the plan.',
+    profile: 'test-quick',
+    contextTokens: 0,
+    saves: false,
+    continuing: true,
+  })
+  assert({
+    given: 'a browser continuing an existing conversation that the server cannot restore',
+    should: 'refuse before constructing an empty session or invoking a model',
+    actual: { status: response.status, creates, threads: (await getJson(app, 'http://localhost/chat')).threads.length },
+    expected: { status: 409, creates: 0, threads: 0 },
+  })
+  await rm(host.tmp, { recursive: true, force: true })
+})

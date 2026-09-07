@@ -23,7 +23,16 @@ export function interruptedOf(state: ResumeState): { state: ResumeState; interru
   const last = state.conversation.at(-1)
   if (last?.role !== 'user') return { state, interrupted: null }
   return {
-    state: { ...state, conversation: state.conversation.slice(0, -1) },
+    state: {
+      ...state,
+      conversation: state.conversation.slice(0, -1),
+      ...(state.modelMessages
+        ? {
+            modelMessages:
+              state.modelMessages.at(-1)?.role === 'user' ? state.modelMessages.slice(0, -1) : state.modelMessages,
+          }
+        : {}),
+    },
     interrupted: { message: last.content, when: last.when ?? null },
   }
 }

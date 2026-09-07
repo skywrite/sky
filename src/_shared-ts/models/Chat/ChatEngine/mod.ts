@@ -287,13 +287,22 @@ export default class ChatEngine {
    * how old the prior exchanges are. Assistant stamps stay file-only —
    * prefixing the model's own past replies would teach it to emit stamps.
    */
-  seedConversation(conversation: ConversationMessage[]): void {
+  seedConversation(conversation: ConversationMessage[], modelMessages?: ModelMessage[]): void {
+    if (modelMessages) {
+      this.messages = structuredClone(modelMessages) as unknown as Message[]
+      return
+    }
     this.messages.push(
       ...conversation.map((m) => ({
         role: m.role,
         content: m.role === 'user' && m.when ? `${timeStampLine(m.when)}\n${m.content}` : m.content,
       })),
     )
+  }
+
+  /** A detached copy of the full history for restart recovery. */
+  snapshotMessages(): ModelMessage[] {
+    return structuredClone(this.messages) as unknown as ModelMessage[]
   }
 
   /**
