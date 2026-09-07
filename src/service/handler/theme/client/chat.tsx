@@ -87,6 +87,8 @@ export interface Run {
   lines: string[]
   /** How it ended; null while it runs */
   status: 'success' | 'fail' | 'error' | null
+  /** Epoch milliseconds when it ended — with `started`, how long it took */
+  finished?: number
   /** One line on what it did, from a small model once it ended — the label it folds under */
   summary?: string
   /** What the call was about — the query, the page, the mission — from the model's record of it */
@@ -206,7 +208,7 @@ type Action =
   | { type: 'tool'; id: string; name: string; subject?: string }
   | { type: 'run-started'; id: string; run: Run }
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
-  | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status'] }
+  | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status']; finished: number }
   | { type: 'run-summary'; id: string; tool: string; at: number; text: string }
   | {
       type: 'finished'
@@ -404,7 +406,10 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     case 'run-finished': {
       const i = state.runs.findLastIndex((r) => r.tool === action.tool && r.at === action.at && r.status === null)
       if (i < 0) return state
-      return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, status: action.status } : r)) }
+      return {
+        ...state,
+        runs: state.runs.map((r, k) => (k === i ? { ...r, status: action.status, finished: action.finished } : r)),
+      }
     }
     case 'run-summary': {
       const i = state.runs.findLastIndex((r) => r.tool === action.tool && r.at === action.at)
@@ -419,7 +424,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         approvals: [],
         contextVersion: state.contextVersion + 1,
         // A run still open when the turn ends never reported its end — the turn did.
-        runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'success' } : r)),
+        runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'success', finished: Date.now() } : r)),
         turns: withReply(state.turns, (r) => ({
           ...r,
           content: action.content,
@@ -791,6 +796,7 @@ export function useChat(id: string) {
                 tool: d.tool as string,
                 at: d.at as number,
                 status: d.status as Run['status'],
+                finished: (d.finished as number | undefined) ?? Date.now(),
               })
               break
             case 'tool-summary':
@@ -1038,9 +1044,10 @@ function elapsedLabel(seconds: number): string {
  * was about once the model's record of it lands; while it runs, the line
  * under the chip is the last thing it said, with the time since it
  * started; a click opens everything it said. Once done the run folds to
- * one line — a caret, the tool's name, and what it did in a small model's
- * words (its last line until that arrives) — and a click on that line
- * unfolds the record of what the tool said.
+ * one line — a caret, the tool's name, how long it took, and what it did
+ * in a small model's words (its last line until that arrives) — and a
+ * click on that line unfolds the record of what the tool said. The time
+ * stays: a wait watched on the counter is not lost the moment it ends.
  */
 function RunView({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
@@ -1050,6 +1057,7 @@ function RunView({ run }: { run: Run }) {
     if (!running) setOpen(false)
   }, [running])
   const seconds = useElapsed(run.started, running)
+  const took = run.finished === undefined ? undefined : Math.max(0, Math.floor((run.finished - run.started) / 1000))
   const count = run.lines.length
   const last = run.lines.at(-1)
   const folded = !running && count > 0
@@ -1067,6 +1075,7 @@ function RunView({ run }: { run: Run }) {
             {open ? '▾' : '▸'}
           </span>
           <span className="sky-tool-fold-name">{titleOf(run.tool)} Output</span>
+          {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
           <span className="sky-tool-fold-summary">{run.summary ?? last}</span>
         </button>
       ) : (

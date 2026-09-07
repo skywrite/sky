@@ -145,8 +145,10 @@ a person can see and touch:
   stream the same three as frames. On the page the running tool's chip
   carries the time since it started and the last thing it said sits
   under it; a click opens everything it said. Once it ends the run folds
-  to one line — a caret, the tool's name, and what it did in a small
-  model's words: as a run ends with more than one line the sink asks
+  to one line — a caret, the tool's name, how long it took (the routes
+  stamp `finished` on the run beside `started`, so the time survives a
+  reload), and what it did in a small model's words: as a run ends with
+  more than one line the sink asks
   `summarizeToolRun` (the fast role, twelve words at most) and the routes
   stream the answer as `tool-summary`, kept on the run as `summary`;
   until it lands, or when none comes, the run's last line stands in, and

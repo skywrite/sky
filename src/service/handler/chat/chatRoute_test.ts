@@ -1277,6 +1277,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
         at: after.runs[0].at,
         lines: after.runs[0].lines.length,
         summary: after.runs[0].summary,
+        took: typeof after.runs[0].finished === 'number' && after.runs[0].finished >= after.runs[0].started,
       },
       turns: after.turns.length,
     },
@@ -1300,7 +1301,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
         ['google_agent', 1, 'Mission started'],
         ['google_agent', 1, 'Applied 3 update(s) to "Atlas Plan"'],
       ],
-      run: { status: 'success', at: 1, lines: 2, summary: 'Applied three updates to the plan' },
+      run: { status: 'success', at: 1, lines: 2, summary: 'Applied three updates to the plan', took: true },
       turns: 2,
     },
   })

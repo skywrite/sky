@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-06
 ---
 
 # A tool's own lines reach the page
@@ -99,3 +99,18 @@ lands as its step ends — after a command-backed tool has run and folded
 subject rides its record for a reload. A record at the moment of the
 call would come from the engine's stream, which has the part; that is a
 later rung.
+
+## 2026-09-06: the time stays
+
+A mission ran for nineteen minutes with the counter on its chip, and the
+moment it ended the fold showed the tool's name and the summary, and the
+time was gone. The counter's last reading was still in the page at that
+moment; the folded row never printed it, and after a reload nothing could,
+because the run recorded when it started and not when it ended.
+
+- The routes stamp `finished` on the run as the tool ends, and on any run
+  still open when the turn ends. The `tool-finished` frame carries it; the
+  thread record returns it with the run.
+- The folded row reads `Google Agent Output · 19m28s — what it did`. A
+  run from before this has no end time and shows no time, rather than a
+  wrong one.

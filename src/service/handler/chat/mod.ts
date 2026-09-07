@@ -94,6 +94,8 @@ export interface ToolRun {
   lines: string[]
   /** How it ended; null while it runs */
   status: 'success' | 'fail' | 'error' | null
+  /** Epoch milliseconds when it ended — with `started`, how long it took, kept for a reload */
+  finished?: number
   /** One line on what it did, from a small model once it ended — the label its output folds under. Absent until then, or when none came */
   summary?: string
   /** What the call was about — the query, the page, the mission — from the model's record of the call, once its step ends */
@@ -280,7 +282,7 @@ type WireEvent =
   | { type: 'tool-call'; toolName: string; input: unknown; subject?: string }
   | { type: 'tool-started'; run: ToolRun }
   | { type: 'tool-line'; tool: string; at: number; text: string; level: 'log' | 'error' }
-  | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error' }
+  | { type: 'tool-finished'; tool: string; at: number; status: 'success' | 'fail' | 'error'; finished: number }
   | { type: 'tool-summary'; tool: string; at: number; text: string }
   | { type: 'title'; title: string }
 
@@ -399,7 +401,8 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
     case 'tool-finished': {
       if (!open) return null
       open.status = event.status
-      return { type: 'tool-finished', tool: open.tool, at: open.at, status: event.status }
+      open.finished = Date.now()
+      return { type: 'tool-finished', tool: open.tool, at: open.at, status: event.status, finished: open.finished }
     }
     case 'tool-summary': {
       // The line comes after the run ended: it labels the newest ended run of that tool still without one.
@@ -839,7 +842,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           clearInterval(beat)
           if (!thread.saves) await dropSnapshot(id, thread)
           // A run still open when the turn ends never reported its end — the turn did.
-          for (const run of thread.runs) if (run.status === null) run.status = turn.error ? 'error' : 'success'
+          for (const run of thread.runs) {
+            if (run.status !== null) continue
+            run.status = turn.error ? 'error' : 'success'
+            run.finished = Date.now()
+          }
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
           thread.updatedAt = ++tick
