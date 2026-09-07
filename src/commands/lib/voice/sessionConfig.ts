@@ -20,29 +20,27 @@ export const DEFAULT_VOICE_MODEL = 'gpt-realtime-2.1'
 /** Every voice the Realtime API offers, as the SDK lists them. */
 export const VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 export type Voice = (typeof VOICES)[number]
-/**
- * Chosen by ear on 2026-08-30 from an audition of all ten: a peer's
- * register, not a companion's. The voice is the voice — the prompt no
- * longer tells it how to sound.
- */
-export const DEFAULT_VOICE: Voice = 'ash'
-export const DEFAULT_RESEARCHER_NAME = 'Sunny'
-export const DEFAULT_RESEARCHER_VOICE: Voice = 'marin'
+/** Sky uses she/her and marin; Sonny uses he/him and ash. */
+export const DEFAULT_VOICE: Voice = 'marin'
+export const DEFAULT_RESEARCHER_NAME = 'Sonny'
+export const DEFAULT_RESEARCHER_VOICE: Voice = 'ash'
 /** Browser calls open with a hello, leaving the user to set the topic. */
 export const BROWSER_GREETING_TEMPLATE = 'Hey{{#if me.firstName}} {{me.firstName}}{{/if}}.'
 
-/** A local handoff to Sunny's speaking session; no notebook research is required. */
-export const INVITE_SUNNY_TOOL: RealtimeFunctionTool = {
+/** A local handoff to Sonny's speaking session; no notebook research is required. */
+export const INVITE_SONNY_TOOL: RealtimeFunctionTool = {
   type: 'function',
-  name: 'invite_sunny',
+  name: 'invite_sonny',
   description:
-    'Let Sunny speak next for greetings, conversation, or an opinion the existing evidence can support. ' +
-    'This only invites her to speak; it does not run research. For a requested deep investigation, including ' +
-    'one specified before the latest topic clarification, use research_web for public questions or ' +
-    'research_notebook for notebook questions. No research topic is required for a greeting. Pass a ' +
+    'Let Sonny (he/him, also heard as Sunny) speak next for greetings, presence checks such as "Sunny there?", ' +
+    'conversation, or an opinion the existing evidence can support. Let him answer when addressed; Sky is she/her. ' +
+    'This only invites him to speak; it does not run research. Use research_together for shared research or ' +
+    'a public/notebook comparison. For a standalone deep investigation, including one specified before the ' +
+    'latest topic clarification, use research_web for public questions or research_notebook for notebook ' +
+    'questions. No research topic is required for a greeting. Pass a ' +
     'self-contained request faithful to the user’s words, without adding a mood, topic, question, or greeting ' +
     'script they did not ask for. Then yield immediately: do not narrate tool mechanics or answer ' +
-    'for her.',
+    'for him.',
   parameters: {
     type: 'object',
     properties: {
@@ -106,7 +104,7 @@ export function auditionSessionConfig(voice: Voice, instructions: string): Realt
   }
 }
 
-/** Sunny's receive-only conversation session. Invitations and research results arrive through the host. */
+/** Sonny's receive-only conversation session. Invitations and research results arrive through the host. */
 export function researcherSessionConfig({
   voice = preferredResearcherVoice(),
   instructions,
@@ -152,7 +150,7 @@ export interface VoicePrompts {
   instructions: string
   /** The ask_notebook delegate's system prompt. */
   askPrompt: string
-  /** Sunny's instructions for direct conversation and presenting actual research results. */
+  /** Sonny's instructions for direct conversation and presenting actual research results. */
   researcherInstructions: string
   /** The opening line, its name slot already filled from the AboutMe profile. */
   greeting: string
@@ -161,7 +159,7 @@ export interface VoicePrompts {
 export interface VoicePromptInput extends VoiceClock {
   /** Bounded, source-labelled notebook snapshot shared with the research delegate. */
   notebookContext?: string
-  /** Browser host with fast lookup, deep research, and Sunny's separate speaking session. */
+  /** Browser host with fast lookup, deep research, and Sonny's separate speaking session. */
   dualVoice?: boolean
   /**
    * The day's calendar checked against the notebook's meeting records,

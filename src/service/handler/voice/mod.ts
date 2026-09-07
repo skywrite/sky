@@ -155,7 +155,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     signal: AbortSignal,
   ): Promise<string> => {
     const t0 = performance.now()
-    // Sunny may run longer than the browser conversation's timed hold.
+    // Sonny may run longer than the browser conversation's timed hold.
     const release = hold(`voice tool: ${name}`)
     let output: string
     try {
@@ -249,6 +249,7 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
         model: thread.session.model ?? null,
         voice: thread.session.audio?.output?.voice ?? null,
         opening: thread.opening,
+        instructions: thread.session.instructions ?? '',
         tools: (thread.session.tools ?? []).flatMap((tool) =>
           tool.type === 'function' && tool.name ? [tool.name] : [],
         ),

@@ -423,12 +423,12 @@ function VoicePane({ data, change }: { data: SettingsData; change: ReturnType<ty
       passage: undefined,
     },
     {
-      name: 'Sunny',
+      name: 'Sonny',
       key: 'voice.researcherVoice',
       field: 'researcherCurrent',
       note: 'Brings back notebook research while you keep talking with Sky. A change speaks on your next call.',
       passage:
-        "Sunny here. I'll look through the notebook and bring back what matters. Keep talking with Sky while I work.",
+        "Sonny here. I'll look through the notebook and bring back what matters. Keep talking with Sky while I work.",
     },
   ] as const
 

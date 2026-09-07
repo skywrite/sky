@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-05
+updated: 2026-09-07
 ---
 
 # Settings — the web's settings section
@@ -22,12 +22,14 @@ Sections at `/settings` and `/settings/<section>`:
   to `web.theme` / `web.textSize`; applied on the spot, and at app
   start by `useAppearanceBoot`. The sidebar's quick toggle writes the
   same key. Text size is a page zoom.
-- **Voice** — every Realtime voice with a Hear button (the audition's
-  receive-only call, one row at a time), the pick saved to
-  `voice.voice`. Sessions read it per call (`preferredVoice()` in
-  `commands/lib/voice/sessionConfig.ts`), so a change speaks on the
-  next call — CLI and web both. Microphone and speaker are the call
-  bar's own browser-local choice (`sky-voice-devices`), shown here.
+- **Voice** — independent Sky and Sonny voice pickers, each with a Hear
+  button (the audition's receive-only call, one row at a time). Picks
+  save to `voice.voice` and `voice.researcherVoice`, resolved per session
+  in `commands/lib/voice/sessionConfig.ts`, so changes apply to the next
+  call. Sky's choice also applies to CLI voice. See the owning
+  [voice design](../../../../commands/all/ai/voice/docs/README.md).
+  Microphone and speaker are the call bar's own browser-local choice
+  (`sky-voice-devices`), shown here.
 - **AI** — the model roles (registry `ROLES`, read-only, each naming
   its configuration), every model configuration — the built-in
   `default-*` catalog and yours — and the ai/memory note count. Yours

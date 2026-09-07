@@ -60,8 +60,8 @@ function hostWith(config: SkyConfig = CONFIG) {
   const host: SettingsRoutesOptions = {
     load: () => snapshot,
     voices: () => ({
-      current: config.voice.voice ?? 'ash',
-      researcherCurrent: config.voice.researcherVoice ?? 'marin',
+      current: config.voice.voice ?? 'marin',
+      researcherCurrent: config.voice.researcherVoice ?? 'ash',
       groups: GROUPS,
     }),
     models: () => [
@@ -134,7 +134,7 @@ test({ name: 'settings route - one payload carries every pane' }, async () => {
       data.voice.researcherCurrent,
       data.memoryNotes,
     ],
-    expected: [200, 'system', 'default', 'ash', 'marin', 7],
+    expected: [200, 'system', 'default', 'marin', 'ash', 7],
   })
   assert({
     given: 'the notebook block',

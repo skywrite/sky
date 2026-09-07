@@ -22,7 +22,7 @@ omissions travel with the evidence; local context remains usable when
 the service is unavailable.
 
 In the browser, Sky hosts the conversation with `gpt-realtime-2.1`, using
-`medium` reasoning effort and normally speaking in `ash`. Calls open with a
+`medium` reasoning effort and normally speaking in `marin` (she/her). Calls open with a
 simple hello, including the profile's first name
 when available. Greetings and social check-ins stay brief and social; they
 do not trigger notebook priorities, capability menus, or offers of work.
@@ -30,10 +30,38 @@ Both speech prompts specify conversational cadence and give short examples.
 Quick reads are prompted to run silently. The browser also mutes messages
 marked `commentary` and excludes them from displayed and mirrored speech,
 while keeping generation, tool calls, and audio drain running. Final answers
-and legacy audio without a phase remain audible. Pauses are fine.
+and legacy audio without a phase remain audible. Explicit shared-assignment
+acknowledgement turns request one final-channel reply. Pauses are fine.
 When the topic is missing, Sky asks one short question. An explicit request
-for deep research stays active when the user supplies the topic on the next
-turn; it goes directly to Sunny rather than a parallel quick preview.
+for standalone deep research stays active when the user supplies the topic
+on the next turn; it goes directly to Sonny. Separate assignments to Sky and
+Sonny retain their requested depth and speaker.
+
+Shared public/notebook research uses the browser-local `research_together`
+tool, with separate `web_question` and `notebook_question` arguments. The
+controller starts Sky's Qwen public lookup and Sonny's Astra notebook
+investigation concurrently. Only the public question reaches `lookup_web`;
+the notebook request includes conversation context and `notebook_only: true`.
+That flag removes web tools from Sonny's investigation, including its recovery
+path. It returns internal evidence without claiming a fresh market comparison.
+
+Sky and Sonny each acknowledge their own assignment in one brief sentence,
+in that order, while both retrievals are already running. These scheduled
+turns confirm who is doing what without a duplicate preamble or early findings.
+Only after both acknowledgements does Sky give the web overview, followed by
+Sonny's notebook comparison and Sky's synthesis. Retrieval may finish in either order. The
+controller queues only the next eligible speaking stage, and advances after
+completed, nonempty speech and drained audio. Sonny receives the actual public
+result before his comparison; Sky receives both results for her final turn.
+All stages preserve their full persona and disable tools for that presentation.
+Findings interrupted or left unspoken by failed/silent responses stay available
+for resumption without repeating retrieval. Acknowledgements are transient:
+silent or refused acknowledgements advance, and user speech discards any
+remaining acknowledgements while preserving the research. They do not appear
+as findings-ready counts or source evidence. One failed source
+limits the comparison without discarding the other; two failed sources skip
+an empty final synthesis. Standalone research retains its separate behavior.
+
 `lookup_notebook` uses Qwen on Cerebras for a quick missing fact.
 `lookup_web` uses the same fast model for public web questions and specific
 pages. Both search and read before answering; web lookup receives the public
@@ -45,10 +73,10 @@ announcements against maintained official references. Sky's handoff preserves
 the user's product names and question scope. Quick web research allows six
 model steps for a follow-up search and read, within the existing twenty-second
 and six-tool-call limits; its final step is reserved for spoken synthesis.
-`research_notebook` starts Sunny's iterative Astra research in the
-background. Sunny presents the result through a second Realtime session,
-normally in `marin`, while Sky remains available for conversation.
-`research_web` gives her the same background path for deeper web research.
+`research_notebook` starts Sonny's iterative Astra research in the
+background. Sonny presents the result through a second Realtime session,
+normally in `ash` (he/him), while Sky remains available for conversation.
+`research_web` gives him the same background path for deeper web research.
 The first web step requires the sole active custom search function; naming
 `web_search` in OpenAI's tool-choice object would select the SDK's native-tool
 alias and fail before retrieval. Research results keep explicit complete,
@@ -58,28 +86,31 @@ Deep investigation reserves thirty seconds of its three-minute budget for
 one recovery synthesis from already-read evidence if a later step fails.
 Web excerpts can be continued from their cached UTF-8 byte offset. An excerpt
 boundary is not a failed investigation or a spoken disclaimer.
-Deep research can combine notebook and public evidence when needed, with
-private notebook details kept out of external search queries by default.
+Standalone deep research can combine notebook and public evidence when needed,
+with private notebook details kept out of external search queries by default.
 
-Address her directly, such as "Sunny, say hello," or ask to hear from her.
-Sky uses the browser-local `invite_sunny` handoff for greetings, conversation,
-and questions Sunny can answer from existing context. He yields the turn
+Address him directly, such as "Sonny, say hello," or ask to hear from him.
+Both speech prompts establish Sky (she/her) and Sonny (he/him) before notebook
+context. "Sunny" is treated as the same spoken name; a presence check addressed
+to him goes directly to his voice instead of Sky answering for herself.
+Sky uses the browser-local `invite_sonny` handoff for greetings, conversation,
+and questions Sonny can answer from existing context. She yields the turn
 without another spoken explanation. Requests for deeper investigation
-still start research, and Sunny reports at the next pause. Say "Sunny,
-continue" to hear queued findings or resume an interrupted report. Earlier dated notes use her
-former name, Scout.
+still start research, and Sonny reports at the next pause. Say "Sonny,
+continue" to hear queued findings or resume an interrupted report. Earlier dated notes use his
+former names, Sunny and Scout.
 
-Starting background research yields without an extra Sky response. Sky can
-still answer independent questions or action results while it runs. He gets
-the research status when it finishes, and the source evidence after Sunny
-has actually spoken her report. Sunny leads with the useful findings and
+Starting standalone background research yields without an extra Sky response. Sky can
+still answer independent questions or action results while it runs. She gets
+the research status when it finishes, and the source evidence after Sonny
+has actually spoken his report. Sonny leads with the useful findings and
 their implications. Partial findings remain usable; a wholly failed attempt
 gets one brief acknowledgement without invalidating earlier successful reads.
 A completed presentation with no audible transcript stays available to resume.
 
 The browser's speech sessions and research engines receive the initial
-notebook snapshot. Sky answers directly when it has enough context. For
-today's or this week's priorities, his instructions require a current task
+notebook snapshot. Sky answers directly when she has enough context. For
+today's or this week's priorities, her instructions require a current task
 read before choosing, unless a relevant result was already fetched in the
 conversation. Delivery checks apply to secondary recommendations too; an
 irrelevant old task can simply be omitted. Recorded plans and unchecked boxes
@@ -95,20 +126,20 @@ change the mailbox. Ambiguous authorized accounts are returned for resolution.
 
 Completed spoken turns are mirrored between the speech sessions, and each
 research question carries the conversation details it needs. Quick lookup,
-mail-search, thread-read, inbox-list, and day-list results also reach Sunny
+mail-search, thread-read, inbox-list, and day-list results also reach Sonny
 silently, bounded to twenty-four thousand characters per shared excerpt.
-She receives the source evidence before a same-turn invitation, including
+He receives the source evidence before a same-turn invitation, including
 truncation notices. Action results are excluded from that evidence feed.
-Sunny's speaking session has no tools: a spoken suggestion to check something
-does not start a lookup. She can assess supplied evidence and offer her own
+Sonny's speaking session has no tools: a spoken suggestion to check something
+does not start a lookup. He can assess supplied evidence and offer his own
 reasoning; Sky handles retrieval and background research. The calendar remains
 separate from the notebook research prompt.
 
 The browser coordinates one speaking turn at a time and interrupts
 playback when the user speaks. Interrupted or failed reports remain
-available through **Resume Sunny** or a spoken request to continue; resuming
+available through **Resume research** or a spoken request to continue; resuming
 reuses the saved findings without another Astra run. Settings offers
-independent Sky and Sunny voice pickers, with previews; changes apply to
+independent Sky and Sonny voice pickers, with previews; changes apply to
 the next call.
 
 The browser research defaults are
@@ -125,6 +156,11 @@ changes take effect in newly started sessions.
 
 ## Notes
 
+- Let both speakers acknowledge their assigned work while retrieval starts:
+  [2026-09-07 — research acknowledgements](2026-09-07-research-acknowledgements.md)
+- Coordinate Sky's public overview, Sonny's notebook comparison, and Sky's
+  synthesis, with identities and resumable speaking stages:
+  [2026-09-07 — shared research conversation](2026-09-07-shared-research-conversation.md)
 - Fix Astra's custom web-tool choice, preserve research results, and let Sunny
   deliver them without a competing Sky answer:
   [2026-09-07 — research results and the speaking handoff](2026-09-07-research-handoff-and-results.md)

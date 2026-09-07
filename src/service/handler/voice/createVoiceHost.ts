@@ -1,7 +1,7 @@
 /**
  * Browser voice wiring: shared persona and starting context, quick Qwen
  * lookup, background Astra research, and live command tools. Sky hosts
- * the conversation; Sunny joins it and presents research through her own
+ * the conversation; Sonny joins it and presents research through his own
  * speech session. Audio travels directly between the browser and OpenAI.
  */
 
@@ -21,6 +21,7 @@ import {
   LOOKUP_WEB_TOOL,
   RESEARCH_NOTEBOOK,
   RESEARCH_NOTEBOOK_TOOL,
+  RESEARCH_TOGETHER_TOOL,
   RESEARCH_WEB,
   RESEARCH_WEB_TOOL,
   RESUME_RESEARCH_TOOL,
@@ -31,7 +32,7 @@ import {
   BROWSER_VOICE_EFFORT,
   DEFAULT_VOICE_MODEL,
   DEFAULT_RESEARCHER_NAME,
-  INVITE_SUNNY_TOOL,
+  INVITE_SONNY_TOOL,
   preferredVoice,
   preferredResearcherVoice,
   openingInstructions,
@@ -117,7 +118,10 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
           const question = typeof input.question === 'string' ? input.question.trim() : ''
           if (!question)
             return JSON.stringify({ status: 'failed', answer: 'The research question is missing.', paths: [] })
-          const result = await run(question, signal)
+          const result =
+            name === RESEARCH_NOTEBOOK
+              ? await research.research(question, signal, input.notebook_only === true)
+              : await run(question, signal)
           // Preserve the outcome and evidence together; a partial answer is not a failed lookup.
           return JSON.stringify(result)
         },
@@ -147,7 +151,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
         instructions: prompts.instructions,
         tools: [...tools.values()]
           .map((tool) => tool.definition)
-          .concat(INVITE_SUNNY_TOOL, RESUME_RESEARCH_TOOL, gated ? APPROVAL_TOOLS : []),
+          .concat(INVITE_SONNY_TOOL, RESUME_RESEARCH_TOOL, RESEARCH_TOGETHER_TOOL, gated ? APPROVAL_TOOLS : []),
         manualTurns: true,
       }),
       researcher: {

@@ -14,6 +14,7 @@ const BOOM: RealtimeFunctionTool = { type: 'function', name: 'boom', parameters:
 const SESSION: RealtimeSessionCreateRequest = {
   type: 'realtime',
   model: 'gpt-realtime-2.1',
+  instructions: 'You are Sky. Speak naturally.',
   audio: { output: { voice: 'marin' } },
   tools: [ECHO, BOOM],
 }
@@ -102,6 +103,7 @@ test({ name: 'voice route - a session mints a secret around the thread configura
         model: 'gpt-realtime-2.1',
         voice: 'marin',
         opening: 'Say hello.',
+        instructions: 'You are Sky. Speak naturally.',
         tools: ['echo', 'boom'],
       },
     ],
@@ -137,20 +139,20 @@ test({ name: 'voice route - a mint failure is reported, not thrown' }, async () 
 test('voice route - host and researcher receive distinct secrets with their own voices', async () => {
   const { host, minted } = hostWith((session) =>
     Promise.resolve({
-      value: session.audio?.output?.voice === 'ash' ? 'ek_host' : 'ek_researcher',
+      value: session.audio?.output?.voice === 'marin' ? 'ek_host' : 'ek_researcher',
       expiresAt: 1700000060,
     }),
   )
   const create = host.createThread
   host.createThread = async (id) => ({
     ...(await create(id)),
-    session: { ...SESSION, audio: { output: { voice: 'ash' } } },
+    session: { ...SESSION, audio: { output: { voice: 'marin' } } },
     researcher: {
-      name: 'Sunny',
+      name: 'Sonny',
       session: {
         ...SESSION,
         instructions: 'Speak supported research findings.',
-        audio: { output: { voice: 'marin' } },
+        audio: { output: { voice: 'ash' } },
         tools: [],
       },
     },
@@ -159,19 +161,19 @@ test('voice route - host and researcher receive distinct secrets with their own 
   const response = await post(app, '/voice/duet/session')
   const data = await response.json()
   assert({
-    given: 'a thread with a host and a female researcher',
+    given: 'a thread with Sky and Sonny with their separate voices',
     should: 'mint both sessions and return the speaking-only researcher configuration to the browser',
     actual: [response.status, data.clientSecret, data.voice, data.researcher, minted.length],
     expected: [
       200,
       'ek_host',
-      'ash',
+      'marin',
       {
         clientSecret: 'ek_researcher',
         expiresAt: 1700000060,
         model: 'gpt-realtime-2.1',
-        voice: 'marin',
-        name: 'Sunny',
+        voice: 'ash',
+        name: 'Sonny',
         instructions: 'Speak supported research findings.',
       },
       2,

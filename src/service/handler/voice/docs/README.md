@@ -6,7 +6,7 @@ updated: 2026-09-07
 # Voice over the web — service side
 
 The browser talks to OpenAI Realtime directly over two WebRTC connections:
-Sky receives the microphone, and Sunny receives text for conversation and
+Sky receives the microphone, and Sonny receives text for conversation and
 research reports. This handler mints both client secrets around the shared session
 configuration (`commands/lib/voice/sessionConfig.ts`) and executes Sky's
 tools. Ending a call aborts its running research and rejects late tool

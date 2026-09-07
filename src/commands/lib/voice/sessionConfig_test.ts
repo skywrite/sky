@@ -3,9 +3,11 @@ import {
   auditionSessionConfig,
   DEFAULT_RESEARCHER_NAME,
   DEFAULT_RESEARCHER_VOICE,
-  INVITE_SUNNY_TOOL,
+  DEFAULT_VOICE,
+  INVITE_SONNY_TOOL,
   openingInstructions,
   preferredResearcherVoice,
+  preferredVoice,
   renderVoicePrompts,
   researcherSessionConfig,
   VOICE_GROUPS,
@@ -86,8 +88,8 @@ test({ name: 'voice session config - a PCM transport declares its format, WebRTC
   })
 })
 
-test({ name: 'voice session config - Sunny speaks on explicit invitations and research turns' }, () => {
-  const session = researcherSessionConfig({ voice: 'marin', instructions: 'Present the supplied findings.' })
+test({ name: 'voice session config - Sonny speaks on explicit invitations and research turns' }, () => {
+  const session = researcherSessionConfig({ voice: 'ash', instructions: 'Present the supplied findings.' })
   assert({
     given: 'a researcher presentation session',
     should: 'use a separate voice with no automatic listening, tools, or tracing',
@@ -106,7 +108,7 @@ test({ name: 'voice session config - Sunny speaks on explicit invitations and re
       model: 'gpt-realtime-2.1',
       instructions: 'Present the supplied findings.',
       modalities: ['audio'],
-      audio: { input: { turn_detection: null }, output: { voice: 'marin' } },
+      audio: { input: { turn_detection: null }, output: { voice: 'ash' } },
       tools: [],
       toolChoice: 'none',
       tracing: null,
@@ -114,13 +116,19 @@ test({ name: 'voice session config - Sunny speaks on explicit invitations and re
   })
   assert({
     given: 'a valid voice preference or an invalid/missing value',
-    should: 'honor valid preferences and fall back to Sunny’s default voice',
+    should: 'honor valid preferences and fall back to Sonny’s default voice',
     actual: [
       DEFAULT_RESEARCHER_NAME,
       DEFAULT_RESEARCHER_VOICE,
       ...['sage', 'unknown', ''].map(preferredResearcherVoice),
     ],
-    expected: ['Sunny', 'marin', 'sage', 'marin', 'marin'],
+    expected: ['Sonny', 'ash', 'sage', 'ash', 'ash'],
+  })
+  assert({
+    given: 'Sky’s default and valid or invalid voice preferences',
+    should: 'use marin by default while honoring an explicit voice choice',
+    actual: [DEFAULT_VOICE, ...['ash', 'unknown', ''].map(preferredVoice)],
+    expected: ['marin', 'ash', 'marin', 'marin'],
   })
 })
 
@@ -206,7 +214,7 @@ test({ name: 'voice session config - host and researcher receive the same initia
     '',
     'Recent summaries were unavailable; this does not establish that there was no recent activity.',
   ].join('\n')
-  const prompts = await renderVoicePrompts({ ...CLOCK, notebookContext }, () => 0)
+  const prompts = await renderVoicePrompts({ ...CLOCK, notebookContext, dualVoice: true }, () => 0)
 
   assert({
     given: 'dated source evidence, special characters, and a collection limitation from the host',
@@ -215,6 +223,22 @@ test({ name: 'voice session config - host and researcher receive the same initia
       prompt.includes(`## Initial notebook context\n\n${notebookContext}\n`),
     ),
     expected: [true, true, true],
+  })
+  assert({
+    given: 'two participants and notebook evidence that can make the prompt long',
+    should: 'anchor both identities and the Sunny spelling before the notebook evidence in each speech prompt',
+    actual: [prompts.instructions, prompts.researcherInstructions].map((prompt) => {
+      const roster = prompt.slice(0, prompt.indexOf('## Initial notebook context'))
+      return {
+        sky: /Sky \((?:you, )?she\/her\)/.test(roster),
+        sonny: /Sonny \((?:you, )?he\/him\)/.test(roster),
+        alias: roster.includes('"Sunny" is another spelling'),
+      }
+    }),
+    expected: [
+      { sky: true, sonny: true, alias: true },
+      { sky: true, sonny: true, alias: true },
+    ],
   })
 })
 
@@ -237,7 +261,7 @@ test(
 )
 
 test(
-  { name: 'voice session config - only dual voice hosts receive Sunny and the browser notebook tools' },
+  { name: 'voice session config - only dual voice hosts receive Sonny and the browser notebook tools' },
   async () => {
     const calendar = 'No meetings on the calendar for 2026-01-27.'
     const single = await renderVoicePrompts({ ...CLOCK, calendar }, () => 0)
@@ -250,20 +274,63 @@ test(
       'search_email',
       'research_web',
       'resume_research',
-      'invite_sunny',
-      'Sunny',
+      'invite_sonny',
+      'research_together',
+      'Sonny',
     ]
     assert({
       given: 'the default single voice host, including its calendar instructions',
       should: 'keep its existing research tool and avoid claiming the browser-only capabilities',
       actual: toolNames.map((name) => single.instructions.includes(name)),
-      expected: [true, false, false, false, false, false, false, false, false],
+      expected: [true, false, false, false, false, false, false, false, false, false],
     })
     assert({
       given: 'an explicitly enabled dual voice host',
-      should: 'describe direct conversation, notebook and web lookup/research, and saved-report resumption with Sunny',
+      should: 'describe direct conversation, notebook and web lookup/research, and saved-report resumption with Sonny',
       actual: toolNames.map((name) => dual.instructions.includes(name)),
-      expected: [false, true, true, true, true, true, true, true, true],
+      expected: [false, true, true, true, true, true, true, true, true, true],
+    })
+    assert({
+      given: 'a shared public/notebook assignment',
+      should: 'preserve the split and complete the comparison after Sonny speaks',
+      actual: {
+        sharedFirst: dual.instructions.includes('Choose research_together first'),
+        separateQuestions: dual.instructions.includes(
+          'public-only web_question and a separate, self-contained notebook_question',
+        ),
+        speakerOrder: dual.instructions.includes(
+          'you give the web overview first, Sonny adds the notebook findings and comparison, then you bring both together',
+        ),
+        standaloneDepth: dual.instructions.includes(
+          'For a standalone assignment, explicit deep research takes priority',
+        ),
+        sonnyCompares: dual.researcherInstructions.includes(
+          'your turn connects what the notebook establishes with the supplied public evidence',
+        ),
+        noSecondPublicReport: dual.researcherInstructions.includes(
+          "do not repeat Sky's public overview or prepare a separate second public report",
+        ),
+      },
+      expected: {
+        sharedFirst: true,
+        separateQuestions: true,
+        speakerOrder: true,
+        standaloneDepth: true,
+        sonnyCompares: true,
+        noSecondPublicReport: true,
+      },
+    })
+    assert({
+      given: 'the user asks whether Sonny is present, including the Sunny spelling',
+      should: 'let Sonny answer rather than have Sky speak for him',
+      actual: {
+        routesPresence: dual.instructions.includes(
+          '"Is Sonny here?", "Sunny there?", and "I\'d like to hear from Sonny" all go straight to invite_sonny',
+        ),
+        oldHostAnswer: dual.instructions.includes('"Yep, he\'s here."'),
+        invitationAlias: INVITE_SONNY_TOOL.description?.includes('also heard as Sunny'),
+      },
+      expected: { routesPresence: true, oldHostAnswer: false, invitationAlias: true },
     })
     assert({
       given: 'the same single and dual voice sessions',
@@ -276,27 +343,30 @@ test(
       should: 'resolve the conditional template and still produce the researcher presentation instructions',
       actual: [single, dual].map((prompts) => ({
         unresolved: prompts.instructions.includes('{{'),
-        researcher: prompts.researcherInstructions.startsWith('You are Sunny'),
+        researcher: prompts.researcherInstructions.startsWith('You are Sonny'),
+        skyPronouns: prompts.instructions.includes('Use I/me for yourself and she/her'),
+        sonnyPronouns: prompts.researcherInstructions.includes('Use I/me for yourself and he/him'),
+        researcherKnowsSky: prompts.researcherInstructions.includes('Refer to Sky by her name or she/her'),
       })),
       expected: [
-        { unresolved: false, researcher: true },
-        { unresolved: false, researcher: true },
+        { unresolved: false, researcher: true, skyPronouns: true, sonnyPronouns: true, researcherKnowsSky: true },
+        { unresolved: false, researcher: true, skyPronouns: true, sonnyPronouns: true, researcherKnowsSky: true },
       ],
     })
   },
 )
 
 test(
-  { name: 'voice session config - inviting Sunny requires a conversational request rather than research parameters' },
+  { name: 'voice session config - inviting Sonny requires a conversational request rather than research parameters' },
   () => {
     const session = voiceSessionConfig({
       model: 'gpt-realtime-2.1',
       voice: 'ash',
-      instructions: 'Let Sunny answer when invited.',
-      tools: [INVITE_SUNNY_TOOL],
+      instructions: 'Let Sonny answer when invited.',
+      tools: [INVITE_SONNY_TOOL],
       manualTurns: true,
     })
-    const invite = session.tools?.find((tool) => tool.type === 'function' && tool.name === 'invite_sunny')
+    const invite = session.tools?.find((tool) => tool.type === 'function' && tool.name === 'invite_sonny')
     const parameters = (invite?.type === 'function' ? invite.parameters : undefined) as
       | {
           properties?: Record<string, Record<string, unknown>>
@@ -319,7 +389,7 @@ test(
             }
           : undefined,
       expected: {
-        name: 'invite_sunny',
+        name: 'invite_sonny',
         required: ['request'],
         fields: ['request'],
         request: { type: 'string', minLength: 1, maxLength: 12_000 },

@@ -1,4 +1,4 @@
-/** Talk: Sky hosts the conversation; Sunny returns from deeper research. */
+/** Talk: Sky hosts the conversation; Sonny returns from deeper research. */
 import { Button, Select } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { humanize, useFollow } from './chat.tsx'
@@ -41,7 +41,7 @@ const CAN_PICK_OUTPUT = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' i
 export function useVoice(id: string) {
   const [state, setState] = useState<VoiceState>(INITIAL_VOICE_STATE)
   const audioRef = useRef<SinkElement | null>(null)
-  const sunnyAudioRef = useRef<SinkElement | null>(null)
+  const sonnyAudioRef = useRef<SinkElement | null>(null)
   const controllerRef = useRef<VoiceController | null>(null)
   if (!controllerRef.current) {
     controllerRef.current = new VoiceController(
@@ -57,7 +57,7 @@ export function useVoice(id: string) {
           }
           return navigator.mediaDevices.getUserMedia(constraints)
         },
-        audio: (speaker) => (speaker === 'sky' ? audioRef.current : sunnyAudioRef.current),
+        audio: (speaker) => (speaker === 'sky' ? audioRef.current : sonnyAudioRef.current),
         warmSpeakers: whenSpeakersWarm,
         setTimer: (callback, ms) => window.setTimeout(callback, ms),
         clearTimer: (timer) => window.clearTimeout(timer),
@@ -115,7 +115,7 @@ export function useVoice(id: string) {
     [controller],
   )
 
-  return { state, audioRef, sunnyAudioRef, devices, chosen, start, end, resumeResearch, chooseInput, chooseOutput }
+  return { state, audioRef, sonnyAudioRef, devices, chosen, start, end, resumeResearch, chooseInput, chooseOutput }
 }
 
 export type Voice = ReturnType<typeof useVoice>
@@ -138,7 +138,7 @@ function statusOf(state: VoiceState): string {
             ? 'Checking the web…'
             : `Running ${humanize(state.tool ?? 'a tool')}…`
       }
-      return state.activity === 'speaking' ? `${state.speaker === 'sunny' ? 'Sunny' : 'Sky'} is speaking` : 'Listening'
+      return state.activity === 'speaking' ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is speaking` : 'Listening'
   }
 }
 
@@ -179,7 +179,7 @@ export function VoiceMain({ back }: { back: { label: string; onClick: () => void
         {state.phase === 'idle' ? (
           <div className="sky-blank">
             <div className="sky-voice-hello">
-              <p>Talk with Sky. Sunny joins in with deeper findings while you keep the conversation going.</p>
+              <p>Talk with Sky. Sonny joins in with deeper findings while you keep the conversation going.</p>
               <Button size="md" onClick={() => void voice.start()}>
                 Start talking
               </Button>
@@ -224,12 +224,12 @@ export function VoiceMain({ back }: { back: { label: string; onClick: () => void
           </span>
           {state.phase === 'live' && (state.research.running > 0 || state.research.ready > 0) && (
             <span className="sky-voice-research" role="status">
-              {state.research.ready > 0 ? 'Sunny has findings ready' : 'Sunny is researching…'}
+              {state.research.ready > 0 ? 'Research findings ready' : 'Researching…'}
             </span>
           )}
           {state.phase === 'live' && state.research.paused > 0 && (
             <Button size="xs" onClick={voice.resumeResearch}>
-              Resume Sunny
+              Resume research
             </Button>
           )}
           {state.phase === 'live' && state.error && <span className="sky-voice-warn">{state.error}</span>}
@@ -262,7 +262,7 @@ export function VoiceMain({ back }: { back: { label: string; onClick: () => void
           {state.model ? (
             <>
               <span className="sky-hint">
-                {state.model} · Sky: {state.voice} · Sunny: {state.researcherVoice}
+                {state.model} · Sky: {state.voice} · Sonny: {state.researcherVoice}
               </span>
               {state.tools.length > 0 && (
                 <>
@@ -277,7 +277,7 @@ export function VoiceMain({ back }: { back: { label: string; onClick: () => void
         </div>
       </div>
       <audio ref={voice.audioRef} autoPlay />
-      <audio ref={voice.sunnyAudioRef} autoPlay />
+      <audio ref={voice.sonnyAudioRef} autoPlay />
     </div>
   )
 }

@@ -8,7 +8,14 @@ import { typeDefs } from '#service/graphql/schema.ts'
 import { getProfile, type ModelProfile } from '#shared/ai/models.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { createVoiceResearch, DEEP_VOICE_PROFILE, FAST_VOICE_PROFILE, voiceResearchProfile } from './research.ts'
+import {
+  createVoiceResearch,
+  DEEP_VOICE_PROFILE,
+  FAST_VOICE_PROFILE,
+  RESEARCH_NOTEBOOK_TOOL,
+  RESEARCH_TOGETHER_TOOL,
+  voiceResearchProfile,
+} from './research.ts'
 import type { ResearchFetch } from './researchTools.ts'
 
 const USAGE = {
@@ -95,7 +102,7 @@ test('voice lookup uses Qwen without changing the shared profile and reads its s
   })
 })
 
-test('Sunny learns a lead from a read, follows it with a structured query, and compares the next source', async () => {
+test('Sonny learns a lead from a read, follows it with a structured query, and compares the next source', async () => {
   await fixture(
     {
       'notes/atlas.md': '# Atlas\nThe timeline changed after the Harbor review.',
@@ -364,7 +371,7 @@ test('voice web lookup uses Qwen and page evidence without exposing initial note
   })
 })
 
-test('Sunny web research follows a new public lead and compares pages using Astra', async () => {
+test('Sonny web research follows a new public lead and compares pages using Astra', async () => {
   let learnedLead = false
   let step = 0
   const model = new MockLanguageModelV3({
@@ -469,7 +476,7 @@ test('voice web answers cannot pass the evidence guard after missing key, empty 
   })
 })
 
-test('Sunny can combine a notebook source and an authorized public page in one research run', async () => {
+test('Sonny can combine a notebook source and an authorized public page in one research run', async () => {
   await fixture({ 'notes/atlas.md': 'Atlas requires a public standard with optional caching.' }, async (base) => {
     const model = new MockLanguageModelV3({
       doGenerate: [
@@ -491,6 +498,161 @@ test('Sunny can combine a notebook source and an authorized public page in one r
       should: 'retain both notebook and web evidence without needing a public query containing private terms',
       actual: [result.paths, result.urls],
       expected: [['notes/atlas.md'], ['https://example.com/standard']],
+    })
+  })
+})
+
+test('joint research separates public and private questions and notebook-only scope is optional', () => {
+  const joint = RESEARCH_TOGETHER_TOOL.parameters
+  const notebook = RESEARCH_NOTEBOOK_TOOL.parameters
+  assert({
+    given: 'the tools advertised to Sky for separate research assignments',
+    should: 'require distinct public and private questions while preserving ordinary notebook research calls',
+    actual: [
+      RESEARCH_TOGETHER_TOOL.name,
+      joint?.required,
+      joint?.additionalProperties,
+      joint?.properties?.web_question?.type,
+      joint?.properties?.notebook_question?.type,
+      joint?.properties?.web_question?.description?.includes('no private notebook-only'),
+      joint?.properties?.notebook_question?.description?.includes('never used for external web retrieval'),
+      notebook?.required,
+      notebook?.properties?.notebook_only?.type,
+    ],
+    expected: [
+      'research_together',
+      ['web_question', 'notebook_question'],
+      false,
+      'string',
+      'string',
+      true,
+      true,
+      ['question'],
+      'boolean',
+    ],
+  })
+})
+
+test('Sonny notebook-only research exposes no web tools and keeps the public comparison with Sky', async () => {
+  await fixture({ 'notes/atlas.md': 'Atlas requires a public standard with optional caching.' }, async (base) => {
+    let webRequests = 0
+    const model = new MockLanguageModelV3({
+      doGenerate: [
+        call('n', 'read_file', { path: 'notes/atlas.md' }),
+        answer('Atlas requires optional caching; the notebook does not record a final vendor decision.'),
+      ],
+    })
+    const result = await createVoiceResearch(
+      { ...options(base), webApiKey: 'mock-api-key' },
+      {
+        model: () => ({ model }),
+        fetcher: async () => {
+          webRequests++
+          throw new Error('A notebook file read does not need a network request.')
+        },
+        pageFetcher: async () => {
+          webRequests++
+          throw new Error('Notebook-only research must not retrieve public pages.')
+        },
+      },
+    ).research('Find the notebook requirements that Sky should compare with the public standard.', undefined, true)
+    assert({
+      given: 'a separate notebook assignment even with configured public-search credentials',
+      should:
+        'retrieve local evidence using only notebook tools and explicitly leave current public verification to Sky',
+      actual: [
+        result.status,
+        result.paths,
+        result.urls,
+        webRequests,
+        model.doGenerateCalls.every(
+          (input) =>
+            JSON.stringify(input.prompt).includes('Your assignment is notebook-only.') &&
+            JSON.stringify(input.prompt).includes('claim a fresh web comparison') &&
+            input.tools?.every((entry) => ['search_notebook', 'query_notebook', 'read_file'].includes(entry.name)),
+        ),
+        model.doGenerateCalls[0].tools?.map((entry) => entry.name).sort(),
+      ],
+      expected: [
+        'complete',
+        ['notes/atlas.md'],
+        undefined,
+        0,
+        true,
+        ['query_notebook', 'read_file', 'search_notebook'],
+      ],
+    })
+  })
+})
+
+test('empty notebook-only research cannot fall back to a model-requested public lookup', async () => {
+  let notebookRequests = 0
+  let externalRequests = 0
+  const model = new MockLanguageModelV3({
+    doGenerate: [
+      call('n', 'search_notebook', { query: 'Atlas' }),
+      call('w', 'read_web_page', { url: 'https://example.com/standard' }),
+      answer('Invented current public comparison.'),
+    ],
+  })
+  const result = await createVoiceResearch(
+    { ...options('/mock-notebook'), webApiKey: 'mock-api-key' },
+    {
+      model: () => ({ model }),
+      fetcher: async (url) => {
+        if (url.startsWith('http://localhost:4321/')) {
+          notebookRequests++
+          return Response.json({ results: [] })
+        }
+        externalRequests++
+        throw new Error('Notebook-only research must not call external search.')
+      },
+      pageFetcher: async () => {
+        externalRequests++
+        throw new Error('Notebook-only research must not read public pages.')
+      },
+    },
+  ).research('Find notebook evidence about Atlas; Sky is checking public sources.', undefined, true)
+  assert({
+    given: 'an empty notebook search followed by an attempted public tool call',
+    should: 'leave the notebook evidence unavailable without external fallback or fabricated public claims',
+    actual: [
+      result.status,
+      result.paths,
+      result.urls,
+      notebookRequests,
+      externalRequests,
+      result.answer.includes('Invented'),
+    ],
+    expected: ['failed', [], undefined, 1, 0, false],
+  })
+})
+
+test('Sonny retains the notebook-only assignment when recovering a partial report', async () => {
+  await fixture({ 'notes/atlas.md': 'Atlas requires optional caching.' }, async (base) => {
+    let step = 0
+    let recoveryScoped = false
+    const model = new MockLanguageModelV3({
+      doGenerate: async (input) => {
+        if (step++ === 0) return call('n', 'read_file', { path: 'notes/atlas.md' })
+        if (step === 2) throw new Error('Synthetic model connection failure.')
+        recoveryScoped =
+          !input.tools?.length &&
+          JSON.stringify(input.prompt).includes('Your assignment is notebook-only.') &&
+          JSON.stringify(input.prompt).includes('Atlas requires optional caching.')
+        return answer('The notebook requires optional caching; the rest of the internal review is unfinished.')
+      },
+    })
+    const result = await createVoiceResearch(options(base), { model: () => ({ model }) }).research(
+      'Review the notebook requirements for Atlas.',
+      undefined,
+      true,
+    )
+    assert({
+      given: 'a failed investigation step after a successful notebook read',
+      should: 'recover the internal findings without opening a second public investigation',
+      actual: [step, recoveryScoped, result.status, result.paths, result.urls],
+      expected: [3, true, 'partial', ['notes/atlas.md'], undefined],
     })
   })
 })
@@ -839,7 +1001,7 @@ test('voice research preserves complete prose beyond the former character cutoff
   })
 })
 
-test('Sunny recovers a grounded partial report when a later model step fails', async () => {
+test('Sonny recovers a grounded partial report when a later model step fails', async () => {
   let step = 0
   let synthesisEvidence = false
   let synthesisHasTools = true
@@ -877,7 +1039,7 @@ test('Sunny recovers a grounded partial report when a later model step fails', a
   })
 })
 
-test('Sunny distinguishes unfinished synthesis from failed retrieval when recovery also fails', async () => {
+test('Sonny distinguishes unfinished synthesis from failed retrieval when recovery also fails', async () => {
   let step = 0
   const model = new MockLanguageModelV3({
     doGenerate: async () => {
@@ -912,7 +1074,7 @@ test('Sunny distinguishes unfinished synthesis from failed retrieval when recove
   })
 })
 
-test('Sunny retains bounded actual source excerpts when synthesis stays unavailable', async () => {
+test('Sonny retains bounded actual source excerpts when synthesis stays unavailable', async () => {
   const pages = Array.from({ length: 8 }, (_, i) => `https://example.com/source-${i}`)
   const bodies = new Map(pages.map((url, i) => [url, `Public evidence ${i}: ${'🧭\u0000'.repeat(1000)}`]))
   let step = 0
@@ -928,7 +1090,7 @@ test('Sunny retains bounded actual source excerpts when synthesis stays unavaila
   }).researchWeb(`Compare the public evidence in ${pages.join(' ')}`)
   assert({
     given: 'eight read sources with multibyte and JSON-escaped characters, followed by unavailable synthesis',
-    should: 'give Sunny real readable evidence from multiple sources within a combined serialized 24KB allowance',
+    should: 'give Sonny real readable evidence from multiple sources within a combined serialized 24KB allowance',
     actual: [
       result.status,
       result.urls?.length,

@@ -42,7 +42,7 @@
   color: var(--sky-text-2);
 }
 
-.sky-turn[data-voice='sunny'] .sky-who {
+.sky-turn[data-voice='sonny'] .sky-who {
   color: var(--sky-accent);
 }
 
