@@ -1,21 +1,22 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText, jsonSchema, type ModelMessage } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { withCommandRun } from '#commands/lib/core/commandLog.ts'
 import * as config from '#config'
 import type { ResolvedModel } from '#shared/ai/models.ts'
-import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
-import type { SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
+import type { SaveChatReport, SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { dayFile, readDay } from '#shared/nbfs/mod.ts'
 import { configureTiming } from '#shared/timing/log.ts'
 import { setTimingSink, withTimingEnvironment, type TimingEvent } from '#shared/timing/mod.ts'
 import { parseTimingLog } from '#shared/timing/read.ts'
@@ -623,6 +624,73 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
     actual: (await post(app, 'http://localhost/chat/t5/end', {})).status,
     expected: 404,
   })
+})
+
+test('chat route - web saving logs to its notebook day and reports logging failures', async () => {
+  const host = await testHost()
+  const web = createChatHost({ ...config, DEFAULT_CATEGORY: 'Personal' }, {})
+  host.endDefaults = { ...web.endDefaults, enricher: stubEnricher, memoryDir: null, people: false }
+  const app = appWith(host)
+  const dayPath = path.join(host.tmp, dayFile(TODAY))
+  const before = '# **2026-01-27 - Tue**\n\n## Personal Complete\n- 08:00 > Morning walk\n'
+  try {
+    await mkdir(path.dirname(dayPath), { recursive: true })
+    await writeTextFile(dayPath, before)
+
+    await (await send(app, 'http://localhost/chat/discard/messages', { message: 'A temporary question.' })).text()
+    const discarded = await getJsonAfterEnd('discard', false)
+    assert({
+      given: 'the web filing policy and a chat explicitly discarded',
+      should: 'leave the day file untouched',
+      actual: { saved: discarded, day: await readTextFile(dayPath) },
+      expected: { saved: null, day: before },
+    })
+
+    await (await send(app, 'http://localhost/chat/logged/messages', { message: 'Plan the Atlas demo.' })).text()
+    const saved = await getJsonAfterEnd('logged', true)
+    const day = await readDay(TODAY, host.tmp)
+    const entry = day.getCompleteItem('09:30 > AI Chat', 'Personal')
+    assert({
+      given: 'a web chat saved using the host defaults',
+      should: 'save its transcript and log a working link under the configured category',
+      actual: {
+        dayLog: saved?.dayLog,
+        transcriptExists: saved ? await exists(saved.path) : false,
+        linkResolves: entry ? path.resolve(path.dirname(dayPath), entry.path) === saved?.path : false,
+        title: entry?.title,
+        priorEntryKept: day.toMarkdown().includes('08:00 > Morning walk'),
+      },
+      expected: {
+        dayLog: { logged: true, category: 'Personal' },
+        transcriptExists: true,
+        linkResolves: true,
+        title: 'Atlas Demo Focus',
+        priorEntryKept: true,
+      },
+    })
+
+    await rm(dayPath)
+    host.endDefaults.enricher = { ...stubEnricher, summarize: async () => 'Atlas Next Steps' }
+    await (await send(app, 'http://localhost/chat/missing-day/messages', { message: 'Review the next steps.' })).text()
+    const partial = await getJsonAfterEnd('missing-day', true)
+    assert({
+      given: 'a transcript saved when its day file cannot be read',
+      should: 'keep the transcript and return the logging failure to the page',
+      actual: {
+        transcriptExists: partial ? await exists(partial.path) : false,
+        loggingFailed: partial?.dayLog?.logged === false && partial.dayLog.reason === 'error',
+      },
+      expected: { transcriptExists: true, loggingFailed: true },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+
+  async function getJsonAfterEnd(id: string, save: boolean): Promise<SaveChatReport | null> {
+    const response = await post(app, `http://localhost/chat/${id}/end`, { save })
+    const body = (await response.json()) as { saved: SaveChatReport | null }
+    return body.saved
+  }
 })
 
 test({ name: 'chat route - an unfiled thread keeps recovery until explicitly discarded' }, async () => {

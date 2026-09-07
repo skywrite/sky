@@ -212,7 +212,12 @@ a person can see and touch:
 - **Whether the thread is filed.** `Saves to today ▾` sits with the model and
   the budget, with two stops: saves to today, or not saved. The preference
   controls the final archive and save-time learning, and can change until
-  close. Both choices keep temporary recovery snapshots during the active
+  close. Saving a new chat also logs its transcript link in the starting
+  day's Complete list, under the configured default category. The page
+  confirms logging or reports a day-file failure alongside the saved
+  transcript. Resumed chats retain the store's existing rule of skipping
+  another day entry. See [2026-09-07](2026-09-07-saving-includes-day-logging.md).
+  Both choices keep temporary recovery snapshots during the active
   conversation. The settings routes carry `saves`; changing it updates the
   snapshot immediately, and restoration keeps that choice. For Not saved,
   the end button reads Discard, the list marks it "not saved", and ending
@@ -270,6 +275,11 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-07 — web save defaults exercised through HTTP against a temporary
+  notebook: save writes the transcript and a resolving day-file link in the
+  default category, discard leaves the day untouched, and a missing day file
+  returns a logging failure while preserving the transcript.
 
 - 2026-09-07 — fresh route instances restore from real disk snapshots under
   both filing settings, including exact model history with tool results and

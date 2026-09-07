@@ -899,6 +899,10 @@ export function useChat(id: string) {
             aborted?: { reason: string }
             memoryOps?: Array<{ op: string; summary: string; outcome: string }>
             personOps?: Array<{ op?: string; summary?: string; name?: string; outcome?: string }>
+            dayLog?:
+              | { logged: true; category: string }
+              | { logged: false; reason: 'resume' }
+              | { logged: false; reason: 'error'; message: string }
           } | null
         }
         const notes: Note[] = []
@@ -910,6 +914,14 @@ export function useChat(id: string) {
             text: `Saved as “${saved.summary}” · ${saved.exchanges} turn${saved.exchanges === 1 ? '' : 's'}`,
             tone: 'done',
           })
+        if (saved?.dayLog?.logged) {
+          notes.push({ text: 'Logged to the day file', tone: 'done' })
+        } else if (saved?.dayLog?.logged === false && saved.dayLog.reason === 'error') {
+          notes.push({
+            text: `Chat saved, but couldn't log it to the day file: ${saved.dayLog.message}`,
+            tone: 'failed',
+          })
+        }
         for (const m of saved?.memoryOps ?? []) {
           if (m.outcome !== 'skipped') notes.push({ text: `🧠 ${m.op}: ${m.summary}`, tone: 'quiet' })
         }

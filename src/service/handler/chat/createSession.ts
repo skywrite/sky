@@ -422,7 +422,13 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     // The terminal's one-shot titler, over the first exchange: a topic in a few words from the fast model.
     title: (turns) => summarizeTranscript(buildChatTranscript(turns), { kind: CHAT_ENRICH.kind }),
     settings: createChatSettingsHost(),
-    endDefaults: { autoTag: true, autoRel: true, memoryDir: config.DIR_AI_MEMORY, people: true },
+    endDefaults: {
+      autoTag: true,
+      autoRel: true,
+      memoryDir: config.DIR_AI_MEMORY,
+      people: true,
+      logToDay: { category: config.DEFAULT_CATEGORY },
+    },
     timeDir: config.DIR_TIME,
     aboutMePath: config.FILE_ABOUT_ME,
   }

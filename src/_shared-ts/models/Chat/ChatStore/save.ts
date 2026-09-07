@@ -43,7 +43,7 @@ import {
   type PersonSubjectRef,
   type UnlistedPerson,
 } from '#shared/models/Person/write.ts'
-import { dayAIChatsDir, readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { dayAIChatsDir, dayFile, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
@@ -462,6 +462,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   if (input.logToDay) {
     report.dayLog = await logChatToDay({
+      timeDir,
       day,
       startTime,
       summary,
@@ -504,6 +505,7 @@ async function writeRecoveryCopy(markdown: string, endTime: PlainDateTime, recov
  * is already on disk by this point.
  */
 async function logChatToDay(input: {
+  timeDir: string
   day: PlainDate
   startTime: PlainDateTime
   summary: string
@@ -516,14 +518,14 @@ async function logChatToDay(input: {
   try {
     // A branch's file lives beside its parent, which may be another day's;
     // the link is relative to the day the item is on either way.
-    const dayDirPath = path.dirname(path.join(input.savePath.split('/actions/')[0], 'day.md'))
+    const dayDirPath = path.dirname(path.join(input.timeDir, dayFile(input.day)))
     const relativePath = path.relative(dayDirPath, input.savePath)
     const key = `${input.startTime.time} > AI Chat`
     const value = `[${input.summary}](${relativePath})`
 
-    let dayDoc = await readDay(input.day)
+    let dayDoc = await readDay(input.day, input.timeDir)
     dayDoc = dayDoc.setCompleteItem(key, value, { time: input.startTime.time, category: input.category })
-    await writeDay(dayDoc)
+    await writeDay(dayDoc, input.timeDir)
 
     return { logged: true, category: input.category }
   } catch (err) {
