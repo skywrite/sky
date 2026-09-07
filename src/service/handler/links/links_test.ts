@@ -69,6 +69,56 @@ test('link picker searches dates, people and types and distinguishes nested chat
   })
 })
 
+test('link picker finds person aliases and ranks them before paginating newer contextual matches', async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'notebook-link-people-'))
+  const people = path.join(base, 'people')
+  try {
+    await mkdir(people)
+    await writeFile(
+      path.join(people, 'Jane-Doe.md'),
+      '---\nname: [Jane Doe, Jay]\nalt: JD\nnames: Janie\nupdated: 2025-01-01\n---\n',
+    )
+    for (let i = 0; i < 45; i++) {
+      await writeFile(
+        path.join(people, `Contact-${i}.md`),
+        `---\nname: Contact ${i}\nsummary: Blue jay notes\nupdated: 2026-01-28\n---\n`,
+      )
+    }
+    const store = await MarkdownStore.build({ peopleDirs: [people], orgDirs: [], timeDirs: [] })
+    const app = createTestHttpApp([people], { markdownStore: store })
+    const search = async (query: string, offset = 0, kind = 'person') => {
+      const params = new URLSearchParams({ q: query, kind, offset: String(offset) })
+      return (await (await app.request(`/docs/_api/links?${params}`)).json()) as LinkSearch
+    }
+    const first = await search('jay')
+    const next = await search('jay', 40)
+    assert({
+      given: 'an old profile whose alias matches and more than a page of newer summary matches',
+      should: 'return the person first, once, under the canonical link value',
+      actual: [
+        first.items[0]?.title,
+        first.items[0]?.value,
+        first.items[0]?.path,
+        first.total,
+        first.items.length,
+        next.items.length,
+        [...first.items, ...next.items].filter((item) => item.value === 'Jane Doe').length,
+      ],
+      expected: ['Jane Doe', 'Jane Doe', 'people/Jane-Doe.md', 46, 40, 6, 1],
+    })
+    assert({
+      given: 'name-list, alt and names aliases, or the canonical name with mixed case and separators',
+      should: 'resolve each query to the same person, including with all types selected',
+      actual: await Promise.all(
+        ['  JAY ', 'jd', 'janie', 'JANE_doe'].map(async (query) => (await search(query, 0, '')).items[0]?.value),
+      ),
+      expected: ['Jane Doe', 'Jane Doe', 'Jane Doe', 'Jane Doe'],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
 test('link writes retain other metadata and body, deduplicate references and update backlinks immediately', async () => {
   await notebook(async (base, store) => {
     const { host } = createLinks(store, base, [path.join(base, 'time')])

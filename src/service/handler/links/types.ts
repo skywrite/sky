@@ -17,6 +17,8 @@ export interface LinkItem {
   value: string
   path: string
   title: string
+  /** Other names the record answers to; selections retain the canonical value. */
+  aliases?: string[]
   kind: LinkKind
   date?: string
   people?: string

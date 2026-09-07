@@ -60,6 +60,7 @@ remain imported by their existing components and join the same bundle.
 Clock place labels and timezone metadata follow the [clock design](../../clock/docs/README.md).
 The reusable meeting dialog and its mobile layout follow the
 [meeting composer design](../../meetings/docs/README.md).
+The shared link picker follows the [record-link design](../../links/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

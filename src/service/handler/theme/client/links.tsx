@@ -186,7 +186,7 @@ function Picker({
   }
   const groups = new Map<string, LinkItem[]>()
   for (const item of result?.items ?? []) {
-    const label = dateLabel(item.date, today)
+    const label = query.trim() ? 'Search results' : dateLabel(item.date, today)
     groups.set(label, [...(groups.get(label) ?? []), item])
   }
   const body = (

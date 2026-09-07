@@ -58,6 +58,7 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
             : doc && entity.type === 'day'
               ? docTitle(doc, entity.path)
               : (entity.label ?? (doc ? text(doc.yaml['name']) : undefined) ?? entity.value),
+        aliases: entity.aliases,
         kind: recordKind(entity.path, entity.type),
         date: doc ? (parseTimePath(entity.path)?.start.toString() ?? docDate(doc, entity.path)?.ymd) : undefined,
         people: doc
@@ -72,19 +73,41 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
     })
 }
 
+function normalizeSearch(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ')
+}
+
+/** Names and aliases outrank incidental matches in a record's context, regardless of age. */
+function relevance(item: LinkItem, query: string, terms: string[]): number {
+  if (terms.length === 0) return 1
+  const names = [item.title, ...(item.aliases ?? [])].map(normalizeSearch)
+  if (names.includes(query)) return 5
+  if (names.some((name) => name.startsWith(query))) return 4
+  if (names.some((name) => terms.every((term) => name.split(/[\s/.,()]+/).some((word) => word.startsWith(term)))))
+    return 3
+  if (names.some((name) => terms.every((term) => name.includes(term)))) return 2
+  const searchable = normalizeSearch(
+    [...names, item.people, item.summary, item.date, item.path, item.parent?.title].join(' '),
+  )
+  return terms.every((term) => searchable.includes(term)) ? 1 : 0
+}
+
 export function searchLinks(items: LinkItem[], query: string, kind: string, day: string, exclude: string): LinkItem[] {
-  const terms = query.toLowerCase().replace(/[-_]/g, ' ').split(/\s+/).filter(Boolean)
+  const normalized = normalizeSearch(query)
+  const terms = normalized.split(' ').filter(Boolean)
   return items
-    .filter((item) => {
-      if (item.path === exclude || (kind && item.kind !== kind) || (day && item.date !== day)) return false
-      const searchable = [item.title, item.people, item.summary, item.date, item.path, item.parent?.title]
-        .join(' ')
-        .toLowerCase()
-        .replace(/[-_]/g, ' ')
-      return terms.every((term) => searchable.includes(term))
-    })
+    .filter((item) => item.path !== exclude && (!kind || item.kind === kind) && (!day || item.date === day))
+    .map((item) => ({ item, score: relevance(item, normalized, terms) }))
+    .filter(({ score }) => score > 0)
     .sort(
       (a, b) =>
-        (b.date ?? '').localeCompare(a.date ?? '') || a.title.localeCompare(b.title) || a.path.localeCompare(b.path),
+        b.score - a.score ||
+        (b.item.date ?? '').localeCompare(a.item.date ?? '') ||
+        a.item.title.localeCompare(b.item.title) ||
+        a.item.path.localeCompare(b.item.path),
     )
+    .map(({ item }) => item)
 }

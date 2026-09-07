@@ -15,6 +15,62 @@ const FILED = 'time/2026/W05/01-28/actions/videos/Loom_followup.md'
 const SRT = '1\n00:00:00,000 --> 00:00:02,000\nHere is the Atlas follow-up.\n'
 
 test(
+  { name: 'person link search keeps relevance order and saves an alias as its canonical name', timeout: 30000 },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '---\nrel: []\n---\n\n# Notes\n',
+        tempPrefix: 'link-people-e2e-',
+        store: true,
+        files: {
+          'people/Jane-Doe.md': '---\nname: [Jane Doe, Jay]\nalt: JD\nupdated: 2025-01-01\n---\n',
+          'people/Jayden-Doe.md': '---\nname: Jayden Doe\nupdated: 2026-01-27\n---\n',
+          'people/Sanjay-Example.md': '---\nname: Sanjay Example\nupdated: 2025-01-01\n---\n',
+          'people/Bob-Example.md': '---\nname: Bob Example\nsummary: Blue jay notes\nupdated: 2026-01-28\n---\n',
+        },
+      },
+      async ({ page, origin, relativePath, file, errors }) => {
+        await page.goto(`${origin}/explorer/${relativePath}`)
+        await page.getByRole('button', { name: 'Edit', exact: true }).click()
+        for (const width of [1500, 430]) {
+          await page.setViewportSize({ width, height: 1000 })
+          if (width === 430) await page.getByRole('button', { name: 'Show details', exact: true }).click()
+          await page.getByRole('button', { name: '+ Add link', exact: true }).click()
+          await page.getByRole('combobox', { name: 'Link type', exact: true }).click()
+          await page.getByRole('option', { name: 'People', exact: true }).click()
+          await page.getByLabel('Search notebook links').fill('jay')
+          await page.getByRole('heading', { name: 'Search results', exact: true }).waitFor()
+          assert({
+            given: `person search at ${width}px, with exact and substring matches sharing a date`,
+            should: 'show names and aliases by relevance without regrouping them by date',
+            actual: await page.locator('.sky-link-title').allTextContents(),
+            expected: ['Jane Doe', 'Jayden Doe', 'Sanjay Example', 'Bob Example'],
+          })
+          await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+        }
+        await page.getByRole('button', { name: '+ Add link', exact: true }).click()
+        await page.getByLabel('Search notebook links').fill('jd')
+        await page.getByRole('heading', { name: 'Search results', exact: true }).waitFor()
+        await page.getByLabel('Search notebook links').press('ArrowDown')
+        const saved = page.waitForResponse(
+          (response) => response.url().includes('/docs/_api/content/') && response.request().method() === 'PUT',
+        )
+        await page.keyboard.press('Enter')
+        await saved
+        await page.locator('[data-section="links"] a').filter({ hasText: 'Jane Doe' }).waitFor()
+        assert({
+          given: 'a person selected by alias with the keyboard',
+          should: 'save the canonical name without browser errors',
+          actual: [(await readFile(file, 'utf8')).includes('  - Jane Doe'), errors],
+          expected: [true, []],
+        })
+      },
+    )
+  },
+)
+
+test(
   {
     name: 'link an earlier video before import, add a branch during review, and edit links after filing',
     timeout: 45000,

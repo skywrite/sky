@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # Links between notebook records
@@ -14,10 +14,16 @@ Dates, participants and branch details remain available in the picker.
 ## Choosing a record
 
 `GET /docs/_api/links` searches the existing markdown index by title,
-summary, people, tags, date and path. Empty search lists recent records.
-Type and date filters apply before pagination; each page has forty records.
-Dates group under Today, Yesterday or their full date, anchored to notebook
-time. The current document is excluded. Search errors remain visible.
+aliases, summary, people, tags, date and path. Exact names and aliases rank
+first, followed by name/title prefixes, word prefixes, substrings, then
+contextual matches. Dates break ties within each relevance tier. The person
+appears once under their canonical name, whichever alias found them.
+
+Type and date filters and relevance ranking apply before pagination; each
+page has forty records. Searches display in relevance order. Empty search
+lists recent records grouped under Today, Yesterday or their full date,
+anchored to notebook time. The current document is excluded. Search errors
+remain visible.
 
 Videos, meetings, messages, journals and saved chats receive specific type
 labels. A chat branch is its own record, showing its parent title and turn.
@@ -52,11 +58,14 @@ record's Linked from section reflects the new connection immediately.
 
 ## Verification
 
-`links_test.ts` covers search, branches, reference resolution, metadata
-preservation, backlinks, validation, resume and a selection racing filing.
-`../http-links-e2e_test.ts` exercises a video import before Start, a branch
-added during review, reload, previews, filters and editing on a phone.
+`catalog_test.ts` covers name/title relevance, contextual matching and
+filters. `links_test.ts` covers aliases, ranking before pagination, branches,
+reference resolution, metadata preservation, backlinks, validation, resume
+and a selection racing filing. `../http-links-e2e_test.ts` exercises person
+search order on desktop and phone, keyboard selection by alias, a video
+import before Start, a branch added during review, reload and previews.
 
 ## Notes
 
+- [2026-09-07 — names before incidental matches](2026-09-07-names-before-incidental-matches.md)
 - [2026-09-06 — links across an import](2026-09-06-links-across-an-import.md)
