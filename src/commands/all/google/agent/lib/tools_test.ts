@@ -211,3 +211,191 @@ test('get_values - the Sheets API refusal of an Office file points at read_file'
     ],
   })
 })
+
+// ── restyle_doc: fonts and sizes by role, proved by read-back ───────────
+
+const HANDBOOK_URL = 'https://docs.google.com/document/d/d1/edit'
+
+function handbookTab(tabId: string, title: string, family: string, sizes: { heading: number; body: number }) {
+  return {
+    tabProperties: { tabId, title },
+    documentTab: {
+      namedStyles: {
+        styles: [
+          {
+            namedStyleType: 'NORMAL_TEXT',
+            textStyle: { weightedFontFamily: { fontFamily: family }, fontSize: { magnitude: sizes.body } },
+          },
+          { namedStyleType: 'HEADING_1', textStyle: { fontSize: { magnitude: sizes.heading } } },
+        ],
+      },
+      body: {
+        content: [
+          { endIndex: 1 },
+          {
+            startIndex: 1,
+            endIndex: 9,
+            paragraph: {
+              paragraphStyle: { namedStyleType: 'HEADING_1' },
+              elements: [{ startIndex: 1, endIndex: 9, textRun: { content: 'Welcome\n' } }],
+            },
+          },
+          {
+            startIndex: 9,
+            endIndex: 20,
+            paragraph: {
+              paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+              elements: [{ startIndex: 9, endIndex: 20, textRun: { content: 'Hello team\n' } }],
+            },
+          },
+        ],
+      },
+    },
+  }
+}
+
+/** Fake Drive + Docs: the handbook reads as Arial first and as Inter once a batch has been applied. */
+function handbookApi(): (url: URL) => Response {
+  let updated = false
+  return (url) => {
+    if (url.pathname === '/drive/v3/files/d1') {
+      return new Response(
+        JSON.stringify({ id: 'd1', name: 'Atlas Handbook', mimeType: WORKSPACE_MIME.doc, webViewLink: HANDBOOK_URL }),
+        { status: 200 },
+      )
+    }
+    if (url.pathname.endsWith(':batchUpdate')) {
+      updated = true
+      return new Response(JSON.stringify({ replies: [{}, {}, {}, {}, {}, {}] }), { status: 200 })
+    }
+    if (url.pathname === '/v1/documents/d1') {
+      const style = updated ? { family: 'Inter', heading: 14, body: 10 } : { family: 'Arial', heading: 20, body: 11 }
+      return new Response(
+        JSON.stringify({
+          title: 'Atlas Handbook',
+          tabs: [handbookTab('t.0', 'Overview', style.family, style), handbookTab('t.1', 'Notes', style.family, style)],
+        }),
+        { status: 200 },
+      )
+    }
+    return new Response('{}', { status: 404 })
+  }
+}
+
+test('restyle_doc - one call styles every tab by role and proves it by reading back', async () => {
+  const calls: DriveCall[] = []
+  const { tools, log } = await agentToolsOver(handbookApi(), calls)
+
+  const result = (await tools.restyle_doc.execute({
+    fileId: 'd1',
+    fontFamily: 'Inter',
+    sizes: { heading1: 14, body: 10 },
+  })) as Record<string, unknown>
+
+  const batch = calls.find((c) => c.path.endsWith(':batchUpdate'))
+  const requests = (
+    JSON.parse(batch?.body ?? '{}') as { requests: Array<{ updateTextStyle: Record<string, unknown> }> }
+  ).requests
+
+  assert({
+    given: 'a two-tab doc, a family and sizes for heading1 and body',
+    should: 'read the doc, send one batch of six tab-scoped updateTextStyle requests, then read it back',
+    expected: {
+      paths: ['/drive/v3/files/d1', '/v1/documents/d1', '/v1/documents/d1:batchUpdate', '/v1/documents/d1'],
+      kinds: [
+        'updateTextStyle',
+        'updateTextStyle',
+        'updateTextStyle',
+        'updateTextStyle',
+        'updateTextStyle',
+        'updateTextStyle',
+      ],
+      firstRange: { startIndex: 1, endIndex: 19, tabId: 't.0' },
+      firstFields: 'weightedFontFamily',
+      tabs: ['t.0', 't.0', 't.0', 't.1', 't.1', 't.1'],
+    },
+    actual: {
+      paths: calls.map((c) => c.path),
+      kinds: requests.map((r) => Object.keys(r)[0]),
+      firstRange: requests[0]?.updateTextStyle.range,
+      firstFields: requests[0]?.updateTextStyle.fields,
+      tabs: requests.map((r) => (r.updateTextStyle.range as { tabId: string }).tabId),
+    },
+  })
+
+  assert({
+    given: 'the result and the progress feed',
+    should: 'report the tabs, the applied count and a clean read-back, and log one line per batch plus the summary',
+    expected: {
+      file: 'Atlas Handbook',
+      restyled: 'Inter; heading1 14pt, body 10pt',
+      tabs: [
+        { tabId: 't.0', title: 'Overview', paragraphs: 2 },
+        { tabId: 't.1', title: 'Notes', paragraphs: 2 },
+      ],
+      applied: 6,
+      readBack: { runs: 4, matching: 4, off: [], skipped: 0 },
+      log: [
+        'Restyling "Atlas Handbook": batch 1/1 (6 requests)',
+        'Restyled "Atlas Handbook" — Inter; heading1 14pt, body 10pt: 2 tab(s), 6 request(s); read-back: all 4 text runs match',
+      ],
+    },
+    actual: {
+      file: result.file,
+      restyled: result.restyled,
+      tabs: result.tabs,
+      applied: result.applied,
+      readBack: result.readBack,
+      log,
+    },
+  })
+})
+
+test('restyle_doc - a bad spec is refused before anything is read or written', async () => {
+  const calls: DriveCall[] = []
+  const { tools } = await agentToolsOver(handbookApi(), calls)
+
+  const result = String(await tools.restyle_doc.execute({ fileId: 'd1', sizes: { caption: 9 } } as never))
+
+  assert({
+    given: 'a size for a role that does not exist',
+    should: 'name the role and the valid roles, with no API call made',
+    expected: { error: true, namesRole: true, calls: 0 },
+    actual: {
+      error: result.startsWith('Error: unknown role "caption"'),
+      namesRole: result.includes('tableHeader'),
+      calls: calls.length,
+    },
+  })
+})
+
+// ── The repetition guard around every mission tool ──────────────────────
+
+test('a mission tool called three times with the same input and result is refused the third time', async () => {
+  const calls: DriveCall[] = []
+  const { tools, log } = await agentToolsOver(uploadedWorkbookApi(false), calls)
+
+  const first = await tools.find_files.execute({ query: 'Atlas' })
+  const second = (await tools.find_files.execute({ query: 'Atlas' })) as unknown as Record<string, unknown>
+  const third = String(await tools.find_files.execute({ query: 'Atlas' }))
+
+  assert({
+    given: 'three identical Drive searches that all come back empty',
+    should:
+      'run two — the second carrying the repeat note — refuse the third without a request, and say so in the feed',
+    expected: {
+      first: [],
+      secondNoted: true,
+      thirdRefused: true,
+      driveSearches: 2,
+      lastLog: 'Refused a repeated find_files call — same input, same result twice already',
+    },
+    actual: {
+      first,
+      secondNoted: String(second.repeated).includes('nothing has changed since'),
+      thirdRefused: third.startsWith('Error: refused — this exact find_files call'),
+      driveSearches: calls.filter((c) => c.path === '/drive/v3/files').length,
+      lastLog: log.at(-1),
+    },
+  })
+})

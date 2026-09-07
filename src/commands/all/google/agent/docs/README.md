@@ -1,15 +1,23 @@
 ---
 created: 2026-08-09
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # google:agent — the mission loop and its reliability ladder
 
-A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` (Qwen 3.8
-on Cerebras, on trial since [2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cerebras-provider.md))
-with the agent tools — or the profile named by `--reasoning`, e.g.
-`default-opus-5` for the deep run — up to `MAX_STEPS = 48` steps, final
-text = the report. A create-only mission runs without a go; a mission on an
+A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — Opus 5
+at medium effort (`default-opus-5-medium`) — with the agent tools, or the
+profile named by `--reasoning` (`default-opus-5` for full depth,
+`default-sonnet-5` for no thinking), up to `MAX_STEPS = 48` steps, final
+text = the report. A mission executes a brief the chat model already
+wrote, so it needs Opus's hands without Opus's deliberation. Measured on one
+three-tab brief on 2026-09-06: Opus 5 at xhigh, the default until then,
+took 19m28s for 25 steps, 19m05s of it thinking, and built the doc right;
+Qwen 3.8 on Cerebras, the default on trial from
+[2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cerebras-provider.md),
+took 4m49s, probed request formats against the live document one request
+per batch, emptied two of three tabs, and ended on a narration that passed
+for a report. A create-only mission runs without a go; a mission on an
 existing file, or an import, asks once per file per chat
 (`lib/approval.ts`). Two properties of
 that loop are non-obvious and load-bearing:
@@ -88,6 +96,29 @@ The closing line and notebook record retain profile, steps, model/tool time,
 and per-tool counts, now with a trace ID and overlap/other measurements.
 `lib/timing.ts` is a compatibility export for the record format. The command
 trace also covers preparation and cleanup outside the mission's model loop.
+
+## Fonts and sizes by role
+
+A typography mission — one typeface, sizes per role, across a doc with
+several tabs — used to be dozens of model-authored `updateTextStyle`
+batches, each needing an outline read first, none verifiable. `restyle_doc`
+(`#lib/google/docsRestyle.ts`) makes it one deterministic call: roles come
+from the structure alone (named paragraph styles; inside tables, header rows
+against the rest), the family goes over each tab's whole text, sizes go on
+coalesced ranges per role, and a read-back resolves inheritance and reports
+every run that still differs. Only the fields the spec names change. The
+agent prompt routes font and size missions there and away from hand-built
+batches ([2026-09-05](2026-09-05-fonts-and-sizes-by-role.md)).
+
+## Repeated calls
+
+Every mission tool runs behind the chat engine's repetition guard
+(`#shared/models/Chat/ChatEngine/repetitionGuard.ts`): the same tool with
+the same input and the same result twice is refused the third time, unrun,
+with the reason in the model's terms, and the feed says so. The guard never
+ends a mission on its own — `MAX_STEPS` does that — it takes the wasted
+calls out of the loop. The chat engine's own turn gets the fuller ladder
+([Chat docs](../../../../../_shared-ts/models/Chat/docs/README.md)).
 
 ## Stall forensics
 

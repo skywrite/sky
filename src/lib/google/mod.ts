@@ -92,6 +92,16 @@ export {
 export type { DocOutline, DocOutlineEntry, DocSuggestion, DocTabInfo, DocTabOutline, DocTabText } from './docs.ts'
 
 export {
+  RESTYLE_ROLES,
+  checkRestyle,
+  describeRestyleSpec,
+  planRestyle,
+  restyleDoc,
+  validateRestyleSpec,
+} from './docsRestyle.ts'
+export type { RestyleCheck, RestyleResult, RestyleRole, RestyleSpec } from './docsRestyle.ts'
+
+export {
   SLIDES_ALLOWED_REQUESTS,
   SLIDES_API_URL,
   batchUpdateSlides,

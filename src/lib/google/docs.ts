@@ -30,7 +30,7 @@ export const DOCS_ALLOWED_REQUESTS = new Set([
   'deleteTab',
 ])
 
-const MAX_REQUESTS_PER_BATCH = 100
+export const MAX_REQUESTS_PER_BATCH = 100
 
 /** Returns a user/agent-readable problem description, or null when the batch is acceptable. */
 export function validateDocsRequests(requests: unknown): string | null {
@@ -64,14 +64,14 @@ interface RawTabProperties {
   nestingLevel?: number
 }
 
-function nestedTabFields(perTab: string, depth = 3): string {
+export function nestedTabFields(perTab: string, depth = 3): string {
   return depth <= 1 ? perTab : `${perTab},childTabs(${nestedTabFields(perTab, depth - 1)})`
 }
 
-const TAB_PROPS_FIELDS = 'tabProperties(tabId,title,nestingLevel)'
+export const TAB_PROPS_FIELDS = 'tabProperties(tabId,title,nestingLevel)'
 
 /** Tabs flattened to document order: each parent immediately before its children. */
-function flattenTabs<T extends { childTabs?: T[] }>(tabs: T[]): T[] {
+export function flattenTabs<T extends { childTabs?: T[] }>(tabs: T[]): T[] {
   const flat: T[] = []
   const walk = (list: T[]): void => {
     for (const tab of list) {
@@ -83,7 +83,7 @@ function flattenTabs<T extends { childTabs?: T[] }>(tabs: T[]): T[] {
   return flat
 }
 
-async function fetchDoc<T>(client: GoogleClient, fileId: string, fields: string): Promise<T> {
+export async function fetchDoc<T>(client: GoogleClient, fileId: string, fields: string): Promise<T> {
   const url = new URL(`${DOCS_API_URL}/${encodeURIComponent(fileId)}`)
   url.searchParams.set('includeTabsContent', 'true')
   url.searchParams.set('fields', fields)

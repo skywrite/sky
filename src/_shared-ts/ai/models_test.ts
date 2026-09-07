@@ -206,6 +206,28 @@ test('default-fable-5.1-high profile resolves to fable 5.1 at effort high', () =
   })
 })
 
+test('default-opus-5-medium profile resolves to opus 5 at effort medium', () => {
+  const resolved = aiModelByProfile('default-opus-5-medium')
+  assert({
+    given: 'the default-opus-5-medium profile',
+    should: 'resolve to claude-opus-5',
+    actual: modelId(resolved.model),
+    expected: 'claude-opus-5',
+  })
+  assert({
+    given: 'its effort option',
+    should: 'land under providerOptions.anthropic as high',
+    actual: resolved.providerOptions?.['anthropic']?.['effort'],
+    expected: 'medium',
+  })
+  assert({
+    given: 'its thinking option',
+    should: 'land under providerOptions.anthropic as adaptive',
+    actual: resolved.providerOptions?.['anthropic']?.['thinking'],
+    expected: { type: 'adaptive' },
+  })
+})
+
 for (const effort of ['high', 'xhigh'] as const) {
   test(`default-gpt-6-astra-${effort} routes openai options under providerOptions.openai`, () => {
     const resolved = aiModelByProfile(`default-gpt-6-astra-${effort}`)

@@ -5,6 +5,7 @@ import { generateText, jsonSchema } from 'ai'
 import {
   EXPORT_MIME,
   MAX_IMAGE_BYTES,
+  RESTYLE_ROLES,
   WORKSPACE_MIME,
   batchUpdateDoc,
   batchUpdateSlides,
@@ -15,6 +16,7 @@ import {
   createComment,
   createReply,
   deleteComment,
+  describeRestyleSpec,
   listComments,
   listDocSuggestionIds,
   listDocSuggestions,
@@ -41,6 +43,7 @@ import {
   presentationUrl,
   renameFile,
   replaceFileWithMarkdown,
+  restyleDoc,
   searchFiles,
   setValues,
   sniffImageMime,
@@ -49,12 +52,14 @@ import {
   uploadFile,
   uploadedSpreadsheetFormat,
   validateDocsRequests,
+  validateRestyleSpec,
   validateSheetsRequests,
   validateSlidesRequests,
   workspaceKind,
 } from '#lib/google/mod.ts'
-import type { GoogleClient, WorkspaceKind } from '#lib/google/mod.ts'
+import type { GoogleClient, RestyleSpec, WorkspaceKind } from '#lib/google/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
+import { RepetitionGuard, guardTools } from '#shared/models/Chat/ChatEngine/repetitionGuard.ts'
 import { paginateRead } from '../../lib/readWorkspaceFile.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
 import { suggestDocsEdit } from './browserSuggestions.ts'
@@ -67,6 +72,9 @@ export interface MissionFile {
   kind?: WorkspaceKind
   action: 'created' | 'updated' | 'read'
 }
+
+/** restyle_doc input: the spec plus the document it applies to. */
+type RestyleInput = RestyleSpec & { fileId: string }
 
 /** What the mission touched — drives the notebook artifact and the command result. */
 export interface MissionState {
@@ -1292,6 +1300,61 @@ export function createAgentTools(deps: {
       },
     },
 
+    restyle_doc: {
+      description:
+        'Put one typography on a Google Doc deterministically, by paragraph role, across every tab at once, verified by read-back. fontFamily sets ONE font on all text; sizes are points per role: title, subtitle, heading1…heading6, body, tableHeader (rows flagged as header, else the first row of each table) and tableCell (the other rows; table roles fall back to body). Only what you pass changes — bold, italic, colors, cell fills, alignment, spacing and content stay as they are. Use this INSTEAD of hand-built updateTextStyle batches whenever a mission is about fonts or sizes; the result says how many text runs match and lists those that do not. Headers, footers and footnotes are not touched. tabIds limits the pass to those tabs (default: all).',
+      inputSchema: jsonSchema<RestyleInput>({
+        type: 'object',
+        properties: {
+          fileId: { type: 'string' },
+          fontFamily: {
+            type: 'string',
+            description: 'One font for every text run, e.g. "Inter" — any Google Fonts name',
+          },
+          sizes: {
+            type: 'object',
+            description: 'Point sizes by role; roles you leave out keep their size',
+            properties: Object.fromEntries(RESTYLE_ROLES.map((role) => [role, { type: 'number' as const }])),
+            additionalProperties: false,
+          },
+          tabIds: { type: 'array', items: { type: 'string' }, description: 'Only these tabs (default: every tab)' },
+        },
+        required: ['fileId'],
+      }),
+      execute: async ({ fileId, ...spec }: RestyleInput) => {
+        const problem = validateRestyleSpec(spec)
+        if (problem) return `Error: ${problem}`
+        try {
+          const file = await getFile(client, fileId)
+          if (workspaceKind(file.mimeType) !== 'doc') {
+            return `Error: "${file.name}" is not a Google Doc — restyle_doc styles Docs only`
+          }
+          const result = await restyleDoc(client, fileId, spec, log)
+          track(state, 'updated', file)
+          const { check } = result
+          const verdict =
+            check.runs === 0
+              ? 'no text to check'
+              : check.off.length === 0
+                ? `all ${check.runs} text runs match`
+                : `${check.runs - check.matching} of ${check.runs} text runs differ`
+          log(
+            `Restyled "${file.name}" — ${describeRestyleSpec(spec)}: ${result.tabs.length} tab(s), ${result.applied} request(s); read-back: ${verdict}`,
+          )
+          return {
+            file: file.name,
+            restyled: describeRestyleSpec(spec),
+            tabs: result.tabs,
+            applied: result.applied,
+            readBack: check,
+            untouched: 'headers, footers and footnotes',
+          }
+        } catch (err) {
+          return toolError(err)
+        }
+      },
+    },
+
     get_doc_outline: {
       description:
         'Inspect a Google Doc: title, headings with startIndex/endIndex (for range-based styling), paragraph count, end index. A doc holding several tabs returns one outline per tab under `tabs` (tabId, tabTitle, headings) — indexes are LOCAL to each tab. Use after writes to verify structure.',
@@ -1319,5 +1382,9 @@ export function createAgentTools(deps: {
     },
   }
 
-  return withToolTimeouts(tools, log)
+  // Outermost: the repetition guard answers before a timed call starts.
+  const guard = new RepetitionGuard({
+    onRefusal: (tool) => log(`Refused a repeated ${tool} call — same input, same result twice already`),
+  })
+  return guardTools(withToolTimeouts(tools, log), guard)
 }

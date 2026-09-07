@@ -40,8 +40,18 @@ import type { MissionFile } from './lib/tools.ts'
 
 const MAX_STEPS = 48
 
-/** The profile a mission runs on unless `--reasoning` says otherwise (Qwen on Cerebras, on trial). */
-const MISSION_PROFILE = 'default-cerebras-qwen-3.8'
+/**
+ * The profile a mission runs on unless `--reasoning` says otherwise. A
+ * mission executes a brief the chat model already wrote — content, tab
+ * names, design direction — so it needs Opus's hands without Opus's
+ * deliberation: the same model at medium effort. Measured 2026-09-06 on one
+ * brief: Opus 5 at xhigh took 19m28s for 25 steps, 19m05s of it thinking
+ * (~46 s a step), and built the doc right; Qwen 3.8 on Cerebras took 4m49s,
+ * probed request formats against the live doc and emptied two tabs.
+ * `--reasoning default-opus-5` is the full-depth run; `default-sonnet-5`
+ * the no-thinking one.
+ */
+const MISSION_PROFILE = 'default-opus-5-medium'
 /**
  * The watchdog counts EVERY stream frame: includeRawChunks surfaces the
  * provider's raw SSE events, so Anthropic's keep-alive pings re-arm it even
@@ -70,7 +80,7 @@ const params = {
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  reasoning: Flag.string('Model profile that runs the mission (e.g. default-cerebras-qwen-3.8, default-opus-5)', {
+  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5-medium, default-sonnet-5)', {
     short: 'r',
     default: () => MISSION_PROFILE,
   }),
@@ -136,10 +146,9 @@ export default class GoogleAgentTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
 
-    // The mission's model is a profile, picked per run. The default is the
-    // fast Cerebras profile while it is on trial for missions;
-    // `--reasoning default-opus-5` is the deep run. An unknown name fails
-    // here, before any Google work.
+    // The mission's model is a profile, picked per run. The default is Opus
+    // at medium effort; `--reasoning default-opus-5` is the full-depth run.
+    // An unknown name fails here, before any Google work.
     let missionProfile: ModelProfile
     try {
       missionProfile = getProfile(args.reasoning)

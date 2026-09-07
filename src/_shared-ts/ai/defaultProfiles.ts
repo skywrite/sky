@@ -42,6 +42,14 @@ export const PROFILES = {
     model: 'claude-opus-5',
     options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
   }),
+  // Opus with its thinking reined in: for hands work on a brief already
+  // reasoned through — a google:agent mission — where xhigh spent ~46 s a
+  // step deliberating (measured 2026-09-06) and medium keeps the judgment.
+  'default-opus-5-medium': defineProfile({
+    provider: 'anthropic',
+    model: 'claude-opus-5',
+    options: { effort: 'medium', thinking: { type: 'adaptive' } },
+  }),
   'default-sonnet-5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
   'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
   'default-gpt-6-astra-xhigh': defineProfile({
