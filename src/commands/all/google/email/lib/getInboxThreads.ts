@@ -1,5 +1,5 @@
 import type { GoogleClient } from '#lib/google/mod.ts'
-import { getThread, listThreads, modifyThread, resolveLabelId, threadIdToDecimal } from '#lib/google/mod.ts'
+import { getThread, listThreads, modifyThread, resolveLabel, threadIdToDecimal } from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 
@@ -61,19 +61,25 @@ export function savedByCutoff(msgDate: Date, lastActivity: Date): boolean {
  * Get all threads carrying a Gmail label, grouped and marked as saved/unsaved
  * against the follow registry. Shared between google:email:inbox:view
  * (display) and google:email:inbox:fetch (download). `limit` counts threads
- * (the IMAP original counted messages).
+ * (the IMAP original counted messages). Display-only callers set
+ * `syncLabels: false` to avoid relabeling replies in user buckets.
  */
 export async function getInboxThreads(
   client: GoogleClient,
   label: string,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; syncLabels?: boolean; followDir?: string } = {},
 ): Promise<InboxThreadsResult> {
   const { limit = 250 } = opts
 
-  const labelId = await resolveLabelId(client, label)
-  if (!labelId) {
+  const resolved = await resolveLabel(client, label)
+  if (!resolved) {
     throw new Error(`Gmail label "${label}" not found for ${client.email}`)
   }
+  const labelId = resolved.id
+  // The thread-level label sync below is persistence hygiene for user
+  // buckets like Sky/Follow. It must never run for a system label:
+  // re-adding INBOX un-archives, re-adding UNREAD marks mail unread.
+  const syncLabels = (opts.syncLabels ?? true) && resolved.type === 'user'
 
   const refs = await listThreads(client, { labelIds: [labelId], limit })
 
@@ -86,7 +92,7 @@ export async function getInboxThreads(
     // inherit the label, and archiving would make them unfindable under it.
     // The IMAP original copied INBOX replies into the label folder; here one
     // thread-level add labels every message.
-    if (messages.some((m) => !m.labelIds.includes(labelId))) {
+    if (syncLabels && messages.some((m) => !m.labelIds.includes(labelId))) {
       try {
         await modifyThread(client, ref.id, { addLabelIds: [labelId] })
       } catch {
@@ -114,7 +120,7 @@ export async function getInboxThreads(
   const followMessages = new Map<string, { date: string; path: string }[]>()
   const followLastActivity = new Map<string, Date>()
   const followFiles = new Map<string, string>()
-  const registry = await EmailFollowRegistry.build()
+  const registry = await EmailFollowRegistry.build(opts.followDir)
   for (const entry of registry.getAll()) {
     const tid = entry.follow.ref.threadId
     if (!tid) continue

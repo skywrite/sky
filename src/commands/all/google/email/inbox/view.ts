@@ -1,7 +1,10 @@
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { z } from 'zod'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
+import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { AccountResolutionError, listLabels } from '#lib/google/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { AccountResolutionError, getLabelCounts, listLabels } from '#lib/google/mod.ts'
+import type { GmailLabelCounts } from '#lib/google/mod.ts'
+import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
@@ -9,11 +12,25 @@ import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
 const params = {
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
   label: Flag.string('Gmail label to read', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to fetch', { default: () => 250 }),
+  limit: Flag.number('Max threads to fetch', { default: () => 250, schema: z.coerce.number().int().positive() }),
 }
 
 type Params = InferParams<typeof params>
-type Result = { count: number; label: string }
+
+/** One thread as the tool reports it — enough to say it aloud and act on it. */
+interface ViewThreadRow {
+  /** Gmail API thread id — pass to google:email:read and google:email:draft:reply. */
+  threadId: string
+  subject: string
+  from: string
+  /** Newest message time, ISO. */
+  date?: string
+  snippet?: string
+  messages: number
+  saved: boolean
+}
+
+type Result = { count: number; label: string; threads: ViewThreadRow[]; totals: GmailLabelCounts | null }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -21,10 +38,16 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
+@AIChatTool({ needsApproval: false })
 export default class GoogleEmailInboxViewTask extends Command {
   static override description: CommandDescription = {
     name: 'google:email:inbox:view',
-    description: 'List emails in a Gmail label with their labels, sender, subject, and date.',
+    description:
+      'List Gmail threads in a label, newest first: sender, subject, date, snippet, and the threadId that ' +
+      'google:email:read and google:email:draft:reply take. label INBOX is the inbox, UNREAD is unread mail; ' +
+      "the default is the Sky/Follow bucket. `totals` carries the label's true thread and message counts — " +
+      'answer "how many" from totals, never from the number of listed threads. A null totals means the total ' +
+      'could not be retrieved. Changes nothing.',
     descriptionLong: [
       'Gmail-API twin of email:inbox:view, using the OAuth grant from google:auth',
       '(requires the Gmail scope). Shows a compact summary of threads in the',
@@ -41,7 +64,12 @@ export default class GoogleEmailInboxViewTask extends Command {
 
     let client
     try {
-      client = await resolveGmailClient({ secrets, requested: account, interactive: true })
+      client = await resolveGmailClient({
+        secrets,
+        requested: account,
+        // A composed or served call must error on ambiguity, not prompt.
+        interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
+      })
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
       throw err
@@ -50,19 +78,43 @@ export default class GoogleEmailInboxViewTask extends Command {
     try {
       output.log(`\n  Fetching "${label}" for ${client.email} (limit: ${limit})...\n`)
 
-      const { threads, savedCount, labelId } = await getInboxThreads(client, label, { limit })
+      const { threads, savedCount, labelId } = await getInboxThreads(client, label, {
+        limit,
+        syncLabels: false,
+        followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+      })
+
+      const totals = await getLabelCounts(client, labelId).catch(() => null)
 
       if (threads.length === 0) {
         output.log('  No messages found.\n')
-        return CommandResult.success({ count: 0, label })
+        return CommandResult.success({ count: 0, label, threads: [], totals })
       }
 
       const labelNames = new Map((await listLabels(client)).map((l) => [l.id, l.name]))
       const msgCount = outputTable(output, threads, labelId, labelNames)
 
+      const rows: ViewThreadRow[] = threads.map((t) => {
+        const newest = t.messages[t.messages.length - 1]
+        const first = t.messages[0]
+        const timestamp = newest.date ? Instant.fromEpochMilliseconds(Number(newest.date)) : undefined
+        return {
+          threadId: t.apiThreadId,
+          subject: first.subject || '(no subject)',
+          from: newest.from?.name || newest.from?.address || '(unknown)',
+          date: timestamp?.toString({ smallestUnit: 'millisecond' }),
+          snippet: newest.snippet,
+          messages: t.messages.length,
+          saved: t.saved,
+        }
+      })
+
       const savedStr = savedCount > 0 ? `, ${savedCount} saved` : ''
-      output.log(`\n  ${msgCount} message(s) in ${threads.length} thread(s)${savedStr}\n`)
-      return CommandResult.success({ count: msgCount, label })
+      const totalStr = totals
+        ? ` — label total: ${totals.threadsTotal} thread(s), ${totals.messagesTotal} message(s)`
+        : ''
+      output.log(`\n  ${msgCount} message(s) in ${threads.length} thread(s)${savedStr}${totalStr}\n`)
+      return CommandResult.success({ count: msgCount, label, threads: rows, totals })
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')
     }

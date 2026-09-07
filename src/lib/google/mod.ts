@@ -152,6 +152,7 @@ export {
   draftUrl,
   getAttachment,
   getDraft,
+  getLabelCounts,
   getMessage,
   getThread,
   hasGmailScope,
@@ -165,6 +166,14 @@ export {
   threadIdToDecimal,
   updateDraft,
 } from './gmail.ts'
-export type { GmailAddress, GmailAttachment, GmailDraft, GmailLabel, GmailMessage, GmailThreadRef } from './gmail.ts'
+export type {
+  GmailAddress,
+  GmailAttachment,
+  GmailDraft,
+  GmailLabel,
+  GmailLabelCounts,
+  GmailMessage,
+  GmailThreadRef,
+} from './gmail.ts'
 
 export { renderEmailHtml } from './emailHtml.ts'

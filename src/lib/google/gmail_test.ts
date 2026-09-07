@@ -7,6 +7,7 @@ import {
   createDraft,
   draftUrl,
   getAttachment,
+  getLabelCounts,
   getThread,
   hasGmailScope,
   listThreads,
@@ -222,6 +223,24 @@ test('resolveLabelId', async () => {
       await resolveLabelId(client, 'sky/follow'),
       await resolveLabelId(client, 'Nope'),
     ],
+  })
+})
+
+test('getLabelCounts', async () => {
+  const calls: RecordedCall[] = []
+  const counts = { threadsTotal: 80, messagesTotal: 125, threadsUnread: 7, messagesUnread: 9 }
+  const client = await clientWith([counts, {}], calls)
+  const totals = await getLabelCounts(client, 'Label_7')
+  const empty = await getLabelCounts(client, 'INBOX')
+  assert({
+    given: 'label-wide counts and an empty label response',
+    should: 'fetch each label directly and distinguish messages from threads, defaulting absent counts to zero',
+    expected: {
+      paths: ['/gmail/v1/users/me/labels/Label_7', '/gmail/v1/users/me/labels/INBOX'],
+      totals: counts,
+      empty: { threadsTotal: 0, messagesTotal: 0, threadsUnread: 0, messagesUnread: 0 },
+    },
+    actual: { paths: calls.map((call) => new URL(call.url).pathname), totals, empty },
   })
 })
 

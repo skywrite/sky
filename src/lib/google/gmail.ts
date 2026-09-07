@@ -157,6 +157,29 @@ export async function listLabels(client: GoogleClient): Promise<GmailLabel[]> {
   )
 }
 
+/** A label's true totals, from labels.get — the numbers Gmail's own UI shows. */
+export interface GmailLabelCounts {
+  threadsTotal: number
+  messagesTotal: number
+  threadsUnread: number
+  messagesUnread: number
+}
+
+export async function getLabelCounts(client: GoogleClient, labelId: string): Promise<GmailLabelCounts> {
+  const wire = await client.getJson<{
+    threadsTotal?: number
+    messagesTotal?: number
+    threadsUnread?: number
+    messagesUnread?: number
+  }>(`${GMAIL_API_URL}/labels/${encodeURIComponent(labelId)}`)
+  return {
+    threadsTotal: wire.threadsTotal ?? 0,
+    messagesTotal: wire.messagesTotal ?? 0,
+    threadsUnread: wire.threadsUnread ?? 0,
+    messagesUnread: wire.messagesUnread ?? 0,
+  }
+}
+
 /** Resolve a label display name ("Sky/Follow", "INBOX") to the label; exact match first, then case-insensitive. */
 export async function resolveLabel(client: GoogleClient, name: string): Promise<GmailLabel | undefined> {
   const labels = await listLabels(client)
