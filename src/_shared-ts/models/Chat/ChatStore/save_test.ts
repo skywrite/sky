@@ -670,7 +670,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
   let sawTranscript: string | undefined
   const report = await saveChat({
     turns: [
-      msg('user', 'What did Alex Rivera say about the rollout?', '2026-01-27 09:30'),
+      msg('user', 'Earlier discussion. '.repeat(3000) + 'Alex Rivera moved to Lisbon.', '2026-01-27 09:30'),
       msg('assistant', 'Alex Rivera confirmed the vendor timeline and moved to Lisbon.', '2026-01-27 09:31'),
     ],
     contextLog: [],
@@ -705,9 +705,14 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
 
   assert({
     given: 'the distiller inputs',
-    should: 'carry the packed conversation',
-    actual: Boolean(sawTranscript?.includes('Alex Rivera confirmed the vendor timeline')),
-    expected: true,
+    should: 'carry the full conversation, including a fact after 48k characters and its source time',
+    actual: {
+      fact: sawTranscript?.includes('Alex Rivera moved to Lisbon.'),
+      sourceTime: sawTranscript?.includes('User [2026-01-27 09:30]:'),
+      assistantContext: sawTranscript?.includes('Alex Rivera confirmed the vendor timeline'),
+      fullLength: (sawTranscript?.length ?? 0) > 48_000,
+    },
+    expected: { fact: true, sourceTime: true, assistantContext: true, fullLength: true },
   })
 
   assert({

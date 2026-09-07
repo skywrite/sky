@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-06
 ---
 
 # meeting:new — the action items
@@ -10,6 +10,9 @@ file (the pipeline itself is `commands/all/audio/transcript/docs/README.md`).
 Once the meeting is on disk it offers the summary's action items for
 acceptance. This page is about that step: what is offered, where an accepted
 item goes, and how the terminal and the web page ask.
+
+Profile curation uses the corrected transcript; its evidence and write rules
+live in [Person profiles](../../../../_shared-ts/models/Person/docs/README.md).
 
 ## What is offered
 

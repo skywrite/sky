@@ -25,7 +25,7 @@ import { fetchEntityScores } from './scores.ts'
 // the model.
 
 // generateObject has no timeout option; an unbounded call can hang forever.
-const AI_TIMEOUT_MS = 60_000
+const AI_TIMEOUT_MS = 180_000
 
 const LINE_RULE = `one fact, at most ${MAX_WORDS_PER_LINE} words, no semicolons`
 
@@ -58,7 +58,7 @@ const opSchema = z.discriminatedUnion('op', [
 ])
 
 export type PersonDistillInput = {
-  /** The packed conversation transcript */
+  /** The complete conversation or corrected meeting transcript */
   transcript: string
   /** The discovered people and their current profiles */
   subjects: PersonSubject[]
@@ -82,7 +82,7 @@ export interface PersonFactsDistillation extends PersonDistillResult {
 
 /**
  * The full front half of person curation over any finished text — chat
- * transcript, meeting summary: service-backed subject discovery (the whole
+ * transcript: service-backed subject discovery (the whole
  * people index, ranked by the service's interaction scores so a bare first
  * name surfaces the likely namesakes), then the distill call. A host that
  * already confirmed the text's people passes them as anchors, and a bare
@@ -93,7 +93,7 @@ export interface PersonFactsDistillation extends PersonDistillResult {
  */
 export async function distillPersonFactsFromText(
   input: { text: string; today: string; userLabel: string; kind: string; anchors?: string[] },
-  role: Role = 'fast',
+  role: Role = 'balanced',
 ): Promise<PersonFactsDistillation | undefined> {
   let index: PersonIndexEntry[] = []
   let subjects: PersonSubject[] = []
@@ -135,11 +135,19 @@ export function personFactsPrompt(input: { kind: string; userLabel: string; toda
   return [
     `You curate the person profiles — the CRM — of a personal markdown notebook. Below are a finished ${input.kind} and the current profiles of the people it may mention. Decide what those profiles should learn and return the operations.`,
     '',
+    'EVIDENCE — keep the source and its certainty intact:',
+    '- In an AI chat, learn only from the User turns: what the user stated, corrected, or explicitly confirmed. AI turns help interpret the user but are never evidence. Do not promote assistant suggestions, summaries, or assessments into facts, even when the user did not object.',
+    '- In a meeting transcript, learn from what the speakers actually said. Confirmed attendee names and the meeting date frame the transcript. Attribute opinions and secondhand reports to their speaker; do not turn them into established facts.',
+    '- A question, possibility, proposed role, suggested task, or unconfirmed handoff is not a fact. Preserve uncertainty and qualifications. A later explicit correction overrides an earlier claim.',
+    '- Date historical facts from the source, not from the day this profile is saved. A past meeting cannot establish that its temporary situation is still current. Never write floating dates such as "today", "Thursday", or "in two weeks".',
+    '- Existing profiles are the baseline to preserve. Their presence is not a reason to rewrite them. If the new source teaches nothing, return no operations.',
+    '',
     'THE BAR — most conversations teach nothing about a person:',
     '- Return ZERO ops for a person unless the conversation materially discussed them or revealed durable facts about them. A passing mention teaches nothing.',
     '- The profiles are candidates matched by name, not conclusions: a bare first name in the conversation lists the likeliest profile answering to it — two when their standing with the user is close — and the person meant may be none of them. Attribute a mention to a profile only when its org, role, or history fits the conversation; when it is unclear which person is meant, write nothing about them — no ops and no unlisted entry.',
     "- Profiles hold who a person IS: identity, role, history, family, preferences — what makes them legible in future conversations. The notebook's meetings, messages, and chats already record what HAPPENED; never copy event minutiae into a profile.",
-    "- Never invent. Every fact must come from the transcript or from the person's current profile.",
+    '- Never invent. Every new or corrected fact needs explicit source evidence under the rules above. Preserve existing facts unless that evidence corrects them.',
+    '- Compare meaning across the whole profile, including prose and subsections. Do not append a fact already present in different words, or turn existing prose into additional bullets.',
     '',
     'FORMAT — a reader with no patience takes each line in at a glance:',
     `- One fact per line. At most ${MAX_WORDS_PER_LINE} words. No semicolons. No dashes joining clauses. No lists inside a line.`,
@@ -147,9 +155,9 @@ export function personFactsPrompt(input: { kind: string; userLabel: string; toda
     '- A line that breaks these rules is refused, so split a long thought into two lines.',
     '',
     'Operations (name each person exactly as their profile is listed):',
-    `- overview: the full replacement ## Overview, ${MAX_OVERVIEW_LINES} lines at most. It answers "who is this and where do things stand": role and org, how they connect to ${user}, where the relationship or engagement stands now, a candid read worth keeping. It REPLACES the current Overview, so carry over every fact still true from it, reworded freely, one per line. Recent events and the current state belong here and nowhere else. Omit it when the picture has not changed.`,
-    `- note: one fact that will stay true, appended to a section forever. Background: origin story, how they met ${user}, career history. Family: spouse, children, birthdays, anniversaries. Info: lasting miscellany — how a name is pronounced, quirks, standing preferences. Never a status, a plan, or something that happened; that is overview material.`,
-    '- replace: correct a line in Background, Family, or Info that the conversation shows is wrong or stale. Quote the old line exactly as the profile has it, without its list marker, and give the corrected line. Nothing outside those three sections is editable.',
+    `- overview: the full replacement ## Overview, ${MAX_OVERVIEW_LINES} lines at most. It answers "who is this and how do they relate to ${user}": role and org, how they connect, and established changes in the relationship or engagement. It REPLACES the current Overview, so preserve every still-true fact. Meeting agendas, progress reports, metrics, deadlines, plans, and one-off tasks do not belong here. Omit this op if nothing material changed or preserving the existing facts would exceed the cap.`,
+    `- note: one fact that will stay true, appended to a section forever. Background: origin story, how they met ${user}, career history. Family: spouse, children, birthdays, anniversaries. Info: lasting miscellany — how a name is pronounced, quirks, standing preferences. Never a temporary status, plan, deadline, or one-off event; the source record already holds those.`,
+    '- replace: correct a line in Background, Family, or Info only when explicit source evidence shows it is wrong or stale. Quote the old line exactly as the supplied profile has it, without its list marker, and preserve its other still-true facts. Do not replace a line just to shorten or reword it. At most one replacement per existing line; never target text produced by another operation.',
     '- field: fill an empty frontmatter field (location, title, org) the conversation establishes. When the overview states a role, org, or location and that field is empty, send this too.',
     '- site: a URL that clearly belongs to the person (their site, their LinkedIn).',
     '- preferred-name: ONLY on explicit evidence — "goes by", "call me", a stated correction. Never infer from usage alone.',
@@ -171,7 +179,7 @@ export function personFactsPrompt(input: { kind: string; userLabel: string; toda
  */
 export async function distillPersonFacts(
   input: PersonDistillInput,
-  role: Role = 'fast',
+  role: Role = 'balanced',
 ): Promise<PersonDistillResult | undefined> {
   if (!input.transcript.trim()) return undefined
   const kind = input.kind ?? 'conversation'

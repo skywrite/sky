@@ -15,6 +15,9 @@ updated: 2026-09-06
 - **ChatContext** — what a turn gets to see; has its own docs
   ([ChatContext/docs](../ChatContext/docs/README.md)).
 
+Save-time person curation uses full dated turns; its evidence and write rules
+live in [Person profiles](../../Person/docs/README.md).
+
 ## Relationships to records discussed in the chat
 
 Saving with auto-rel enabled also resolves conversational references to dated

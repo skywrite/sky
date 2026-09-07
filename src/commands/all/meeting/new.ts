@@ -84,6 +84,7 @@ export default class MeetingNewTask extends Command {
     const { output, config } = context
     let { when, medium, who, summary, category, fromVoiceMemo, fromZoomVtt, fromText, duration } = args
     let body: string | undefined
+    let personTranscript: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
     /** Files the notebook takes ownership of: the transcript, or the recording and its transcript */
@@ -188,6 +189,7 @@ export default class MeetingNewTask extends Command {
       who = data.who.length > 0 ? data.who.join(', ') : 'Unknown'
       summary = data.title
       body = data.body
+      personTranscript = data.cleanedText
       rel = data.rel.length > 0 ? data.rel : undefined
 
       // The pipeline's people lists, as confirmed at its corrections prompt,
@@ -351,19 +353,25 @@ export default class MeetingNewTask extends Command {
     }
 
     // What the meeting taught the CRM (people/ profiles) — the same
-    // distiller every chat save runs, against the summarized body (the
+    // distiller every chat save runs, against the corrected transcript (the
     // manual path has no content worth distilling). Autonomous: the
     // never-delete discipline lives in models/Person/write.ts, so no TTY or
     // category gate. Facts anchor to the meeting's day; updated: stamps the
     // day the edit actually happened. The meeting file is already on disk,
     // so a failure degrades to a warning.
-    if (body) {
+    if (personTranscript?.trim()) {
       try {
         const distilled = await distillPersonFactsFromText({
-          text: [who, summary, body].filter(Boolean).join('\n'),
+          text: [
+            `Meeting date: ${whenDate}`,
+            `Confirmed attendees: ${who}`,
+            `Confirmed related people: ${(anchors ?? []).join(', ')}`,
+            '',
+            personTranscript,
+          ].join('\n'),
           today: String(whenDate),
           userLabel: userSpeakerLabel(),
-          kind: 'meeting summary',
+          kind: 'meeting transcript',
           anchors,
         })
         if (distilled && (distilled.facts.length > 0 || distilled.unlisted.length > 0)) {

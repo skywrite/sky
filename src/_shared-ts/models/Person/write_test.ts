@@ -413,6 +413,103 @@ test('applyPersonFacts - a save where every op skips never writes at all', async
   })
 })
 
+test('applyPersonFacts - an unchanged overview never saves or bumps updated', async () => {
+  const ops: PersonOp[] = [{ op: 'overview', lines: ['Platform lead at Example Corp.'] }]
+  const seeded = await applyOps(ops)
+  const repeated = await applyOps(ops, seeded.after)
+  assert({
+    given: 'the same overview proposed again',
+    should: 'leave the entire profile untouched',
+    actual: {
+      content: repeated.after,
+      saves: repeated.io.saves,
+      reasons: repeated.outcomes.map((o) => o.reason),
+    },
+    expected: { content: seeded.after, saves: 0, reasons: ['unchanged'] },
+  })
+})
+
+test('applyPersonFacts - an overview added while the model was thinking survives', async () => {
+  const latest = PROFILE.replace('## Background', '## Overview\n\n- Confirmed role at Example Corp.\n\n## Background')
+  const io = memoryIO({ [PATH]: latest })
+  const outcomes = await applyPersonFacts({
+    facts: [
+      {
+        name: SUBJECT.name,
+        ops: [
+          { op: 'overview', lines: ['An older picture of the role.'] },
+          { op: 'field', field: 'location', value: 'Lisbon' },
+        ],
+      },
+    ],
+    unlisted: [],
+    subjects: [{ ...SUBJECT, markdown: PROFILE }],
+    today: TODAY,
+    io,
+  })
+  assert({
+    given: 'discovery saw no overview but another writer added one before the model finished',
+    should: 'skip the stale overview while applying the independent field fill',
+    actual: {
+      outcomes: outcomes.map((o) => o.outcome),
+      reason: outcomes[0].reason,
+      currentRole: io.content(PATH).includes('Confirmed role at Example Corp.'),
+      staleRole: io.content(PATH).includes('An older picture'),
+      location: io.content(PATH).includes('location: Lisbon'),
+    },
+    expected: {
+      outcomes: ['skipped', 'applied'],
+      reason: 'overview changed since it was read',
+      currentRole: true,
+      staleRole: false,
+      location: true,
+    },
+  })
+})
+
+test('applyPersonFacts - a conflict never replays a stale overview over a newer one', async () => {
+  const seeded = await applyOps([{ op: 'overview', lines: ['Platform lead at Example Corp.'] }])
+  const latest = seeded.after.replace('Platform lead at Example Corp.', 'Now leading the Atlas team.')
+  for (const withField of [false, true]) {
+    const io = memoryIO({ [PATH]: seeded.after })
+    let attempts = 0
+    let savedContent = latest
+    io.save = async (path, content, version) => {
+      attempts += 1
+      if (attempts === 1 || version !== 2) return { saved: false, current: { path, content: latest, version: 2 } }
+      savedContent = content
+      return { saved: true }
+    }
+    const ops: PersonOp[] = [{ op: 'overview', lines: ['Working on Widget-V2.'] }]
+    if (withField) ops.push({ op: 'field', field: 'location', value: 'Lisbon' })
+    const outcomes = await applyPersonFacts({
+      facts: [{ name: SUBJECT.name, ops }],
+      unlisted: [],
+      subjects: [{ ...SUBJECT, markdown: seeded.after }],
+      today: TODAY,
+      io,
+    })
+    assert({
+      given: `an overview conflict ${withField ? 'with' : 'without'} an independent field fill`,
+      should: 'keep the newer overview and retry only when an independent change remains',
+      actual: {
+        attempts,
+        outcomes: outcomes.map((o) => o.outcome),
+        currentRole: savedContent.includes('Now leading the Atlas team.'),
+        staleRole: savedContent.includes('Working on Widget-V2.'),
+        location: savedContent.includes('location: Lisbon'),
+      },
+      expected: {
+        attempts: withField ? 2 : 1,
+        outcomes: withField ? ['skipped', 'applied'] : ['skipped'],
+        currentRole: true,
+        staleRole: false,
+        location: withField,
+      },
+    })
+  }
+})
+
 test('applyPersonFacts - a version conflict re-applies against the fresh content once', async () => {
   const io = memoryIO({ [PATH]: PROFILE })
   const handEdited = PROFILE.trimEnd() + '\n\nHand-added while saving.\n'

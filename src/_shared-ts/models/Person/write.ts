@@ -25,8 +25,8 @@
  * documents.ts), so no profile path is ever touched from outside the
  * service. The transport's version handle makes every write conflict-
  * checked: a hand edit or another session landing mid-save surfaces as a
- * conflict, and the ops re-apply against the fresh content once before
- * giving up. Every op, applied or skipped, returns an outcome the host
+ * conflict. Safe ops re-apply against fresh content once; an overview
+ * changed since discovery is never replaced. Every op returns an outcome the host
  * renders (the 👤 lines) and the transcript's context log records.
  */
 
@@ -270,14 +270,27 @@ export interface AppliedMarkdown {
 
 /**
  * Apply one person's ops to their profile text. Pure — same inputs, same
- * result — which is what lets a version conflict simply re-run it against
- * the fresh content. Ops that cannot apply (occupied field, duplicate
+ * result. On a version conflict, the original baseline still guards the
+ * Overview while safe ops re-apply. Ops that cannot apply (occupied field, duplicate
  * note, a line over the cap, over the op cap) come back skipped; the
  * returned markdown is only meaningful when `applied > 0`.
  */
-export function applyOpsToMarkdown(markdown: string, ops: PersonOp[], person: string, today: string): AppliedMarkdown {
+export function applyOpsToMarkdown(
+  markdown: string,
+  ops: PersonOp[],
+  person: string,
+  today: string,
+  baselineMarkdown: string = markdown,
+): AppliedMarkdown {
   const doc = PersonDocument.fromMarkdown(markdown)
   const split = canonicalizeSections(splitBodySections(doc.toMarkdown({ yaml: false })))
+  const baseline =
+    baselineMarkdown === markdown
+      ? split
+      : canonicalizeSections(
+          splitBodySections(PersonDocument.fromMarkdown(baselineMarkdown).toMarkdown({ yaml: false })),
+        )
+  const overviewBefore = findSection(baseline, 'Overview')?.body
   const outcomes: PersonOpOutcome[] = []
   let applied = 0
 
@@ -293,7 +306,7 @@ export function applyOpsToMarkdown(markdown: string, ops: PersonOp[], person: st
       continue
     }
     try {
-      const outcome = applyOp(op, doc, split, person)
+      const outcome = applyOp(op, doc, split, person, overviewBefore)
       if (outcome.outcome === 'applied') applied += 1
       outcomes.push(outcome)
     } catch (err) {
@@ -325,6 +338,8 @@ export function applyOpsToMarkdown(markdown: string, ops: PersonOp[], person: st
 export interface PersonSubjectRef {
   name: string
   path: string
+  /** The profile shown to the distiller, before generation; guards Overview replacement. */
+  markdown?: string
 }
 
 export interface ApplyPersonFactsInput {
@@ -450,16 +465,15 @@ async function applyToPerson(
     const snapshot = await io.read(subject.path)
     if (!snapshot) return skippedAll('profile not found')
 
-    let attempt = applyOpsToMarkdown(snapshot.content, ops, subject.name, today)
+    const baseline = subject.markdown ?? snapshot.content
+    let attempt = applyOpsToMarkdown(snapshot.content, ops, subject.name, today, baseline)
     if (attempt.applied === 0) return attempt.outcomes
 
     let result = await io.save(subject.path, attempt.markdown, snapshot.version)
     if (!result.saved) {
-      // The file moved under us — a hand edit or another session. The ops
-      // are re-runnable (dedupe, fill-empty), so re-apply against the
-      // current content once; a second conflict means real contention and
-      // the save yields rather than fight for the file.
-      attempt = applyOpsToMarkdown(result.current.content, ops, subject.name, today)
+      // Re-apply safe ops, keeping the original baseline so a concurrent
+      // Overview edit is skipped. A second conflict yields to the writer.
+      attempt = applyOpsToMarkdown(result.current.content, ops, subject.name, today, baseline)
       if (attempt.applied === 0) return attempt.outcomes
       result = await io.save(subject.path, attempt.markdown, result.current.version)
       if (!result.saved) return skippedAll('write conflict — the profile is being edited')
@@ -470,7 +484,13 @@ async function applyToPerson(
   }
 }
 
-function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: string): PersonOpOutcome {
+function applyOp(
+  op: PersonOp,
+  doc: PersonDocument,
+  split: SplitBody,
+  person: string,
+  overviewBefore: string | undefined,
+): PersonOpOutcome {
   const skipped = (summary: string, reason: string): PersonOpOutcome => ({
     op: op.op,
     person,
@@ -494,6 +514,8 @@ function applyOp(op: PersonOp, doc: PersonDocument, split: SplitBody, person: st
       }
       const body = lines.map(bullet).join('\n')
       const existing = findSection(split, 'Overview')
+      if (existing?.body === body) return skipped(opGist(op), 'unchanged')
+      if (existing?.body !== overviewBefore) return skipped(opGist(op), 'overview changed since it was read')
       if (existing) existing.body = body
       else split.sections.unshift({ heading: 'Overview', body })
       return applied(truncate(lines.join(' · ')))

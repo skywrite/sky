@@ -1,6 +1,6 @@
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import { assert, test } from '#test'
-import { buildChatTranscript, CHAT_ENRICH } from './enrich.ts'
+import { buildChatTranscript, buildPersonTranscript, CHAT_ENRICH } from './enrich.ts'
 
 const msg = (role: 'user' | 'assistant', content: string): ConversationMessage => ({ role, content })
 
@@ -121,5 +121,26 @@ test('buildChatTranscript - maxChars raises the packing budget', () => {
       wideIsLonger: wide.length > packed.length,
     },
     expected: { packedClipped: true, wideClipped: false, wideIsLonger: true },
+  })
+})
+
+test('buildPersonTranscript preserves complete dated evidence beyond the classifier limits', () => {
+  const detail = 'Meeting detail. '.repeat(4000)
+  const correction = 'Correction: Jane Doe is still at Example Corp.'
+  const transcript = buildPersonTranscript([
+    { role: 'user', when: '2026-01-20 09:00', content: detail + correction },
+    { role: 'assistant', when: '2026-01-20 09:01', content: detail + 'That changes my earlier suggestion.' },
+    { role: 'user', when: '2026-01-21 25:30', content: 'Keep her current role.<!-- hidden plumbing -->' },
+    msg('assistant', '<!-- no conversation -->'),
+  ])
+  assert({
+    given: 'long messages with late corrections and statements on different notebook days',
+    should: 'preserve every visible word, role, and source time without clipping',
+    actual: transcript,
+    expected: [
+      `User [2026-01-20 09:00]: ${detail}${correction}`,
+      `AI [2026-01-20 09:01]: ${detail}That changes my earlier suggestion.`,
+      'User [2026-01-21 25:30]: Keep her current role.',
+    ].join('\n\n'),
   })
 })

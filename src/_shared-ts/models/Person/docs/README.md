@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-08-30
+updated: 2026-09-06
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -19,13 +19,40 @@ Pieces:
 - `lib/notebook/enrich/distillPersonFacts.ts` — the schema and the prompt.
   It asks; it never writes.
 
+## Model and source evidence
+
+Person curation uses the `balanced` role (Sonnet 5), independently of the
+`fast` role used by other extractors. Its request timeout is three minutes.
+
+- Chats supply every visible word of every turn, with speaker labels and
+  notebook timestamps where available. There is no per-turn or head/tail
+  clipping. Classifier and memory packing remain separate.
+- Meetings supply the complete corrected transcript returned by the
+  pipeline, plus the confirmed attendees, related names, and meeting date.
+  The generated write-up is not the profile's evidence.
+- The API's context limit still applies. A request that exceeds it abstains
+  through the logged model-error path; source text is never silently cut to
+  make a profile update fit.
+
+The prompt accepts new chat facts only from user statements, corrections,
+or explicit confirmations. Assistant replies are reading context, not
+evidence. Meeting opinions and secondhand reports keep their attribution;
+possibilities and proposed handoffs never become established facts. Source
+dates and qualifications survive. The model compares meaning across the
+whole profile before adding anything.
+
+These are extraction instructions, not semantic guarantees in the writer.
+The writer enforces structure, caps, quoted replacements, exact dedupe, and
+the concurrency rules below. The reasoning is in
+[2026-09-06 — complete sources for person updates](2026-09-06-complete-sources-for-person-updates.md).
+
 ## The shape of a profile
 
 Frontmatter, then `# Name`, then `##` sections.
 
 | Part | Owner | What the AI may do |
 | --- | --- | --- |
-| `## Overview` | AI | Rewrite wholesale. Bullets, 6 lines at most. "Who is this and where do things stand." |
+| `## Overview` | AI | Rewrite wholesale when unchanged since discovery. Bullets, 6 lines at most. Identity and established relationship or engagement changes. |
 | `## Background` | hand + AI | Append a bullet. Replace one quoted line. |
 | `## Family` | hand + AI | Same. |
 | `## Info` | hand + AI | Same. |
@@ -81,6 +108,8 @@ trimmed. Two lines with the same key are the same line.
   section. No match → `skipped: old line not found`. A heading →
   `skipped: old line is a heading`. Same text → `skipped: unchanged`. The
   new line lands as a bullet where the old one stood.
+- `overview`: an identical section body skips as unchanged, without a save
+  or an `updated:` bump.
 
 ## Where new lines go
 
@@ -107,12 +136,12 @@ every op skips writes nothing.
 
 ## Guarantees and their limits
 
-- Nothing is deleted unquoted. The only lines that ever disappear are one
-  the distiller quoted verbatim in a `replace`, and a heading echo.
+- Outside Overview, a replaced line must be quoted. Heading echoes also
+  disappear during normalization on touch.
 - The Overview rewrite is asked to carry every still-true fact. That is a
-  prompt promise, not a code check. The cap keeps it finite: the Overview
-  is the current picture, not an archive. Durable facts belong in the
-  append sections.
+  prompt promise, not a code check. If preserving those facts would exceed
+  the cap, the prompt asks for no rewrite. Meeting agendas, metrics,
+  deadlines, and one-off tasks stay in their source records.
 - Hand content is never reformatted. Old paragraph lines stay paragraphs.
   New lines are bullets. A section can hold both.
 
@@ -122,8 +151,10 @@ every op skips writes nothing.
   into one line). Past a cap, ops skip visibly. The per-person cap sits
   above a rich conversation's honest count: overview, three field fills,
   two replaces, a note, a rename is eight.
-- Writes go through the service (`DocumentIO`), version-checked. A conflict
-  re-applies once against the fresh content, then yields.
+- Writes go through the service (`DocumentIO`), version-checked. Discovery
+  carries the profile text the model saw. An Overview changed since that
+  read skips, both before the first write and on retry. Independent safe
+  ops re-apply once against fresh content, then yield on a second conflict.
 
 ## Who rides the prompt
 
@@ -149,7 +180,7 @@ corrections prompt. Those lists are the anchors.
   word in the alias.
 - A bare name in who/rel pins nothing. Not by score. Not as the only
   namesake. Not as an explicit alias.
-- A full name in the summary text still rides.
+- A full name in the corrected transcript still rides.
 - The pipeline's metadata box prints `Profiles:` (what will be written to)
   and `No match:` (bare or unknown names) before the corrections prompt.
   Retyping the list with a full name pins: `rel: Sam Rivera, Jordan` —

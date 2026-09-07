@@ -29,6 +29,24 @@ const OMISSION_MARK = '\n\n[... middle omitted ...]\n\n'
 const HEAD_SHARE = 0.6
 
 /**
+ * Profile curation needs the complete evidence, including corrections in
+ * the middle of a chat and at the end of a long turn. Sonnet receives this
+ * separately from the packed classifier and memory inputs. Timestamps
+ * anchor statements from resumed conversations to when they were made.
+ */
+export function buildPersonTranscript(messages: ConversationMessage[]): string {
+  return messages
+    .flatMap((message) => {
+      const text = message.content.replace(/<!--[\s\S]*?-->/g, '').trim()
+      if (!text) return []
+      const role = message.role === 'user' ? 'User' : 'AI'
+      const when = message.when ? ` [${message.when}]` : ''
+      return [`${role}${when}: ${text}`]
+    })
+    .join('\n\n')
+}
+
+/**
  * Role-labeled transcript of a chat's turns, packed to the classifier budget
  * by default. A consumer that needs more of the conversation (the memory
  * distiller reads for mid-conversation corrections, not just the topic)

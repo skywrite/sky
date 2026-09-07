@@ -50,7 +50,7 @@ import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog
 import { branchDir } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent, firstWordsSummary, userSpeakerLabel } from '../document/mod.ts'
 import { universeOf, verifyResumeCandidate } from '../document/resume.ts'
-import { buildChatTranscript, CHAT_ENRICH } from '../enrich.ts'
+import { buildChatTranscript, buildPersonTranscript, CHAT_ENRICH } from '../enrich.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
 
@@ -113,12 +113,12 @@ export const corpusEnricher: SaveEnricher = {
 }
 
 /**
- * The distillers read a wider packing than the 8k classifier budget: a
+ * Memory reads a wider packing than the 8k classifier budget: a
  * remember-request, a correction, or the one biographical aside can sit
  * mid-conversation, exactly where the head+tail clip cuts. Still bounded —
  * the save path must stay a save, not a second context assembly.
  */
-const DISTILL_TRANSCRIPT_CHARS = 48_000
+const MEMORY_TRANSCRIPT_CHARS = 48_000
 
 // -----------------------------------------------------------------------------
 // Filenames
@@ -305,8 +305,8 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const subject: EnrichSubject = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
   const wantMemory = Boolean(input.memoryDir && enricher.distillMemories)
   const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
-  const distillTranscript =
-    wantMemory || wantPeople ? buildChatTranscript(turns, { maxChars: DISTILL_TRANSCRIPT_CHARS }) : ''
+  const memoryTranscript = wantMemory ? buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }) : ''
+  const personTranscript = wantPeople ? buildPersonTranscript(turns) : ''
   const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
@@ -330,7 +330,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // model failures before returning undefined).
     wantMemory
       ? loadMemories(input.memoryDir as string)
-          .then((memories) => enricher.distillMemories!(distillTranscript, memories))
+          .then((memories) => enricher.distillMemories!(memoryTranscript, memories))
           .catch(async (err) => {
             await logAIError({ source: 'ai:chat', stage: 'memory', message: (err as Error).message })
             return undefined
@@ -339,7 +339,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // Same abstain contract for the CRM — the enricher owns its subject
     // discovery, so this catch is the whole safety net around it.
     wantPeople
-      ? enricher.distillPersonFacts!(distillTranscript, endTime.plainDate.ymd).catch(async (err) => {
+      ? enricher.distillPersonFacts!(personTranscript, endTime.plainDate.ymd).catch(async (err) => {
           await logAIError({ source: 'ai:chat', stage: 'people', message: (err as Error).message })
           return undefined
         })
