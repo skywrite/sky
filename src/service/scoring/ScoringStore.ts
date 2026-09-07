@@ -3,9 +3,11 @@
  *
  * Decoupled from the main Store to allow independent use with any data source.
  *
- * Scoring formula: score += weight × recencyMultiplier
+ * Direct-contact score: weight × recencyMultiplier
  * - weight: determined by interaction type (meeting=10, email=5, slack=3, day=2)
  * - recencyMultiplier: decays over time (1.0 → 0.05)
+ * Person mentions earn discounted relevance and no familiarity.
+ * Profile bonuses are applied once when the person's aliases are combined.
  *
  * Scores are cumulative - frequent interactions compound.
  */
@@ -13,6 +15,7 @@
 import { EventEmitter } from 'node:events'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PERSON_MENTION_MULTIPLIER } from './familiarity.ts'
 
 /**
  * Interaction weights by type.
@@ -51,7 +54,10 @@ export const RECENCY_THRESHOLDS = {
 
 export interface PersonScore {
   name: string
+  /** Relevance: direct contact, discounted mentions, and any family bonus. */
   score: number
+  /** Direct contact and family only; absent means familiarity is unknown. */
+  familiarityScore?: number
   lastInteraction: string | null // ISO date
   interactionCount: number
 }
@@ -98,13 +104,15 @@ interface Contribution {
   name: string
   dateStr: string
   points: number
+  familiarityPoints?: number
 }
 
 /** The entries of one person as one: scores and counts added, the latest interaction kept. */
 function asOnePerson(name: string, entries: Iterable<PersonScore>): PersonScore {
-  const one: PersonScore = { name, score: 0, lastInteraction: null, interactionCount: 0 }
+  const one = { name, score: 0, familiarityScore: 0, lastInteraction: null as string | null, interactionCount: 0 }
   for (const entry of entries) {
     one.score += entry.score
+    one.familiarityScore += entry.familiarityScore ?? 0
     one.interactionCount += entry.interactionCount
     if (entry.lastInteraction && (!one.lastInteraction || entry.lastInteraction > one.lastInteraction)) {
       one.lastInteraction = entry.lastInteraction
@@ -152,6 +160,7 @@ export class ScoringStore extends EventEmitter {
    * @param weight - Interaction weight (use INTERACTION_WEIGHTS constants)
    * @param referenceDate - Reference date for recency calculation (defaults to today)
    * @param source - The file this was read from, so `forgetSource` can take it back
+   * @param kind - Direct contact or a mention in related frontmatter
    */
   recordPersonInteraction(
     name: string,
@@ -159,13 +168,17 @@ export class ScoringStore extends EventEmitter {
     weight: number,
     referenceDate?: PlainDate,
     source?: string,
+    kind: 'direct' | 'mention' = 'direct',
   ): void {
     const existing = this._personScores.get(name)
     const recencyMultiplier = this.calculateRecencyMultiplier(dateStr, referenceDate)
-    const points = weight * recencyMultiplier
+    const weighted = weight * recencyMultiplier
+    const points = kind === 'mention' ? weighted * PERSON_MENTION_MULTIPLIER : weighted
+    const familiarityPoints = kind === 'direct' ? weighted : 0
 
     if (existing) {
       existing.score += points
+      existing.familiarityScore = (existing.familiarityScore ?? 0) + familiarityPoints
       existing.interactionCount += 1
       // Update lastInteraction if this is more recent
       if (!existing.lastInteraction || dateStr > existing.lastInteraction) {
@@ -175,11 +188,12 @@ export class ScoringStore extends EventEmitter {
       this._personScores.set(name, {
         name,
         score: points,
+        familiarityScore: familiarityPoints,
         lastInteraction: dateStr,
         interactionCount: 1,
       })
     }
-    if (source) this.contribute(source, { kind: 'person', name, dateStr, points })
+    if (source) this.contribute(source, { kind: 'person', name, dateStr, points, familiarityPoints })
   }
 
   /**
@@ -268,7 +282,7 @@ export class ScoringStore extends EventEmitter {
     this._bySource.delete(source)
 
     const affected = new Map<string, Contribution['kind']>()
-    for (const { kind, name, points } of contributions) {
+    for (const { kind, name, points, familiarityPoints } of contributions) {
       affected.set(`${kind}\n${name}`, kind)
       if (kind === 'tag') {
         const entry = this._tagScores.get(name)
@@ -281,6 +295,10 @@ export class ScoringStore extends EventEmitter {
         if (entry) {
           entry.score -= points
           entry.interactionCount -= 1
+          if (kind === 'person') {
+            const person = entry as PersonScore
+            person.familiarityScore = (person.familiarityScore ?? 0) - (familiarityPoints ?? 0)
+          }
         }
       }
     }
@@ -339,9 +357,14 @@ export class ScoringStore extends EventEmitter {
    *
    * @param allPeople - All known people names (includes those without scores)
    * @param spellingsOf - The other names a person goes by; absent = the name alone
+   * @param bonusOf - Permanent profile bonus, applied once after combining aliases
    * @returns Sorted array with all people, zero-scored ones included
    */
-  getPeopleWithScores(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): PersonScore[] {
+  getPeopleWithScores(
+    allPeople: Iterable<string>,
+    spellingsOf?: (name: string) => Iterable<string>,
+    bonusOf?: (name: string) => number,
+  ): PersonScore[] {
     // A person is one person however a file spelled them: entries whose
     // names match case-insensitively add up, and so do the entries for the
     // other spellings `spellingsOf` gives — a profile's `name:` list. Two
@@ -364,7 +387,11 @@ export class ScoringStore extends EventEmitter {
       for (const spelling of spellingsOf?.(name) ?? []) spellings.add(normalizeName(spelling))
       const entries = new Set<PersonScore>()
       for (const spelling of spellings) for (const entry of byNormalized.get(spelling) ?? []) entries.add(entry)
-      result.push(asOnePerson(name, entries))
+      const person = asOnePerson(name, entries)
+      const bonus = bonusOf?.(name) ?? 0
+      person.score += bonus
+      person.familiarityScore = (person.familiarityScore ?? 0) + bonus
+      result.push(person)
     }
 
     // Sort by score descending, then by name ascending for ties
@@ -402,8 +429,12 @@ export class ScoringStore extends EventEmitter {
   /**
    * Emit person scores updated event.
    */
-  emitPersonScoresUpdated(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): void {
-    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople, spellingsOf))
+  emitPersonScoresUpdated(
+    allPeople: Iterable<string>,
+    spellingsOf?: (name: string) => Iterable<string>,
+    bonusOf?: (name: string) => number,
+  ): void {
+    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople, spellingsOf, bonusOf))
   }
 
   /**
@@ -451,5 +482,6 @@ export class ScoringStore extends EventEmitter {
     this._personScores.clear()
     this._orgScores.clear()
     this._tagScores.clear()
+    this._bySource.clear()
   }
 }

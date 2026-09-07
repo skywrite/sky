@@ -10,8 +10,12 @@ import { START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCh
 import { fetchDayMeetings } from '#commands/all/google/calendar/lib/dayMeetings.ts'
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import type { PersonScore } from '../../scoring/ScoringStore.ts'
+import type { Store } from '../../store.ts'
+import { createAttendeeNames } from './attendeeNames.ts'
 import isDay from './isDay.ts'
 import { buildDayRecord, type MeetingRow } from './record.ts'
 
@@ -23,7 +27,7 @@ export interface ScheduledMeeting {
   start: string
   end: string
   allDay: boolean
-  /** The other people in the room, names or addresses */
+  /** Familiar names for known contacts; calendar labels or addresses for everyone else */
   who: string[]
   joinUrl: string | null
   state: ScheduleState
@@ -82,7 +86,10 @@ export function scheduleOf(input: {
   clock: ScheduleClock
   read: boolean
   errors: string[]
+  people?: PeopleStore | null
+  personScores?: readonly PersonScore[]
 }): DaySchedule {
+  const attendeeNames = createAttendeeNames(input.people, input.personScores)
   const remaining = new Set(input.records)
   const recordOf = (event: CalendarEvent): ScheduledMeeting['record'] => {
     if (event.allDay) return null
@@ -103,7 +110,7 @@ export function scheduleOf(input: {
       start: event.allDay ? '' : event.start.slice(11, 16),
       end: event.allDay ? '' : event.end.slice(11, 16),
       allDay: event.allDay,
-      who: event.attendees.filter((a) => !a.self).map((a) => a.name ?? a.email),
+      who: attendeeNames(event.attendees),
       joinUrl: event.conferenceUrl ?? null,
       state: stateOf(event, input.day, input.clock),
       record: recordOf(event),
@@ -135,7 +142,12 @@ export function scheduleOf(input: {
  * Account errors beside meetings still make a schedule; errors alone do
  * not.
  */
-export function createDayScheduleHost(options: { timeDir: string; markdownBaseDir: string }): ScheduleHost {
+export function createDayScheduleHost(options: {
+  timeDir: string
+  markdownBaseDir: string
+  people?: PeopleStore | null
+  scores?: Pick<Store, 'getPeopleWithScores'>
+}): ScheduleHost {
   const secrets = new KeychainSecretsProvider()
   return async (day) => {
     const [calendar, record] = await Promise.all([
@@ -159,6 +171,8 @@ export function createDayScheduleHost(options: { timeDir: string; markdownBaseDi
       clock: { date: now.plainDate.ymd, time: now.time },
       read: calendar.meetings.length > 0 || calendar.errors.length === 0,
       errors: calendar.errors,
+      people: options.people,
+      personScores: options.scores?.getPeopleWithScores(),
     })
   }
 }

@@ -5,6 +5,7 @@
  */
 
 import MarkdownDoc from '#shared/models/Markdown/Document/mod.ts'
+import { normalizeName } from '#shared/models/Store/normalize.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { parseDateFromDayPath } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -99,14 +100,13 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     const newSet = store.people.union(new Set(persons))
     store.update('people', newSet)
     // One person however a file spells them: every name here scores as one
-    store.rememberPersonNames(file, persons)
+    store.rememberPersonNames(file, persons, md.tags)
 
     // Record 'met' date as an interaction so new contacts appear in recent list
     const metDate = md.yaml.met
     if (typeof metDate === 'string' && REGEX_YMD_EXACT.test(metDate) && persons.length > 0) {
-      for (const name of persons) {
-        store.recordInteraction(name, metDate, INTERACTION_WEIGHTS.personMet, referenceDate, file)
-      }
+      // The date describes one meeting with one person, however many aliases the profile lists.
+      store.recordInteraction(persons[0]!, metDate, INTERACTION_WEIGHTS.personMet, referenceDate, file)
 
       // Also track org interaction if person has an org
       const personOrg = md.yaml.org ?? (md.yaml.orgs as Record<string, unknown>)?.current
@@ -163,18 +163,23 @@ export function createScanners(store: Store, entityChecker: EntityChecker, optio
     const ccPeople = parsePeopleFromField(md.yaml.cc)
     const bccPeople = parsePeopleFromField(md.yaml.bcc)
 
-    // Combine all people and record interactions
-    const allPeople = new Set([...whoPeople, ...relPeople, ...toPeople, ...fromPeople, ...ccPeople, ...bccPeople])
-
-    for (const person of allPeople) {
+    // One contribution per known person and file. Participation wins when a person is also discussed.
+    const direct = new Set([...whoPeople, ...toPeople, ...fromPeople, ...ccPeople, ...bccPeople])
+    const contributions = new Map<string, { name: string; direct: boolean }>()
+    for (const person of [...direct, ...relPeople]) {
       // Skip if it looks like a project reference
       if (person.includes('/')) continue
-
+      const key = store.spellingsOf(person).map(normalizeName).sort().join('\n')
+      const known = contributions.get(key)
+      if (known) known.direct ||= direct.has(person)
+      else contributions.set(key, { name: person, direct: direct.has(person) })
+    }
+    for (const { name: person, direct: participated } of contributions.values()) {
       // Check if this is an org reference - if so, track org interaction
       if (store.organizations.has(person)) {
         store.recordOrgInteraction(person, dateStr, weight, referenceDate, filePath)
       } else {
-        store.recordInteraction(person, dateStr, weight, referenceDate, filePath)
+        store.recordInteraction(person, dateStr, weight, referenceDate, filePath, participated ? 'direct' : 'mention')
       }
     }
   }

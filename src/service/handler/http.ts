@@ -149,7 +149,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         timeDir: chat.timeDir,
         aboutMePath: chat.aboutMePath,
         files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir },
-        schedule: createDayScheduleHost({ timeDir: chat.timeDir, markdownBaseDir }),
+        schedule: createDayScheduleHost({
+          timeDir: chat.timeDir,
+          markdownBaseDir,
+          people: markdownStore?.people,
+          scores: store,
+        }),
       }),
     )
     // The week the days live in: its days, its plan, what waits for the next one. The page itself is /week, below.

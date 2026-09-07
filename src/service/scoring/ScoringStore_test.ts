@@ -397,3 +397,52 @@ test('ScoringStore - a source read again counts once, and a forgotten source giv
     expected: [true, 10, 1, '2026-01-30', false, false, false],
   })
 })
+
+test('ScoringStore - mentions aid relevance while familiarity follows direct contact through aliases and removal', () => {
+  const scoring = new ScoringStore()
+  scoring.recordPersonInteraction('Jane Doe', '2026-01-17', 10, referenceDate, '/nb/meeting.md')
+  scoring.recordPersonInteraction('Jane Doe', '2026-02-01', 10, referenceDate, '/nb/mention.md', 'mention')
+  scoring.recordPersonInteraction('Janie', '2026-02-01', 5, referenceDate, '/nb/email.md')
+  const aliases = () => ['Jane Doe', 'Janie']
+  const scores = () =>
+    scoring.getPeopleWithScores(['Jane Doe', 'Janie'], aliases).map((person) => [person.score, person.familiarityScore])
+  assert({
+    given: 'an older direct meeting, a current mention, and an email under an alias',
+    should: 'discount the mention and exclude it from familiarity while combining aliases once',
+    actual: scores(),
+    expected: [
+      [11, 10],
+      [11, 10],
+    ],
+  })
+  scoring.forgetSource('/nb/meeting.md')
+  assert({
+    given: 'the meeting removed',
+    should: 'take its decayed share back from both totals',
+    actual: scores(),
+    expected: [
+      [6, 5],
+      [6, 5],
+    ],
+  })
+  scoring.forgetSource('/nb/mention.md')
+  assert({
+    given: 'the mention removed too',
+    should: 'leave familiarity unchanged',
+    actual: scores(),
+    expected: [
+      [5, 5],
+      [5, 5],
+    ],
+  })
+  const replacement = new ScoringStore()
+  replacement.replaceFrom(scoring)
+  replacement.clear()
+  replacement.recordPersonInteraction('Janie', '2026-02-01', 3, referenceDate, '/nb/new.md')
+  assert({
+    given: 'a rebuilt store cleared before new activity',
+    should: 'retain no old source that could subtract from the new scores',
+    actual: [replacement.forgetSource('/nb/email.md'), replacement.personScores.get('Janie')?.familiarityScore],
+    expected: [false, 3],
+  })
+})

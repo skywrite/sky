@@ -61,6 +61,7 @@ ${dcSchema}
 type PersonWithScore {
   name: String!
   score: Float!
+  familiarityScore: Float!
   lastInteraction: String
 }
 

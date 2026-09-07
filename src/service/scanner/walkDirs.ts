@@ -51,23 +51,23 @@ export async function scanFiles(options: ScanOptions): Promise<void> {
     trackOrgInteractionsFromProject,
   } = scanners
 
-  // Collect every markdown file, then process org files first: time and
-  // project files classify a name as org-vs-person by membership in
-  // store.organizations, so the org set must be complete before they are
-  // read. Filesystem enumeration order must not decide how an interaction
-  // is filed — it briefly did, going red on CI when a runner image changed
-  // readdir order.
+  // Load the entity rosters before interactions: org membership decides
+  // org-vs-person scoring, and person aliases let one file count someone
+  // once even when it lists several spellings. Directory order must not
+  // decide either classification.
   const orgFiles: string[] = []
+  const personFiles: string[] = []
   const otherFiles: string[] = []
   for (const dir of dirs) {
     for await (const entry of walk(dir)) {
       if (path.extname(entry.path) !== '.md') continue
       if (isOrganization(entry.path)) orgFiles.push(entry.path)
+      else if (isPerson(entry.path)) personFiles.push(entry.path)
       else otherFiles.push(entry.path)
     }
   }
 
-  for (const file of [...orgFiles, ...otherFiles]) {
+  for (const file of [...orgFiles, ...personFiles, ...otherFiles]) {
     try {
       const contents = await readTextFile(file)
       readFileAndUpdateTags(contents, file)

@@ -1,3 +1,8 @@
+---
+created: 2026-08-30
+updated: 2026-09-07
+---
+
 # Scanner
 
 Boot-time and watcher-driven ingestion of the notebook tree into the in-memory
@@ -33,7 +38,43 @@ signal, `-audio` variants) 3, `day.md` rel mentions 2. Files under `/events/`
 count as meetings. `gdoc`, `gslides`, `video`, and `x` are deliberately
 unweighted — shared artifacts and posts, not direct interactions.
 
-`ScoringStore` applies recency decay on top; see `../scoring/ScoringStore.ts`.
+`ScoringStore` applies recency decay on top: 1.0 through seven days, 0.5
+through thirty, 0.25 through ninety, 0.1 through a year, and 0.05 beyond.
+
+For people, participation in `who`, `to`, `from`, `cc`, or `bcc` earns the
+full weighted amount. A name occurring only in `rel` earns one tenth of
+that amount. One person contributes once per file, even when multiple
+fields list different aliases; participation takes precedence over a
+mention. Organization weights are unchanged.
+
+## Relevance and familiarity
+
+Each reported person has two deterministic totals:
+
+- `score` is relevance: direct contact, discounted mentions, and a family
+  bonus. Existing ranking consumers continue to use it.
+- `familiarityScore` includes direct contact and the family bonus. Mentions
+  contribute zero, however numerous. It is available in the same GraphQL
+  `peopleWithScores` query and score subscriptions.
+
+A profile tagged `Person/Family` or any descendant such as
+`Person/Family/Spouse` receives a permanent 100 points in both totals.
+Matching is case-insensitive and respects slash boundaries; `Person/Spouse`,
+`Person/FamilyFriends`, and unrelated tags containing `Family` do not qualify.
+The bonus is applied once after combining aliases, never once per tag or
+alias, and does not create an interaction or a last-interaction date.
+
+A valid profile `met` date contributes one introduction worth five points
+before recency decay. Multiple aliases do not multiply it. Missing dates
+and `met: Never` create neither contact evidence nor a penalty; these fields
+can be incomplete or stale.
+
+Calendar attendee labels use short names at a familiarity score of at least
+100; see [the day schedule](../../handler/day/docs/README.md) for name
+selection and collision handling. A missing familiarity score uses the full
+name. Policy constants live in `../scoring/familiarity.ts`.
+
+## Edits and rebuilds
 
 Each interaction is recorded with the file it came from. The watcher hands a
 saved file to `processFileUpdate` whole, so the file's earlier share is taken
@@ -41,6 +82,8 @@ back first (`forgetFile` → `ScoringStore.forgetSource`): scores and counts
 come down by what the file gave, a last date is found again among what
 remains, and an entry with nothing left goes. A removed file is forgotten the
 same way; the rosters, which only ever grow, follow with a rebuild from disk.
+Both relevance and familiarity contributions are reversed. Family tag edits
+and profile removals immediately update the bonus; rebuilds preserve it.
 
 ## One person, many spellings
 
@@ -55,14 +98,22 @@ stand under it alone, so the dominance rule that resolves bare names keeps its
 footing. Every listed name reports the same total, so a lookup by any spelling
 finds the person.
 
+The scanner loads organization and person profiles before time files, so
+alias deduplication and organization classification do not depend on directory
+enumeration order. Shared aliases cannot transfer a family's bonus or borrow
+another contact's familiarity for a short calendar label.
+
 ## History
 
-- `2026-08-30-scoring-blind-to-timestamped-filenames.md` — meetings, emails,
-  and messages silently stopped scoring when filenames gained the `HH-MM_`
-  time prefix; prefix matching replaced with segment-exact matching.
+- `2026-09-07-familiarity-needs-contact.md` — mentions previously looked like
+  participation and family had no standing; distinguish relevance from
+  familiarity and add an explicit family bonus.
 - `2026-09-01-one-score-per-person.md` — a person's score and last interaction
   were split by the spelling and casing each file used; reported as one person
   now, across the names the profile lists.
 - `2026-09-01-a-save-counted-twice.md` — every save of a file re-recorded
   its interactions on top of the last ones, so scores grew with edits until
   the next boot; a file's share is now taken back before it is read again.
+- `2026-08-30-scoring-blind-to-timestamped-filenames.md` — meetings, emails,
+  and messages silently stopped scoring when filenames gained the `HH-MM_`
+  time prefix; prefix matching replaced with segment-exact matching.
