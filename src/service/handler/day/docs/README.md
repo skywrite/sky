@@ -8,6 +8,10 @@ updated: 2026-09-06
 Design notes for `src/service/handler/day/` and the page that drives it,
 `theme/client/day.tsx` with `dayRail.tsx`.
 
+The day view shows the plan and record. Conversations open on their own chat
+pages; the day has no embedded chat or composer. Add a file in the header
+opens the import picker on desktop and mobile.
+
 ## The day's items
 
 The plan on the page — Most important, Commitments, To-dos, Reminders — is
@@ -167,7 +171,7 @@ reload.
 - **Remove** (`POST …/remove`) sends a file or a folder to the Trash and
   answers with a move Undo can quote; the files page is where it is
   offered.
-- **On the phone** the paperclip is the import's picker; the pad is a desk
+- **On the phone** Add a file in the header is the import's picker; the pad is a desk
   thing, so a phone has no way to keep a file yet.
 
 ### Why a look, then a move

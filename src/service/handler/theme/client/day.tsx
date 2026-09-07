@@ -1,11 +1,11 @@
 import { ActionIcon, Button } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
-import { type Chat, Composer, type ComposerAttach, type Note, NoteLine, ThreadColumn, useFollow } from './chat.tsx'
+import { type Note, NoteLine } from './chat.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayRail } from './dayRail.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
-import { DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
+import { acceptsImports, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
@@ -13,7 +13,7 @@ import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 /**
  * The day is the page. Its column is what needs to get done — with
  * checkboxes that write back to the day file — then the day so far, the
- * threads running inside it, and the day's own conversation. A checked
+ * conversations listed in its record. A checked
  * to-do slides into Done today; a checked reminder just leaves; an item
  * can also be taken off the day, by the × a hover shows or a swipe on the
  * phone. Undo holds the door for eight seconds whichever way a row left.
@@ -735,16 +735,7 @@ function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
   )
 }
 
-const DAY_HINTS = (
-  <>
-    <span className="sky-hint">Enter to send</span>
-    <span className="sky-hint">·</span>
-    <span className="sky-hint">Shift+Enter for a new line</span>
-  </>
-)
-
 export function DayView({
-  chat,
   day,
   threads,
   imports = [],
@@ -754,13 +745,12 @@ export function DayView({
   onOpenImport = () => {},
   onImportMeeting,
   dragging = false,
-  attach,
+  onImportFiles,
   kept = [],
   onKept = () => {},
   onUndoKept = () => {},
   onDismissKept = () => {},
 }: {
-  chat: Chat
   day: DayData | null
   threads: ThreadSummary[]
   /** Files dropped on the day, running or done — rows beside the threads */
@@ -773,7 +763,7 @@ export function DayView({
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files are held over the page */
   dragging?: boolean
-  attach?: ComposerAttach
+  onImportFiles?: (files: File[]) => void
   /** Files just kept: the toast holds Undo for a moment */
   kept?: Kept[]
   /** The rail's pad moved or copied these */
@@ -781,9 +771,7 @@ export function DayView({
   onUndoKept?: () => void
   onDismissKept?: () => void
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  // The record reads top-down; the column follows only once a conversation is running in it.
-  useFollow(scrollRef, [chat.state.turns, chat.state.gather], chat.state.turns.length > 0 || Boolean(chat.state.gather))
+  const fileRef = useRef<HTMLInputElement>(null)
 
   // Checking a box answers with the fresh view; it lands here, over the prop.
   const [view, setView] = useState<DayData | null>(day)
@@ -850,11 +838,31 @@ export function DayView({
               </span>
             )}
             <nav className="sky-tabs">
+              {onImportFiles && (
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    hidden
+                    multiple
+                    accept={acceptsImports()}
+                    onChange={(event) => {
+                      const list = event.currentTarget.files
+                      const files: File[] = list ? Array.from(list) : []
+                      event.currentTarget.value = ''
+                      if (files.length > 0) onImportFiles(files)
+                    }}
+                  />
+                  <ActionIcon aria-label="Add a file" title="Import a file" onClick={() => fileRef.current?.click()}>
+                    ＋
+                  </ActionIcon>
+                </>
+              )}
               {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
             </nav>
           </header>
 
-          <div className="sky-scroll" ref={scrollRef}>
+          <div className="sky-scroll">
             <div className="sky-col">
               {notes.map((note, i) => (
                 <Fragment key={i}>
@@ -1011,18 +1019,8 @@ export function DayView({
                   <FiledCard archive={record.messages.archive} />
                 </>
               )}
-
-              <ThreadColumn chat={chat} />
-
-              {chat.state.turns.length === 0 && !chat.state.gather && (
-                <div className="sky-blank" style={{ height: 'auto', padding: '24px 0' }}>
-                  <p>Ask the day anything, or start a chat — answers come from your files.</p>
-                </div>
-              )}
             </div>
           </div>
-
-          <Composer chat={chat} placeholder="Message the day…" hints={DAY_HINTS} attach={attach} />
         </div>
         {rail.open && view && (
           <DayRail

@@ -11,7 +11,7 @@ import { DayView, useDay, useThreads } from './day.tsx'
 import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
-import { acceptsImports, ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
+import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
@@ -100,9 +100,7 @@ function Canvas() {
   const [notes, setNotes] = useState<Note[]>([])
   const importRows = imports.filter((j) => j.state !== 'cancelled')
 
-  // A day's own conversation is a thread whose id is the day; the day's rail lists the others.
-  const dayThreadId = day ? `day-${day.day.ymd}` : ''
-  const chat = useChat(threadId ?? dayThreadId)
+  const chat = useChat(threadId ?? '')
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -387,7 +385,6 @@ function Canvas() {
         </Fragment>
       ) : (
         <DayView
-          chat={chat}
           day={day}
           threads={others}
           imports={isToday ? importRows : []}
@@ -397,7 +394,7 @@ function Canvas() {
           onOpenImport={openImport}
           onImportMeeting={queue.take}
           dragging={drop.dragging}
-          attach={{ accept: acceptsImports(), onFiles: queue.take }}
+          onImportFiles={queue.take}
           kept={kept}
           onKept={setKept}
           onUndoKept={undoKept}
