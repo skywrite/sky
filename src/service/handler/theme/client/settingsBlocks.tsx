@@ -3,7 +3,7 @@
  * monospace value, and how a refusal from the service is read.
  */
 
-import type { ReactNode } from 'react'
+import type { Key, ReactNode } from 'react'
 
 export const UNREACHABLE = "Couldn't reach sky — is the service running?"
 
@@ -15,7 +15,16 @@ export async function refusalOf(r: Response | null): Promise<string | null> {
   return body.message ?? `The service answered ${r.status}.`
 }
 
-export function Block({ head, note, children }: { head?: string; note?: string; children: ReactNode }) {
+export function Block({
+  head,
+  note,
+  children,
+}: {
+  key?: Key | null
+  head?: string
+  note?: string
+  children: ReactNode
+}) {
   return (
     <div className="sky-block">
       {head && <div className="sky-block-head">{head}</div>}
