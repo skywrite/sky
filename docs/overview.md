@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-29
+updated: 2026-09-06
 ---
 
 # Overview
@@ -261,7 +261,8 @@ notebook without touching your real one.
 | `SKY_INPUT_DIR` | `inputDir` |
 | `SKY_OUTPUT_DIR` | `outputDir` |
 
-The service's settings pages live at `/settings` — appearance, voice, AI, notebook. Its
+The service's settings pages live at `/settings` — appearance, voice, AI, connections,
+notebook. Its
 Advanced section shows this file resolved: every value, and whether it came from the file,
 a default, or one of these variables.
 
