@@ -38,6 +38,10 @@
   font-weight: 600;
 }
 
+.sky-turn[data-voice='sunny'] .sky-who {
+  color: var(--sky-accent);
+}
+
 .sky-voice-warn {
   color: var(--mantine-color-red-7);
   font-size: 14px;
