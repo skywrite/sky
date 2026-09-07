@@ -51,7 +51,10 @@ export interface SavedChatSummary {
   path: string
   time: string
   summary: string
+  /** Complete exchanges the file itself holds */
   exchanges: number
+  /** The chat this one branched from (relative to the notebook root) and the turn it left after; null for a chat that began on its own */
+  parent: { chat: string; turn: number } | null
 }
 
 export interface DayView {
@@ -104,6 +107,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     time: c.time,
     summary: c.summary,
     exchanges: c.exchanges,
+    parent: c.parent,
   }))
 
   return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section, chats, record }

@@ -72,6 +72,7 @@ test({ name: "day view - today's saved chats come along, relative to the noteboo
         time: '09:30',
         summary: 'Atlas Launch Planning',
         exchanges: 2,
+        parent: null,
       },
     ],
   })
