@@ -838,10 +838,10 @@ function ConfirmBody({
         </>
       )}
       {error && <div className="sky-confirm-read">{error}</div>}
-      <div className="sky-confirm-actions">
+      <div className="sky-dialog-actions">
         <Button onClick={onCancel}>{refusal ? 'Remove' : 'Cancel'}</Button>
         {!refusal && (
-          <Button variant="light" color="blue" onClick={() => void start()} disabled={!live || starting || linkBusy}>
+          <Button variant="primary" onClick={() => void start()} disabled={!live || starting || linkBusy}>
             {starting ? 'Starting…' : 'Start'}
           </Button>
         )}
@@ -902,25 +902,13 @@ export function ImportDialog({
 
   if (phone) {
     return (
-      <Drawer
-        opened={opened}
-        onClose={cancel}
-        position="bottom"
-        size="auto"
-        withCloseButton={false}
-        padding={20}
-        radius="lg"
-        styles={{
-          inner: { alignItems: 'flex-end' },
-          content: { height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
-        }}
-      >
+      <Drawer opened={opened} onClose={cancel} position="bottom" size="auto" withCloseButton={false}>
         {body}
       </Drawer>
     )
   }
   return (
-    <Modal opened={opened} onClose={cancel} centered size={560} withCloseButton={false} padding={28} radius="xl">
+    <Modal opened={opened} onClose={cancel} centered size={560} withCloseButton={false}>
       {body}
     </Modal>
   )
@@ -983,7 +971,7 @@ export function ImportRow({ job, onOpen }: { job: ImportJob; onOpen: (id: string
       </span>
       <span className="sky-run-at">{job.when}</span>
       {job.state === 'needs-you' ? (
-        <Button variant="light" color="blue" onClick={() => onOpen(job.id)}>
+        <Button variant="primary" onClick={() => onOpen(job.id)}>
           Review
         </Button>
       ) : (
@@ -1292,7 +1280,7 @@ function ReviewForm({
         )
       })}
       <div className="sky-form-foot">
-        <Button variant="light" color="blue" onClick={submit}>
+        <Button variant="primary" onClick={submit}>
           Apply {applied}
         </Button>
         <Button onClick={() => onAnswer(Object.fromEntries(items.map((i) => [i.id, { action: 'skip' }])))}>
@@ -1410,7 +1398,7 @@ function CorrectionsExchange({
               autoFocus
             />
           </div>
-          <Button variant="light" color="blue" onClick={() => send(value.trim())}>
+          <Button variant="primary" onClick={() => send(value.trim())}>
             {value.trim() ? 'Apply' : 'Looks right'}
           </Button>
         </div>
@@ -1473,7 +1461,7 @@ function ActionItems({
         )
       })}
       <div className="sky-form-foot">
-        <Button variant="light" color="blue" onClick={() => onAnswer([...picked])}>
+        <Button variant="primary" onClick={() => onAnswer([...picked])}>
           Accept {picked.size}
         </Button>
         <Button onClick={() => onAnswer([])}>None</Button>
@@ -1583,8 +1571,7 @@ function PlaceItems({
       })}
       <div className="sky-form-foot">
         <Button
-          variant="light"
-          color="blue"
+          variant="primary"
           onClick={() => onAnswer(ticked.map((item) => ({ value: item.value, when: whenOf(item) })))}
         >
           Accept {ticked.length}
@@ -1666,12 +1653,7 @@ function WhenChip({
           position="bottom"
           size="auto"
           withCloseButton={false}
-          padding={12}
-          radius="lg"
-          styles={{
-            inner: { alignItems: 'flex-end' },
-            content: { height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
-          }}
+          padding="var(--sky-space-3)"
         >
           <div className="sky-sheet">
             <div className="sky-sheet-handle" />
@@ -1947,7 +1929,7 @@ function Choice({
       <div className="sky-pills">
         {prompt.kind === 'confirm' ? (
           <>
-            <Button variant="light" color="blue" onClick={() => onAnswer(true)}>
+            <Button variant="primary" onClick={() => onAnswer(true)}>
               Yes
             </Button>
             <Button onClick={() => onAnswer(false)}>No</Button>
@@ -2119,14 +2101,14 @@ export function ImportMain({
             </Button>
           )}
           {job?.state === 'done' && job.result && (
-            <Button size="sm" variant="light" color="blue" component="a" href={fileHref(job.result.file)}>
+            <Button size="sm" variant="primary" component="a" href={fileHref(job.result.file)}>
               Open it
             </Button>
           )}
           {(job?.state === 'failed' || job?.state === 'cancelled') && (
             <>
               {!job.readback.refusal && (
-                <Button size="sm" variant="light" color="blue" onClick={() => onStartAgain(job)}>
+                <Button size="sm" variant="primary" onClick={() => onStartAgain(job)}>
                   Start again
                 </Button>
               )}
@@ -2145,7 +2127,7 @@ export function ImportMain({
             <Block head="Not started" mini={job.readback.summary}>
               <div className="sky-lead">This file is waiting for a Start.</div>
               <div className="sky-form-foot">
-                <Button variant="light" color="blue" onClick={() => onStartAgain(job)}>
+                <Button variant="primary" onClick={() => onStartAgain(job)}>
                   Start
                 </Button>
                 <Button onClick={remove}>Remove</Button>

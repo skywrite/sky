@@ -54,7 +54,7 @@
 }
 
 .sky-clock-table:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 4px;
   border-radius: 8px;
 }
@@ -128,7 +128,7 @@
 
 .sky-clock-row[data-tone='answer'] .sky-clock-time,
 .sky-clock-row[data-tone='answer'] .sky-clock-name {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font-weight: 600;
 }
 
@@ -139,7 +139,7 @@
 }
 
 .sky-clock-group[data-kind='answer'] {
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
 }
 
 .sky-clock-group[data-kind='pinned'] {
@@ -249,7 +249,7 @@
 }
 
 .sky-clock-htoggle:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }

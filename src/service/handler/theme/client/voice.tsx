@@ -529,7 +529,7 @@ export function VoiceMain({ back }: { back: { label: string; onClick: () => void
         <span className="sky-title">Talk</span>
         <nav className="sky-tabs">
           {inCall ? (
-            <Button size="sm" color="red" onClick={voice.end}>
+            <Button size="sm" variant="danger-quiet" onClick={voice.end}>
               End
             </Button>
           ) : state.phase !== 'idle' ? (

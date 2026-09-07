@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # Scheduling a meeting
@@ -9,6 +9,8 @@ The New meeting button on `/clock` opens `theme/client/meeting.tsx`: a
 dialog on desktop and a full-screen composer on phones. The component is
 reusable; scheduling does not belong to the clock converter. It keeps Sky's
 theme, with a scrollable body and an always-visible action footer.
+Its shared header, spacing, action roles and footer follow the
+[UI toolkit](../../theme/docs/README.md#shared-ui-toolkit).
 
 ## From words to an invitation
 

@@ -25,7 +25,7 @@
 }
 
 .sky-props-faces button:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: -2px;
 }
 
@@ -122,8 +122,8 @@
 }
 
 .sky-prop-chip.link {
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-prop-chip.link:hover {
@@ -185,7 +185,7 @@
 .sky-prop-more {
   border: 0;
   background: transparent;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font: inherit;
   font-size: 13px;
   padding: 0;
@@ -258,8 +258,8 @@
 }
 
 .sky-props-dropdown .mantine-Combobox-option[data-combobox-selected] {
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-props-dropdown .mantine-Combobox-option[data-combobox-selected] .sky-prop-mark {
@@ -304,11 +304,11 @@
 }
 
 .sky-props-add-input .mantine-Input-input {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-props-add-input .mantine-Input-input::placeholder {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   opacity: 0.9;
 }
 

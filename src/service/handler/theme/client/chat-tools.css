@@ -169,11 +169,11 @@
 
 .sky-reply-details > summary:hover,
 .sky-reply-details[open] > summary {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-reply-details > summary:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -336,7 +336,7 @@
 
 .sky-condensed a,
 .sky-condensed .sky-link {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 
@@ -381,7 +381,7 @@
 }
 
 .sky-sources-list a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 

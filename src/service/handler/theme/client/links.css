@@ -46,7 +46,7 @@
 }
 .sky-link-pick:hover,
 .sky-link-pick:focus-visible {
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
 }
 .sky-link-pick:disabled {
   opacity: 0.55;
@@ -69,7 +69,7 @@
 .sky-link-preview-button {
   background: none;
   border: 0;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font: inherit;
   font-size: 14px;
   padding: 10px 6px;
@@ -87,11 +87,6 @@
 .sky-link-preview .sky-markdown {
   font-size: 16px;
   overflow-wrap: anywhere;
-}
-.sky-link-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 .sky-links-input {
   min-width: 0;
@@ -119,7 +114,7 @@
 }
 .sky-linked-label a {
   min-width: 0;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 .sky-linked-label a:hover {

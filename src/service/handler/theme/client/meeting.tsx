@@ -126,13 +126,7 @@ function DaySchedule({
               <span>Nearby free times</span>
               <div>
                 {available.alternatives.map((alternative) => (
-                  <Button
-                    key={alternative}
-                    size="compact-sm"
-                    variant="light"
-                    color="blue"
-                    onClick={() => onTime(alternative)}
-                  >
+                  <Button key={alternative} size="compact-sm" variant="primary" onClick={() => onTime(alternative)}>
                     {clock(alternative)}
                   </Button>
                 ))}
@@ -483,7 +477,6 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       centered
       size={draft && !job ? 1020 : 680}
       padding={0}
-      radius="xl"
       title={
         <span className="sky-meeting-dialog-title">
           <CalendarIcon />
@@ -493,7 +486,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       closeOnClickOutside={false}
       closeOnEscape={!active}
       withCloseButton={!active}
-      classNames={{ content: 'sky-meeting-modal', header: 'sky-meeting-modal-header', body: 'sky-meeting-modal-body' }}
+      classNames={{ content: 'sky-meeting-modal', body: 'sky-meeting-modal-body' }}
     >
       {job || sending ? (
         <div className="sky-meeting-outcome" aria-live="polite">
@@ -520,7 +513,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                 </p>
               )}
               <div className="sky-meeting-outcome-actions">
-                <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="light" color="blue">
+                <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="primary">
                   Open in Calendar
                 </Button>
                 <Button
@@ -548,7 +541,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
             <>
               <h2>{job?.state === 'uncertain' ? 'Check Calendar before retrying' : 'The meeting wasn’t created'}</h2>
               <p>{job?.message}</p>
-              <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="light" color="blue">
+              <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="primary">
                 Open Google Calendar
               </Button>
               {(job?.state === 'failed' || job?.state === 'uncertain') && (
@@ -739,7 +732,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               </>
             )}
           </div>
-          <footer className="sky-meeting-footer">
+          <footer className="sky-dialog-footer sky-meeting-footer">
             <div>
               {draft ? (
                 <>
@@ -771,12 +764,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               )}
             </div>
             {draft ? (
-              <Button
-                variant="light"
-                color={conflicts ? 'orange' : 'blue'}
-                disabled={!canCreate}
-                onClick={() => void create()}
-              >
+              <Button variant={conflicts ? 'warning' : 'primary'} disabled={!canCreate} onClick={() => void create()}>
                 Create & send invites
               </Button>
             ) : (

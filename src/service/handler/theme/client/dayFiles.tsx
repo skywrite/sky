@@ -490,14 +490,13 @@ export function DayFilesMain({ ymd, folder, go }: { ymd: string; folder: string;
                     <span className="sky-fsum-acts">
                       <Button
                         size="compact-sm"
-                        color="red"
-                        variant="light"
+                        variant="danger"
                         disabled={picked.size === 0 || busy}
                         onClick={() => void remove(pickedEntries)}
                       >
                         {picked.size > 0 ? `Move ${picked.size} to the Trash` : 'Move to the Trash'}
                       </Button>
-                      <Button size="compact-sm" variant="subtle" onClick={() => setSelecting(false)}>
+                      <Button size="compact-sm" variant="secondary" onClick={() => setSelecting(false)}>
                         Cancel
                       </Button>
                     </span>

@@ -244,8 +244,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 </p>
                 <div className="sky-outbox-actions">
                   <Button
-                    variant="filled"
-                    color="indigo"
+                    variant="delivery"
                     loading={busy}
                     onClick={() =>
                       void act(async () => {
@@ -336,8 +335,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 <div className="sky-outbox-actions">
                   {editable && (
                     <Button
-                      variant="filled"
-                      color="indigo"
+                      variant="delivery"
                       loading={busy}
                       disabled={
                         !edit.text.trim() || conflicted || (item.stale && !reviewedChanges) || !item.conversation.target
@@ -424,8 +422,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                       minutes.
                     </p>
                     <Button
-                      variant="filled"
-                      color="indigo"
+                      variant="delivery"
                       loading={busy}
                       onClick={() =>
                         void act(async () => {

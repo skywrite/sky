@@ -269,7 +269,7 @@ function DaysBlock({
           {d.state === 'due' && (
             <>
               <span className="sky-wstate">not started yet</span>
-              <Button size="sm" variant="light" loading={busy === `start:${d.ymd}`} onClick={() => onStart(d)}>
+              <Button size="sm" variant="primary" loading={busy === `start:${d.ymd}`} onClick={() => onStart(d)}>
                 Start {d.weekday}
               </Button>
             </>

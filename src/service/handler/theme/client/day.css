@@ -395,7 +395,7 @@
   font: inherit;
   font-size: 16px;
   font-weight: 600;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   cursor: pointer;
   flex: none;
 }
@@ -406,13 +406,13 @@
   right: 0;
   bottom: 0;
   height: 3px;
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
 }
 
 .sky-undo-fill {
   display: block;
   height: 3px;
-  background: var(--sky-blue-deep);
+  background: var(--sky-accent);
   animation: sky-undo-drain 8s linear forwards;
 }
 

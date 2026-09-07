@@ -205,7 +205,7 @@ export function AuditionMain({ back }: { back: { label: string; onClick: () => v
         <span className="sky-title">Audition</span>
         <nav className="sky-tabs">
           {playing && (
-            <Button size="sm" color="red" onClick={stop}>
+            <Button size="sm" variant="danger-quiet" onClick={stop}>
               Stop
             </Button>
           )}

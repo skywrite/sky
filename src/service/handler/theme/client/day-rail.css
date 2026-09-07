@@ -34,13 +34,13 @@
 }
 
 .sky-rail-sec[data-meetings-drop][data-dragging] {
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
   border-radius: 8px;
-  box-shadow: inset 0 0 0 2px var(--sky-blue-deep);
+  box-shadow: inset 0 0 0 2px var(--sky-accent);
 }
 
 .sky-rail-sec[data-meetings-drop][data-dragging] > .sky-rail-sec-h {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 /* a row: the time, the label, the mark at the right; who is coming under the label */
@@ -106,7 +106,7 @@
 }
 
 .sky-dr-mark a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 
@@ -125,7 +125,7 @@
 }
 
 .sky-dr-item[data-state='now'] {
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
   margin: 0 -8px;
   padding: 5px 8px;
   border-radius: 8px;
@@ -134,7 +134,7 @@
 
 .sky-dr-item[data-state='now'] .sky-dr-time,
 .sky-dr-item[data-state='now'] .sky-dr-mark {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-dr-item[data-state='past'] .sky-dr-label {
@@ -142,14 +142,14 @@
 }
 
 .sky-dr-item[data-meeting-drop][data-dragging] {
-  background: var(--sky-blue-soft);
+  background: var(--sky-accent-soft);
   border-radius: 8px;
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 3px;
 }
 
 .sky-dr-item[data-meeting-drop][data-dragging] > span {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-dr-item[data-live] .sky-dr-open::before {
@@ -158,7 +158,7 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--sky-blue-deep);
+  background: var(--sky-accent);
   margin-right: 6px;
   vertical-align: 1px;
 }
@@ -182,7 +182,7 @@
 .sky-dr-work-line {
   display: block;
   font-size: 12.5px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -200,7 +200,7 @@
   font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 

@@ -42,7 +42,7 @@
 }
 
 .sky-input:focus-within {
-  box-shadow: 0 0 0 2px var(--sky-blue-soft);
+  box-shadow: 0 0 0 2px var(--sky-accent-soft);
 }
 
 .sky-input-root {
@@ -118,7 +118,7 @@
   width: 16px;
   height: 16px;
   display: inline-flex;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   opacity: 0;
 }
 

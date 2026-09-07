@@ -205,18 +205,18 @@ function AttachDialog({
         </div>
       )}
       {problem ? <p className="sky-rail-problem">{problem}</p> : null}
-      <div className="sky-confirm-actions">
+      <div className="sky-dialog-actions">
         <FileButton onChange={onBring} multiple>
           {(props) => (
-            <Button variant="subtle" {...props}>
+            <Button variant="secondary" {...props}>
               From this Mac…
             </Button>
           )}
         </FileButton>
-        <Button variant="subtle" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button disabled={picked.size === 0} onClick={() => onPick([...picked])}>
+        <Button variant="primary" disabled={picked.size === 0} onClick={() => onPick([...picked])}>
           {picked.size > 1 ? `Add ${picked.size} files` : 'Add'}
         </Button>
       </div>
@@ -224,25 +224,13 @@ function AttachDialog({
   )
   if (phone) {
     return (
-      <Drawer
-        opened={opened}
-        onClose={onClose}
-        position="bottom"
-        size="auto"
-        withCloseButton={false}
-        padding={20}
-        radius="lg"
-        styles={{
-          inner: { alignItems: 'flex-end' },
-          content: { width: '100%', height: 'auto', flex: '0 0 auto', maxHeight: '92dvh' },
-        }}
-      >
+      <Drawer opened={opened} onClose={onClose} position="bottom" size="auto" withCloseButton={false}>
         {body}
       </Drawer>
     )
   }
   return (
-    <Modal opened={opened} onClose={onClose} centered size={520} withCloseButton={false} padding={28} radius="xl">
+    <Modal opened={opened} onClose={onClose} centered size={520} withCloseButton={false}>
       {body}
     </Modal>
   )

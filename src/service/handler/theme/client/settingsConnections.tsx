@@ -133,7 +133,7 @@ function SlackRow() {
               {busy ? 'Checking…' : 'Check'}
             </Button>
           ) : (
-            <Button size="compact-sm" variant="light" color="blue" disabled={busy} onClick={reconnect}>
+            <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
               {busy ? 'Reconnecting…' : 'Reconnect'}
             </Button>
           ))}
@@ -230,8 +230,7 @@ function ClientForm({ steps, onSaved, onCancel }: { steps: string[]; onSaved: ()
       <div className="sky-set-form-foot">
         <Button
           size="sm"
-          variant="light"
-          color="blue"
+          variant="primary"
           disabled={busy || !clientId.trim() || !clientSecret.trim()}
           onClick={() => void save()}
         >
@@ -310,7 +309,7 @@ function AccountsBlock({ data, reload }: { data: ConnectionsData; reload: () => 
           >
             <span className="sky-set-status">Connected</span>
             {confirming === account.email ? (
-              <Button size="compact-sm" color="red" variant="light" onClick={() => void remove(account.email)}>
+              <Button size="compact-sm" variant="danger" onClick={() => void remove(account.email)}>
                 Really remove
               </Button>
             ) : (
@@ -342,7 +341,7 @@ function AccountsBlock({ data, reload }: { data: ConnectionsData; reload: () => 
         </div>
       ) : (
         <div className="sky-set-foot">
-          <Button size="sm" variant="light" color="blue" onClick={add}>
+          <Button size="sm" variant="primary" onClick={add}>
             ＋ Add Google account
           </Button>
         </div>
@@ -533,7 +532,7 @@ function SecretForm({
         </p>
       )}
       <div className="sky-set-form-foot">
-        <Button size="sm" variant="light" color="blue" disabled={busy || !ready} onClick={() => void save()}>
+        <Button size="sm" variant="primary" disabled={busy || !ready} onClick={() => void save()}>
           Save to keychain
         </Button>
         <Button size="sm" disabled={busy} onClick={onCancel}>
@@ -578,7 +577,7 @@ function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () =
                 Change
               </Button>
               {confirming === id ? (
-                <Button size="compact-sm" color="red" variant="light" onClick={() => void remove(row)}>
+                <Button size="compact-sm" variant="danger" onClick={() => void remove(row)}>
                   Really remove
                 </Button>
               ) : (
@@ -604,7 +603,7 @@ function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () =
         <SecretForm onDone={done} onCancel={() => setEditing(null)} />
       ) : (
         <div className="sky-set-foot">
-          <Button size="sm" variant="light" color="blue" onClick={() => setEditing('new')}>
+          <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
             ＋ Add to keychain
           </Button>
         </div>

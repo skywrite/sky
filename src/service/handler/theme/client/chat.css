@@ -27,7 +27,7 @@
 }
 
 .sky-bubble a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 
@@ -121,7 +121,7 @@
 }
 
 .sky-rendered a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   overflow-wrap: anywhere;
 }
 
@@ -173,7 +173,7 @@
 .sky-turn:hover .sky-act,
 .sky-turn:focus-within .sky-act,
 .sky-act[data-busy] {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-act:hover {
@@ -205,7 +205,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--sky-blue-deep);
+  background: var(--sky-accent);
   animation: sky-chat-breathe 1.8s ease-in-out infinite;
 }
 
@@ -235,7 +235,7 @@
 
 .sky-queries-toggle:hover,
 .sky-queries-toggle[aria-expanded='true'] {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-queries-toggle svg[data-open='true'] {
@@ -281,7 +281,7 @@
 }
 
 .sky-query-copy:hover {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: underline;
 }
 
@@ -301,7 +301,7 @@
 .sky-queries-toggle:focus-visible,
 .sky-query pre:focus-visible,
 .sky-query-copy:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 3px;
 }
 

@@ -279,7 +279,7 @@ function Picker({
           </section>
         ))}
       </div>
-      <div className="sky-link-footer">
+      <div className="sky-dialog-actions">
         {offset > 0 && (
           <Button size="sm" onClick={() => setOffset(Math.max(0, offset - 40))}>
             Previous
@@ -297,11 +297,11 @@ function Picker({
     </div>
   )
   return phone ? (
-    <Drawer opened={opened} onClose={onClose} title="Add link" position="bottom" size="90dvh" padding={20} radius="lg">
+    <Drawer opened={opened} onClose={onClose} title="Add link" position="bottom" size="90dvh">
       {body}
     </Drawer>
   ) : (
-    <Modal opened={opened} onClose={onClose} title="Add link" centered size={720} padding={24} radius="xl">
+    <Modal opened={opened} onClose={onClose} title="Add link" centered size={720}>
       {body}
     </Modal>
   )
@@ -381,7 +381,7 @@ export function LinksInput({
         )
       })}
       {!readOnly && onChange && (
-        <Button size="sm" variant="subtle" disabled={busy} onClick={() => setOpened(true)}>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => setOpened(true)}>
           + Add link
         </Button>
       )}

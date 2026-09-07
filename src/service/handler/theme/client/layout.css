@@ -63,8 +63,8 @@ body {
   border-radius: 999px;
   font: inherit;
   font-size: 12px;
-  color: var(--sky-blue-deep);
-  background: var(--sky-blue-soft);
+  color: var(--sky-accent);
+  background: var(--sky-accent-soft);
   cursor: pointer;
 }
 
@@ -181,7 +181,7 @@ body {
 }
 
 .sky-blank a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 a.sky-thread {
@@ -307,5 +307,5 @@ a.sky-thread {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--mantine-color-blue-6);
+  background: var(--mantine-primary-color-6);
 }

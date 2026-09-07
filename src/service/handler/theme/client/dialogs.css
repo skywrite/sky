@@ -1,0 +1,98 @@
+/* Modal and Drawer chrome is assigned by theme.ts, including dialogs rendered in portals. */
+.sky-dialog-content,
+.sky-dialog-header {
+  background: var(--sky-dialog-bg);
+  color: var(--sky-text);
+}
+
+.sky-dialog-header {
+  padding: var(--sky-space-6) var(--sky-dialog-padding) var(--sky-space-4);
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-dialog-title,
+.sky-confirm-title {
+  font-size: var(--sky-dialog-title-size);
+  font-weight: var(--sky-dialog-title-weight);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.sky-dialog-body {
+  /* Honor explicit padding=0 for composers with their own scrolling body and fixed footer. */
+  padding: var(--mb-padding, var(--sky-dialog-padding));
+}
+
+.sky-dialog-sheet .mantine-Drawer-inner {
+  align-items: flex-end;
+}
+
+.sky-dialog-sheet .sky-dialog-content {
+  flex: 0 0 auto;
+  width: 100%;
+  height: var(--drawer-size);
+  max-height: var(--sky-dialog-max-height);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.sky-dialog-sheet .sky-dialog-body {
+  padding-bottom: max(var(--mb-padding, var(--sky-dialog-padding)), env(safe-area-inset-bottom));
+}
+
+.sky-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sky-dialog-gap);
+}
+
+.sky-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--sky-dialog-actions-gap);
+  padding-top: var(--sky-dialog-gap);
+}
+
+.sky-dialog-sheet .sky-dialog-actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sky-sheet-handle {
+  width: 36px;
+  height: var(--sky-space-1);
+  border-radius: 999px;
+  background: var(--sky-border-soft);
+  margin: 0 auto var(--sky-space-2);
+}
+
+.sky-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: var(--sky-space-5);
+  padding: var(--sky-space-4) var(--sky-dialog-padding);
+  border-top: 1px solid var(--sky-border-soft);
+  background: var(--sky-dialog-bg);
+}
+
+@media (max-width: 900px) {
+  .sky-dialog-header {
+    padding-top: max(var(--sky-space-4), env(safe-area-inset-top));
+  }
+
+  .sky-dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sky-dialog-gap);
+    padding-bottom: max(var(--sky-space-4), env(safe-area-inset-bottom));
+  }
+
+  .sky-dialog-footer > button,
+  .sky-dialog-sheet .sky-dialog-actions > button {
+    min-height: 44px;
+  }
+}

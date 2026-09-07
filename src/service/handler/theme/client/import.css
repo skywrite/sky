@@ -5,7 +5,7 @@
   position: absolute;
   inset: 0;
   z-index: 6;
-  background: color-mix(in srgb, var(--sky-blue-soft) 94%, transparent);
+  background: color-mix(in srgb, var(--sky-accent-soft) 94%, transparent);
   display: flex;
   /* An open Files pad sits at the top of the column; the hint keeps clear of it. */
   align-items: flex-end;
@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-drop-title {
@@ -46,20 +46,6 @@
   font-size: 17px;
   color: var(--sky-text-2);
   line-height: 1.5;
-}
-
-/* the confirm: dialog on a desk, sheet on a phone — same body */
-.sky-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sky-confirm-title {
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
 }
 
 .sky-confirm-file {
@@ -89,28 +75,6 @@
   font-size: 16px;
   color: var(--sky-dim);
   max-width: 72ch;
-}
-
-.sky-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding-top: 10px;
-}
-
-.sky-sheet .sky-confirm-actions {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-}
-
-.sky-sheet-handle {
-  width: 36px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--sky-border-soft);
-  margin: 0 auto 8px;
 }
 
 /* labelled rows of pills */
@@ -157,13 +121,13 @@
 }
 
 .sky-pill[data-on='true'] {
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
   font-weight: 600;
 }
 
 .sky-pill:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
   outline-offset: 2px;
 }
 
@@ -180,7 +144,7 @@
 }
 
 .sky-when-input:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
 }
 
 .sky-when-note {
@@ -257,7 +221,7 @@
   display: inline-block;
   width: 2px;
   height: 22px;
-  background: var(--sky-blue-deep);
+  background: var(--sky-accent);
   vertical-align: -5px;
   margin-left: 3px;
 }
@@ -435,8 +399,8 @@
   line-height: 1.5;
   padding: 2px 11px;
   border-radius: 999px;
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 /* the when chip: where a ticked item lands. Set = the person or the words chose;
@@ -476,7 +440,7 @@
   color: var(--sky-text);
 }
 .sky-place-chip:focus-visible {
-  outline: 2px solid var(--sky-blue-deep);
+  outline: 2px solid var(--sky-accent);
 }
 .sky-place-chip-sub {
   color: var(--sky-dim);
@@ -535,7 +499,7 @@
 .sky-place-menu-tick {
   width: 16px;
   height: 16px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   flex: none;
 }
 .sky-place-menu-sep {
@@ -566,7 +530,7 @@
   background: transparent;
   font: inherit;
   font-size: 14px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   cursor: pointer;
 }
 .sky-place-menu-hint {

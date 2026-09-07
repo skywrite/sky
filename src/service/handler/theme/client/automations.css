@@ -88,7 +88,7 @@ button.sky-auto-txt:hover .sky-auto-name {
 .sky-auto-due {
   margin-top: 4px;
   font-size: 15px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 /* the brief wears the reply type; its headings stay modest */
@@ -151,7 +151,7 @@ button.sky-auto-txt:hover .sky-auto-name {
 }
 
 .sky-auto-foot a:hover {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 /* ============ new automation & proposals ============ */

@@ -3,6 +3,7 @@
 @import './tokens.css';
 @import './layout.css';
 @import './components.css';
+@import './dialogs.css';
 @import './chat.css';
 @import './composer.css';
 @import './chat-tools.css';

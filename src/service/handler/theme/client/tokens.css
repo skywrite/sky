@@ -1,6 +1,13 @@
-/* Shared colors, syntax colors, and content type sizes for light, dark, and narrow layouts. */
+/* Shared colors, spacing, surfaces, and type sizes for light, dark, and narrow layouts. */
 
 :root {
+  --sky-space-1: 4px;
+  --sky-space-2: 8px;
+  --sky-space-3: 12px;
+  --sky-space-4: 16px;
+  --sky-space-5: 20px;
+  --sky-space-6: 24px;
+  --sky-space-7: 28px;
   --sky-content-font-size: 19px;
   --sky-bg: var(--mantine-color-body);
   --sky-side: var(--mantine-color-gray-0);
@@ -10,11 +17,22 @@
   --sky-text-2: var(--mantine-color-gray-7);
   --sky-dim: var(--mantine-color-gray-6);
   --sky-green: var(--mantine-color-green-8);
-  --sky-blue-deep: var(--mantine-color-blue-8);
-  --sky-blue-soft: var(--mantine-color-blue-0);
+  --sky-accent: var(--mantine-primary-color-8);
+  --sky-accent-soft: var(--mantine-primary-color-0);
   --sky-hover: var(--mantine-color-gray-2);
   --sky-card: #ffffff;
   --sky-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --sky-card-radius: var(--mantine-radius-xl);
+  --sky-dialog-padding: var(--sky-space-7);
+  --sky-dialog-gap: var(--sky-space-3);
+  --sky-dialog-title-size: 23px;
+  --sky-dialog-title-weight: 650;
+  --sky-dialog-radius: var(--mantine-radius-xl);
+  --sky-sheet-radius: var(--mantine-radius-lg);
+  --sky-dialog-shadow: var(--mantine-shadow-xl);
+  --sky-dialog-bg: var(--sky-bg);
+  --sky-dialog-max-height: 92dvh;
+  --sky-dialog-actions-gap: var(--sky-space-2);
   --sky-code-keyword: var(--mantine-color-grape-8);
   --sky-code-string: var(--mantine-color-green-8);
   --sky-code-number: var(--mantine-color-orange-8);
@@ -37,8 +55,8 @@
   --sky-text-2: var(--mantine-color-dark-1);
   --sky-dim: var(--mantine-color-dark-2);
   --sky-green: var(--mantine-color-green-4);
-  --sky-blue-deep: var(--mantine-color-blue-3);
-  --sky-blue-soft: rgba(34, 139, 230, 0.16);
+  --sky-accent: var(--mantine-primary-color-3);
+  --sky-accent-soft: color-mix(in srgb, var(--mantine-primary-color-6) 16%, transparent);
   --sky-hover: var(--mantine-color-dark-4);
   --sky-card: var(--mantine-color-dark-5);
   --sky-card-shadow: none;
@@ -47,6 +65,8 @@
 @media (max-width: 900px) {
   :root {
     --sky-content-font-size: 18px;
+    --sky-dialog-padding: var(--sky-space-5);
+    --sky-dialog-title-size: 22px;
   }
 }
 

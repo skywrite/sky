@@ -1270,11 +1270,11 @@ function ApprovalCard({
       )}
       {onAnswer && answered === undefined && (
         <div className="sky-ask-acts">
-          <Button variant="light" color="blue" size="sm" onClick={() => onAnswer(true)}>
+          <Button variant="primary" size="sm" onClick={() => onAnswer(true)}>
             Allow
           </Button>
           {approval.sessionKey && (
-            <Button variant="subtle" color="blue" size="sm" onClick={() => onAnswer(true, true)}>
+            <Button variant="primary-quiet" size="sm" onClick={() => onAnswer(true, true)}>
               Allow for this file
             </Button>
           )}
@@ -1547,7 +1547,7 @@ export function Composer({
             autoFocus
           />
         </div>
-        <ActionIcon variant="light" color="blue" aria-label="Send" onClick={submit} disabled={!canSend}>
+        <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
           ↑
         </ActionIcon>
       </div>

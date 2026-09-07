@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # The web app's shell and client
@@ -37,9 +37,10 @@ Keep changes with the feature they affect, including its responsive rules:
 
 | File in `client/` | Owns |
 | --- | --- |
-| `tokens.css` | Shared colors, syntax colors, content sizes, dark and narrow overrides |
+| `tokens.css` | Shared colors, spacing, dialog and card values, content sizes, dark and narrow overrides |
 | `layout.css` | App frame, sidebar, navigation, headers, columns, mobile drawer |
 | `components.css` | Shared cards, section labels, counters, chips, activity rows, disclosure links |
+| `dialogs.css` | Modal and Drawer surfaces, headers, titles, bodies, action rows, fixed footers, mobile sheets |
 | `chat.css` | Conversation turns, replies, branch actions |
 | `composer.css` | Message input, composer controls, reading budget |
 | `chat-tools.css` | Tool activity, output, usage, approval prompts |
@@ -65,6 +66,53 @@ explicit and check overlapping selectors when changing it. Properties in
 the Details rail live with their base property rules in `frontmatter.css`;
 reader and editor prose share `document.css`. Avoid adding another copy
 of shared rules to make a local change.
+
+## Shared UI toolkit
+
+`theme.ts` owns Mantine defaults and action roles. `tokens.css` owns shared
+CSS values; `components.css` and `dialogs.css` turn them into reusable
+styles. Feature styles own the content and layout particular to that feature.
+
+Use Mantine's `Button` and `ActionIcon` with an action role:
+
+| `variant` | Use |
+| --- | --- |
+| `primary` | The main action: save, add, submit, continue |
+| `secondary` (default) | Cancel, navigation, and supporting actions |
+| `primary-quiet` | A primary-colored action with no resting fill |
+| `danger` / `danger-quiet` | Destructive actions, or a quiet stop action |
+| `warning` | Proceeding with a known issue, such as a scheduling conflict |
+| `delivery` | Outbox's deliberate, filled delivery action |
+
+Choose the role at the call site, without a `color` prop. The role owns its
+palette and resting/hover appearance in `actionVariants`; it resolves through
+Mantine so light/dark colors, disabled states, loading and focus behavior stay
+with the existing components. Built-in variants remain available for deliberate
+appearance choices, such as the neutral New chat button and canvas tool toggles.
+
+Changing `skyTheme.primaryColor` updates primary buttons, icon buttons, and
+custom CSS accents together. Custom controls use `--sky-accent` and
+`--sky-accent-soft`, which derive from that same palette. Syntax highlighting
+and status colors keep their own meaning. To change only the primary button
+family, set its color in `actionVariants` instead.
+
+Every Mantine `Modal` and `Drawer` receives shared classes from the theme,
+including content rendered in portals. Tune `--sky-dialog-padding`,
+`--sky-dialog-title-size`, `--sky-dialog-radius`, `--sky-dialog-bg`, and the other
+dialog tokens in `tokens.css`. Use `.sky-dialog-actions` for an action row and
+`.sky-dialog-footer` for a fixed composer footer. The shared stylesheet owns
+sheet stacking, maximum height and safe-area spacing. Dialogs still choose
+their size and dismissal behavior; a bottom Drawer with `size="auto"` fits its
+content, while an explicit size supports a taller chooser.
+
+The meeting composer intentionally keeps `padding={0}` on its Modal: its
+scrolling inner body and fixed footer consume the same dialog padding token.
+It keeps its full-screen phone layout. Avoid adding local copies of shared
+header, title, padding, radius or sheet rules; an intentional exception should
+describe the layout need it serves.
+
+See [2026-09-07 — Shared actions and dialog styling](2026-09-07-shared-ui-toolkit.md)
+for the consolidation's rationale and verification.
 
 ## Typography
 

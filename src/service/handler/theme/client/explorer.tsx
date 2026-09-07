@@ -600,10 +600,10 @@ export function DocView({ file }: { file: string }) {
               {note && <span className="sky-head-count">{note}</span>}
               {editing && conflict && (
                 <>
-                  <Button size="sm" variant="light" onClick={() => editor.current?.reload()}>
+                  <Button size="sm" variant="primary" onClick={() => editor.current?.reload()}>
                     Reload disk version
                   </Button>
-                  <Button size="sm" variant="light" color="red" onClick={() => editor.current?.overwrite()}>
+                  <Button size="sm" variant="danger" onClick={() => editor.current?.overwrite()}>
                     Overwrite disk version
                   </Button>
                 </>

@@ -284,7 +284,7 @@ function WorkingSection({ imports, onOpenImport }: { imports: ImportJob[]; onOpe
               <span className="sky-dr-work-line">{j.line ?? importStateWord(j)}</span>
             </span>
             {j.state === 'needs-you' ? (
-              <Button size="compact-xs" variant="light" color="blue" onClick={() => onOpenImport(j.id)}>
+              <Button size="compact-xs" variant="primary" onClick={() => onOpenImport(j.id)}>
                 Review
               </Button>
             ) : (

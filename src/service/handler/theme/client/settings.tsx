@@ -598,8 +598,7 @@ function ProfileForm({
       <div className="sky-set-form-foot">
         <Button
           size="sm"
-          variant="light"
-          color="blue"
+          variant="primary"
           disabled={busy || !name.trim() || !model.trim()}
           onClick={() => void save()}
         >
@@ -679,7 +678,7 @@ function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
                         Edit
                       </Button>
                       {confirming === profile.name ? (
-                        <Button size="compact-sm" color="red" variant="light" onClick={() => void remove(profile.name)}>
+                        <Button size="compact-sm" variant="danger" onClick={() => void remove(profile.name)}>
                           Really delete
                         </Button>
                       ) : (
@@ -698,7 +697,7 @@ function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
           <ProfileForm providers={data.providers} onDone={done} onCancel={() => setEditing(null)} />
         ) : (
           <div className="sky-set-foot">
-            <Button size="sm" variant="light" color="blue" onClick={() => setEditing('new')}>
+            <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
               ＋ New configuration
             </Button>
           </div>

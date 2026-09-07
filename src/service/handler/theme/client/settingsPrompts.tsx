@@ -258,7 +258,7 @@ export function PromptsMain({
                   <p>Find a prompt, see where it’s used, and make it yours.</p>
                 </div>
                 <Button
-                  variant="light"
+                  variant="primary"
                   onClick={() => {
                     setCreateNote('')
                     setCreating(true)
@@ -564,7 +564,7 @@ function PromptDetail({
             >
               Discard
             </Button>
-            <Button variant="light" loading={busy} disabled={!dirty} onClick={() => void save()}>
+            <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => void save()}>
               Save changes
             </Button>
           </div>
@@ -779,7 +779,7 @@ function PromptDetail({
         centered
       >
         <p>This removes your saved customization and replaces the current edit with the built-in text.</p>
-        <Button variant="light" loading={busy} onClick={() => void restore()}>
+        <Button variant="primary" loading={busy} onClick={() => void restore()}>
           Restore built-in
         </Button>
       </Modal>

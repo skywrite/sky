@@ -395,7 +395,7 @@ export function AutomationsMain({
         </Button>
         <span className="sky-title">Automations</span>
         <span className="sky-spacer" style={{ flex: 1 }} />
-        <Button variant="light" color="blue" size="sm" onClick={onNew}>
+        <Button variant="primary" size="sm" onClick={onNew}>
           New automation
         </Button>
       </header>
@@ -477,7 +477,7 @@ function AskInput({ placeholder, busy, onAsk }: { placeholder: string; busy: boo
           disabled={busy}
         />
       </div>
-      <ActionIcon variant="light" color="blue" aria-label="Ask sky" onClick={submit} disabled={busy}>
+      <ActionIcon variant="primary" aria-label="Ask sky" onClick={submit} disabled={busy}>
         ↑
       </ActionIcon>
     </div>
@@ -532,7 +532,7 @@ function ProposalCard({
         {fileOpen && <pre className="sky-auto-file">{draft.contents.trimEnd()}</pre>}
 
         <div className="sky-auto-actions">
-          <Button variant="light" color="blue" onClick={onAccept} disabled={busy}>
+          <Button variant="primary" onClick={onAccept} disabled={busy}>
             {busy ? 'Writing…' : accept}
           </Button>
           <Button onClick={onDiscard} disabled={busy}>

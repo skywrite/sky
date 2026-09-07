@@ -50,7 +50,7 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--sky-blue-deep);
+  accent-color: var(--sky-accent);
 }
 .sky-prompt-search > span {
   white-space: nowrap;
@@ -94,7 +94,7 @@
   cursor: pointer;
 }
 .sky-prompt-name:hover {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 .sky-prompt-customized {
   margin-left: 10px;
@@ -120,7 +120,7 @@
 }
 button.sky-prompt-chip {
   cursor: pointer;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 .sky-prompt-muted {
   color: var(--sky-dim);
@@ -201,7 +201,7 @@ button.sky-prompt-chip {
   cursor: pointer;
 }
 .sky-prompt-modes button[aria-pressed='true'] {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   background: var(--sky-bg);
   box-shadow: 0 1px 4px #0001;
 }
@@ -225,7 +225,7 @@ button.sky-prompt-chip {
 }
 .sky-prompt-toolbar button:hover {
   background: var(--sky-card);
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 .sky-prompt-toolbar select {
   margin-left: auto;
@@ -332,7 +332,7 @@ button.sky-prompt-chip {
   overflow-wrap: anywhere;
 }
 .sky-prompt-variable code {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font-size: 12px;
 }
 .sky-prompt-variable > input,
@@ -368,7 +368,7 @@ button.sky-prompt-chip {
 .sky-prompt-preview-head button {
   font: inherit;
   font-size: 12px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   background: none;
   border: 0;
   cursor: pointer;

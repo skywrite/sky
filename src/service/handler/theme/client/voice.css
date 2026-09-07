@@ -63,7 +63,7 @@
 }
 
 .sky-voice-dot[data-activity='speaking'] {
-  background: var(--sky-blue-deep);
+  background: var(--sky-accent);
 }
 
 .sky-voice-dot[data-activity='checking'] {

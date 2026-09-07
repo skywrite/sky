@@ -19,7 +19,7 @@
   /* room below the last block, so a click under the document lands on the editor (NAV-13) */
   padding-bottom: 30vh;
   outline: none;
-  caret-color: var(--sky-blue-deep);
+  caret-color: var(--sky-accent);
 }
 
 .sky-wysiwyg .end-block {
@@ -45,7 +45,7 @@
 }
 
 .sky-wysiwyg .expanded .content {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 /* a hard break shows where it is; raw html reads as code */
@@ -181,8 +181,8 @@
 
 /* a rule selected as a whole */
 .sky-wysiwyg .atom.selected hr {
-  border-top-color: var(--sky-blue-deep);
-  box-shadow: 0 0 0 3px var(--sky-blue-soft);
+  border-top-color: var(--sky-accent);
+  box-shadow: 0 0 0 3px var(--sky-accent-soft);
 }
 
 /* tables: each cell is its own editable; the focused table wears its tools above it */

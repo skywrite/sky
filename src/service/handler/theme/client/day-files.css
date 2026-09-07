@@ -23,7 +23,7 @@
   margin-left: auto;
   border: 0;
   background: transparent;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font: inherit;
   font-size: 14px;
   padding: 2px 0;
@@ -143,7 +143,7 @@
   max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
 }
 

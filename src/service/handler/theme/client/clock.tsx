@@ -502,13 +502,7 @@ export function ClockMain({
             {snap.notebook.timezone} · {offsetLabel(offsetMinutes(at, snap.notebook.timezone))}
           </span>
         )}
-        <Button
-          className="sky-clock-new-meeting"
-          variant="light"
-          color="blue"
-          size="sm"
-          onClick={() => setMeetingOpen(true)}
-        >
+        <Button className="sky-clock-new-meeting" variant="primary" size="sm" onClick={() => setMeetingOpen(true)}>
           + New meeting
         </Button>
       </header>

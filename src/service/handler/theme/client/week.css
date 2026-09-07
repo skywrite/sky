@@ -120,8 +120,8 @@
 }
 
 .sky-status[data-tone='track'] {
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-verdict {
@@ -178,7 +178,7 @@
   padding: 0;
   font: inherit;
   font-size: 15px;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -210,7 +210,7 @@
 
 .sky-addfield:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--sky-blue-soft);
+  box-shadow: 0 0 0 2px var(--sky-accent-soft);
 }
 
 .sky-seg {
@@ -231,8 +231,8 @@
 }
 
 .sky-seg button[data-on='true'] {
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-seg[data-days] button {
@@ -266,6 +266,6 @@
   height: 8px;
   margin-left: 9px;
   border-radius: 50%;
-  background: var(--mantine-color-blue-6);
+  background: var(--mantine-primary-color-6);
   vertical-align: middle;
 }

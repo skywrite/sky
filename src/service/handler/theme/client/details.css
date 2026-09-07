@@ -101,7 +101,7 @@
 .sky-rail-more {
   border: 0;
   background: transparent;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font: inherit;
   font-size: 12.5px;
   padding: 2px 0;
@@ -126,21 +126,21 @@
 }
 
 .sky-rail-pad[data-over] {
-  border-color: var(--sky-blue-deep);
-  background: var(--sky-blue-soft);
-  color: var(--sky-blue-deep);
+  border-color: var(--sky-accent);
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-rail-pad[data-busy] {
   border-style: solid;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-rail-choose,
 .sky-rail-undo {
   border: 0;
   background: transparent;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   font: inherit;
   padding: 0;
   cursor: pointer;
@@ -265,7 +265,7 @@
   color: var(--sky-dim);
 }
 
-.sky-attach-dialog .sky-confirm-actions > :first-child {
+.sky-attach-dialog .sky-dialog-actions > :first-child {
   margin-right: auto;
 }
 
@@ -301,7 +301,7 @@
   gap: 6px;
   align-items: baseline;
   padding: 3px 0;
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
   text-decoration: none;
   font-size: 13.5px;
 }
@@ -349,7 +349,7 @@
 }
 
 .sky-outline li.on button {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 @media (max-width: 640px) {

@@ -143,7 +143,7 @@
 /* picked: blue with a white center dot */
 .sky-set-radio[data-on='true'] {
   border: 0;
-  background: radial-gradient(circle, #ffffff 0 4px, var(--mantine-color-blue-6) 4.5px);
+  background: radial-gradient(circle, #ffffff 0 4px, var(--mantine-primary-color-6) 4.5px);
 }
 
 .sky-set-voice .sky-tag {
@@ -202,7 +202,7 @@
 }
 
 .sky-set-adv-row[data-source='env'] .sky-set-adv-source {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 /* ── squeezed: rows stack, the voice list goes single-column ── */
@@ -263,8 +263,8 @@
   font-size: 13px;
   padding: 2px 10px;
   border-radius: 999px;
-  color: var(--sky-blue-deep);
-  background: var(--sky-blue-soft);
+  color: var(--sky-accent);
+  background: var(--sky-accent-soft);
 }
 
 .sky-set-form {
@@ -329,7 +329,7 @@
 }
 
 .sky-set-wait a {
-  color: var(--sky-blue-deep);
+  color: var(--sky-accent);
 }
 
 .sky-set-steps {
