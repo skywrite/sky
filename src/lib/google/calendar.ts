@@ -35,6 +35,8 @@ export interface CalendarEvent {
   eventType: string
   /** 'confirmed' | 'tentative' | 'cancelled' */
   status: string
+  /** Transparent entries appear on the calendar without occupying time. */
+  transparency?: string
   conferenceUrl?: string
   location?: string
   htmlLink?: string
@@ -57,6 +59,7 @@ interface EventWire {
   id?: string
   iCalUID?: string
   status?: string
+  transparency?: string
   summary?: string
   location?: string
   start?: EventTimeWire
@@ -106,6 +109,7 @@ function normalizeEvent(wire: EventWire, account: string): CalendarEvent | null 
     selfResponse: attendees.find((a) => a.self)?.response,
     eventType: wire.eventType ?? 'default',
     status: wire.status ?? 'confirmed',
+    ...(wire.transparency ? { transparency: wire.transparency } : {}),
     conferenceUrl: video?.uri ?? wire.hangoutLink,
     location: wire.location,
     htmlLink: wire.htmlLink,

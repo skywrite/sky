@@ -36,6 +36,8 @@ import {
   isPathWithinRoot,
   isPathWithinRoots,
 } from './markdown-preview/mod.ts'
+import { createMeetingRoutes } from './meetings/mod.ts'
+import type { MeetingsHost } from './meetings/types.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 import {
@@ -74,6 +76,7 @@ export interface HttpHandlerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  meetings?: MeetingsHost
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -165,6 +168,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (clock) {
     app.route('/clock/_api', createClockRoutes(clock))
   }
+  if (options.meetings) app.route('/meetings/_api', createMeetingRoutes(options.meetings))
 
   // The automations page's data: the status report. The page itself is /automations, below.
   if (automations) {

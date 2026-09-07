@@ -16,6 +16,7 @@ import { createAutomationsHost } from './handler/automations/createAutomationsHo
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
+import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
@@ -160,6 +161,7 @@ const server = createServer({
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
   clock: createClockHost(config, env.toObject()),
+  meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),

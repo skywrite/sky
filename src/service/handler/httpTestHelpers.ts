@@ -8,6 +8,7 @@ import type { ChatRoutesOptions } from './chat/mod.ts'
 import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
+import type { MeetingsHost } from './meetings/types.ts'
 import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
@@ -29,6 +30,7 @@ export function createTestHttpApp(
     voice?: VoiceRoutesOptions
     settings?: SettingsRoutesOptions
     clock?: ClockRoutesOptions
+    meetings?: MeetingsHost
     automations?: AutomationsRoutesOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
@@ -47,6 +49,7 @@ export function createTestHttpApp(
     voice: options.voice,
     settings: options.settings,
     clock: options.clock,
+    meetings: options.meetings,
     automations: options.automations,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.

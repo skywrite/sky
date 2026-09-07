@@ -42,6 +42,7 @@ import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
+import type { MeetingsHost } from './handler/meetings/types.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
@@ -85,6 +86,7 @@ export interface ServerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
+  meetings?: MeetingsHost
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -254,6 +256,7 @@ export function createServer(options: ServerOptions): Server {
       voice,
       settings,
       clock,
+      meetings: options.meetings,
       automations,
       week,
       imports: options.imports,
