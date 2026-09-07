@@ -60,6 +60,7 @@ ends a mission. Read the [2026-09-06 note](2026-09-06-a-turn-that-stops-says-so.
 
 ## Notes
 
+- [2026-09-07 — A blank is no value](2026-09-07-a-blank-is-no-value.md): a model's empty optional field is dropped before the approval policy and the command see it.
 - [2026-09-06 — A turn that stops says so](2026-09-06-a-turn-that-stops-says-so.md): the closing step and the repetition guard.
 - [2026-09-06 — nested chat files and the day's shared branch hierarchy](../../../../service/handler/day/docs/2026-09-06-videos-and-chat-branches.md)
 - [2026-09-06 — conversational references become document relationships](2026-09-06-conversational-document-rel.md)

@@ -204,13 +204,30 @@ const MAX_TOOL_ERROR_CHARS = 2000
  * returned here must be plain JSON — see the boundary comments inside.
  * Exported as the unit under test; createNotebookTools wires it per tool.
  */
+/**
+ * A blank string is no value. A model fills the optional string parameters
+ * it has nothing to say about with "" — a `file: ""` that reads as a target
+ * and asks for a go, a `reasoning: ""` that reads as a profile name and
+ * fails the call before it starts. Every tool input passes through here
+ * before the approval policy sees it and before the command runs. False,
+ * zero and an empty list stay: they say something.
+ */
+export function withoutBlankStrings(input: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'string' && value.trim() === '') continue
+    clean[key] = value
+  }
+  return clean
+}
+
 export async function runToolCommand(
   tasks: CommandService,
   entry: Pick<DiscoveredTool, 'toolName' | 'commandName'>,
   input: Record<string, unknown>,
   options: CreateNotebookToolsOptions = {},
 ): Promise<Record<string, unknown>> {
-  const result = await tasks.run(entry.commandName, input)
+  const result = await tasks.run(entry.commandName, withoutBlankStrings(input))
   if (result.status !== 'success') {
     // Failures cross this boundary as message strings only — never the
     // Error instance. A class instance fails the next step's validation
@@ -356,7 +373,8 @@ export function toolApprovalPolicy(
   const { toolName, sessionKey, needsApprovalFor } = tool
   const blessable = Boolean(isBlessed && sessionKey)
   if (!blessable && !needsApprovalFor) return 'user-approval'
-  return (input) => {
+  return (raw) => {
+    const input = withoutBlankStrings(raw)
     if (needsApprovalFor && !needsApprovalFor(input)) return 'approved'
     const key = sessionKey?.(input)
     if (key !== undefined && isBlessed?.(toolName, key)) {

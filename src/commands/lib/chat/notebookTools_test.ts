@@ -261,3 +261,60 @@ test('toolApprovalPolicy - who asks, who runs', async (t) => {
     })
   })
 })
+
+// ── A blank is no value ────────────────────────────────────────────────
+
+test('withoutBlankStrings - drops the empty optional fields a model fills in', async () => {
+  const { withoutBlankStrings } = await import('./notebookTools.ts')
+  const input = { mission: 'Create a doc', file: '', import: '   ', reasoning: '', noOpen: false, limit: 0, tags: [] }
+  const clean = withoutBlankStrings(input)
+  assert({
+    given: 'an input with blank strings beside real values',
+    should:
+      'drop the blanks and keep everything else — false, zero and an empty list included — leaving the original as it was',
+    expected: {
+      clean: { mission: 'Create a doc', noOpen: false, limit: 0, tags: [] },
+      originalKeys: ['mission', 'file', 'import', 'reasoning', 'noOpen', 'limit', 'tags'],
+    },
+    actual: { clean, originalKeys: Object.keys(input) },
+  })
+})
+
+test('toolApprovalPolicy - a blank target is no target', async () => {
+  const { toolApprovalPolicy } = await import('./notebookTools.ts')
+  const statics = {
+    toolName: 'google_agent',
+    sessionKey: (input: Record<string, unknown>) => (typeof input.file === 'string' ? input.file : undefined),
+    needsApprovalFor: (input: Record<string, unknown>) =>
+      typeof input.file === 'string' || typeof input.import === 'string',
+  }
+  const policy = toolApprovalPolicy(statics, { isBlessed: () => false })
+  const decide = (input: Record<string, unknown>) => (typeof policy === 'function' ? policy(input) : policy)
+  assert({
+    given: 'a create mission whose model filled the file and import fields with blanks, then a real target',
+    should: 'run the blank ones without asking and still ask for the real one',
+    expected: ['approved', 'approved', 'user-approval'],
+    actual: [
+      decide({ mission: 'Create a doc', file: '' }),
+      decide({ mission: 'x', file: '  ', import: '' }),
+      decide({ file: 'doc-9' }),
+    ],
+  })
+})
+
+test('runToolCommand - blank strings never reach the command', async () => {
+  let seen: unknown
+  const recording = {
+    run: (_name: string, input: unknown) => {
+      seen = input
+      return Promise.resolve(CommandResult.success({ ok: true }))
+    },
+  } as unknown as CommandService
+  await runToolCommand(recording, ENTRY, { mission: 'Create a doc', reasoning: '', file: '  ', noOpen: false })
+  assert({
+    given: 'a call whose model sent an empty reasoning profile and a blank file',
+    should: 'hand the command only the fields that say something',
+    expected: { mission: 'Create a doc', noOpen: false },
+    actual: seen,
+  })
+})
