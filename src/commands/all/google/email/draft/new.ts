@@ -2,7 +2,7 @@ import open from 'open'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { AccountResolutionError, createDraft, draftUrl, parseRecipients, renderEmailHtml } from '#lib/google/mod.ts'
 import type { GmailAddress, GmailDraft } from '#lib/google/mod.ts'
@@ -22,7 +22,7 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
-type Result = { report: string; url: string }
+type Result = { report: string; url: string; draftId: string }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -40,7 +40,7 @@ export default class GoogleEmailDraftNewTask extends Command {
   static override description: CommandDescription = {
     name: 'google:email:draft:new',
     description:
-      'Create a NEW Gmail draft — a fresh message, not a reply. It is never sent: the draft waits in Gmail Drafts for the user to review and send by hand. Body is markdown rendered to HTML (paragraphs flow — never hard-wrap lines); give recipients and a subject when known.',
+      'Create a NEW Gmail draft — a fresh message, not a reply. It is never sent: the draft waits in Gmail Drafts for the user to review and send by hand. Body is markdown rendered to HTML (paragraphs flow — never hard-wrap lines); give recipients and a subject when known. Returns draftId for google:email:draft:update.',
     descriptionLong: [
       'Files a message under Drafts via the Gmail API, using the OAuth grant',
       'from google:auth (requires the Gmail scope), then opens the draft in the',
@@ -48,8 +48,8 @@ export default class GoogleEmailDraftNewTask extends Command {
       "Gmail's normal rich compose and paragraphs flow to the reader's width.",
       'Nothing is sent, ever: sending is a separate Gmail endpoint the code',
       'does not call — finish and send from Gmail. Recipients and subject are',
-      'optional; add them in Gmail if omitted. Replies into existing threads',
-      'are not supported yet.',
+      'optional; add them in Gmail if omitted. Use google:email:draft:reply',
+      'to reply within an existing thread.',
     ],
     usage: [
       'sky google:email:draft:new "Hi Jane, can we move the Atlas kickoff to Thursday?" -t jane@example.com -s "Atlas kickoff"',
@@ -102,7 +102,7 @@ export default class GoogleEmailDraftNewTask extends Command {
       client = await resolveGmailClient({
         secrets,
         requested: args.account,
-        interactive: context.compositionDepth === 0,
+        interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
       })
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
@@ -125,6 +125,6 @@ export default class GoogleEmailDraftNewTask extends Command {
     } — ${url}`
     output.log('')
     output.log(report)
-    return CommandResult.success({ report, url })
+    return CommandResult.success({ report, url, draftId: draft.id })
   }
 }
