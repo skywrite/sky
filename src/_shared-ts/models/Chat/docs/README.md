@@ -33,8 +33,34 @@ Existing spellings survive, equivalent refs deduplicate, and ambiguous or
 incomplete searches add nothing. `--no-auto-rel` skips this lookup along with
 entity suggestions. External artifact relationships retain their own path.
 
+## When the engine ends a turn
+
+A tool loop ends in one of two hands. The model's: it writes, and the
+turn is done. The engine's: the step cap (`maxSteps`, forty by default —
+a backstop, not a budget; it was five) or the repetition guard says stop. An engine-ended turn used to end on the
+last tool result and read as a finished reply — the opening sentence, the
+sources, nothing about the work left undone. Now it gets a **closing
+step**: one more model step whose last message is a notice — the reason,
+and the ask to write, not call. The notice is prompt only, never history.
+Its text is the reply's last paragraph. If the model
+calls tools anyway, the engine writes a fixed closing line itself. The
+result carries `cutShort` (`steps` or `repetition`); the CLI prints a dim
+line from it, the page shows the closing text.
+
+The **repetition guard** (`ChatEngine/repetitionGuard.ts`) wraps every
+tool for the turn. The same tool, the same input, the same result is a
+call that taught the model nothing: the second identical result carries a
+note, the third identical call is refused unrun with the reason in the
+model's terms, and three refusals end the loop through the closing step.
+Inputs alone never count — a re-read after a write is normal — and a
+result that carries a clock never looks identical, so the guard fails
+quiet. The Google agent's mission tools sit behind the same guard
+(`google/agent/lib/tools.ts`), notes and refusals only; its own step cap
+ends a mission. Read the [2026-09-06 note](2026-09-06-a-turn-that-stops-says-so.md).
+
 ## Notes
 
+- [2026-09-06 — A turn that stops says so](2026-09-06-a-turn-that-stops-says-so.md): the closing step and the repetition guard.
 - [2026-09-06 — nested chat files and the day's shared branch hierarchy](../../../../service/handler/day/docs/2026-09-06-videos-and-chat-branches.md)
 - [2026-09-06 — conversational references become document relationships](2026-09-06-conversational-document-rel.md)
 - [2026-09-06 — one Sources list under a reply, its own and the searched pages merged](2026-09-06-one-sources-list.md)

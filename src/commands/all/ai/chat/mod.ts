@@ -853,6 +853,15 @@ export default class AiChatTask extends Command {
       if (turn.approvalRoundsExhausted) {
         output.log(colors.dim('Too many approval requests, moving on.'))
       }
+      if (turn.cutShort) {
+        output.log(
+          colors.dim(
+            turn.cutShort === 'steps'
+              ? 'Stopped at the tool-step limit; the reply says what is left.'
+              : 'Stopped after a tool call kept repeating; the reply says what is left.',
+          ),
+        )
+      }
       if (turn.usage) output.log(colors.dim(usageLine(turn.usage, reasoningProfileName)))
       if (turn.timing) output.log(colors.dim(timingLine(turn.timing)))
 

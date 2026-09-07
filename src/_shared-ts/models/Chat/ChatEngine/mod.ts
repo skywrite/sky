@@ -12,7 +12,16 @@
  * the approval protocol is unit-testable with scripted results.
  */
 
-import { isStepCount, type LanguageModelUsage, streamText, type SystemModelMessage, type ToolSet } from 'ai'
+import {
+  isStepCount,
+  type LanguageModelUsage,
+  type ModelMessage,
+  type PrepareStepFunction,
+  type StopCondition,
+  streamText,
+  type SystemModelMessage,
+  type ToolSet,
+} from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/promptCache.ts'
 import { addUsage, NO_USAGE, type TokenUsage, tokenUsageOf } from '#shared/ai/usage.ts'
@@ -24,6 +33,7 @@ import { timingSummary, type TimingSummary } from '#shared/timing/summary.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
+import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
 import { turnErrorMessage } from './turnErrorMessage.ts'
 
 type Message = { role: 'user' | 'assistant'; content: string }
@@ -68,6 +78,9 @@ export type ChatEngineEvent =
   | { type: 'tool-call'; toolName: string; input: unknown }
   | { type: 'turn-complete'; toolRecords: ToolCallRecord[] }
 
+/** Why the engine ended a tool loop: the step cap, or the repetition guard. */
+export type TurnCut = 'steps' | 'repetition'
+
 export interface TurnResult {
   timing?: TimingSummary
   /** The reply exactly as it streamed: every text delta in order, step and round boundaries as paragraph breaks. */
@@ -78,6 +91,12 @@ export interface TurnResult {
   toolRecords: ToolCallRecord[]
   /** True when the approval-round cap cut the loop short. */
   approvalRoundsExhausted: boolean
+  /**
+   * Set when the engine, not the model, ended the tool loop — at the step
+   * cap or on the repetition guard — and a closing step wrote the reply's
+   * last paragraph.
+   */
+  cutShort?: TurnCut
   /** The turn's token counts, every step and approval round summed; zero when the invoker reports none. */
   usage: TokenUsage
 }
@@ -181,7 +200,12 @@ export interface ChatEngineOptions {
   /** The turn's event stream — progress lines, SSE frames, or nothing. */
   onEvent?: (event: ChatEngineEvent) => void
   maxApprovalRounds?: number
-  /** Model steps (text + tool calls) per invocation round. Default 5; research-style tool loops raise it. */
+  /**
+   * Model steps (text + tool calls) per invocation round. Default 40 — a
+   * backstop no honest turn reaches, not a budget: the repetition guard
+   * catches loops, and a turn that does hit it gets a closing step. Was 5,
+   * which cut research-then-build turns short with nothing said.
+   */
   maxSteps?: number
   /** Test seam — production streams via streamText. */
   invokeModel?: ModelInvoker
@@ -248,7 +272,7 @@ export default class ChatEngine {
     this.approvalHandler = opts.approvalHandler
     this.onEvent = opts.onEvent
     this.maxApprovalRounds = opts.maxApprovalRounds ?? 3
-    this.maxSteps = opts.maxSteps ?? 5
+    this.maxSteps = opts.maxSteps ?? 40
     this.invokeModel = opts.invokeModel
   }
 
@@ -319,6 +343,13 @@ export default class ChatEngine {
 
     const emit = (event: ChatEngineEvent) => this.onEvent?.(event)
 
+    // Every tool runs behind this turn's repetition guard: the third
+    // identical call — same input, same result twice — is refused unrun,
+    // and three refusals end the loop.
+    const guard = new RepetitionGuard()
+    const tools = guardTools(opts.tools as ToolSet, guard)
+    let cutShort: TurnCut | undefined
+
     // The reply, accumulated from exactly what was emitted. A boundary
     // defers its paragraph break until text actually follows, so a turn
     // never ends on a dangling separator.
@@ -366,18 +397,42 @@ export default class ChatEngine {
         // a later step's error is observable at all. Tool failures are not
         // errors here — they flow as tool-error parts and never fire this.
         let streamError: unknown
+        // The closing step. When the loop is ended by the engine rather than
+        // by the model — the step cap, or the guard — the model gets one more
+        // step, told to write and not to call, so it says what it did and
+        // what is left. Without it a cut turn ends on a tool result and reads
+        // as complete. The notice goes where the model reads last, a message
+        // after the step's tool results: in the system prompt it was ignored
+        // live and broke the prompt cache for the step. Tools stay defined:
+        // this provider drops them for a tool choice of none, and Anthropic
+        // refuses a history of tool calls that defines no tools.
+        let closingAt: number | undefined
+        let piecesAtClosing = 0
+        const prepareStep: PrepareStepFunction<ToolSet> = (step) => {
+          const base = cacheTailStep(step)
+          if (closingAt !== undefined) return base
+          const reason = guard.exhausted ? 'repetition' : step.stepNumber >= this.maxSteps ? 'steps' : undefined
+          if (!reason) return base
+          closingAt = step.stepNumber
+          cutShort = reason
+          piecesAtClosing = roundPieces
+          return { ...base, messages: [...base.messages, closingMessage(reason, this.maxSteps)] }
+        }
+        const closingDone: StopCondition<ToolSet> = ({ steps }) => closingAt !== undefined && steps.length > closingAt
         const stream = streamText({
           ...this.model,
           instructions,
           messages,
           // Discovered notebook tools arrive as untyped records; this SDK
           // boundary is where they become a ToolSet.
-          tools: opts.tools as ToolSet,
+          tools,
           toolApproval: opts.toolApproval,
-          stopWhen: isStepCount(this.maxSteps),
+          // One step past the cap is the closing step, when it is needed.
+          stopWhen: [isStepCount(this.maxSteps + 1), closingDone],
           // Each tool step replays the turn so far; re-tailing the cache
-          // breakpoint per step keeps that replay a cache read.
-          prepareStep: cacheTailStep,
+          // breakpoint per step keeps that replay a cache read. The same
+          // hook turns the last step into the closing one.
+          prepareStep,
           onStepEnd,
           // Deltas ride a callback rather than a consumed stream: awaiting
           // the result promises below is what drives this stream, and
@@ -392,7 +447,7 @@ export default class ChatEngine {
           },
         })
         try {
-          return {
+          const result = {
             text: await stream.text,
             content: await stream.content,
             steps: await stream.steps,
@@ -400,6 +455,10 @@ export default class ChatEngine {
             error: streamError,
             usage: await stream.totalUsage,
           }
+          // A closing step that called tools anyway wrote nothing — the
+          // cut must still be said, so the engine says it.
+          if (closingAt !== undefined && cutShort && roundPieces === piecesAtClosing) sink.write(closingLine(cutShort))
+          return result
         } catch (err) {
           // When zero steps completed (e.g. every retry of the first request
           // failed), the SDK rejects all result promises with a generic
@@ -579,7 +638,14 @@ export default class ChatEngine {
       // path for the turn ending.
       emit({ type: 'turn-complete', toolRecords: turnTools })
 
-      return { text: reply, sourceUrls, toolRecords: turnTools, approvalRoundsExhausted, usage }
+      return {
+        text: reply,
+        sourceUrls,
+        toolRecords: turnTools,
+        approvalRoundsExhausted,
+        usage,
+        ...(cutShort ? { cutShort } : {}),
+      }
     } catch (err) {
       // Roll back to the turn's start and rethrow clamped — the raw SDK
       // error can embed the entire message array, and hosts print and log
@@ -588,4 +654,31 @@ export default class ChatEngine {
       throw new TurnError(truncate(turnErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools)
     }
   }
+}
+
+// -----------------------------------------------------------------------------
+// The closing step
+// -----------------------------------------------------------------------------
+
+/**
+ * What the model is told on the closing step — the reason, then the ask —
+ * as the last message of the step. It is prompt only: response messages
+ * never include it, so the history the next turn sees stays clean.
+ */
+export function closingMessage(reason: TurnCut, maxSteps: number): ModelMessage {
+  const why =
+    reason === 'steps'
+      ? `This turn has used its ${maxSteps} tool steps.`
+      : 'This turn is ending: the same tool call was refused three times because it kept returning the same result.'
+  return {
+    role: 'user',
+    content: `[Sky] ${why} Do not call any tool now. In a few short lines, tell me what you did, what you found, and what is left undone. Say plainly that the work is not finished, and that I can say "continue" to carry on.`,
+  }
+}
+
+/** The engine's own last line when the closing step wrote none. */
+export function closingLine(reason: TurnCut): string {
+  return reason === 'steps'
+    ? 'This turn stopped at its tool-step limit before finishing. Say "continue" to carry on.'
+    : 'This turn stopped because a tool call kept repeating with the same result. Say "continue" to carry on.'
 }

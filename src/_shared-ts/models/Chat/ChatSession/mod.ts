@@ -44,6 +44,7 @@ import ChatEngine, {
   type ModelInvoker,
   type ToolApprovalConfig,
   TurnError,
+  type TurnCut,
 } from '../ChatEngine/mod.ts'
 import { clearChatAutosave, writeChatAutosave } from '../ChatStore/autosave.ts'
 import { loadResumeSession, type ResumeSession } from '../ChatStore/mod.ts'
@@ -164,6 +165,8 @@ export interface TurnReport {
   /** Deduplicated web-search sources; the saved turn ends in one Sources list holding these and any the reply named itself */
   sourceUrls: string[]
   approvalRoundsExhausted: boolean
+  /** Set when the engine ended the tool loop (step cap, or repeated calls) and a closing step wrote the reply's last paragraph. */
+  cutShort?: TurnCut
   /** The turn's token counts, every model step summed; absent when the turn failed */
   usage?: TokenUsage
   /** The turn died — already logged; the conversation continues without a reply */
@@ -562,6 +565,7 @@ export default class ChatSession {
       report.text = result.text
       report.sourceUrls = sourceUrls
       report.approvalRoundsExhausted = result.approvalRoundsExhausted
+      if (result.cutShort) report.cutShort = result.cutShort
       report.usage = result.usage
     } catch (err) {
       // A failed turn keeps its tool trail — an executed side-effectful

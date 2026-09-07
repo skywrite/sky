@@ -878,3 +878,168 @@ test('a turn whose invoker reports no usage shows zero, not nothing', async () =
     expected: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
   })
 })
+
+// ---------------------------------------------------------------------------
+// The closing step — a turn the engine ends says so
+// ---------------------------------------------------------------------------
+
+function textStep(text: string) {
+  return mockStep(
+    [
+      { type: 'text-start', id: 't' },
+      { type: 'text-delta', id: 't', delta: text },
+      { type: 'text-end', id: 't' },
+    ],
+    'stop',
+  )
+}
+
+function probeCall(id: string, input: string) {
+  return mockStep([{ type: 'tool-call', toolCallId: id, toolName: 'probe', input }], 'tool-calls')
+}
+
+function probeTool(answer = 'ok') {
+  let ran = 0
+  return {
+    ran: () => ran,
+    tools: {
+      probe: {
+        description: 'Probes.',
+        inputSchema: jsonSchema<{ n?: number }>({ type: 'object', properties: { n: { type: 'number' } } }),
+        execute: () => {
+          ran++
+          return Promise.resolve(answer)
+        },
+      },
+    },
+  }
+}
+
+test('a turn cut at the step cap gets a closing step, and its text is the reply', async () => {
+  const model = new MockLanguageModelV3({
+    doStream: [
+      probeCall('c1', '{"n":1}'),
+      probeCall('c2', '{"n":2}'),
+      textStep('Two probes done; the doc is not built yet. Say continue to carry on.'),
+    ],
+  })
+  const engine = new ChatEngine({ model: { model }, approvalHandler: () => Promise.resolve(DECLINE), maxSteps: 2 })
+  engine.appendUserMessage('probe twice, then build')
+  const probe = probeTool()
+  const result = await engine.runTurn({ instructions: ['system prompt'], tools: probe.tools, toolApproval: {} })
+
+  const closingCall = model.doStreamCalls[2]
+  // deno-lint-ignore no-explicit-any
+  const prompt = closingCall.prompt as any[]
+  const last = prompt.at(-1)
+  const lastText = Array.isArray(last?.content) ? String(last.content[0]?.text ?? '') : String(last?.content ?? '')
+  assert({
+    given: 'a two-step cap and a model still calling tools after its second step',
+    should:
+      'run one more step whose last message is the closing notice, keep the tools defined for it, and flag the turn as cut at the cap',
+    expected: {
+      text: 'Two probes done; the doc is not built yet. Say continue to carry on.',
+      cutShort: 'steps',
+      calls: 3,
+      ran: 2,
+      lastRole: 'user',
+      lastOpens: '[Sky] This turn has used its 2 tool steps.',
+      systems: 1,
+      toolsDefined: 1,
+    },
+    actual: {
+      text: result.text,
+      cutShort: result.cutShort,
+      calls: model.doStreamCalls.length,
+      ran: probe.ran(),
+      lastRole: last?.role,
+      lastOpens: lastText.split(' Do not call')[0],
+      systems: prompt.filter((m) => m.role === 'system').length,
+      toolsDefined: closingCall.tools?.length,
+    },
+  })
+})
+
+test('a closing step that calls tools anyway still ends with the engine saying the turn was cut', async () => {
+  const model = new MockLanguageModelV3({
+    doStream: [probeCall('c1', '{"n":1}'), probeCall('c2', '{"n":2}')],
+  })
+  const engine = new ChatEngine({ model: { model }, approvalHandler: () => Promise.resolve(DECLINE), maxSteps: 1 })
+  engine.appendUserMessage('probe')
+  const probe = probeTool()
+  const result = await engine.runTurn({ instructions: ['system prompt'], tools: probe.tools, toolApproval: {} })
+
+  assert({
+    given: 'a one-step cap and a model that ignores the closing instruction and calls a tool again',
+    should: 'stop after the closing step and write the fixed closing line, so the cut is never silent',
+    expected: {
+      text: 'This turn stopped at its tool-step limit before finishing. Say "continue" to carry on.',
+      cutShort: 'steps',
+      calls: 2,
+    },
+    actual: { text: result.text, cutShort: result.cutShort, calls: model.doStreamCalls.length },
+  })
+})
+
+test('a model repeating one call is refused, then closed out', async () => {
+  const same = '{"n":1}'
+  const model = new MockLanguageModelV3({
+    doStream: [
+      probeCall('c1', same),
+      probeCall('c2', same),
+      probeCall('c3', same),
+      probeCall('c4', same),
+      probeCall('c5', same),
+      textStep('The probe keeps answering the same; I stopped. Nothing else was done.'),
+    ],
+  })
+  const engine = new ChatEngine({ model: { model }, approvalHandler: () => Promise.resolve(DECLINE), maxSteps: 10 })
+  engine.appendUserMessage('keep probing')
+  const probe = probeTool()
+  const result = await engine.runTurn({ instructions: ['system prompt'], tools: probe.tools, toolApproval: {} })
+
+  const promptOf = (i: number) => JSON.stringify(model.doStreamCalls[i]?.prompt ?? [])
+  assert({
+    given: 'five identical probe calls in a row, under a cap of ten',
+    should:
+      'run two, refuse three, then close the turn on the sixth call with tools still defined, flagged as repetition',
+    expected: {
+      ran: 2,
+      calls: 6,
+      cutShort: 'repetition',
+      text: 'The probe keeps answering the same; I stopped. Nothing else was done.',
+      secondSawNote: true,
+      thirdSawRefusal: true,
+      closingToldWhy: true,
+      toolsDefinedAtClosing: 1,
+    },
+    actual: {
+      ran: probe.ran(),
+      calls: model.doStreamCalls.length,
+      cutShort: result.cutShort,
+      text: result.text,
+      secondSawNote: promptOf(2).includes('nothing has changed since'),
+      thirdSawRefusal: promptOf(3).includes('Error: refused'),
+      closingToldWhy: promptOf(5).includes('refused three times'),
+      toolsDefinedAtClosing: model.doStreamCalls[5]?.tools?.length,
+    },
+  })
+})
+
+test('a turn the model finishes on its own is not marked as cut', async () => {
+  const model = new MockLanguageModelV3({ doStream: [probeCall('c1', '{"n":1}'), textStep('done')] })
+  const engine = new ChatEngine({ model: { model }, approvalHandler: () => Promise.resolve(DECLINE) })
+  engine.appendUserMessage('probe once')
+  const result = await engine.runTurn({ instructions: ['system prompt'], tools: probeTool().tools, toolApproval: {} })
+  assert({
+    given: 'a turn that ends with the model writing',
+    should: 'carry no cut flag and no closing instruction',
+    expected: { cutShort: undefined, hasKey: false, systems: 1 },
+    actual: {
+      cutShort: result.cutShort,
+      hasKey: 'cutShort' in result,
+      // deno-lint-ignore no-explicit-any
+      systems: (model.doStreamCalls[1].prompt as any[]).filter((m) => m.role === 'system').length,
+    },
+  })
+})
