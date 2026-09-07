@@ -98,7 +98,7 @@ test({ name: "schedule - a record within the tolerance is the meeting's record" 
     given: 'a record seven minutes after one start and none near the other',
     should: 'link the first meeting to its record and leave the second without',
     actual: schedule.meetings.map((m) => m.record?.title ?? null),
-    expected: ['Board prep sync', null],
+    expected: ['Board prep sync', 'Old call', null],
   })
 })
 
@@ -154,5 +154,49 @@ test({ name: 'schedule route - answers a day and refuses anything else' }, async
     should: "answer the day with the host's schedule and 404 the word",
     actual: { ok: ok.status, body: await ok.json(), bad: bad.status, asked },
     expected: { ok: 200, body: answered, bad: 404, asked: [DAY] },
+  })
+})
+
+test('meetings remain available without a calendar and include inline records', () => {
+  const inline = { ...record('Jane Doe Zoom', '10:00'), path: 'time/2026/W05/01-27/day.md', inline: true }
+  const schedule = scheduleOf({
+    day: DAY,
+    events: [],
+    records: [record('Afternoon call', '14:00'), inline],
+    clock: { date: DAY, time: '18:00' },
+    read: false,
+    errors: ['Calendar unavailable'],
+  })
+  assert({
+    given: 'inline and filed records with an unavailable calendar',
+    should: 'retain both in time order with their links',
+    actual: {
+      read: schedule.read,
+      meetings: schedule.meetings.map((m) => [m.start, m.record?.title, m.record?.inline ?? false]),
+    },
+    expected: {
+      read: false,
+      meetings: [
+        ['10:00', 'Jane Doe Zoom', true],
+        ['14:00', 'Afternoon call', false],
+      ],
+    },
+  })
+})
+
+test('a recorded meeting is matched to at most one calendar event', () => {
+  const schedule = scheduleOf({
+    day: DAY,
+    events: [event('Planning', '10:00', '10:30'), event('Other call', '10:10', '10:40')],
+    records: [{ ...record('Planning notes', '10:00'), inline: true }],
+    clock: { date: DAY, time: '18:00' },
+    read: true,
+    errors: [],
+  })
+  assert({
+    given: 'two calendar events near one inline record',
+    should: 'include the record once',
+    actual: schedule.meetings.map((m) => m.record?.title ?? null),
+    expected: ['Planning notes', null],
   })
 })

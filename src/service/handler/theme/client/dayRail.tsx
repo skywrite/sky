@@ -9,7 +9,7 @@ import { RailToggle } from './railToggle.tsx'
 
 /**
  * The rail beside a day: what is around the day rather than in its
- * record — the calendar's schedule, the day's chats, work in progress,
+ * record — the day's meetings, chats, work in progress,
  * and a pad to attach files. Drawn the way a document's Details rail is
  * drawn, so the two read alike. The record itself stays in the column.
  */
@@ -29,11 +29,11 @@ export interface ScheduledMeeting {
   joinUrl: string | null
   state: 'past' | 'now' | 'next'
   /** The notebook's record of it, when one is filed */
-  record: { path: string; title: string } | null
+  record: { path: string; title: string; inline?: boolean } | null
 }
 
 export interface DaySchedule {
-  /** Whether the calendar answered; false leaves `meetings` empty */
+  /** Whether the calendar answered; local meetings may still be present */
   read: boolean
   errors: string[]
   meetings: ScheduledMeeting[]
@@ -153,7 +153,7 @@ function MeetingRow({
           'drop to import'
         ) : m.state === 'past' ? (
           m.record ? (
-            <a href={fileHref(m.record.path)}>filed</a>
+            <a href={fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
           ) : (
             'no record'
           )

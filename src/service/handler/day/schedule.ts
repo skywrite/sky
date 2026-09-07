@@ -1,12 +1,7 @@
 /**
- * The day's schedule for the rail: the calendar's meetings for one day,
- * each judged against the notebook clock — past, now, or next — and, for
- * every one, whether the notebook filed a record of it. The record match
- * is the meeting check's own rule: a notebook meeting starting within its
- * tolerance of the calendar's start counts as the record.
- *
- * Read-only, and it never throws: a calendar that will not answer comes
- * back as `read: false` with its reasons, so the rail can say so.
+ * Meetings for the day's rail: calendar events merged with the day's
+ * inline notes and filed records. Local records survive calendar failures.
+ * Each record matches at most one calendar event within the check's tolerance.
  */
 
 import * as path from 'node:path'
@@ -33,11 +28,11 @@ export interface ScheduledMeeting {
   joinUrl: string | null
   state: ScheduleState
   /** The notebook's record of it, relative to the notebook root, when one is filed */
-  record: { path: string; title: string } | null
+  record: { path: string; title: string; inline?: boolean } | null
 }
 
 export interface DaySchedule {
-  /** Whether the calendar answered; false leaves `meetings` empty and `errors` saying why */
+  /** Whether the calendar answered; local records remain available when it did not */
   read: boolean
   errors: string[]
   meetings: ScheduledMeeting[]
@@ -61,16 +56,6 @@ function minutesOf(time: string): number {
 /** The `HH:MM` a record's `when:` starts with, if it has one. */
 function recordStart(row: MeetingRow): string | null {
   return row.when?.match(/^(\d{1,2}:\d{2})/)?.[1] ?? null
-}
-
-function recordOf(event: CalendarEvent, records: MeetingRow[]): ScheduledMeeting['record'] {
-  if (event.allDay) return null
-  const start = minutesOf(event.start.slice(11, 16))
-  const match = records.find((row) => {
-    const at = recordStart(row)
-    return at !== null && Math.abs(minutesOf(at) - start) <= START_TOLERANCE_MINUTES
-  })
-  return match ? { path: match.path, title: match.title } : null
 }
 
 /**
@@ -98,7 +83,20 @@ export function scheduleOf(input: {
   read: boolean
   errors: string[]
 }): DaySchedule {
-  if (!input.read) return { read: false, errors: input.errors, meetings: [] }
+  const remaining = new Set(input.records)
+  const recordOf = (event: CalendarEvent): ScheduledMeeting['record'] => {
+    if (event.allDay) return null
+    const start = minutesOf(event.start.slice(11, 16))
+    const match = [...remaining]
+      .filter((row) => {
+        const at = recordStart(row)
+        return at !== null && Math.abs(minutesOf(at) - start) <= START_TOLERANCE_MINUTES
+      })
+      .sort((a, b) => Math.abs(minutesOf(recordStart(a)!) - start) - Math.abs(minutesOf(recordStart(b)!) - start))[0]
+    if (!match) return null
+    remaining.delete(match)
+    return { path: match.path, title: match.title, inline: match.inline }
+  }
   const meetings = input.events.map(
     (event): ScheduledMeeting => ({
       title: event.title,
@@ -108,10 +106,27 @@ export function scheduleOf(input: {
       who: event.attendees.filter((a) => !a.self).map((a) => a.name ?? a.email),
       joinUrl: event.conferenceUrl ?? null,
       state: stateOf(event, input.day, input.clock),
-      record: recordOf(event, input.records),
+      record: recordOf(event),
     }),
   )
-  return { read: true, errors: input.errors, meetings }
+  for (const row of remaining) {
+    meetings.push({
+      title: row.title,
+      start: recordStart(row) ?? '',
+      end: '',
+      allDay: false,
+      who: row.who ? [row.who] : [],
+      joinUrl: null,
+      state: 'past',
+      record: { path: row.path, title: row.title, inline: row.inline },
+    })
+  }
+  meetings.sort(
+    (a, b) =>
+      (a.allDay ? -1 : a.start ? minutesOf(a.start) : Infinity) -
+      (b.allDay ? -1 : b.start ? minutesOf(b.start) : Infinity),
+  )
+  return { read: input.read, errors: input.errors, meetings }
 }
 
 /**

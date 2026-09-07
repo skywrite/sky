@@ -12,7 +12,7 @@ import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
-import { ACTIONS_DIR, isActionPath, readDay } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, dayFile, isActionPath, readDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
@@ -43,6 +43,7 @@ export interface DayDocRow {
 
 export interface MeetingRow extends DayDocRow {
   who: string | null
+  inline?: boolean
 }
 
 export interface MessageRow extends DayDocRow {
@@ -201,6 +202,19 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
   // The plan and its outcome: the day file's own lists, by heading.
   try {
     const dayDoc = await readDay(input.day, input.timeDir)
+    for (const meeting of dayDoc.meetings) {
+      record.meetings.push({
+        title: meeting.title,
+        path: path.relative(
+          input.markdownBaseDir,
+          meeting.path ? path.resolve(input.dayDirPath, meeting.path) : path.join(input.timeDir, dayFile(input.day)),
+        ),
+        when: meeting.time,
+        who: meeting.who,
+        summary: meeting.notes,
+        inline: !meeting.path,
+      })
+    }
     for (const list of dayDoc.lists) {
       const heading = list.title.trim()
       const category = categoryOf(heading)
@@ -226,7 +240,11 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     const row = rowOf(entry.doc, entry.path, input.markdownBaseDir)
     if (entry.kind === 'journal') record.journals.push(journalRow(row))
     else if (isActionPath('meeting', entry.path)) {
-      record.meetings.push({ ...row, who: text(entry.doc.yaml['who']) })
+      const existing = record.meetings.findIndex((m) => !m.inline && m.path === row.path)
+      const meeting = { ...row, who: text(entry.doc.yaml['who']) }
+      if (existing >= 0)
+        record.meetings[existing] = { ...meeting, when: meeting.when ?? record.meetings[existing].when }
+      else record.meetings.push(meeting)
     } else if (isActionPath('message', entry.path)) {
       const message: MessageRow = {
         ...row,

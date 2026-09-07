@@ -86,15 +86,16 @@ overlay below 1180px). It folds from the chevron in its top-left corner;
 folded, the chevron waits at the header's end and brings it back. Its body
 scrolls; its foot is anchored.
 
-- **Meetings** — the calendar's meetings for the day, from the same read the
-  meeting check makes (`schedule.ts`, `GET /day/:ymd/schedule`). Each row
-  stands against the notebook clock: a past meeting says `filed`, linking
-  the record the notebook has of it, or `no record`; the one under way is
-  tinted and offers `join` when the event has a conference link; a coming
-  one shows its length. The record match is the meeting check's own rule,
-  a notebook meeting starting within fifteen minutes of the calendar's
-  start. Re-read every minute. A calendar that does not answer reads as
-  "Calendar not read", never as an empty day.
+- **Meetings** — calendar events, saved meeting files, and inline meeting
+  notes from the day's Complete lists (`DayDocument.meetings`). For example,
+  `10:00 > Jane Doe Zoom -> discussed next steps` is a meeting record even
+  without a linked file. Linked entries and their files merge by path.
+  `schedule.ts` combines these with calendar events, matching each record
+  at most once within fifteen minutes of the event start and retaining
+  unmatched records. Rows sort by time; inline records link to the day and
+  say `noted`, saved files say `filed`. Current calendar events still offer
+  `join`. Local records remain visible if the calendar fails. The existing
+  `GET /day/:ymd/schedule` route refreshes every minute.
   A timed past meeting marked `no record` takes a transcript or recording
   drop: the row lights blue and opens the shared import dialog for that
   slot. The section heading and the blank space below its rows, before Chats, import an

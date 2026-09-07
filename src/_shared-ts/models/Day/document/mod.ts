@@ -7,6 +7,7 @@ import { parse as parseYAML } from '#shared/yaml/mod.ts'
 import durationStringToHours from '#universal/dates/durationStringToHours.ts'
 import { hoursToDurationString } from '#universal/dates/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { extractMeetings } from './meetings.ts'
 
 export interface DayConstructorOptions {
   yaml?: string | Record<string, unknown>
@@ -156,6 +157,11 @@ export default class DayDocument extends ListDocument {
    * Extract meeting references from Complete sections.
    * Matches items like: `12:00 > ... -> [Title](actions/meetings/file.md)`
    */
+  /** Meetings logged in the day, including notes without a separate file. */
+  get meetings() {
+    return extractMeetings(this.lists)
+  }
+
   get meetingRefs(): DocumentRef[] {
     return this.extractDocumentRefs(`${actionKindRel('meeting')}/`)
   }
