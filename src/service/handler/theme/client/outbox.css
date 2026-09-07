@@ -1,0 +1,309 @@
+.sky-outbox {
+  --outbox-accent: var(--mantine-color-indigo-8);
+  --outbox-soft: var(--mantine-color-indigo-0);
+  --outbox-line: var(--mantine-color-indigo-2);
+  --outbox-ready: var(--mantine-color-teal-9);
+  --outbox-ready-soft: var(--mantine-color-teal-0);
+}
+.sky-outbox-nav[data-active='true'] {
+  color: var(--mantine-color-indigo-8);
+  background: var(--mantine-color-indigo-0);
+}
+.sky-outbox .sky-spacer {
+  flex: 1;
+}
+.sky-outbox-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.sky-outbox-layout > .sky-scroll {
+  flex: 1;
+  min-width: 0;
+}
+.sky-outbox-column {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 40px 60px;
+}
+.sky-outbox h1 {
+  font-size: 30px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  margin: 12px 0 18px;
+}
+.sky-outbox h2 {
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.sky-outbox h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.sky-outbox-intro p {
+  margin-top: -8px;
+  color: var(--sky-text-2);
+}
+.sky-outbox-meta {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+  overflow-wrap: anywhere;
+}
+.sky-outbox-situation {
+  color: var(--sky-text-2);
+  font-size: var(--sky-content-font-size);
+  line-height: 1.6;
+}
+.sky-outbox-tabs {
+  display: flex;
+  gap: 28px;
+  margin: 30px 0 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-outbox-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  padding: 12px 0;
+  font: inherit;
+  color: var(--sky-text-2);
+  cursor: pointer;
+}
+.sky-outbox-tabs button[aria-selected='true'] {
+  color: var(--outbox-accent);
+  border-bottom-color: var(--mantine-color-indigo-5);
+}
+.sky-outbox-tabs span {
+  margin-left: 5px;
+  font-size: 15px;
+}
+.sky-outbox-row {
+  display: flex;
+  gap: 18px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  background: none;
+  text-align: left;
+  padding: 28px 8px;
+  font: inherit;
+  color: var(--sky-text);
+  cursor: pointer;
+}
+.sky-outbox-row:hover {
+  background: color-mix(in srgb, var(--outbox-soft) 40%, transparent);
+}
+.sky-outbox-row:focus-visible {
+  outline: 2px solid var(--outbox-accent);
+  outline-offset: -2px;
+}
+.sky-outbox-avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 14px;
+  font-size: 23px;
+  background: var(--outbox-soft);
+  color: var(--outbox-accent);
+}
+.sky-outbox-row-content {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+.sky-outbox-row-content > strong {
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.sky-outbox-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  border-left: 3px solid var(--outbox-line);
+  background: var(--outbox-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  color: var(--outbox-accent);
+  font-size: 18px;
+  white-space: pre-wrap;
+}
+.sky-outbox-preview[data-ready='true'] {
+  background: var(--outbox-ready-soft);
+  color: var(--outbox-ready);
+  border-color: var(--mantine-color-teal-3);
+}
+.sky-outbox-arrow {
+  align-self: center;
+  color: var(--sky-dim);
+  font-size: 26px;
+}
+.sky-outbox-empty {
+  padding: 34px 4px;
+  max-width: 700px;
+}
+.sky-outbox-footer {
+  margin-top: 32px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-outbox-scan-feedback {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--sky-text-2);
+}
+.sky-outbox-scan-feedback[data-checking='true'] {
+  color: var(--outbox-accent);
+}
+.sky-outbox-scan-feedback[role='alert'] {
+  color: var(--sky-amber);
+}
+.sky-outbox-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 12px;
+}
+.sky-outbox-draft {
+  margin: 28px 0 22px;
+  padding: 22px;
+  background: var(--outbox-soft);
+  border: 1px solid var(--outbox-line);
+  border-radius: 12px;
+}
+.sky-outbox-draft-label {
+  margin-bottom: 14px;
+  color: var(--outbox-accent);
+  font-weight: 600;
+}
+.sky-outbox-draft textarea,
+.sky-outbox-voice textarea {
+  font-size: 19px;
+  line-height: 1.65;
+}
+.sky-outbox-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sky-outbox-notice {
+  background: var(--sky-s2);
+  padding: 16px 20px;
+  border-radius: 10px;
+  margin: 18px 0;
+  color: var(--sky-text-2);
+}
+.sky-outbox-notice[role='alert'] {
+  border-left: 3px solid var(--mantine-color-orange-5);
+}
+.sky-outbox-questions {
+  padding: 8px 0;
+}
+.sky-outbox-questions ul {
+  padding-left: 22px;
+}
+.sky-outbox-original {
+  margin-top: 24px;
+  color: var(--sky-text-2);
+}
+.sky-outbox-original summary {
+  cursor: pointer;
+}
+.sky-outbox-details {
+  width: 320px;
+  flex: none;
+  padding: 20px 24px;
+  overflow-y: auto;
+  border-left: 1px solid var(--sky-border-soft);
+  background: var(--sky-side);
+  font-size: 16px;
+}
+.sky-outbox-details-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+.sky-outbox-details section {
+  padding: 20px 0;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-outbox-details .sky-outbox-text {
+  line-height: 1.65;
+}
+[data-mantine-color-scheme='dark'] .sky-outbox {
+  --outbox-accent: var(--mantine-color-indigo-2);
+  --outbox-soft: color-mix(in srgb, var(--mantine-color-indigo-8) 18%, var(--sky-bg));
+  --outbox-line: var(--mantine-color-indigo-8);
+  --outbox-ready: var(--mantine-color-teal-2);
+  --outbox-ready-soft: color-mix(in srgb, var(--mantine-color-teal-8) 18%, var(--sky-bg));
+}
+[data-mantine-color-scheme='dark'] .sky-outbox-nav[data-active='true'] {
+  color: var(--mantine-color-indigo-2);
+  background: color-mix(in srgb, var(--mantine-color-indigo-8) 25%, transparent);
+}
+@media (max-width: 1200px) {
+  .sky-outbox-details {
+    width: 300px;
+  }
+  .sky-outbox-column {
+    padding: 28px;
+  }
+}
+@media (max-width: 1000px) {
+  .sky-outbox-details {
+    position: absolute;
+    right: 0;
+    top: 60px;
+    bottom: 0;
+    z-index: 20;
+    width: min(380px, 90vw);
+    box-shadow: -4px 0 18px #0001;
+  }
+}
+@media (max-width: 600px) {
+  .sky-outbox .sky-title[data-focused='true'] {
+    display: none;
+  }
+  .sky-outbox .sky-head .mantine-Button-root {
+    flex-shrink: 0;
+    padding-inline: 6px;
+    font-size: 16px;
+  }
+  .sky-outbox-column {
+    padding: 24px 18px;
+  }
+  .sky-outbox h1 {
+    font-size: 26px;
+  }
+  .sky-outbox-row {
+    gap: 12px;
+    padding: 24px 0;
+  }
+  .sky-outbox-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 18px;
+  }
+  .sky-outbox-row-content > strong {
+    font-size: 21px;
+  }
+  .sky-outbox-draft {
+    padding: 16px;
+  }
+  .sky-outbox-tabs {
+    gap: 22px;
+  }
+  .sky-outbox .sky-head {
+    gap: 4px;
+  }
+}

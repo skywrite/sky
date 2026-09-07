@@ -30,6 +30,7 @@ export interface AutomationLastRun {
 
 export interface AutomationRow {
   name: string
+  kind?: 'personal' | 'system'
   /** The command the charter points at */
   run: string
   /** The trigger as written: "every 5m", "EVERY-WEEKDAY 07:15", "06:00, 11:00" */

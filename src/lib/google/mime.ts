@@ -13,6 +13,10 @@ export interface MimeMessageInput {
   cc?: GmailAddress[]
   bcc?: GmailAddress[]
   subject?: string
+  /** RFC 822 Message-ID of the message this replies to, angle brackets included. */
+  inReplyTo?: string
+  /** RFC 822 References header value: the thread's Message-IDs, space-separated. */
+  references?: string
   /** HTML body (see emailHtml.ts); any line-ending style, normalized to CRLF. */
   html: string
 }
@@ -33,6 +37,13 @@ export function buildMimeMessage(input: MimeMessageInput): string {
   addressHeader('Bcc', input.bcc)
   const subject = encodeHeaderText(input.subject ?? '')
   if (subject) headers.push(`Subject: ${subject}`)
+  // Message-IDs are ASCII by construction; singleLine guards against header injection.
+  const idHeader = (name: string, value: string | undefined) => {
+    const clean = encodeHeaderText(value ?? '')
+    if (clean) headers.push(`${name}: ${clean}`)
+  }
+  idHeader('In-Reply-To', input.inReplyTo)
+  idHeader('References', input.references)
   headers.push('MIME-Version: 1.0', 'Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: base64')
 
   const body = Buffer.from(input.html.replace(/\r\n?|\n/g, CRLF), 'utf-8').toString('base64')

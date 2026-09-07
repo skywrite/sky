@@ -132,6 +132,14 @@ After solving a problem whose reasoning isn't visible in the resulting code, add
 
 ## Key Conventions
 
+### Product and Design Direction
+
+- Extend Sky's existing look and feel in every design and mockup. Reuse the actual app shell, color tokens, typography, controls, and layout conventions. A request for a contemporary, agentic experience does not authorize a new visual identity or a replacement navigation layout. Inspect the live theme and owning components before designing.
+- Sky should feel like a contemporary product for the agentic era: generous, readable typography, clear hierarchy, and room to focus. Avoid cramped small-font layouts, Windows-like enterprise panels, and the visual feel of 2009-era ExtJS applications.
+- Scope product work around the user's desired outcomes before designing screens. When asked to refine the concept through questions first, ask and wait for the answers before creating mockups or writing code.
+- For the universal inbox, the intended outcome is for Sky to respond on the user's behalf to most inbound messages and requests, preserving the user's decision capacity for their highest-value work as a CEO. Design around delegated resolution and meaningful human decisions.
+- Preserve clear descriptions of each situation and access to prior/source messages. This context should make the decisions that reach the user easier to understand and resolve.
+
 ### HTML Mocks
 
 **All HTML mocks and mockups must be created in a temporary folder outside the repository**, such as a directory created with `mktemp -d /tmp/sky-html-mock.XXXXXX`. Keep their supporting CSS, JavaScript, images, and preview artifacts in that temporary folder too. Never create them in the repo root or any repo subdirectory, including gitignored folders.

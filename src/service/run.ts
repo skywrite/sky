@@ -3,6 +3,7 @@ import process from 'node:process'
 import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
+import { commandOutcome } from '#lib/automations/commandOutcome.ts'
 import runDueAutomations from '#lib/automations/runDue.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
@@ -17,6 +18,7 @@ import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
+import { createOutboxHost } from './handler/outbox/createOutboxHost.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
@@ -163,6 +165,7 @@ const server = createServer({
   clock: createClockHost(config, env.toObject()),
   meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),
+  outbox: createOutboxHost(config, env.toObject()),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,
@@ -380,7 +383,7 @@ export default async function run() {
         systemNow: new ZonedDateTime(),
         invoke: async ({ run, args }) => {
           const outcome = await commandService.run(run, args)
-          return outcome.status === 'success' ? { outcome: 'acted' } : { outcome: 'failed', message: outcome.message }
+          return commandOutcome(outcome)
         },
       })
 

@@ -81,6 +81,22 @@ export async function createDraft(
 }
 
 /**
+ * Replace one draft's text through `agent-slack message draft update`.
+ * Addressing is untouched: the draft stays in its composer or thread,
+ * carrying the new words. Options go first and `--` closes them, so a
+ * body that starts with a dash is never read as a flag.
+ */
+export async function updateDraft(
+  workspace: string,
+  update: { id: string; text: string },
+  run: AgentSlackRun = runAgentSlack,
+): Promise<{ ok: true; draft?: SlackDraft } | { ok: false; error: string }> {
+  const result = await run(['message', 'draft', 'update', '--workspace', workspace, '--', update.id, update.text])
+  if (!result.success) return { ok: false, error: describeFailure('agent-slack message draft update', result) }
+  return { ok: true, draft: toDraft(parseJson(result.stdout)?.draft) }
+}
+
+/**
  * Delete one draft. The edit ts rides along so agent-slack needn't re-list
  * to find it — Slack requires it for conflict detection.
  */

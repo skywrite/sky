@@ -68,6 +68,8 @@ export interface GmailMessage {
   /** RFC 822 Message-ID header. */
   messageId?: string
   inReplyTo?: string
+  /** RFC 822 References header value, when present. */
+  references?: string
   labelIds: string[]
   snippet?: string
   /** Decoded text/plain body; absent in format=metadata responses. */
@@ -270,12 +272,52 @@ interface DraftWire {
 /**
  * File a new message under Drafts. drafts.create stores the message and
  * nothing more — it cannot send, and no send primitive exists in this
- * module (see the header comment). The draft is a fresh message, not a
- * reply: no thread, In-Reply-To, or References.
+ * module (see the header comment). A fresh message by default; passing
+ * `threadId` (with the reply headers set on the input) files the draft
+ * as a reply inside that thread.
  */
-export async function createDraft(client: GoogleClient, input: MimeMessageInput): Promise<GmailDraft> {
+export async function createDraft(
+  client: GoogleClient,
+  input: MimeMessageInput,
+  opts: { threadId?: string } = {},
+): Promise<GmailDraft> {
   const raw = Buffer.from(buildMimeMessage(input), 'utf-8').toString('base64url')
-  const wire = await client.postJson<DraftWire>(`${GMAIL_API_URL}/drafts`, { message: { raw } })
+  const message = opts.threadId ? { raw, threadId: opts.threadId } : { raw }
+  const wire = await client.postJson<DraftWire>(`${GMAIL_API_URL}/drafts`, { message })
+  if (!wire.id || !wire.message?.id) throw new Error('Gmail draft came back without ids')
+  return { id: wire.id, messageId: wire.message.id, threadId: wire.message.threadId ?? wire.message.id }
+}
+
+/** One stored draft with its message decoded — the headers a rewrite must carry forward. */
+export async function getDraft(
+  client: GoogleClient,
+  draftId: string,
+): Promise<{ draft: GmailDraft; message: GmailMessage }> {
+  const wire = await client.getJson<DraftWire>(`${GMAIL_API_URL}/drafts/${encodeURIComponent(draftId)}?format=full`)
+  if (!wire.id || !wire.message?.id) throw new Error(`Gmail draft ${draftId} came back without ids`)
+  const message = normalizeMessage(wire.message as MessageWire)
+  if (!message) throw new Error(`Gmail draft ${draftId} came back without a message`)
+  return {
+    draft: { id: wire.id, messageId: wire.message.id, threadId: wire.message.threadId ?? wire.message.id },
+    message,
+  }
+}
+
+/**
+ * Replace a draft's content in place — drafts.update rewrites the stored
+ * message and, like every write in this module, cannot send. The caller
+ * carries the headers forward (see getDraft); `threadId` keeps a reply
+ * draft inside its thread.
+ */
+export async function updateDraft(
+  client: GoogleClient,
+  draftId: string,
+  input: MimeMessageInput,
+  opts: { threadId?: string } = {},
+): Promise<GmailDraft> {
+  const raw = Buffer.from(buildMimeMessage(input), 'utf-8').toString('base64url')
+  const message = opts.threadId ? { raw, threadId: opts.threadId } : { raw }
+  const wire = await client.putJson<DraftWire>(`${GMAIL_API_URL}/drafts/${encodeURIComponent(draftId)}`, { message })
   if (!wire.id || !wire.message?.id) throw new Error('Gmail draft came back without ids')
   return { id: wire.id, messageId: wire.message.id, threadId: wire.message.threadId ?? wire.message.id }
 }
@@ -335,6 +377,7 @@ function normalizeMessage(wire: MessageWire): GmailMessage | null {
     cc: cc.length > 0 ? cc : undefined,
     messageId: headers.get('message-id'),
     inReplyTo: headers.get('in-reply-to'),
+    references: headers.get('references'),
     bodyText: collected.text,
     bodyHtml: collected.html,
     attachments: collected.attachments,

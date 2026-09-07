@@ -22,6 +22,7 @@ import { parseTrigger, type Trigger } from './trigger.ts'
 */
 
 export type AutomationStatus = 'active' | 'paused'
+export type AutomationKind = 'personal' | 'system'
 
 const STATUSES = new Set<string>(['active', 'paused'])
 
@@ -30,7 +31,20 @@ const STATUSES = new Set<string>(['active', 'paused'])
  * created/updated/tags/rel are corpus-wide document conventions rather than
  * anything this model reads.
  */
-const KNOWN_KEYS = new Set(['run', 'every', 'at', 'tz', 'status', 'until', 'args', 'created', 'updated', 'tags', 'rel'])
+const KNOWN_KEYS = new Set([
+  'kind',
+  'run',
+  'every',
+  'at',
+  'tz',
+  'status',
+  'until',
+  'args',
+  'created',
+  'updated',
+  'tags',
+  'rel',
+])
 
 /** A charter could not be read; the message is meant for the person who wrote it */
 export class AutomationError extends Error {
@@ -59,6 +73,12 @@ function parseStatus(value: unknown): AutomationStatus {
   return value.trim().toLowerCase() as AutomationStatus
 }
 
+function parseKind(value: unknown): AutomationKind {
+  if (value === undefined || value === null) return 'personal'
+  if (value !== 'personal' && value !== 'system') throw new AutomationError('kind: needs personal or system')
+  return value
+}
+
 function parseUntil(value: unknown): PlainDate | undefined {
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string' || !value.trim()) {
@@ -81,6 +101,7 @@ function parseArgs(value: unknown): Record<string, unknown> {
 
 export default class Automation {
   readonly name: string
+  readonly kind: AutomationKind
   readonly run: string
   readonly trigger: Trigger
   readonly status: AutomationStatus
@@ -98,6 +119,7 @@ export default class Automation {
 
   private constructor(fields: {
     name: string
+    kind: AutomationKind
     run: string
     trigger: Trigger
     status: AutomationStatus
@@ -107,6 +129,7 @@ export default class Automation {
     unknownKeys: string[]
   }) {
     this.name = fields.name
+    this.kind = fields.kind
     this.run = fields.run
     this.trigger = fields.trigger
     this.status = fields.status
@@ -132,6 +155,7 @@ export default class Automation {
 
     return new Automation({
       name,
+      kind: parseKind(yaml.kind),
       run: parseRun(yaml.run),
       trigger: parseTrigger(yaml),
       status: parseStatus(yaml.status),

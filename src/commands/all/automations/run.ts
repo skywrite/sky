@@ -2,6 +2,7 @@ import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
+import { commandOutcome } from '#lib/automations/commandOutcome.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import AutomationStateStore, { type RunOutcome } from '#shared/models/Automation/state.ts'
 import { dueFiring, resolveNow } from '#shared/models/Automation/trigger.ts'
@@ -84,10 +85,7 @@ export default class AutomationsRunTask extends Command {
     let message: string | undefined
     try {
       const result = await tasks.run(automation.run, automation.args)
-      if (result.status !== 'success') {
-        outcome = 'failed'
-        message = result.message
-      }
+      ;({ outcome, message } = commandOutcome(result))
     } catch (err) {
       outcome = 'failed'
       message = err instanceof Error ? err.message : String(err)

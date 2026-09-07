@@ -16,6 +16,7 @@ type Params = InferParams<typeof params>
 
 type StatusRow = {
   name: string
+  kind: 'personal' | 'system'
   run: string
   trigger: string
   frame: string
@@ -82,6 +83,7 @@ export default class AutomationsStatusTask extends Command {
       const now = resolveNow(trigger, systemNow)
       const row: StatusRow = {
         name,
+        kind: automation.kind,
         run: automation.run,
         trigger: describeTrigger(trigger),
         frame: frameOf(trigger),
@@ -105,7 +107,7 @@ export default class AutomationsStatusTask extends Command {
     for (const row of rows) {
       const state_ = row.state === 'active' ? '' : colors.dim(` [${row.state}]`)
       const due = row.due ? colors.cyan(' DUE') : ''
-      output.log(`${colors.bold(row.name)}${state_}${due}`)
+      output.log(`${colors.bold(row.name)}${row.kind === 'system' ? colors.dim(' [system]') : ''}${state_}${due}`)
       output.log(`  ${colors.dim('runs')}  ${row.run}`)
       output.log(`  ${colors.dim('when')}  ${row.trigger} ${colors.dim(`(${row.frame})`)}`)
       output.log(`  ${colors.dim('last')}  ${describeLastRun(row.lastRun)}`)

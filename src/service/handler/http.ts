@@ -38,6 +38,7 @@ import {
 } from './markdown-preview/mod.ts'
 import { createMeetingRoutes } from './meetings/mod.ts'
 import type { MeetingsHost } from './meetings/types.ts'
+import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 import {
@@ -79,6 +80,7 @@ export interface HttpHandlerOptions {
   meetings?: MeetingsHost
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
+  outbox?: OutboxRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
@@ -174,6 +176,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (automations) {
     app.route('/automations/_api', createAutomationRoutes(automations))
   }
+  if (options.outbox) app.route('/outbox/_api', createOutboxRoutes(options.outbox))
 
   // A file dropped on the day: the upload, its read-back, the run, its questions.
   // The page for one import is /import/<id>, below.
@@ -553,6 +556,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.get('/automations', (c) => {
     return c.html(renderAppHtml('sky'))
   })
+  app.get('/outbox', (c) => c.html(renderAppHtml('sky')))
   app.get('/automations/*', (c) => {
     // A data path with no automations host stays a 404, not a page.
     if (c.req.path.startsWith('/automations/_api/')) return c.json(jsend.fail({ message: 'Not found.' }), 404)

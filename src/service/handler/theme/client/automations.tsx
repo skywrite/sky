@@ -36,6 +36,7 @@ export interface AutomationLastRun {
 
 export interface AutomationRow {
   name: string
+  kind?: 'personal' | 'system'
   run: string
   /** As written: "every 5m", "EVERY-WEEKDAY 07:15", "06:00, 11:00" */
   trigger: string
@@ -315,7 +316,10 @@ function Row({ row, onOpen, refresh }: { row: AutomationRow; onOpen: (name: stri
         <span className="sky-dot" data-tone={dotTone(row)} />
       </span>
       <button type="button" className="sky-auto-txt" onClick={() => onOpen(row.name)}>
-        <span className="sky-auto-name">{titleOf(row.name)}</span>
+        <span className="sky-auto-name">
+          {titleOf(row.name)}
+          {row.kind === 'system' && <span className="sky-count"> · system</span>}
+        </span>
         {briefLine && <span className="sky-auto-sub">{briefLine}</span>}
         {row.lastRun?.message && <span className="sky-auto-sub sky-auto-note">{row.lastRun.message}</span>}
         {row.unknownKeys.length > 0 && (

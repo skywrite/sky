@@ -12,6 +12,7 @@ import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
+import { OutboxMain } from './outbox.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
@@ -82,6 +83,7 @@ function Canvas() {
   const automationName =
     path.startsWith('/automations/') && !isNewAutomation ? decodeURIComponent(path.slice('/automations/'.length)) : null
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
+  const isOutbox = path === '/outbox'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const threads = useThreads()
@@ -111,6 +113,7 @@ function Canvas() {
     !isSettings &&
     !isClock &&
     !isAutomations &&
+    !isOutbox &&
     !isWeek &&
     filesRoute === null &&
     explorerFile === null
@@ -239,6 +242,14 @@ function Canvas() {
               <span className="sky-meta">voice</span>
             </button>
 
+            <button
+              type="button"
+              className="sky-thread sky-outbox-nav"
+              data-active={isOutbox}
+              onClick={() => navigate('/outbox')}
+            >
+              <span>Outbox</span>
+            </button>
             <div className="sky-side-label">Days</div>
             {(day?.days ?? []).map((d, offset) => (
               <button
@@ -252,6 +263,7 @@ function Canvas() {
                   !isSettings &&
                   !isClock &&
                   !isAutomations &&
+                  !isOutbox &&
                   !isWeek &&
                   (offset === 0 ? isToday : dayYmd === d.ymd)
                 }
@@ -326,6 +338,8 @@ function Canvas() {
         />
       ) : isClock ? (
         <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
+      ) : isOutbox ? (
+        <OutboxMain navigate={navigate} />
       ) : isNewAutomation ? (
         <NewAutomation
           back={{ label: 'Automations', onClick: () => navigate('/automations') }}

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-31
-updated: 2026-08-31
+updated: 2026-09-06
 ---
 
 # Automations — the machine's own jobs, on a page
@@ -9,6 +9,8 @@ Design notes for `src/service/handler/automations/` and the pages it
 serves, `theme/client/automations.tsx`.
 
 ## What is built
+
+Charters may declare `kind: system`; existing charters default to `personal` and keep their behavior. System jobs use this same scheduler, ledger, and pause control. The first is [Outbox](../../../../lib/outbox/docs/README.md); existing Slack/Gmail heartbeat capture jobs remain in place. Commands may return `data.outcome: nothing` so both scheduled and manual runs preserve quiet passes instead of reporting every success as work.
 
 `/automations` is a place of the Explorer/Settings rank, entered from the
 sidebar foot. The overview renders one report: every charter in the
