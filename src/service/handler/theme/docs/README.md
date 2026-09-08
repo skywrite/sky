@@ -132,6 +132,28 @@ The shell's 18px UI base stays separate so navigation, buttons, metadata,
 and the user's appearance setting keep their existing scale. Explorer's
 text-size control multiplies the content size and keeps its saved preference.
 
+## Text selection and rendered HTML
+
+`client/renderedHtml.tsx` owns `RenderedHtml`, the shared component for
+read-only HTML in chat replies, approval previews, automation descriptions
+and proposals, notebook link previews, and workstream prose and reports.
+Use it with an HTML string and the feature's existing class names.
+
+The component memoizes the `dangerouslySetInnerHTML` prop object by its
+HTML string. A new object on every render makes React replace unchanged
+text nodes and clears the browser's selection; memoizing just the string
+does not prevent this. Background polling and unrelated controls must
+leave those nodes intact. Changed HTML must still update normally.
+
+Explorer and import readers manage their HTML through effects that depend
+only on the HTML string; Explorer also applies syntax highlighting. They
+follow the same rule: unchanged content keeps its existing DOM.
+
+`AGENTS.md` requires the shared component and a browser check covering
+selection through polling, a drag across a refresh, selections spanning
+paragraphs, and changed content. See
+[2026-09-07 — Shared HTML keeps selections](2026-09-07-shared-html-keeps-selections.md).
+
 ## Today's hierarchy
 
 The sidebar keeps Today and Yesterday as relative labels; older days use

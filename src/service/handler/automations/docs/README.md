@@ -1,12 +1,15 @@
 ---
 created: 2026-08-31
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # Automations — the machine's own jobs, on a page
 
 Design notes for `src/service/handler/automations/` and the pages it
 serves, `theme/client/automations.tsx`.
+
+Descriptions and proposal previews follow the
+[shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).
 
 ## What is built
 

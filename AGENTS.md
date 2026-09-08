@@ -144,6 +144,13 @@ After solving a problem whose reasoning isn't visible in the resulting code, add
 
 **All HTML mocks and mockups must be created in a temporary folder outside the repository**, such as a directory created with `mktemp -d /tmp/sky-html-mock.XXXXXX`. Keep their supporting CSS, JavaScript, images, and preview artifacts in that temporary folder too. Never create them in the repo root or any repo subdirectory, including gitignored folders.
 
+### Browser Text Selection
+
+- **Preserve text selection across unrelated renders and background polling.** Render read-only HTML with the shared `RenderedHtml` component in `src/service/handler/theme/client/renderedHtml.tsx`.
+- **Never create a fresh `dangerouslySetInnerHTML` prop object during a client React render.** React compares the object by identity and can replace unchanged text nodes, destroying the browser's selection. Memoizing just the HTML string is insufficient; the shared renderer memoizes the prop object by that string.
+- A view that must manage its own DOM (for example, syntax highlighting) must update it only when the HTML changes. Preserve existing text nodes during unrelated updates.
+- When fixing a shared rendering bug, search the web client for the same pattern and fix every affected surface. Verify in a browser that selection survives background refreshes, including a drag across a refresh and a range spanning paragraphs, and that changed content still appears.
+
 ### Imports
 
 Use subpath imports with `#` prefix (configured in `package.json`):

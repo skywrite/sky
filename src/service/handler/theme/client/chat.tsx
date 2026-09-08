@@ -6,7 +6,6 @@ import {
   type RefObject,
   useCallback,
   useEffect,
-  useMemo,
   useReducer,
   useRef,
   useState,
@@ -18,6 +17,7 @@ import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
+import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { awaitReturn, frames } from './turnStream.ts'
@@ -973,13 +973,6 @@ export type Chat = ReturnType<typeof useChat>
 // -----------------------------------------------------------------------------
 // Rendering
 // -----------------------------------------------------------------------------
-
-/** Keep unchanged text nodes mounted so background polling does not erase the reader's selection. */
-function RenderedHtml({ html, className }: { html: string; className: string }) {
-  // React compares this prop object by identity, then assigns innerHTML even when its string is unchanged.
-  const markup = useMemo(() => ({ __html: html }), [html])
-  return <div className={className} dangerouslySetInnerHTML={markup} />
-}
 
 /**
  * Follow the reply as it streams, unless the reader scrolled up to read.

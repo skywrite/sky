@@ -20,10 +20,8 @@ renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
 - **Text stays selected through background refreshes.** Completed replies
-  and rich approval previews keep the same HTML prop object while their
-  rendered text is unchanged. Sidebar and thread polling can update the
-  page without replacing those text nodes and clearing the selection.
-  See [2026-09-07](2026-09-07-text-selection-survives-refreshes.md).
+  and rich approval previews use the
+  [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
 - **Progress and the queries behind a reply.** A compact activity row sits
   below the message while context is gathered and the reply is prepared.
   Its wording follows the stage; quiet reading and thinking waits vary

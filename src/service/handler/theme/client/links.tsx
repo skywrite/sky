@@ -5,6 +5,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { LinkItem, LinkSearch } from '../../links/types.ts'
 import { LinkIcon } from './linkIcon.tsx'
+import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 const KINDS = [
@@ -92,7 +93,7 @@ function Preview({ item }: { item: LinkItem }) {
       ) : content === null ? (
         <p>Loading preview…</p>
       ) : (
-        <div className="sky-markdown" dangerouslySetInnerHTML={{ __html: renderStatic(content) }} />
+        <RenderedHtml className="sky-markdown" html={renderStatic(content)} />
       )}
       <a href={href(item.path)} target="_blank" rel="noreferrer">
         Open full record ↗

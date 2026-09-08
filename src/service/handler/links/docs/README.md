@@ -11,6 +11,9 @@ phone drawer, colors and typography. Links stay as ordinary YAML references.
 Saved links show the primary name or title with a small type icon beside it.
 Dates, participants and branch details remain available in the picker.
 
+Record previews follow the
+[shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).
+
 ## Choosing a record
 
 `GET /docs/_api/links` searches the existing markdown index by title,

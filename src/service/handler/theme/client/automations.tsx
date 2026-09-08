@@ -1,6 +1,7 @@
 import { ActionIcon, Button, Switch, Textarea } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { fileHref } from './explorer.tsx'
+import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 import './automations.css'
 
@@ -520,7 +521,7 @@ function ProposalCard({
         <div className="sky-auto-spec" data-last="true">
           <span className="sky-auto-spec-key">Why</span>
           {briefHtml ? (
-            <div className="sky-body sky-rendered sky-auto-brief" dangerouslySetInnerHTML={{ __html: briefHtml }} />
+            <RenderedHtml className="sky-body sky-rendered sky-auto-brief" html={briefHtml} />
           ) : (
             <span style={{ whiteSpace: 'pre-wrap' }}>{draft.brief}</span>
           )}
@@ -799,10 +800,7 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
                 <div className="sky-block-pad">
                   {row.brief ? (
                     briefHtml ? (
-                      <div
-                        className="sky-body sky-rendered sky-auto-brief"
-                        dangerouslySetInnerHTML={{ __html: briefHtml }}
-                      />
+                      <RenderedHtml className="sky-body sky-rendered sky-auto-brief" html={briefHtml} />
                     ) : (
                       <p className="sky-auto-briefraw">{row.brief}</p>
                     )
