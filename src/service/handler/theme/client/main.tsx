@@ -16,6 +16,7 @@ import { OutboxMain } from './outbox.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
+import { SidebarIcon } from './sidebarIcon.tsx'
 import { SidebarUtilities } from './sidebarUtilities.tsx'
 import { skyTheme } from './theme.ts'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
@@ -231,11 +232,12 @@ function Canvas() {
             <>
               <button
                 type="button"
-                className="sky-thread"
+                className="sky-thread sky-side-primary"
                 data-active={todayActive}
                 aria-current={todayActive ? 'page' : undefined}
                 onClick={() => navigate('/')}
               >
+                <SidebarIcon name="today" />
                 <span>Today</span>
               </button>
               {showDateNav && (
@@ -290,19 +292,22 @@ function Canvas() {
               )}
               <button
                 type="button"
-                className="sky-thread"
+                className="sky-thread sky-side-primary"
                 data-active={threadId !== null}
                 aria-current={threadId !== null ? 'page' : undefined}
                 onClick={newChat}
               >
+                <SidebarIcon name="chat" />
                 <span>Chat</span>
               </button>
               <button
                 type="button"
-                className="sky-thread sky-outbox-nav"
+                className="sky-thread sky-side-primary sky-outbox-nav"
                 data-active={isOutbox}
+                aria-current={isOutbox ? 'page' : undefined}
                 onClick={() => navigate('/outbox')}
               >
+                <SidebarIcon name="outbox" />
                 <span>Outbox</span>
               </button>
             </>

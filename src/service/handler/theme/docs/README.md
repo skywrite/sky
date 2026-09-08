@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # The web app's shell and client
@@ -127,6 +127,13 @@ drawer follows the same rule and closes after navigation.
 
 Chat follows Today's date group as a standard navigation row. It starts
 a new thread and stays highlighted for any open conversation.
+
+The four primary rows pair their labels with 22px outline icons from
+`client/sidebarIcon.tsx`: a sun, speech bubble, outgoing tray, and branching
+nodes. Their rounded 1.6px strokes match the footer; inactive icons use the
+secondary text color and the selected icon uses the primary accent in both
+themes. The nested dates align with the primary labels. Icons are decorative;
+the labels and `aria-current` identify each destination and its selected state.
 
 ## Sidebar utilities
 

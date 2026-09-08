@@ -98,8 +98,8 @@ body {
 }
 
 .sky-side-dates {
-  margin: 2px 0 12px 10px;
-  padding-left: 8px;
+  margin: 2px 0 12px 22px;
+  padding-left: 12px;
   border-left: 1px solid var(--sky-border-soft);
 }
 
@@ -134,6 +134,24 @@ body {
   box-shadow: var(--sky-card-shadow);
   color: var(--sky-text);
   font-weight: 550;
+}
+
+.sky-side-primary {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.sky-side-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--sky-text-2);
+}
+
+.sky-side-primary[data-active='true'] .sky-side-icon {
+  color: var(--sky-accent);
 }
 
 .sky-thread .sky-meta {
@@ -210,7 +228,8 @@ a.sky-thread {
   text-decoration: none;
 }
 
-.sky-thread > span:first-child {
+.sky-thread > span:first-child,
+.sky-side-primary > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
