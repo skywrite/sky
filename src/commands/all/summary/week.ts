@@ -13,7 +13,8 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
-import { gatherWeekHealthData, type WeekHealthCsv } from './_health.ts'
+import { parseCsv } from '#universal/encoding/csv/mod.ts'
+import { gatherWeekHealthData, HEALTH_FILES, type WeekHealthCsv } from './_health.ts'
 import { gatherWeekPriceData, type WeekPriceCsv } from './_prices.ts'
 import { parseSummaryContext, serializeSummaryContext } from './lib/contextRecord.ts'
 import gatherWeekSummaries, { type WeekSummaryEntry } from './lib/gatherWeekSummaries.ts'
@@ -188,12 +189,16 @@ export default class SummaryWeekTask extends Command {
     output.log(plan ? 'Week plan: week.md (final state)' : 'Week plan: none')
     output.log(checkins ? 'Checkins: checkins.md (incl. original-plan snapshot)' : 'Checkins: none')
 
-    // 3. Week-native tracking data: day-keyed health CSVs from the week dir,
-    // asset prices filtered to the week.
+    // 3. Tracking and asset price CSVs filtered to the week.
     const healthCsvs = await gatherWeekHealthData(week.start, timeDir)
-    if (healthCsvs.length > 0) output.log(`Health CSVs: ${healthCsvs.length}`)
+    output.log(`Health CSVs: ${healthCsvs.length}`)
+    for (const csv of healthCsvs) output.log(`  - ${this.describeCsv(csv, <string>config.DIR_BASE)}`)
+    for (const name of HEALTH_FILES) {
+      if (!healthCsvs.some((csv) => csv.name === name)) output.log(`  - ${name}.csv: no entries for this week`)
+    }
     const priceCsvs = await gatherWeekPriceData(week.start, week.end, <string>config.DIR_DATA)
-    if (priceCsvs.length > 0) output.log(`Price CSVs: ${priceCsvs.length}`)
+    output.log(`Price CSVs: ${priceCsvs.length}`)
+    for (const csv of priceCsvs) output.log(`  - ${this.describeCsv(csv, <string>config.DIR_BASE)}`)
 
     // 4. rel: union of the dailies' rel lists. A daily's flat rel list can't
     // tell orgs from people, so bare names sort as one alphabetical run with
@@ -334,6 +339,20 @@ export default class SummaryWeekTask extends Command {
     }
 
     return CommandResult.success({ path: summaryPath })
+  }
+
+  private describeCsv(source: { path: string; csv: string }, baseDir: string): string {
+    const { header, records } = parseCsv(source.csv)
+    const dates = records
+      .map((record) => record[header[0]]?.slice(0, 10))
+      .filter((date) => !!date)
+      .sort()
+    const sourcePath = path.relative(baseDir, source.path)
+    if (dates.length === 0) return `${sourcePath}: 0 rows (no entries for this week)`
+    const first = dates[0]
+    const last = dates[dates.length - 1]
+    const range = first === last ? first : `${first} – ${last}`
+    return `${sourcePath}: ${dates.length} row${dates.length === 1 ? '' : 's'} (${range})`
   }
 
   private async loadPromptTemplate(): Promise<string> {

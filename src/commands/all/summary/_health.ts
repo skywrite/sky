@@ -19,7 +19,7 @@ export interface WeekHealthCsv {
   csv: string
 }
 
-const HEALTH_FILES = ['strength', 'distance', 'sleep', 'weight', 'work'] as const
+export const HEALTH_FILES = ['strength', 'distance', 'sleep', 'weight', 'work'] as const
 
 /** Read the requested week, including both annual files at a year boundary. */
 export async function gatherWeekHealthData(weekStart: PlainDate, timeDir: string): Promise<WeekHealthCsv[]> {
