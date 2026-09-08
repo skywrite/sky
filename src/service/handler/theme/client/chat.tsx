@@ -14,6 +14,7 @@ import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
+import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { splitLinks } from './links.ts'
@@ -21,6 +22,7 @@ import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { awaitReturn, frames } from './turnStream.ts'
+import { VoiceButton, VoiceStatus, VoiceTranscript } from './voice.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -565,6 +567,24 @@ export function useChat(id: string) {
   // True while this page reads a turn's stream — then the stream, not a poll, keeps the thread current.
   const attached = useRef(false)
 
+  const reload = useCallback(async () => {
+    const response = await fetch(`/chat/${id}`)
+    if (!response.ok) throw new Error('The voice transcript was kept, but the chat could not be refreshed. Try again.')
+    const body = (await response.json()) as ThreadBody
+    dispatch({
+      type: 'refresh',
+      id,
+      turns: turnsOf(body),
+      documents: body.kept ?? body.documents,
+      busy: Boolean(body.busy),
+      approvals: body.pending ?? [],
+      answered: body.answered ?? [],
+      runs: body.runs ?? [],
+      queries: body.queries ?? [],
+      interrupted: interruptedOf(body),
+    })
+  }, [id])
+
   // The thread is read back from the service whenever the id changes; one
   // the service doesn't hold (never messaged, or the service restarted)
   // starts empty.
@@ -963,6 +983,7 @@ export function useChat(id: string) {
     setModel,
     setContextTokens,
     setSaves,
+    reload,
     answer,
     branch,
   }
@@ -1506,26 +1527,37 @@ export function Composer({
   placeholder,
   hints,
   attach,
+  trailingAction,
+  status,
+  onSend,
+  sendDisabled = false,
 }: {
   chat: Chat
   placeholder: string
   hints: ReactNode
   /** A + before the input that picks files — the door for people who don't drag */
   attach?: ComposerAttach
+  /** Extra input methods stay after Send so its position remains predictable. */
+  trailingAction?: ReactNode
+  status?: ReactNode
+  onSend?: (text: string) => void
+  sendDisabled?: boolean
 }) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const busy = state.phase !== 'idle'
-  const canSend = !busy && !chat.tuning && state.settings !== null
+  const canSend = !busy && !chat.tuning && state.settings !== null && !sendDisabled
 
   const submit = () => {
     if (!canSend) return
     const el = inputRef.current
     if (!el) return
     const text = el.value
+    if (!text.trim()) return
     el.value = ''
-    void send(text)
+    if (onSend) onSend(text)
+    else void send(text)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1537,6 +1569,7 @@ export function Composer({
 
   return (
     <div className="sky-composer-zone">
+      {status}
       <div className="sky-composer">
         {attach && (
           <>
@@ -1576,6 +1609,7 @@ export function Composer({
         <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
           ↑
         </ActionIcon>
+        {trailingAction}
       </div>
       <div className="sky-under">
         {state.settings && (
@@ -1636,11 +1670,21 @@ export function ChatMain({
   onOpenSaved?: (chat: string) => void
 }) {
   const { state } = chat
+  const call = useChatVoice(chat)
+  const [endRequested, setEndRequested] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  useFollow(scrollRef, [state.turns, state.gather])
+  useFollow(scrollRef, [state.turns, state.gather, call.voice.state.turns])
   const busy = state.phase !== 'idle'
-  const empty = state.turns.length === 0 && !state.gather
+  const empty = state.turns.length === 0 && !state.gather && !call.visible
   const [panel, setPanel] = useState(false)
+  useEffect(() => {
+    if (!endRequested) return
+    setEndRequested(false)
+    onEnd()
+  }, [endRequested, onEnd])
+  const endConversation = async () => {
+    if (await call.end()) setEndRequested(true)
+  }
 
   return (
     <div className="sky-main">
@@ -1656,8 +1700,8 @@ export function ChatMain({
               Context · {state.documents}
             </Button>
           )}
-          {state.turns.length > 0 && (
-            <Button size="sm" onClick={onEnd} disabled={busy}>
+          {(state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
+            <Button size="sm" onClick={() => void endConversation()} disabled={busy || call.syncing}>
               {state.settings?.saves === false
                 ? state.phase === 'saving'
                   ? 'Closing…'
@@ -1680,11 +1724,40 @@ export function ChatMain({
             ) : (
               <div className="sky-col">
                 <ThreadColumn chat={chat} branches={branches} onBranched={onBranched} onOpenSaved={onOpenSaved} />
+                {call.visible && <VoiceTranscript voice={call.voice} />}
               </div>
             )}
           </div>
 
-          <Composer chat={chat} placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'} hints={KEY_HINTS} />
+          <Composer
+            chat={chat}
+            placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
+            hints={KEY_HINTS}
+            sendDisabled={call.preparing || call.syncing || call.unsaved || call.voice.state.phase === 'starting'}
+            onSend={call.active ? (text) => void call.voice.sendText(text) : undefined}
+            status={
+              <VoiceStatus
+                voice={call.voice}
+                syncing={call.syncing}
+                error={call.error}
+                onEnd={() => void call.end()}
+                onRetry={() => void call.retry()}
+              />
+            }
+            trailingAction={
+              <VoiceButton
+                active={call.active}
+                disabled={
+                  !call.active &&
+                  (busy || call.preparing || call.syncing || chat.tuning || !state.loaded || !state.settings)
+                }
+                onClick={() => {
+                  if (call.active) void call.end()
+                  else void call.start()
+                }}
+              />
+            }
+          />
         </div>
         {panel && (
           <ContextPanel
@@ -1696,6 +1769,8 @@ export function ChatMain({
           />
         )}
       </div>
+      <audio ref={call.voice.audioRef} autoPlay />
+      <audio ref={call.voice.sonnyAudioRef} autoPlay />
     </div>
   )
 }

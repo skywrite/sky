@@ -365,6 +365,28 @@ export default class ChatSession {
     return this.newMessages
   }
 
+  /** Import speech already delivered to the user without rerunning it through the text model. */
+  async appendConversation(after: number, conversation: ConversationMessage[]): Promise<void> {
+    const existing = this.turns.slice(after)
+    const same =
+      existing.length === conversation.length &&
+      existing.every(
+        (turn, i) => turn.role === conversation[i].role && turn.content.trim() === conversation[i].content.trim(),
+      )
+    if (same) return
+    if (after !== this.turns.length || after % 2 !== 0) {
+      throw new Error(
+        'This chat changed while voice was running. Keep this page open to preserve the voice transcript.',
+      )
+    }
+    const when = await this.stamp()
+    const turns = conversation.map((turn) => ({ ...turn, ...(when ? { when } : {}) }))
+    this.turns.push(...turns)
+    this.engine.seedConversation(turns)
+    this.newMessages = true
+    await this.snapshot()
+  }
+
   /**
    * Seed the session: a resumed or restored conversation reseeds the model's
    * history (the turns themselves were seeded at construction), and a
@@ -510,6 +532,8 @@ export default class ChatSession {
       this.firstTurnPending = true
     }
 
+    // Spoken exchanges also occupy turn numbers, although they did not run this context pipeline.
+    this.context.continueAfter(Math.floor(this.turns.length / 2))
     let context: TurnContextReport
     if (this.firstTurnPending) {
       this.firstTurnPending = false

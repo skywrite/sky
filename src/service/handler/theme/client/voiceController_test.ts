@@ -236,6 +236,59 @@ const TOGETHER_QUESTIONS = {
   web_question: 'Give a public overview of current heat-pump efficiency.',
   notebook_question: 'Compare the Atlas pilot requirements in the notebook with that public overview.',
 }
+
+test('voice joins the existing chat and accepts typed messages on the same speaking floor', async () => {
+  const { controller, peers, mic } = harness()
+  const context = 'Previous chat: User asked about the Atlas outline. Sky suggested a focused hour.'
+  await controller.start(null, null, context)
+  await settle()
+  assert({
+    given: 'a chat switching to voice',
+    should: 'give both voices the same history before speaking',
+    actual: peers.map((peer) => messages(peer).filter((event) => event.item?.content?.[0]?.text === context).length),
+    expected: [1, 1],
+  })
+  done(peers[0], 'hello', 'I’m listening.')
+  drain(peers[0], 'hello')
+  const accepted = controller.sendText('Keep the outline to three sections.')
+  assert({
+    given: 'a typed message while voice is active',
+    should: 'send it to the host, mirror it to Sonny, and keep it in the transcript',
+    actual: {
+      accepted,
+      turn: controller.state.turns.at(-1)?.text,
+      host: messages(peers[0]).some(
+        (event) => event.item?.content?.[0]?.text === 'Keep the outline to three sections.',
+      ),
+      sonny: messages(peers[1]).some((event) =>
+        event.item?.content?.[0]?.text?.includes('Keep the outline to three sections.'),
+      ),
+      replies: responses(peers[0]).length,
+    },
+    expected: { accepted: true, turn: 'Keep the outline to three sections.', host: true, sonny: true, replies: 2 },
+  })
+  controller.setMuted(true)
+  assert({
+    given: 'mute is pressed',
+    should: 'disable the actual microphone track',
+    actual: [controller.state.muted, mic.stream.getAudioTracks()[0].enabled],
+    expected: [true, false],
+  })
+  controller.setMuted(false)
+  assert({
+    given: 'unmute is pressed',
+    should: 'enable the actual microphone track',
+    actual: [controller.state.muted, mic.stream.getAudioTracks()[0].enabled],
+    expected: [false, true],
+  })
+  controller.end()
+  assert({
+    given: 'the chat stops voice',
+    should: 'release the microphone and refuse further voice input',
+    actual: [mic.stopped(), controller.sendText('After the call')],
+    expected: [true, false],
+  })
+})
 const TOGETHER_WEB = {
   status: 'complete',
   answer: 'Modern heat pumps transfer heat efficiently, with performance depending on temperature.',

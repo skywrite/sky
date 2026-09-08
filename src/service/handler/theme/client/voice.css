@@ -1,16 +1,8 @@
-/* ============ talk — the voice page ============ */
-
-/* The empty page before a call: an invitation, then the button. */
-.sky-voice-hello {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  max-width: 44ch;
-}
-
-.sky-voice-hello p {
-  margin: 0;
+/* Voice is an input method in the chat composer. */
+.sky-voice-dock {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 8px 48px 0;
 }
 
 /* The bar where the composer would be: what the call is doing, and which devices carry it. */
@@ -18,11 +10,12 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 19px;
-  border-radius: 18px;
-  background: var(--sky-s2);
-  font-size: 16px;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 13px;
+  background: var(--sky-side);
+  border: 1px solid var(--sky-border-soft);
+  font-size: 14px;
   color: var(--sky-text-2);
 }
 
@@ -58,13 +51,24 @@
 
 .sky-voice-devices {
   display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.sky-voice-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 
+.sky-voice-toggle {
+  flex: none;
+}
+
 .sky-voice-dot {
-  width: 11px;
-  height: 11px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: var(--sky-dim);
   flex: none;
@@ -97,9 +101,9 @@
 }
 
 @media (max-width: 900px) {
-  .sky-voice-devices {
-    margin-left: 0;
-    width: 100%;
+  .sky-voice-dock {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }
 

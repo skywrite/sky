@@ -34,6 +34,7 @@ import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { timelineOf } from './timeline.ts'
+import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 
 /** What a thread is tuned with before its first message builds it. */
 export interface ThreadPrefs {
@@ -891,6 +892,80 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         await stream.writeSSE({ event: 'error', data: JSON.stringify({ message: err.message }) })
       },
     )
+  })
+
+  // A completed voice segment joins the same durable thread, without asking the text model to answer again.
+  app.post('/:id/voice', async (c) => {
+    const id = c.req.param('id')
+    const body = (await c.req.json().catch(() => null)) as {
+      after?: unknown
+      turns?: unknown
+      profile?: unknown
+      contextTokens?: unknown
+      saves?: unknown
+    } | null
+    if (!body || !Number.isSafeInteger(body.after) || (body.after as number) < 0 || !isSpokenTurns(body.turns)) {
+      return c.json({ message: 'expected a conversation position and voice transcript' }, 400)
+    }
+    const host = options.settings
+    if (
+      !host ||
+      typeof body.profile !== 'string' ||
+      typeof body.saves !== 'boolean' ||
+      typeof body.contextTokens !== 'number' ||
+      !Number.isSafeInteger(body.contextTokens) ||
+      body.contextTokens < 0
+    ) {
+      return c.json(
+        { message: 'Voice needs the chat’s model, reading budget, and save settings. Reload the page.' },
+        400,
+      )
+    }
+    try {
+      const chosen = host.resolve(body.profile)
+      if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
+        return c.json({ message: 'The reading budget exceeds this model’s limit.' }, 400)
+      }
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
+    if (accepting.has(id) || threads.get(id)?.busy)
+      return c.json({ message: 'a turn is already running on this thread' }, 409)
+    accepting.add(id)
+    const release = hold('chat voice transcript')
+    let thread: Thread | undefined
+    let reserved = false
+    try {
+      await restored
+      await opening.get(id)
+      if (!threads.has(id) && body.after !== 0) {
+        return c.json(
+          { message: 'This chat could not be restored. Keep this page open to preserve its voice transcript.' },
+          409,
+        )
+      }
+      const conversation = voiceConversation(body.turns)
+      if (conversation.length === 0) return c.json({ appended: 0 })
+      if (!threads.has(id))
+        pending.set(id, { profile: body.profile, contextTokens: body.contextTokens, saves: body.saves })
+      thread = await open(id)
+      if (thread.busy) return c.json({ message: 'a turn is already running on this thread' }, 409)
+      thread.busy = true
+      try {
+        reserved = true
+        await thread.session.appendConversation(body.after as number, conversation)
+      } catch (error) {
+        return c.json({ message: (error as Error).message }, 409)
+      }
+      thread.state = 'done'
+      thread.updatedAt = ++tick
+      name(id, thread)
+      return c.json({ appended: conversation.length })
+    } finally {
+      if (thread && reserved) thread.busy = false
+      accepting.delete(id)
+      release()
+    }
   })
 
   // The day's view of its threads: newest activity first.

@@ -18,7 +18,6 @@ import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAp
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
 import { SidebarUtilities } from './sidebarUtilities.tsx'
 import { skyTheme } from './theme.ts'
-import { VoiceMain } from './voice.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
 
 /**
@@ -37,9 +36,13 @@ function App() {
 
 /** The path is the state: `/` is today, `/<ymd>` another day, `/thread/<id>` a conversation. */
 function useRoute(): [string, (to: string) => void] {
-  const [path, setPath] = useState(window.location.pathname)
+  const readRoute = () => {
+    if (window.location.pathname === '/voice') history.replaceState(null, '', `/thread/${crypto.randomUUID()}`)
+    return window.location.pathname
+  }
+  const [path, setPath] = useState(readRoute)
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname)
+    const onPop = () => setPath(readRoute())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -70,7 +73,6 @@ function Canvas() {
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   // /<ymd>/files is the day's files, /<ymd>/files/<folder> a folder inside them.
   const filesRoute = filesRouteOf(path)
-  const isVoice = path === '/voice'
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
   const isSettings = settingsSection !== null
@@ -109,7 +111,6 @@ function Canvas() {
   const onDayPage =
     threadId === null &&
     importId === null &&
-    !isVoice &&
     !isAudition &&
     !isSettings &&
     !isClock &&
@@ -228,12 +229,6 @@ function Canvas() {
               <Button className="sky-newchat" fullWidth variant="default" onClick={newChat}>
                 New chat
               </Button>
-              {/* A voice session is its own page, off the day like a thread. */}
-              <button type="button" className="sky-thread" data-active={isVoice} onClick={() => navigate('/voice')}>
-                <span>Talk</span>
-                <span className="sky-meta">voice</span>
-              </button>
-
               <button
                 type="button"
                 className="sky-thread sky-outbox-nav"
@@ -251,7 +246,6 @@ function Canvas() {
                   data-active={
                     threadId === null &&
                     importId === null &&
-                    !isVoice &&
                     !isSettings &&
                     !isClock &&
                     !isAutomations &&
@@ -350,9 +344,7 @@ function Canvas() {
           back={{ label: 'Today', onClick: () => navigate('/') }}
         />
       ) : isAudition ? (
-        <AuditionMain back={{ label: 'Talk', onClick: () => navigate('/voice') }} />
-      ) : isVoice ? (
-        <VoiceMain back={{ label: 'Today', onClick: () => navigate('/') }} />
+        <AuditionMain back={{ label: 'Chat', onClick: newChat }} />
       ) : importId ? (
         <Fragment key={importId}>
           <ImportMain

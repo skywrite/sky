@@ -13,6 +13,12 @@ Settings and at `/voice/audition`.
 
 ## Current design
 
+The browser starts voice from the waveform after Send in Chat. The chat
+retains its typed draft, shares its prior conversation with both speakers,
+and keeps completed speech for later text replies and filing. The UI and
+transcript handoff are described in the
+[chat design](../../../../service/handler/chat/docs/README.md#voice-in-the-conversation).
+
 Browser voice sessions start with a bounded notebook
 snapshot: profile and remembered preferences, goals, current week and
 day, recent daily summaries, people, open projects, and pending decisions.

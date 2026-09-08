@@ -235,6 +235,116 @@ function parseSSE(text: string): Frame[] {
     })
 }
 
+test('chat voice transcript survives recovery and reaches the next text reply exactly once', async () => {
+  const seen: ModelMessage[][] = []
+  const host = await testHost({
+    invokeModel: async ({ sink, messages }) => {
+      seen.push(structuredClone(messages) as ModelMessage[])
+      sink.write('A synthetic reply.')
+      return EMPTY
+    },
+  })
+  const app = appWith(host)
+  const url = 'http://localhost/chat/voice-thread'
+  await (await send(app, `${url}/messages`, { message: 'Help with the Atlas outline.' })).text()
+  const body = {
+    after: 2,
+    profile: 'test-thinking',
+    contextTokens: 300_000,
+    saves: true,
+    turns: [
+      { who: 'sky', text: 'I’m listening.' },
+      { who: 'you', text: 'Use three sections.' },
+      { who: 'sky', text: 'Start with the problem and the proposal.' },
+      { who: 'sonny', text: 'The third section can cover the evidence.' },
+    ],
+  }
+  const imported = await post(app, `${url}/voice`, body)
+  const retried = await post(app, `${url}/voice`, body)
+  const before = await getJson(app, url)
+  const snapshot = await loadResumeSession(path.join(host.tmp, 'voice-thread.autosave.md'))
+  assert({
+    given: 'a text chat followed by both speakers and a retried transcript request',
+    should: 'keep one voice exchange in the thread and its recovery snapshot without another model call',
+    actual: {
+      statuses: [imported.status, retried.status],
+      turns: before.turns.length,
+      assistant: before.turns[3].content,
+      recovered: snapshot.state.conversation.length,
+      calls: seen.length,
+    },
+    expected: {
+      statuses: [200, 200],
+      turns: 4,
+      assistant: 'Sky: Start with the problem and the proposal.\n\nSonny: The third section can cover the evidence.',
+      recovered: 4,
+      calls: 1,
+    },
+  })
+  const restarted = appWith({
+    ...host,
+    snapshots: async () => [{ id: 'voice-thread', startTime: START, state: snapshot.state }],
+  })
+  await (await send(restarted, `${url}/messages`, { message: 'Expand the third section.' })).text()
+  const continued = await getJson(restarted, url)
+  assert({
+    given: 'a restarted service and a new typed message',
+    should: 'retain speech in model history and number the next text exchange after it',
+    actual: {
+      heardVoice: JSON.stringify(seen.at(-1)).includes('The third section can cover the evidence.'),
+      turns: continued.turns.length,
+      turn: continued.queries.at(-1)?.turn,
+      branch: continued.branchPoints.at(-1)?.turn,
+    },
+    expected: { heardVoice: true, turns: 6, turn: 3, branch: 3 },
+  })
+  const conflict = await post(restarted, `${url}/voice`, body)
+  assert({
+    given: 'a stale voice segment after a newer text reply',
+    should: 'refuse to overwrite or duplicate later messages',
+    actual: { status: conflict.status, turns: (await getJson(restarted, url)).turns.length },
+    expected: { status: 409, turns: 6 },
+  })
+})
+
+test('voice can begin an empty chat and keeps its filing preference', async () => {
+  const host = await testHost()
+  const app = appWith(host)
+  const url = 'http://localhost/chat/voice-first'
+  const response = await post(app, `${url}/voice`, {
+    after: 0,
+    profile: 'test-quick',
+    contextTokens: 0,
+    saves: false,
+    turns: [
+      { who: 'you', text: 'Help with a short plan.' },
+      { who: 'sky', text: 'Choose one outcome.' },
+    ],
+  })
+  const settings = await getJson(app, `${url}/settings`)
+  const kept = await loadResumeSession(path.join(host.tmp, 'voice-first.autosave.md'))
+  const malformed = await post(app, `${url}/voice`, {
+    after: 2,
+    profile: 'test-quick',
+    contextTokens: 0,
+    saves: false,
+    turns: [{ who: 'system', text: 'An invalid speaker' }],
+  })
+  assert({
+    given: 'voice as the first input, with filing disabled',
+    should: 'create a recoverable chat with the chosen settings and validate incoming speakers',
+    actual: {
+      status: response.status,
+      profile: settings.model.current,
+      budget: settings.contextTokens,
+      saves: settings.saves,
+      recovered: kept.state.conversation.length,
+      malformed: malformed.status,
+    },
+    expected: { status: 200, profile: 'test-quick', budget: 0, saves: false, recovered: 2, malformed: 400 },
+  })
+})
+
 test({ name: 'chat route - a message needs a body' }, async () => {
   const app = appWith(await testHost())
   const response = await send(app, 'http://localhost/chat/t0/messages', { message: '   ' })

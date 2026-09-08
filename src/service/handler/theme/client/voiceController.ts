@@ -23,6 +23,7 @@ export interface VoiceTurn {
 }
 export interface VoiceState {
   phase: 'idle' | 'starting' | 'live' | 'ended' | 'failed'
+  muted: boolean
   activity: 'listening' | 'speaking' | 'checking'
   speaker: Speaker | null
   tool: string | null
@@ -37,6 +38,7 @@ export interface VoiceState {
 
 export const INITIAL_VOICE_STATE: VoiceState = {
   phase: 'idle',
+  muted: false,
   activity: 'listening',
   speaker: null,
   tool: null,
@@ -217,6 +219,7 @@ interface Call {
   pausedReports: Report[]
   seenTools: Set<string>
   seenUserTurns: Set<string>
+  chatContext: string
 }
 
 export function micConstraints(input: string | null): MediaStreamConstraints {
@@ -258,7 +261,7 @@ export class VoiceController {
     return this.active === call && !call.abort.signal.aborted
   }
 
-  async start(input: string | null = null, output: string | null = null): Promise<void> {
+  async start(input: string | null = null, output: string | null = null, chatContext = ''): Promise<void> {
     if (this.active) return
     // A new route identity prevents a late /end from closing a newer call.
     const call: Call = {
@@ -283,6 +286,7 @@ export class VoiceController {
       pausedReports: [],
       seenTools: new Set(),
       seenUserTurns: new Set(),
+      chatContext,
     }
     this.active = call
     this.update({ ...INITIAL_VOICE_STATE, phase: 'starting' })
@@ -302,6 +306,8 @@ export class VoiceController {
       call.opening = session.opening
       call.hostInstructions = session.instructions ?? ''
       call.researcherInstructions = session.researcher.instructions
+      if (call.chatContext)
+        call.opening = `${call.hostInstructions}\n\nThe user switched this existing chat to voice. Briefly acknowledge that you are listening. Keep the supplied conversation in mind; do not repeat its replies or treat its earlier requests as new assignments.`
       this.update({
         model: session.model ?? null,
         voice: session.voice ?? null,
@@ -955,6 +961,10 @@ export class VoiceController {
     )
       return
     if (this.state.phase === 'starting') this.update({ phase: 'live' })
+    if (call.chatContext) {
+      for (const speaker of ['sky', 'sonny'] as const) this.record(call, speaker, call.chatContext)
+      call.chatContext = ''
+    }
     if (call.userSpeaking || call.waitingForCommit || occupied || call.blockingTools) return
     const host = call.connections.get('sky')!
     if (!call.greeted) {
@@ -1011,6 +1021,30 @@ export class VoiceController {
     this.flush(call)
   }
 
+  /** Typed messages use the same speaking floor and history as microphone input. */
+  sendText(message: string): boolean {
+    const call = this.active
+    const text = message.trim()
+    if (!call || this.state.phase !== 'live' || !text) return false
+    call.greeted = true
+    call.userTurn++
+    call.invitation = null
+    call.pendingHost = true
+    this.skipAcknowledgements(call)
+    for (const conn of call.connections.values()) this.interrupt(call, conn)
+    this.record(call, 'sky', text)
+    this.mirror(call, 'you', text)
+    this.update({ turns: [...this.state.turns, { who: 'you', text, live: false }] })
+    this.flush(call)
+    return true
+  }
+
+  setMuted(muted: boolean): void {
+    if (!this.active) return
+    for (const track of this.active.mic?.getAudioTracks() ?? []) track.enabled = !muted
+    this.update({ muted })
+  }
+
   async chooseInput(input: string | null): Promise<void> {
     const call = this.active
     if (!call) return
@@ -1027,6 +1061,7 @@ export class VoiceController {
         .find((item) => item.track?.kind === 'audio')
       const track = stream.getAudioTracks()[0]
       if (!sender || !track) throw new Error('The microphone connection is not ready.')
+      track.enabled = !this.state.muted
       await sender.replaceTrack(track)
       if (!this.current(call)) {
         for (const newTrack of stream.getTracks()) newTrack.stop()
@@ -1078,7 +1113,7 @@ export class VoiceController {
       activity: 'listening',
       speaker: null,
       research: { running: 0, ready: 0, paused: 0 },
-      turns: this.state.turns.map((turn) => ({ ...turn, live: false })),
+      turns: this.state.turns.map((turn) => ({ ...turn, live: false, ...(turn.live ? { interrupted: true } : {}) })),
     })
   }
 }

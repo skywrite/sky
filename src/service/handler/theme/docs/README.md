@@ -117,6 +117,10 @@ for the consolidation's rationale and verification.
 
 ## Sidebar utilities
 
+Voice lives in the chat composer, immediately after Send; its conversation
+handoff and lifecycle are described in the [chat design](../../chat/docs/README.md#voice-in-the-conversation).
+The main sidebar has no Talk destination.
+
 Automations, Explorer, and Settings share a persistent footer in every sidebar
 section. `client/sidebarUtilities.tsx` renders the bolt, folder, and gear as 24px
 outline icons in three equal columns, each with a 44px target. The current

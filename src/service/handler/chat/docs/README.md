@@ -14,6 +14,32 @@ first context load, and is saved on each turn through the
 
 ## What is built
 
+### Voice in the conversation
+
+The waveform immediately after Send starts voice inside the thread. The
+composer stays mounted, preserving its draft, while an inline bar provides
+mute, microphone/speaker choices, research status, and End voice. Spoken
+turns appear in the conversation column; typed messages during a live call
+use the same voice session. Starting voice passes a bounded copy of the
+current conversation to both speakers. Leaving the chat releases the
+microphone and both audio connections. The former `/voice` page opens a new
+chat without starting its microphone; voice auditions remain in Settings
+and at `/voice/audition`.
+
+Ending voice posts its transcript to `POST /chat/:id/voice` before continuing
+with text or saving the thread. The route appends against the original message
+count and accepts identical retries, refusing to replace newer conversation.
+The transcript enters both model history and the normal recovery snapshot;
+the chat's filing preference still decides what Save & close keeps.
+Consecutive utterances from the same role share an exchange, with named Sky
+and Sonny replies. An opening hello before the first user message is omitted
+from the saved exchanges. Pending voice turns remain visible if the handoff
+fails, with a retry action; uncompleted live calls are held in the browser
+until they end. Text submission stays disabled until the handoff succeeds.
+See [the integration note](2026-09-07-voice-inside-chat.md).
+
+### Text chat and thread controls
+
 A thread is a ChatSession backed by a temporary recovery snapshot throughout
 its active life, including when it will not be filed. A message is a POST whose response is the turn's event stream; the page
 renders the same events the terminal renders. Around that, three things

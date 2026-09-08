@@ -1,7 +1,7 @@
-/** Talk: Sky hosts the conversation; Sonny returns from deeper research. */
-import { Button, Select } from '@mantine/core'
+/** Voice inside Chat: Sky hosts; Sonny returns from deeper research. */
+import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { humanize, useFollow } from './chat.tsx'
+import { humanize } from './chat.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
 import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 import './voice.css'
@@ -81,12 +81,18 @@ export function useVoice(id: string) {
     })
   }, [])
 
-  const start = useCallback(async () => {
-    await controller.start(chosen.input, chosen.output)
-    if (controller.state.phase === 'live' || controller.state.phase === 'starting') void refreshDevices()
-  }, [controller, chosen, refreshDevices])
+  const start = useCallback(
+    async (context = '') => {
+      await controller.start(chosen.input, chosen.output, context)
+      if (controller.state.phase === 'live' || controller.state.phase === 'starting') void refreshDevices()
+    },
+    [controller, chosen, refreshDevices],
+  )
   const end = useCallback(() => controller.end(), [controller])
   const resumeResearch = useCallback(() => controller.resumeResearch(), [controller])
+  const mute = useCallback(() => controller.setMuted(!controller.state.muted), [controller])
+  const sendText = useCallback((text: string) => controller.sendText(text), [controller])
+  const latest = useCallback(() => controller.state, [controller])
 
   useEffect(() => () => controller.end(), [controller])
   useEffect(() => {
@@ -115,7 +121,21 @@ export function useVoice(id: string) {
     [controller],
   )
 
-  return { state, audioRef, sonnyAudioRef, devices, chosen, start, end, resumeResearch, chooseInput, chooseOutput }
+  return {
+    state,
+    audioRef,
+    sonnyAudioRef,
+    devices,
+    chosen,
+    start,
+    end,
+    resumeResearch,
+    mute,
+    sendText,
+    latest,
+    chooseInput,
+    chooseOutput,
+  }
 }
 
 export type Voice = ReturnType<typeof useVoice>
@@ -138,7 +158,11 @@ function statusOf(state: VoiceState): string {
             ? 'Checking the web…'
             : `Running ${humanize(state.tool ?? 'a tool')}…`
       }
-      return state.activity === 'speaking' ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is speaking` : 'Listening'
+      return state.activity === 'speaking'
+        ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is speaking`
+        : state.muted
+          ? 'Microphone muted'
+          : 'Listening'
   }
 }
 
@@ -146,138 +170,198 @@ function deviceOptions(list: MediaDeviceInfo[], fallback: string) {
   return list.map((d, i) => ({ value: d.deviceId, label: d.label || `${fallback} ${i + 1}` }))
 }
 
-/** A voice session as its own page. */
-export function VoiceMain({ back }: { back: { label: string; onClick: () => void } }) {
-  const [id] = useState(() => crypto.randomUUID())
-  const voice = useVoice(id)
-  const { state } = voice
-  const scrollRef = useRef<HTMLDivElement>(null)
-  useFollow(scrollRef, [state.turns, state.activity])
-  const inCall = state.phase === 'starting' || state.phase === 'live'
-
+export function VoiceWave() {
   return (
-    <div className="sky-main">
-      <header className="sky-head">
-        <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
-          ‹ {back.label}
-        </Button>
-        <span className="sky-title">Talk</span>
-        <nav className="sky-tabs">
-          {inCall ? (
-            <Button size="sm" variant="danger-quiet" onClick={voice.end}>
-              End
-            </Button>
-          ) : state.phase !== 'idle' ? (
-            <Button size="sm" onClick={() => void voice.start()}>
-              Talk again
-            </Button>
-          ) : null}
-        </nav>
-      </header>
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 9v6M8 5v14M12 2v20M16 6v12M20 9v6" />
+    </svg>
+  )
+}
 
-      <div className="sky-scroll" ref={scrollRef}>
-        {state.phase === 'idle' ? (
-          <div className="sky-blank">
-            <div className="sky-voice-hello">
-              <p>Talk with Sky. Sonny joins in with deeper findings while you keep the conversation going.</p>
-              <Button size="md" onClick={() => void voice.start()}>
-                Start talking
-              </Button>
-            </div>
+export function VoiceButton({
+  active,
+  disabled,
+  onClick,
+}: {
+  active: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  const label = active ? 'End voice chat' : 'Start voice chat'
+  return (
+    <Tooltip label={label} withArrow>
+      <ActionIcon
+        variant={active ? 'primary' : 'secondary'}
+        className="sky-voice-toggle"
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        <VoiceWave />
+      </ActionIcon>
+    </Tooltip>
+  )
+}
+
+/** Spoken replies use the same conversation column as typed replies. */
+export function VoiceTranscript({ voice }: { voice: Voice }) {
+  return (
+    <>
+      {voice.state.turns.map((turn, i) =>
+        turn.who === 'you' ? (
+          <div key={i} className="sky-turn sky-turn-user">
+            <div className="sky-bubble">{turn.text}</div>
           </div>
         ) : (
-          <div className="sky-col">
-            {state.turns.map((turn, i) =>
-              turn.who === 'you' ? (
-                <div key={i} className="sky-turn sky-turn-user">
-                  <div className="sky-bubble">{turn.text}</div>
-                </div>
-              ) : (
-                <div key={i} className="sky-turn" data-voice={turn.who}>
-                  <span className="sky-who">{turn.who}</span>
-                  <div className="sky-body">
-                    <p className="sky-para">
-                      {turn.text}
-                      {turn.live && <span className="sky-caret" aria-hidden="true" />}
-                      {turn.interrupted && <span className="sky-voice-interrupted"> — interrupted</span>}
-                    </p>
-                  </div>
-                </div>
-              ),
-            )}
-            {state.phase === 'starting' && <div className="sky-condensed">— connecting —</div>}
-            {state.phase === 'ended' && <div className="sky-condensed">— session over —</div>}
-            {state.phase === 'failed' && (
-              <div className="sky-condensed" data-tone="failed">
-                — {state.error} —
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="sky-composer-zone">
-        <div className="sky-voice-bar" data-phase={state.phase}>
-          <span className="sky-voice-dot" data-activity={state.phase === 'live' ? state.activity : 'off'} />
-          <span className="sky-voice-status" role="status">
-            {statusOf(state)}
-          </span>
-          {state.phase === 'live' && (state.research.running > 0 || state.research.ready > 0) && (
-            <span className="sky-voice-research" role="status">
-              {state.research.ready > 0 ? 'Research findings ready' : 'Researching…'}
-            </span>
-          )}
-          {state.phase === 'live' && state.research.paused > 0 && (
-            <Button size="xs" onClick={voice.resumeResearch}>
-              Resume research
-            </Button>
-          )}
-          {state.phase === 'live' && state.error && <span className="sky-voice-warn">{state.error}</span>}
-          {state.phase === 'live' && voice.devices.inputs.length > 0 && (
-            <div className="sky-voice-devices">
-              <Select
-                size="xs"
-                aria-label="Microphone"
-                placeholder="System microphone"
-                data={deviceOptions(voice.devices.inputs, 'Microphone')}
-                value={voice.chosen.input}
-                onChange={(value) => void voice.chooseInput(value)}
-                clearable
-              />
-              {CAN_PICK_OUTPUT && voice.devices.outputs.length > 0 && (
-                <Select
-                  size="xs"
-                  aria-label="Speaker"
-                  placeholder="System speaker"
-                  data={deviceOptions(voice.devices.outputs, 'Speaker')}
-                  value={voice.chosen.output}
-                  onChange={voice.chooseOutput}
-                  clearable
-                />
-              )}
+          <div key={i} className="sky-turn" data-voice={turn.who}>
+            <span className="sky-who">{turn.who}</span>
+            <div className="sky-body">
+              <p className="sky-para">
+                {turn.text}
+                {turn.live && <span className="sky-caret" aria-hidden="true" />}
+                {turn.interrupted && <span className="sky-voice-interrupted"> — interrupted</span>}
+              </p>
             </div>
-          )}
-        </div>
-        <div className="sky-under">
-          {state.model ? (
+          </div>
+        ),
+      )}
+    </>
+  )
+}
+
+export function VoiceStatus({
+  voice,
+  syncing,
+  error,
+  onEnd,
+  onRetry,
+}: {
+  voice: Voice
+  syncing: boolean
+  error: string | null
+  onEnd: () => void
+  onRetry: () => void
+}) {
+  const { state } = voice
+  const inCall = state.phase === 'starting' || state.phase === 'live'
+  if (!inCall && state.phase !== 'failed' && !syncing && !error) return null
+  return (
+    <div className="sky-voice-dock">
+      <div className="sky-voice-bar" data-phase={error ? 'failed' : state.phase}>
+        <span
+          className="sky-voice-dot"
+          data-activity={state.phase === 'live' && !state.muted ? state.activity : 'off'}
+        />
+        <span className="sky-voice-status" role="status">
+          {error ?? (syncing ? 'Keeping the conversation…' : statusOf(state))}
+        </span>
+        {state.phase === 'live' && (state.research.running > 0 || state.research.ready > 0) && (
+          <span className="sky-voice-research" role="status">
+            {state.research.ready > 0 ? 'Research findings ready' : 'Researching…'}
+          </span>
+        )}
+        {state.phase === 'live' && state.research.paused > 0 && (
+          <Button size="xs" onClick={voice.resumeResearch}>
+            Resume research
+          </Button>
+        )}
+        {state.phase === 'live' && state.error && <span className="sky-voice-warn">{state.error}</span>}
+        <div className="sky-voice-actions">
+          {state.phase === 'live' && (
             <>
-              <span className="sky-hint">
-                {state.model} · Sky: {state.voice} · Sonny: {state.researcherVoice}
-              </span>
-              {state.tools.length > 0 && (
-                <>
-                  <span className="sky-hint">·</span>
-                  <span className="sky-hint">tools: {state.tools.map(humanize).join(', ')}</span>
-                </>
+              <Tooltip label={state.muted ? 'Unmute microphone' : 'Mute microphone'} withArrow>
+                <ActionIcon
+                  size="sm"
+                  aria-label={state.muted ? 'Unmute microphone' : 'Mute microphone'}
+                  aria-pressed={state.muted}
+                  onClick={voice.mute}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="8" y="2" width="8" height="13" rx="4" />
+                    <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M9 22h6" />
+                    {state.muted && <path d="m3 3 18 18" />}
+                  </svg>
+                </ActionIcon>
+              </Tooltip>
+              {voice.devices.inputs.length > 0 && (
+                <Popover position="top-end" withArrow shadow="md" width={270}>
+                  <Popover.Target>
+                    <ActionIcon size="sm" aria-label="Voice devices">
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M4 7h16M4 17h16" />
+                        <circle cx="9" cy="7" r="3" fill="var(--sky-bg)" />
+                        <circle cx="15" cy="17" r="3" fill="var(--sky-bg)" />
+                      </svg>
+                    </ActionIcon>
+                  </Popover.Target>
+                  <Popover.Dropdown>
+                    <div className="sky-voice-devices">
+                      <Select
+                        size="sm"
+                        label="Microphone"
+                        placeholder="System microphone"
+                        data={deviceOptions(voice.devices.inputs, 'Microphone')}
+                        value={voice.chosen.input}
+                        onChange={(value) => void voice.chooseInput(value)}
+                        clearable
+                      />
+                      {CAN_PICK_OUTPUT && voice.devices.outputs.length > 0 && (
+                        <Select
+                          size="sm"
+                          label="Speaker"
+                          placeholder="System speaker"
+                          data={deviceOptions(voice.devices.outputs, 'Speaker')}
+                          value={voice.chosen.output}
+                          onChange={voice.chooseOutput}
+                          clearable
+                        />
+                      )}
+                    </div>
+                  </Popover.Dropdown>
+                </Popover>
               )}
             </>
-          ) : (
-            <span className="sky-hint">Your microphone goes straight to OpenAI; the service only runs the tools.</span>
+          )}
+          {error && (
+            <Button size="xs" onClick={onRetry}>
+              Retry
+            </Button>
+          )}
+          {inCall && (
+            <Button size="xs" variant="danger-quiet" onClick={onEnd}>
+              End voice
+            </Button>
           )}
         </div>
       </div>
-      <audio ref={voice.audioRef} autoPlay />
-      <audio ref={voice.sonnyAudioRef} autoPlay />
     </div>
   )
 }

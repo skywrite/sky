@@ -501,6 +501,11 @@ export default class ChatContext {
   // Turns
   // ---------------------------------------------------------------------------
 
+  /** External conversations occupy turn numbers without running this retrieval pipeline. */
+  continueAfter(turn: number): void {
+    this.turnNumber = Math.max(this.turnNumber, turn)
+  }
+
   /**
    * The first gathering turn: produce the initial query from the question
    * and merge its results. Turn 1 of a session that read from the start;
