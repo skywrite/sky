@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -74,9 +74,12 @@ platform. The row opens the notebook's video record and transcript.
 The Chats block and the rail use one hierarchy (`theme/client/dayChats.ts`).
 Each branch sits below its parent, at any depth, and says which turn it
 left from. Counts on branches name only their **new turns**; shared turns
-remain in the parent and are assembled when the chat opens. Saved files
-open to continue, and a live continuation replaces its saved row while
-keeping the branches below it. Parent lookup uses the live id when it is
+remain in the parent and are assembled when the chat opens. Saved titles
+link directly to their notebook documents in Explorer. A separate **Continue
+chat** action resumes the conversation. A live continuation replaces its
+saved row while retaining that document link and the branches below it;
+Continue chat reuses the active thread. Unsaved titles open their live
+conversations and have no document action. Parent lookup uses the live id when it is
 available and falls back to the saved path. A parent outside the day is
 still named beside the branch point.
 
@@ -87,6 +90,8 @@ to the live chat list or import state also refresh the record while it is
 open; the existing day stays visible during the read.
 
 Narrative: [2026-09-06 — videos and chat branches in the day](2026-09-06-videos-and-chat-branches.md).
+
+Document navigation: [2026-09-08 — saved chat titles open their documents](2026-09-08-saved-chat-document-links.md).
 
 ## The rail
 

@@ -191,13 +191,15 @@ a person can see and touch:
   on talking into that file; the branch then files beside it, in the
   folder carrying the parent's name, holding only its own turns and its
   parent key. The rail lists a day's branches under the chat each left.
-- **A saved chat opens to continue.** A chat in the rail opens as a thread
+- **A saved chat opens to continue.** Continue chat in either day list opens a thread
   whose session writes back to its file — `POST /chat/open` `{ chat }`
   with the path relative to the notebook root; opening the same file again
   finds the same thread. Its turns are on the page at once, its title is
   the saved one, the composer reads "Continue this chat…", and a branch
   from one of its replies is the retroactive case: a new chat from a
-  morning's conversation, this afternoon.
+  morning's conversation, this afternoon. The saved title itself opens the
+  notebook document, and the conversation header offers **Open document**.
+  See the [day's document navigation](../../day/docs/2026-09-08-saved-chat-document-links.md).
 - **A name for the thread.** Until its first exchange is in, a thread goes
   by the first words of its first message, or "New chat" when the message
   had none. Once the first reply has landed, the terminal's one-shot titler

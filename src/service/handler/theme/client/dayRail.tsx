@@ -203,10 +203,10 @@ function ScheduleSection({
 
 /**
  * The day's chats: the ones filed under it and the live threads that
- * started on it, each branch under the chat it left. A saved chat opens
- * as a thread to continue; a live one is opened as it is. A live thread
- * that continues a saved chat stands in for the file, so the two never
- * list twice.
+ * started on it, each branch under the chat it left. A saved title opens
+ * its document, with a separate action to continue the conversation.
+ * A live continuation retains that document link and replaces its saved
+ * row, so the two never list twice.
  */
 function ChatsSection({
   ymd,
@@ -240,20 +240,40 @@ function ChatsSection({
           key={row.key}
         >
           <span className="sky-dr-time">{row.time}</span>
-          <button
-            type="button"
-            className="sky-dr-label sky-dr-open"
-            style={{ paddingInlineStart: row.depth * 14 }}
-            title={row.title}
-            onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
-          >
-            {row.title}
-          </button>
+          {row.path ? (
+            <a
+              className="sky-dr-label sky-dr-open"
+              style={{ paddingInlineStart: row.depth * 14 }}
+              title={row.title}
+              href={fileHref(row.path)}
+            >
+              {row.title}
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="sky-dr-label sky-dr-open"
+              style={{ paddingInlineStart: row.depth * 14 }}
+              title={row.title}
+              onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
+            >
+              {row.title}
+            </button>
+          )}
           <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
           {row.parent && (
             <span className="sky-dr-who" title={`From turn ${row.parent.turn} of ${row.parent.title}`}>
               {row.state !== null && `${chatTurnCount(row)} · `}from turn {row.parent.turn} of {row.parent.title}
             </span>
+          )}
+          {row.path && (
+            <Button
+              className="sky-dr-chat-continue"
+              size="compact-sm"
+              onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
+            >
+              Continue chat
+            </Button>
           )}
         </div>
       ))}

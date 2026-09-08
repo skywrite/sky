@@ -14,7 +14,7 @@ const DAY = new PlainDate('2026-01-27')
 const CHAT_DIR = path.posix.join('time', dayAIChatsDir(DAY))
 const ROOT = `${CHAT_DIR}/09-00_Atlas-planning.md`
 const BRANCH = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline.md`
-const LEAF = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline/11-00_Budget-questions.md`
+const LEAF = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline/11-00_Budget [questions].md`
 const VIDEO = path.posix.join('time', dayDir(DAY), 'actions/videos/Loom_Atlas.md')
 const VIDEO_MD = `---
 from: Jane Doe
@@ -69,14 +69,46 @@ test(
       },
       async ({ page, origin, file, errors }) => {
         let threads: ThreadSummary[] = []
+        const opened: string[] = []
         await page.route('**/chat', (route) => route.fulfill({ json: { threads } }))
+        await page.route('**/chat/open', (route) => {
+          opened.push(route.request().postDataJSON().chat)
+          return route.fulfill({ json: { id: 'continued-chat' } })
+        })
+        await page.route('**/chat/continued-chat', (route) =>
+          route.fulfill({
+            json: {
+              saved: opened.at(-1),
+              turns: [
+                { role: 'user', content: 'Help me plan the next steps.' },
+                { role: 'assistant', content: 'Start with a short checklist and assign each action.' },
+              ],
+              documents: 0,
+              kept: 0,
+              busy: false,
+            },
+          }),
+        )
+        await page.route('**/chat/*/settings', (route) =>
+          route.fulfill({
+            json: {
+              model: {
+                current: 'test',
+                default: 'test',
+                choices: [{ name: 'test', label: 'Test model', provider: 'Test', roles: [] }],
+              },
+              contextTokens: 0,
+              saves: true,
+            },
+          }),
+        )
         await page.setViewportSize({ width: 1500, height: 1000 })
         await page.goto(`${origin}/${DAY.ymd}`)
         await page.waitForSelector('.sky-day-chat:has-text("Budget questions")')
         const rows = () =>
           page.locator('.sky-day-chat').evaluateAll((elements) =>
             elements.map((element) => ({
-              title: element.querySelector('button')?.textContent,
+              title: element.querySelector('.sky-day-chat-open')?.textContent,
               depth: element.getAttribute('data-depth'),
               detail: element.querySelector('.sky-day-chat-meta')?.textContent,
             })),
@@ -107,6 +139,43 @@ test(
           expected: `/explorer/${VIDEO}`,
         })
 
+        const leafUrl = `/explorer/${LEAF.split('/').map(encodeURIComponent).join('/')}`
+        const mainLeaf = page.locator('.sky-day-chat').filter({ hasText: 'Budget questions' })
+        const railLeaf = page.locator('.sky-rail .sky-dr-item').filter({ hasText: 'Budget questions' })
+        assert({
+          given: 'a saved branch whose filename contains spaces and brackets',
+          should: 'link its title to the encoded document URL in both day lists',
+          actual: [
+            await mainLeaf.getByRole('link', { name: 'Budget questions', exact: true }).getAttribute('href'),
+            await railLeaf.getByRole('link', { name: 'Budget questions', exact: true }).getAttribute('href'),
+          ],
+          expected: [leafUrl, leafUrl],
+        })
+        await mainLeaf.getByRole('link', { name: 'Budget questions', exact: true }).click()
+        await page.waitForURL(`${origin}${leafUrl}`)
+        await page.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'clicking a saved title from the day',
+          should: 'open the notebook document without starting a conversation',
+          actual: opened,
+          expected: [],
+        })
+        await page.goBack()
+        await railLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await page.waitForURL(`${origin}/thread/continued-chat`)
+        const openDocument = page.getByRole('link', { name: 'Open document', exact: true })
+        await openDocument.waitFor()
+        assert({
+          given: 'Continue chat from the day rail',
+          should: 'resume the saved file and offer a link back to that document',
+          actual: { opened, href: await openDocument.getAttribute('href') },
+          expected: { opened: [LEAF], href: leafUrl },
+        })
+        await openDocument.click()
+        await page.waitForURL(`${origin}${leafUrl}`)
+        await page.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        await page.goto(`${origin}/${DAY.ymd}`)
+
         threads = [
           {
             id: 'live-parent',
@@ -133,6 +202,22 @@ test(
             ['Budget questions', '2'],
           ],
         })
+        const mainParent = page.locator('.sky-day-chat').filter({ hasText: 'Atlas continued' }).first()
+        assert({
+          given: 'a saved chat with an active continuation',
+          should: 'keep its title linked to the document',
+          actual: await mainParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
+          expected: `/explorer/${ROOT}`,
+        })
+        await mainParent.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await page.waitForURL(`${origin}/thread/live-parent`)
+        assert({
+          given: 'Continue chat on an already active conversation',
+          should: 'reuse its thread without opening another',
+          actual: opened,
+          expected: [LEAF],
+        })
+        await page.goto(`${origin}/${DAY.ymd}`)
 
         await writeFile(
           path.join(path.dirname(file), 'actions/ai-chats/13-00_Atlas-follow-up.md'),
@@ -157,6 +242,25 @@ test(
           actual: await page.locator('.sky-day-chat').count(),
           expected: 4,
         })
+        await mainLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await page.waitForURL(`${origin}/thread/continued-chat`)
+        await openDocument.waitFor()
+        assert({
+          given: 'the conversation header on a phone',
+          should: 'keep the document link within the viewport',
+          actual: await openDocument.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const label = element.querySelector('.mantine-Button-label')
+            return (
+              rect.left >= 0 &&
+              rect.right <= window.innerWidth &&
+              Boolean(label && label.clientWidth >= label.scrollWidth)
+            )
+          }),
+          expected: true,
+        })
+        await openDocument.click()
+        await page.waitForURL(`${origin}${leafUrl}`)
         assert({ given: 'the video and chat day view', should: 'raise no page errors', actual: errors, expected: [] })
       },
     )

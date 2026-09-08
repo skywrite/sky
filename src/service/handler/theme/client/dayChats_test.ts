@@ -63,10 +63,10 @@ test('day chats keep saved children beneath a live continuation of their parent'
   assert({
     given: 'a saved parent opened to continue while its branch stays saved',
     should: 'replace only the parent row and preserve its child and the correct open targets',
-    actual: rows.map((row) => [row.title, row.depth, row.turns, row.target]),
+    actual: rows.map((row) => [row.title, row.depth, row.turns, row.path, row.target]),
     expected: [
-      ['Atlas live', 0, 2, { kind: 'live', id: 'live-root' }],
-      ['Board', 1, 1, { kind: 'saved', path: BRANCH }],
+      ['Atlas live', 0, 2, ROOT, { kind: 'live', id: 'live-root' }],
+      ['Board', 1, 1, BRANCH, { kind: 'saved', path: BRANCH }],
     ],
   })
 })
@@ -96,11 +96,11 @@ test('day chats fall back to the saved parent when a branch’s live parent id h
   assert({
     given: 'a saved parent, its live branch carrying an old parent id, and a live grandchild',
     should: 'keep both branches nested, excluding inherited messages and an unfinished reply from their counts',
-    actual: rows.map((row) => [row.title, row.depth, row.turns]),
+    actual: rows.map((row) => [row.title, row.depth, row.turns, row.path]),
     expected: [
-      ['Atlas', 0, 1],
-      ['Board', 1, 1],
-      ['Budget', 2, 1],
+      ['Atlas', 0, 1, ROOT],
+      ['Board', 1, 1, BRANCH],
+      ['Budget', 2, 1, null],
     ],
   })
 })

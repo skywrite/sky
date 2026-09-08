@@ -20,6 +20,7 @@ import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chat
 import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
+import { fileHref } from './explorer.tsx'
 import { splitLinks } from './links.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
@@ -1774,20 +1775,24 @@ export function ChatMain({
 
   return (
     <div className="sky-main">
-      <header className="sky-head">
+      <header className="sky-head sky-chat-head">
         <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
         </Button>
         <span className="sky-title">{title}</span>
-        {state.saved && <span className="sky-head-count">saved</span>}
-        {!voiceMode && (
+        {(state.saved || !voiceMode) && (
           <nav className="sky-tabs">
-            {state.documents !== null && (
+            {state.saved && (
+              <Button size="sm" component="a" href={fileHref(state.saved)}>
+                Open document
+              </Button>
+            )}
+            {!voiceMode && state.documents !== null && (
               <Button size="sm" onClick={() => setPanel((open) => !open)} data-active={panel}>
                 Context · {state.documents}
               </Button>
             )}
-            {(state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
+            {!voiceMode && (state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
               <Button size="sm" onClick={() => void endConversation()} disabled={busy || call.syncing}>
                 {state.settings?.saves === false
                   ? state.phase === 'saving'

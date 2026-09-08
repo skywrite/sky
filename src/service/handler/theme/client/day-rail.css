@@ -80,7 +80,7 @@
   text-decoration: underline;
 }
 
-/* a live thread's row is a button: the label itself, so it clips like one */
+/* Chat titles link to documents when saved, or open the live conversation. */
 .sky-dr-open {
   display: block;
   width: 100%;
@@ -91,11 +91,18 @@
   font: inherit;
   color: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .sky-dr-open:hover {
   text-decoration: underline;
+}
+
+.sky-dr-chat-continue {
+  grid-column: 2 / -1;
+  justify-self: start;
+  margin: 3px 0;
 }
 
 .sky-dr-mark {

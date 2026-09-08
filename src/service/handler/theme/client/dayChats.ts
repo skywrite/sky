@@ -7,13 +7,15 @@ export interface DayChatRow {
   /** Complete exchanges added by this chat, excluding inherited messages. */
   turns: number
   state: ThreadSummary['state'] | null
+  /** The notebook document, also retained while its conversation is live. */
+  path: string | null
+  /** Where to continue the conversation; independent of opening its document. */
   target: { kind: 'saved'; path: string } | { kind: 'live'; id: string }
   parent: { title: string; turn: number } | null
   depth: number
 }
 
 interface ChatNode extends Omit<DayChatRow, 'parent' | 'depth'> {
-  path: string | null
   parent: { chat: string; turn: number; id?: string | null; title?: string | null } | null
 }
 
@@ -89,6 +91,7 @@ export function dayChatRows(ymd: string, chats: DayData['chats'], threads: Threa
       time: node.time,
       turns: node.turns,
       state: node.state,
+      path: node.path,
       target: node.target,
       parent: node.parent
         ? {

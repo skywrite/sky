@@ -216,6 +216,24 @@
   overflow-wrap: anywhere;
 }
 
+/* The document action stays readable beside the conversation controls on a phone. */
+@media (max-width: 900px) {
+  .sky-chat-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sky-chat-head .sky-tabs {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    margin-left: -44px;
+  }
+
+  .sky-chat-head .sky-tabs .mantine-Button-root {
+    padding-inline: 10px;
+  }
+}
+
 /* The turns a branch inherited from its parent read dimmed; its own follow in full. */
 .sky-turn[data-shared] {
   opacity: 0.58;

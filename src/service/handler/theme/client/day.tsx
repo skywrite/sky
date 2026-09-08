@@ -667,13 +667,31 @@ function ChatsCard({
           style={{ marginInlineStart: row.depth * 18 }}
         >
           <DocLine when={row.time} tag={chatState(row)}>
-            <button
-              type="button"
-              className="sky-day-chat-open"
-              onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
-            >
-              {row.title}
-            </button>
+            <span className="sky-day-chat-heading">
+              {row.path ? (
+                <a className="sky-day-chat-open" href={fileHref(row.path)}>
+                  {row.title}
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="sky-day-chat-open"
+                  onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
+                >
+                  {row.title}
+                </button>
+              )}
+              {row.path && (
+                <Button
+                  size="compact-sm"
+                  onClick={() =>
+                    row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
+                  }
+                >
+                  Continue chat
+                </Button>
+              )}
+            </span>
             <span className="sky-day-chat-meta">
               {chatTurnCount(row)}
               {row.parent && ` · from turn ${row.parent.turn} of ${row.parent.title}`}

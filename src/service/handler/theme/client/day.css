@@ -43,6 +43,13 @@
   overflow-wrap: anywhere;
 }
 
+.sky-day-chat-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
 .sky-day-chat-open {
   border: 0;
   background: none;
@@ -51,6 +58,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
 .sky-day-chat-open:hover {
