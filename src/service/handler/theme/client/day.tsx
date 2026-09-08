@@ -996,20 +996,25 @@ export function DayView({
                     </Block>
                   )}
 
-                  {(record.journals.length > 0 || record.notes.length > 0) && (
-                    <Block head="Written" mini={String(record.journals.length + record.notes.length)}>
+                  {record.journals.length > 0 && (
+                    <Block head="Reflections" mini={String(record.journals.length)}>
                       {record.journals.map((row) => (
                         <Fragment key={row.path}>
                           <DocLine when={row.when}>
                             <a href={fileHref(row.path)}>{row.title}</a>
+                            {row.summary?.trim() && <span className="sky-day-journal-summary">{row.summary}</span>}
                           </DocLine>
                         </Fragment>
                       ))}
+                    </Block>
+                  )}
+
+                  {record.notes.length > 0 && (
+                    <Block head="Notes" mini={String(record.notes.length)}>
                       {record.notes.map((row) => (
                         <Fragment key={row.path}>
                           <DocLine when={row.when}>
                             <a href={fileHref(row.path)}>{row.title}</a>
-                            <span className="sky-rec-sub">note</span>
                           </DocLine>
                         </Fragment>
                       ))}

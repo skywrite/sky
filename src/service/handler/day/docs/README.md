@@ -54,6 +54,16 @@ Reminder completion: [2026-09-06 — completing a reminder deletes it](2026-09-0
 Rows grow to fit wrapped text and collapse through a grid track, with no fixed
 height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
 
+## Reflections and notes in the day's record
+
+Under **The day so far**, journal entries appear in **Reflections** and notes
+appear in **Notes**, each with its own count. Empty sections stay hidden.
+Both retain their document links and times. A reflection with a nonblank
+`summary:` shows that text below its title, with line breaks preserved and
+long text wrapping on narrow screens. Entries without summaries have no
+summary placeholder. Summaries render as ordinary text so selections survive
+unrelated renders and polling.
+
 ## Videos and chats in the day's record
 
 The main column lists Videos and Chats under **The day so far**, including

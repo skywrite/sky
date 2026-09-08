@@ -33,6 +33,16 @@
   color: var(--sky-dim);
 }
 
+.sky-day-journal-summary {
+  display: block;
+  margin-top: 4px;
+  font-size: calc(var(--sky-content-font-size) - 1px);
+  line-height: 1.6;
+  color: var(--sky-text-2);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .sky-day-chat-open {
   border: 0;
   background: none;
