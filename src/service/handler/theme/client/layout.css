@@ -34,8 +34,22 @@ body {
   display: flex;
   flex-direction: column;
   padding: 14px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  gap: 2px;
+  overflow: hidden;
+}
+
+.sky-side-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 2px;
   overflow-y: auto;
+}
+
+.sky-side-scroll > * {
+  flex-shrink: 0;
 }
 
 .sky-side-top {
@@ -68,9 +82,7 @@ body {
   cursor: pointer;
 }
 
-/* The sidebar is a flex column that scrolls; the button is the one child that
-   could shrink (Mantine clips it), so it says no or it collapses when the
-   list outgrows the window. */
+/* Keep the New chat and New automation actions at their full size. */
 .sky-newchat {
   margin-bottom: 10px;
   flex: none;
@@ -294,10 +306,38 @@ a.sky-thread {
   flex-direction: column;
 }
 
-/* The way out of the day list and into the files sits at the foot of the sidebar. */
+/* Utilities stay at the foot while the day list or section navigation scrolls. */
 .sky-side-foot {
+  flex: none;
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: 10px;
+}
+
+.sky-side-utilities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-items: center;
+  border-top: 1px solid var(--sky-border-soft);
+  padding: 12px 0 2px;
+}
+
+.sky-side-utility {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border-radius: 11px;
+  color: var(--sky-text-2);
+}
+
+.sky-side-utility:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-side-utility[data-active='true'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
 }
 
 .sky-menu-dot {

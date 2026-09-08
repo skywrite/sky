@@ -115,6 +115,20 @@ describe the layout need it serves.
 See [2026-09-07 — Shared actions and dialog styling](2026-09-07-shared-ui-toolkit.md)
 for the consolidation's rationale and verification.
 
+## Sidebar utilities
+
+Automations, Explorer, and Settings share a persistent footer in every sidebar
+section. `client/sidebarUtilities.tsx` renders the bolt, folder, and gear as 24px
+outline icons in three equal columns, each with a 44px target. The current
+section uses the primary accent and `aria-current`; hover and keyboard focus
+show the destination's name. Native links support opening a section in another
+tab, while ordinary clicks use the app's navigation and close the mobile drawer.
+
+The sidebar's content scrolls inside `sky-side-scroll`, keeping the footer
+visible in short windows and long Explorer trees. New automation stays just
+above the icons in the Automations section. The mobile footer respects the
+device's bottom safe area.
+
 ## Typography
 
 Today and Explorer share `--sky-content-font-size`: 19px on desktop, 18px

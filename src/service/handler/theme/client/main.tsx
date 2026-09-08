@@ -16,6 +16,7 @@ import { OutboxMain } from './outbox.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
+import { SidebarUtilities } from './sidebarUtilities.tsx'
 import { skyTheme } from './theme.ts'
 import { VoiceMain } from './voice.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
@@ -177,152 +178,137 @@ function Canvas() {
       </button>
       {menu && <div className="sky-scrim" onClick={() => setMenu(false)} />}
       <nav className="sky-side" data-open={menu}>
-        <div className="sky-side-top">
-          <span className="sky-brand">sky</span>
-          <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
-        </div>
-        <RestartPending />
-        {explorerFile !== null ? (
-          <>
-            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
-              <span>‹ Today</span>
-            </button>
-            <div className="sky-side-label">Explorer</div>
-            <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
-          </>
-        ) : settingsSection ? (
-          <>
-            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
-              <span>‹ Today</span>
-            </button>
-            <div className="sky-side-label">Settings</div>
-            {SETTINGS_SECTIONS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className="sky-thread"
-                data-active={s.id === settingsSection}
-                onClick={() => navigate(settingsHref(s.id))}
-              >
-                <span>{s.label}</span>
+        <div className="sky-side-scroll">
+          <div className="sky-side-top">
+            <span className="sky-brand">sky</span>
+            <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
+          </div>
+          <RestartPending />
+          {explorerFile !== null ? (
+            <>
+              <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+                <span>‹ Today</span>
               </button>
-            ))}
-          </>
-        ) : isAutomations ? (
-          <>
-            <button type="button" className="sky-thread" onClick={() => navigate('/')}>
-              <span>‹ Today</span>
-            </button>
-            <div className="sky-side-label">Automations</div>
-            <AutomationsSideNav
-              overviewActive={automationName === null && !isNewAutomation}
-              activeName={automationName}
-              onOverview={() => navigate('/automations')}
-              onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
-            />
-            <div className="sky-side-foot">
-              <Button
-                className="sky-newchat"
-                fullWidth
-                justify="flex-start"
-                onClick={() => navigate('/automations/new')}
-              >
-                ＋ New automation
+              <div className="sky-side-label">Explorer</div>
+              <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
+            </>
+          ) : settingsSection ? (
+            <>
+              <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+                <span>‹ Today</span>
+              </button>
+              <div className="sky-side-label">Settings</div>
+              {SETTINGS_SECTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className="sky-thread"
+                  data-active={s.id === settingsSection}
+                  onClick={() => navigate(settingsHref(s.id))}
+                >
+                  <span>{s.label}</span>
+                </button>
+              ))}
+            </>
+          ) : isAutomations ? (
+            <>
+              <button type="button" className="sky-thread" onClick={() => navigate('/')}>
+                <span>‹ Today</span>
+              </button>
+              <div className="sky-side-label">Automations</div>
+              <AutomationsSideNav
+                overviewActive={automationName === null && !isNewAutomation}
+                activeName={automationName}
+                onOverview={() => navigate('/automations')}
+                onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
+              />
+            </>
+          ) : (
+            <>
+              <Button className="sky-newchat" fullWidth variant="default" onClick={newChat}>
+                New chat
               </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <Button className="sky-newchat" fullWidth variant="default" onClick={newChat}>
-              New chat
+              {/* A voice session is its own page, off the day like a thread. */}
+              <button type="button" className="sky-thread" data-active={isVoice} onClick={() => navigate('/voice')}>
+                <span>Talk</span>
+                <span className="sky-meta">voice</span>
+              </button>
+
+              <button
+                type="button"
+                className="sky-thread sky-outbox-nav"
+                data-active={isOutbox}
+                onClick={() => navigate('/outbox')}
+              >
+                <span>Outbox</span>
+              </button>
+              <div className="sky-side-label">Days</div>
+              {(day?.days ?? []).map((d, offset) => (
+                <button
+                  key={d.ymd}
+                  type="button"
+                  className="sky-thread"
+                  data-active={
+                    threadId === null &&
+                    importId === null &&
+                    !isVoice &&
+                    !isSettings &&
+                    !isClock &&
+                    !isAutomations &&
+                    !isOutbox &&
+                    !isWeek &&
+                    (offset === 0 ? isToday : dayYmd === d.ymd)
+                  }
+                  onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
+                >
+                  <span>{d.label}</span>
+                  <time className="sky-meta" dateTime={d.ymd} title={d.ymd}>
+                    {d.ymd.slice(5)}
+                  </time>
+                </button>
+              ))}
+
+              {/* The two horizons: this week, with the day waiting to start, and the next. */}
+              <div className="sky-side-label">Week</div>
+              <button
+                type="button"
+                className="sky-thread"
+                data-active={isWeek && (weekId === '' || weekId === thisWeek?.id)}
+                onClick={() => navigate('/week')}
+              >
+                <span>
+                  This week
+                  {thisWeek?.due && <span className="sky-wdot" />}
+                </span>
+                <span className="sky-meta">
+                  {thisWeek?.due ? `${thisWeek.due.weekday} not started` : thisWeek ? thisWeek.id.slice(5) : ''}
+                </span>
+              </button>
+              {thisWeek && (
+                <button
+                  type="button"
+                  className="sky-thread"
+                  data-active={isWeek && weekId === thisWeek.next.id}
+                  onClick={() => navigate(weekHref(thisWeek.next.id))}
+                >
+                  <span>Next week</span>
+                  <span className="sky-meta">{thisWeek.next.planned ? 'planned' : 'no plan yet'}</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        <div className="sky-side-foot">
+          {isAutomations && (
+            <Button className="sky-newchat" fullWidth justify="flex-start" onClick={() => navigate('/automations/new')}>
+              ＋ New automation
             </Button>
-            {/* A voice session is its own page, off the day like a thread. */}
-            <button type="button" className="sky-thread" data-active={isVoice} onClick={() => navigate('/voice')}>
-              <span>Talk</span>
-              <span className="sky-meta">voice</span>
-            </button>
-
-            <button
-              type="button"
-              className="sky-thread sky-outbox-nav"
-              data-active={isOutbox}
-              onClick={() => navigate('/outbox')}
-            >
-              <span>Outbox</span>
-            </button>
-            <div className="sky-side-label">Days</div>
-            {(day?.days ?? []).map((d, offset) => (
-              <button
-                key={d.ymd}
-                type="button"
-                className="sky-thread"
-                data-active={
-                  threadId === null &&
-                  importId === null &&
-                  !isVoice &&
-                  !isSettings &&
-                  !isClock &&
-                  !isAutomations &&
-                  !isOutbox &&
-                  !isWeek &&
-                  (offset === 0 ? isToday : dayYmd === d.ymd)
-                }
-                onClick={() => navigate(offset === 0 ? '/' : `/${d.ymd}`)}
-              >
-                <span>{d.label}</span>
-                <time className="sky-meta" dateTime={d.ymd} title={d.ymd}>
-                  {d.ymd.slice(5)}
-                </time>
-              </button>
-            ))}
-
-            {/* The two horizons: this week, with the day waiting to start, and the next. */}
-            <div className="sky-side-label">Week</div>
-            <button
-              type="button"
-              className="sky-thread"
-              data-active={isWeek && (weekId === '' || weekId === thisWeek?.id)}
-              onClick={() => navigate('/week')}
-            >
-              <span>
-                This week
-                {thisWeek?.due && <span className="sky-wdot" />}
-              </span>
-              <span className="sky-meta">
-                {thisWeek?.due ? `${thisWeek.due.weekday} not started` : thisWeek ? thisWeek.id.slice(5) : ''}
-              </span>
-            </button>
-            {thisWeek && (
-              <button
-                type="button"
-                className="sky-thread"
-                data-active={isWeek && weekId === thisWeek.next.id}
-                onClick={() => navigate(weekHref(thisWeek.next.id))}
-              >
-                <span>Next week</span>
-                <span className="sky-meta">{thisWeek.next.planned ? 'planned' : 'no plan yet'}</span>
-              </button>
-            )}
-
-            {/* The way out of the day and into the files, at the foot of the list. */}
-            <div className="sky-side-foot">
-              <button type="button" className="sky-thread" onClick={() => navigate('/automations')}>
-                <span>Automations</span>
-              </button>
-              <button type="button" className="sky-thread" onClick={() => navigate('/explorer')}>
-                <span>Explorer</span>
-              </button>
-              <button
-                type="button"
-                className="sky-thread"
-                data-active={isSettings}
-                onClick={() => navigate('/settings')}
-              >
-                <span>Settings</span>
-              </button>
-            </div>
-          </>
-        )}
+          )}
+          <SidebarUtilities
+            active={isAutomations ? 'automations' : explorerFile !== null ? 'explorer' : isSettings ? 'settings' : null}
+            navigate={navigate}
+          />
+        </div>
       </nav>
 
       {explorerFile !== null ? (
