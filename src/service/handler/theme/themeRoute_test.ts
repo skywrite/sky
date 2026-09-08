@@ -86,3 +86,22 @@ test({ name: 'theme assets - Bun-built bundle serves js and css' }, async () => 
     })
   })
 })
+
+test({ name: 'voice visuals do not serve retired avatar or lip-analysis assets' }, async () => {
+  await withApp(async (app) => {
+    for (const name of [
+      'voice-sky.glb',
+      'voice-sonny.glb',
+      'voice-headaudio-worklet.mjs',
+      'voice-headaudio-model.bin',
+    ]) {
+      const response = await app.request(`http://localhost/_assets/${name}`)
+      assert({
+        given: 'a retired human-avatar or lip-analysis asset request',
+        should: 'return missing because cloud visuals are procedural',
+        actual: response.status,
+        expected: 404,
+      })
+    }
+  })
+})

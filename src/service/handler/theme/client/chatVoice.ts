@@ -69,6 +69,8 @@ export function useChatVoice(chat: Chat) {
   const start = useCallback(async () => {
     if (starting.current || pending.current || chat.state.phase !== 'idle' || !chat.state.settings) return
     starting.current = true
+    // Unlock local lip analysis in the click, before preflight network awaits.
+    void voice.audioMotion.start()
     setPreparing(true)
     setError(null)
     try {
@@ -97,6 +99,7 @@ export function useChatVoice(chat: Chat) {
       if (mounted.current) setError((error as Error).message)
     } finally {
       starting.current = false
+      if (!['starting', 'live'].includes(voice.latest().phase)) voice.audioMotion.stop()
       if (mounted.current) setPreparing(false)
     }
   }, [chat, sync, voice])

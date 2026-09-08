@@ -3,6 +3,7 @@ import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { humanize } from './chat.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
+import { VoiceAudioLevels } from './voiceAudio.ts'
 import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 import './voice.css'
 
@@ -42,6 +43,9 @@ export function useVoice(id: string) {
   const [state, setState] = useState<VoiceState>(INITIAL_VOICE_STATE)
   const audioRef = useRef<SinkElement | null>(null)
   const sonnyAudioRef = useRef<SinkElement | null>(null)
+  const [audioMotion] = useState(
+    () => new VoiceAudioLevels((speaker) => (speaker === 'sky' ? audioRef.current : sonnyAudioRef.current)),
+  )
   const controllerRef = useRef<VoiceController | null>(null)
   if (!controllerRef.current) {
     controllerRef.current = new VoiceController(
@@ -88,13 +92,19 @@ export function useVoice(id: string) {
     },
     [controller, chosen, refreshDevices],
   )
-  const end = useCallback(() => controller.end(), [controller])
+  const end = useCallback(() => {
+    controller.end()
+    audioMotion.stop()
+  }, [controller, audioMotion])
   const resumeResearch = useCallback(() => controller.resumeResearch(), [controller])
   const mute = useCallback(() => controller.setMuted(!controller.state.muted), [controller])
   const sendText = useCallback((text: string) => controller.sendText(text), [controller])
   const latest = useCallback(() => controller.state, [controller])
 
-  useEffect(() => () => controller.end(), [controller])
+  useEffect(() => end, [end])
+  useEffect(() => {
+    if (state.phase === 'ended' || state.phase === 'failed') audioMotion.stop()
+  }, [state.phase, audioMotion])
   useEffect(() => {
     if (state.phase !== 'live' || !navigator.mediaDevices?.addEventListener) return
     const onChange = () => void refreshDevices()
@@ -123,6 +133,7 @@ export function useVoice(id: string) {
 
   return {
     state,
+    audioMotion,
     audioRef,
     sonnyAudioRef,
     devices,
@@ -159,7 +170,7 @@ function statusOf(state: VoiceState): string {
             : `Running ${humanize(state.tool ?? 'a tool')}…`
       }
       return state.activity === 'speaking'
-        ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is speaking`
+        ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is responding`
         : state.muted
           ? 'Microphone muted'
           : 'Listening'

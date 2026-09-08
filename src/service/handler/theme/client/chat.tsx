@@ -26,6 +26,7 @@ import { ReplyDetails } from './replyDetails.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { awaitReturn, frames } from './turnStream.ts'
 import { VoiceButton, VoiceStatus, VoiceTranscript } from './voice.tsx'
+import { VoicePresence } from './voicePresence.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -1573,6 +1574,7 @@ export function Composer({
   status,
   onSend,
   sendDisabled = false,
+  hidden = false,
 }: {
   chat: Chat
   placeholder: string
@@ -1584,6 +1586,8 @@ export function Composer({
   status?: ReactNode
   onSend?: (text: string) => void
   sendDisabled?: boolean
+  /** Keep the draft in its textarea while voice owns the conversation surface. */
+  hidden?: boolean
 }) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -1626,7 +1630,7 @@ export function Composer({
   }
 
   return (
-    <div className="sky-composer-zone">
+    <div className="sky-composer-zone" hidden={hidden} style={hidden ? { display: 'none' } : undefined}>
       <div className="sky-composer">
         {status}
         {sendError && (
@@ -1751,11 +1755,12 @@ export function ChatMain({
 }) {
   const { state } = chat
   const call = useChatVoice(chat)
+  const voiceMode = call.active
   const [endRequested, setEndRequested] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  useFollow(scrollRef, [state.turns, state.gather, call.voice.state.turns])
+  useFollow(scrollRef, [state.turns, state.gather, call.voice.state.turns, voiceMode], !voiceMode)
   const busy = state.phase !== 'idle'
-  const attachments = useChatFiles(state.id, busy || call.active || call.preparing || call.syncing || call.unsaved)
+  const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved)
   const empty = state.turns.length === 0 && !state.gather && !call.visible
   const [panel, setPanel] = useState(false)
   useEffect(() => {
@@ -1775,24 +1780,26 @@ export function ChatMain({
         </Button>
         <span className="sky-title">{title}</span>
         {state.saved && <span className="sky-head-count">saved</span>}
-        <nav className="sky-tabs">
-          {state.documents !== null && (
-            <Button size="sm" onClick={() => setPanel((open) => !open)} data-active={panel}>
-              Context · {state.documents}
-            </Button>
-          )}
-          {(state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
-            <Button size="sm" onClick={() => void endConversation()} disabled={busy || call.syncing}>
-              {state.settings?.saves === false
-                ? state.phase === 'saving'
-                  ? 'Closing…'
-                  : 'Discard'
-                : state.phase === 'saving'
-                  ? 'Saving…'
-                  : 'Save & close'}
-            </Button>
-          )}
-        </nav>
+        {!voiceMode && (
+          <nav className="sky-tabs">
+            {state.documents !== null && (
+              <Button size="sm" onClick={() => setPanel((open) => !open)} data-active={panel}>
+                Context · {state.documents}
+              </Button>
+            )}
+            {(state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
+              <Button size="sm" onClick={() => void endConversation()} disabled={busy || call.syncing}>
+                {state.settings?.saves === false
+                  ? state.phase === 'saving'
+                    ? 'Closing…'
+                    : 'Discard'
+                  : state.phase === 'saving'
+                    ? 'Saving…'
+                    : 'Save & close'}
+              </Button>
+            )}
+          </nav>
+        )}
       </header>
 
       <div className="sky-split">
@@ -1803,7 +1810,12 @@ export function ChatMain({
               <span>Drop files to read in this chat</span>
             </div>
           )}
-          <div className="sky-scroll" ref={scrollRef}>
+          <div
+            className="sky-scroll"
+            ref={scrollRef}
+            hidden={voiceMode}
+            style={voiceMode ? { display: 'none' } : undefined}
+          >
             {empty ? (
               <div className="sky-blank">
                 <p>Ask about your notebook. Answers come from your files.</p>
@@ -1816,29 +1828,28 @@ export function ChatMain({
             )}
           </div>
 
+          {voiceMode && <VoicePresence voice={call.voice} />}
+          <VoiceStatus
+            voice={call.voice}
+            syncing={call.syncing}
+            error={call.error}
+            onEnd={() => void call.end()}
+            onRetry={() => void call.retry()}
+          />
           <Composer
             chat={chat}
+            hidden={voiceMode}
             placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
             hints={KEY_HINTS}
             attach={attachments.attach}
-            sendDisabled={call.preparing || call.syncing || call.unsaved || call.voice.state.phase === 'starting'}
-            onSend={call.active ? (text) => void call.voice.sendText(text) : undefined}
             status={
-              <>
-                <VoiceStatus
-                  voice={call.voice}
-                  syncing={call.syncing}
-                  error={call.error}
-                  onEnd={() => void call.end()}
-                  onRetry={() => void call.retry()}
-                />
-                {attachments.error && (
-                  <p className="sky-chat-file-error" role="alert">
-                    {attachments.error}
-                  </p>
-                )}
-              </>
+              attachments.error && (
+                <p className="sky-chat-file-error" role="alert">
+                  {attachments.error}
+                </p>
+              )
             }
+            sendDisabled={voiceMode || call.preparing || call.syncing || call.unsaved}
             trailingAction={
               <VoiceButton
                 active={call.active}
@@ -1854,7 +1865,7 @@ export function ChatMain({
             }
           />
         </div>
-        {panel && (
+        {panel && !voiceMode && (
           <ContextPanel
             id={state.id}
             version={state.contextVersion}
