@@ -1,9 +1,9 @@
+import { contactEmails } from '#lib/calendarScheduler/people.ts'
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { FAMILIAR_NAME_THRESHOLD } from '../../scoring/familiarity.ts'
 import type { PersonScore } from '../../scoring/ScoringStore.ts'
-import { contactEmails } from '../meetings/people.ts'
 
 interface AttendeeName {
   full: string

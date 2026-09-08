@@ -1,7 +1,12 @@
 import type { Page } from 'playwright'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
+import {
+  type CalendarMeeting,
+  finishCalendarInvitation,
+  savedMeetingMatches,
+  zoomMeetingUrl,
+} from '#lib/google/createCalendarMeeting.ts'
 import { assert, test } from '#test'
-import { type CalendarMeeting, finishCalendarInvitation, savedMeetingMatches, zoomMeetingUrl } from './createMeeting.ts'
 
 const URL = 'https://zoom.us/j/12345678901?pwd=example'
 const MEETING: CalendarMeeting = {

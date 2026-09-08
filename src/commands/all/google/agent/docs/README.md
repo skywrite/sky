@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -45,11 +45,11 @@ Changing any constant means re-checking the ordering:
 
 | Bound | Where | Converts |
 |---|---|---|
-| 60s launch (`LAUNCH_TIMEOUT_MS`) | `lib/browserSession.ts` | a wedged Chromium launch → kill-and-retry (takeover), then a flow error |
+| 60s launch (`LAUNCH_TIMEOUT_MS`) | `#lib/google/browserSession.ts` | a wedged Chromium launch → kill-and-retry (takeover), then a flow error |
 | 90s stream idle × 3 (`STREAM_IDLE_MS`) | `#shared/ai/llm/anthropicProvider.ts` → `idleGuardFetch.ts` | a wedged model request → invisible in-place retry (pre-response) or a fast stream error (mid-body) |
-| 90s warm-browser idle (`WARM_IDLE_MS`) | `lib/browserSession.ts` | a parked browser → closed, cross-process lock released |
-| 120s lock wait | `lib/profileLock.ts` | another process's turn → `ProfileLockBusyError`, not a silent queue |
-| 150s flow deadline (`FLOW_DEADLINE_MS`) | `lib/browserSession.ts` | a wedged page operation → browser closed under it, queue advances |
+| 90s warm-browser idle (`WARM_IDLE_MS`) | `#lib/google/browserSession.ts` | a parked browser → closed, cross-process lock released |
+| 120s lock wait | `#lib/google/profileLock.ts` | another process's turn → `ProfileLockBusyError`, not a silent queue |
+| 150s flow deadline (`FLOW_DEADLINE_MS`) | `#lib/google/browserSession.ts` | a wedged page operation → browser closed under it, queue advances |
 | 180s tool timer (`TOOL_TIMEOUT_MS`) | `lib/tools.ts` | any hung tool → an error string the agent routes around |
 | 360s stream watchdog (`STREAM_STALL_MS`) | `mod.ts` | a truly dead stream → mission aborted with a files-touched report |
 

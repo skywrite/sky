@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # google — Workspace commands
@@ -21,8 +21,11 @@ The group's root commands, and where the depth lives:
 - `google:email:*` (Gmail) and `google:calendar:*` have their own trees;
   Gmail's docs live in [`email/docs/`](../email/docs/README.md).
 - The web [meeting composer](../../../../service/handler/meetings/docs/README.md)
-  uses `calendar/lib/createMeeting.ts` to create a reviewed Zoom invitation
+  uses `#lib/google/createCalendarMeeting.ts` to create a reviewed Zoom invitation
   through the existing Calendar add-on and shared Google browser session.
+- [CalendarScheduler](../../../../lib/calendarScheduler/docs/README.md) also edits
+  and reschedules existing events through `calendar:update`, using shared provider
+  reads and `#lib/google/updateCalendarEvent.ts` for the browser update.
 
 Shared plumbing sits in `lib/` (account resolution, cross-account file
 probing, the shared read path) on top of the API client in `#lib/google`.

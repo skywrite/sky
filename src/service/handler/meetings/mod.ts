@@ -1,13 +1,12 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { calendarInstant, instantNow } from '#universal/dates/nbdt/mod.ts'
-import { MeetingJobs } from './jobs.ts'
-import type { MeetingsHost } from './types.ts'
-import { meetingInterval, meetingTimingSchema, validateMeeting } from './validation.ts'
+import { CalendarScheduler } from '#lib/calendarScheduler/CalendarScheduler.ts'
+import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import { hold } from '../../activity.ts'
 
-export function createMeetingRoutes(host: MeetingsHost): Hono {
+export function createMeetingRoutes(host: CalendarSchedulerHost): Hono {
   const app = new Hono()
-  const jobs = new MeetingJobs(host)
+  const scheduler = new CalendarScheduler(host, { hold: () => hold('saving a calendar event') })
 
   app.use('*', async (c, next) => {
     if (c.req.method === 'POST') {
@@ -27,35 +26,31 @@ export function createMeetingRoutes(host: MeetingsHost): Hono {
     ),
   )
 
-  app.get('/setup', async (c) => c.json(await host.setup()))
-  app.get('/people', async (c) => c.json(await host.people((c.req.query('q') ?? '').slice(0, 200))))
-  app.post('/parse', async (c) => {
-    const { query, timezone } = z
-      .object({ query: z.string().trim().min(1).max(4000), timezone: z.string().min(1).max(100) })
+  app.get('/setup', async (c) => c.json(await scheduler.setup()))
+  app.get('/people', async (c) => c.json(await scheduler.people(c.req.query('q') ?? '')))
+  app.post('/parse', async (c) => c.json(await scheduler.parse(await c.req.json(), c.req.raw.signal)))
+  app.post('/preview', async (c) => c.json(await scheduler.preview(await c.req.json())))
+  app.post('/prepare', async (c) => c.json(await scheduler.prepare(await c.req.json(), c.req.raw.signal)))
+  app.post('/review', async (c) => c.json(await scheduler.review(await c.req.json())))
+  app.post('/updates/prepare', async (c) => c.json(await scheduler.prepareUpdate(await c.req.json(), c.req.raw.signal)))
+  app.post('/updates/review', async (c) => c.json(await scheduler.reviewUpdate(await c.req.json())))
+  app.post('/update', async (c) => {
+    const { draftId } = z
+      .object({ draftId: z.uuid() })
+      .strict()
       .parse(await c.req.json())
-    return c.json(await host.parse(query, timezone, c.req.raw.signal))
+    return c.json(await scheduler.update(draftId), 202)
   })
-  app.post('/preview', async (c) => {
-    const timing = meetingTimingSchema.parse(await c.req.json())
-    meetingInterval(timing)
-    return c.json(await host.availability(timing))
-  })
-  app.post('/create', async (c) => {
-    const body = z
-      .object({ id: z.uuid(), fields: z.unknown(), reviewKey: z.string().regex(/^[a-f0-9]{64}$/) })
+  app.post('/create', async (c) => c.json(await scheduler.create(await c.req.json()), 202))
+  app.post('/send', async (c) => {
+    const { draftId } = z
+      .object({ draftId: z.uuid() })
+      .strict()
       .parse(await c.req.json())
-    const fields = validateMeeting(body.fields)
-    // A retry of an existing request only retrieves its result, even if its time has since passed.
-    if (!(await jobs.get(body.id))) {
-      if (meetingInterval(fields).startMilliseconds <= calendarInstant(instantNow()))
-        throw new Error('Choose a future meeting time.')
-      const setup = await host.setup()
-      if (!setup.accounts.includes(fields.account)) throw new Error('Choose a connected Google account.')
-    }
-    return c.json(await jobs.start(body.id, fields, body.reviewKey), 202)
+    return c.json(await scheduler.send(draftId), 202)
   })
   app.get('/jobs/:id', async (c) => {
-    const job = await jobs.get(c.req.param('id'))
+    const job = await scheduler.get(c.req.param('id'))
     return job ? c.json(job) : c.json({ message: 'Meeting request not found.' }, 404)
   })
   return app

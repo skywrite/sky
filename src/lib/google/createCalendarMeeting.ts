@@ -1,8 +1,9 @@
 import type { Page } from 'playwright'
+import type { CreatedCalendarEvent } from '#lib/calendarScheduler/types.ts'
+import { withGoogleBrowser } from '#lib/google/browserSession.ts'
 import { listEvents, type CalendarEvent } from '#lib/google/calendar.ts'
 import type { GoogleClient } from '#lib/google/client.ts'
 import { calendarInstant, calendarNow, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { withGoogleBrowser } from '../../lib/browserSession.ts'
 
 export interface CalendarMeeting {
   title: string
@@ -84,7 +85,7 @@ async function selectCalendar(page: Page, meeting: CalendarMeeting): Promise<voi
   await page.getByRole('combobox', { name: 'Calendar', exact: true }).evaluate((element) => element.blur())
 }
 
-function formDate(value: string): string {
+export function formDate(value: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const parts = /^(\w+) (\d{1,2}), (\d{4})$/.exec(value)
   const month = parts
@@ -93,7 +94,7 @@ function formDate(value: string): string {
   return month && parts ? `${parts[3]}-${String(month).padStart(2, '0')}-${parts[2]!.padStart(2, '0')}` : ''
 }
 
-function formTime(value: string): string {
+export function formTime(value: string): string {
   const parts = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(value.trim())
   if (!parts) return ''
   const hour = parts[3] ? (Number(parts[1]) % 12) + (parts[3].toLowerCase() === 'pm' ? 12 : 0) : Number(parts[1])
@@ -188,7 +189,7 @@ export async function finishCalendarInvitation(
   meeting: CalendarMeeting,
   zoomUrl: string,
   read: () => Promise<CalendarEvent[]>,
-): Promise<{ title: string; calendarUrl: string; zoomUrl: string }> {
+): Promise<CreatedCalendarEvent> {
   let sent = false
   let invitedOutside = false
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -205,7 +206,13 @@ export async function finishCalendarInvitation(
     // The editor can disappear before either confirmation arrives. Its disappearance alone is not a send.
     if (sent && !(await page.getByRole('textbox', { name: 'Title', exact: true }).isVisible())) {
       const saved = (await read()).find((event) => savedMeetingMatches(event, meeting, zoomUrl))
-      if (saved?.htmlLink) return { title: saved.title, calendarUrl: saved.htmlLink, zoomUrl: saved.conferenceUrl! }
+      if (saved?.htmlLink)
+        return {
+          title: saved.title,
+          calendarUrl: saved.htmlLink,
+          zoomUrl: saved.conferenceUrl!,
+          event: { account: meeting.account, calendarId: meeting.calendarId, eventId: saved.id },
+        }
     }
     await page.waitForTimeout(500)
   }
@@ -216,7 +223,7 @@ export async function createCalendarZoomMeeting(
   client: GoogleClient,
   meeting: CalendarMeeting,
   hooks: { beforeSave: () => Promise<void>; saving: () => Promise<void> },
-): Promise<{ title: string; calendarUrl: string; zoomUrl: string }> {
+): Promise<CreatedCalendarEvent> {
   const day = new PlainDate(meeting.date)
   const read = () =>
     listEvents(client, {

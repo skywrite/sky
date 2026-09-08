@@ -67,64 +67,39 @@ Its shared header, spacing, action roles and footer follow the
 
 ## Service boundary
 
-`MeetingsHost` in `types.ts` supplies account setup, contact search, model
-parsing, availability, and creation. `createMeetingsHost.ts` wires it to the
-notebook, keychain and Google APIs. Route tests replace that host entirely.
+The shared [CalendarScheduler](../../../../lib/calendarScheduler/docs/README.md)
+owns interpretation, validation, availability and invitation jobs. This directory
+owns the composer routes and service wiring. `createMeetingsHost.ts` supplies the
+live notebook contact index and interaction scores to the shared Google provider;
+`mod.ts` supplies the service activity hold while an invitation is being created.
 
-| Route under `/meetings/_api` | Behavior |
+The same route instance is mounted at `/calendar/_api` and `/meetings/_api`.
+The command uses the calendar path; the existing composer keeps the meeting path.
+Both see the same jobs, including invitations started before the extraction.
+
+| Route under either API prefix | Behavior |
 | --- | --- |
 | `GET /setup` | Civil date, zone, accounts with calendar access |
 | `GET /people?q=...` | Matching contacts ranked with the shared interaction scores, with explicit emails |
-| `POST /parse` | Free text → a draft; no event or conference created |
+| `POST /parse` | Free text → editable draft; no event or conference created |
 | `POST /preview` | Timing → day, conflicts, alternatives and a review key |
-| `POST /create` | Validated fields + review key + unique request ID → job |
-| `GET /jobs/:id` | Creating, created, failed, or uncertain |
+| `POST /prepare` | Natural-language request + optional account/zone → questions or a persistent draft ID |
+| `POST /review` | Explicitly resolved fields → validation, fresh availability and a persistent draft ID |
+| `POST /updates/prepare` | Natural-language edit + optional exact event reference → candidates, questions or an update draft |
+| `POST /updates/review` | Event reference + reviewed version + exact fields → fresh availability and an update draft |
+| `POST /update` | Prepared update draft ID → update job; no new event is created |
+| `POST /create` | Validated composer fields + review key + unique request ID → job |
+| `POST /send` | Prepared draft ID → job for those exact saved fields |
+| `GET /jobs/:id` | Creating/created or updating/updated, failed, or uncertain |
 
-Dates and elapsed-time arithmetic live in nbdt's `calendar.ts`. It uses
-Temporal internally to preserve explicit provider offsets and to reject
-missing or repeated daylight-saving hours. A duration is elapsed minutes,
-including when the end crosses a clock change. Meeting hours stay 00–23.
-
-## Google Calendar and Zoom
-
-`commands/all/google/calendar/lib/createMeeting.ts` drives the existing
-Google Calendar Zoom add-on through Sky's dedicated Google browser profile.
-It does not require another Zoom app or new Google Calendar write scopes.
-The Google account must be signed in to that profile (`sky google:browser`)
-and have the Zoom for Google Workspace add-on connected. Mobile uses the
-same server-side browser; the computer running Sky must be available.
-
-The adapter chooses the primary calendar by ID, checks the signed-in
-account, selects Zoom before adding guests, and verifies the guest emails,
-title, date and times before Save. Selecting Zoom before guests avoids a
-race with Google's automatic conferencing. The template's `ctz` supplies
-the explicit event zone. After Save, it handles Google's invitation and
-external-guest prompts and reads the event back through the Calendar API,
-matching timing, guests and conference ID before reporting success.
-
-Zoom inherits the add-on's account settings. The meeting-ID preference must
-be set to generate IDs automatically. The adapter also rejects a conference
-ID already present in the organizer's recent calendar or between now and
-the requested day. This is a reuse check, not a lookup of the account's PMI.
-If the browser signs out or Google's controls change, creation fails with
-the draft retained. There is no fallback to Meet or a saved Zoom room link.
-
-## A send cannot be replayed
-
-`jobs.ts` persists each request under `<userDataDir>/meetings/<id>.json`.
-Exclusive, atomic initial writes make a duplicate POST retrieve the same
-job. State changes are atomic. A `saving` record is persisted before the
-first Save click; a crash or unconfirmed result after that becomes
-**uncertain**, never an automatic retry. The client remembers the pending
-ID in session storage and resumes checking it after a reload. A service
-activity hold prevents a normal source reload during creation.
-
-Create requests require JSON and reject cross-origin browser requests.
-The server revalidates email addresses, times and the chosen Google account,
-deduplicates guests, and rechecks availability immediately before Save.
-No real guest address or conference link belongs in fixtures or documentation.
+The client remembers its pending ID in session storage and resumes checking it
+after a reload. JSON and same-origin checks live at the HTTP boundary. Persistence,
+retry rules and Google/Zoom integration live in the shared scheduler documentation.
 
 ## Notes
+
+- [2026-09-07 — Updating the existing event](../../../../lib/calendarScheduler/docs/2026-09-07-updating-the-existing-event.md)
+- [2026-09-07 — Calendar scheduling has a shared API and command](../../../../lib/calendarScheduler/docs/2026-09-07-a-scheduler-outside-the-handler.md)
 
 - [2026-09-06 — Live interpretation preserves the review](2026-09-06-live-meeting-drafts.md)
 - [2026-09-06 — A time without a day means today](2026-09-06-time-without-a-day.md)

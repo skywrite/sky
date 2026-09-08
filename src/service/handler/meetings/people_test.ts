@@ -1,8 +1,8 @@
+import { meetingPeople } from '#lib/calendarScheduler/people.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { INTERACTION_WEIGHTS, Store } from '../../store.ts'
-import { meetingPeople } from './people.ts'
 
 test('meeting people use the IntelliSense interaction scores, combining aliases once per contact', async () => {
   const notebook = await MarkdownStore.build({ peopleDirs: [], orgDirs: [] })

@@ -32,6 +32,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { DIR_USER_DATA } from '#config'
+import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import { beginEvent, logger } from '#shared/log.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -42,7 +43,6 @@ import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
-import type { MeetingsHost } from './handler/meetings/types.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
@@ -87,7 +87,7 @@ export interface ServerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
-  meetings?: MeetingsHost
+  meetings?: CalendarSchedulerHost
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions

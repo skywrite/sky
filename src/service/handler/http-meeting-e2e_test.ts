@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
+import type { CalendarDraft, CalendarFields } from '#lib/calendarScheduler/types.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
-import type { MeetingDraft, MeetingFields } from './meetings/types.ts'
 
 test(
   { name: 'meeting composer — review people and conflicts before sending, on desktop and mobile', timeout: 60000 },
@@ -12,7 +12,7 @@ test(
       t,
       { initialMarkdown: '# Test notebook\n', tempPrefix: 'sky-meeting-ui-', day: true },
       async ({ page, origin }) => {
-        const sent: MeetingFields[] = []
+        const sent: CalendarFields[] = []
         const jane = { id: 'jane', name: 'Jane Doe', hint: 'Atlas', emails: [] }
         const otherJane = { id: 'other-jane', name: 'Jane Smith', hint: 'Widget', emails: ['jane.smith@example.com'] }
         const taylor = { id: 'taylor', name: 'Taylor Morgan', hint: 'Atlas', emails: [] }
@@ -24,7 +24,7 @@ test(
         }
         const artifacts = env.get('SKY_MEETING_SCREENSHOTS')
         if (artifacts) await mkdir(artifacts, { recursive: true })
-        const fields: MeetingFields = {
+        const fields: CalendarFields = {
           title: 'Atlas review',
           date: '2030-05-03',
           time: '15:00',
@@ -63,7 +63,7 @@ test(
               },
             })
           if (url.pathname.endsWith('/preview')) {
-            const timing = route.request().postDataJSON() as MeetingFields
+            const timing = route.request().postDataJSON() as CalendarFields
             return route.fulfill({
               json: {
                 date: timing.date,
@@ -98,7 +98,7 @@ test(
             })
           }
           if (url.pathname.endsWith('/create')) {
-            sent.push(route.request().postDataJSON().fields as MeetingFields)
+            sent.push(route.request().postDataJSON().fields as CalendarFields)
             return route.fulfill({
               json: {
                 id: 'test-request',
@@ -282,7 +282,7 @@ test(
           hint: 'Atlas',
           emails: ['sam@example.com', 'sam.work@example.com'],
         }
-        const draft = (time: string, duration = 30): MeetingDraft => ({
+        const draft = (time: string, duration = 30): CalendarDraft => ({
           fields: {
             title: 'Meeting with Sam',
             date: '2030-05-03',
@@ -339,7 +339,7 @@ test(
             return route.fulfill({ json: draft(time) })
           }
           if (url.pathname.endsWith('/preview')) {
-            const timing = route.request().postDataJSON() as MeetingFields
+            const timing = route.request().postDataJSON() as CalendarFields
             return route.fulfill({
               json: {
                 date: timing.date,

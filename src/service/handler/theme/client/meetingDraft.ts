@@ -1,9 +1,9 @@
-import type { MeetingDraft, MeetingFields, MeetingInvitee } from '../../meetings/types.ts'
+import type { CalendarDraft, CalendarFields, CalendarInvitee } from '#lib/calendarScheduler/types.ts'
 
 const editableFields = ['title', 'date', 'time', 'timezone', 'duration', 'description'] as const
 const normalized = (value: string) => value.trim().toLowerCase()
 
-function sameInvitee(a: MeetingInvitee, b: MeetingInvitee): boolean {
+function sameInvitee(a: CalendarInvitee, b: CalendarInvitee): boolean {
   if (normalized(a.query) === normalized(b.query)) return true
   return (
     !a.query.includes('@') &&
@@ -16,11 +16,11 @@ function sameInvitee(a: MeetingInvitee, b: MeetingInvitee): boolean {
 
 /** Merge new wording with the reviewed draft, using the previous AI result to recognize manual edits. */
 export function mergeMeetingDraft(
-  current: MeetingDraft | null,
-  previous: MeetingDraft | null,
-  next: MeetingDraft,
-  editedDuringRequest: ReadonlySet<keyof MeetingFields> = new Set(),
-): MeetingDraft {
+  current: CalendarDraft | null,
+  previous: CalendarDraft | null,
+  next: CalendarDraft,
+  editedDuringRequest: ReadonlySet<keyof CalendarFields> = new Set(),
+): CalendarDraft {
   if (!current) return next
   let fields = { ...next.fields, account: current.fields.account || next.fields.account }
   for (const key of editableFields) {

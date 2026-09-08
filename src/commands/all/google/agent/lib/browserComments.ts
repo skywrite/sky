@@ -1,5 +1,5 @@
 import type { Page } from 'playwright'
-import { openGooglePage, withGoogleBrowser } from '../../lib/browserSession.ts'
+import { openGooglePage, withGoogleBrowser } from '#lib/google/browserSession.ts'
 import { selectDocMatch } from './findBar.ts'
 
 // Real anchored comments, which the Drive API cannot create on editor files

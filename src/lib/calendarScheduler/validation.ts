@@ -1,6 +1,6 @@
 import { z } from 'zod'
+import type { CalendarFields, CalendarTiming } from '#lib/calendarScheduler/types.ts'
 import { calendarInterval, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { MeetingFields, MeetingTiming } from './types.ts'
 
 export const meetingTimingSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -19,7 +19,7 @@ export const meetingFieldsSchema = meetingTimingSchema.extend({
   description: z.string().max(8000),
 })
 
-export function meetingInterval(timing: MeetingTiming) {
+export function meetingInterval(timing: CalendarTiming) {
   meetingTimingSchema.parse(timing)
   new PlainDate(timing.date)
   try {
@@ -35,7 +35,7 @@ export function meetingInterval(timing: MeetingTiming) {
   }
 }
 
-export function validateMeeting(value: unknown): MeetingFields {
+export function validateMeeting(value: unknown): CalendarFields {
   const fields = meetingFieldsSchema.parse(value)
   meetingInterval(fields)
   fields.account = fields.account.toLowerCase()

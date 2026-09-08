@@ -18,6 +18,15 @@ export interface CalendarAttendee {
 
 export interface CalendarEvent {
   id: string
+  calendarId?: string
+  etag?: string
+  description?: string
+  timezone?: string
+  organizer?: { email?: string; self?: boolean }
+  recurringEventId?: string
+  recurrence?: string[]
+  attendeesOmitted?: boolean
+  resourceEmails?: string[]
   /** Provider-independent identity; survives the same event syncing into other calendars. */
   iCalUid?: string
   /** Email of the account whose calendar produced the event. */
@@ -45,6 +54,7 @@ export interface CalendarEvent {
 interface EventTimeWire {
   date?: string
   dateTime?: string
+  timeZone?: string
 }
 
 interface AttendeeWire {
@@ -57,6 +67,12 @@ interface AttendeeWire {
 
 interface EventWire {
   id?: string
+  etag?: string
+  description?: string
+  organizer?: { email?: string; self?: boolean }
+  recurringEventId?: string
+  recurrence?: string[]
+  attendeesOmitted?: boolean
   iCalUID?: string
   status?: string
   transparency?: string
@@ -87,7 +103,7 @@ function normalizeResponse(value?: string): CalendarAttendee['response'] {
   }
 }
 
-function normalizeEvent(wire: EventWire, account: string): CalendarEvent | null {
+function normalizeEvent(wire: EventWire, account: string, calendarId: string): CalendarEvent | null {
   const start = wire.start?.dateTime ?? wire.start?.date
   const end = wire.end?.dateTime ?? wire.end?.date
   if (!wire.id || !start || !end) return null
@@ -99,6 +115,15 @@ function normalizeEvent(wire: EventWire, account: string): CalendarEvent | null 
   const video = wire.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video' && e.uri)
   return {
     id: wire.id,
+    calendarId,
+    etag: wire.etag,
+    description: wire.description,
+    timezone: wire.start?.timeZone,
+    organizer: wire.organizer,
+    recurringEventId: wire.recurringEventId,
+    recurrence: wire.recurrence,
+    attendeesOmitted: wire.attendeesOmitted,
+    resourceEmails: (wire.attendees ?? []).flatMap((a) => (a.resource && a.email ? [a.email.toLowerCase()] : [])),
     iCalUid: wire.iCalUID,
     account,
     title: wire.summary ?? '',
@@ -125,7 +150,7 @@ function normalizeEvent(wire: EventWire, account: string): CalendarEvent | null 
  */
 export async function listEvents(
   client: GoogleClient,
-  options: { timeMin: string; timeMax: string; calendarId?: string; timeZone?: string },
+  options: { timeMin: string; timeMax: string; calendarId?: string; timeZone?: string; query?: string },
 ): Promise<CalendarEvent[]> {
   const calendarId = options.calendarId ?? 'primary'
   const events: CalendarEvent[] = []
@@ -138,15 +163,26 @@ export async function listEvents(
     url.searchParams.set('timeMax', options.timeMax)
     url.searchParams.set('maxResults', '250')
     if (options.timeZone) url.searchParams.set('timeZone', options.timeZone)
+    if (options.query) url.searchParams.set('q', options.query)
     if (pageToken) url.searchParams.set('pageToken', pageToken)
     const page = await client.getJson<EventsPageWire>(url.toString())
     for (const wire of page.items ?? []) {
-      const event = normalizeEvent(wire, client.email)
+      const event = normalizeEvent(wire, client.email, calendarId)
       if (event) events.push(event)
     }
     pageToken = page.nextPageToken
   } while (pageToken)
   return events
+}
+
+/** Read one exact event or recurring occurrence, including its current version. */
+export async function getEvent(client: GoogleClient, calendarId: string, eventId: string): Promise<CalendarEvent> {
+  const wire = await client.getJson<EventWire>(
+    `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+  )
+  const event = normalizeEvent(wire, client.email, calendarId)
+  if (!event || event.status === 'cancelled') throw new Error('This calendar event no longer exists.')
+  return event
 }
 
 /**

@@ -5,8 +5,8 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import type { BrowserContext, Page } from 'playwright'
+import { acquireProfileLock, isProcessAlive } from '#lib/google/profileLock.ts'
 import { exists } from '#shared/fs/mod.ts'
-import { acquireProfileLock, isProcessAlive } from './profileLock.ts'
 
 // A dedicated persistent browser profile for Google UI automation. Google
 // blocks CDP attachment to a browser's default profile (Chromium 136+), so

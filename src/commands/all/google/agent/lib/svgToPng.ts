@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
+import { CHROMIUM_PATHS } from '#lib/google/browserSession.ts'
 import { exists, makeTempDir } from '#shared/fs/mod.ts'
-import { CHROMIUM_PATHS } from '../../lib/browserSession.ts'
 
 // Rasterizes agent-authored SVG into PNG background art using whatever the
 // machine already has — no bundled renderer. Fidelity order: librsvg is fast

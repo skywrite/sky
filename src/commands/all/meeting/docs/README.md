@@ -1,9 +1,12 @@
 ---
 created: 2026-09-03
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # meeting:new — the action items
+
+Calendar invitations use [`calendar:schedule`](../../../../lib/calendarScheduler/docs/README.md).
+This command creates notebook meeting documents.
 
 `meeting:new` files a meeting from a transcript, a voice memo, or a text
 file (the pipeline itself is `commands/all/audio/transcript/docs/README.md`).

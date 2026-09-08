@@ -1,17 +1,17 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { availabilityOf } from '#lib/calendarScheduler/availability.ts'
+import { CalendarJobs } from '#lib/calendarScheduler/jobs.ts'
+import { reviewMeetingDate } from '#lib/calendarScheduler/parse.ts'
+import { contactEmails, resolveInvitee } from '#lib/calendarScheduler/people.ts'
+import type { CalendarFields, CalendarJob, CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
 import { assert, test } from '#test'
 import { calendarInterval, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { availabilityOf } from './availability.ts'
-import { MeetingJobs } from './jobs.ts'
 import { createMeetingRoutes } from './mod.ts'
-import { reviewMeetingDate } from './parse.ts'
-import { contactEmails, resolveInvitee } from './people.ts'
-import type { MeetingFields, MeetingJob, MeetingsHost } from './types.ts'
 
-const FIELDS: MeetingFields = {
+const FIELDS: CalendarFields = {
   title: 'Atlas review',
   date: '2030-05-03',
   time: '15:00',
@@ -160,7 +160,7 @@ test('invitees resolve only explicit contact email addresses and leave ambiguous
   })
 })
 
-async function fixture(run: (host: MeetingsHost) => Promise<void>) {
+async function fixture(run: (host: CalendarSchedulerHost) => Promise<void>) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-meeting-jobs-'))
   try {
     await run({
@@ -180,7 +180,7 @@ async function fixture(run: (host: MeetingsHost) => Promise<void>) {
   }
 }
 
-async function finished(jobs: MeetingJobs, id: string): Promise<MeetingJob> {
+async function finished(jobs: CalendarJobs, id: string): Promise<CalendarJob> {
   for (let attempt = 0; attempt < 100; attempt++) {
     const job = await jobs.get(id)
     if (job && job.state !== 'creating') return job
@@ -197,11 +197,11 @@ test('a repeated meeting request sends once, survives a restart, and cannot acqu
       sends++
       return create(...args)
     }
-    const jobs = new MeetingJobs(host)
+    const jobs = new CalendarJobs(host)
     const id = crypto.randomUUID()
     await Promise.all([jobs.start(id, FIELDS, EMPTY.reviewKey), jobs.start(id, FIELDS, EMPTY.reviewKey)])
     const final = await finished(jobs, id)
-    const restarted = new MeetingJobs(host)
+    const restarted = new CalendarJobs(host)
     await restarted.start(id, FIELDS, EMPTY.reviewKey)
     let refused = false
     try {
@@ -220,7 +220,7 @@ test('a repeated meeting request sends once, survives a restart, and cannot acqu
 test('calendar changes before Save stop creation; a failure after Save cannot resend', async () =>
   fixture(async (host) => {
     let sends = 0
-    const jobs = new MeetingJobs(host)
+    const jobs = new CalendarJobs(host)
     host.availability = async () => ({ ...EMPTY, reviewKey: 'changed' })
     host.create = async () => {
       sends++
@@ -243,7 +243,7 @@ test('calendar changes before Save stop creation; a failure after Save cannot re
     const uncertain = crypto.randomUUID()
     await jobs.start(uncertain, FIELDS, EMPTY.reviewKey)
     const final = await finished(jobs, uncertain)
-    const restarted = new MeetingJobs(host)
+    const restarted = new CalendarJobs(host)
     await restarted.start(uncertain, FIELDS, EMPTY.reviewKey)
     assert({
       given: 'an unconfirmed save followed by a retry after restart',

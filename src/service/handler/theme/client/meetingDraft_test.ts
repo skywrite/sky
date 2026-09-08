@@ -1,18 +1,18 @@
+import type { CalendarDraft, CalendarInvitee } from '#lib/calendarScheduler/types.ts'
 import { assert, test } from '#test'
-import type { MeetingDraft, MeetingInvitee } from '../../meetings/types.ts'
 import { mergeMeetingDraft } from './meetingDraft.ts'
 
-const sam: MeetingInvitee = {
+const sam: CalendarInvitee = {
   query: 'Sam',
   candidates: [{ id: 'sam', name: 'Sam Rivera', hint: '', emails: ['sam@example.com', 'sam.work@example.com'] }],
   selected: null,
 }
-const jane: MeetingInvitee = {
+const jane: CalendarInvitee = {
   query: 'Jane Doe',
   candidates: [],
   selected: { name: 'Jane Doe', email: 'jane@example.com' },
 }
-const initial: MeetingDraft = {
+const initial: CalendarDraft = {
   fields: {
     title: 'Meeting with Sam',
     date: '2030-05-03',
@@ -30,7 +30,7 @@ const initial: MeetingDraft = {
 }
 
 test('live meeting drafts preserve reviewed emails, manual guests and removals while wording evolves', () => {
-  const extra: MeetingInvitee = {
+  const extra: CalendarInvitee = {
     query: 'extra@example.com',
     candidates: [],
     selected: { name: 'extra@example.com', email: 'extra@example.com' },

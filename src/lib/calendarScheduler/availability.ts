@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
+import type { CalendarAvailability, CalendarDayEvent, CalendarTiming } from '#lib/calendarScheduler/types.ts'
+import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
 import { calendarInstant, calendarInterval, instantNow, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { MeetingAvailability, MeetingDayEvent, MeetingTiming } from './types.ts'
-import { meetingInterval } from './validation.ts'
+import type { CalendarEventSnapshot } from './updateTypes.ts'
 
 export interface CalendarSourceEvents {
   label: string
@@ -11,21 +12,33 @@ export interface CalendarSourceEvents {
 
 /** Overlap is half-open: one meeting can start exactly when another ends. */
 export function availabilityOf(
-  timing: MeetingTiming,
+  timing: CalendarTiming,
   sources: CalendarSourceEvents[],
   warnings: string[],
   now: string = instantNow(),
-): MeetingAvailability {
+  exclude?: CalendarEventSnapshot,
+): CalendarAvailability {
   const requested = meetingInterval(timing)
   const day = new PlainDate(timing.date)
   const midnight = (date: string) =>
     calendarInterval(new PlainDateTime({ date, time: '00:00' }), timing.timezone, 1).startMilliseconds
   const dayStart = midnight(day.ymd)
   const dayEnd = midnight(day.addDays(1).ymd)
-  const byId = new Map<string, { row: MeetingDayEvent; from: number; to: number }>()
+  const byId = new Map<string, { row: CalendarDayEvent; from: number; to: number }>()
   for (const source of sources) {
     for (const event of source.events) {
       if (event.status === 'cancelled' || event.selfResponse === 'declined') continue
+      if (
+        exclude &&
+        ((event.id === exclude.ref.eventId &&
+          event.account === exclude.ref.account &&
+          event.calendarId === exclude.ref.calendarId) ||
+          (event.iCalUid &&
+            event.iCalUid === exclude.iCalUid &&
+            !event.allDay &&
+            calendarInstant(event.start) === calendarInstant(exclude.start)))
+      )
+        continue
       const from = event.allDay ? midnight(event.start) : calendarInstant(event.start)
       const to = event.allDay ? midnight(event.end) : calendarInstant(event.end)
       if (to <= dayStart || from >= Math.max(dayEnd, requested.endMilliseconds)) continue

@@ -9,6 +9,7 @@ import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -38,7 +39,6 @@ import {
   isPathWithinRoots,
 } from './markdown-preview/mod.ts'
 import { createMeetingRoutes } from './meetings/mod.ts'
-import type { MeetingsHost } from './meetings/types.ts'
 import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
@@ -78,7 +78,7 @@ export interface HttpHandlerOptions {
   settings?: SettingsRoutesOptions
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
-  meetings?: MeetingsHost
+  meetings?: CalendarSchedulerHost
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
@@ -177,7 +177,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (clock) {
     app.route('/clock/_api', createClockRoutes(clock))
   }
-  if (options.meetings) app.route('/meetings/_api', createMeetingRoutes(options.meetings))
+  if (options.meetings) {
+    const calendar = createMeetingRoutes(options.meetings)
+    app.route('/calendar/_api', calendar)
+    app.route('/meetings/_api', calendar)
+  }
 
   // The automations page's data: the status report. The page itself is /automations, below.
   if (automations) {

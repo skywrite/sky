@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Loader, TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
-import type { MeetingInvitee, MeetingPerson } from '../../meetings/types.ts'
+import type { CalendarInvitee, CalendarContact } from '#lib/calendarScheduler/types.ts'
 
 const isEmail = (value: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)
 
@@ -8,8 +8,8 @@ function Candidates({
   people,
   choose,
 }: {
-  people: MeetingPerson[]
-  choose: (person: MeetingPerson, email: string) => void
+  people: CalendarContact[]
+  choose: (person: CalendarContact, email: string) => void
 }) {
   return (
     <div className="sky-meeting-candidates">
@@ -62,7 +62,7 @@ function Candidates({
   )
 }
 
-function Unresolved({ invitee, onChange }: { invitee: MeetingInvitee; onChange: (invitee: MeetingInvitee) => void }) {
+function Unresolved({ invitee, onChange }: { invitee: CalendarInvitee; onChange: (invitee: CalendarInvitee) => void }) {
   const [email, setEmail] = useState('')
   const emailInput = useRef<HTMLInputElement>(null)
   const person = invitee.candidates.find((candidate) => candidate.id === invitee.personId)
@@ -138,11 +138,11 @@ export function MeetingGuests({
   value,
   onChange,
 }: {
-  value: MeetingInvitee[]
-  onChange: (value: MeetingInvitee[]) => void
+  value: CalendarInvitee[]
+  onChange: (value: CalendarInvitee[]) => void
 }) {
   const [query, setQuery] = useState('')
-  const [people, setPeople] = useState<MeetingPerson[]>([])
+  const [people, setPeople] = useState<CalendarContact[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -158,7 +158,7 @@ export function MeetingGuests({
       fetch(`/meetings/_api/people?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal })
         .then(async (response) => {
           if (!response.ok) throw new Error('Contact search is unavailable. You can enter an email address.')
-          const result = (await response.json()) as MeetingPerson[]
+          const result = (await response.json()) as CalendarContact[]
           if (!controller.signal.aborted) setPeople(result)
         })
         .catch((failure: unknown) => {
@@ -175,7 +175,7 @@ export function MeetingGuests({
     }
   }, [query])
 
-  const add = (items: MeetingInvitee[]) => {
+  const add = (items: CalendarInvitee[]) => {
     const existing = new Set(value.flatMap((item) => (item.selected ? [item.selected.email.toLowerCase()] : [])))
     const fresh = items.filter((item) => {
       const email = item.selected?.email.toLowerCase()

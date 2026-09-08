@@ -1,4 +1,4 @@
-import { openGooglePage, withGoogleBrowser } from '../../lib/browserSession.ts'
+import { openGooglePage, withGoogleBrowser } from '#lib/google/browserSession.ts'
 import { docsCommentUrl } from './browserComments.ts'
 import { selectDocMatch } from './findBar.ts'
 

@@ -5,12 +5,15 @@
  */
 
 import * as path from 'node:path'
+import { matchScore, normalizeMatchText as plain } from '#lib/string/matchScore.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import openProjectNames from '#shared/nbfs/openProjectNames.ts'
 import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import type { OrgScore, PersonScore, TagScore } from '../../scoring/ScoringStore.ts'
 import { toNotebookRelativePath } from '../markdown-preview/request.ts'
+
+export { matchScore } from '#lib/string/matchScore.ts'
 
 export type EntityType = 'person' | 'org' | 'project' | 'place' | 'library' | 'day'
 export type CompletionKind = 'people' | 'orgs' | 'projects' | 'places' | 'library' | 'rel' | 'tags' | 'values' | 'keys'
@@ -303,31 +306,6 @@ export async function vocabularyOf(store: MarkdownStore, base: string): Promise<
     cache.set(store, cached)
   }
   return { ...cached, entities: [...cached.entities, ...(await openProjects(store, base))] }
-}
-
-/**
- * How well a candidate answers a query: 0 exact, 1 prefix, 2 a word's prefix, 3 substring,
- * 4 the letters in order; null when it does not match. An empty query matches everything.
- */
-export function matchScore(query: string, candidate: string): number | null {
-  const q = plain(query)
-  if (q.length === 0) return 3
-  const c = plain(candidate)
-  if (c === q) return 0
-  if (c.startsWith(q)) return 1
-  if (c.split(/[\s\-_/.,()]+/).some((word) => word.startsWith(q))) return 2
-  if (c.includes(q)) return 3
-  let i = 0
-  for (const ch of c) if (ch === q[i]) i++
-  return i === q.length ? 4 : null
-}
-
-/** Lowercased, with dashes, underscores and runs of spaces read as one space — so "weekly sync" finds Weekly-Sync. */
-function plain(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[\s\-_]+/g, ' ')
 }
 
 function best(query: string, candidates: string[]): number | null {

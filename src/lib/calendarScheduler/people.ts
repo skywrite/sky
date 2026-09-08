@@ -1,8 +1,7 @@
+import type { CalendarInvitee, CalendarContact } from '#lib/calendarScheduler/types.ts'
+import { matchScore } from '#lib/string/matchScore.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
-import type { PersonScore } from '../../scoring/mod.ts'
-import { matchScore } from '../vocabulary/mod.ts'
-import type { MeetingInvitee, MeetingPerson } from './types.ts'
 
 const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/
 
@@ -20,12 +19,12 @@ export function contactEmails(raw: unknown): string[] {
 export function meetingPeople(
   store: MarkdownStore | null,
   query: string,
-  interactionScores: readonly Pick<PersonScore, 'name' | 'score'>[],
-): MeetingPerson[] {
+  interactionScores: readonly { name: string; score: number }[],
+): CalendarContact[] {
   if (!store || !query.trim()) return []
   // Store.getPeopleWithScores already combines interactions across a profile's aliases.
   const scoresByName = new Map(interactionScores.map((person) => [normalizeName(person.name), person.score]))
-  const matches: Array<MeetingPerson & { match: number; score: number }> = []
+  const matches: Array<CalendarContact & { match: number; score: number }> = []
   for (const { doc, path } of store.people.getAll()) {
     const names = [...doc.names, ...(doc.alt ? [doc.alt] : [])]
     const emails = contactEmails(doc.yaml['email'])
@@ -51,7 +50,7 @@ export function meetingPeople(
     .map(({ score: _, match: __, ...person }) => person)
 }
 
-export function resolveInvitee(query: string, candidates: MeetingPerson[]): MeetingInvitee {
+export function resolveInvitee(query: string, candidates: CalendarContact[]): CalendarInvitee {
   if (EMAIL.test(query)) {
     const email = query.toLowerCase()
     const match = candidates.find((person) => person.emails.includes(email))

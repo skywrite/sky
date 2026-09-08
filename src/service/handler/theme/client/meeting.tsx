@@ -1,15 +1,15 @@
 import { Alert, Button, Loader, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useEffect, useRef, useState } from 'react'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type {
-  MeetingAvailability,
-  MeetingDraft,
-  MeetingFields,
-  MeetingGuest,
-  MeetingJob,
-  MeetingSetup,
-} from '../../meetings/types.ts'
+  CalendarAvailability,
+  CalendarDraft,
+  CalendarFields,
+  CalendarGuest,
+  CalendarJob,
+  CalendarSetup,
+} from '#lib/calendarScheduler/types.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { mergeMeetingDraft } from './meetingDraft.ts'
 import { MeetingGuests } from './meetingGuests.tsx'
 import './meeting.css'
@@ -88,7 +88,7 @@ function DaySchedule({
   time,
   onTime,
 }: {
-  available: MeetingAvailability | null
+  available: CalendarAvailability | null
   busy: boolean
   error: string
   time: string
@@ -171,26 +171,26 @@ function DaySchedule({
 
 export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const phone = useMediaQuery('(max-width: 900px)') ?? false
-  const [setup, setSetup] = useState<MeetingSetup | null>(null)
+  const [setup, setSetup] = useState<CalendarSetup | null>(null)
   const [query, setQuery] = useState('')
   const [parsedQuery, setParsedQuery] = useState('')
-  const [draft, setDraft] = useState<MeetingDraft | null>(null)
+  const [draft, setDraft] = useState<CalendarDraft | null>(null)
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
   const [parseAttempt, setParseAttempt] = useState(0)
   const [error, setError] = useState('')
-  const [available, setAvailable] = useState<MeetingAvailability | null>(null)
+  const [available, setAvailable] = useState<CalendarAvailability | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState('')
   const [refresh, setRefresh] = useState(0)
-  const [job, setJob] = useState<MeetingJob | null>(null)
+  const [job, setJob] = useState<CalendarJob | null>(null)
   const [sending, setSending] = useState(false)
-  const [sentFields, setSentFields] = useState<MeetingFields | null>(null)
+  const [sentFields, setSentFields] = useState<CalendarFields | null>(null)
   const [copied, setCopied] = useState(false)
   const parseRequest = useRef<AbortController | null>(null)
   const parseSequence = useRef(0)
-  const lastInference = useRef<{ query: string; draft: MeetingDraft } | null>(null)
-  const fieldEdits = useRef<Partial<Record<keyof MeetingFields, number>>>({})
+  const lastInference = useRef<{ query: string; draft: CalendarDraft } | null>(null)
+  const fieldEdits = useRef<Partial<Record<keyof CalendarFields, number>>>({})
   const parseImmediately = useRef(false)
   const submitting = useRef(false)
   const fields = draft?.fields
@@ -232,13 +232,13 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     const editsAtStart = { ...fieldEdits.current }
     const timer = setTimeout(() => {
       setParsing(true)
-      void request<MeetingDraft>('parse', { query: text, timezone: parseContext.current.timezone }, controller.signal)
+      void request<CalendarDraft>('parse', { query: text, timezone: parseContext.current.timezone }, controller.signal)
         .then((next) => {
           if (controller.signal.aborted || sequence !== parseSequence.current) return
           next.fields.account = parseContext.current.account
           const previous = lastInference.current?.draft ?? null
           const editedDuringRequest = new Set(
-            (Object.keys(fieldEdits.current) as Array<keyof MeetingFields>).filter(
+            (Object.keys(fieldEdits.current) as Array<keyof CalendarFields>).filter(
               (key) => fieldEdits.current[key] !== editsAtStart[key],
             ),
           )
@@ -263,7 +263,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
   useEffect(() => {
     if (!opened) return
     const controller = new AbortController()
-    request<MeetingSetup>('setup', undefined, controller.signal)
+    request<CalendarSetup>('setup', undefined, controller.signal)
       .then((data) => {
         setSetup(data)
         if (!data.accounts.length) setError('Connect a Google account with calendar access in Settings → Connections.')
@@ -275,7 +275,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     try {
       const stored = sessionStorage.getItem(PENDING_KEY)
       if (stored) {
-        const pending = JSON.parse(stored) as { id: string; fields: MeetingFields }
+        const pending = JSON.parse(stored) as { id: string; fields: CalendarFields }
         setSentFields(pending.fields)
         setJob({ id: pending.id, state: 'creating' })
       }
@@ -303,7 +303,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       setChecking(false)
       return
     }
-    const timing = JSON.parse(timingKey) as MeetingFields
+    const timing = JSON.parse(timingKey) as CalendarFields
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(timing.date) ||
       !/^([01]\d|2[0-3]):[0-5]\d$/.test(timing.time) ||
@@ -315,7 +315,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     const controller = new AbortController()
     setChecking(true)
     const timer = setTimeout(() => {
-      request<MeetingAvailability>('preview', timing, controller.signal)
+      request<CalendarAvailability>('preview', timing, controller.signal)
         .then((data) => {
           if (!controller.signal.aborted) setAvailable(data)
         })
@@ -347,7 +347,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       try {
-        const next = await request<MeetingJob>(`jobs/${encodeURIComponent(job.id)}`)
+        const next = await request<CalendarJob>(`jobs/${encodeURIComponent(job.id)}`)
         if (stopped) return
         setJob(next)
         setError('')
@@ -376,7 +376,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     }
   }, [job?.id, job?.state])
 
-  const change = <K extends keyof MeetingFields>(key: K, value: MeetingFields[K]) => {
+  const change = <K extends keyof CalendarFields>(key: K, value: CalendarFields[K]) => {
     fieldEdits.current[key] = (fieldEdits.current[key] ?? 0) + 1
     setDraft((current) =>
       current ? { ...current, assumptions: [], questions: [], fields: { ...current.fields, [key]: value } } : current,
@@ -389,7 +389,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
 
   const unresolved = draft?.invitees.filter((invitee) => !invitee.selected).length ?? 0
   const guests = [
-    ...new Map<string, MeetingGuest>(
+    ...new Map<string, CalendarGuest>(
       (draft?.invitees.flatMap((invitee) => (invitee.selected ? [invitee.selected] : [])) ?? []).map(
         (guest) => [guest.email.toLowerCase(), guest] as const,
       ),
@@ -422,7 +422,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       /* Server idempotency still covers this page. */
     }
     try {
-      setJob(await request<MeetingJob>('create', { id, fields: finalFields, reviewKey: available.reviewKey }))
+      setJob(await request<CalendarJob>('create', { id, fields: finalFields, reviewKey: available.reviewKey }))
     } catch (failure) {
       if (failure instanceof MeetingRequestError && [400, 403, 415].includes(failure.status)) {
         setError(failure.message)
@@ -433,7 +433,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       }
       // A lost POST response may follow a successful save. Query the same id before offering a retry.
       try {
-        setJob(await request<MeetingJob>(`jobs/${id}`))
+        setJob(await request<CalendarJob>(`jobs/${id}`))
       } catch {
         setError(failure instanceof Error ? failure.message : 'Could not start the meeting.')
         setJob({
@@ -551,7 +551,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                       const recoveredQuery = query || sentFields.title
                       setQuery(recoveredQuery)
                       setParsedQuery(recoveredQuery)
-                      const recovered: MeetingDraft = {
+                      const recovered: CalendarDraft = {
                         fields: sentFields,
                         invitees: sentFields.guests.map((guest) => ({
                           query: guest.name,

@@ -1,7 +1,7 @@
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
-import { GOOGLE_BROWSER_PROFILE_LOCK, GoogleBrowserError, launchGoogleBrowser } from './lib/browserSession.ts'
-import { ProfileLockBusyError, acquireProfileLock } from './lib/profileLock.ts'
+import { GOOGLE_BROWSER_PROFILE_LOCK, GoogleBrowserError, launchGoogleBrowser } from '#lib/google/browserSession.ts'
+import { ProfileLockBusyError, acquireProfileLock } from '#lib/google/profileLock.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {

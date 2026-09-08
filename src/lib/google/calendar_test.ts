@@ -1,6 +1,6 @@
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
-import { CALENDAR_READONLY_SCOPE, hasCalendarScope, listEvents, meetingDropReason } from './calendar.ts'
+import { CALENDAR_READONLY_SCOPE, getEvent, hasCalendarScope, listEvents, meetingDropReason } from './calendar.ts'
 import type { CalendarEvent } from './calendar.ts'
 import { GoogleClient } from './client.ts'
 import { saveAccountTokens } from './tokens.ts'
@@ -182,6 +182,62 @@ test('hasCalendarScope', () => {
     actual: [
       hasCalendarScope({ refreshToken: 'rt', scopes: ['https://www.googleapis.com/auth/drive'] }),
       hasCalendarScope({ refreshToken: 'rt', scopes: [CALENDAR_READONLY_SCOPE] }),
+    ],
+  })
+})
+
+test('getEvent reads an exact calendar occurrence and retains edit metadata and rooms', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, 'organizer@example.com', {
+    refreshToken: 'mock-refresh',
+    accessToken: 'mock-access',
+    scopes: [],
+  })
+  let requested = ''
+  const client = new GoogleClient({
+    secrets,
+    email: 'organizer@example.com',
+    client: { clientId: 'mock-client', clientSecret: 'mock-secret' },
+    fetchFn: (async (url: unknown) => {
+      requested = String(url)
+      return Response.json({
+        id: 'occurrence_20300503',
+        etag: '"version-one"',
+        summary: 'Atlas review',
+        description: 'Keep this agenda.',
+        organizer: { email: 'team@example.com', self: true },
+        recurringEventId: 'series',
+        start: { dateTime: '2030-05-03T15:00:00-04:00', timeZone: 'America/New_York' },
+        end: { dateTime: '2030-05-03T15:30:00-04:00' },
+        attendees: [{ email: 'jane@example.com' }, { email: 'room@example.com', resource: true }],
+      })
+    }) as typeof fetch,
+  })
+  const event = await getEvent(client, 'team@example.com', 'occurrence_20300503')
+  assert({
+    given: 'an event ID on a secondary calendar',
+    should: 'read that exact occurrence without losing version, zone, agenda, organizer or rooms',
+    actual: [
+      new URL(requested).pathname,
+      event.calendarId,
+      event.etag,
+      event.timezone,
+      event.description,
+      event.organizer,
+      event.recurringEventId,
+      event.resourceEmails,
+      event.attendees.map((guest) => guest.email),
+    ],
+    expected: [
+      '/calendar/v3/calendars/team%40example.com/events/occurrence_20300503',
+      'team@example.com',
+      '"version-one"',
+      'America/New_York',
+      'Keep this agenda.',
+      { email: 'team@example.com', self: true },
+      'series',
+      ['room@example.com'],
+      ['jane@example.com'],
     ],
   })
 })

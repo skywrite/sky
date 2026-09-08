@@ -2,8 +2,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
+import { ProfileLockBusyError, acquireProfileLock } from '#lib/google/profileLock.ts'
 import { assert, test } from '#test'
-import { ProfileLockBusyError, acquireProfileLock } from './profileLock.ts'
 
 // A pid that cannot exist: macOS caps pids at 99998, Linux at 4194304.
 const DEAD_PID = 4194305

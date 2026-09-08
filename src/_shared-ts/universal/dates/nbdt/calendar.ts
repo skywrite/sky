@@ -24,6 +24,15 @@ export function calendarInstant(value: string): number {
   return Temporal.Instant.from(value).epochMilliseconds
 }
 
+/** Render a provider instant on the civil clock in an explicit IANA zone. */
+export function calendarLocal(value: string, timezone: string): PlainDateTime {
+  const local = Temporal.Instant.from(value).toZonedDateTimeISO(timezone)
+  return new PlainDateTime({
+    date: local.toPlainDate().toString(),
+    time: local.toPlainTime().toString({ smallestUnit: 'minute' }),
+  })
+}
+
 /** Current civil time in an explicit zone, independent of the notebook's open day. */
 export function calendarNow(timezone: string): PlainDateTime {
   const now = Temporal.Now.zonedDateTimeISO(timezone)
