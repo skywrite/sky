@@ -225,6 +225,10 @@ a person can see and touch:
   while a call is held finds it in `GET /chat/:id` as `pending` (with
   `busy`) and follows the turn by re-reading the thread until it settles.
   The day's list shows such a thread as `waiting` with "needs your go".
+- **Calendar invitations and updates.** The calendar tools prepare and read
+  receipts without asking; sending or saving uses an asynchronous formatter to
+  show the stored event details before approval. See the
+  [calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice).
 - **A tool at work, in its own words.** Every line a command prints in the
   terminal reaches the page while the tool runs: the session's tools get
   their own command service whose output is an `EventOutput`, and

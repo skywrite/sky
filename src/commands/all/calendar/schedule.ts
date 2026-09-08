@@ -1,16 +1,22 @@
 import { z } from 'zod'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
 import { describeCalendarJob, describePreparation } from '#lib/calendarScheduler/describe.ts'
 import type { CalendarJob, CalendarPreparation } from '#lib/calendarScheduler/types.ts'
 import { promptSchedule } from './lib/promptSchedule.ts'
+import { calendarApproval, calendarNeedsApproval } from './lib/toolApproval.ts'
 
 const params = {
-  request: ArgOrFlag.string('Who to invite, when, duration, title, and agenda in natural language', { optional: true }),
+  request: ArgOrFlag.string(
+    'The user’s scheduling words plus any already-known context. Names or initials are enough; date, duration, timezone and emails may be omitted. Pass this before asking for missing details.',
+    { optional: true },
+  ),
   account: Flag.string('Organizer Google account (email or a unique part of it)', { short: 'a' }),
   timezone: Flag.string('Default IANA timezone for times without a zone; otherwise use the system timezone'),
   send: Flag.string('Create and send the exact prepared draft by ID; repeat the same ID to retrieve its result'),
+  status: Flag.string('Read a previously sent draft/job ID without sending or asking for approval'),
   json: Flag.bool('Print the structured result as JSON', { default: false }),
 }
 
@@ -23,11 +29,14 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
+@AIChatTool({ needsApproval: true })
 export default class CalendarSchedule extends Command {
+  static needsApprovalFor = calendarNeedsApproval
+  static formatApproval = calendarApproval('schedule')
   static override description: CommandDescription = {
     name: 'calendar:schedule',
     description:
-      'Prepare a Google Calendar invitation with Zoom from natural language, then send the reviewed draft by ID.',
+      'Schedule a Google Calendar meeting with Zoom. Call with the user’s request BEFORE asking for a day, emails or duration: Cerebras interprets the words and searches saved contacts ranked by name match and interaction score. Defaults: today, local timezone, 30 minutes; me/myself is the organizer. Preparation sends nothing. Ask only questions left in its result, using returned contact/email choices. When ready, send: draftId requests approval. Use status for receipts; calendar_update edits existing events.',
     descriptionLong: [
       'A request resolves guests, date, time, duration, and calendar conflicts.',
       'In a terminal, choose unresolved contacts, emails and accounts, then confirm the invitation.',
@@ -48,10 +57,12 @@ export default class CalendarSchedule extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const request = args.request?.trim()
     const send = args.send?.trim()
-    if (!!request === !!send) return CommandResult.fail('Provide a natural-language request or --send <draft-id>.')
-    if (send && !z.uuid().safeParse(send).success)
+    const status = args.status?.trim()
+    if ([request, send, status].filter(Boolean).length !== 1)
+      return CommandResult.fail('Provide a natural-language request, --send <draft-id>, or --status <job-id>.')
+    if ((send || status) && !z.uuid().safeParse(send || status).success)
       return CommandResult.fail('Use the draft ID returned by calendar:schedule.')
-    if (send && (args.account || args.timezone))
+    if ((send || status) && (args.account || args.timezone))
       return CommandResult.fail(
         'A prepared draft already fixes the account and timezone. Prepare a new request to change them.',
       )
@@ -67,6 +78,11 @@ export default class CalendarSchedule extends Command {
         : CommandResult.success(job)
     }
     try {
+      if (status) {
+        const job = await client.get(status, context.signal)
+        context.output.log(args.json ? JSON.stringify(job, null, 2) : describeCalendarJob(job))
+        return CommandResult.success(job)
+      }
       if (send) return await sendDraft(send)
       const input = { request: request!, account: args.account, timezone: args.timezone }
       let prepared = await client.prepare(input, context.signal)

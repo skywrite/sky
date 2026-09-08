@@ -6,6 +6,10 @@ export interface CalendarContact {
   name: string
   hint: string
   emails: string[]
+  /** Stored names/nicknames used for exact identity matches, never inferred by the model. */
+  aliases?: string[]
+  /** Same combined interaction score used by notebook contact completion. */
+  interactionScore?: number
 }
 
 export interface CalendarGuest {

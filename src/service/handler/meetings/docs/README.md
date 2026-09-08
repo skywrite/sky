@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Scheduling a meeting
@@ -42,11 +42,13 @@ Its shared header, spacing, action roles and footer follow the
    Alias interactions already belong to the canonical score and count once;
    profiles and their email choices remain grouped. Scores refresh on each
    lookup. Both AI-resolved names and the Add invitees search use this path.
-   Namesakes and multiple addresses remain a choice. The model never supplies an
+   A unique exact alias or stronger direct name match identifies a person even
+   when weaker fuzzy matches also appear. Equal-quality namesakes and multiple addresses remain a choice. The model never supplies an
    invented address. The person can add more names or explicit emails,
    change a match, or remove an invitee. The complete guest list is reviewed.
    A contact appears once, with their email choices grouped underneath.
-   Only multiple matching contacts prompt for who the person means.
+   Only unresolved matching contacts prompt for who the person means. An already
+   identified contact retains their identity while saved email choices are shown.
    Choosing a contact with no saved email keeps their identity and focuses
    an email field. The invitee stays unresolved until an address is supplied.
 3. The selected day's owned Google calendars appear alongside the draft.
@@ -90,11 +92,16 @@ Both see the same jobs, including invitations started before the extraction.
 | `POST /update` | Prepared update draft ID → update job; no new event is created |
 | `POST /create` | Validated composer fields + review key + unique request ID → job |
 | `POST /send` | Prepared draft ID → job for those exact saved fields |
+| `GET /drafts/:id/approval?operation=schedule\|update` | Stored review for chat/voice confirmation, requiring the matching operation |
 | `GET /jobs/:id` | Creating/created or updating/updated, failed, or uncertain |
 
 The client remembers its pending ID in session storage and resumes checking it
 after a reload. JSON and same-origin checks live at the HTTP boundary. Persistence,
 retry rules and Google/Zoom integration live in the shared scheduler documentation.
+Chat and voice use the same API; their [calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice)
+is owned by CalendarScheduler.
+The same [lookup before questions](../../../../lib/calendarScheduler/docs/2026-09-08-lookup-before-questions.md)
+behavior now applies in voice and chat.
 
 ## Notes
 

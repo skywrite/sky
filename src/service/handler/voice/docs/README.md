@@ -14,6 +14,10 @@ requests. A running tool holds service reloads until it settles.
 Routes: `POST /voice/:id/session`, `/tools`, `/end`, and the `/_api/audition`
 pair.
 
+Calendar scheduling and updates use the shared command policy and stored review
+before spoken confirmation; see the
+[calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice).
+
 The owning voice design and verification notes are at
 [browser voice](../../../../commands/lib/voice/docs/README.md), including
 [two voices with notebook research](../../../../commands/lib/voice/docs/2026-09-07-two-voice-research.md).

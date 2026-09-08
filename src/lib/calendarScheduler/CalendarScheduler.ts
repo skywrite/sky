@@ -1,11 +1,13 @@
 import { z } from 'zod'
 import { calendarInstant, calendarNow, instantNow } from '#universal/dates/nbdt/mod.ts'
+import { describePreparation, describeUpdatePreparation } from './describe.ts'
 import { CalendarDrafts } from './drafts.ts'
 import { CalendarJobs } from './jobs.ts'
+import { inviteeQuestion } from './people.ts'
 import type { CalendarPreparation, CalendarRequest, CalendarSchedulerHost } from './types.ts'
 import { CalendarUpdates } from './updates.ts'
 import type { CalendarUpdateRequest } from './updateTypes.ts'
-import { validateEventUpdate } from './updateValidation.ts'
+import { eventFieldsSchema, validateEventUpdate } from './updateValidation.ts'
 import { meetingFieldsSchema, meetingInterval, meetingTimingSchema, validateMeeting } from './validation.ts'
 
 const requestSchema = z.object({
@@ -20,7 +22,7 @@ const createSchema = z.object({
   reviewKey: z.string().regex(/^[a-f0-9]{64}$/),
 })
 
-/** One scheduling workflow for the composer, commands, and future AI tools. */
+/** One scheduling workflow for the composer, commands, chat and voice. */
 export class CalendarScheduler {
   private readonly drafts: CalendarDrafts
   private readonly jobs: CalendarJobs
@@ -77,6 +79,42 @@ export class CalendarScheduler {
     return this.jobs.get(id)
   }
 
+  /** Approval describes persisted fields, never a model-supplied summary or just an ID. */
+  async approval(id: string, operation: 'schedule' | 'update'): Promise<{ summary: string }> {
+    const draft = await this.drafts.get(id)
+    if (Boolean(draft.update) !== (operation === 'update'))
+      throw new Error(`Use calendar:${draft.update ? 'update' : 'schedule'} for this draft.`)
+    let summary = draft.summary
+    if (!summary) {
+      // Drafts prepared before conversational tools existed have no saved presentation.
+      const availability = await this.host.availability(draft.fields, draft.update)
+      if (availability.reviewKey !== draft.reviewKey)
+        throw new Error('Calendar availability changed. Review the event again before saving.')
+      const common = {
+        status: 'ready' as const,
+        availability,
+        assumptions: [],
+        questions: [],
+        requestQuestions: [],
+        unsupported: [],
+      }
+      summary = draft.update
+        ? describeUpdatePreparation({
+            ...common,
+            fields: eventFieldsSchema.parse(draft.fields),
+            event: draft.update,
+            candidates: [],
+            addGuests: [],
+            removeGuests: [],
+            warnings: [],
+          })
+        : describePreparation({ ...common, fields: draft.fields, invitees: [], accounts: [draft.fields.account] })
+    }
+    return {
+      summary: `${draft.update ? 'Save these event changes and notify guests.' : 'Create this event with Zoom and send invitations.'}\n${summary}`,
+    }
+  }
+
   async prepare(input: CalendarRequest, signal?: AbortSignal): Promise<CalendarPreparation> {
     const request = requestSchema.parse(input)
     const setup = await this.host.setup()
@@ -111,7 +149,7 @@ export class CalendarScheduler {
       )
     }
     for (const invitee of parsed.invitees) {
-      if (!invitee.selected) questions.push(`Which contact and email address should be used for "${invitee.query}"?`)
+      if (!invitee.selected) questions.push(inviteeQuestion(invitee))
     }
     if (!parsed.invitees.length) askAboutRequest('Who should be invited? Include a name or email address.')
 
@@ -162,7 +200,11 @@ export class CalendarScheduler {
       availability,
     }
     if (status === 'ready' && availability) {
-      result.draftId = await this.drafts.save({ fields, reviewKey: availability.reviewKey })
+      result.draftId = await this.drafts.save({
+        fields,
+        reviewKey: availability.reviewKey,
+        summary: describePreparation(result),
+      })
     }
     return result
   }
@@ -181,10 +223,8 @@ export class CalendarScheduler {
     const setup = await this.host.setup()
     if (!setup.accounts.includes(fields.account)) throw new Error('Choose a connected Google account.')
     const availability = await this.host.availability(fields)
-    const draftId = await this.drafts.save({ fields, reviewKey: availability.reviewKey })
-    return {
+    const result: CalendarPreparation = {
       status: 'ready',
-      draftId,
       fields,
       accounts: setup.accounts,
       availability,
@@ -194,6 +234,12 @@ export class CalendarScheduler {
       requestQuestions: [],
       unsupported: [],
     }
+    result.draftId = await this.drafts.save({
+      fields,
+      reviewKey: availability.reviewKey,
+      summary: describePreparation(result),
+    })
+    return result
   }
 
   async send(id: string) {

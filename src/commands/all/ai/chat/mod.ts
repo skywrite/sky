@@ -594,7 +594,7 @@ export default class AiChatTask extends Command {
         // Use task-specific formatter if available, generic fallback otherwise
         const formatter = getApprovalFormatter(toolName)
         if (formatter) {
-          formatter(input as Record<string, unknown>, output)
+          await formatter(input as Record<string, unknown>, output, context)
         } else {
           output.log('')
           output.log(colors.bold(`Approve ${toolName}?`))

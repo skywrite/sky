@@ -10,6 +10,7 @@
  *   export default class SlackPostTask extends Command { ... }
  */
 
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 
 const AI_CHAT_TOOL_KEY = Symbol('ai-chat-tool')
@@ -48,7 +49,11 @@ export function getAIChatToolOptions(target: any): AIChatToolOptions | undefined
 }
 
 /** Type for the optional static formatApproval method on task classes */
-export type FormatApprovalFn = (input: Record<string, unknown>, output: OutputHandler) => void
+export type FormatApprovalFn = (
+  input: Record<string, unknown>,
+  output: OutputHandler,
+  context?: CommandContext,
+) => void | Promise<void>
 
 /**
  * Type for the optional static approvalSessionKey method on task classes.

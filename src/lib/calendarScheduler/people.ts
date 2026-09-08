@@ -35,6 +35,7 @@ export function meetingPeople(
     matches.push({
       id: path,
       name: names[0] ?? emails[0] ?? query,
+      aliases: names.slice(1),
       emails,
       hint: [doc.yaml['title'], doc.yaml['org']]
         .filter((value): value is string => typeof value === 'string')
@@ -47,7 +48,7 @@ export function meetingPeople(
   return matches
     .sort((a, b) => a.match - b.match || b.score - a.score || a.name.localeCompare(b.name))
     .slice(0, 12)
-    .map(({ score: _, match: __, ...person }) => person)
+    .map(({ score, match: _, ...person }) => ({ ...person, interactionScore: score }))
 }
 
 export function resolveInvitee(query: string, candidates: CalendarContact[]): CalendarInvitee {
@@ -56,12 +57,34 @@ export function resolveInvitee(query: string, candidates: CalendarContact[]): Ca
     const match = candidates.find((person) => person.emails.includes(email))
     return { query, candidates, selected: { name: match?.name ?? email, email } }
   }
-  const exact = candidates.filter((person) => person.name.toLowerCase() === query.toLowerCase())
-  // A unique full name or a single candidate is reviewable. Namesakes and multiple addresses stay a choice.
-  const person = exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : undefined
+  const direct = candidates
+    .map((person) => ({
+      person,
+      match: Math.min(...[person.name, ...(person.aliases ?? [])].map((name) => matchScore(query, name) ?? Infinity)),
+    }))
+    .filter(({ match }) => match <= 2)
+  const best = Math.min(...direct.map(({ match }) => match))
+  const strongest = direct.filter(({ match }) => match === best)
+  // A unique stored name, alias or direct prefix outranks fuzzy/domain matches.
+  // Interaction scores order ties; they never authorize choosing between namesakes or emails.
+  const person = strongest.length === 1 ? strongest[0]!.person : candidates.length === 1 ? candidates[0] : undefined
   return {
     query,
     candidates,
+    ...(person ? { personId: person.id } : {}),
     selected: person?.emails.length === 1 ? { name: person.name, email: person.emails[0]! } : null,
   }
+}
+
+/** Ask only for the unresolved part, using addresses the lookup already found. */
+export function inviteeQuestion(invitee: CalendarInvitee): string {
+  const person = invitee.candidates.find((candidate) => candidate.id === invitee.personId)
+  if (person) {
+    return person.emails.length
+      ? `Which email address for ${person.name}: ${person.emails.join(' or ')}?`
+      : `No saved email address for ${person.name}. Which address should be used?`
+  }
+  return invitee.candidates.length
+    ? `Which contact do you mean by "${invitee.query}"?`
+    : `No saved contact matches "${invitee.query}". What name or email address should be used?`
 }

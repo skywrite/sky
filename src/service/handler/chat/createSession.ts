@@ -332,7 +332,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         const sessionKey = getApprovalSessionKey(toolName)?.(input)
         const decision = await ask({
           toolName,
-          lines: approvalCard(toolName, input, getApprovalFormatter(toolName)),
+          lines: await approvalCard(toolName, input, getApprovalFormatter(toolName), context),
           sessionKey,
         })
         if (decision.approved && decision.always && sessionKey) blessed.blessDurably(toolName, sessionKey)

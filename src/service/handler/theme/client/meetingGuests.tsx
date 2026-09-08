@@ -65,9 +65,11 @@ function Candidates({
 function Unresolved({ invitee, onChange }: { invitee: CalendarInvitee; onChange: (invitee: CalendarInvitee) => void }) {
   const [email, setEmail] = useState('')
   const emailInput = useRef<HTMLInputElement>(null)
-  const person = invitee.candidates.find((candidate) => candidate.id === invitee.personId)
+  const knownPerson = invitee.candidates.find((candidate) => candidate.id === invitee.personId)
+  const candidates = knownPerson ? [knownPerson] : invitee.candidates
+  const person = knownPerson?.emails.length ? undefined : knownPerson
   const personId = person?.id
-  const name = person?.name ?? invitee.query
+  const name = knownPerson?.name ?? invitee.query
   useEffect(() => {
     if (personId) emailInput.current?.focus()
   }, [personId])
@@ -95,10 +97,10 @@ function Unresolved({ invitee, onChange }: { invitee: CalendarInvitee; onChange:
         </div>
       ) : (
         <>
-          {invitee.candidates.length > 1 && <p>Who do you mean by “{invitee.query}”?</p>}
-          {!invitee.candidates.length && <p>Add an email for {invitee.query}</p>}
+          {candidates.length > 1 && <p>Who do you mean by “{invitee.query}”?</p>}
+          {!candidates.length && <p>Add an email for {invitee.query}</p>}
           <Candidates
-            people={invitee.candidates}
+            people={candidates}
             choose={(candidate, address) => {
               setEmail('')
               onChange({

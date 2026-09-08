@@ -58,7 +58,7 @@ test(
                 unsupported: [],
                 invitees: [
                   { query: 'Jane', candidates: [jane, otherJane], selected: null },
-                  { query: 'Sam', candidates: [sam], selected: null },
+                  { query: 'Sam', candidates: [sam], personId: sam.id, selected: null },
                 ],
               },
             })

@@ -8,6 +8,8 @@ interface SavedDraft {
   fields: CalendarFields
   reviewKey: string
   update?: CalendarEventSnapshot
+  /** The exact review presented by chat and voice, including conflicts and assumptions. */
+  summary?: string
 }
 
 /** Immutable prepared invitations. Sending uses these exact fields without another model call. */

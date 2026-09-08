@@ -161,7 +161,11 @@ async function testHost(
         systemPrompt: () => Promise.resolve('You are a test assistant.'),
         tools: () => Promise.resolve({ tools: {}, toolApproval: {} }),
         approvalHandler: async ({ toolName, input }) => {
-          const decision = await ask({ toolName, lines: approvalCard(toolName, input), sessionKey: over.sessionKey })
+          const decision = await ask({
+            toolName,
+            lines: await approvalCard(toolName, input),
+            sessionKey: over.sessionKey,
+          })
           over.decisions?.push(decision)
           return decision
         },

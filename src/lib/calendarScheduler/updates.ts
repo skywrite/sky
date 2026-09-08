@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { calendarNow, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { describeUpdatePreparation } from './describe.ts'
 import type { CalendarDrafts } from './drafts.ts'
+import { inviteeQuestion } from './people.ts'
 import type { CalendarSchedulerHost } from './types.ts'
 import type { CalendarUpdatePreparation, CalendarUpdateRequest, CalendarEventSnapshot } from './updateTypes.ts'
 import { eventFieldsSchema, eventRefSchema, requireEditable, validateEventUpdate } from './updateValidation.ts'
@@ -129,7 +131,7 @@ export class CalendarUpdates {
           const question =
             action === 'remove' && !guest.candidates.length
               ? `No current guest matches "${guest.query}". Specify their current name or email address.`
-              : `Which guest should be ${action === 'add' ? 'added' : 'removed'} for "${guest.query}"?`
+              : inviteeQuestion(guest)
           result.questions.push(question)
           if (action === 'remove' && !guest.candidates.length) result.requestQuestions.push(question)
         }
@@ -176,7 +178,13 @@ export class CalendarUpdates {
     const event = result.event!
     const fields = validateEventUpdate(event, result.fields, this.now())
     const availability = await this.host.availability(fields, event)
-    const draftId = await this.drafts.save({ fields, reviewKey: availability.reviewKey, update: event })
-    return { ...result, status: 'ready', fields, availability, draftId }
+    const prepared: CalendarUpdatePreparation = { ...result, status: 'ready', fields, availability }
+    prepared.draftId = await this.drafts.save({
+      fields,
+      reviewKey: availability.reviewKey,
+      update: event,
+      summary: describeUpdatePreparation(prepared),
+    })
+    return prepared
   }
 }

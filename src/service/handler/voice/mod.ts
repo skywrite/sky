@@ -12,6 +12,8 @@
 
 import { Hono } from 'hono'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
+import type { NeedsApprovalForFn } from '#commands/lib/AIChatTool.ts'
+import { withoutBlankStrings } from '#commands/lib/chat/notebookTools.ts'
 import { logger } from '#shared/log.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { hold, touch } from '../../activity.ts'
@@ -28,6 +30,10 @@ export interface VoiceTool {
    * confirm_action call — executes it. Enforced here, not in the prompt.
    */
   needsApproval?: boolean
+  /** A gated command can exempt preparation and status reads, as it does in chat. */
+  needsApprovalFor?: NeedsApprovalForFn
+  /** Resolve the action's details before parking; failure never falls back to an ID-only approval. */
+  approvalSummary?: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<string>
 }
 
 export const CONFIRM_ACTION = 'confirm_action'
@@ -306,7 +312,9 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     let input: Record<string, unknown> = {}
     if (typeof body.arguments === 'string') {
       try {
-        input = JSON.parse(body.arguments) as Record<string, unknown>
+        const parsed: unknown = JSON.parse(body.arguments)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+          input = withoutBlankStrings(parsed as Record<string, unknown>)
       } catch {
         // Malformed arguments — run the tool with none and let it complain.
       }
@@ -336,10 +344,18 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     // A gated tool parks; only the user's spoken yes, relayed as
     // confirm_action, runs it. The gate lives here so no prompt drift can
     // bypass it.
-    if (tool.needsApproval) {
+    if (tool.needsApproval && (tool.needsApprovalFor?.(input) ?? true)) {
       const approvals = approvalsOf(id)
       const approvalId = crypto.randomUUID().slice(0, 8)
-      const summary = summarizeCall(body.name, input)
+      let summary: string
+      try {
+        summary = tool.approvalSummary ? await tool.approvalSummary(input, signal) : summarizeCall(body.name, input)
+        signal.throwIfAborted()
+      } catch (error) {
+        return c.json({
+          output: `Could not prepare this action for confirmation: ${truncate(error instanceof Error ? error.message : String(error), MAX_TOOL_OUTPUT_ERROR_CHARS)}`,
+        })
+      }
       approvals.set(approvalId, { tool, input, summary, expiresAt: Date.now() + APPROVAL_TTL_MS })
       log.info('tool {tool} parked as {approvalId}', { tool: body.name, approvalId })
       return c.json({

@@ -7,10 +7,9 @@
 
 import OpenAI from 'openai'
 import { renderDayCalendar } from '#commands/all/day/meeting/lib/meetingCheck.ts'
-import { discoverAIChatTools, runToolCommand } from '#commands/lib/chat/notebookTools.ts'
+import { discoverAIChatTools } from '#commands/lib/chat/notebookTools.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import { createVoiceEmailTools } from '#commands/lib/voice/emailTools.ts'
 import { loadVoiceInitialContext } from '#commands/lib/voice/initialContext.ts'
 import {
@@ -46,36 +45,12 @@ import {
 } from '#commands/lib/voice/sessionConfig.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { renderTemplate } from '#shared/prompts/mod.ts'
+import { createVoiceCommandTools } from './commandTools.ts'
 import type { AuditionHost, ClientSecretMinter, VoiceRoutesOptions, VoiceThreadFactory, VoiceTool } from './mod.ts'
 import { APPROVAL_TOOLS } from './mod.ts'
 
 /** How long a minted secret can start a session; the session itself outlives it. */
 const SECRET_TTL_SECONDS = 60
-
-/**
- * The commands a voice session offers, by name. Curated instead of
- * inherited from the chat set: a realtime session re-bills every tool
- * schema on every spoken reply, and a chat-only flow (clarify → create
- * under a terminal approval card) has no voice shape. Reads and day-list
- * writes run on the user's word and read their result back; commands
- * whose decorator says needsApproval park in the route's spoken-confirm
- * gate. Names not yet in the manifest simply wait here until they land.
- */
-const VOICE_COMMANDS = new Set([
-  'day:items',
-  'day:items:add',
-  'day:items:done',
-  'slack:unread',
-  'slack:api:channels',
-  'slack:draft:new',
-  'slack:draft:reply',
-  'slack:draft:update',
-  'google:email:inbox:view',
-  'google:email:read',
-  'google:email:draft:new',
-  'google:email:draft:reply',
-  'google:email:draft:update',
-])
 
 function clockOf(context: CommandContext): VoiceClock {
   return {
@@ -127,19 +102,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
         },
       })
     }
-    for (const entry of entries) {
-      if (!VOICE_COMMANDS.has(entry.commandName)) continue
-      tools.set(entry.toolName, {
-        definition: {
-          type: 'function',
-          name: entry.toolName,
-          description: entry.description,
-          parameters: commandDescriptionToSchema(entry.commandClass.description),
-        },
-        run: async (input) => JSON.stringify(await runToolCommand(tasks, entry, input)),
-        needsApproval: entry.needsApproval,
-      })
-    }
+    for (const [name, tool] of createVoiceCommandTools(entries, tasks)) tools.set(name, tool)
 
     // The gate's confirm/cancel ride along whenever something can park.
     const gated = [...tools.values()].some((tool) => tool.needsApproval)

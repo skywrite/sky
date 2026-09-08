@@ -47,6 +47,7 @@ async function fixture(
           event: undefined,
           calendar: undefined,
           send: undefined,
+          status: undefined,
           json: true,
           ...args,
         },
@@ -69,9 +70,9 @@ test('calendar:update prepares structured changes and sends the exact update onc
     const draft = prepared.data as CalendarUpdatePreparation
     assert({
       given: 'an AI or piped command',
-      should: 'prepare without saving or registering a chat tool',
+      should: 'prepare without saving and make the command available to chat',
       actual: [prepared.ok, draft.status, saved.length, isAIChatTool(CalendarUpdate)],
-      expected: [true, 'ready', 0, false],
+      expected: [true, 'ready', 0, true],
     })
     const sent = await invoke({ request: undefined, send: draft.draftId })
     const retry = await invoke({ request: undefined, send: draft.draftId })

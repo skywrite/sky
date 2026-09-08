@@ -127,6 +127,7 @@ async function fixture(
         account: undefined,
         timezone: undefined,
         send: undefined,
+        status: undefined,
         json: options.json ?? false,
       },
       context,

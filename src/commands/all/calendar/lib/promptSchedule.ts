@@ -39,9 +39,9 @@ export async function pickGuest(
   if (selected && z.email().safeParse(selected.email).success && selected.email.toLowerCase() !== account.toLowerCase())
     return selected
 
-  let person: CalendarContact | undefined
-  if (invitee.candidates.length === 1) person = invitee.candidates[0]
-  else if (invitee.candidates.length > 1) {
+  let person: CalendarContact | undefined = invitee.candidates.find((candidate) => candidate.id === invitee.personId)
+  if (!person && invitee.candidates.length === 1) person = invitee.candidates[0]
+  else if (!person && invitee.candidates.length > 1) {
     const choice = await prompt.select({
       message: `Who do you mean by "${invitee.query}"?`,
       options: [

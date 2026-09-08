@@ -11,7 +11,7 @@ import { createMeetingRoutes } from '#service/handler/meetings/mod.ts'
 import { assert, test } from '#test'
 import CalendarSchedule from './schedule.ts'
 
-test('calendar:schedule prepares through the service and sends its exact draft without exposing a chat tool', async () => {
+test('calendar:schedule prepares through the service and exposes its exact draft as a chat tool', async () => {
   const dir = await mkdtemp('/tmp/sky-calendar-command-')
   const fields: CalendarFields = {
     title: 'Atlas kickoff',
@@ -63,7 +63,15 @@ test('calendar:schedule prepares through the service and sends its exact draft w
   const command = new CalendarSchedule()
   const invoke = (args: { request?: string; send?: string; account?: string; timezone?: string; json?: boolean }) =>
     command.run({
-      args: { request: undefined, send: undefined, account: undefined, timezone: undefined, json: true, ...args },
+      args: {
+        request: undefined,
+        send: undefined,
+        status: undefined,
+        account: undefined,
+        timezone: undefined,
+        json: true,
+        ...args,
+      },
       context,
       tasks: new CommandService(context),
       rawArgs: { _: [] },
@@ -74,9 +82,9 @@ test('calendar:schedule prepares through the service and sends its exact draft w
     const id = data && 'draftId' in data ? data.draftId : undefined
     assert({
       given: 'a natural-language command call',
-      should: 'return the prepared invitation without sending or registering itself for chat',
+      should: 'return the prepared invitation without sending and make it available to chat',
       actual: [prepared.ok, !!id, sends, isAIChatTool(CalendarSchedule), requests],
-      expected: [true, true, 0, false, ['POST /calendar/_api/prepare']],
+      expected: [true, true, 0, true, ['POST /calendar/_api/prepare']],
     })
     const sent = await invoke({ send: id })
     const retried = await invoke({ send: id })

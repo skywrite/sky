@@ -9,16 +9,22 @@
  */
 
 import type { FormatApprovalFn } from '#commands/lib/AIChatTool.ts'
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
 
 const ESC = String.fromCharCode(27)
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*m`, 'g')
 
-export function approvalCard(toolName: string, input: unknown, formatter?: FormatApprovalFn): string[] {
+export async function approvalCard(
+  toolName: string,
+  input: unknown,
+  formatter?: FormatApprovalFn,
+  context?: CommandContext,
+): Promise<string[]> {
   const fields = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
   const output = new BufferedOutput()
   if (formatter) {
-    formatter(fields, output)
+    await formatter(fields, output, context)
   } else {
     for (const [key, value] of Object.entries(fields)) {
       if (typeof value === 'string' && value.includes('\n')) {

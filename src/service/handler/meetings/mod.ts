@@ -28,6 +28,9 @@ export function createMeetingRoutes(host: CalendarSchedulerHost): Hono {
 
   app.get('/setup', async (c) => c.json(await scheduler.setup()))
   app.get('/people', async (c) => c.json(await scheduler.people(c.req.query('q') ?? '')))
+  app.get('/drafts/:id/approval', async (c) =>
+    c.json(await scheduler.approval(c.req.param('id'), z.enum(['schedule', 'update']).parse(c.req.query('operation')))),
+  )
   app.post('/parse', async (c) => c.json(await scheduler.parse(await c.req.json(), c.req.raw.signal)))
   app.post('/preview', async (c) => c.json(await scheduler.preview(await c.req.json())))
   app.post('/prepare', async (c) => c.json(await scheduler.prepare(await c.req.json(), c.req.raw.signal)))

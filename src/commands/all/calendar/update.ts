@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
@@ -6,9 +7,13 @@ import { describeCalendarJob, describeUpdatePreparation } from '#lib/calendarSch
 import type { CalendarJob } from '#lib/calendarScheduler/types.ts'
 import type { CalendarUpdatePreparation, CalendarUpdateRequest } from '#lib/calendarScheduler/updateTypes.ts'
 import { promptUpdate } from './lib/promptUpdate.ts'
+import { calendarApproval, calendarNeedsApproval } from './lib/toolApproval.ts'
 
 const params = {
-  request: ArgOrFlag.string('Identify an existing event and describe changes in natural language', { optional: true }),
+  request: ArgOrFlag.string(
+    'The user’s words identifying the existing event and requested changes, plus any already-known context. Call before asking for event IDs or guest emails; the scheduler searches for them.',
+    { optional: true },
+  ),
   account: Flag.string('Google account email or a unique part of it; an exact email is required with --event', {
     short: 'a',
   }),
@@ -16,6 +21,7 @@ const params = {
   event: Flag.string('Exact Google event ID, including a specific occurrence ID for recurring events'),
   calendar: Flag.string('Calendar ID when using --event; defaults to primary'),
   send: Flag.string('Save the exact prepared update by draft ID and notify guests; retries retrieve its result'),
+  status: Flag.string('Read a previously saved draft/job ID without changing the event or asking for approval'),
   json: Flag.bool('Print structured questions or a prepared update without interactive prompts', { default: false }),
 }
 type Params = InferParams<typeof params>
@@ -27,10 +33,14 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
+@AIChatTool({ needsApproval: true })
 export default class CalendarUpdate extends Command {
+  static needsApprovalFor = calendarNeedsApproval
+  static formatApproval = calendarApproval('update')
   static override description: CommandDescription = {
     name: 'calendar:update',
-    description: 'Edit or reschedule an existing Google Calendar event from natural language.',
+    description:
+      'Edit or reschedule an existing Google Calendar event: time, duration, title, agenda, location or guests. Call request first to search events and scored contacts before asking for IDs or emails. Preparation saves nothing; omitted fields stay unchanged. Ask only unresolved questions using returned choices. Reuse exact event, calendar and account IDs once known. When ready, send: draftId requests approval to save and notify guests. Use status for receipts. Never create a replacement event.',
     descriptionLong: [
       'Find the existing event, review only the requested changes, then save and notify guests.',
       'In a terminal, ambiguous events and guests open pickers before the final confirmation.',
@@ -50,9 +60,16 @@ export default class CalendarUpdate extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const request = args.request?.trim()
     const send = args.send?.trim()
-    if (!!request === !!send) return CommandResult.fail('Provide a natural-language update or --send <draft-id>.')
-    if (send && (!z.uuid().safeParse(send).success || args.account || args.timezone || args.event || args.calendar))
-      return CommandResult.fail('Use only --send <draft-id> to save an already reviewed update.')
+    const status = args.status?.trim()
+    if ([request, send, status].filter(Boolean).length !== 1)
+      return CommandResult.fail('Provide a natural-language update, --send <draft-id>, or --status <job-id>.')
+    if (
+      (send || status) &&
+      (!z.uuid().safeParse(send || status).success || args.account || args.timezone || args.event || args.calendar)
+    )
+      return CommandResult.fail(
+        'Use only --send <draft-id> to save an already reviewed update, or --status <job-id> to read its outcome.',
+      )
     if (args.calendar && !args.event) return CommandResult.fail('--calendar requires --event.')
     if (args.event && !z.email().safeParse(args.account).success)
       return CommandResult.fail('--event requires the full Google account email with --account.')
@@ -68,6 +85,11 @@ export default class CalendarUpdate extends Command {
         : CommandResult.success(job)
     }
     try {
+      if (status) {
+        const job = await client.get(status, context.signal)
+        context.output.log(args.json ? JSON.stringify(job, null, 2) : describeCalendarJob(job))
+        return CommandResult.success(job)
+      }
       if (send) return await save(send)
       const input: CalendarUpdateRequest = {
         request: request!,

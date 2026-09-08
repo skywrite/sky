@@ -53,6 +53,9 @@ export function describeUpdatePreparation(prepared: CalendarUpdatePreparation): 
   const lines: string[] = []
   if (event && fields) {
     lines.push(`Update: ${event.fields.title}`, `Calendar: ${event.calendarName} · ${event.ref.account}`)
+    lines.push(
+      `Guests: ${fields.guests.map((guest) => (guest.name ? `${guest.name} <${guest.email}>` : guest.email)).join(', ') || '(none)'}`,
+    )
     if (event.recurring) lines.push('Scope: this occurrence only.')
     const when = (value: typeof fields) => `${value.date} ${value.time} · ${value.timezone} · ${value.duration} min`
     lines.push(`Before: ${when(event.fields)}`, `After:  ${when(fields)}`)

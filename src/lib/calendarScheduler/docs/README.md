@@ -1,6 +1,6 @@
 ---
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # CalendarScheduler
@@ -9,13 +9,13 @@ Calendar invitations belong here. Notebook meeting documents and transcript
 imports remain under `meeting:new`; scheduling does not create those documents.
 The shared API is `CalendarScheduler` in `CalendarScheduler.ts`. The web composer
 and `calendar:schedule` command use the same validation, contact interpretation,
-availability and creation jobs. Chat and voice do not expose the command yet.
+availability and creation jobs. Chat and voice expose both calendar commands.
 `calendar:update` edits and reschedules existing Google Calendar events.
 
 ## Entry points and ownership
 
 - `CalendarScheduler` provides `setup`, `people`, `parse`, `preview`, `prepare`,
-  `review`, `create`, `send`, `prepareUpdate`, `reviewUpdate`, `update`, and `get`.
+  `review`, `create`, `send`, `prepareUpdate`, `reviewUpdate`, `update`, `approval`, and `get`.
   Hosts inject contacts and provider operations. `updates.ts` owns the update workflow.
 - `google.ts` supplies Google account discovery, calendar reads and creation.
   Credentials and contact lookup are injected; this module does not import the
@@ -42,6 +42,7 @@ sky calendar:schedule --send <draft-id>
 | `--account`, `-a` | Organizer email or a unique part of it; a single connected account is selected automatically |
 | `--timezone` | Default IANA zone for unqualified times; otherwise the system zone; a zone in the request takes precedence |
 | `--send` | ID returned by preparation; mutually exclusive with a request and its overrides |
+| `--status` | Read a sent draft/job ID without saving again; exclusive with request and send |
 | `--json` | Print the structured result without interactive prompts |
 
 In a top-level terminal call, missing request details open a text prompt. Ambiguous
@@ -58,7 +59,7 @@ A request returns `CalendarPreparation`: resolved fields, invitee candidates,
 account choices, assumptions, questions, unsupported requirements and availability.
 `status` is `ready`, `needs_input`, or `unsupported`. Only a ready result receives
 a `draftId`. `requestQuestions` identifies free-text clarifications separately from
-the contact and account choices. Ambiguous names or multiple addresses remain questions. Only explicit
+the contact and account choices. Equal-quality name matches or multiple addresses remain questions. Only explicit
 contact addresses or emails in the request can become guests. Missing/invalid
 fields, past times and organizer-only guest lists cannot produce sendable drafts.
 Relative dates use the civil clock, independently of the notebook's open day.
@@ -73,6 +74,54 @@ without another model call. Sending never interprets text again.
 AI callers should include the relevant conversation context in `request`. The
 scheduler sees only its input, not the calling conversation. Command composition
 returns the same structured data without requiring `--json`.
+
+## Chat and voice
+
+`calendar_schedule` and `calendar_update` are discovered from the commands'
+`@AIChatTool` decorators. Browser voice includes them in its curated command set.
+Both take a natural-language `request`, return unresolved questions or candidates,
+and leave clarification to the conversation. Each call must include its relevant
+context and all settled answers. Call preparation with the user's words before
+asking for dates, emails, duration or account details: it uses the same fast
+Cerebras interpretation and live scored contact search as the `/clock` composer.
+A new meeting without a day means today on the civil clock, duration defaults to
+30 minutes, and timezone defaults to the system zone. The speaker's "me" or
+"myself" is the organizer, already represented by the connected calendar account,
+not a guest to search for. An event selection or later edit uses the exact
+event, calendar and account IDs returned by the scheduler. Unmentioned fields stay
+unchanged; ambiguous matches never select an event automatically.
+
+Contact results retain their stored aliases and combined interaction scores.
+A unique exact name/alias or stronger direct name prefix resolves the identity
+ahead of fuzzy or email-domain matches. Equal-quality namesakes stay a choice;
+interaction scores order that choice. One explicit saved email completes the
+guest. Multiple emails retain `personId` and ask only which saved address to use.
+The terminal, composer and conversation preserve that identity during email
+selection. Voice offers the returned choices instead of asking for a surname or
+having the user dictate addresses that were already found.
+
+Preparation and `status` reads run without approval. Only `send: draftId` is gated:
+the web/terminal chat asks through its approval UI, and voice parks the call until
+`confirm_action` follows a spoken yes. Voice requests the pending approval before
+asking for that yes, so preparation and parking do not each trigger a confirmation
+question. Cancellation discards the parked call; changed requirements get a new
+preparation and approval. Calendar tools never
+receive standing session approval. Hosts that cannot ask do not offer these tools.
+
+Approval formatters may be asynchronous and receive the host command context.
+The calendar formatter loads `GET /drafts/:id/approval?operation=schedule|update`
+from the running service. It presents the saved fields, guests, account, timezone,
+assumptions and availability; updates include before/after details. The summary is
+stored with the immutable draft, before a draft ID or CLI instructions are added
+to the preparation display. Older drafts reconstruct this view only if fresh
+availability matches the original review key. A missing draft, wrong operation or
+failed read cannot produce an approval or execute a write. Save still rechecks
+availability and the provider event version.
+
+Only `created` or `updated` receipts mean completion. A pending, disconnected or
+uncertain save is checked with `status: id`; never prepare a replacement event to
+recover it. New voice sessions pick up the tools and prompt after the command
+manifest is rebuilt with `sky cli:commands --rebuild`.
 
 ## Editing and rescheduling
 
@@ -109,7 +158,7 @@ shows before/after timing, changed text and added/removed addresses, then confir
 before saving and notifying guests. JSON, piped and composed calls remain
 noninteractive. `reviewUpdate({event, version, fields, assumptions?})` accepts exact
 selections without interpreting the request again. `update(draftId)` saves the
-prepared update; `get(id)` retrieves its job. Chat and voice remain unconnected.
+prepared update; `get(id)` retrieves its job.
 
 Update drafts store the exact account, calendar/event IDs, provider version and
 before/after fields. Creation receipts now also return these event IDs for later
@@ -138,7 +187,7 @@ folder is retained so earlier creation receipts remain readable.
 Sending uses the draft ID as the creation job ID and reads its saved fields.
 The command waits up to six minutes for completion, then returns `creating` with
 the same ID if it is still running. A disconnected caller retrieves the outcome
-by repeating `--send` with that ID. It must not prepare a replacement invitation
+with `--status` and that ID (repeating `--send` also returns the same job). It must not prepare a replacement invitation
 to recover an unknown send outcome.
 
 `jobs.ts` keeps receipts at `<userDataDir>/meetings/<id>.json`. Exclusive atomic
@@ -196,6 +245,8 @@ No test invitation is sent to a real account.
 
 ## Notes
 
+- [2026-09-08 — Look up the meeting before asking questions](2026-09-08-lookup-before-questions.md)
+- [2026-09-07 — Calendar actions in conversation](2026-09-07-calendar-in-conversation.md)
 - [2026-09-07 — Updating the existing event](2026-09-07-updating-the-existing-event.md)
 - [2026-09-07 — Terminal questions must open prompts](2026-09-07-terminal-questions-open-prompts.md)
 - [2026-09-07 — A scheduler outside the handler](2026-09-07-a-scheduler-outside-the-handler.md)

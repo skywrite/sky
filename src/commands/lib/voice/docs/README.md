@@ -147,6 +147,14 @@ does not start a lookup. He can assess supplied evidence and offer his own
 reasoning; Sky handles retrieval and background research. The calendar remains
 separate from the notebook research prompt.
 
+Sky can schedule and update calendar events through the curated command tools.
+It calls the scheduler's fast interpretation and scored contact lookup before
+asking for missing details; see [lookup before questions](../../../../lib/calendarScheduler/docs/2026-09-08-lookup-before-questions.md).
+Preparation and receipt reads run immediately; sending or saving waits for the
+spoken confirmation of the stored event details. The
+[calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice)
+owns those rules and verification.
+
 The browser coordinates one speaking turn at a time and interrupts
 playback when the user speaks. Interrupted or failed reports remain
 available through **Resume research** or a spoken request to continue; resuming

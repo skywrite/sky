@@ -47,6 +47,10 @@ export class CalendarSchedulerClient {
     return this.request(`/jobs/${encodeURIComponent(id)}`, undefined, signal)
   }
 
+  approval(id: string, operation: 'schedule' | 'update', signal?: AbortSignal): Promise<{ summary: string }> {
+    return this.request(`/drafts/${encodeURIComponent(id)}/approval?operation=${operation}`, undefined, signal)
+  }
+
   prepareUpdate(request: CalendarUpdateRequest, signal?: AbortSignal): Promise<CalendarUpdatePreparation> {
     return this.request('/updates/prepare', request, signal)
   }
