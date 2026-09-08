@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Browser voice
@@ -32,7 +32,13 @@ In the browser, Sky hosts the conversation with `gpt-realtime-2.1`, using
 simple hello, including the profile's first name
 when available. Greetings and social check-ins stay brief and social; they
 do not trigger notebook priorities, capability menus, or offers of work.
-Both speech prompts specify conversational cadence and give short examples.
+Both speech prompts specify conversational cadence and the same conversation
+rules: questions, answers, volunteered details, and corrections carry across
+speakers. Neither repeats a pending or answered question. Changing addressee
+continues the exchange without another round of greetings or requests for
+context. A brief statement, agreement, or pause can complete a turn. Invented
+three-person exchanges show check-ins in both speaker orders and a question
+left pending while the other voice answers a presence check.
 Quick reads are prompted to run silently. The browser also mutes messages
 marked `commentary` and excludes them from displayed and mirrored speech,
 while keeping generation, tool calls, and audio drain running. Final answers
@@ -162,6 +168,8 @@ changes take effect in newly started sessions.
 
 ## Notes
 
+- Carry questions and answers across speakers and leave room after a reply:
+  [2026-09-08 — shared conversation continuity](2026-09-08-shared-conversation-continuity.md)
 - Remove the terminal transport while preserving browser calls and previews:
   [2026-09-07 — remove the voice CLI](2026-09-07-remove-voice-cli.md)
 
