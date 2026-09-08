@@ -31,6 +31,7 @@ body {
   width: 276px;
   flex: none;
   background: var(--sky-side);
+  border-inline-end: 1px solid var(--sky-border-soft);
   display: flex;
   flex-direction: column;
   padding: 14px;
