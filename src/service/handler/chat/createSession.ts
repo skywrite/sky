@@ -424,7 +424,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     snapshotPath,
     snapshots,
     openSaved,
-    // The terminal's one-shot titler, over the first exchange: a topic in a few words from the fast model.
+    // The shared fast titler can name the opening question before its reply arrives.
     title: (turns) => summarizeTranscript(buildChatTranscript(turns), { kind: CHAT_ENRICH.kind }),
     settings: createChatSettingsHost(),
     endDefaults: {

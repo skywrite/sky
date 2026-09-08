@@ -1701,55 +1701,141 @@ test({ name: 'chat route - a declined call tells the model so, and the turn goes
   })
 })
 
-test({ name: 'chat route - the first exchange names the thread, off the turn' }, async () => {
+test('chat route - the opening question names the thread before its reply finishes', async () => {
+  const message = 'What do you think of the state of the Atlas conversation?'
+  const title = 'Atlas conversation status and next steps'
+  const asked: string[][] = []
+  const reply = Promise.withResolvers<void>()
+  const host = await testHost({
+    invokeModel: async (args) => {
+      await reply.promise
+      return streamingModel(['Focus on the demo.'])(args)
+    },
+  })
+  const app = appWith({
+    ...host,
+    title: (turns) => {
+      asked.push(turns.map((turn) => turn.content))
+      return Promise.resolve(title)
+    },
+  })
+  try {
+    const response = await send(app, 'http://localhost/chat/n1/messages', { message })
+    const body = response.text()
+    const thread = await until(
+      () => getJson(app, 'http://localhost/chat/n1'),
+      (thread) => thread.title === title && thread.turns.length === 1,
+    )
+    const list = await getJson(app, 'http://localhost/chat')
+    assert({
+      given: 'the subject is near the end of the opening question and the reply is still pending',
+      should: 'give the titler the whole question and show its subject while the reply is busy',
+      actual: { asked, title: thread.title, busy: thread.busy, listTitle: list.threads[0].title },
+      expected: { asked: [[message]], title, busy: true, listTitle: title },
+    })
+    reply.resolve()
+    const frames = parseSSE(await body)
+    await (await send(app, 'http://localhost/chat/n1/messages', { message: 'And the next step?' })).text()
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'n1.autosave.md'), { snapshot: true })
+    assert({
+      given: 'the first reply completes and the conversation continues',
+      should: 'stream the title before the reply ends, retain it in recovery, and name the thread only once',
+      actual: {
+        titleBeforeReply:
+          frames.findIndex((frame) => frame.event === 'title') < frames.findIndex((frame) => frame.event === 'turn'),
+        streamedTitle: frames.find((frame) => frame.event === 'title')?.data?.title,
+        recoveredTitle: snapshot.recovery?.host?.title,
+        calls: asked.length,
+      },
+      expected: { titleBeforeReply: true, streamedTitle: title, recoveredTitle: title, calls: 1 },
+    })
+  } finally {
+    reply.resolve()
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat route - a slow title never delays replies or starts duplicate requests', async () => {
+  const naming = Promise.withResolvers<string>()
+  let calls = 0
+  const host = await testHost()
+  const app = appWith({
+    ...host,
+    title: () => {
+      calls++
+      return naming.promise
+    },
+  })
+  try {
+    await (await send(app, 'http://localhost/chat/slow-name/messages', { message: 'Plan the Atlas launch.' })).text()
+    await (await send(app, 'http://localhost/chat/slow-name/messages', { message: 'And the budget?' })).text()
+    const before = await getJson(app, 'http://localhost/chat/slow-name')
+    assert({
+      given: 'two replies finish while the title model is still pending',
+      should: 'complete both replies without waiting or launching more title requests',
+      actual: { calls, busy: before.busy, messages: before.turns.length },
+      expected: { calls: 1, busy: false, messages: 4 },
+    })
+    naming.resolve('Atlas launch planning')
+    const snapshot = await until(
+      async () => loadResumeSession(path.join(host.tmp, 'slow-name.autosave.md'), { snapshot: true }),
+      (snapshot) => snapshot.recovery?.host?.title === 'Atlas launch planning',
+    )
+    assert({
+      given: 'the title arrives after the stream has closed',
+      should: 'make it available to polling and service recovery',
+      actual: {
+        title: (await getJson(app, 'http://localhost/chat/slow-name')).title,
+        recoveredTitle: snapshot.recovery?.host?.title,
+      },
+      expected: { title: 'Atlas launch planning', recoveredTitle: 'Atlas launch planning' },
+    })
+  } finally {
+    naming.resolve('Atlas launch planning')
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat route - a failed opening title can retry with the first reply', async () => {
   const asked: number[] = []
   const host = await testHost()
   const app = appWith({
     ...host,
-    title: (turns) => {
+    title: async (turns) => {
       asked.push(turns.length)
-      return Promise.resolve('Demo focus for the week')
+      if (asked.length === 1) throw new Error('title unavailable')
+      return 'Atlas launch review'
     },
   })
-  const response = await send(app, 'http://localhost/chat/n1/messages', { message: 'What should I focus on today?' })
-  const frames = parseSSE(await response.text())
-
-  const named = await until(
-    () => getJson(app, 'http://localhost/chat'),
-    (list) => (list.threads as ThreadSummary[])[0]?.title === 'Demo focus for the week',
-  )
-  const thread = await getJson(app, 'http://localhost/chat/n1')
-
-  assert({
-    given: 'a host with a titler and one finished exchange',
-    should: 'name the thread from the first two turns once the turn is over, in the list and on the thread',
-    actual: {
-      asked,
-      listTitle: (named.threads as ThreadSummary[])[0].title,
-      threadTitle: thread.title,
-      turnCameFirst: frames.some((f) => f.event === 'turn'),
-    },
-    expected: {
-      asked: [2],
-      listTitle: 'Demo focus for the week',
-      threadTitle: 'Demo focus for the week',
-      turnCameFirst: true,
-    },
-  })
+  try {
+    await (await send(app, 'http://localhost/chat/retry-name/messages', { message: 'Review the Atlas launch.' })).text()
+    const thread = await until(
+      () => getJson(app, 'http://localhost/chat/retry-name'),
+      (thread) => thread.title === 'Atlas launch review',
+    )
+    assert({
+      given: 'the first naming attempt fails',
+      should: 'finish the reply and retry with its first exchange',
+      actual: { asked, title: thread.title, messages: thread.turns.length },
+      expected: { asked: [1, 2], title: 'Atlas launch review', messages: 2 },
+    })
+  } finally {
+    await (await post(app, 'http://localhost/chat/retry-name/end', { save: false })).text()
+    await rm(host.tmp, { recursive: true, force: true })
+  }
 })
 
-test({ name: 'chat route - without a titler a thread goes by its first words' }, async () => {
+test('chat route - the fallback retains the whole question including a subject at the end', async () => {
+  const message = 'What do you think of the state of the Atlas conversation?'
   const app = appWith(await testHost())
-  await (
-    await send(app, 'http://localhost/chat/w1/messages', { message: 'What should I focus on today please' })
-  ).text()
+  await (await send(app, 'http://localhost/chat/w1/messages', { message })).text()
   const list = (await getJson(app, 'http://localhost/chat')).threads as ThreadSummary[]
 
   assert({
     given: 'no titler and one finished exchange',
-    should: 'title the thread by the first words of its first message',
+    should: 'keep the subject even without a generated title',
     actual: list.find((t) => t.id === 'w1')?.title,
-    expected: 'What should I focus on today please',
+    expected: message,
   })
 })
 
@@ -1815,7 +1901,7 @@ test({ name: 'chat route - the threads the last run left behind come back from t
       lastRole: after.turns.at(-1)?.role,
     },
     expected: {
-      listed: ['r1 done 2 turns · What should I focus on for the Atlas'],
+      listed: ['r1 done 2 turns · What should I focus on for the Atlas launch?'],
       turnsBefore: 2,
       statsBefore: { usageAt: [1], timingsAt: [1], model: 'test-quick' },
       streamedTurn: true,

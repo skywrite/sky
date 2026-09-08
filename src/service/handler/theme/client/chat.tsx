@@ -143,6 +143,8 @@ export interface SavedBranch {
 
 export interface ThreadState {
   id: string
+  /** The subject received on this thread's stream, ahead of the next list refresh. */
+  title: string | null
   turns: Turn[]
   phase: Phase
   /** Messages at the head of `turns` that are the parent's — shown dimmed, the branch's own follow */
@@ -183,6 +185,7 @@ export interface ThreadState {
  */
 type Action =
   | { type: 'reset'; id: string }
+  | { type: 'title'; id: string; title: string }
   | {
       type: 'loaded'
       id: string
@@ -262,6 +265,7 @@ function withReply(turns: Turn[], edit: (reply: Turn) => Turn): Turn[] {
 function initial(id: string): ThreadState {
   return {
     id,
+    title: null,
     turns: [],
     phase: 'idle',
     inherited: 0,
@@ -297,6 +301,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
   switch (action.type) {
     case 'reset':
       return initial(action.id)
+    case 'title':
+      return { ...state, title: action.title }
     case 'loaded': {
       // A read-back that lands after the person already typed must not
       // erase what they sent; the service holds it either way.
@@ -526,12 +532,12 @@ function titleOf(toolName: string): string {
   return humanize(toolName).replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 }
 
-/** First words of the first own message — how a thread is named until it is saved; a branch skips what it inherited. */
+/** The full first own message until its subject arrives; a branch skips what it inherited. */
 export function threadTitle(turns: Turn[], inherited = 0): string | null {
   const first = turns.slice(inherited).find((t) => t.role === 'user')
   const content = first ? splitChatFiles(first.content) : null
   const words = content
-    ? (content.text || content.files.map((file) => file.name).join(', ')).split(/\s+/).slice(0, 8).join(' ')
+    ? (content.text || content.files.map((file) => file.name).join(', ')).replace(/\s+/g, ' ').trim()
     : ''
   return words || null
 }
@@ -806,6 +812,9 @@ export function useChat(id: string) {
         for await (const frame of frames(response, SILENCE_MS)) {
           const d = frame.data
           switch (frame.event) {
+            case 'title':
+              if (typeof d.title === 'string') dispatch({ id, type: 'title', title: d.title })
+              break
             case 'user-message':
               dispatch({ id, type: 'user-message', content: d.content as string })
               break
@@ -1437,7 +1446,7 @@ export function ThreadColumn({
     ? async (point: BranchPoint) => {
         if (branching !== null) return
         const tab = window.open('', '_blank')
-        if (tab) tab.document.title = 'New chat…'
+        if (tab) tab.document.title = 'sky:chat - New branch'
         setBranching(point.key)
         try {
           const made = await branch(point)
@@ -1779,7 +1788,9 @@ export function ChatMain({
         <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
         </Button>
-        <span className="sky-title">{title}</span>
+        <span className="sky-title" title={title}>
+          {title}
+        </span>
         {(state.saved || !voiceMode) && (
           <nav className="sky-tabs">
             {state.saved && (

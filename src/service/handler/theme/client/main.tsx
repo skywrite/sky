@@ -107,6 +107,15 @@ function Canvas() {
   const importRows = imports.filter((j) => j.state !== 'cancelled')
 
   const chat = useChat(threadId ?? '')
+  const currentChat = chat.state.id === threadId ? chat.state : null
+  const chatTitle =
+    currentChat?.title ??
+    threads.find((thread) => thread.id === threadId)?.title ??
+    (currentChat ? threadTitle(currentChat.turns, currentChat.inherited) : null) ??
+    (currentChat?.parent ? 'New branch' : 'New chat')
+  useEffect(() => {
+    document.title = threadId ? `sky:chat - ${chatTitle}` : isAudition ? 'sky · audition' : 'sky'
+  }, [threadId, chatTitle, isAudition])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -378,11 +387,7 @@ function Canvas() {
         <Fragment key={threadId}>
           <ChatMain
             chat={chat}
-            title={
-              threads.find((t) => t.id === threadId)?.title ??
-              threadTitle(chat.state.turns, chat.state.inherited) ??
-              (chat.state.parent ? 'New branch' : 'New chat')
-            }
+            title={chatTitle}
             back={{ label: 'Today', onClick: () => navigate('/') }}
             onEnd={endThread}
             branches={[

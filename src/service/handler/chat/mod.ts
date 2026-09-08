@@ -216,8 +216,8 @@ export interface ChatRoutesOptions {
    */
   snapshotPath?: (id: string, startTime: PlainDateTime) => string
   /**
-   * Names a thread from its first exchange — the one-shot titler the
-   * terminal runs for its tab. Absent, a thread goes by its first words.
+   * Names a thread from its first message, alongside the reply. A failed
+   * attempt can retry with the first exchange; saved titles stay fixed.
    */
   title?: (turns: ConversationMessage[]) => Promise<string | undefined>
   /**
@@ -263,7 +263,7 @@ export type ThreadState = 'new' | 'reading' | 'thinking' | 'streaming' | 'waitin
 /** A thread as the day lists it: enough to show a row, never the transcript. */
 export interface ThreadSummary {
   id: string
-  /** The titler's name once the first exchange is in; first words of the first message before; null before any */
+  /** The generated subject, else the full first message; null before any */
   title: string | null
   state: ThreadState
   /** The reply so far while streaming, the last reply when done, the error when failed */
@@ -298,8 +298,10 @@ type WireEvent =
 
 interface Thread {
   session: ChatSession
-  /** The titler's name for the thread; null until the first exchange has been named */
+  /** The generated subject; null until the thread has been named */
   title: string | null
+  /** Prevent overlapping title requests while the reply or another message finishes. */
+  naming: boolean
   /** The chat this thread branched from, with the live thread it left when there is one */
   parent: ThreadParent | null
   started: boolean
@@ -336,7 +338,6 @@ interface Thread {
 const LINE_CHARS = 140
 /** How long a branch waits for the titler to name the family before the first words stand in. */
 const NAMING_PATIENCE_MS = 4000
-const TITLE_WORDS = 8
 /** Lines kept per tool run — a mission narrates for an hour; the newest lines are the ones that matter */
 const RUN_LINES = 400
 
@@ -345,15 +346,12 @@ function head(text: string, chars = LINE_CHARS): string {
   return flat.length > chars ? `${flat.slice(0, chars - 1)}…` : flat
 }
 
-/** First words of the first message — how a thread goes before it is named; null when there are none. */
+/** Keep the full opening message as a fallback so a subject near its end survives. */
 function threadTitle(turns: ConversationMessage[]): string | null {
   const first = turns.find((t) => t.role === 'user')
   if (!first) return null
   const { text, files } = splitChatFiles(first.content)
-  const words = head(
-    (text || files.map((file) => file.name).join(', ')).split(/\s+/).slice(0, TITLE_WORDS).join(' '),
-    80,
-  )
+  const words = (text || files.map((file) => file.name).join(', ')).replace(/\s+/g, ' ').trim()
   return words || null
 }
 
@@ -524,7 +522,7 @@ const HEARTBEAT_MS = 10_000
 /** What a restored thread says in the list when the service went down answering it */
 const INTERRUPTED_LINE = 'sky restarted while replying — send it again'
 
-/** A thread's name: the titler's, else its own first words, else the words of the message a restart took. */
+/** The generated subject, else the first own message or the message a restart took. */
 function titleOf(thread: Thread): string | null {
   return (
     thread.title ??
@@ -616,6 +614,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             session,
             // A continued chat goes by its saved title from the start.
             title: restore?.title ?? (restore?.resume?.summary || null),
+            naming: false,
             parent: restore?.parent
               ? {
                   ...restore.parent,
@@ -686,26 +685,29 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
   }
 
-  // The first exchange names the thread, once, off the turn's critical path:
-  // the reply is already on the page when the name lands, and the list, the
-  // rail and the header pick it up on their next read (or the stream, when
-  // one is still open). A titler that fails or answers nothing leaves the
-  // first words standing.
-  const name = (id: string, thread: Thread) => {
-    // A branch is named from its own first exchange, past the turns it inherited.
+  // Name the opening question while context and the reply are being prepared.
+  // A branch uses its own question; a failed attempt can retry with the reply.
+  const name = (id: string, thread: Thread, message?: string) => {
     const from = thread.session.inherited
-    if (!options.title || thread.title !== null || thread.session.turns.length < from + 2) return
-    void options
-      .title(thread.session.turns.slice(from, from + 2))
+    const turns = thread.session.turns.slice(from, from + 2)
+    const openingMessage = message ?? thread.interrupted?.message
+    if (turns.length === 0 && openingMessage) turns.push({ role: 'user', content: openingMessage })
+    if (!options.title || thread.title !== null || thread.naming || turns.length === 0) return
+    thread.naming = true
+    void Promise.resolve()
+      .then(() => runWithUsageSource('ai:chat', () => options.title!(turns)))
       .then(async (named) => {
         const title = named?.trim()
         if (!title || threads.get(id) !== thread || thread.title !== null) return
         thread.title = title
         thread.updatedAt = ++tick
         thread.sink?.({ type: 'title', title })
-        if (!thread.busy) await snapshotThread(thread)
+        if (thread.state !== 'saving') await snapshotThread(thread)
       })
       .catch(() => {})
+      .finally(() => {
+        thread.naming = false
+      })
   }
 
   // The threads the last run left behind come back first, in start order,
@@ -898,6 +900,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
         try {
           if (files) frame('user-message', { content: message })
+          name(id, thread, message)
           const turn = await timing.run(async () => {
             if (!thread.started) {
               await thread.session.start()

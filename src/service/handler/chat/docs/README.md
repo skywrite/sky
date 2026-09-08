@@ -200,15 +200,11 @@ a person can see and touch:
   morning's conversation, this afternoon. The saved title itself opens the
   notebook document, and the conversation header offers **Open document**.
   See the [day's document navigation](../../day/docs/2026-09-08-saved-chat-document-links.md).
-- **A name for the thread.** Until its first exchange is in, a thread goes
-  by the first words of its first message, or "New chat" when the message
-  had none. Once the first reply has landed, the terminal's one-shot titler
-  runs off the turn's critical path — the fast model, a topic in a few
-  words over the first two turns — and the thread carries that name in the
-  day's list, the rail, and the page header from their next read (a
-  `title` frame goes down the stream when one is still open). The saved
-  file's `summary:` is still chosen at save, independently, as in the
-  terminal. A titler that fails leaves the first words standing.
+- **A name for the thread.** The fast model names the opening question
+  alongside the reply; a branch uses its first own question. The header,
+  day lists, and browser tab (`sky:chat - <subject>`) follow that subject,
+  with the full first message as the fallback. Existing saved titles stay
+  fixed; a new file's `summary:` is chosen independently at save.
 - **A tool call that needs a go.** The page offers every tool the terminal
   offers, gated the same way: the decorator's `needsApproval` is the source
   of truth. When the model calls a gated tool — post to Slack, build a
