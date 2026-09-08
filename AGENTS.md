@@ -120,7 +120,17 @@ It's fine to use a real value transiently to **verify** behavior (run the comman
 
 Non-obvious design context lives next to the code that owns it, in a `docs/` folder beside the module (index: `git ls-files '*docs/*.md'`). Before non-trivial work in a subsystem, check for one and read its README.
 
-- `docs/README.md` — current design: the mental model needed before changing this code. Keep it true when behavior changes.
+**Document durable reasoning, not every change.** A separate design note or problem narrative is warranted for:
+
+- Substantial architectural or product decisions: responsibilities, boundaries, data models, or workflows with meaningful tradeoffs or rejected alternatives.
+- Hard-won debugging knowledge: a non-obvious root cause or external constraint that a future maintainer would otherwise have to investigate again.
+- Cross-cutting contracts or invariants whose rationale cannot be understood from the code and tests or explained in a short local comment.
+
+**Routine changes do not need new docs, README entries, or verification logs.** Examples include chat titles, labels and copy, minor layout or styling adjustments, straightforward bug fixes, and mechanical refactors. A behavior change, a large diff, time spent implementing, or passing tests does not by itself justify documentation.
+
+Before adding documentation, identify the future mistake or repeated investigation it will prevent. If there is no concrete answer, skip it. Prefer clear code and a brief local comment when those convey the reasoning; keep implementation summaries and routine validation in the commit or PR description.
+
+- `docs/README.md` — current design: the mental model needed before changing this code. Make a narrow correction when existing text becomes inaccurate; do not grow it into a feature-by-feature change log.
 - `docs/YYYY-MM-DD-<slug>.md` — dated problem narratives: what was wrong, what was tried and rejected, why the fix works. Append-only, never retro-edited — a dated file is allowed to be stale.
 - Every doc opens with YAML frontmatter carrying `created:` and `updated:` dates (`YYYY-MM-DD`). Bump `updated:` on every edit.
 - Dated lists in a README (`## Notes`, `## Verified`) run newest first. A new entry goes at the top of its list, never appended at the bottom.
@@ -128,7 +138,7 @@ Non-obvious design context lives next to the code that owns it, in a `docs/` fol
 - Cross-cutting topics with no owning module: `docs/topics/<slug>/` at repo root.
 - These files obey the mock-data rule above. Distill narratives with synthetic examples; raw session transcripts containing real notebook content stay out of the repo.
 
-After solving a problem whose reasoning isn't visible in the resulting code, add a dated entry at the topic's home (create `docs/` if needed).
+When a change meets the threshold above, use its existing topic home and the smallest useful addition. Add a dated problem narrative only when the investigation or decision history itself is worth preserving; create a new `docs/` folder only for a topic that needs one.
 
 ## Key Conventions
 
