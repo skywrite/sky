@@ -1,99 +1,11 @@
-/**
- * The ask_notebook delegate behind a voice session — a headless,
- * stateless slice of ai:chat's pipeline: select documents for one
- * question through the tuned ai:context:files producer, read them under a
- * byte budget, and answer with the reasoning model. The prompt also carries
- * the voice session's initial notebook context for orientation. The realtime
- * voice model narrates the wait, so this call is allowed to take its time. Both
- * voice transports run it: ai:voice in its own process, the web page
- * through the service.
- */
+/** Notebook answer shape and source labels for voice research. */
 
-import { generateText } from 'ai'
-import type { RealtimeFunctionTool } from 'openai/resources/realtime/realtime'
-import type { CommandService } from '#commands/mod.ts'
-import type { ResolvedModel } from '#shared/ai/models.ts'
-import { readTextFile } from '#shared/fs/mod.ts'
 import { ACTIONS_DIR, ACTION_KIND_DIRS, AI_CHATS_DIR, toTimeRef } from '#shared/nbfs/mod.ts'
-import truncate from '#shared/strings/truncate.ts'
-
-/** Total notebook text handed to the delegate model (~40k tokens). */
-const MAX_CONTEXT_CHARS = 160_000
-/** Per-document cap so one giant file cannot crowd out the rest. */
-const MAX_FILE_CHARS = 24_000
 
 export interface NotebookAnswer {
   answer: string
-  /** Documents actually included in the delegate's context. */
+  /** Documents actually included in the research context. */
   paths: string[]
-}
-
-/**
- * The realtime-session tool definition. The description doubles as the
- * voice model's operating manual: it carries the narration guidance the
- * Realtime API expects tool descriptions to include.
- */
-export const ASK_NOTEBOOK = 'ask_notebook'
-
-export const ASK_NOTEBOOK_TOOL: RealtimeFunctionTool = {
-  type: 'function',
-  name: ASK_NOTEBOOK,
-  description:
-    "Research the user's personal notebook when a question needs missing or uncertain personal facts, " +
-    'source details, or deeper history. Answer directly when the supplied context or earlier conversation ' +
-    'already provides sufficient evidence. Before calling, briefly say what you are checking; research can ' +
-    'take time. Use the result to answer naturally, preserving source dates and uncertainty. A lookup that ' +
-    'finds nothing does not prove something never happened.',
-  parameters: {
-    type: 'object',
-    properties: {
-      question: {
-        type: 'string',
-        description:
-          "A complete, self-contained question in the user's words, with any context from earlier in the " +
-          'conversation folded in, including relevant names, dates, corrections, and unresolved findings. ' +
-          'The researcher receives any initial context supplied to this session but does not see the full conversation.',
-      },
-    },
-    required: ['question'],
-  },
-}
-
-/**
- * Answer one question from the notebook: ai:context:files picks the
- * documents, the reasoning model reads them and answers for the ear.
- */
-export async function askNotebook(
-  tasks: CommandService,
-  model: ResolvedModel,
-  systemPrompt: string,
-  question: string,
-): Promise<NotebookAnswer> {
-  const selection = await tasks.run('ai:context:files', {
-    _: ['ai:context:files', question],
-    server: true,
-  })
-  if (selection.status !== 'success') {
-    return { answer: `The notebook search failed: ${selection.message ?? 'ai:context:files error'}.`, paths: [] }
-  }
-
-  const paths: string[] = selection.data?.paths ?? []
-  if (paths.length === 0) {
-    return { answer: 'The notebook search returned no documents for that question.', paths: [] }
-  }
-
-  const { block, included } = await readContextBlock(paths)
-  if (included.length === 0) {
-    return { answer: 'The notebook search found documents, but none of them could be read.', paths: [] }
-  }
-
-  const { text } = await generateText({
-    ...model,
-    system: systemPrompt,
-    prompt: `# Notebook context\n\n${block}\n\n# Question\n\n${question}`,
-  })
-
-  return { answer: text.trim(), paths: included }
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -143,27 +55,4 @@ export function describeNotebookPath(path: string): string {
   }
 
   return path
-}
-
-/** Read selected documents into one context block, under the byte budget. */
-async function readContextBlock(paths: string[]): Promise<{ block: string; included: string[] }> {
-  const blocks: string[] = []
-  const included: string[] = []
-  let budget = MAX_CONTEXT_CHARS
-
-  for (const path of paths) {
-    if (budget <= 0) break
-    let content: string
-    try {
-      content = await readTextFile(path)
-    } catch {
-      continue // vanished or unreadable — the notebook is edited live
-    }
-    const clamped = truncate(content, Math.min(MAX_FILE_CHARS, budget))
-    blocks.push(`## ${describeNotebookPath(path)}\n\n${clamped}`)
-    included.push(path)
-    budget -= clamped.length
-  }
-
-  return { block: blocks.join('\n\n'), included }
 }

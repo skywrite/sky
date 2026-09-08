@@ -3,7 +3,7 @@
  * by ear. A textarea holds the passage; the voices sit in two groups; each
  * plays through a receive-only WebRTC call of its own, since a voice is
  * fixed once it has spoken. No microphone is opened here. The page is
- * reached by ai:voice:audition, not from the sidebar.
+ * available directly at /voice/audition.
  */
 
 import { Button, Textarea } from '@mantine/core'

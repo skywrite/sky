@@ -3,7 +3,7 @@ name: voice-ask-notebook
 schema: 0.2.0
 created: 2026-08-16
 updated: 2026-09-07
-description: Evidence and answering rules for notebook lookup and research behind ai:voice
+description: Evidence and answering rules for browser voice notebook lookup and research
 ---
 
 {{#if researcher.enabled}}

@@ -3,7 +3,7 @@
  *
  * The browser talks to the Realtime API directly over WebRTC; audio never
  * comes here. What does: the client secret the browser connects with,
- * minted around the session configuration ai:voice uses (persona, opening
+ * minted around the browser session configuration (persona, opening
  * line, tools), and every tool call the model makes — the browser relays
  * the call, the service runs it, the browser hands the output back over
  * the data channel. A thread is one browser session; it lives in memory

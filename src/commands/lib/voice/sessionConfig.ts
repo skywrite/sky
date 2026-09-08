@@ -1,14 +1,10 @@
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 /**
- * What a voice session is, apart from how its audio travels: the persona
- * rendered with the session-start clocks, an opening line, the
- * ask_notebook delegate's prompt, and the Realtime session configuration.
+ * Browser voice personas rendered with the session-start clocks, an
+ * opening line, the notebook research prompt, and Realtime configuration.
  *
- * Two transports send that configuration. The terminal sends it over its
- * server WebSocket, where PCM flows both ways and so the format is
- * declared. The browser connects over WebRTC with a client secret minted
- * around it, where the audio format is WebRTC's to negotiate and so is
- * not declared at all.
+ * The browser connects over WebRTC with a client secret minted around
+ * this configuration. WebRTC negotiates the audio format.
  */
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -148,7 +144,7 @@ export interface VoiceClock {
 export interface VoicePrompts {
   /** The session's system instructions: persona, voice, the notebook rules, today's calendar. */
   instructions: string
-  /** The ask_notebook delegate's system prompt. */
+  /** The notebook research engine's system prompt. */
   askPrompt: string
   /** Sonny's instructions for direct conversation and presenting actual research results. */
   researcherInstructions: string
@@ -169,7 +165,7 @@ export interface VoicePromptInput extends VoiceClock {
   calendar?: string
 }
 
-/** Render the personas, delegate prompt, and transport's greeting for one session. */
+/** Render the personas, research prompt, and greeting for one browser session. */
 export async function renderVoicePrompts(input: VoicePromptInput, random?: () => number): Promise<VoicePrompts> {
   const { calendar, notebookContext, dualVoice = false, ...clock } = input
   const renderInput: RenderInput = {
@@ -204,16 +200,13 @@ export interface VoiceSessionSpec {
   tools: RealtimeFunctionTool[]
   /** Realtime reasoning effort — omitted means the server default. */
   effort?: RealtimeEffort
-  /** Declared only by a transport that streams raw PCM itself; the API speaks 24 kHz. */
-  pcmRate?: 24000
   /** Emit speech events while the browser coordinates which participant may speak. */
   manualTurns?: boolean
 }
 
-/** The session configuration both transports send, differing only in whether audio is declared. */
+/** Browser session configuration; WebRTC negotiates the audio format. */
 export function voiceSessionConfig(spec: VoiceSessionSpec): RealtimeSessionCreateRequest {
-  const { model, voice, instructions, tools, effort, pcmRate, manualTurns } = spec
-  const format = pcmRate ? { format: { type: 'audio/pcm' as const, rate: pcmRate } } : {}
+  const { model, voice, instructions, tools, effort, manualTurns } = spec
   return {
     type: 'realtime',
     model,
@@ -221,7 +214,6 @@ export function voiceSessionConfig(spec: VoiceSessionSpec): RealtimeSessionCreat
     instructions,
     audio: {
       input: {
-        ...format,
         // Server-side noise filtering helps VAD whatever the microphone.
         noise_reduction: { type: 'near_field' },
         transcription: { model: 'gpt-live-transcribe' },
@@ -230,7 +222,7 @@ export function voiceSessionConfig(spec: VoiceSessionSpec): RealtimeSessionCreat
           ...(manualTurns ? { create_response: false, interrupt_response: false } : {}),
         },
       },
-      output: { ...format, voice },
+      output: { voice },
     },
     tools,
     tool_choice: 'auto',

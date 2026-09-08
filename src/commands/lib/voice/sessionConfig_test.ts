@@ -24,32 +24,26 @@ const CLOCK = {
   systemTimezone: 'Europe/London',
 }
 
-const TOOL = { type: 'function' as const, name: 'ask_notebook', description: 'probe', parameters: { type: 'object' } }
+const TOOL = {
+  type: 'function' as const,
+  name: 'lookup_notebook',
+  description: 'probe',
+  parameters: { type: 'object' },
+}
 
-test({ name: 'voice session config - a PCM transport declares its format, WebRTC declares none' }, () => {
+test({ name: 'voice session config - browser calls let WebRTC negotiate the audio format' }, () => {
   const spec = { model: 'gpt-realtime-2.1', voice: 'marin', instructions: 'Be Sky.', tools: [TOOL] }
-
-  const socket = voiceSessionConfig({ ...spec, pcmRate: 24000 })
-  assert({
-    given: 'a 24 kHz PCM rate',
-    should: 'declare it on both directions',
-    actual: [socket.audio?.input?.format, socket.audio?.output?.format],
-    expected: [
-      { type: 'audio/pcm', rate: 24000 },
-      { type: 'audio/pcm', rate: 24000 },
-    ],
-  })
 
   const webrtc = voiceSessionConfig(spec)
   assert({
-    given: 'no rate',
-    should: 'leave the format to the transport',
+    given: 'a browser session',
+    should: 'leave the audio format to WebRTC',
     actual: [webrtc.audio?.input?.format, webrtc.audio?.output?.format],
     expected: [undefined, undefined],
   })
   assert({
-    given: 'either transport',
-    should: 'keep the shared session shape',
+    given: 'a browser session',
+    should: 'configure the voice, speech detection, transcription, and tools',
     actual: {
       type: webrtc.type,
       model: webrtc.model,
@@ -279,10 +273,10 @@ test(
       'Sonny',
     ]
     assert({
-      given: 'the default single voice host, including its calendar instructions',
-      should: 'keep its existing research tool and avoid claiming the browser-only capabilities',
+      given: 'the single voice audition persona, including its calendar instructions',
+      should: 'avoid claiming research or a second participant',
       actual: toolNames.map((name) => single.instructions.includes(name)),
-      expected: [true, false, false, false, false, false, false, false, false, false],
+      expected: [false, false, false, false, false, false, false, false, false, false],
     })
     assert({
       given: 'an explicitly enabled dual voice host',

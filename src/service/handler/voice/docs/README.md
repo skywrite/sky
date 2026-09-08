@@ -15,8 +15,8 @@ Routes: `POST /voice/:id/session`, `/tools`, `/end`, and the `/_api/audition`
 pair.
 
 The owning voice design and verification notes are at
-[ai:voice](../../../../commands/all/ai/voice/docs/README.md), including
-[two voices with notebook research](../../../../commands/all/ai/voice/docs/2026-09-07-two-voice-research.md).
+[browser voice](../../../../commands/lib/voice/docs/README.md), including
+[two voices with notebook research](../../../../commands/lib/voice/docs/2026-09-07-two-voice-research.md).
 
 - Tool curation and the spoken-confirm gate:
   [2026-08-30 — tools and the spoken confirm](2026-08-30-tools-and-spoken-confirm.md)

@@ -533,7 +533,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.html(renderAppHtml('sky'))
   })
 
-  // The audition — every voice saying one passage. Reached by ai:voice:audition, not the sidebar.
+  // The audition — every voice saying one passage, available directly at /voice/audition.
   app.get('/voice/audition', (c) => {
     return c.html(renderAppHtml('sky · audition'))
   })

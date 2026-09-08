@@ -3,17 +3,17 @@ created: 2026-09-06
 updated: 2026-09-07
 ---
 
-# ai:voice
+# Browser voice
 
-Design notes for `src/commands/all/ai/voice/` — the terminal voice
-session (`ai:voice`) and the audition opener (`ai:voice:audition`). The
-session configuration, persona prompts, greetings, and notebook research
-code live in `src/commands/lib/voice/`; the web page and its service side
-are written up in `src/service/handler/voice/docs/`.
+Design notes for `src/commands/lib/voice/` — session configuration, persona
+prompts, starting context, and notebook and web research for browser calls.
+The web page and its service side are written up in
+`src/service/handler/voice/docs/`. Voice previews remain available in
+Settings and at `/voice/audition`.
 
 ## Current design
 
-Terminal and browser voice sessions start with the same bounded notebook
+Browser voice sessions start with a bounded notebook
 snapshot: profile and remembered preferences, goals, current week and
 day, recent daily summaries, people, open projects, and pending decisions.
 `commands/lib/voice/initialContext.ts` gathers local records and a limited
@@ -145,16 +145,19 @@ the next call.
 The browser research defaults are
 `default-cerebras-qwen-3.8` with voice-local reasoning disabled for notebook
 lookup and set to `low` for web lookup, and
-`default-gpt-6-astra-high`. The terminal keeps its existing single voice
-and `ask_notebook` delegate, with the improved initial context; the new
-two-voice research experience is browser-only. Text/chat model roles and
-shared profiles are unchanged. This code remains in voice until the
+`default-gpt-6-astra-high`. Voice runs in the browser; the terminal commands,
+WebSocket transport, native audio helper, and old `ask_notebook` delegate
+have been removed. Text/chat model roles and shared profiles are unchanged.
+This code remains in voice until the
 overlapping libraries can be extracted separately. Voice auditions do not
 gather the notebook snapshot.
 Notebook prompt overrides still take precedence, and prompt/context
 changes take effect in newly started sessions.
 
 ## Notes
+
+- Remove the terminal transport while preserving browser calls and previews:
+  [2026-09-07 — remove the voice CLI](2026-09-07-remove-voice-cli.md)
 
 - Let both speakers acknowledge their assigned work while retrieval starts:
   [2026-09-07 — research acknowledgements](2026-09-07-research-acknowledgements.md)

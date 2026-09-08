@@ -98,7 +98,7 @@ function section(title: keyof typeof BUDGETS, records: RecordExcerpt[], baseDir:
   return `### ${title}\n\n${parts.join('\n\n') || '[No records loaded for this section.]'}`
 }
 
-/** Both voice transports call this once, alongside calendar/tool discovery. */
+/** Browser call setup gathers this once, alongside calendar/tool discovery. */
 export async function loadVoiceInitialContext(
   config: ContextConfig,
   clock: Pick<VoiceClock, 'notebookDate' | 'notebookTime' | 'notebookTimezone'>,

@@ -26,8 +26,8 @@ Sections at `/settings` and `/settings/<section>`:
   button (the audition's receive-only call, one row at a time). Picks
   save to `voice.voice` and `voice.researcherVoice`, resolved per session
   in `commands/lib/voice/sessionConfig.ts`, so changes apply to the next
-  call. Sky's choice also applies to CLI voice. See the owning
-  [voice design](../../../../commands/all/ai/voice/docs/README.md).
+  call. See the owning
+  [voice design](../../../../commands/lib/voice/docs/README.md).
   Microphone and speaker are the call bar's own browser-local choice
   (`sky-voice-devices`), shown here.
 - **AI** — the model roles (registry `ROLES`, read-only, each naming
