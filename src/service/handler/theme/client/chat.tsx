@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
+import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
@@ -57,6 +58,8 @@ export interface Turn {
   /** The profile that answered, as the settings name it */
   model?: string
   error?: string
+  /** The server's branch reference; failed or interrupted page-only replies have none. */
+  branchPoint?: BranchPoint
 }
 
 /** A tool call held for the person's go — the card in the thread. */
@@ -218,6 +221,7 @@ type Action =
       usage?: TokenUsage
       model?: string
       timing?: string
+      branchPoint?: BranchPoint
     }
   | { type: 'failed'; id: string; message: string; timing?: string }
   | { type: 'rendered'; id: string; index: number; html: string }
@@ -433,6 +437,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           usage: action.usage ?? r.usage,
           timing: action.timing ?? r.timing,
           model: action.model ?? r.model,
+          branchPoint: action.branchPoint,
         })),
       }
     case 'failed':
@@ -443,7 +448,12 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         approvals: [],
         contextVersion: state.contextVersion + 1,
         runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
-        turns: withReply(state.turns, (r) => ({ ...r, error: action.message, timing: action.timing ?? r.timing })),
+        turns: withReply(state.turns, (r) => ({
+          ...r,
+          error: action.message,
+          timing: action.timing ?? r.timing,
+          branchPoint: undefined,
+        })),
       }
     case 'lost':
       // The connection ended before the reply did. What the tools were doing is unknown now; the read-back will say.
@@ -506,6 +516,7 @@ export function threadTitle(turns: Turn[], inherited = 0): string | null {
 /** A thread as the service reads it back. */
 interface ThreadBody {
   turns: Array<{ role: 'user' | 'assistant'; content: string; when?: string }>
+  branchPoints?: Array<BranchPoint | null>
   documents: number
   kept: number | null
   busy?: boolean
@@ -541,6 +552,7 @@ function turnsOf(body: ThreadBody): Turn[] {
       usage: usageAt.get(i)?.usage,
       model: usageAt.get(i)?.model,
       timing: body.timings?.find((entry) => entry.at === i)?.text,
+      branchPoint: body.branchPoints?.[i] ?? undefined,
     }
   })
 }
@@ -820,6 +832,7 @@ export function useChat(id: string) {
                   usage: d.usage as TokenUsage | undefined,
                   timing: d.timingText as string | undefined,
                   model: d.model as string | undefined,
+                  branchPoint: d.branchPoint as BranchPoint | undefined,
                 })
                 const html = renderMarkdown(text)
                 if (html) dispatch({ id, type: 'rendered', index: replyIndex, html })
@@ -854,13 +867,13 @@ export function useChat(id: string) {
   // first `turn` turns. Nothing is written; the caller turns the page to it.
   // A refusal comes back in words, so the page can say why nothing happened.
   const branch = useCallback(
-    async (turn: number): Promise<{ id: string } | { error: string }> => {
+    async (point: BranchPoint): Promise<{ id: string } | { error: string }> => {
       if (!state.id) return { error: 'No thread to branch from.' }
       if (state.phase !== 'idle') return { error: 'Wait for the turn to finish, then branch.' }
       const response = await fetch(`/chat/${state.id}/branch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ turn }),
+        body: JSON.stringify(point),
       }).catch(() => null)
       if (!response) return { error: "Couldn't reach sky — is the service running?" }
       if (!response.ok) {
@@ -1341,11 +1354,11 @@ export function ThreadColumn({
 }) {
   const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
-  const leftAt = (turn: number) => branches.filter((b) => b.turn === turn)
+  const leftAt = (point?: BranchPoint) => (point ? branches.filter((b) => b.turn === point.turn) : [])
   // Why a branch did not open, said under the turns for a moment; and which
   // turn's branch is being made, so its button says so meanwhile.
   const [refusal, setRefusal] = useState<string | null>(null)
-  const [branching, setBranching] = useState<number | null>(null)
+  const [branching, setBranching] = useState<string | null>(null)
   useEffect(() => {
     if (!refusal) return
     const timer = window.setTimeout(() => setRefusal(null), 8000)
@@ -1358,13 +1371,13 @@ export function ThreadColumn({
   // gesture — then pointed at the branch once the service has made it. A
   // blocked tab falls back to turning this page.
   const branchFrom = onBranched
-    ? async (turn: number) => {
+    ? async (point: BranchPoint) => {
         if (branching !== null) return
         const tab = window.open('', '_blank')
         if (tab) tab.document.title = 'New chat…'
-        setBranching(turn)
+        setBranching(point.key)
         try {
-          const made = await branch(turn)
+          const made = await branch(point)
           if ('id' in made) {
             if (tab) tab.location.href = `/thread/${made.id}`
             else onBranched(made.id)
@@ -1407,11 +1420,11 @@ export function ThreadColumn({
             labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
             shared={i < state.inherited}
             onBranch={
-              branchFrom && !busy && turn.role === 'assistant' && i % 2 === 1
-                ? () => void branchFrom((i + 1) / 2)
+              branchFrom && !busy && turn.role === 'assistant' && turn.branchPoint
+                ? () => void branchFrom(turn.branchPoint!)
                 : undefined
             }
-            branching={branching !== null && branching === (i + 1) / 2}
+            branching={branching !== null && branching === turn.branchPoint?.key}
           />
           {turn.role === 'user' && (
             <Fragment key={`${state.id}-${i}`}>
@@ -1433,10 +1446,10 @@ export function ThreadColumn({
               from turn {state.parent.turn} —
             </div>
           )}
-          {turn.role === 'assistant' && leftAt((i + 1) / 2).length > 0 && (
+          {turn.role === 'assistant' && leftAt(turn.branchPoint).length > 0 && (
             <div className="sky-condensed">
-              — {leftAt((i + 1) / 2).length === 1 ? 'a branch left here: ' : 'branches left here: '}
-              {leftAt((i + 1) / 2).map((b, k) => (
+              — {leftAt(turn.branchPoint).length === 1 ? 'a branch left here: ' : 'branches left here: '}
+              {leftAt(turn.branchPoint).map((b, k) => (
                 <Fragment key={b.id ?? b.chat}>
                   {k > 0 && ', '}
                   {b.id !== null ? (

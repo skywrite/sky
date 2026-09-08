@@ -90,7 +90,7 @@ a person can see and touch:
   completed turns. A browser continuation whose thread cannot be restored
   is refused before a new session can silently replace it. See
   [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
-- **A new chat from here.** Every reply offers it. The branch is a thread
+- **A new chat from here.** Every completed reply offers it. The branch is a thread
   that keeps the turns through that reply and goes its own way after them;
   on its page the inherited turns read dimmed, then a line says where it
   came from and from which turn, and the thread it left carries a line
@@ -99,7 +99,17 @@ a person can see and touch:
   on the thread it left — the titler over the shared turns, or the name
   the thread already had — so the folder the branch will file into is
   known; the parent keeps that name when it saves. `POST /chat/:id/branch`
-  `{ turn }` answers the new thread's id and the parent key it carries.
+  `{ turn, key? }` answers the new thread's id and the parent key it carries.
+  The service supplies that reference on completed turn frames and thread
+  read-back; the page never counts interrupted replies as branch points.
+  The key identifies the conversation through the selected reply, surviving
+  snapshot formatting while rejecting missing or changed history with a
+  recovery message. A refused branch keeps the page's messages intact.
+  Existing tabs can still use the original `{ turn }` request when that turn
+  exists. The optional key strengthens validation for updated pages without
+  forcing older pages to reload. See the
+  [compatibility correction](2026-09-07-existing-tabs-can-branch.md).
+  See [2026-09-07](2026-09-07-branching-after-an-interrupted-reply.md).
   When a branch is ended and saved, a parent that has no file yet is filed
   first, lightly (its pinned title, no tag, rel or memory work), and goes
   on talking into that file; the branch then files beside it, in the
@@ -275,6 +285,18 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-07 — a restored chat accepts the original turn-only request from
+  an existing tab and creates a branch with the exact inherited conversation;
+  a turn beyond the recovered history remains refused.
+
+- 2026-09-07 — branching survives a disk restore and resend after an
+  interrupted exchange. HTTP checks reject missing or changed branch
+  references, including an in-range turn with the same reply text under a
+  different question. A browser test closes the reply stream mid-answer,
+  recovers a shorter server history, sends again, and branches at server
+  turn 2 while three replies remain displayed; a refused branch preserves
+  the page and its partial text.
 
 - 2026-09-07 — web save defaults exercised through HTTP against a temporary
   notebook: save writes the transcript and a resolving day-file link in the

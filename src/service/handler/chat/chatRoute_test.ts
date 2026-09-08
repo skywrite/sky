@@ -24,7 +24,9 @@ import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import { approvalCard } from './approvalCard.ts'
+import type { BranchPoint } from './branchPoint.ts'
 import { createChatHost } from './createSession.ts'
+import { interruptedOf } from './interrupted.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -1741,7 +1743,8 @@ test(
     const app = appWith(host)
     await (await send(app, 'http://localhost/chat/p1/messages', { message: 'What should I focus on today?' })).text()
 
-    const made = await post(app, 'http://localhost/chat/p1/branch', { turn: 1 })
+    const source = await getJson(app, 'http://localhost/chat/p1')
+    const made = await post(app, 'http://localhost/chat/p1/branch', source.branchPoints[1])
     const { id: branchId, parent } = (await made.json()) as { id: string; parent: { chat: string; turn: number } }
     const branchBefore = await getJson(app, `http://localhost/chat/${branchId}`)
     const rows = (await getJson(app, 'http://localhost/chat')).threads as ThreadSummary[]
@@ -1812,6 +1815,157 @@ test(
     })
   },
 )
+
+test('chat route - branching after an interrupted exchange uses the recovered server turn', async () => {
+  let calls = 0
+  const host = await testHost({
+    invokeModel: async ({ sink }) => {
+      calls++
+      if (calls === 2) throw new Error('The connection stopped while replying.')
+      sink.write(
+        calls === 1 ? '## Plan\nStart with the demo.\n\nSources:\n- https://example.com/brief\n' : 'Assign an owner.',
+      )
+      return EMPTY
+    },
+  })
+  try {
+    const url = 'http://localhost/chat/branch-recovery'
+    const before = appWith(host)
+    const first = parseSSE(
+      await (await send(before, `${url}/messages`, { message: 'Plan the Atlas launch.' })).text(),
+    ).find((frame) => frame.event === 'turn')!.data!.branchPoint as BranchPoint
+    const failed = parseSSE(await (await send(before, `${url}/messages`, { message: 'What comes next?' })).text()).find(
+      (frame) => frame.event === 'turn',
+    )!.data!
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'branch-recovery.autosave.md'), { snapshot: true })
+    const after = appWith({
+      ...host,
+      snapshots: async () => [{ id: 'branch-recovery', startTime: START, ...interruptedOf(snapshot.state) }],
+    })
+    const restored = await getJson(after, url)
+    const second = parseSSE(await (await send(after, `${url}/messages`, { message: 'What comes next?' })).text()).find(
+      (frame) => frame.event === 'turn',
+    )!.data!.branchPoint as BranchPoint
+    const made = await post(after, `${url}/branch`, second)
+    const branchId = ((await made.json()) as { id: string }).id
+    const branch = await getJson(after, `http://localhost/chat/${branchId}`)
+    const earlier = await post(after, `${url}/branch`, first)
+    assert({
+      given: 'a completed reply, an interrupted exchange, a disk restore, and a successful resend',
+      should: 'keep the first reference through transcript formatting and branch at the second server exchange',
+      actual: {
+        firstSurvived: first.key === restored.branchPoints[1]?.key,
+        failedHasReference: failed.branchPoint !== undefined,
+        interrupted: restored.interrupted?.message,
+        turn: second.turn,
+        statuses: [made.status, earlier.status],
+        inherited: branch.inherited,
+        last: branch.turns.at(-1)?.content,
+        branchReference: branch.branchPoints.at(-1),
+      },
+      expected: {
+        firstSurvived: true,
+        failedHasReference: false,
+        interrupted: 'What comes next?',
+        turn: 2,
+        statuses: [201, 201],
+        inherited: 4,
+        last: 'Assign an owner.',
+        branchReference: second,
+      },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat route - an existing page can still branch with its original turn-only request', async () => {
+  const host = await testHost()
+  try {
+    const url = 'http://localhost/chat/legacy-branch'
+    const before = appWith(host)
+    await (await send(before, `${url}/messages`, { message: 'Plan the Atlas launch.' })).text()
+    await (await send(before, `${url}/messages`, { message: 'Prepare the Widget demo.' })).text()
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'legacy-branch.autosave.md'), { snapshot: true })
+    const after = appWith({
+      ...host,
+      snapshots: async () => [{ id: 'legacy-branch', startTime: START, state: snapshot.state }],
+    })
+    const response = await post(after, `${url}/branch`, { turn: 2 })
+    const result = (await response.json()) as { id: string }
+    const branch = await getJson(after, `http://localhost/chat/${result.id}`)
+    const invalid = await post(after, `${url}/branch`, { turn: 3 })
+    assert({
+      given: 'a restored chat and an already-open browser using the original turn-only API',
+      should: 'branch through the requested reply without a reload and refuse positions the server does not have',
+      actual: {
+        statuses: [response.status, invalid.status],
+        parentTurn: branch.parent?.turn,
+        inherited: branch.inherited,
+        conversation: branch.turns,
+      },
+      expected: {
+        statuses: [201, 409],
+        parentTurn: 2,
+        inherited: 4,
+        conversation: snapshot.state.conversation,
+      },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat route - a stale branch reference never silently selects a different reply', async () => {
+  const host = await testHost()
+  try {
+    const url = 'http://localhost/chat/branch-stale'
+    const before = appWith(host)
+    await (await send(before, `${url}/messages`, { message: 'Plan the Atlas launch.' })).text()
+    const original = await getJson(before, url)
+    const first = original.branchPoints[1] as BranchPoint
+    const snapshot = await loadResumeSession(path.join(host.tmp, 'branch-stale.autosave.md'), { snapshot: true })
+    await (await send(before, `${url}/messages`, { message: 'Prepare the Widget demo.' })).text()
+    const latest = await getJson(before, url)
+    const second = latest.branchPoints[3] as BranchPoint
+    const after = appWith({
+      ...host,
+      snapshots: async () => [{ id: 'branch-stale', startTime: START, state: snapshot.state }],
+    })
+    // The same reply text under a different question must not share a reference.
+    await (await send(after, `${url}/messages`, { message: 'Draft the Team-Survey questions.' })).text()
+    const wrong = await post(after, `${url}/branch`, second)
+    const missing = await post(after, `${url}/branch`, { ...second, turn: 3 })
+    const emptyKey = await post(after, `${url}/branch`, { turn: 2, key: '' })
+    const gone = await post(after, 'http://localhost/chat/missing/branch', first)
+    const malformed = await post(after, `${url}/branch`, { ...first, turn: 1.5 })
+    const held = await getJson(after, url)
+    const rows = (await getJson(after, 'http://localhost/chat')).threads as ThreadSummary[]
+    assert({
+      given: 'a stale reply at an in-range position, one beyond recovery, an empty key, and a missing thread',
+      should: 'refuse without creating branches or changing the parent and explain how to preserve the page',
+      actual: {
+        statuses: [wrong.status, missing.status, emptyKey.status, gone.status, malformed.status],
+        message: ((await wrong.json()) as { message: string }).message,
+        threads: rows.length,
+        turns: held.turns.length,
+        earlierUnchanged: held.branchPoints[1],
+        sameReply: held.turns[3].content === latest.turns[3].content,
+      },
+      expected: {
+        statuses: [409, 409, 409, 409, 400],
+        message:
+          'This reply no longer matches the chat held by Sky. Keep this page open to preserve the messages shown here.',
+        threads: 1,
+        turns: 4,
+        earlierUnchanged: first,
+        sameReply: true,
+      },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
 
 test({ name: 'chat route - a saved chat opens as a thread to continue, once' }, async () => {
   const host = await testHost()

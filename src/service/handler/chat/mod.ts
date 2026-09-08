@@ -30,6 +30,7 @@ import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
+import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { timelineOf } from './timeline.ts'
@@ -868,7 +869,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
           thread.updatedAt = ++tick
-          frame('turn', { ...(wireTurn(turn) as object), model: thread.profile })
+          frame('turn', {
+            ...(wireTurn(turn) as object),
+            model: thread.profile,
+            branchPoint: turn.error ? undefined : branchPoints(thread.session.turns).at(-1),
+          })
           await chain
           if (!turn.error) name(id, thread)
         } catch (error) {
@@ -910,6 +915,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       saved: savedOf(thread, baseDir),
       branches: await savedBranchesOf(savedOf(thread, baseDir), baseDir),
       turns: thread.session.turns,
+      branchPoints: branchPoints(thread.session.turns),
       interrupted: thread.interrupted,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
@@ -1009,13 +1015,29 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     await restored
     const id = c.req.param('id')
     const source = threads.get(id)
-    if (!source) return c.json({ message: 'no such thread' }, 404)
+    if (!source) {
+      return c.json(
+        { message: 'Sky could not recover this chat. Keep this page open to preserve the messages shown here.' },
+        409,
+      )
+    }
     if (source.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
-    const body = (await c.req.json().catch(() => null)) as { turn?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as { turn?: unknown; key?: unknown } | null
     const turn = body?.turn
-    const turns = Math.floor(source.session.turns.length / 2)
-    if (!(typeof turn === 'number' && Number.isInteger(turn) && turn >= 1 && turn <= turns)) {
-      return c.json({ message: `turn must be a whole number from 1 to ${turns}` }, 400)
+    if (!(typeof turn === 'number' && Number.isInteger(turn) && turn >= 1)) {
+      return c.json({ message: 'turn must be a positive whole number' }, 400)
+    }
+    // Existing tabs send only { turn }. Keep that protocol working; newer
+    // pages also identify the reply so a changed history can be detected.
+    const point = branchPoints(source.session.turns)[turn * 2 - 1]
+    if (!point || (body?.key !== undefined && point.key !== body.key)) {
+      return c.json(
+        {
+          message:
+            'This reply no longer matches the chat held by Sky. Keep this page open to preserve the messages shown here.',
+        },
+        409,
+      )
     }
     // The family's name: what the thread is called, else the titler over the
     // shared turns — given a few seconds, no more, since the person is waiting
