@@ -60,6 +60,8 @@ ends a mission. Read the [2026-09-06 note](2026-09-06-a-turn-that-stops-says-so.
 
 ## Notes
 
+- [2026-09-07 — files clipped into web chat](../../../../service/handler/chat/docs/2026-09-07-files-clipped-into-chat.md): a session can accept native document parts with a user message and retain their attachment metadata through recovery.
+
 - [2026-09-07 — voice inside Chat](../../../../service/handler/chat/docs/2026-09-07-voice-inside-chat.md): externally delivered speech appends to model history and recovery without rerunning the text model; later context turn numbers include those exchanges.
 
 - [2026-09-07 — recovery is independent of filing](../../../../service/handler/chat/docs/2026-09-07-recovery-is-independent-of-filing.md): active web chats keep snapshots under either filing preference; recovery includes full model history and host settings.

@@ -16,7 +16,7 @@ import { Buffer } from 'node:buffer'
 import { stat } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { jsonSchema, type Tool, tool } from 'ai'
+import { jsonSchema, type Tool, tool, type UserContent } from 'ai'
 import { IMAGE_EXTENSIONS, loadDocument, type LoadedDocument, PDF_EXTENSIONS } from '#lib/documents/loadDocument.ts'
 import { copyToDayAttachments } from '#lib/notebook/attachments.ts'
 import { slugify } from '#lib/string/mod.ts'
@@ -155,6 +155,19 @@ export function toModelContent(output: ReadFileSuccess, document: LoadedDocument
       },
     ],
   }
+}
+
+/** A browser upload joins the user's message, with the same reading and text budget as read_file. */
+export function toUserContent(output: ReadFileSuccess, document: LoadedDocument): Exclude<UserContent, string> {
+  const header = describe(output)
+  if (document.kind === 'text') return [{ type: 'text', text: `${header}\n\n${document.text}` }]
+  const data = Buffer.from(document.data).toString('base64')
+  return [
+    { type: 'text', text: header },
+    document.kind === 'image'
+      ? { type: 'image', image: data, mediaType: document.mediaType }
+      : { type: 'file', data, mediaType: document.mediaType, filename: output.attachment },
+  ]
 }
 
 /** Load, copy, record. The document rides back beside the output so execute can keep it for toModelOutput. */

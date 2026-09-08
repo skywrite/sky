@@ -21,6 +21,7 @@ import {
   streamText,
   type SystemModelMessage,
   type ToolSet,
+  type UserContent,
 } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/promptCache.ts'
@@ -36,7 +37,7 @@ import type { ConversationMessage } from '../type.d.ts'
 import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
 import { turnErrorMessage } from './turnErrorMessage.ts'
 
-type Message = { role: 'user' | 'assistant'; content: string }
+type Message = ModelMessage
 
 // -----------------------------------------------------------------------------
 // Approvals — the interaction a host injects
@@ -311,13 +312,21 @@ export default class ChatEngine {
    * message; merge into it so roles keep alternating — each merged chunk
    * keeps its own stamp.
    */
-  appendUserMessage(userMessage: string, when?: string): void {
+  appendUserMessage(userMessage: string, when?: string, files: Exclude<UserContent, string> = []): void {
     const content = when ? `${timeStampLine(when)}\n${userMessage}` : userMessage
     const priorMsg = this.messages.at(-1)
-    if (priorMsg?.role === 'user' && typeof priorMsg.content === 'string') {
-      priorMsg.content += '\n\n' + content
+    if (priorMsg?.role === 'user') {
+      if (typeof priorMsg.content === 'string' && files.length === 0) priorMsg.content += '\n\n' + content
+      else {
+        const prior =
+          typeof priorMsg.content === 'string' ? [{ type: 'text' as const, text: priorMsg.content }] : priorMsg.content
+        priorMsg.content = [...prior, { type: 'text', text: content }, ...files]
+      }
     } else {
-      this.messages.push({ role: 'user', content })
+      this.messages.push({
+        role: 'user',
+        content: files.length ? [{ type: 'text', text: content }, ...files] : content,
+      })
     }
   }
 

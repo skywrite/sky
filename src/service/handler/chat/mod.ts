@@ -12,6 +12,7 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
@@ -19,19 +20,22 @@ import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
-import type { ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
+import type { ChatMessageFiles, ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
 import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
+import { chatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_FILES, splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
+import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { timelineOf } from './timeline.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
@@ -116,6 +120,8 @@ export interface ThreadRestore {
   startTime?: PlainDateTime
   /** The conversation and context the thread begins with */
   state: ResumeState
+  /** Files recorded by the active thread before a restart. */
+  attachments?: Attachment[]
   /** The durable approval keys the snapshot carried (`tool:fileId`) */
   approvals?: readonly string[]
   /** A saved chat being continued: the session writes back to its file */
@@ -203,6 +209,8 @@ export interface ChatSettingsHost {
 
 export interface ChatRoutesOptions {
   createSession: ChatSessionFactory
+  /** The console reader's attachment directory; uploads and their permanent download links use it too. */
+  attachmentsRoot?: string
   /**
    * Where a thread's temporary recovery snapshot lives.
    */
@@ -341,7 +349,11 @@ function head(text: string, chars = LINE_CHARS): string {
 function threadTitle(turns: ConversationMessage[]): string | null {
   const first = turns.find((t) => t.role === 'user')
   if (!first) return null
-  const words = head(first.content.split(/\s+/).slice(0, TITLE_WORDS).join(' '), 80)
+  const { text, files } = splitChatFiles(first.content)
+  const words = head(
+    (text || files.map((file) => file.name).join(', ')).split(/\s+/).slice(0, TITLE_WORDS).join(' '),
+    80,
+  )
   return words || null
 }
 
@@ -531,6 +543,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // Tuning chosen before a thread's first message — applied when it is built.
   const pending = new Map<string, ThreadPrefs>()
   const app = new Hono()
+  if (options.attachmentsRoot) app.route('/files', createChatFileRoutes(options.attachmentsRoot))
+  app.use('/:id/messages', bodyLimit({ maxSize: MAX_CHAT_FILE_BYTES + 1024 * 1024 }))
   // Two threads can move within one millisecond; a counter keeps "newest
   // activity first" true where a clock would tie.
   let tick = 0
@@ -748,15 +762,33 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
 
   app.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
-    const body = (await c.req.json().catch(() => null)) as {
+    const multipart = c.req.header('content-type')?.startsWith('multipart/form-data')
+      ? await c.req.formData().catch(() => null)
+      : null
+    const uploads = multipart ? multipart.getAll('files') : []
+    if (uploads.some((file) => !(file instanceof File))) return c.json({ message: 'Expected file attachments.' }, 400)
+    const uploadError = chatFileError(uploads as File[])
+    if (uploadError) return c.json({ message: uploadError }, 400)
+    let rawBody: unknown
+    try {
+      rawBody = multipart ? JSON.parse(String(multipart.get('message') ?? 'null')) : await c.req.json()
+    } catch {
+      return c.json({ message: 'Invalid message.' }, 400)
+    }
+    const body = rawBody as {
       message?: unknown
       profile?: unknown
       contextTokens?: unknown
       saves?: unknown
       continuing?: unknown
     } | null
-    const message = typeof body?.message === 'string' ? body.message.trim() : ''
-    if (!message) return c.json({ message: 'message is required' }, 400)
+    let message = typeof body?.message === 'string' ? body.message.trim() : ''
+    const linked = splitChatFiles(message)
+    const hasFiles = uploads.length > 0 || linked.files.length > 0
+    if (!message && !hasFiles) return c.json({ message: 'message is required' }, 400)
+    if (uploads.length + linked.files.length > MAX_CHAT_FILES)
+      return c.json({ message: `Attach up to ${MAX_CHAT_FILES} files at a time.` }, 400)
+    if (hasFiles && !options.attachmentsRoot) return c.json({ message: 'File attachments are unavailable.' }, 400)
     // A message carries the choices visible when Send was pressed. Missing
     // choices must never turn a restarted service's defaults into consent.
     if (body?.profile === undefined || body.contextTokens === undefined || body.saves === undefined) {
@@ -792,6 +824,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     // Start at acceptance of a valid prompt, before thread construction or initial context.
     const timing = new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
     let thread: Thread | undefined
+    let files: ChatMessageFiles | undefined
     try {
       thread = await timing.run(async () => {
         await restored
@@ -809,6 +842,24 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         )
       }
       thread.busy = true
+      if (hasFiles) {
+        try {
+          const read = await readChatFiles(
+            linked.text,
+            uploads as File[],
+            linked.files,
+            thread.session.startTime.plainDate,
+            options.attachmentsRoot!,
+          )
+          message = read.message
+          files = read.files
+        } catch (error) {
+          thread.busy = false
+          release()
+          timing.finish('error')
+          return c.json({ message: (error as Error).message }, 400)
+        }
+      }
       thread.session.setModel(chosen.model, chosen.profile)
       thread.profile = prefs.profile
       if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
@@ -846,6 +897,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         // is a lost connection, however the socket looks from the browser.
         const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
         try {
+          if (files) frame('user-message', { content: message })
           const turn = await timing.run(async () => {
             if (!thread.started) {
               await thread.session.start()
@@ -856,7 +908,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               })
             }
             // The first reply includes the initial context gathering in its timing.
-            return runWithUsageSource('ai:chat', () => thread.session.send(message))
+            return runWithUsageSource('ai:chat', () => thread.session.send(message, files))
           })
           if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
           if (turn.timing && !turn.error) thread.timings.set(thread.session.turns.length - 1, timingLine(turn.timing))

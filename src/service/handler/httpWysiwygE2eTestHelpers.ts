@@ -126,6 +126,8 @@ export async function runWysiwygE2e(
     day?: boolean
     /** Script an import's read-back and run when testing the day import flow */
     imports?: Partial<ImportRoutesOptions>
+    /** A real chat host with a scripted model, for browser conversation tests. */
+    chat?: (notebookBaseDir: string, userDataDir: string) => ChatRoutesOptions
   },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,
 ) {
@@ -166,6 +168,7 @@ export async function runWysiwygE2e(
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
         ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
+        ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
       },
     )
     browser = await launchChromiumOrSkip(t)

@@ -1,6 +1,7 @@
 import { ActionIcon, Button, Textarea } from '@mantine/core'
 import {
   Fragment,
+  type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -10,10 +11,12 @@ import {
   useRef,
   useState,
 } from 'react'
+import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
+import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
@@ -47,6 +50,8 @@ import { renderStatic } from './wysiwyg/render.ts'
 export interface Turn {
   role: 'user' | 'assistant'
   content: string
+  /** Browser files while sending; durable links replace these when the server accepts the message. */
+  files?: PendingChatFile[]
   /** Notebook stamp `HH:MM` from the service, or a client clock */
   time?: string
   /** The reply rendered as HTML once it finished streaming */
@@ -207,7 +212,9 @@ type Action =
     }
   | { type: 'approval'; id: string; approval: Approval }
   | { type: 'answered'; id: string; approvalId: string; approved: boolean; at: number }
-  | { type: 'sent'; id: string; content: string }
+  | { type: 'sent'; id: string; content: string; files?: PendingChatFile[] }
+  | { type: 'user-message'; id: string; content: string }
+  | { type: 'rejected'; id: string }
   | { type: 'queries'; id: string; turn: number; queries: string[] }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
@@ -346,16 +353,28 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       return {
         ...state,
         phase: 'busy',
-        gather:
-          state.settings?.contextTokens === 0
+        gather: action.files?.length
+          ? 'reading your files'
+          : state.settings?.contextTokens === 0
             ? 'not reading your notebook'
             : state.turns.length === 0
               ? 'reading your notebook'
               : 'finding what matters for this',
         provenance: null,
         interrupted: null,
-        turns: [...state.turns, { role: 'user', content: action.content, time: clock() }],
+        turns: [...state.turns, { role: 'user', content: action.content, files: action.files, time: clock() }],
       }
+    case 'user-message': {
+      const at = state.turns.findLastIndex((turn) => turn.role === 'user')
+      return {
+        ...state,
+        turns: state.turns.map((turn, index) =>
+          index === at ? { ...turn, content: action.content, files: undefined } : turn,
+        ),
+      }
+    }
+    case 'rejected':
+      return { ...state, phase: 'idle', gather: null, turns: state.turns.slice(0, -1) }
     case 'queries':
       return {
         ...state,
@@ -508,7 +527,10 @@ function titleOf(toolName: string): string {
 /** First words of the first own message — how a thread is named until it is saved; a branch skips what it inherited. */
 export function threadTitle(turns: Turn[], inherited = 0): string | null {
   const first = turns.slice(inherited).find((t) => t.role === 'user')
-  const words = first ? first.content.split(/\s+/).slice(0, 8).join(' ') : ''
+  const content = first ? splitChatFiles(first.content) : null
+  const words = content
+    ? (content.text || content.files.map((file) => file.name).join(', ')).split(/\s+/).slice(0, 8).join(' ')
+    : ''
   return words || null
 }
 
@@ -715,9 +737,17 @@ export function useChat(id: string) {
   const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
   const send = useCallback(
-    async (content: string) => {
+    async (content: string, files: File[] = [], onAccepted?: () => void): Promise<{ ok: boolean; error?: string }> => {
       const message = content.trim()
-      if (!message || !state.id || state.phase !== 'idle' || !state.settings || tuningCount.current > 0) return
+      if (
+        (!message && files.length === 0) ||
+        !state.id ||
+        state.phase !== 'idle' ||
+        !state.settings ||
+        tuningCount.current > 0 ||
+        attached.current
+      )
+        return { ok: false }
       const id = state.id
       // Capture once: every retry carries exactly what the composer showed.
       const body = JSON.stringify({
@@ -727,10 +757,15 @@ export function useChat(id: string) {
         saves: state.settings.saves,
         continuing: state.turns.length > 0,
       })
+      const form = files.length > 0 ? new FormData() : null
+      if (form) {
+        form.set('message', body)
+        for (const file of files) form.append('files', file)
+      }
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
       attached.current = true
-      dispatch({ id, type: 'sent', content: message })
+      dispatch({ id, type: 'sent', content: message, files: files.map((file) => ({ name: file.name })) })
       const replyIndex = state.turns.length + 1
 
       // A message the service never received is safe to send again: when it
@@ -739,8 +774,8 @@ export function useChat(id: string) {
       const post = () =>
         fetch(`/chat/${id}/messages`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
+          headers: form ? undefined : { 'Content-Type': 'application/json' },
+          body: form ?? body,
         })
       let response: Response
       try {
@@ -751,22 +786,27 @@ export function useChat(id: string) {
         if (back.kind !== 'answered') {
           attached.current = false
           dispatch({ id, type: 'failed', message: AWAY })
-          return
+          return { ok: false, error: AWAY }
         }
         response = back.response
       }
       if (!response.ok) {
         attached.current = false
         const body = (await response.json().catch(() => ({}))) as { message?: string }
-        dispatch({ id, type: 'failed', message: body.message ?? `The service answered ${response.status}.` })
-        return
+        const error = body.message ?? `The service answered ${response.status}.`
+        dispatch(files.length ? { id, type: 'rejected' } : { id, type: 'failed', message: error })
+        return { ok: false, error }
       }
+      onAccepted?.()
 
       let finished = false
       try {
         for await (const frame of frames(response, SILENCE_MS)) {
           const d = frame.data
           switch (frame.event) {
+            case 'user-message':
+              dispatch({ id, type: 'user-message', content: d.content as string })
+              break
             case 'approval-request':
               dispatch({ id, type: 'approval', approval: d.approval as Approval })
               break
@@ -880,6 +920,7 @@ export function useChat(id: string) {
         }
       }
       followSummaries(id, dispatch)
+      return { ok: true }
     },
     [state.id, state.phase, state.turns.length, state.settings],
   )
@@ -1259,9 +1300,7 @@ function SourcesFold({ sources }: { sources: string[] }) {
 function InterruptedTurn({ interrupted, onResend }: { interrupted: Interrupted; onResend: (message: string) => void }) {
   return (
     <>
-      <div className="sky-turn sky-turn-user">
-        <div className="sky-bubble">{interrupted.message}</div>
-      </div>
+      <TurnView turn={{ role: 'user', content: interrupted.message }} streaming={false} />
       <div className="sky-turn">
         <span className="sky-who">
           <span>sky{interrupted.time ? ` · ${interrupted.time}` : ''}</span>
@@ -1518,8 +1557,11 @@ export function ThreadColumn({
 
 export interface ComposerAttach {
   /** The file kinds the picker offers */
-  accept: string
+  accept?: string
   onFiles: (files: File[]) => void
+  files?: File[]
+  onRemove?: (index: number) => void
+  onSent?: (files: File[]) => void
 }
 
 export function Composer({
@@ -1546,6 +1588,10 @@ export function Composer({
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const threadId = useRef(state.id)
+  threadId.current = state.id
+  const [sendError, setSendError] = useState<string | null>(null)
+  useEffect(() => setSendError(null), [state.id, attach?.files])
   const busy = state.phase !== 'idle'
   const canSend = !busy && !chat.tuning && state.settings !== null && !sendDisabled
 
@@ -1554,10 +1600,22 @@ export function Composer({
     const el = inputRef.current
     if (!el) return
     const text = el.value
-    if (!text.trim()) return
-    el.value = ''
-    if (onSend) onSend(text)
-    else void send(text)
+    const files = attach?.files ?? []
+    if (!text.trim() && files.length === 0) return
+    setSendError(null)
+    if (onSend) {
+      el.value = ''
+      onSend(text)
+    } else {
+      const id = state.id
+      void send(text, files, () => {
+        if (threadId.current !== id) return
+        el.value = ''
+        attach?.onSent?.(files)
+      }).then((result) => {
+        if (!result.ok && threadId.current === id) setSendError(result.error ?? 'Wait a moment and try again.')
+      })
+    }
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1569,47 +1627,69 @@ export function Composer({
 
   return (
     <div className="sky-composer-zone">
-      {status}
       <div className="sky-composer">
-        {attach && (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              hidden
-              multiple
-              accept={attach.accept}
-              onChange={(event) => {
-                const list = event.target.files
-                const files: File[] = list ? Array.from(list) : []
-                event.target.value = ''
-                if (files.length > 0) attach.onFiles(files)
-              }}
-            />
-            <ActionIcon aria-label="Add a file" onClick={() => fileRef.current?.click()}>
-              ＋
-            </ActionIcon>
-          </>
+        {status}
+        {sendError && (
+          <p className="sky-chat-file-error" role="alert">
+            {sendError}
+          </p>
         )}
-        <div className="sky-input">
-          <Textarea
-            ref={inputRef}
-            variant="unstyled"
-            classNames={{ root: 'sky-input-root', input: 'sky-input-field' }}
-            autosize
-            minRows={1}
-            maxRows={8}
-            placeholder={placeholder}
-            aria-label={placeholder}
-            onKeyDown={onKeyDown}
-            disabled={busy}
-            autoFocus
-          />
+        <div className="sky-composer-shell">
+          <FileClips files={attach?.files ?? []} onRemove={attach?.onRemove} disabled={busy || sendDisabled} />
+          <div className="sky-composer-row">
+            {attach && (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  hidden
+                  multiple
+                  disabled={busy || sendDisabled}
+                  accept={attach.accept}
+                  onChange={(event) => {
+                    const list = event.target.files
+                    const files: File[] = list ? Array.from(list) : []
+                    event.target.value = ''
+                    if (files.length > 0) attach.onFiles(files)
+                  }}
+                />
+                <ActionIcon
+                  aria-label="Add a file"
+                  title="Add a file"
+                  disabled={busy || sendDisabled}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip />
+                </ActionIcon>
+              </>
+            )}
+            <div className="sky-input">
+              <Textarea
+                ref={inputRef}
+                variant="unstyled"
+                classNames={{ root: 'sky-input-root', input: 'sky-input-field' }}
+                autosize
+                minRows={1}
+                maxRows={8}
+                placeholder={placeholder}
+                aria-label={placeholder}
+                onKeyDown={onKeyDown}
+                onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
+                  const files: File[] = Array.from(event.clipboardData.files)
+                  if (!attach || files.length === 0) return
+                  event.preventDefault()
+                  attach.onFiles(files)
+                }}
+                disabled={busy}
+                autoFocus
+              />
+            </div>
+            <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
+              ↑
+            </ActionIcon>
+            {trailingAction}
+          </div>
         </div>
-        <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
-          ↑
-        </ActionIcon>
-        {trailingAction}
       </div>
       <div className="sky-under">
         {state.settings && (
@@ -1675,6 +1755,7 @@ export function ChatMain({
   const scrollRef = useRef<HTMLDivElement>(null)
   useFollow(scrollRef, [state.turns, state.gather, call.voice.state.turns])
   const busy = state.phase !== 'idle'
+  const attachments = useChatFiles(state.id, busy || call.active || call.preparing || call.syncing || call.unsaved)
   const empty = state.turns.length === 0 && !state.gather && !call.visible
   const [panel, setPanel] = useState(false)
   useEffect(() => {
@@ -1715,7 +1796,13 @@ export function ChatMain({
       </header>
 
       <div className="sky-split">
-        <div className="sky-split-main">
+        <div className="sky-split-main sky-chat-drop-target" {...attachments.drop}>
+          {attachments.dragging && (
+            <div className="sky-chat-drop" role="status">
+              <Paperclip />
+              <span>Drop files to read in this chat</span>
+            </div>
+          )}
           <div className="sky-scroll" ref={scrollRef}>
             {empty ? (
               <div className="sky-blank">
@@ -1733,16 +1820,24 @@ export function ChatMain({
             chat={chat}
             placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
             hints={KEY_HINTS}
+            attach={attachments.attach}
             sendDisabled={call.preparing || call.syncing || call.unsaved || call.voice.state.phase === 'starting'}
             onSend={call.active ? (text) => void call.voice.sendText(text) : undefined}
             status={
-              <VoiceStatus
-                voice={call.voice}
-                syncing={call.syncing}
-                error={call.error}
-                onEnd={() => void call.end()}
-                onRetry={() => void call.retry()}
-              />
+              <>
+                <VoiceStatus
+                  voice={call.voice}
+                  syncing={call.syncing}
+                  error={call.error}
+                  onEnd={() => void call.end()}
+                  onRetry={() => void call.retry()}
+                />
+                {attachments.error && (
+                  <p className="sky-chat-file-error" role="alert">
+                    {attachments.error}
+                  </p>
+                )}
+              </>
             }
             trailingAction={
               <VoiceButton
@@ -1801,20 +1896,24 @@ export function TurnView({
   labelOf?: (profile: string) => string
 }) {
   if (turn.role === 'user') {
+    const { text, files } = splitChatFiles(turn.content)
     // What the person typed, verbatim — an address in it is a link out.
     return (
       <div className="sky-turn sky-turn-user" data-shared={shared || undefined}>
-        <div className="sky-bubble">
-          {splitLinks(turn.content).map((run, i) =>
-            run.url ? (
-              <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
-                {run.text}
-              </a>
-            ) : (
-              <Fragment key={i}>{run.text}</Fragment>
-            ),
-          )}
-        </div>
+        {text && (
+          <div className="sky-bubble">
+            {splitLinks(text).map((run, i) =>
+              run.url ? (
+                <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
+                  {run.text}
+                </a>
+              ) : (
+                <Fragment key={i}>{run.text}</Fragment>
+              ),
+            )}
+          </div>
+        )}
+        <FileClips files={files.length ? files : (turn.files ?? [])} />
       </div>
     )
   }

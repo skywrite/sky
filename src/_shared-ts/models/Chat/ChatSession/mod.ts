@@ -16,6 +16,7 @@
  */
 
 import * as path from 'node:path'
+import type { UserContent } from 'ai'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
@@ -60,6 +61,11 @@ import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
  */
 const CLOSED_ACTIVITY =
   '(Not read. The notebook is closed for this thread: the person set the reading budget to nothing. Answer from the conversation and your tools, and never describe the notebook as empty or missing.)'
+
+export interface ChatMessageFiles {
+  content: Exclude<UserContent, string>
+  attachments: Attachment[]
+}
 
 // -----------------------------------------------------------------------------
 // Events — the one stream a host renders
@@ -120,6 +126,8 @@ export interface ChatSessionOptions {
    * it ends. Ignored when `resume` is set.
    */
   restore?: ResumeState
+  /** Attachment metadata carried by a recovery snapshot independently of the final saved file. */
+  attachments?: Attachment[]
   /**
    * For a new branch: the chat it left and the turn it left after. The
    * inherited turns are `restore`; the file the session writes holds only
@@ -233,6 +241,7 @@ export default class ChatSession {
     // next message.
     const seed = this.seed
     if (seed) this.turns.push(...seed.conversation)
+    for (const file of opts.attachments ?? []) this.attachments.set(file.file, file)
     // A recovered continuation may contain replies not yet filed in its original transcript.
     if (opts.resume)
       this.newMessages =
@@ -497,7 +506,7 @@ export default class ChatSession {
    * A failed model turn is reported, never thrown — the conversation goes
    * on, and any tool that already ran stays in the record.
    */
-  async send(userMessage: string): Promise<TurnReport> {
+  async send(userMessage: string, files?: ChatMessageFiles): Promise<TurnReport> {
     // A trace is one reply, never an interactive session's idle time between messages.
     const parent = currentTimingSpan()
     const span =
@@ -505,7 +514,7 @@ export default class ChatSession {
         ? parent
         : new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
     try {
-      const report = await span.run(() => this.sendTimed(userMessage))
+      const report = await span.run(() => this.sendTimed(userMessage, files))
       // Result-ready is the boundary. Persist its measurements in the very first
       // snapshot, rather than trying to include the write of those measurements.
       span.finish(report.error ? 'error' : 'success')
@@ -519,7 +528,7 @@ export default class ChatSession {
     }
   }
 
-  private async sendTimed(userMessage: string): Promise<TurnReport> {
+  private async sendTimed(userMessage: string, files?: ChatMessageFiles): Promise<TurnReport> {
     // Stamped at submit time — the gather below can take a while, and the
     // stamp should say when the message was sent, not when the model ran.
     const turnWhen = await this.stamp()
@@ -561,7 +570,8 @@ export default class ChatSession {
       if (turnWhen) turn.when = turnWhen
       this.turns.push(turn)
     }
-    this.engine.appendUserMessage(userMessage, turnWhen)
+    this.engine.appendUserMessage(userMessage, turnWhen, files?.content)
+    for (const file of files?.attachments ?? []) this.attachments.set(file.file, file)
     // The turn has begun: for a host that keeps the thread, the snapshot holds
     // the message now, before the reply, in case the process dies answering.
     if (this.snapshotOnSend) await this.snapshot()

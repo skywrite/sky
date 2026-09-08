@@ -43,6 +43,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
+import { chatFileContext } from './files.ts'
 import { interruptedOf } from './interrupted.ts'
 import type {
   ChatRoutesOptions,
@@ -283,6 +284,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       resume: restore?.resume ?? null,
       // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
       restore: restore?.resume ? undefined : restore?.state,
+      attachments: restore?.attachments,
       parent: restore?.resume ? null : (restore?.parent ?? null),
       model: resolveProfile(profile),
       profile: { provider: profile.provider, model: profile.model },
@@ -291,14 +293,15 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         secrets: context.secrets,
         now: { date: clock.notebookDate, time: clock.notebookTime },
       }),
-      systemPrompt: async () =>
-        (
-          await renderChatSystemPrompt({
-            config: config as Record<string, unknown>,
-            clock,
-            memoryDir: config.DIR_AI_MEMORY,
-          })
-        ).prompt,
+      systemPrompt: async () => {
+        const { prompt } = await renderChatSystemPrompt({
+          config: config as Record<string, unknown>,
+          clock,
+          memoryDir: config.DIR_AI_MEMORY,
+        })
+        const files = chatFileContext(restore?.state.conversation ?? [], config.DIR_ATTACHMENTS)
+        return files ? `${prompt}\n\n${files}` : prompt
+      },
       // Every tool the terminal offers, gated the same way: the decorator's
       // needsApproval is the source of truth for what asks.
       tools: async ({ onExternalFiles, onAttachments }) => ({
@@ -375,6 +378,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             startTime: ref.startTime,
             state,
             approvals,
+            attachments: loaded.attachments,
             parent,
             interrupted,
             prefs,
@@ -411,6 +415,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    attachmentsRoot: config.DIR_ATTACHMENTS,
     // A pasted Google file reference is permission to work on that file —
     // for this process; a paste is not a standing grant.
     onMessage: (id, message) => {

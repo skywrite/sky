@@ -14,6 +14,35 @@ first context load, and is saved on each turn through the
 
 ## What is built
 
+### Files in the conversation
+
+Drop files anywhere in a text conversation, choose them with the composer's
+paperclip, or paste a file. Each appears as a removable clip before sending;
+Send accepts a file with or without a typed question. Pending files stay in
+the browser. A rejected upload keeps the draft and its clips for correction.
+There can be up to ten files totaling 20 MB in one message.
+
+Pending clips sit inside the rounded composer surface, above its message row.
+The files, textarea, paperclip, Send, and voice control share the composer's
+centered width; errors align with that same container. Long lists scroll
+inside the field, and hovering a shortened filename reveals its full name.
+See [2026-09-07 — Clips belong to the composer](2026-09-07-clips-belong-to-the-composer.md).
+
+The message route accepts multipart uploads with the same model, budget, and
+filing settings as text messages. It reads through the console's `read_file`
+implementation: PDFs and images become native model inputs, and supported
+documents and spreadsheets become text under the same conversion and length
+limits. These contents enter conversation history even with notebook reading
+set to Nothing. Original bytes are copied to the thread's day attachments.
+
+The accepted user message carries ordinary markdown attachment links, rendered
+as clickable clips beside its bubble. These survive reloads, recovery, filing,
+and branching without a second browser-only attachment record. Recovery keeps
+the native model content and attachment metadata; a saved chat or branch also
+gives `read_file` the paths behind its earlier clips when it needs to reread.
+Download links remain available after the thread closes. See
+[2026-09-07 — Files clipped into chat](2026-09-07-files-clipped-into-chat.md).
+
 ### Voice in the conversation
 
 The waveform immediately after Send starts voice inside the thread. The

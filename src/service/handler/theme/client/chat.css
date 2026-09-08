@@ -16,6 +16,97 @@
   align-items: flex-end;
 }
 
+.sky-chat-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sky-turn-user > .sky-chat-files {
+  justify-content: flex-end;
+}
+
+.sky-chat-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  background: var(--sky-s2);
+}
+
+.sky-chat-file > a,
+.sky-chat-file-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--sky-text);
+  text-decoration: none;
+}
+
+.sky-chat-file > a:hover {
+  color: var(--sky-accent);
+}
+
+.sky-chat-file svg {
+  flex-shrink: 0;
+  color: var(--sky-dim);
+}
+
+.sky-chat-file-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sky-chat-file-name {
+  max-width: 340px;
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-chat-file-meta {
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-chat-file-error {
+  margin: 0 0 12px;
+  color: var(--mantine-color-red-6);
+  font-size: 14px;
+}
+
+.sky-chat-drop-target {
+  position: relative;
+}
+
+.sky-chat-drop {
+  position: absolute;
+  inset: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  border: 2px dashed var(--sky-accent);
+  border-radius: 18px;
+  background: var(--sky-card);
+  color: var(--sky-accent);
+  font-size: 20px;
+  pointer-events: none;
+}
+
 .sky-bubble {
   background: var(--sky-s2);
   border-radius: 18px 18px 6px 18px;
