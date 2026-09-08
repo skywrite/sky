@@ -229,9 +229,6 @@ function Canvas() {
             </>
           ) : (
             <>
-              <Button className="sky-newchat" fullWidth variant="default" onClick={newChat}>
-                New chat
-              </Button>
               <button
                 type="button"
                 className="sky-thread"
@@ -291,6 +288,15 @@ function Canvas() {
                   )}
                 </div>
               )}
+              <button
+                type="button"
+                className="sky-thread"
+                data-active={threadId !== null}
+                aria-current={threadId !== null ? 'page' : undefined}
+                onClick={newChat}
+              >
+                <span>Chat</span>
+              </button>
               <button
                 type="button"
                 className="sky-thread sky-outbox-nav"

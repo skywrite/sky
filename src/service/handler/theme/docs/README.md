@@ -117,13 +117,16 @@ for the consolidation's rationale and verification.
 
 ## Today and date navigation
 
-Today is a primary sidebar destination above Outbox and Workstreams. It
+Today is a primary sidebar destination above Chat, Outbox, and Workstreams. It
 always opens the notebook's current day at `/`. Recent days, This week,
 and Next week appear beneath it only on day, week, and day-files pages.
 Today appears once; the recent-days list begins with Yesterday. The current
 day or week keeps its selected state, including direct date URLs and a
 day's files. Chat and other sections keep the date list hidden. The mobile
 drawer follows the same rule and closes after navigation.
+
+Chat follows Today's date group as a standard navigation row. It starts
+a new thread and stays highlighted for any open conversation.
 
 ## Sidebar utilities
 
