@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Links between notebook records
@@ -10,6 +10,10 @@ The client lives in `theme/client/links.tsx` and uses the existing modal,
 phone drawer, colors and typography. Links stay as ordinary YAML references.
 Saved links show the primary name or title with a small type icon beside it.
 Dates, participants and branch details remain available in the picker.
+
+Place identities, geographic records and repair are owned by
+[the places library](../../../../lib/places/docs/README.md). Place selections
+save canonical refs and display geographic context beside duplicate names.
 
 Record previews follow the
 [shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).

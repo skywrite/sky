@@ -115,7 +115,7 @@ export function Chip({
     return (
       <a className="sky-prop-chip link" href={hrefOf(resolved.path)}>
         <Mark type={resolved.type} />
-        {value}
+        {resolved.label ?? value}
       </a>
     )
   }
@@ -186,6 +186,7 @@ export function ChipsRow({
       splitChars={row.kind === 'tags' ? [';', ','] : [',']}
       autoFocus={autoFocus}
       placeholder="Add…"
+      chipLabel={(chip) => resolved[chip]?.label ?? chip}
       chipPrefix={(chip) => {
         const hit = resolved[chip]
         if (hit) return <Mark type={hit.type} />

@@ -486,6 +486,16 @@ export default class DomainCollection {
       strings.push(org)
     }
 
+    // Geographic context can be a scalar ref or a list; a place's coordinates
+    // and a chat's parent object are metadata, not references.
+    for (const key of ['where', 'location', 'parent']) {
+      const raw = yaml[key]
+      const values = Array.isArray(raw) ? raw : [raw]
+      for (const value of values) {
+        if (typeof value === 'string' && (key !== 'parent' || value.startsWith('places/'))) strings.push(value)
+      }
+    }
+
     // Scan body for decisions/, projects/, and ideas/ inline references
     // Pattern: HH:MM > decisions/Name -> ... or HH:MM > projects/Name -> ... or HH:MM > ideas/Name -> ...
     const bodyPattern = /\d{2}:\d{2} > ((?:decisions|projects|ideas)\/[^\s]+) ->/g

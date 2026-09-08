@@ -29,6 +29,7 @@ const KINDS: Record<string, RowKind> = {
   cc: 'people',
   org: 'orgs',
   where: 'places',
+  location: 'places',
   attachments: 'files',
   when: 'date',
   met: 'date',

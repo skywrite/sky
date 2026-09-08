@@ -23,6 +23,8 @@ export interface LinkItem {
   date?: string
   people?: string
   summary?: string
+  /** Geographic context distinguishes places with the same name. */
+  hint?: string
   parent?: { path: string; title: string; turn: number }
 }
 

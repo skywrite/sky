@@ -183,9 +183,10 @@ function documentsOf(store: MarkdownStore, base: string): Array<{ path: string; 
     const path = toNotebookRelativePath(base, absolute)
     out.push({ path, dir: path.split('/')[0] ?? '', doc })
   }
-  for (const s of [store.people, store.orgs, store.projects, store.places]) {
+  for (const s of [store.people, store.orgs, store.projects]) {
     for (const { path, doc } of profilesOf(s)) add(path, doc)
   }
+  for (const entry of store.places.getEntries()) add(entry.path, entry.value)
   for (const s of [store.library, store.time, store.ai]) {
     for (const absolute of s.paths) add(absolute, s.findByPath(absolute))
   }
@@ -244,7 +245,14 @@ export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary 
   }
   for (const profile of profilesOf(store.people)) entities.push(named('person', profile))
   for (const profile of profilesOf(store.orgs)) entities.push(named('org', profile))
-  for (const profile of profilesOf(store.places)) entities.push(named('place', profile))
+  for (const { placePath, path: absolute, value: doc } of store.places.getEntries()) {
+    // A colliding ref cannot be selected safely until the records are repaired.
+    if (store.places.findByPlacePath(placePath)?.path !== absolute) continue
+    const entity = entityOf('place', placePath, toNotebookRelativePath(base, absolute), doc, doc.aliases)
+    entity.label = doc.name
+    entity.hint = [doc.kind, doc.toLocationDisplayString() || doc.parent || placePath].filter(Boolean).join(' · ')
+    entities.push(entity)
+  }
   for (const [type, s] of [
     ['library', store.library],
     ['day', store.time],
@@ -433,8 +441,8 @@ export async function resolveNames(
   base: string,
   names: string[],
   sourcePath?: string,
-): Promise<Record<string, { type: EntityType; path: string } | null>> {
-  const out: Record<string, { type: EntityType; path: string } | null> = {}
+): Promise<Record<string, { type: EntityType; path: string; label?: string } | null>> {
+  const out: Record<string, { type: EntityType; path: string; label?: string } | null> = {}
   const projects = names.some((name) => name.startsWith('projects/')) ? await openProjects(store, base) : []
   for (const name of names) {
     const project = projects.find((entity) => entity.value === name)
@@ -449,7 +457,7 @@ export async function resolveNames(
     }
     const path = toNotebookRelativePath(base, ref.path)
     const type = typeOfResolved(ref.type, path)
-    out[name] = type ? { type, path } : null
+    out[name] = type ? { type, path, ...(ref.type === 'place' ? { label: ref.value.name } : {}) } : null
   }
   return out
 }
@@ -468,13 +476,14 @@ export interface Backlink {
   via: string
 }
 
-const LINK_KEYS = ['rel', 'who', 'from', 'to', 'cc', 'org', 'where'] as const
+const LINK_KEYS = ['rel', 'who', 'from', 'to', 'cc', 'org', 'where', 'location', 'parent'] as const
 
 /** The names a document points at, by the key that carries them. */
 function namesOf(doc: Document): Array<{ via: string; name: string }> {
   const out: Array<{ via: string; name: string }> = []
   for (const key of LINK_KEYS) {
     const raw = doc.yaml[key]
+    if (key === 'parent' && (typeof raw !== 'string' || !raw.startsWith('places/'))) continue
     const values = Array.isArray(raw)
       ? asStrings(raw)
       : (asString(raw)

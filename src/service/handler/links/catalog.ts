@@ -59,6 +59,7 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
               ? docTitle(doc, entity.path)
               : (entity.label ?? (doc ? text(doc.yaml['name']) : undefined) ?? entity.value),
         aliases: entity.aliases,
+        hint: entity.type === 'place' ? entity.hint : undefined,
         kind: recordKind(entity.path, entity.type),
         date: doc ? (parseTimePath(entity.path)?.start.toString() ?? docDate(doc, entity.path)?.ymd) : undefined,
         people: doc
@@ -90,7 +91,7 @@ function relevance(item: LinkItem, query: string, terms: string[]): number {
     return 3
   if (names.some((name) => terms.every((term) => name.includes(term)))) return 2
   const searchable = normalizeSearch(
-    [...names, item.people, item.summary, item.date, item.path, item.parent?.title].join(' '),
+    [...names, item.value, item.hint, item.people, item.summary, item.date, item.path, item.parent?.title].join(' '),
   )
   return terms.every((term) => searchable.includes(term)) ? 1 : 0
 }

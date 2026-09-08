@@ -26,6 +26,7 @@ export interface ChipsInputProps {
   onChange: (chips: string[]) => void
   /** What a chip shows before its text — a type mark */
   chipPrefix?: (chip: string) => ReactNode
+  chipLabel?: (chip: string) => string
   renderOption: (option: ChipOption) => ReactNode
   splitChars?: string[]
   placeholder?: string
@@ -40,6 +41,7 @@ export function ChipsInput({
   onSearch,
   onChange,
   chipPrefix,
+  chipLabel,
   renderOption,
   splitChars = [','],
   placeholder,
@@ -110,7 +112,7 @@ export function ChipsInput({
             {chips.map((chip) => (
               <Pill key={chip} withRemoveButton onRemove={() => onChange(chips.filter((c) => c !== chip))}>
                 {chipPrefix?.(chip)}
-                {chip}
+                {chipLabel?.(chip) ?? chip}
               </Pill>
             ))}
             <Combobox.EventsTarget>

@@ -58,6 +58,7 @@ function Detail({ item }: { item: LinkItem }) {
       <span className="sky-link-meta">
         {[item.kind.charAt(0).toUpperCase() + item.kind.slice(1), item.date, item.people].filter(Boolean).join(' · ')}
       </span>
+      {item.hint && <span className="sky-link-meta">{item.hint}</span>}
       {item.parent && (
         <span className="sky-link-meta">
           From turn {item.parent.turn} of {item.parent.title}
@@ -107,12 +108,14 @@ function Picker({
   onClose,
   onPick,
   selected,
+  selectedPaths,
   file,
 }: {
   opened: boolean
   onClose: () => void
   onPick: (item: LinkItem) => Promise<void>
   selected: string[]
+  selectedPaths: string[]
   file?: string
 }) {
   const phone = useMediaQuery('(max-width: 900px)') ?? false
@@ -244,7 +247,7 @@ function Picker({
           <section key={label} aria-label={label}>
             <h3>{label}</h3>
             {items.map((item) => {
-              const chosen = selected.includes(item.value)
+              const chosen = selected.includes(item.value) || selectedPaths.includes(item.path)
               return (
                 <div className="sky-link-result" key={item.path}>
                   <div className="sky-link-result-head">
@@ -396,9 +399,11 @@ export function LinksInput({
         onClose={() => setOpened(false)}
         file={file}
         selected={values}
+        selectedPaths={values.flatMap((value) => items[value]?.path ?? [])}
         onPick={async (item) => {
           setItems((known) => ({ ...known, [item.value]: item }))
-          await change([...new Set([...values, item.value])])
+          if (!values.some((value) => value === item.value || items[value]?.path === item.path))
+            await change([...values, item.value])
         }}
       />
     </div>

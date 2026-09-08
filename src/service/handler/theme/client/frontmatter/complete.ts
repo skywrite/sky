@@ -20,6 +20,7 @@ export type CompletionKind = 'people' | 'orgs' | 'projects' | 'places' | 'librar
 export interface Resolved {
   type: EntityType
   path: string
+  label?: string
 }
 
 const CACHE_LIMIT = 300

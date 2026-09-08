@@ -72,15 +72,7 @@ function collectEntityMatches(
   seenPaths: Set<string>,
 ): void {
   // Goals are excluded: GoalStore is category-based and has no name index.
-  const entityStores = [
-    store.people,
-    store.orgs,
-    store.projects,
-    store.decisions,
-    store.streaks,
-    store.ideas,
-    store.places,
-  ]
+  const entityStores = [store.people, store.orgs, store.projects, store.decisions, store.streaks, store.ideas]
 
   for (const entityStore of entityStores) {
     let matched = 0
@@ -105,6 +97,24 @@ function collectEntityMatches(
         interactionScore: interactionScoreFor(resolved.type, title, scoring),
       })
     }
+  }
+
+  let placesMatched = 0
+  for (const entry of store.places.getEntries()) {
+    if (placesMatched >= MAX_ENTITY_MATCHES_PER_KIND) break
+    const text = [entry.value.name, ...entry.value.aliases, entry.placePath, entry.value.toLocationDisplayString()]
+      .join(' ')
+      .toLowerCase()
+    if (!terms.every((term) => text.includes(term)) || seenPaths.has(entry.path)) continue
+    seenPaths.add(entry.path)
+    placesMatched++
+    candidates.push({
+      relativePath: path.relative(markdownBaseDir, entry.path),
+      title: entry.value.name,
+      kind: 'place',
+      score: 100,
+      interactionScore: 0,
+    })
   }
 }
 

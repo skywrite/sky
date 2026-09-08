@@ -332,11 +332,12 @@ export default class MarkdownStore {
       }
     }
 
-    if (raw.startsWith('places/')) {
+    if (/^places\//i.test(raw.trim())) {
       const place = this.places.findByPlacePath(raw)
       if (place) {
         return { type: 'place', value: place.value, path: place.path, raw }
       }
+      return { type: 'unresolved', value: null, raw }
     }
 
     if (raw.startsWith('library/') && this.dirs.libraryDir) {
@@ -361,6 +362,10 @@ export default class MarkdownStore {
     if (org) {
       return { type: 'org', value: org.value, path: org.path, raw }
     }
+
+    // Older UI selections saved a place's name. Retain unambiguous spellings.
+    const place = this.places.find(raw)
+    if (place) return { type: 'place', value: place.value, path: place.path, raw }
 
     const doc = this.time.resolveRef(raw, context ?? {})
     if (doc) {

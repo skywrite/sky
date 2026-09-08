@@ -8,7 +8,7 @@ import { readMarkdownContent, saveMarkdownContent } from '../markdown-preview/co
 import { isPathWithinRoot, isPathWithinRoots, resolveMarkdownPreviewRequest } from '../markdown-preview/request.ts'
 import { linkCatalog, searchLinks } from './catalog.ts'
 import { changeLinks } from './content.ts'
-import type { ImportLinksHost } from './types.ts'
+import type { ImportLinksHost, LinkItem } from './types.ts'
 
 export function linkValues(value: unknown): string[] {
   if (
@@ -28,6 +28,12 @@ export function createLinks(
   const routes = new Hono()
   const writes = new Map<string, Promise<void>>()
   const catalog = () => (store ? linkCatalog(store, base, dirs) : Promise.resolve([]))
+  const lookup = (items: LinkItem[], value: string, source?: string) => {
+    const exact = items.find((item) => item.value === value)
+    if (exact) return exact
+    const ref = store?.resolve(value, source ? { sourceFilePath: source } : undefined)
+    return ref && 'path' in ref ? items.find((item) => path.resolve(base, item.path) === ref.path) : undefined
+  }
   const allowed = async (file: string) => {
     const actual = await realpath(file)
     const actualBase = await realpath(base)
@@ -40,7 +46,7 @@ export function createLinks(
       if (values.length === 0) return
       const items = await catalog()
       for (const value of values) {
-        const hit = items.find((item) => item.value === value)
+        const hit = lookup(items, value)
         if (!hit) throw new Error('A selected record is no longer available. Search for it again.')
         await allowed(path.resolve(base, hit.path))
         await stat(path.resolve(base, hit.path))
@@ -102,10 +108,7 @@ export function createLinks(
       const source = typeof body.file === 'string' ? path.resolve(base, body.file) : undefined
       return c.json({
         items: values.flatMap((value) => {
-          const exact = items.find((i) => i.value === value)
-          if (exact) return [{ ...exact, value }]
-          const ref = store?.resolve(value, source ? { sourceFilePath: source } : undefined)
-          const hit = ref && 'path' in ref ? items.find((i) => path.resolve(base, i.path) === ref.path) : undefined
+          const hit = lookup(items, value, source)
           return hit ? [{ ...hit, value }] : []
         }),
       })

@@ -1,7 +1,20 @@
 import { slugify } from '#lib/string/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
+import { normalizePlaceRef } from '../reference.ts'
 import { buildPlacePath, toDisplayString } from './path.ts'
-import type { PlaceCreateInput, PlaceLocation } from './types.ts'
+import {
+  GEOGRAPHIC_KINDS,
+  type GeographicPlaceInput,
+  type PlaceCreateInput,
+  type PlaceKind,
+  type PlaceLocation,
+} from './types.ts'
+
+function strings(value: unknown): string[] {
+  return (Array.isArray(value) ? value : [value])
+    .filter((v): v is string => typeof v === 'string' && !!v.trim())
+    .map((v) => v.trim())
+}
 
 export default class PlaceDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
@@ -9,12 +22,45 @@ export default class PlaceDocument extends Document {
   }
 
   /** Preferred key order for place document YAML frontmatter */
-  static override yamlKeyOrder = ['name', 'type', 'address', 'site', 'location', 'googleMapsUrl']
+  static override yamlKeyOrder = [
+    'name',
+    'alt',
+    'kind',
+    'ref',
+    'refAliases',
+    'parent',
+    'type',
+    'address',
+    'site',
+    'location',
+    'googleMapsUrl',
+  ]
 
   // Typed accessors for YAML fields
 
   get name(): string {
-    return (this.yaml['name'] as string) ?? ''
+    return typeof this.yaml['name'] === 'string' ? this.yaml['name'].trim() : ''
+  }
+
+  get aliases(): string[] {
+    return [...new Set([...strings(this.yaml['alt']), ...strings(this.yaml['names'])])]
+  }
+
+  get ref(): string | undefined {
+    return typeof this.yaml['ref'] === 'string' ? normalizePlaceRef(this.yaml['ref']) : undefined
+  }
+
+  get refAliases(): string[] {
+    return strings(this.yaml['refAliases']).flatMap((raw) => normalizePlaceRef(raw) ?? [])
+  }
+
+  get kind(): PlaceKind {
+    const kind = this.yaml['kind']
+    return GEOGRAPHIC_KINDS.some((k) => k === kind) ? (kind as PlaceKind) : 'venue'
+  }
+
+  get parent(): string | undefined {
+    return typeof this.yaml['parent'] === 'string' ? normalizePlaceRef(this.yaml['parent']) : undefined
   }
 
   get type(): string {
@@ -47,16 +93,11 @@ export default class PlaceDocument extends Document {
 
   get location(): PlaceLocation | undefined {
     const loc = this.yaml['location']
-    if (!loc || typeof loc !== 'object') return undefined
+    if (!loc || typeof loc !== 'object' || Array.isArray(loc)) return undefined
 
     const locObj = loc as Record<string, unknown>
     const latitude = locObj['latitude']
     const longitude = locObj['longitude']
-
-    // Latitude and longitude are required
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-      return undefined
-    }
 
     // New format: country/region/city/subcity are in location object
     let country = locObj['country'] as string | undefined
@@ -80,8 +121,8 @@ export default class PlaceDocument extends Document {
       region,
       city,
       subcity,
-      latitude,
-      longitude,
+      latitude: typeof latitude === 'number' ? latitude : undefined,
+      longitude: typeof longitude === 'number' ? longitude : undefined,
       plusCode: locObj['plusCode'] as string | undefined,
     }
   }
@@ -100,6 +141,7 @@ export default class PlaceDocument extends Document {
    * @example "places/US/NY/New-York/Manhattan/drink/Ty-Bar"
    */
   toPath(): string {
+    if (this.ref) return this.ref
     const location = this.location
     if (!location) {
       throw new Error('Cannot build path: location is undefined')
@@ -114,12 +156,7 @@ export default class PlaceDocument extends Document {
    * @example "US/NY/New-York/Manhattan/drink/Ty-Bar"
    */
   toFilePath(): string {
-    const location = this.location
-    if (!location) {
-      throw new Error('Cannot build path: location is undefined')
-    }
-    const basePath = buildPlacePath(location, this.type)
-    return `${basePath}/${this.slugPreserveCase}`
+    return this.toPath().slice('places/'.length)
   }
 
   /**
@@ -166,6 +203,24 @@ export default class PlaceDocument extends Document {
 
     const markdown = PlaceDocument.createTemplate(yaml)
     return new PlaceDocument(yaml, markdown)
+  }
+
+  static createGeographic(input: GeographicPlaceInput): PlaceDocument {
+    const ref = normalizePlaceRef(input.ref)
+    const parent = input.parent ? normalizePlaceRef(input.parent) : undefined
+    if (!ref || !input.name.trim() || !GEOGRAPHIC_KINDS.includes(input.kind))
+      throw new Error('A geographic place needs a name, kind and valid places/ reference.')
+    if (input.parent && (!parent || parent.toLowerCase() === ref.toLowerCase()))
+      throw new Error('Choose a different valid place as the parent.')
+    const yaml = {
+      name: input.name.trim(),
+      ...(input.aliases?.length ? { alt: input.aliases } : {}),
+      kind: input.kind,
+      ref,
+      ...(parent ? { parent } : {}),
+      ...(input.location ? { location: input.location } : {}),
+    }
+    return new PlaceDocument(yaml, PlaceDocument.createTemplate(yaml))
   }
 
   /**

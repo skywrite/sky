@@ -1,11 +1,11 @@
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
-import { Collection } from '#shared/models/Markdown/mod.ts'
-import PlaceDocument from '#shared/models/Place/mod.ts'
+import Collection from '#shared/models/Markdown/Collection/mod.ts'
+import PlaceDocument, { normalizePlaceRef } from '#shared/models/Place/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 
-interface PlaceEntry {
+export interface PlaceEntry {
   value: PlaceDocument
   path: string
   /** The place path without file extension, e.g., "places/US/NY/New-York/Manhattan/drink/Ty-Bar" */
@@ -26,14 +26,14 @@ interface PlaceEntry {
  * Build is async (walks directories), lookups are sync (objects pre-loaded).
  */
 export default class PlaceStore {
-  /** Normalized name → PlaceEntry */
-  private byName: Map<string, PlaceEntry> = new Map()
+  /** Names can belong to several places; an ambiguous lookup never picks one. */
+  private byName: Map<string, PlaceEntry[]> = new Map()
 
   /** File path → PlaceDocument */
   private byPath: Map<string, PlaceDocument> = new Map()
 
   /** Place path → PlaceEntry (for rel: resolution) */
-  private byPlacePath: Map<string, PlaceEntry> = new Map()
+  private byPlacePath: Map<string, PlaceEntry[]> = new Map()
 
   /** All entries for iteration */
   private entries: PlaceEntry[] = []
@@ -70,53 +70,7 @@ export default class PlaceStore {
 
       try {
         const contents = await readTextFile(entry.path)
-        const doc = PlaceDocument.fromMarkdown(contents)
-
-        // Check for yaml errors
-        if (doc.yamlError) {
-          store._warnings.push({
-            path: entry.path,
-            warning: `YAML error: ${doc.yamlError}`,
-          })
-        }
-
-        // Check for missing name
-        if (!doc.name) {
-          store._warnings.push({
-            path: entry.path,
-            warning: 'Missing name field',
-          })
-          // Still index by path even without name
-          store.byPath.set(entry.path, doc)
-          continue
-        }
-
-        // Calculate place path from file path
-        // e.g., /path/to/places/locations/US/NY/New-York/drink/Ty-Bar.md
-        //    -> places/US/NY/New-York/drink/Ty-Bar
-        const relativePath = entry.path.replace(placesDir, '').replace(/^\//, '')
-        const placePath = 'places/' + relativePath.replace(/\.md$/, '').replace(/^locations\//, '')
-
-        const placeEntry: PlaceEntry = {
-          value: doc,
-          path: entry.path,
-          placePath,
-        }
-
-        // Index by path
-        store.byPath.set(entry.path, doc)
-
-        // Index by name
-        const normalized = normalizeName(doc.name)
-        if (normalized) {
-          store.byName.set(normalized, placeEntry)
-        }
-
-        // Index by place path (for rel: resolution)
-        store.byPlacePath.set(placePath, placeEntry)
-
-        // Add to entries list
-        store.entries.push(placeEntry)
+        store.set(entry.path, contents)
       } catch (err) {
         store._errors.push({
           path: entry.path,
@@ -132,16 +86,22 @@ export default class PlaceStore {
    * Add or update a place by file path and raw contents.
    */
   set(filePath: string, contents: string): void {
-    this.delete(filePath)
+    if (this.byPath.has(filePath)) this.delete(filePath)
 
     const doc = PlaceDocument.fromMarkdown(contents)
-
     this.byPath.set(filePath, doc)
-
-    if (!doc.name || !this.placesDir) return
-
-    const relativePath = filePath.replace(this.placesDir, '').replace(/^\//, '')
-    const placePath = 'places/' + relativePath.replace(/\.md$/, '').replace(/^locations\//, '')
+    if (doc.yamlError) this._warnings.push({ path: filePath, warning: `YAML error: ${doc.yamlError}` })
+    if (!doc.name) {
+      this._warnings.push({ path: filePath, warning: 'Missing name field' })
+      return
+    }
+    if (!this.placesDir) return
+    const fileRef = normalizePlaceRef(`places/${path.relative(this.placesDir, filePath)}`)
+    if (!fileRef) return
+    if (doc.yaml['ref'] !== undefined && !doc.ref) {
+      this._warnings.push({ path: filePath, warning: 'Invalid place ref' })
+    }
+    const placePath = doc.ref ?? fileRef
 
     const placeEntry: PlaceEntry = {
       value: doc,
@@ -149,12 +109,12 @@ export default class PlaceStore {
       placePath,
     }
 
-    const normalized = normalizeName(doc.name)
-    if (normalized) {
-      this.byName.set(normalized, placeEntry)
+    for (const name of new Set([doc.name, ...doc.aliases].map(normalizeName))) {
+      this.byName.set(name, [...(this.byName.get(name) ?? []), placeEntry])
     }
-
-    this.byPlacePath.set(placePath, placeEntry)
+    for (const ref of new Set([placePath, fileRef, ...doc.refAliases].map((r) => r.toLowerCase()))) {
+      this.byPlacePath.set(ref, [...(this.byPlacePath.get(ref) ?? []), placeEntry])
+    }
     this.entries.push(placeEntry)
   }
 
@@ -163,16 +123,12 @@ export default class PlaceStore {
    */
   delete(filePath: string): void {
     this.byPath.delete(filePath)
-
-    for (const [key, entry] of this.byName) {
-      if (entry.path === filePath) {
-        this.byName.delete(key)
-      }
-    }
-
-    for (const [key, entry] of this.byPlacePath) {
-      if (entry.path === filePath) {
-        this.byPlacePath.delete(key)
+    this._warnings = this._warnings.filter((w) => w.path !== filePath)
+    for (const index of [this.byName, this.byPlacePath]) {
+      for (const [key, entries] of index) {
+        const remaining = entries.filter((entry) => entry.path !== filePath)
+        if (remaining.length) index.set(key, remaining)
+        else index.delete(key)
       }
     }
 
@@ -187,7 +143,8 @@ export default class PlaceStore {
    * Returns the entry with the document and file path.
    */
   find(name: string): PlaceEntry | undefined {
-    return this.byName.get(normalizeName(name))
+    const matches = this.byName.get(normalizeName(name))
+    return matches?.length === 1 ? matches[0] : undefined
   }
 
   /**
@@ -195,7 +152,20 @@ export default class PlaceStore {
    * Returns the entry with the document and file path.
    */
   findByPlacePath(placePath: string): PlaceEntry | undefined {
-    return this.byPlacePath.get(placePath)
+    const ref = normalizePlaceRef(placePath)
+    const matches = ref ? this.byPlacePath.get(ref.toLowerCase()) : undefined
+    return matches?.length === 1 ? matches[0] : undefined
+  }
+
+  /** Whether a ref is claimed, including a collision that needs repair. */
+  hasPlacePath(placePath: string): boolean {
+    const ref = normalizePlaceRef(placePath)
+    return !!ref && this.byPlacePath.has(ref.toLowerCase())
+  }
+
+  /** Iterate by identity, so duplicate names never hide records from search. */
+  getEntries(): readonly PlaceEntry[] {
+    return this.entries
   }
 
   /**
@@ -224,7 +194,7 @@ export default class PlaceStore {
    * Get all place paths.
    */
   get placePaths(): string[] {
-    return Array.from(this.byPlacePath.keys())
+    return this.entries.map((entry) => entry.placePath)
   }
 
   /**
