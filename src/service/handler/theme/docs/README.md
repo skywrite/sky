@@ -172,6 +172,9 @@ text-size control multiplies the content size and keeps its saved preference.
 
 ## Text selection and rendered HTML
 
+Chat draft presentation and delivery formatting follow the
+[chat design](../../chat/docs/README.md#text-chat-and-thread-controls).
+
 `client/renderedHtml.tsx` owns `RenderedHtml`, the shared component for
 read-only HTML in chat replies, approval previews, automation descriptions
 and proposals, notebook link previews, and workstream prose and reports.

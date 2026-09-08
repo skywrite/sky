@@ -17,6 +17,7 @@ import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
+import { renderChatMarkdown } from './chatMarkdown.ts'
 import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
@@ -515,9 +516,9 @@ function reduce(state: ThreadState, action: Action): ThreadState {
 // -----------------------------------------------------------------------------
 
 /** A reply's markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
-function renderMarkdown(raw: string): string | null {
+function renderMarkdown(raw: string, reply = false): string | null {
   try {
-    return renderStatic(raw)
+    return reply ? renderChatMarkdown(raw) : renderStatic(raw)
   } catch {
     return null
   }
@@ -581,7 +582,7 @@ function turnsOf(body: ThreadBody): Turn[] {
       content: text,
       sources: sources.length > 0 ? sources : undefined,
       time: t.when?.slice(11),
-      html: t.role === 'assistant' ? (renderMarkdown(text) ?? undefined) : undefined,
+      html: t.role === 'assistant' ? (renderMarkdown(text, true) ?? undefined) : undefined,
       usage: usageAt.get(i)?.usage,
       model: usageAt.get(i)?.model,
       timing: body.timings?.find((entry) => entry.at === i)?.text,
@@ -906,7 +907,7 @@ export function useChat(id: string) {
                   model: d.model as string | undefined,
                   branchPoint: d.branchPoint as BranchPoint | undefined,
                 })
-                const html = renderMarkdown(text)
+                const html = renderMarkdown(text, true)
                 if (html) dispatch({ id, type: 'rendered', index: replyIndex, html })
               }
               break

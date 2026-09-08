@@ -92,6 +92,19 @@ its active life, including when it will not be filed. A message is a POST whose 
 renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
+- **Drafts read as documents in chat.** The shared chat prompt puts each
+  message draft in one Markdown blockquote during review and revision,
+  including drafts destined for Slack. Introductions and editing notes stay
+  outside the quote; the enclosing review quote is removed for delivery.
+  Slack syntax and its decorative subject underline apply when
+  preparing the delivery payload. `theme/client/chatMarkdown.ts` also renders
+  older fenced Slack drafts as quoted prose when a reply finishes or is read
+  back: paragraphs, emphasis, lists, and links, with the underline removed.
+  Drafts already inside a quote keep that single review container. It
+  recognizes Slack-labelled fences and the former subject/underline pattern
+  in plain-text fences; other code stays code. Long literal lines wrap within
+  the reply. Conversation text and approval payloads retain their source.
+  See [2026-09-08 — Drafts are read here](2026-09-08-drafts-are-read-here.md).
 - **Text stays selected through background refreshes.** Completed replies
   and rich approval previews use the
   [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
@@ -363,6 +376,13 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-08 — draft rendering tests cover legacy and labelled Slack fences,
+  quoted drafts with commentary outside, preserved code, and inert HTML.
+  An isolated browser regression checks
+  desktop and mobile wrapping, selections across paragraphs and polling,
+  mouse dragging through a refresh, changed replies, completed turns, and
+  reloads.
 
 - 2026-09-07 — an isolated Chromium check using the real client and mocked
   responses preserves selections through repeated sidebar refreshes,
