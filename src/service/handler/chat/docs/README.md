@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -66,6 +66,10 @@ from the saved exchanges. Pending voice turns remain visible if the handoff
 fails, with a retry action; uncompleted live calls are held in the browser
 until they end. Text submission stays disabled until the handoff succeeds.
 See [the integration note](2026-09-07-voice-inside-chat.md).
+
+Saved voice replies omit "New chat from here…"; their retained speaker labels
+also identify transcripts reopened from older calls. Completed text replies
+continue to offer branching.
 
 ### Text chat and thread controls
 
@@ -148,7 +152,7 @@ a person can see and touch:
   completed turns. A browser continuation whose thread cannot be restored
   is refused before a new session can silently replace it. See
   [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
-- **A new chat from here.** Every completed reply offers it. The branch is a thread
+- **A new chat from here.** Every completed text reply offers it. The branch is a thread
   that keeps the turns through that reply and goes its own way after them;
   on its page the inherited turns read dimmed, then a line says where it
   came from and from which turn, and the thread it left carries a line

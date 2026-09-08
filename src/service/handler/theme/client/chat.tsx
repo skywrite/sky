@@ -1918,6 +1918,9 @@ export function TurnView({
     )
   }
 
+  // Voice replies keep these speaker labels when saved and reopened.
+  const branch = /^(?:Sky|Sonny): /.test(turn.content) ? undefined : onBranch
+
   return (
     <>
       {turn.note && <div className="sky-condensed">— {turn.note} —</div>}
@@ -1947,19 +1950,19 @@ export function TurnView({
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
-        {!streaming && (turn.usage || turn.timing || onBranch) && (
+        {!streaming && (turn.usage || turn.timing || branch) && (
           <div className="sky-reply-foot">
             <ReplyDetails
               usage={turn.usage}
               model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
               timing={turn.timing}
             />
-            {onBranch && (
+            {branch && (
               <div className="sky-reply-acts">
                 <button
                   type="button"
                   className="sky-act"
-                  onClick={onBranch}
+                  onClick={branch}
                   disabled={branching}
                   data-busy={branching || undefined}
                 >
