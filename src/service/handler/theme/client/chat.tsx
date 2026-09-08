@@ -6,6 +6,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -973,6 +974,13 @@ export type Chat = ReturnType<typeof useChat>
 // Rendering
 // -----------------------------------------------------------------------------
 
+/** Keep unchanged text nodes mounted so background polling does not erase the reader's selection. */
+function RenderedHtml({ html, className }: { html: string; className: string }) {
+  // React compares this prop object by identity, then assigns innerHTML even when its string is unchanged.
+  const markup = useMemo(() => ({ __html: html }), [html])
+  return <div className={className} dangerouslySetInnerHTML={markup} />
+}
+
 /**
  * Follow the reply as it streams, unless the reader scrolled up to read.
  * "Near the bottom" is judged against the height before this change — a
@@ -1289,7 +1297,7 @@ function ApprovalCard({
         </span>
       </div>
       {rich ? (
-        <div className="sky-ask-body sky-rendered" dangerouslySetInnerHTML={{ __html: rich }} />
+        <RenderedHtml className="sky-ask-body sky-rendered" html={rich} />
       ) : (
         <pre className="sky-ask-body">{text}</pre>
       )}
@@ -1752,7 +1760,7 @@ export function TurnView({
           <span>sky{turn.time ? ` · ${turn.time}` : ''}</span>
         </span>
         {turn.html ? (
-          <div className="sky-body sky-rendered" dangerouslySetInnerHTML={{ __html: turn.html }} />
+          <RenderedHtml className="sky-body sky-rendered" html={turn.html} />
         ) : (
           <div className="sky-body">
             {/* A reply that has only called tools so far has no paragraph yet — one caret, below. */}

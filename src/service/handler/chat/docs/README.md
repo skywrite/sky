@@ -19,6 +19,11 @@ its active life, including when it will not be filed. A message is a POST whose 
 renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
+- **Text stays selected through background refreshes.** Completed replies
+  and rich approval previews keep the same HTML prop object while their
+  rendered text is unchanged. Sidebar and thread polling can update the
+  page without replacing those text nodes and clearing the selection.
+  See [2026-09-07](2026-09-07-text-selection-survives-refreshes.md).
 - **Progress and the queries behind a reply.** A compact activity row sits
   below the message while context is gathered and the reply is prepared.
   Its wording follows the stage; quiet reading and thinking waits vary
@@ -285,6 +290,12 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-07 — an isolated Chromium check using the real client and mocked
+  responses preserves selections through repeated sidebar refreshes,
+  including a mouse drag across a refresh, a range spanning paragraphs,
+  and a rich approval preview. Active thread polling preserves selections
+  when it returns unchanged HTML; changed reply HTML still updates.
 
 - 2026-09-07 — a restored chat accepts the original turn-only request from
   an existing tab and creates a branch with the exact inherited conversation;
