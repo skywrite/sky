@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # Tracking commands
@@ -77,16 +77,25 @@ files apply only to their original sources; omit completed repairs on a rerun.
 2. A bare value against a single-value definition (`182`) writes without
    any model call. Anything richer (`3 mile run in the park at 6:30 am`) goes
    through one fast-model call (`prompts/parse-entry.prompt.md`,
-   `lib/parse.ts`) that maps the sentence onto the declared columns, then a
-   one-keystroke confirm of the exact row.
-3. Parse failure falls back to per-column prompts. Empty answer skips.
+   `lib/parse.ts`) that resolves the entry date and maps the sentence onto
+   the declared columns, then a one-keystroke confirm of the exact row.
+3. Parse failure falls back to per-column and date prompts, then confirmation.
+   An unclear or invalid date asks for a date while keeping parsed values.
+   Empty answer to the tracking question skips.
    Ctrl-C / Esc cancels the session; rows already written stay.
 4. A `time` column the answer didn't state is stamped with the current time.
 
 ## Which day a row belongs to
 
-The row is keyed to the **calendar day on the clock**, in the notebook's
-timezone — `lib/moment.ts`. Not `fetchNow()`.
+An explicitly stated date or relative day ("yesterday", "on Monday") keys
+the row and selects its annual or weekly file. Month/day dates without a
+year and unqualified weekdays resolve to their most recent occurrence on
+or before today. The parser returns the date separately from column values;
+invalid, unclear, or missing date output requires a date prompt before writing.
+Only an explicit null in the parser response means the entry stated no date.
+
+Without a stated date, the row defaults to the **calendar day on the clock**,
+in the notebook's timezone — `lib/moment.ts`. Not `fetchNow()`.
 
 `fetchNow()` answers a different question: which notebook day is *open*. A
 day stays open until the next one is started with `day:start`, so on a
@@ -95,7 +104,6 @@ attributing late-night actions to the day still in progress; it is wrong
 for a weigh-in taken after waking, which a hand edit keys to the new day.
 Narrative: `2026-08-30-calendar-day-not-open-day.md`.
 
-Consequence to know: an entry typed after midnight but before bed lands on
-the new calendar day (`SU, 1:15`), where a hand edit sometimes writes the
-previous day in extended hours (`SA, 25:15`). Saying which day the entry
-belongs to is not understood yet — the parser has no date output.
+An undated entry typed after midnight but before bed lands on the new
+calendar day (`SU, 1:15`). An answer can explicitly name the previous date
+and use extended hours (`SA, 25:15`); the stated date and time are preserved.

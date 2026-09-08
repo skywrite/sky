@@ -1,6 +1,6 @@
 import { generateText } from 'ai'
 /**
- * Free-text tracking entries → record column values.
+ * Free-text tracking entries → entry date and record column values.
  *
  * The scalar fast path (isBareScalar) never touches a model: a bare "180"
  * against weight's single value column writes directly, keeping the daily
@@ -15,14 +15,34 @@ import { aiModel } from '#shared/ai/models.ts'
 import type { TrackingColumn, TrackingDocument } from '#shared/models/Tracking/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 const PROMPT_FILE = new URL('../prompts/parse-entry.prompt.md', import.meta.url).pathname
 
 const NUMERIC = /^-?\d+(\.\d+)?$/
 
 const responseSchema = z.object({
+  // null explicitly means no date was stated. Missing or invalid dates must
+  // be clarified, including responses from an older customized prompt.
+  date: z.string().nullable().optional(),
   values: z.record(z.string(), z.union([z.string(), z.number()])),
 })
+
+export interface ParsedEntry {
+  /** Resolved entry date; null requires a date prompt before writing. */
+  date: PlainDate | null
+  values: Record<string, string>
+}
+
+/** Accept only a complete, valid calendar date, without partial-date expansion. */
+export function parseEntryDate(value: string | undefined): PlainDate | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return null
+  try {
+    return new PlainDate(value.trim())
+  } catch {
+    return null
+  }
+}
 
 /** The columns a human answers — everything except auto-stamped time and notes. */
 export function valueColumns(def: TrackingDocument): TrackingColumn[] {
@@ -61,8 +81,16 @@ export function sanitizeParsedValues(
   return values
 }
 
+/** Keep the date outside the column filter and default only an explicitly unstated date. */
+export function parseEntryResponse(def: TrackingDocument, raw: unknown, today: PlainDate): ParsedEntry | null {
+  const parsed = responseSchema.parse(raw)
+  const values = sanitizeParsedValues(def, parsed.values)
+  if (Object.keys(values).length === 0) return null
+  return { date: parsed.date === null ? today : parseEntryDate(parsed.date), values }
+}
+
 /**
- * Map a free-text entry onto the definition's columns via one fast-model
+ * Map a free-text entry onto its date and the definition's columns via one fast-model
  * call. Returns null when the model fails or nothing usable was extracted —
  * callers fall back to per-column prompts, so entry is never blocked on AI.
  */
@@ -70,7 +98,7 @@ export async function parseEntry(
   def: TrackingDocument,
   entry: string,
   now: { date: string; time: string },
-): Promise<Record<string, string> | null> {
+): Promise<ParsedEntry | null> {
   try {
     const content = await readPromptFile(PROMPT_FILE)
     const columns = def.columns.map((c) => `- ${c.name} (${c.type}${c.unit ? `, unit: ${c.unit}` : ''})`).join('\n')
@@ -92,9 +120,7 @@ export async function parseEntry(
       prompt: output,
     })
 
-    const parsed = responseSchema.parse(extractJson(result.text))
-    const values = sanitizeParsedValues(def, parsed.values)
-    return Object.keys(values).length > 0 ? values : null
+    return parseEntryResponse(def, extractJson(result.text), new PlainDate(now.date))
   } catch (err) {
     await logAIError({
       source: 'track:ask',

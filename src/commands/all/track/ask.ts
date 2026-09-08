@@ -5,8 +5,9 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import TrackingStore from '#shared/models/Store/TrackingStore/mod.ts'
 import type { TrackingColumn, TrackingDocument } from '#shared/models/Tracking/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { currentMoment } from './lib/moment.ts'
-import { isBareScalar, parseEntry, valueColumns } from './lib/parse.ts'
+import { isBareScalar, parseEntry, parseEntryDate, valueColumns } from './lib/parse.ts'
 import { appendRecord, formatRow, hasEntryForDate, recordFilePath } from './lib/records.ts'
 
 const params = {
@@ -44,13 +45,14 @@ export default class TrackAskTask extends Command {
       'question, skips any already answered today, and asks the rest one at a',
       'time. Answers append to the annual tracking CSV, keyed by full date',
       '(or day letters for explicit legacy weekly storage), using the',
-      "calendar day on the clock (today's row, even before day:start).",
+      'calendar day on the clock unless the answer names another day.',
       '',
       'Answers are plain language: a bare value ("180") writes directly, and',
       'anything richer ("3 mile run in the park at 6:30 am")',
       "is AI-mapped onto the definition's columns and shown as the exact row",
       'for a one-keystroke confirm before writing. If parsing fails, the',
-      'columns are asked directly.',
+      'columns and date are asked directly. Explicit dates and relative days',
+      '("yesterday", "on Monday") set the entry date; unclear dates are asked.',
       '',
       'Enter on an empty prompt skips a question; Ctrl-C stops the session',
       '(already-written rows stay).',
@@ -117,8 +119,8 @@ export default class TrackAskTask extends Command {
     for (const def of candidates) {
       if (cancelled) break
 
-      const filePath = recordFilePath(dirs, def, today)
-      const contents = (await exists(filePath)) ? await readTextFile(filePath) : ''
+      const todayFilePath = recordFilePath(dirs, def, today)
+      const contents = (await exists(todayFilePath)) ? await readTextFile(todayFilePath) : ''
 
       if (hasEntryForDate(def, contents, today)) {
         if (!explicit) {
@@ -126,7 +128,7 @@ export default class TrackAskTask extends Command {
           output.log(colors.dim(`✓ ${def.title} — already recorded today`))
           continue
         }
-        output.log(colors.dim(`${def.title} already has an entry today — adding another`))
+        output.log(colors.dim(`${def.title} already has an entry today`))
       }
 
       if (valueColumns(def).length === 0) {
@@ -153,19 +155,21 @@ export default class TrackAskTask extends Command {
         }
 
         let values: Record<string, string>
-        let aiParsed = false
+        let entryDate: PlainDate | null = today
+        let confirmRow = false
 
         if (isBareScalar(def, text)) {
           values = { [valueColumns(def)[0].name]: text }
         } else {
+          confirmRow = true
           const spinner = p.spinner()
           spinner.start('Parsing…')
           const parsed = await parseEntry(def, text, { date: today.toString(), time: timeNow })
           spinner.stop(parsed ? 'Parsed' : 'Could not parse that')
 
           if (parsed) {
-            values = parsed
-            aiParsed = true
+            values = parsed.values
+            entryDate = parsed.date
           } else {
             const direct = await promptPerColumn(def)
             if (direct === CANCELLED) {
@@ -173,6 +177,7 @@ export default class TrackAskTask extends Command {
               break
             }
             values = direct
+            entryDate = null
           }
         }
 
@@ -190,10 +195,20 @@ export default class TrackAskTask extends Command {
           break
         }
 
-        const row = formatRow(def, today, values)
+        if (entryDate === null) {
+          const date = await promptEntryDate(today)
+          if (date === CANCELLED) {
+            cancelled = true
+            break
+          }
+          entryDate = date
+        }
 
-        // AI-mapped rows get a one-keystroke check; bare scalars write directly.
-        if (aiParsed) {
+        const filePath = recordFilePath(dirs, def, entryDate)
+        const row = formatRow(def, entryDate, values)
+
+        // Parsed and fallback rows get a check; bare scalars write directly.
+        if (confirmRow) {
           const ok = await p.confirm({ message: `Write: ${row}`, initialValue: true })
           if (p.isCancel(ok)) {
             cancelled = true
@@ -202,7 +217,7 @@ export default class TrackAskTask extends Command {
           if (!ok) continue answering
         }
 
-        await appendRecord(filePath, def, today, values)
+        await appendRecord(filePath, def, entryDate, values)
         result.recorded.push(def.name)
         const shortPath = filePath.startsWith(timeDir)
           ? `time${filePath.slice(timeDir.length)}`
@@ -225,6 +240,16 @@ export default class TrackAskTask extends Command {
 
     return CommandResult.success(result)
   }
+}
+
+async function promptEntryDate(today: PlainDate): Promise<PlainDate | typeof CANCELLED> {
+  const answer = await p.text({
+    message: 'Which date should this entry use? (YYYY-MM-DD)',
+    placeholder: today.toString(),
+    validate: (value) => (parseEntryDate(value) ? undefined : 'Enter a valid date as YYYY-MM-DD'),
+  })
+  if (p.isCancel(answer)) return CANCELLED
+  return new PlainDate(answer.trim())
 }
 
 /** Per-column prompts — the no-AI fallback when parsing fails. */
