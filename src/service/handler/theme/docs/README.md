@@ -115,6 +115,16 @@ describe the layout need it serves.
 See [2026-09-07 — Shared actions and dialog styling](2026-09-07-shared-ui-toolkit.md)
 for the consolidation's rationale and verification.
 
+## Today and date navigation
+
+Today is a primary sidebar destination above Outbox and Workstreams. It
+always opens the notebook's current day at `/`. Recent days, This week,
+and Next week appear beneath it only on day, week, and day-files pages.
+Today appears once; the recent-days list begins with Yesterday. The current
+day or week keeps its selected state, including direct date URLs and a
+day's files. Chat and other sections keep the date list hidden. The mobile
+drawer follows the same rule and closes after navigation.
+
 ## Sidebar utilities
 
 Voice lives in the chat composer, immediately after Send; its conversation

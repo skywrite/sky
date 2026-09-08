@@ -97,6 +97,16 @@ body {
   padding: 13px 10px 5px;
 }
 
+.sky-side-dates {
+  margin: 2px 0 12px 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--sky-border-soft);
+}
+
+.sky-side-dates > .sky-side-label:first-child {
+  padding-top: 4px;
+}
+
 .sky-thread {
   display: flex;
   align-items: baseline;
