@@ -1,6 +1,7 @@
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
+import type { AutomationSetup } from './configure.ts'
 import type { AutomationsReport, AutomationsRoutesOptions } from './mod.ts'
 
 // The routes are what is under test: the report is scripted, so no test
@@ -59,6 +60,9 @@ const DRAFT = {
 
 function scripted(overrides: Partial<AutomationsRoutesOptions> = {}): AutomationsRoutesOptions {
   return {
+    commands: () => Promise.resolve([]),
+    configuration: () => Promise.resolve(null),
+    preview: () => Promise.resolve([DRAFT]),
     status: () => Promise.resolve(REPORT),
     setStatus: () => Promise.resolve(true),
     runNow: () => Promise.resolve({ outcome: 'nothing' }),
@@ -68,6 +72,54 @@ function scripted(overrides: Partial<AutomationsRoutesOptions> = {}): Automation
     ...overrides,
   }
 }
+
+test('automations routes expose commands and validate previews without writing', async () => {
+  const seen: AutomationSetup[] = []
+  let writes = 0
+  const catalog = [{ name: 'recap:journal', description: 'Recap a journal', source: 'local' as const, flags: [] }]
+  const setup = { commands: [{ run: 'recap:journal', args: {} }], at: ['07:00'] }
+  const app = await appWith(
+    scripted({
+      commands: async () => catalog,
+      configuration: async (name) => (name === 'morning-brief' ? setup : null),
+      preview: async (input) => {
+        seen.push(input)
+        return [DRAFT]
+      },
+      create: async () => {
+        writes++
+        return { kind: 'created' }
+      },
+    }),
+  )
+  const commands = await app.request('http://localhost/automations/_api/commands')
+  const config = await app.request('http://localhost/automations/_api/automation/morning-brief/configuration')
+  const missing = await app.request('http://localhost/automations/_api/automation/missing/configuration')
+  const post = (body: unknown) =>
+    app.request('http://localhost/automations/_api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const preview = await post(setup)
+  const invalid = await post({ ...setup, commands: [] })
+  const unsupported = await post({ ...setup, onlyIf: 'invented condition' })
+  assert({
+    given: 'catalog lookup, saved settings and a valid preview alongside invalid input',
+    should: 'expose the data, validate input and write nothing',
+    actual: [
+      await commands.json(),
+      await config.json(),
+      missing.status,
+      await preview.json(),
+      invalid.status,
+      unsupported.status,
+      seen,
+      writes,
+    ],
+    expected: [catalog, setup, 404, [DRAFT], 400, 400, [setup], 0],
+  })
+})
 
 async function appWith(automations: AutomationsRoutesOptions) {
   const tmp = await makeTempDir({ prefix: 'sky-automations-route-' })
@@ -175,7 +227,7 @@ test({ name: 'automations route - draft relays the request, refuses a blank, rep
       draft: (request, revise) => {
         seen.push([request, revise])
         if (request === 'gibberish') return Promise.reject(new Error('The draft did not validate: no trigger'))
-        return Promise.resolve(DRAFT)
+        return Promise.resolve({ ...DRAFT, revised: !!revise })
       },
     }),
   )
@@ -198,7 +250,15 @@ test({ name: 'automations route - draft relays the request, refuses a blank, rep
     actual: [drafted.status, await drafted.json(), revised.status, blank.status, failed.status, seen],
     expected: [
       200,
-      DRAFT,
+      {
+        ...DRAFT,
+        args: {},
+        setup: {
+          commands: [{ name: 'morning-brief', run: 'day:start', args: {}, template: DRAFT.contents }],
+          at: ['EVERY-WEEKDAY 07:00'],
+          brief: 'Brief me.',
+        },
+      },
       200,
       400,
       502,

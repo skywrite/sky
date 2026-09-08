@@ -1,11 +1,14 @@
 ---
 created: 2026-09-01
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # Recap commands
 
 Design notes for `src/commands/all/recap/`.
+
+Selecting and scheduling morning recap commands is described in the
+[automation design](../../../../service/handler/automations/docs/README.md).
 
 ## Coding sessions — recap:claude-code and recap:codex
 

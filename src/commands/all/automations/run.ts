@@ -3,6 +3,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
 import { commandOutcome } from '#lib/automations/commandOutcome.ts'
+import { invokeAutomation } from '#lib/automations/invoke.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import AutomationStateStore, { type RunOutcome } from '#shared/models/Automation/state.ts'
 import { dueFiring, resolveNow } from '#shared/models/Automation/trigger.ts'
@@ -84,7 +85,7 @@ export default class AutomationsRunTask extends Command {
     let outcome: RunOutcome = 'acted'
     let message: string | undefined
     try {
-      const result = await tasks.run(automation.run, automation.args)
+      const result = await invokeAutomation(tasks, automation.run, automation.args, now)
       ;({ outcome, message } = commandOutcome(result))
     } catch (err) {
       outcome = 'failed'

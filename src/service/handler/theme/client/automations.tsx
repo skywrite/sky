@@ -1,5 +1,8 @@
-import { ActionIcon, Button, Switch, Textarea } from '@mantine/core'
+import { ActionIcon, Button, SegmentedControl, Switch, Textarea } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import type { AutomationSetup } from '../../automations/configure.ts'
+import { AutomationBuilder, automationRequest } from './automationBuilder.tsx'
 import { fileHref } from './explorer.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -11,9 +14,9 @@ import './automations.css'
  * Three pages over one report. The overview is a row per charter — name, the
  * brief's first line, the schedule in words, what the last run amounted to,
  * and the on/off switch. A charter's own page is its brief in full, its
- * schedule, the run ledger, and "Change it" — a sentence sky turns into a
- * rewritten file, applied only on approval. The new-automation page is the
- * same shape from nothing: describe it, read the proposed file, turn it on.
+ * schedule, the run ledger, and "Edit automation". Describe a new automation,
+ * then customize its proposed commands and conditions before saving. Direct
+ * command selection also supports scheduling several commands together.
  * Charters that could not be read get their own block, because a charter
  * that never fires looks exactly like one that had nothing to do.
  *
@@ -120,9 +123,11 @@ export interface DraftWire {
   frame: string
   brief: string
   revised: boolean
+  args?: Record<string, unknown>
+  until?: string
 }
 
-type DraftAnswer = { ok: true; draft: DraftWire } | { ok: false; message: string }
+type DraftAnswer = { ok: true; draft: DraftWire; setup: AutomationSetup } | { ok: false; message: string }
 
 async function postDraft(request: string, revise?: string): Promise<DraftAnswer> {
   try {
@@ -131,9 +136,9 @@ async function postDraft(request: string, revise?: string): Promise<DraftAnswer>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(revise ? { request, revise } : { request }),
     })
-    const body = (await response.json().catch(() => ({}))) as DraftWire & { message?: string }
+    const body = (await response.json().catch(() => ({}))) as DraftWire & { setup: AutomationSetup; message?: string }
     if (!response.ok) return { ok: false, message: body.message ?? `The service answered ${response.status}.` }
-    return { ok: true, draft: body }
+    return { ok: true, draft: body, setup: body.setup }
   } catch {
     return { ok: false, message: "Couldn't reach sky — is the service running?" }
   }
@@ -248,12 +253,9 @@ export function sidebarMeta(row: AutomationRow): string {
 /** "2026-08-31 16:00" → "today 16:00", against the viewer's calendar */
 function whenWords(clock: string): string {
   const [date, time = ''] = clock.split(' ')
-  const now = new Date()
-  const ymd = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  if (date === ymd(now)) return `today ${timeWords(time)}`
-  const yesterday = new Date(now.getTime() - 86_400_000)
-  if (date === ymd(yesterday)) return `yesterday ${timeWords(time)}`
+  const today = PlainDate.today()
+  if (date === today.ymd) return `today ${timeWords(time)}`
+  if (date === today.addDays(-1).ymd) return `yesterday ${timeWords(time)}`
   return `${date?.slice(5) ?? ''} ${timeWords(time)}`
 }
 
@@ -492,6 +494,8 @@ function ProposalCard({
   error,
   onAccept,
   onDiscard,
+  onCustomize,
+  previewOnly = false,
 }: {
   draft: DraftWire
   accept: string
@@ -499,6 +503,8 @@ function ProposalCard({
   error: string | null
   onAccept: () => void
   onDiscard: () => void
+  onCustomize?: () => void
+  previewOnly?: boolean
 }) {
   const [fileOpen, setFileOpen] = useState(false)
   const briefHtml = useMemo(() => renderMarkdown(draft.brief), [draft.brief])
@@ -518,6 +524,20 @@ function ProposalCard({
           <span className="sky-auto-spec-key">Runs</span>
           <span>{draft.run}</span>
         </div>
+        {draft.args?.day !== undefined && (
+          <div className="sky-auto-spec">
+            <span className="sky-auto-spec-key">Day</span>
+            <span>
+              {draft.args.day === 'yesterday' ? 'Previous day, worked out at each run' : String(draft.args.day)}
+            </span>
+          </div>
+        )}
+        {draft.until && (
+          <div className="sky-auto-spec">
+            <span className="sky-auto-spec-key">Until</span>
+            <span>{draft.until}</span>
+          </div>
+        )}
         <div className="sky-auto-spec" data-last="true">
           <span className="sky-auto-spec-key">Why</span>
           {briefHtml ? (
@@ -532,22 +552,29 @@ function ProposalCard({
         </button>
         {fileOpen && <pre className="sky-auto-file">{draft.contents.trimEnd()}</pre>}
 
-        <div className="sky-auto-actions">
-          <Button variant="primary" onClick={onAccept} disabled={busy}>
-            {busy ? 'Writing…' : accept}
-          </Button>
-          <Button onClick={onDiscard} disabled={busy}>
-            Discard
-          </Button>
-          {error && <span className="sky-auto-problem">{error}</span>}
-        </div>
+        {!previewOnly && (
+          <div className="sky-auto-actions">
+            <Button variant="primary" onClick={onAccept} disabled={busy}>
+              {busy ? 'Writing…' : accept}
+            </Button>
+            {onCustomize && (
+              <Button onClick={onCustomize} disabled={busy}>
+                Customize
+              </Button>
+            )}
+            <Button onClick={onDiscard} disabled={busy}>
+              Discard
+            </Button>
+            {error && <span className="sky-auto-problem">{error}</span>}
+          </div>
+        )}
       </div>
     </section>
   )
 }
 
 // -----------------------------------------------------------------------------
-// New automation — you describe, sky writes the file, you turn it on
+// New automation — describe it, customize the proposal, then turn it on
 // -----------------------------------------------------------------------------
 
 export function NewAutomation({
@@ -558,34 +585,69 @@ export function NewAutomation({
   onCreated: (name: string) => void
 }) {
   const [asked, setAsked] = useState('')
+  const [mode, setMode] = useState('describe')
+  const [initialSetup, setInitialSetup] = useState<AutomationSetup>()
   const [drafting, setDrafting] = useState(false)
-  const [draft, setDraft] = useState<DraftWire | null>(null)
+  const [drafts, setDrafts] = useState<DraftWire[]>([])
+  const [saved, setSaved] = useState<string[]>([])
   const [problem, setProblem] = useState<string | null>(null)
   const [writing, setWriting] = useState(false)
   const [writeProblem, setWriteProblem] = useState<string | null>(null)
 
   const ask = (request: string) => {
     setAsked(request)
+    setMode('describe')
     setDrafting(true)
     setProblem(null)
-    setDraft(null)
+    setDrafts([])
+    setSaved([])
     setWriteProblem(null)
     void postDraft(request).then((answer) => {
       setDrafting(false)
-      if (answer.ok) setDraft(answer.draft)
-      else setProblem(answer.message)
+      if (answer.ok) {
+        setDrafts([answer.draft])
+        setInitialSetup(answer.setup)
+      } else setProblem(answer.message)
     })
   }
 
-  const turnOn = () => {
-    if (!draft) return
+  const preview = (setup: AutomationSetup) => {
+    setDrafting(true)
+    setProblem(null)
+    setDrafts([])
+    setSaved([])
+    setWriteProblem(null)
+    void automationRequest<DraftWire[]>('preview', setup)
+      .then(setDrafts)
+      .catch((error: unknown) => {
+        setProblem(error instanceof Error ? error.message : 'Could not prepare the automations.')
+      })
+      .finally(() => setDrafting(false))
+  }
+
+  const clearPreview = () => {
+    setDrafts([])
+    setSaved([])
+    setWriteProblem(null)
+    setProblem(null)
+  }
+  const turnOn = async () => {
+    if (!drafts.length || writing) return
     setWriting(true)
     setWriteProblem(null)
-    void postCreate(draft.name, draft.contents).then((outcome) => {
-      setWriting(false)
-      if (outcome.ok) onCreated(draft.name)
-      else setWriteProblem(outcome.message)
-    })
+    for (const draft of drafts) {
+      if (saved.includes(draft.name)) continue
+      const outcome = await postCreate(draft.name, draft.contents)
+      if (!outcome.ok) {
+        setWriteProblem(`${titleOf(draft.name)}: ${outcome.message}`)
+        setWriting(false)
+        return
+      }
+      setSaved((names) => [...names, draft.name])
+      window.dispatchEvent(new Event(CHANGED))
+    }
+    setWriting(false)
+    onCreated(drafts[0]!.name)
   }
 
   return (
@@ -602,37 +664,96 @@ export function NewAutomation({
           <div>
             <h2 className="sky-auto-hero">What should sky take care of?</h2>
             <p className="sky-auto-herosub">
-              Say it in your own words — "every weekday at 7, fetch my inbox", "file the week's receipts every friday".
-              Sky writes the charter file; nothing runs until you turn it on.
+              Describe what you want. Sky will draft it, then you can customize the commands, schedule and conditions
+              before turning it on.
             </p>
           </div>
 
-          <AskInput placeholder="Every weekday at 7…" busy={drafting} onAsk={ask} />
+          <div>
+            <AskInput placeholder="Every weekday at 7…" busy={drafting || writing} onAsk={ask} />
+            {mode === 'describe' && !drafts.length && !drafting && (
+              <Button
+                size="sm"
+                variant="primary-quiet"
+                style={{ marginTop: 12 }}
+                onClick={() => {
+                  setInitialSetup(undefined)
+                  setMode('commands')
+                }}
+              >
+                Choose commands instead
+              </Button>
+            )}
+          </div>
+          {mode === 'commands' && (
+            <AutomationBuilder
+              initialSetup={initialSetup}
+              busy={drafting || writing}
+              onPreview={preview}
+              onChange={clearPreview}
+            />
+          )}
 
-          {drafting && <div className="sky-condensed">— sky is writing the charter… —</div>}
+          {drafting && <div className="sky-condensed">— preparing your preview… —</div>}
           {problem && (
             <div className="sky-condensed" data-tone="failed">
               — {problem} —
             </div>
           )}
 
-          {draft && (
+          {drafts.length > 0 && (
             <>
-              <ProposalCard
-                draft={draft}
-                accept="Turn it on"
-                busy={writing}
-                error={writeProblem}
-                onAccept={turnOn}
-                onDiscard={() => setDraft(null)}
-              />
-              <div className="sky-auto-adjust">
-                <AskInput
-                  placeholder="Adjust it — “make it 8:00”, “skip fridays”…"
-                  busy={drafting}
-                  onAsk={(adjustment) => ask(`${asked}\n\nAdjustment: ${adjustment}`)}
-                />
+              {drafts.map((draft) => (
+                <Fragment key={draft.name}>
+                  <ProposalCard
+                    draft={draft}
+                    accept="Turn it on"
+                    busy={writing}
+                    error={null}
+                    onAccept={turnOn}
+                    onDiscard={clearPreview}
+                    previewOnly
+                  />
+                </Fragment>
+              ))}
+              <div className="sky-auto-actions">
+                <Button variant="primary" disabled={writing} onClick={turnOn}>
+                  {writing
+                    ? 'Writing…'
+                    : drafts.length === 1
+                      ? 'Turn it on'
+                      : saved.length
+                        ? `Turn on ${drafts.length - saved.length} remaining`
+                        : `Turn on ${drafts.length} automations`}
+                </Button>
+                {mode === 'describe' && initialSetup && (
+                  <Button disabled={writing || drafting} onClick={() => setMode('commands')}>
+                    Customize
+                  </Button>
+                )}
+                <Button disabled={writing} onClick={clearPreview}>
+                  Discard preview
+                </Button>
+                {saved.length > 0 && (
+                  <span className="sky-auto-help" role="status">
+                    {saved.length} of {drafts.length} saved and active.
+                  </span>
+                )}
+                {writeProblem && (
+                  <span className="sky-auto-problem" role="alert">
+                    {writeProblem}
+                  </span>
+                )}
               </div>
+              {mode === 'describe' && (
+                <div className="sky-auto-adjust">
+                  <AskInput
+                    placeholder="Adjust it — “make it 8:00”, “skip fridays”…"
+                    busy={drafting || writing}
+                    onAsk={(adjustment) => ask(`${asked}\n\nAdjustment: ${adjustment}`)}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -647,13 +768,26 @@ export function NewAutomation({
 
 const RUNS_FOLDED = 10
 
-/** Behavior changes are sentences: sky rewrites the file, you apply it. */
+/** Direct settings and written requests both become a proposal before saving. */
 function ChangeIt({ name, onSaved }: { name: string; onSaved: (note: string) => void }) {
+  const [mode, setMode] = useState('commands')
+  const [initialSetup, setInitialSetup] = useState<AutomationSetup>()
   const [drafting, setDrafting] = useState(false)
   const [draft, setDraft] = useState<DraftWire | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [writing, setWriting] = useState(false)
   const [writeProblem, setWriteProblem] = useState<string | null>(null)
+
+  const preview = (setup: AutomationSetup) => {
+    setDrafting(true)
+    setDraft(null)
+    setProblem(null)
+    setWriteProblem(null)
+    void automationRequest<DraftWire[]>('preview', setup)
+      .then((drafts) => setDraft(drafts[0] ?? null))
+      .catch((error: unknown) => setProblem(error instanceof Error ? error.message : 'Could not prepare the changes.'))
+      .finally(() => setDrafting(false))
+  }
 
   const ask = (request: string) => {
     setDrafting(true)
@@ -662,8 +796,10 @@ function ChangeIt({ name, onSaved }: { name: string; onSaved: (note: string) => 
     setWriteProblem(null)
     void postDraft(request, name).then((answer) => {
       setDrafting(false)
-      if (answer.ok) setDraft(answer.draft)
-      else setProblem(answer.message)
+      if (answer.ok) {
+        setDraft(answer.draft)
+        setInitialSetup(answer.setup)
+      } else setProblem(answer.message)
     })
   }
 
@@ -682,13 +818,48 @@ function ChangeIt({ name, onSaved }: { name: string; onSaved: (note: string) => 
 
   return (
     <section className="sky-block">
-      <div className="sky-block-head">Change it</div>
+      <div className="sky-block-head">Edit automation</div>
       <div className="sky-block-pad">
-        <AskInput
-          placeholder="Tell sky what to change — “run at 8 instead”, “skip fridays”…"
-          busy={drafting || writing}
-          onAsk={ask}
+        <SegmentedControl
+          aria-label="Edit automation"
+          fullWidth
+          classNames={{ label: 'sky-auto-mode-label' }}
+          value={mode}
+          disabled={drafting || writing}
+          data={[
+            { value: 'commands', label: 'Commands & conditions' },
+            { value: 'describe', label: 'Describe a change' },
+          ]}
+          onChange={(value) => {
+            setMode(value)
+            setProblem(null)
+            setWriteProblem(null)
+          }}
         />
+        <div style={{ marginTop: 20 }}>
+          <div hidden={mode !== 'commands'}>
+            <Fragment key={name}>
+              <AutomationBuilder
+                revise={name}
+                initialSetup={initialSetup}
+                busy={drafting || writing}
+                onPreview={preview}
+                onChange={() => {
+                  setDraft(null)
+                  setProblem(null)
+                  setWriteProblem(null)
+                }}
+              />
+            </Fragment>
+          </div>
+          <div hidden={mode !== 'describe'}>
+            <AskInput
+              placeholder="Tell sky what to change — “run at 8 instead”, “skip fridays”…"
+              busy={drafting || writing}
+              onAsk={ask}
+            />
+          </div>
+        </div>
         {drafting && (
           <div className="sky-condensed" style={{ marginTop: 10 }}>
             — sky is rewriting the charter… —
@@ -708,6 +879,7 @@ function ChangeIt({ name, onSaved }: { name: string; onSaved: (note: string) => 
               error={writeProblem}
               onAccept={apply}
               onDiscard={() => setDraft(null)}
+              onCustomize={mode === 'describe' ? () => setMode('commands') : undefined}
             />
           </div>
         )}
@@ -731,6 +903,7 @@ function RunLine({ run }: { run: AutomationLastRun }) {
 }
 
 export function AutomationDetail({ name, back }: { name: string; back: { label: string; onClick: () => void } }) {
+  const editRef = useRef<HTMLDivElement>(null)
   const { report, refresh } = useAutomations()
   const row = report?.rows.find((candidate) => candidate.name === name) ?? null
   const [allRuns, setAllRuns] = useState(false)
@@ -764,20 +937,32 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
 
   return (
     <div className="sky-main">
-      <header className="sky-head">
-        <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
+      <header className="sky-head sky-auto-detail-head">
+        <Button size="sm" onClick={back.onClick} className="sky-auto-back">
           ‹ {back.label}
         </Button>
         <span className="sky-title">{titleOf(name)}</span>
         <span className="sky-spacer" style={{ flex: 1 }} />
         {note && <span className="sky-head-count">{note}</span>}
         {row && (
-          <>
+          <div className="sky-auto-detail-actions">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                editRef.current?.scrollIntoView({ block: 'start' })
+                const input = editRef.current?.querySelector<HTMLInputElement>('input[role="combobox"]')
+                input?.focus({ preventScroll: true })
+                input?.select()
+              }}
+            >
+              Edit automation
+            </Button>
             <Button size="sm" onClick={runNow} disabled={running}>
               {running ? 'Running…' : 'Run now'}
             </Button>
             <StatusSwitch row={row} refresh={refresh} />
-          </>
+          </div>
         )}
       </header>
 
@@ -823,13 +1008,17 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
                 </div>
               </section>
 
-              <ChangeIt
-                name={name}
-                onSaved={(saved) => {
-                  setNote(saved)
-                  refresh()
-                }}
-              />
+              <div ref={editRef} className="sky-auto-edit">
+                <Fragment key={name}>
+                  <ChangeIt
+                    name={name}
+                    onSaved={(saved) => {
+                      setNote(saved)
+                      refresh()
+                    }}
+                  />
+                </Fragment>
+              </div>
 
               <div>
                 <p className="sky-rec-label">Runs</p>

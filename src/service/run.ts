@@ -4,6 +4,7 @@ import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandOutcome } from '#lib/automations/commandOutcome.ts'
+import { invokeAutomation } from '#lib/automations/invoke.ts'
 import runDueAutomations from '#lib/automations/runDue.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
@@ -381,8 +382,8 @@ export default async function run() {
         dir: config.DIR_AUTOMATIONS,
         statePath: config.FILE_AUTOMATIONS_STATE,
         systemNow: new ZonedDateTime(),
-        invoke: async ({ run, args }) => {
-          const outcome = await commandService.run(run, args)
+        invoke: async ({ run, args, context }) => {
+          const outcome = await invokeAutomation(commandService, run, args, context.now)
           return commandOutcome(outcome)
         },
       })

@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-08-31
-updated: 2026-09-05
+updated: 2026-09-07
 description: System prompt for drafting automation charter files from a plain-words request
 ---
 
@@ -28,9 +28,14 @@ Why this exists, in the owner's voice.
 What a good outcome looks like.
 ```
 
-- `run:` — exactly one command name from the catalog below. Never invent one. Flags go
-  in `args:` as a mapping, and every key must be a real flag of that command. When no
-  flags are needed, leave `args:` out.
+- `run:` — exactly one command name from the catalog below. Never invent one.
+  Arguments, including positional parameters such as `day`, go in `args:` as a
+  mapping. Every key must be a real parameter of that command. When no arguments
+  are needed, leave `args:` out.
+- For a date parameter, `today` and `yesterday` are resolved on each run using the
+  automation's clock. A recurring previous-day recap should carry `day: yesterday`,
+  never a fixed date. Set `no-editor: true` when that parameter is available so a
+  scheduled recap does not open an editor.
 - The trigger — exactly one of:
   - `every: <duration>` — elapsed time: `30s`, `5m`, `2h`, `1d`.
   - `at: [DAY-PATTERN ]HH:MM` — a time of day, one entry or a list. With no day
@@ -42,6 +47,7 @@ What a good outcome looks like.
   follows the machine's own clock, which is what travel should do.
 - `status: active` on every new draft. `created:` is today on a new charter; on a
   revision keep the existing `created:` and `status:`, and set `updated:` to today.
+- `until:` — an optional inclusive last date to run, as YYYY-MM-DD.
 - No other frontmatter keys. Anything else is read by nothing and treated as a typo.
 
 ## The body is the brief

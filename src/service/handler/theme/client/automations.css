@@ -234,6 +234,105 @@ button.sky-auto-txt:hover .sky-auto-name {
   max-width: 640px;
 }
 
+.sky-auto-builder {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sky-auto-condition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.sky-auto-command-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sky-auto-command-option small,
+.sky-auto-help {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+
+.sky-auto-options summary {
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.sky-auto-options > div {
+  margin-top: 16px;
+}
+
+.sky-auto-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sky-auto-command-browse {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: -12px;
+}
+
+.sky-auto-edit {
+  scroll-margin-top: 16px;
+}
+
+.sky-auto-mode-label {
+  white-space: normal;
+}
+
+.sky-auto-back {
+  margin-left: -10px;
+}
+
+.sky-auto-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .sky-auto-detail-head {
+    flex-wrap: wrap;
+    padding-left: 16px;
+  }
+
+  .sky-auto-back {
+    margin-left: 34px;
+  }
+
+  .sky-auto-detail-head .sky-title {
+    flex: 1;
+  }
+
+  .sky-auto-detail-head .sky-spacer {
+    display: none;
+  }
+
+  .sky-auto-detail-actions {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+
+  .sky-auto-condition-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .sky-auto-when {
     display: none;

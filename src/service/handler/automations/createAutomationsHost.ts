@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type * as ConfigModule from '#shared/config.ts'
@@ -6,6 +7,8 @@ import { exists, outputFile, readTextFile, rename } from '#shared/fs/mod.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import Automation from '#shared/models/Automation/mod.ts'
 import { setAutomationStatus } from '#shared/models/Automation/setStatus.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { automationCommands, configureAutomations, setupFromCharter } from './configure.ts'
 import type {
   AutomationsReport,
   AutomationsRoutesOptions,
@@ -29,6 +32,35 @@ export function createAutomationsHost(
   const service = () => new CommandService(CommandContext.server(config, env))
 
   return {
+    commands: async () => automationCommands(await getManifest()),
+
+    configuration: async (name) => {
+      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
+      const entry = byName.get(name)
+      return entry ? setupFromCharter(name, await readTextFile(entry.path)) : null
+    },
+
+    preview: async (setup) => {
+      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
+      const entry = setup.revise ? byName.get(setup.revise) : undefined
+      const drafts = configureAutomations(setup, {
+        commands: automationCommands(await getManifest()),
+        existingNames: new Set(byName.keys()),
+        today: PlainDate.today(),
+        current: entry ? { name: setup.revise!, contents: await readTextFile(entry.path) } : undefined,
+      })
+      for (const draft of drafts) {
+        const command = await service().get(draft.run)
+        const automation = Automation.fromMarkdown(draft.contents, draft.name)
+        for (const [name, param] of Object.entries(command.description.params ?? {})) {
+          if (!param.optional && param.default === undefined && automation.args[name] === undefined) {
+            throw new Error(`${draft.run} needs an argument: ${name}.`)
+          }
+        }
+      }
+      return drafts
+    },
+
     status: async (): Promise<AutomationsReport> => {
       const result = await service().run('automations:status', { verbose: false })
       if (result.status !== 'success' || !result.data) {

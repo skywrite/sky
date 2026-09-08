@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { AutomationSetupSchema, setupFromDraft, type AutomationCommand, type AutomationSetup } from './configure.ts'
 
 /**
  * Automations — the machine's own jobs, read for the page at /automations.
@@ -7,8 +8,8 @@ import { Hono } from 'hono'
  * folder with its trigger, state and last run, plus the charters that could
  * not be read. It is the same picture `automations:status` prints, and the
  * production host builds it by running that command in-process, so the CLI
- * and the page can never disagree. This rung is read-only: the page shows
- * what runs; changing a charter is still done in the file.
+ * and the page can never disagree. Command selection and written requests
+ * produce previews; create/save make the reviewed charters real.
  */
 
 /** Whether a run changed anything — `nothing` is a result, not a failure */
@@ -76,12 +77,17 @@ export interface DraftReport {
   frame: string
   brief: string
   revised: boolean
+  args?: Record<string, unknown>
+  until?: string
 }
 
 export type CreateOutcome = { kind: 'created' } | { kind: 'exists' } | { kind: 'invalid'; message: string }
 export type SaveOutcome = { kind: 'saved' } | { kind: 'missing' } | { kind: 'invalid'; message: string }
 
 export interface AutomationsRoutesOptions {
+  commands: () => Promise<AutomationCommand[]>
+  configuration: (name: string) => Promise<AutomationSetup | null>
+  preview: (setup: AutomationSetup) => Promise<DraftReport[]>
   /** The report, built fresh — production runs automations:status, tests script it */
   status: () => Promise<AutomationsReport>
   /** Flip a charter's status: line; false when no charter has that name */
@@ -106,6 +112,33 @@ export interface AutomationsRoutesOptions {
 
 export function createAutomationRoutes(options: AutomationsRoutesOptions): Hono {
   const app = new Hono()
+
+  app.get('/commands', async (c) => {
+    try {
+      return c.json(await options.commands())
+    } catch (err) {
+      return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
+    }
+  })
+
+  app.get('/automation/:name/configuration', async (c) => {
+    try {
+      const setup = await options.configuration(c.req.param('name'))
+      return setup ? c.json(setup) : c.json({ message: 'The automation no longer exists.' }, 404)
+    } catch (err) {
+      return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
+    }
+  })
+
+  app.post('/preview', async (c) => {
+    const parsed = AutomationSetupSchema.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ message: parsed.error.issues.map((issue) => issue.message).join('; ') }, 400)
+    try {
+      return c.json(await options.preview(parsed.data))
+    } catch (err) {
+      return c.json({ message: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
 
   app.get('/status', async (c) => {
     try {
@@ -148,7 +181,9 @@ export function createAutomationRoutes(options: AutomationsRoutesOptions): Hono 
     const revise = typeof body?.revise === 'string' && body.revise ? body.revise : undefined
     if (!request) return c.json({ message: 'Missing required field: request' }, 400)
     try {
-      return c.json(await options.draft(request, revise))
+      const draft = await options.draft(request, revise)
+      const setup = setupFromDraft(draft)
+      return c.json({ ...draft, args: setup.commands[0]!.args, until: setup.until, setup })
     } catch (err) {
       // The drafter is a model call away; its failure is upstream of this route.
       return c.json({ message: err instanceof Error ? err.message : String(err) }, 502)
