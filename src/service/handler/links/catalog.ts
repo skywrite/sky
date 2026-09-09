@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { placeChoices } from '#lib/places/catalog.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { dayDir, isActionPath } from '#shared/nbfs/mod.ts'
@@ -39,7 +40,7 @@ function branch(doc: Document, store: MarkdownStore, base: string): LinkItem['pa
 /** The existing index supplies records at every nesting depth; no notebook walk per search. */
 export async function linkCatalog(store: MarkdownStore, base: string, dirs: string[]): Promise<LinkItem[]> {
   const vocabulary = await vocabularyOf(store, base)
-  return vocabulary.entities
+  const items: LinkItem[] = vocabulary.entities
     .filter((e) => isPathWithinRoots(path.resolve(base, e.path), dirs))
     .map((entity) => {
       const doc = store.findByPath(path.resolve(base, entity.path))?.doc
@@ -72,6 +73,24 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
         parent: doc ? branch(doc, store, base) : undefined,
       }
     })
+  for (const place of placeChoices(store.places)) {
+    if (!isPathWithinRoots(place.path, dirs)) continue
+    const relative = path.relative(base, place.path)
+    const at = items.findIndex((item) => item.path === relative)
+    const item: LinkItem = {
+      ...(at >= 0 ? items[at] : {}),
+      value: place.ref,
+      path: relative,
+      title: place.name,
+      kind: 'place',
+      aliases: place.aliases,
+      hint: place.hint,
+      ...(place.needsCreation ? { needsCreation: true } : {}),
+    }
+    if (at >= 0) items[at] = item
+    else items.push(item)
+  }
+  return items
 }
 
 function normalizeSearch(value: string): string {

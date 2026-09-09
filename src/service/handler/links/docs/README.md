@@ -14,6 +14,9 @@ Dates, participants and branch details remain available in the picker.
 Place identities, geographic records and repair are owned by
 [the places library](../../../../lib/places/docs/README.md). Place selections
 save canonical refs and display geographic context beside duplicate names.
+Country search also includes unsaved countries. `POST /choose` creates a
+selected country once; searches and `/resolve` never create files. Imports
+use the same creation boundary when validating an explicit selection.
 
 Record previews follow the
 [shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).

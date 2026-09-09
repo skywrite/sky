@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Chat model — the pieces under every chat host
@@ -32,6 +32,11 @@ These refs append on every save, including resumes with an existing `rel`.
 Existing spellings survive, equivalent refs deduplicate, and ambiguous or
 incomplete searches add nothing. `--no-auto-rel` skips this lookup along with
 entity suggestions. External artifact relationships retain their own path.
+
+Place subjects and country creation follow the shared
+[place relationship rules](../../../../lib/places/docs/README.md#automatic-relationships-and-country-selection).
+New turns in a resumed chat can append place links even when other entity
+relationships are already present.
 
 ## When the engine ends a turn
 

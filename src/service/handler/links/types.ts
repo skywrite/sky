@@ -25,6 +25,8 @@ export interface LinkItem {
   summary?: string
   /** Geographic context distinguishes places with the same name. */
   hint?: string
+  /** A known country becomes a notebook record when selected. Search itself never writes. */
+  needsCreation?: boolean
   parent?: { path: string; title: string; turn: number }
 }
 

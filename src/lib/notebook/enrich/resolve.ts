@@ -1,10 +1,19 @@
 import * as path from 'node:path'
 import * as stringSimilarity from 'string-similarity'
 import { DIR_DECISIONS, DIR_ORGS, DIR_PEOPLE, DIR_PEOPLE_OLD, DIR_PLACES, DIR_PROJECTS } from '#config'
+import {
+  matchPlace,
+  placeChoiceForRef,
+  placeChoices,
+  type PlaceChoice,
+  type PlaceMatch,
+  type PlaceMention,
+} from '#lib/places/catalog.ts'
 import { walkToArray } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import type PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 
-export type EntityKind = 'person' | 'org' | 'project'
+export type EntityKind = 'person' | 'org' | 'project' | 'place'
 
 export type EntityCandidate = {
   /** The string written into rel: — spaced person/org name, or projects/<Name> */
@@ -16,12 +25,16 @@ export type EntityCandidate = {
   projectStatus?: string
   /** person exists only under people-old — matched reluctantly */
   archivedPerson?: boolean
+  label?: string
 }
 
 export type EntityIndex = {
   candidates: EntityCandidate[]
   /** MarkdownStore.canResolve — the single authority on whether a ref is live */
   canResolve: (raw: string) => boolean
+  places?: { store: PlaceStore; choices: PlaceChoice[] }
+  /** Retain the store's person/org precedence for bare legacy names. */
+  placeRef?: (raw: string) => string | undefined
 }
 
 export type ResolveOptions = {
@@ -140,7 +153,30 @@ export async function buildEntityIndex(): Promise<EntityIndex> {
     }
   }
 
-  return { candidates, canResolve }
+  const choices = placeChoices(store.places)
+  for (const choice of choices)
+    candidates.push({
+      ref: choice.ref,
+      kind: 'place',
+      norm: normalizeEntityName(choice.name),
+      label: `${choice.name} · ${choice.hint}`,
+    })
+  const placeRef = (raw: string) => {
+    const resolved = store.resolve(raw)
+    if (resolved.type === 'place')
+      return store.places.getEntries().find((entry) => entry.path === resolved.path)?.placePath
+    if (resolved.type !== 'unresolved') return undefined
+    return placeChoiceForRef(raw, choices)?.ref ?? matchPlace({ name: raw }, choices).ref
+  }
+  return { candidates, canResolve, places: { store: store.places, choices }, placeRef }
+}
+
+export function placeRefInIndex(raw: string, index: EntityIndex): string | undefined {
+  if (index.placeRef) return index.placeRef(raw)
+  if (index.candidates.some((candidate) => candidate.kind !== 'place' && candidate.norm === normalizeEntityName(raw)))
+    return undefined
+  const choices = index.places?.choices ?? []
+  return placeChoiceForRef(raw, choices)?.ref ?? matchPlace({ name: raw }, choices).ref
 }
 
 /**
@@ -150,6 +186,7 @@ export async function buildEntityIndex(): Promise<EntityIndex> {
  * score an ambiguous mention abstains rather than guesses.
  */
 export function resolveMention(name: string, kind: EntityKind, opts: ResolveOptions): string | undefined {
+  if (kind === 'place') return matchPlace({ name }, opts.index.places?.choices ?? []).ref
   const target = normalizeEntityName(name)
   if (!target) return undefined
 
@@ -193,7 +230,7 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
   )?.ref
 }
 
-export type SubjectLists = { people: string[]; orgs: string[]; projects: string[] }
+export type SubjectLists = { people: string[]; orgs: string[]; projects: string[]; places?: PlaceMention[] }
 
 /**
  * Resolve extracted subjects to canonical refs, deduped by normalized form.
@@ -205,7 +242,7 @@ export function resolveSubjects(
   index: EntityIndex,
   scores: Map<string, number> | undefined,
   opts: { projectStatuses?: string[] } = {},
-): { refs: string[]; dropped: number } {
+): { refs: string[]; dropped: number; unresolvedPlaces: PlaceMatch[] } {
   const attempts: [string, EntityKind][] = [
     ...subjects.people.map((n): [string, EntityKind] => [n, 'person']),
     ...subjects.orgs.map((n): [string, EntityKind] => [n, 'org']),
@@ -213,6 +250,7 @@ export function resolveSubjects(
   ]
   const refs: string[] = []
   let dropped = 0
+  const unresolvedPlaces: PlaceMatch[] = []
   for (const [name, kind] of attempts) {
     const base = { index, scores, projectStatuses: opts.projectStatuses }
     const ref = resolveMention(name, kind, base) ?? (kind === 'org' ? resolveMention(name, 'project', base) : undefined)
@@ -222,7 +260,16 @@ export function resolveSubjects(
     }
     if (!refs.some((r) => normalizeEntityName(r) === normalizeEntityName(ref))) refs.push(ref)
   }
-  return { refs, dropped }
+  for (const mention of subjects.places ?? []) {
+    const match = matchPlace(mention, index.places?.choices ?? [])
+    if (match.ref) {
+      if (!refs.includes(match.ref)) refs.push(match.ref)
+    } else {
+      dropped++
+      unresolvedPlaces.push(match)
+    }
+  }
+  return { refs, dropped, unresolvedPlaces }
 }
 
 /** Unique candidate wins; ties resolve only under a dominant interaction score. */

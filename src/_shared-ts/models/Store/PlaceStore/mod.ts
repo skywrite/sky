@@ -168,6 +168,10 @@ export default class PlaceStore {
     return this.entries
   }
 
+  get directory(): string | undefined {
+    return this.placesDir || undefined
+  }
+
   /**
    * Find a place by file path.
    */

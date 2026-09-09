@@ -275,6 +275,51 @@ test('saveChat - disabling auto-rel also disables conversational document lookup
   })
 })
 
+test('saveChat - new place subjects append on resume and respect disabled auto-rel', async () => {
+  const { report: first, timeDir } = await saveNew({
+    autoRel: true,
+    enricher: stubEnricher({ chooseRel: async () => ['projects/Atlas'] }),
+  })
+  const resume = await loadResumeSession(first.path)
+  let calls = 0
+  const save = (autoRel: boolean) =>
+    saveChat({
+      turns: [...TURNS, msg('user', 'What about visiting France?', '2026-01-27 10:30')],
+      contextLog: [],
+      resume,
+      timeDir,
+      day: DAY,
+      startTime: START,
+      endTime: END,
+      provider: 'claude',
+      model: 'claude-opus-4-6',
+      autoRel,
+      enricher: {
+        ...neverCalled,
+        choosePlaceRel: async (subject) => {
+          calls++
+          assert({
+            given: 'a resumed chat with an existing project link',
+            should: 'pass its existing relationships to place deduplication',
+            actual: subject.existingRel,
+            expected: ['projects/Atlas'],
+          })
+          return ['places/FR']
+        },
+      },
+    })
+  await save(false)
+  assert({ given: 'automatic relationships disabled', should: 'skip place extraction too', actual: calls, expected: 0 })
+  const report = await save(true)
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'a newly discussed place in a chat already linked to a project',
+    should: 'append its canonical reference without adding a physical location attribute',
+    actual: [[...doc.rel], doc.yaml['location'], calls],
+    expected: [['projects/Atlas', 'places/FR'], undefined, 1],
+  })
+})
+
 test('saveChat - files read into the session are recorded as attachments, and a resume keeps them', async () => {
   const { report: first } = await saveNew({ attachments: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }] })
 

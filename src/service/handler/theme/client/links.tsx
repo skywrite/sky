@@ -170,7 +170,10 @@ function Picker({
     setBusy(true)
     setError(null)
     try {
-      await onPick(item)
+      const selected = item.needsCreation
+        ? (await request<{ item: LinkItem }>('/docs/_api/links/choose', { value: item.value })).item
+        : item
+      await onPick(selected)
       onClose()
     } catch (failure) {
       setError((failure as Error).message)
@@ -264,7 +267,7 @@ function Picker({
                       </span>
                       <Detail item={item} />
                     </button>
-                    {item.path.endsWith('.md') && (
+                    {!item.needsCreation && item.path.endsWith('.md') && (
                       <button
                         type="button"
                         className="sky-link-preview-button"

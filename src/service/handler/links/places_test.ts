@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -19,7 +19,7 @@ test('place search, stored references, legacy names, backlinks and AI traversal 
   try {
     const files = {
       [COUNTRY]:
-        '---\nname: France\nkind: country\nref: places/FR\nalt: [French Republic]\nlocation:\n  country: FR\n---\n\n# France\n',
+        '---\nname: France\nkind: country\nref: places/FR\nalt: [French Republic]\nsummary: Travel research\ncreated: 2026-01-27\nlocation:\n  country: FR\n---\n\n# France\n',
       [CITY]: '---\nname: Harbor City\nkind: city\nref: places/FR/Harbor-City\nparent: places/FR\n---\n',
       [NOTE]: '---\nlocation: places/FR\nrel: []\n---\n\n# Notes\n\nOriginal prose.\n',
       [CAFES[0]!]: '---\nname: Cafe\nalt: Harbor Cafe\ntype: drink\n---\n',
@@ -34,6 +34,15 @@ test('place search, stored references, legacy names, backlinks and AI traversal 
     const app = createTestHttpApp(dirs, { markdownStore: store })
     const found = (await (await app.request('/docs/_api/links?kind=place&q=French')).json()) as LinkSearch
     const item = found.items[0]!
+    const byContext = (await (
+      await app.request('/docs/_api/links?kind=place&q=Travel&day=2026-01-27')
+    ).json()) as LinkSearch
+    assert({
+      given: 'a saved place with summary and date metadata',
+      should: 'retain contextual search and date filtering alongside country name lookup',
+      actual: byContext.items.map((place) => place.value),
+      expected: ['places/FR'],
+    })
     assert({
       given: 'a country found by its alternate name',
       should: 'show its display name and save a resolvable places/ reference',
@@ -112,5 +121,104 @@ test('place search, stored references, legacy names, backlinks and AI traversal 
     })
   } finally {
     await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('unsaved countries are searchable without writes and become records when explicitly selected', async () => {
+  const base = await mkdtemp('/tmp/sky-place-selection-')
+  try {
+    const places = path.join(base, 'places')
+    const time = path.join(base, 'time')
+    await mkdir(path.dirname(path.join(base, NOTE)), { recursive: true })
+    const original = '---\nrel: []\n---\n\nKeep the prose.\n'
+    await writeFile(path.join(base, NOTE), original)
+    const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [], placesDir: places, timeDirs: [time] })
+    const app = createTestHttpApp([places, time], { markdownStore: store })
+    const search = (await (await app.request('/docs/_api/links?q=France&kind=place')).json()) as LinkSearch
+    const resolve = await app.request('/docs/_api/links/resolve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values: ['places/FR'] }),
+    })
+    assert({
+      given: 'a country with no notebook file',
+      should: 'offer one creation candidate while reads leave the notebook alone',
+      actual: [search.items.map((item) => [item.value, item.needsCreation]), await readdir(base), await resolve.json()],
+      expected: [[['places/FR', true]], ['time'], { items: [] }],
+    })
+    const choose = (value: string) =>
+      app.request('/docs/_api/links/choose', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value }),
+      })
+    const picked = await choose('places/FR')
+    const selected = (await picked.json()) as { item: { value: string; needsCreation?: boolean } }
+    const { host } = createLinks(store, base, [places, time])
+    await host.update(NOTE, [selected.item.value], [])
+    const countryFile = path.join(base, COUNTRY)
+    const annotated = (await readFile(countryFile, 'utf8')) + '\nKeep country notes.\n'
+    await writeFile(countryFile, annotated)
+    const repeated = await choose('places/FR')
+    await host.validate(['places/CA'])
+    const rejected = await choose('places/FR/Unknown-City')
+    assert({
+      given: 'selection, linking, repetition and an import selection',
+      should: 'create resolvable targets once, update backlinks, preserve notes and reject unknown geography',
+      actual: [
+        picked.status,
+        selected.item.value,
+        selected.item.needsCreation,
+        repeated.status,
+        rejected.status,
+        store.resolve('places/FR').type,
+        store.resolve('places/CA').type,
+        backlinksOf(store, base, COUNTRY).map((backlink) => backlink.path),
+        await readFile(countryFile, 'utf8'),
+        await readFile(path.join(base, NOTE), 'utf8'),
+      ],
+      expected: [
+        200,
+        'places/FR',
+        undefined,
+        200,
+        400,
+        'place',
+        'place',
+        [NOTE],
+        annotated,
+        original.replace('rel: []', 'rel:\n  - places/FR'),
+      ],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('country selection rejects a destination linked outside the notebook', async () => {
+  const base = await mkdtemp('/tmp/sky-country-boundary-')
+  const outside = await mkdtemp('/tmp/sky-country-outside-')
+  try {
+    const places = path.join(base, 'places')
+    const time = path.join(base, 'time')
+    await mkdir(places)
+    await mkdir(time)
+    await symlink(outside, path.join(places, 'locations'))
+    const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [], placesDir: places, timeDirs: [time] })
+    const app = createTestHttpApp([places, time], { markdownStore: store })
+    const response = await app.request('/docs/_api/links/choose', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'places/FR' }),
+    })
+    assert({
+      given: 'a country destination outside the notebook through a symlink',
+      should: 'reject it before creating a record',
+      actual: [response.status, await readdir(outside)],
+      expected: [400, []],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
   }
 })

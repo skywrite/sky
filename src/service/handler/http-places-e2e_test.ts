@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
+import * as path from 'node:path'
 import { assert, test } from '#test'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
@@ -68,3 +69,60 @@ test(
     )
   },
 )
+
+test({ name: 'selecting an unsaved country creates and links it on desktop and phone', timeout: 30000 }, async (t) => {
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: '---\nrel: []\n---\n\n# Travel notes\n',
+      tempPrefix: 'country-selection-e2e-',
+      store: true,
+      files: { 'places/readme.md': '# Places\n' },
+    },
+    async ({ page, origin, relativePath, file, errors }) => {
+      const places = path.join(path.dirname(path.dirname(file)), 'places')
+      for (const [width, name, code] of [
+        [1500, 'France', 'FR'],
+        [430, 'Canada', 'CA'],
+      ] as const) {
+        await page.setViewportSize({ width, height: 1000 })
+        await page.goto(`${origin}/explorer/${relativePath}`)
+        await page.getByRole('button', { name: 'Edit', exact: true }).click()
+        if (width === 430) await page.getByRole('button', { name: 'Show details', exact: true }).click()
+        await page.getByRole('button', { name: '+ Add link', exact: true }).click()
+        await page.getByLabel('Search notebook links').fill(name)
+        await page.getByRole('button', { name: `Link ${name}`, exact: true }).waitFor()
+        const filesBefore = await readdir(places, { recursive: true })
+        assert({
+          given: `${name} found in the picker at ${width}px`,
+          should: 'remain unsaved while searching and offer no broken preview',
+          actual: [
+            filesBefore.includes(`locations/${code}.md`),
+            await page.getByRole('button', { name: `Preview ${name}`, exact: true }).count(),
+          ],
+          expected: [false, 0],
+        })
+        const saved = page.waitForResponse(
+          (response) => response.url().includes('/docs/_api/content/') && response.request().method() === 'PUT',
+        )
+        await page.getByRole('button', { name: `Link ${name}`, exact: true }).click()
+        await saved
+        await page.setViewportSize({ width: 1500, height: 1000 })
+        await page.reload()
+        const link = page.locator('[data-section="links"] a').filter({ hasText: name })
+        await link.waitFor()
+        assert({
+          given: `${name} selected and the note reopened`,
+          should: 'have a readable link to the newly created country record',
+          actual: [
+            (await readFile(file, 'utf8')).includes(`  - places/${code}`),
+            (await readFile(path.join(places, 'locations', `${code}.md`), 'utf8')).includes(`ref: places/${code}`),
+            await link.getAttribute('href'),
+            errors,
+          ],
+          expected: [true, true, `/explorer/places/locations/${code}.md`, []],
+        })
+      }
+    },
+  )
+})

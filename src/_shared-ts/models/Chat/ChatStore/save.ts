@@ -63,6 +63,7 @@ export interface EnrichSubject {
   from: string
   summary: string
   body: string
+  existingRel?: string[]
 }
 
 /**
@@ -74,6 +75,8 @@ export interface SaveEnricher {
   summarize(transcript: string): Promise<string | undefined>
   chooseTags(subject: EnrichSubject): Promise<string | undefined>
   chooseRel(subject: EnrichSubject): Promise<string[] | undefined>
+  /** Newly discussed places append when an existing chat already has entity links. */
+  choosePlaceRel?(subject: EnrichSubject): Promise<string[] | undefined>
   /** Ground overt conversational references to notebook files, including on resume. */
   chooseDocumentRel?(input: DocumentRelInput): Promise<string[] | undefined>
   /**
@@ -103,6 +106,7 @@ export const corpusEnricher: SaveEnricher = {
   summarize: (transcript) => summarizeTranscript(transcript, { kind: CHAT_ENRICH.kind }),
   chooseTags: (subject) => autoTagMessage(subject, CHAT_ENRICH),
   chooseRel: (subject) => autoRelMessage(subject, CHAT_ENRICH),
+  choosePlaceRel: (subject) => autoRelMessage(subject, { ...CHAT_ENRICH, placesOnly: true }),
   chooseDocumentRel: resolveDocumentRel,
   distillMemories: (transcript, memories) => distillMemories({ transcript, memories, kind: CHAT_ENRICH.kind }),
   // Discovery + distill live in the lib (shared with meeting:new): subjects
@@ -291,13 +295,19 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const priorRel = resume && resume.rel.length > 0 ? resume.rel : undefined
   const wantTags = !priorTags && input.autoTag === true
   const wantRel = !priorRel && input.autoRel === true
+  const wantPlaces = Boolean(
+    priorRel &&
+    input.autoRel === true &&
+    enricher.choosePlaceRel &&
+    turns.length > (resume?.own.conversation.length ?? 0),
+  )
   const wantDocumentRel = input.autoRel === true && Boolean(enricher.chooseDocumentRel)
   const baseDir = path.dirname(timeDir)
 
-  if (wantTags || wantRel || wantDocumentRel) {
+  if (wantTags || wantRel || wantPlaces || wantDocumentRel) {
     const choosing: Array<'tags' | 'rel'> = []
     if (wantTags) choosing.push('tags')
-    if (wantRel || wantDocumentRel) choosing.push('rel')
+    if (wantRel || wantPlaces || wantDocumentRel) choosing.push('rel')
     input.onProgress?.({ type: 'enriching', choosing })
   }
 
@@ -310,7 +320,16 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
-    wantRel ? enricher.chooseRel(subject) : Promise.resolve(undefined),
+    wantRel
+      ? enricher.chooseRel(subject)
+      : wantPlaces
+        ? enricher.choosePlaceRel!({
+            ...subject,
+            summary: firstWordsSummary(turns.slice(resume?.own.conversation.length ?? 0)),
+            body: buildChatTranscript(turns.slice(Math.max(0, (resume?.own.conversation.length ?? 0) - 2))),
+            existingRel: priorRel,
+          }).catch(() => undefined)
+        : Promise.resolve(undefined),
     wantDocumentRel
       ? enricher.chooseDocumentRel!({
           turns,
@@ -371,7 +390,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // resumed, or auto) — a session that touched a Google file always
     // records it, deduped against entries already carrying the URL.
     rel: mergeDocumentRel(
-      mergeRel(priorRel ?? autoRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
+      mergeRel(mergeRel(priorRel, autoRel), artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
       documentRel,
       baseDir,
       (resume && documentTimeRef(resume.filePath, baseDir)?.slice(0, 10)) || day.ymd,

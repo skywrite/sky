@@ -1,12 +1,14 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import type { PlaceMatch } from '#lib/places/catalog.ts'
+import { ensurePlaceRef } from '#lib/places/geography.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
-import { extractSubjects } from './extract.ts'
+import { extractSubjects, groundedPlaces } from './extract.ts'
 import { excludeParties, partyExclusionSet } from './parties.ts'
-import { buildEntityIndex, normalizeEntityName, resolveSubjects } from './resolve.ts'
+import { buildEntityIndex, normalizeEntityName, placeRefInIndex, resolveSubjects } from './resolve.ts'
 import { fetchEntityScores } from './scores.ts'
-import { selectRel } from './select.ts'
+import { selectRel, validateSelection } from './select.ts'
 import type { RelCandidate } from './select.ts'
 
 // Same taxonomy floor as auto-tagging: the pre-2025 notebook is another era.
@@ -25,6 +27,36 @@ export type AutoRelInput = {
   from?: string
   summary?: string
   body: string
+  existingRel?: string[]
+}
+
+export interface AutoRelOptions {
+  mediums: string[]
+  kind?: string
+  /** Saved chats can append newly discussed places while preserving their other entity links. */
+  placesOnly?: boolean
+}
+
+export interface AutoRelServices {
+  buildIndex: typeof buildEntityIndex
+  fetchScores: typeof fetchEntityScores
+  loadCorpus: typeof loadMessageCorpus
+  extract: typeof extractSubjects
+  select: typeof selectRel
+}
+
+export const autoRelServices: AutoRelServices = {
+  buildIndex: buildEntityIndex,
+  fetchScores: fetchEntityScores,
+  loadCorpus: loadMessageCorpus,
+  extract: extractSubjects,
+  select: selectRel,
+}
+
+export interface AutoRelProposal {
+  rel: string[]
+  unresolvedPlaces: PlaceMatch[]
+  error?: string
 }
 
 /**
@@ -46,13 +78,46 @@ export type AutoRelInput = {
  */
 export async function autoRelMessage(
   input: AutoRelInput,
-  opts: { mediums: string[]; kind?: string },
+  opts: AutoRelOptions,
+  services: AutoRelServices = autoRelServices,
 ): Promise<string[] | undefined> {
   try {
+    const index = await services.buildIndex()
+    const proposal = await proposeRel(input, opts, { ...services, buildIndex: async () => index })
+    const refs: string[] = []
+    for (const ref of proposal.rel) {
+      if (ref.startsWith('places/')) {
+        if (!index.places) continue
+        try {
+          const saved = await ensurePlaceRef(index.places.store, ref)
+          refs.push(saved.ref)
+        } catch {
+          // A failed creation or a new conflict costs this link, never the capture.
+        }
+      } else if (index.canResolve(ref)) refs.push(ref)
+    }
+    const identity = (raw: string) => {
+      return normalizeEntityName(placeRefInIndex(raw, index) ?? raw)
+    }
+    const existing = new Set((input.existingRel ?? []).map(identity))
+    const added = [...new Set(refs)].filter((ref) => !existing.has(identity(ref)))
+    return added.length ? added : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The same extraction and selection as new captures, without creating records or changing rel. */
+export async function proposeRel(
+  input: AutoRelInput,
+  opts: AutoRelOptions,
+  services: AutoRelServices = autoRelServices,
+): Promise<AutoRelProposal> {
+  try {
     const [index, scores, corpus] = await Promise.all([
-      buildEntityIndex(),
-      fetchEntityScores(),
-      loadMessageCorpus(opts.mediums),
+      services.buildIndex(),
+      services.fetchScores(),
+      services.loadCorpus(opts.mediums),
     ])
     const records = corpus.records.filter((r) => r.date >= REL_SINCE)
     const relHistory = relHistoryFor(records, input.to)
@@ -65,19 +130,23 @@ export async function autoRelMessage(
       .slice(-MAX_EXEMPLARS)
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
-    const { subjects } = await extractSubjects(
-      { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from },
-      'fast',
-    )
-    const resolved = resolveSubjects(subjects, index, scores, { projectStatuses: ['open'] })
+    const request = { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from }
+    const { subjects, error } = await services.extract(request, 'fast')
+    if (error) return { rel: [], unresolvedPlaces: [], error }
+    const resolved = resolveSubjects({ ...subjects, places: groundedPlaces(subjects.places, request) }, index, scores, {
+      projectStatuses: ['open'],
+    })
     const parties = partyExclusionSet([input.from, input.to], { index, scores })
-    const subjectRefs = excludeParties(resolved.refs, parties)
+    const subjectRefs = excludeParties(resolved.refs, parties).filter(
+      (ref) => !opts.placesOnly || ref.startsWith('places/'),
+    )
 
     const usesOf = new Map(relHistory.map((h) => [normalizeEntityName(h.tag), h.count]))
     const candidates: RelCandidate[] = subjectRefs.map((ref) => {
       const norm = normalizeEntityName(ref)
       return {
         ref,
+        label: index.candidates.find((candidate) => candidate.ref === ref)?.label,
         inText: true,
         inPrior: usesOf.has(norm),
         uses: usesOf.get(norm) ?? 0,
@@ -86,12 +155,14 @@ export async function autoRelMessage(
     })
     const inText = new Set(subjectRefs.map(normalizeEntityName))
     let added = 0
-    for (const h of relHistory) {
+    for (const h of opts.placesOnly ? [] : relHistory) {
       if (added >= MAX_PRIOR_ONLY_CANDIDATES) break
       const norm = normalizeEntityName(h.tag)
       if (inText.has(norm)) continue
       // History predates the party rule, so it can carry the parties themselves
       if (parties.has(norm)) continue
+      // A country's precedent is not evidence that this capture discusses it.
+      if (placeRefInIndex(h.tag, index)) continue
       // Prior-only candidates must still resolve — history can carry renamed refs
       if (!index.canResolve(h.tag)) continue
       candidates.push({
@@ -103,9 +174,9 @@ export async function autoRelMessage(
       })
       added++
     }
-    if (candidates.length === 0) return undefined
+    if (candidates.length === 0) return { rel: [], unresolvedPlaces: resolved.unresolvedPlaces }
 
-    const selection = await selectRel(
+    const selection = await services.select(
       {
         body: input.body,
         summary: input.summary,
@@ -117,9 +188,13 @@ export async function autoRelMessage(
       },
       'balanced',
     )
-    return selection.rel.length > 0 ? selection.rel : undefined
-  } catch {
-    return undefined
+    return {
+      rel: validateSelection(selection.rel, candidates),
+      unresolvedPlaces: resolved.unresolvedPlaces,
+      ...(selection.error ? { error: selection.error } : {}),
+    }
+  } catch (error) {
+    return { rel: [], unresolvedPlaces: [], error: error instanceof Error ? error.message : String(error) }
   }
 }
 

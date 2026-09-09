@@ -1,6 +1,7 @@
-import { realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import { ensurePlaceRef } from '#lib/places/geography.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -41,16 +42,35 @@ export function createLinks(
     if (!isPathWithinRoot(actual, actualBase) || !isPathWithinRoots(actual, actualDirs))
       throw new Error('Choose a record inside the notebook.')
   }
+  const destination = async (file: string): Promise<string> => {
+    try {
+      return await realpath(file)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || path.dirname(file) === file) throw error
+      return path.join(await destination(path.dirname(file)), path.basename(file))
+    }
+  }
+  const choose = async (value: string): Promise<LinkItem> => {
+    const hit = lookup(await catalog(), value)
+    if (!hit || !store) throw new Error('A selected record is no longer available. Search for it again.')
+    if (hit.needsCreation) {
+      const target = await destination(path.resolve(base, hit.path))
+      const actualBase = await realpath(base)
+      const actualDirs = await Promise.all(dirs.map(destination))
+      if (!isPathWithinRoot(target, actualBase) || !isPathWithinRoots(target, actualDirs))
+        throw new Error('Choose a record inside the notebook.')
+      const saved = await ensurePlaceRef(store.places, hit.value)
+      store.set(saved.filePath, await readFile(saved.filePath, 'utf8'))
+    }
+    const selected = lookup(await catalog(), hit.value)
+    if (!selected || selected.needsCreation) throw new Error('The country record could not be created.')
+    await allowed(path.resolve(base, selected.path))
+    await stat(path.resolve(base, selected.path))
+    return selected
+  }
   const host: ImportLinksHost = {
     async validate(values) {
-      if (values.length === 0) return
-      const items = await catalog()
-      for (const value of values) {
-        const hit = lookup(items, value)
-        if (!hit) throw new Error('A selected record is no longer available. Search for it again.')
-        await allowed(path.resolve(base, hit.path))
-        await stat(path.resolve(base, hit.path))
-      }
+      for (const value of values) await choose(value)
     },
     update(file, add, remove) {
       const work = (writes.get(file) ?? Promise.resolve())
@@ -61,6 +81,7 @@ export function createLinks(
           const absolute = request.value.filePath
           await allowed(absolute)
           const current = await readMarkdownContent(absolute)
+          for (const value of add) if (/^places\//i.test(value)) await choose(value)
           const identity = (value: string) => {
             const ref = store?.resolve(value, { sourceFilePath: absolute })
             return ref && 'path' in ref ? String(ref.path) : value
@@ -84,7 +105,9 @@ export function createLinks(
   routes.get('/', async (c) => {
     if (!store) return c.json({ message: 'The notebook search is still loading.' }, 503)
     const matches = searchLinks(
-      await catalog(),
+      (await catalog()).filter(
+        (item) => !item.needsCreation || c.req.query('q')?.trim() || c.req.query('kind') === 'place',
+      ),
       c.req.query('q') ?? '',
       c.req.query('kind') ?? '',
       c.req.query('day') ?? '',
@@ -100,6 +123,15 @@ export function createLinks(
     }
     return c.json({ items: matches.slice(offset, offset + 40), total: matches.length, today })
   })
+  routes.post('/choose', async (c) => {
+    try {
+      const body = await c.req.json()
+      const [value] = linkValues([body.value])
+      return c.json({ item: await choose(value!) })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
+  })
   routes.post('/resolve', async (c) => {
     try {
       const body = await c.req.json()
@@ -109,7 +141,7 @@ export function createLinks(
       return c.json({
         items: values.flatMap((value) => {
           const hit = lookup(items, value, source)
-          return hit ? [{ ...hit, value }] : []
+          return hit && !hit.needsCreation ? [{ ...hit, value }] : []
         }),
       })
     } catch (error) {
