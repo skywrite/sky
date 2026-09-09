@@ -133,6 +133,8 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
   const linked = firstItemLink(Lexer.lexInline(text))
   const link = linked ? { title: linked.text, path: linked.href } : null
   if (linked) text = text.replace(linked.raw, linked.text).trim()
+  // MI labels organize the notebook; the day view shows just the task.
+  text = text.replace(/^MI\/\S+(?:\s*(?:->|→))?\s*/i, '')
   return { text, done, category, time, link, list, raw }
 }
 

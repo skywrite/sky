@@ -191,6 +191,18 @@
 }
 
 /* Most important is the day's one card. The other sections share the page. */
+.sky-day .sky-col > .sky-day-priority {
+  background: color-mix(in srgb, var(--sky-accent-soft) 45%, var(--sky-bg));
+}
+
+.sky-day-priority > .sky-block-head {
+  color: color-mix(in srgb, var(--sky-accent) 40%, var(--sky-text-2));
+}
+
+.sky-day-priority .sky-count {
+  color: var(--sky-text-2);
+}
+
 .sky-day .sky-col > .sky-block:not(.sky-day-priority) {
   background: transparent;
   border-radius: 0;
