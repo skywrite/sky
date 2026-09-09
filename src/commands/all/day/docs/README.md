@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-08-30
+updated: 2026-09-09
 ---
 
 # Day commands
@@ -31,15 +31,6 @@ before), and the ambient context of every chat and voice session, where
 the render also judges each meeting against the notebook clock (upcoming,
 in progress, not logged). See
 [2026-08-30 — the meeting check reaches the chat and the voice](2026-08-30-meeting-check-in-chat-and-voice.md).
-
-## The morning check-in
-
-`day:start` ends by grading the week: once the day's started stamp is
-written, it runs `week:checkin` for the day's week when that week has a
-`week.md`, with the editor kept closed. The entry lands in `checkins.md`
-next to the plan and the web's week page shows it. A week without a plan
-is not graded, and a check-in that fails prints a warning and never holds
-up the start. See `src/service/handler/week/docs/README.md`.
 
 ## The day's lists as tools — day:items
 

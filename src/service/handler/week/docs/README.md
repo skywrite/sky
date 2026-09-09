@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-09-09
 ---
 
 # The week page
@@ -76,13 +76,10 @@ for now (`sky week:plan 37`); the page says so in one line.
 the Sunday or Monday step, as a button. The current week needs none, since
 day:start creates the week when the day file is missing.
 
-## The morning check-in
+## Weekly check-ins
 
-day:start now ends by grading the week: week:checkin runs when the week has
-a `week.md`, with the editor kept closed, and its failure never holds up the
-day. The entry lands in `checkins.md` and the week page shows it. Starting
-the day from the web runs the same day:start, so the Start button waits for
-the check-in too.
+Run `sky week:checkin` to grade the week against its plan. The entry lands
+in `checkins.md` and the week page shows it.
 
 ## Routes
 
