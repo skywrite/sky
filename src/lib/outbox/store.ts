@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from './files.ts'
+import { dayRange, ScanRangeSchema, type SavedScanRange, type ScanRange } from './range.ts'
 import { ItemSchema, OutboxError, type OutboxItem, type OutboxRecord } from './types.ts'
 
 export const DEFAULT_PREFERENCES = `Be brief, direct, empathetic, and humble. Use natural language, without AI filler.
@@ -64,6 +65,29 @@ export class OutboxStore {
     const doc = text === undefined ? null : Document.fromMarkdown(text)
     if (doc?.yamlError) throw new OutboxError('Communication preferences have invalid frontmatter.')
     return { text: doc?.markdown.trim() ?? DEFAULT_PREFERENCES, revision: hash(text ?? '') }
+  }
+
+  async scanRange(today: string): Promise<SavedScanRange> {
+    const text = await readOptional(path.join(this.dir, 'search.md'))
+    if (text === undefined) return { value: dayRange(today), revision: hash('') }
+    const doc = Document.fromMarkdown(text)
+    if (doc.yamlError) throw new OutboxError('The saved Outbox search range has invalid frontmatter.')
+    return { value: ScanRangeSchema.parse(doc.yaml.range), revision: hash(text) }
+  }
+
+  async saveScanRange(value: ScanRange, revision: string, today: string): Promise<void> {
+    const range = ScanRangeSchema.parse(value)
+    await withLock(path.join(this.stateDir, 'write.lock'), async () => {
+      if ((await this.scanRange(today)).revision !== revision)
+        throw new OutboxError('The search range changed in another window. Reload before checking.', 409)
+      await atomicWrite(
+        path.join(this.dir, 'search.md'),
+        new Document(
+          { range, updated: today },
+          'Dates and times follow saved message timestamps. This range stays fixed until you change it.\n',
+        ).toMarkdown(),
+      )
+    })
   }
 
   async savePreferences(text: string, revision: string): Promise<void> {

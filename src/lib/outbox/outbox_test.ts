@@ -4,6 +4,8 @@ import * as path from 'node:path'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
+import { readScanProgress } from './progress.ts'
+import { dayRange } from './range.ts'
 import { OutboxReview } from './review.ts'
 import { scanOutbox, type Propose } from './scan.ts'
 import { SavedMessages } from './sources.ts'
@@ -62,7 +64,255 @@ async function errorOf(run: () => Promise<unknown>): Promise<string> {
   }
 }
 
-test('Outbox baselines history, starts today, and later picks up an old-dated new capture', async () => {
+test('Outbox selects actual message times across dates, including a capture filed on a different day', async () => {
+  const f = await fixture()
+  try {
+    const range = { start: '2025-03-14T23:30', end: '2025-03-15T09:15' }
+    const values = [
+      ['2025-03-14', '23:29', '2025-03-14'],
+      ['2025-03-14', '23:30', '2025-03-14'],
+      ['2025-03-15', '09:15', '2025-03-10'],
+      ['2025-03-15', '09:16', '2025-03-15'],
+    ]
+    for (const [index, [date, time, filed]] of values.entries())
+      await f.write(
+        `${filed}/actions/messages/slack_Example-${index}.md`,
+        `## ${date} ${time} - **Jane Doe**\nCould you review example ${index}?`,
+        { follow: null, link: `https://atlas.slack.com/archives/C012ABCDEF/p1700000000000${index}00` },
+      )
+    const seen: string[] = []
+    const report = await scanOutbox({
+      store: f.store,
+      sources: f.sources,
+      today: TODAY,
+      now: NOW,
+      range,
+      propose: async ({ conversation, range: supplied }) => {
+        if (JSON.stringify(supplied) !== JSON.stringify(range)) throw new Error('Wrong range supplied to model')
+        seen.push(conversation.sources[0].body)
+        return proposal
+      },
+    })
+    assert({
+      given: 'a multi-day range and activity filed under another date',
+      should: 'include exactly the two endpoint messages',
+      actual: [
+        report.total,
+        report.prepared,
+        seen.some((body) => body.includes('example 1')),
+        seen.some((body) => body.includes('example 2')),
+      ],
+      expected: [2, 2, true, true],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('An old selected range includes a later saved reply even without a follow record', async () => {
+  const f = await fixture()
+  try {
+    await f.write(OLD_REF, '## 2025-03-14 09:00 - **Jane Doe**\nDid the update arrive?', { follow: null })
+    const answer = '## 2025-03-15 09:00 - **Alex Example**\nYes, I have the update.'
+    await f.write(TODAY_REF, answer, { follow: null })
+    const result = await scanOutbox({
+      store: f.store,
+      sources: f.sources,
+      today: TODAY,
+      now: NOW,
+      range: dayRange('2025-03-14'),
+      propose: async ({ conversation, triggerSources }) => {
+        if (conversation.sources.length !== 2 || triggerSources?.join() !== OLD_REF)
+          throw new Error('Missing later reply or wrong trigger')
+        return { ...proposal, action: 'ignore', responseEvidence: { ref: TODAY_REF, quote: answer } }
+      },
+    })
+    assert({
+      given: 'yesterday’s question and today’s saved answer in the same Slack thread',
+      should: 'recognize the answer without reviving the old request',
+      actual: [result.total, result.answered, (await f.store.list()).length],
+      expected: [1, 1, 0],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Recorded sends persist across reruns while new requests reopen the same conversation', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, '## 2025-03-15 09:00 - **Jane Doe**\nDid the update arrive?', { follow: null })
+    await f.run()
+    const item = (await f.store.list())[0]
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => ({ id: 'draft-1', url: LINK }),
+      () => NOW,
+    )
+    const ready = await review.approve(item.id, item.revision, 'Got it, thanks.', false)
+    const sent = await review.reportSent(ready.id, ready.revision, 'Sent the acknowledgment in Slack at noon.')
+    let calls = 0
+    const repeated = await f.run(async () => {
+      calls++
+      return proposal
+    })
+    await f.write(
+      TODAY_REF,
+      '## 2025-03-15 09:00 - **Jane Doe**\nDid the update arrive?\n\n## 2025-03-15 14:00 - **Jane Doe**\nCan you approve the revised scope?',
+      { follow: null },
+    )
+    let received = ''
+    const next = await f.run(async ({ priorResponse }) => {
+      received = priorResponse?.responseHistory?.at(-1)?.reply ?? ''
+      return { ...proposal, draft: 'The revised scope looks good.' }
+    })
+    const reopened = (await f.store.list())[0]
+    assert({
+      given: 'an explicitly reported send followed by a new request in the same thread',
+      should: 'remember the sent reply, avoid duplicates, and prepare the new response',
+      actual: [
+        sent.status,
+        repeated.answered,
+        calls,
+        next.prepared,
+        received,
+        reopened.id === item.id,
+        reopened.status,
+        reopened.native,
+        reopened.delivery,
+        reopened.responseHistory?.length,
+      ],
+      expected: ['dismissed', 1, 0, 1, 'Got it, thanks.', true, 'needs_review', null, undefined, 1],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Observed replies close an approved draft only with captured evidence and allow a subsequent ask', async () => {
+  const f = await fixture()
+  try {
+    const ask = '## 2025-03-15 09:00 - **Jane Doe**\nDid the update arrive?'
+    await f.write(TODAY_REF, ask, { follow: null })
+    await f.run()
+    const item = (await f.store.list())[0]
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => ({ id: 'draft-1', url: LINK }),
+      () => NOW,
+    )
+    await review.approve(item.id, item.revision, 'Got it, thanks.', false)
+    await f.write(TODAY_REF, `${ask}\n\n## 2025-03-15 09:15 - **Jane Doe**\nThanks for looking.`, { follow: null })
+    const forged = await f.run(async () => ({
+      ...proposal,
+      action: 'ignore',
+      responseEvidence: { ref: TODAY_REF, quote: 'A reply that is not in the capture.' },
+    }))
+    const kept = (await f.store.list())[0]
+    const quote = '## 2025-03-15 09:20 - **Alex Example**\nGot it, thanks.'
+    await f.write(TODAY_REF, `${ask}\n\n${quote}`, { follow: null })
+    const answered = await f.run(async ({ priorResponse }) => {
+      if (priorResponse?.delivery || priorResponse?.status !== 'ready') throw new Error('A draft was treated as sent')
+      return { ...proposal, action: 'ignore', responseEvidence: { ref: TODAY_REF, quote } }
+    })
+    const closed = (await f.store.list())[0]
+    await f.write(TODAY_REF, `${ask}\n\n${quote}\n\n## 2025-03-15 10:00 - **Jane Doe**\nOne more question?`, {
+      follow: null,
+    })
+    const next = await f.run()
+    assert({
+      given: 'a claimed reply, then a real captured reply and another question',
+      should: 'reject invented evidence, remember the observed answer, and reopen for new work',
+      actual: [
+        forged.failed,
+        kept.status,
+        answered.answered,
+        closed.status,
+        closed.responseHistory?.[0].kind,
+        next.prepared,
+        (await f.store.list())[0].native,
+      ],
+      expected: [1, 'ready', 1, 'dismissed', 'captured_reply', 1, null],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Changing the range reassesses a closed conversation with unchanged captured content', async () => {
+  const f = await fixture()
+  try {
+    await f.write(
+      TODAY_REF,
+      '## 2025-03-15 09:00 - **Jane Doe**\nDid it arrive?\n\n## 2025-03-15 15:00 - **Jane Doe**\nCan you review the next update?',
+      { follow: null },
+    )
+    const morning = { start: `${TODAY}T08:00`, end: `${TODAY}T10:00` }
+    const run = (range: typeof morning, propose: Propose) =>
+      scanOutbox({ store: f.store, sources: f.sources, today: TODAY, now: NOW, range, propose })
+    await run(morning, async () => proposal)
+    const item = (await f.store.list())[0]
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => ({ id: 'draft-1', url: LINK }),
+      () => NOW,
+    )
+    await review.reportSent(item.id, item.revision, 'Replied to the morning question in Slack.')
+    let calls = 0
+    const result = await run({ start: `${TODAY}T14:00`, end: `${TODAY}T16:00` }, async () => {
+      calls++
+      return proposal
+    })
+    assert({
+      given: 'a sent morning reply and a newly selected afternoon range',
+      should: 'reconsider the afternoon request even when the source version has not changed',
+      actual: [calls, result.prepared, (await f.store.list())[0].status],
+      expected: [1, 1, 'needs_review'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Missing timestamps and missing history cannot silently become a completed empty check', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Could you take a look?', {
+      follow: null,
+      previous: '2025-03-14/actions/messages/slack_Missing.md',
+    })
+    const range = { start: `${TODAY}T09:00`, end: `${TODAY}T10:00` }
+    const report = await scanOutbox({
+      store: f.store,
+      sources: f.sources,
+      today: TODAY,
+      now: NOW,
+      range,
+      propose: async () => ({ ...proposal, action: 'ignore' }),
+    })
+    const record = (await f.store.list())[0]
+    assert({
+      given: 'an undated capture in the selected day and unreadable linked history',
+      should: 'surface a decision and report incomplete coverage even if the model tries to ignore it',
+      actual: [
+        report.outcome,
+        report.incomplete,
+        report.pending,
+        record.status,
+        record.draft,
+        Boolean(record.questions.length),
+      ],
+      expected: ['failed', 1, 1, 'needs_review', '', true],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox only discovers today on every check while retaining linked history', async () => {
   const f = await fixture()
   try {
     await f.write(OLD_REF, 'An older request.')
@@ -82,20 +332,20 @@ test('Outbox baselines history, starts today, and later picks up an old-dated ne
     const third = await f.run(propose)
     assert({
       given: 'today with linked history, then an unchanged pass and a new old-dated capture',
-      should: 'prepare once per new conversation and include older context',
+      should: 'include linked history without admitting older unrelated captures',
       actual: {
         prepared: [first.prepared, second.prepared, third.prepared],
         context: seen[0],
         total: (await f.store.list()).length,
       },
-      expected: { prepared: [1, 0, 1], context: [OLD_REF, TODAY_REF], total: 2 },
+      expected: { prepared: [1, 0, 0], context: [OLD_REF, TODAY_REF], total: 1 },
     })
   } finally {
     await f.clean()
   }
 })
 
-test('Outbox does not process old unlinked content on the first pass', async () => {
+test('Outbox excludes changed old content on subsequent checks too', async () => {
   const f = await fixture()
   try {
     await f.write(OLD_REF, 'Earlier request.', { follow: null })
@@ -111,9 +361,9 @@ test('Outbox does not process old unlinked content on the first pass', async () 
     })
     assert({
       given: 'an old saved conversation changes after the initial baseline',
-      should: 'only read it for a proposal after it changes',
+      should: 'never admit it as a candidate for today',
       actual: [first.prepared, second.prepared, calls],
-      expected: [0, 1, 1],
+      expected: [0, 0, 0],
     })
   } finally {
     await f.clean()
@@ -534,6 +784,370 @@ test('Outbox preferences persist as Markdown with metadata and detect edit confl
       should: 'persist the updated guidance without losing metadata or newer edits',
       actual: [saved.text, file.startsWith('---\n'), Boolean(conflict)],
       expected: ['Keep replies short and warm.', true, true],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox completes more than five conversations, exposing progress and every skip reason', async () => {
+  const f = await fixture()
+  let release!: () => void
+  let started!: () => void
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const entered = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  try {
+    for (let i = 0; i < 12; i++) {
+      await f.write(`${TODAY}/actions/messages/slack_Sample-${i}.md`, `Request ${i}`, {
+        follow: null,
+        link: `https://atlas.slack.com/archives/C012ABCDEF/p1700000000000${String(i).padStart(3, '0')}`,
+      })
+    }
+    let active = 0
+    let peak = 0
+    let calls = 0
+    const pending = scanOutbox({
+      store: f.store,
+      sources: f.sources,
+      today: TODAY,
+      now: NOW,
+      model: 'test-model',
+      propose: async ({ today, now }) => {
+        if (today !== TODAY || now !== NOW) throw new Error('Missing date context')
+        calls++
+        active++
+        peak = Math.max(peak, active)
+        if (active === 4) started()
+        await hold
+        active--
+        return { ...proposal, action: 'ignore', reasoning: 'Jane confirmed the request was resolved.' }
+      },
+    })
+    await entered
+    const progress = await readScanProgress(f.store)
+    release()
+    const result = await pending
+    const done = await readScanProgress(f.store)
+    const repeat = await f.run(async () => {
+      throw new Error('Unchanged messages must reuse their result')
+    })
+    assert({
+      given: 'a dozen independent requests in a single check',
+      should: 'finish all, bound concurrency, persist progress, and explain cached results',
+      actual: {
+        running: [progress?.status, progress?.total, progress?.completed],
+        complete: [result.total, result.completed, result.pending, calls, peak],
+        audit: [
+          done?.status,
+          done?.checks.length,
+          done?.checks.every(
+            (check) => check.reason === 'Jane confirmed the request was resolved.' && check.model === 'test-model',
+          ),
+        ],
+        repeat: [repeat.unchanged, repeat.failed, repeat.pending],
+      },
+      expected: {
+        running: ['running', 12, 0],
+        complete: [12, 12, 0, 12, 4],
+        audit: ['complete', 12, true],
+        repeat: [12, 0, 0],
+      },
+    })
+  } finally {
+    release?.()
+    await f.clean()
+  }
+})
+
+test('Outbox rechecks linked history even if today’s file metadata did not change', async () => {
+  const f = await fixture()
+  try {
+    await f.write(OLD_REF, 'Earlier discussion.')
+    await f.write(TODAY_REF, 'Which option should we choose?')
+    await f.follow([OLD_REF, TODAY_REF])
+    await f.run()
+    await f.write(OLD_REF, 'Earlier discussion with a corrected constraint.')
+    let calls = 0
+    await f.run(async () => {
+      calls++
+      return proposal
+    })
+    assert({
+      given: 'a correction to the context of today’s request',
+      should: 'reassess the conversation',
+      actual: calls,
+      expected: 1,
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox reassesses legacy skips, drops the old backlog, and retires an untouched old-only item', async () => {
+  const f = await fixture()
+  try {
+    await f.write(OLD_REF, 'A request from yesterday.', { follow: null })
+    await f.run(undefined, OLD_REF.slice(0, 10))
+    const old = (await f.store.list())[0]
+    await f.write(TODAY_REF, 'A new decision for today.', {
+      follow: null,
+      link: 'https://atlas.slack.com/archives/C012ABCDEF/p1700000000000200',
+    })
+    const today = (await f.sources.conversation(TODAY_REF))!
+    await writeFile(
+      path.join(f.store.stateDir, 'sources.json'),
+      JSON.stringify({
+        version: 1,
+        files: {},
+        pending: [OLD_REF],
+        handled: { [today.key]: today.version },
+      }),
+    )
+    const result = await f.run()
+    const items = await f.store.list()
+    assert({
+      given: 'a legacy checkpoint marked a current request handled and queued yesterday',
+      should: 'review today again and remove only the untouched mistaken item',
+      actual: [result.total, result.prepared, result.pending, items.find((item) => item.id === old.id)?.status],
+      expected: [1, 1, 0, 'dismissed'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox preserves a dismissed version but resurfaces a new request in the same conversation', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'First request.', { follow: null })
+    await f.run()
+    const item = (await f.store.list())[0]
+    await f.store.put({ ...item, status: 'dismissed' }, item.revision)
+    await f.run(async () => {
+      throw new Error('Dismissal must remain quiet')
+    })
+    await f.write(TODAY_REF, 'A new unanswered question.', { follow: null })
+    const next = await f.run()
+    assert({
+      given: 'new content after an owner dismissed a prior request',
+      should: 'review the new request',
+      actual: [next.prepared, (await f.store.list())[0].status],
+      expected: [1, 'needs_review'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox upgrades cached summary-only items to drafted replies without replacing owner edits', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Which part should I clarify?', { follow: null })
+    await f.run(async () => ({ ...proposal, action: 'decision', draft: '', questions: ['What should the reply say?'] }))
+    const file = path.join(f.store.stateDir, 'sources.json')
+    const checkpoint = JSON.parse(await readFile(file, 'utf8'))
+    await writeFile(file, JSON.stringify({ ...checkpoint, policy: 'today-triage-v2' }))
+    const filled = await f.run()
+    const item = (await f.store.list())[0]
+    await f.store.put({ ...item, draft: 'My own wording.', edited: true }, item.revision)
+    const again = JSON.parse(await readFile(file, 'utf8'))
+    await writeFile(file, JSON.stringify({ ...again, policy: 'today-triage-v2' }))
+    await f.run(async () => {
+      throw new Error('Owner wording must survive a policy upgrade')
+    })
+    assert({
+      given: 'today’s unchanged conversations were checked with the summary-only policy',
+      should: 'fill the untouched draft once and retain a subsequent owner edit',
+      actual: [filled.prepared, item.draft, (await f.store.list())[0].draft],
+      expected: [1, proposal.draft, 'My own wording.'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox composes from an owner decision without any native write and protects it on the next scan', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Choose the pilot scope.', { follow: null })
+    await f.run(async () => ({
+      ...proposal,
+      action: 'decision',
+      draft: '',
+      questions: ['Which scope?'],
+      replyOptions: [{ label: 'Small pilot', instruction: 'Choose the smaller pilot.' }],
+    }))
+    const item = (await f.store.list())[0]
+    let writes = 0
+    let received: string[] = []
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => {
+        writes++
+        return { id: 'native', url: LINK }
+      },
+      () => NOW,
+      undefined,
+      async ({ instruction, draft }) => {
+        received = [instruction, draft]
+        return { ...proposal, draft: 'Let’s start with the smaller pilot.', questions: [], replyOptions: [] }
+      },
+    )
+    const result = await review.compose(item.id, item.revision, 'My rough note.', 'Choose the smaller pilot.')
+    await f.write(TODAY_REF, 'Choose the pilot scope. An additional comment.', { follow: null })
+    await f.run()
+    const after = (await f.store.list())[0]
+    assert({
+      given: 'an owner picks a scope and Sky writes the reply',
+      should: 'save a local review draft with resolved questions and retain it across new context',
+      actual: [received, writes, result.status, result.draft, result.questions, after.draft, after.stale],
+      expected: [
+        ['Choose the smaller pilot.', 'My rough note.'],
+        0,
+        'needs_review',
+        'Let’s start with the smaller pilot.',
+        [],
+        'Let’s start with the smaller pilot.',
+        true,
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox preserves a newer human edit when reply composition finishes later', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Clarify the update.', { follow: null })
+    await f.run()
+    const item = (await f.store.list())[0]
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => {
+        throw new Error('No native writes')
+      },
+      () => NOW,
+      undefined,
+      async () => {
+        await f.store.put({ ...item, draft: 'My newer edit.', edited: true }, item.revision)
+        return proposal
+      },
+    )
+    const error = await errorOf(() => review.compose(item.id, item.revision, item.draft, 'Shorter'))
+    assert({
+      given: 'another editor saves while Sky writes',
+      should: 'reject the stale result and preserve the newer text',
+      actual: [Boolean(error), (await f.store.list())[0].draft],
+      expected: [true, 'My newer edit.'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox rejects a reply based on messages that change during composition', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Clarify the update.', { follow: null })
+    await f.run()
+    const item = (await f.store.list())[0]
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => {
+        throw new Error('No native writes')
+      },
+      () => NOW,
+      undefined,
+      async () => {
+        await f.write(TODAY_REF, 'The request changed.', { follow: null })
+        return { ...proposal, draft: 'An obsolete reply.' }
+      },
+    )
+    const error = await errorOf(() => review.compose(item.id, item.revision, item.draft, 'Shorter'))
+    assert({
+      given: 'new messages arrive while Sky writes',
+      should: 'reject the obsolete reply and keep the saved draft',
+      actual: [Boolean(error), (await f.store.list())[0].draft],
+      expected: [true, item.draft],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox retains earlier owner answers when a reply needs one more detail', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Which day and time work?', { follow: null })
+    await f.run(async () => ({ ...proposal, action: 'decision', draft: '', questions: ['Which day and time?'] }))
+    const first = (await f.store.list())[0]
+    let previous: string[] = []
+    const review = new OutboxReview(
+      f.store,
+      f.sources,
+      async () => {
+        throw new Error('No native writes')
+      },
+      () => NOW,
+      undefined,
+      async ({ item, instruction }) => {
+        previous = (item.replyDirections ?? []).map((direction) => direction.text)
+        return instruction === 'Tuesday'
+          ? { ...proposal, action: 'decision', draft: '', questions: ['What time on Tuesday?'] }
+          : { ...proposal, draft: 'Tuesday at 10 works for me.', questions: [] }
+      },
+    )
+    const question = await review.compose(first.id, first.revision, '', 'Tuesday')
+    const answer = await review.compose(question.id, question.revision, '', '10 works')
+    assert({
+      given: 'an owner answers the day and then a follow-up about time',
+      should: 'retain the first answer while completing the reply',
+      actual: [previous, answer.draft, answer.replyDirections?.map((direction) => direction.text)],
+      expected: [['Tuesday'], 'Tuesday at 10 works for me.', ['Tuesday', '10 works']],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox reconsiders cached judgments when the model or effort profile changes', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'A request to reconsider.', { follow: null })
+    let calls = 0
+    const run = (model: string, modelProfile: string, ignored: boolean) =>
+      scanOutbox({
+        store: f.store,
+        sources: f.sources,
+        today: TODAY,
+        now: NOW,
+        model,
+        modelProfile,
+        propose: async () => {
+          calls++
+          return { ...proposal, action: ignored ? 'ignore' : 'draft' }
+        },
+      })
+    await run('model-a', 'profile-a', true)
+    const unchanged = await run('model-a', 'profile-a', true)
+    const replaced = await run('model-b', 'profile-b', false)
+    const retuned = await run('model-b', 'profile-c', false)
+    const item = (await f.store.list())[0]
+    await f.store.put({ ...item, draft: 'My reviewed words.', edited: true }, item.revision)
+    await run('model-c', 'profile-d', false)
+    assert({
+      given: 'a quiet result, a model switch, an effort change, and then an owner edit',
+      should: 'reassess the earlier judgments while retaining the owner’s words',
+      actual: [calls, unchanged.unchanged, replaced.prepared, retuned.prepared, (await f.store.list())[0].draft],
+      expected: [3, 1, 1, 1, 'My reviewed words.'],
     })
   } finally {
     await f.clean()

@@ -1,8 +1,10 @@
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import { assert, test } from '#test'
+import { holding } from '../../activity.ts'
+import { createReloadGate, RELOAD_EXIT_CODE } from '../../reload.ts'
 import { createOutboxRoutes, type OutboxRoutesOptions } from './mod.ts'
 
-function harness() {
+function harness(overrides: Partial<OutboxRoutesOptions> = {}) {
   const actions: string[] = []
   const item: OutboxRecord = {
     id: 'a'.repeat(32),
@@ -48,9 +50,66 @@ function harness() {
     preferences: async () => {
       actions.push('preferences')
     },
+    ...overrides,
   }
   return { app: createOutboxRoutes(host), actions }
 }
+
+test('Outbox check startup defers automatic reload until the worker handoff succeeds or fails', async () => {
+  for (const fails of [false, true]) {
+    const codes: number[] = []
+    const gate = createReloadGate({
+      root: '/nowhere',
+      watch: false,
+      exit: (code) => codes.push(code),
+      log: { info: () => {}, warn: () => {} },
+      debounceMs: 1,
+      graceMs: 1,
+    })
+    let entered!: () => void
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let finish!: () => void
+    const handoff = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const { app } = harness({
+      scan: async () => {
+        entered()
+        await handoff
+        if (fails) throw new Error('Could not start the check worker.')
+        return { outcome: 'nothing', running: true }
+      },
+    })
+    const response = app.request('/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    try {
+      await entering
+      gate.request('source changed')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const during = { exits: [...codes], held: holding().includes('outbox check startup') }
+      finish()
+      const accepted = await response
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert({
+        given: fails
+          ? 'worker startup fails while a reload is pending'
+          : 'worker registration is pending during a source change',
+        should: 'defer restart through handoff and always release it afterward',
+        actual: [during, accepted.status, holding().includes('outbox check startup'), codes],
+        expected: [{ exits: [], held: true }, fails ? 400 : 202, false, [RELOAD_EXIT_CODE]],
+      })
+    } finally {
+      finish()
+      await response
+      gate.close()
+    }
+  }
+})
 
 test('Outbox routes require a same-origin explicit approval with nonempty revision', async () => {
   const { app, actions } = harness()
@@ -103,5 +162,33 @@ test('Outbox Check now returns a quiet result instead of an empty success', asyn
       result: { outcome: 'nothing', message: 'No new or changed conversations to check.' },
       actions: ['scan'],
     },
+  })
+})
+
+test('Outbox validates the selected dates, times, and range revision before starting a check', async () => {
+  const { app, actions } = harness()
+  const valid = { start: '2025-03-14T08:30', end: '2025-03-15T17:45' }
+  const requests = [
+    { range: { ...valid, start: '2025-02-30T08:30' }, revision: 'v1' },
+    { range: { start: valid.end, end: valid.start }, revision: 'v1' },
+    { range: valid },
+    { range: valid, revision: 'v1' },
+  ]
+  const statuses: number[] = []
+  for (const data of requests)
+    statuses.push(
+      (
+        await app.request('/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+      ).status,
+    )
+  assert({
+    given: 'invalid, reversed, unversioned, and valid selected ranges',
+    should: 'start only the valid revisioned request',
+    actual: [statuses, actions],
+    expected: [[400, 400, 400, 200], ['scan']],
   })
 })

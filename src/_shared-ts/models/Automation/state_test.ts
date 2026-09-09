@@ -254,9 +254,52 @@ test('AutomationStateStore - saving leaves no temporary file behind', async () =
 
     assert({
       given: 'a completed save',
-      should: 'leave only the state file in place',
+      should: 'leave the state and reusable process lock, without a temporary file',
       actual: (await readdir(dir)).sort(),
-      expected: ['automations.json'],
+      expected: ['automations.json', 'automations.json.lock'],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('AutomationStateStore - concurrent writers preserve each charter and save each pending run once', async () => {
+  const { dir, file } = await tempFile()
+  try {
+    const [left, right] = await Promise.all([AutomationStateStore.load(file), AutomationStateStore.load(file)])
+    const stamp = new PlainDateTime('09:00', '2026-01-05')
+    left.record('alpha', { utc: stamp, clock: stamp, outcome: 'acted' })
+    right.record('beta', { utc: stamp, clock: stamp, outcome: 'nothing' })
+    await Promise.all([left.save(), right.save(), left.save()])
+    await right.save()
+    const restored = await AutomationStateStore.load(file)
+    assert({
+      given: 'two independent ledger snapshots saving different runs concurrently',
+      should: 'keep both charters without replaying a previously saved pending record',
+      actual: [restored.names(), restored.runsFor('alpha').length, restored.runsFor('beta').length],
+      expected: [['alpha', 'beta'], 1, 1],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('AutomationStateStore - an older worker completing later preserves the newer schedule stamp', async () => {
+  const { dir, file } = await tempFile()
+  try {
+    const [scheduled, manual] = await Promise.all([AutomationStateStore.load(file), AutomationStateStore.load(file)])
+    const earlier = new PlainDateTime('09:00', '2026-01-05')
+    const later = new PlainDateTime('09:10', '2026-01-05')
+    scheduled.record('alpha', { utc: earlier, clock: earlier, outcome: 'nothing' })
+    manual.record('alpha', { utc: later, clock: later, outcome: 'acted' })
+    await manual.save()
+    await scheduled.save()
+    const restored = await AutomationStateStore.load(file)
+    assert({
+      given: 'an older scheduled pass finishing after a newer manual run of the same charter',
+      should: 'retain both outcomes while keeping the schedule at the newer firing',
+      actual: [restored.last('alpha')?.utc, restored.runsFor('alpha').map(({ outcome }) => outcome)],
+      expected: ['2026-01-05 09:10', ['acted', 'nothing']],
     })
   } finally {
     await rm(dir, { recursive: true, force: true })

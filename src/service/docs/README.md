@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # The service process
@@ -24,9 +24,9 @@ and a descriptor table past 4,096 ask for a restart the same way, and so
 does the person, from the shell, which is the one way to cut a wait short.
 
 What holds the process (`activity.ts`): boot itself, a chat turn, a chat
-being filed, an import running, a heartbeat tick with its follow checks
-and automation runs, and a voice conversation for two minutes past its
-last request. A hold is taken where the work starts and released where it
+being filed, an import running, a heartbeat tick with its follow checks,
+an Outbox check starting its worker, and a voice conversation for two minutes past
+its last request. A hold is taken where the work starts and released where it
 ends; a timed hold covers work the service only hears from in bursts.
 
 The log (`/tmp/sky/logs/service.<date>.jsonl`) carries `reload-pending`
@@ -38,6 +38,12 @@ leaves.
 /service/restart` leaves now. The shell shows "restart pending" under the
 brand while one waits, its title naming what it waits on, and a click on it
 is "now".
+
+## Work that survives restarts
+
+Manual [Outbox checks](../../lib/outbox/docs/2026-09-08-checks-survive-restarts.md)
+also run in a detached worker, with a short activity hold protecting the HTTP
+startup request until that worker is registered.
 
 ## Notes
 

@@ -6,14 +6,30 @@ import { threadIdFromDecimal } from '#lib/google/gmail.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { resolveTimeRef, toTimeRef } from '#shared/nbfs/timeRef.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hash, missing, notebookFile, readOptional } from './files.ts'
+import { dayRange, inRange, rangeKey, ScanRangeSchema, type ScanRange } from './range.ts'
 import type { Conversation } from './types.ts'
+
+export const SCAN_POLICY = 'range-responses-v4'
+
+const IndexedSource = z.object({
+  stamp: z.string(),
+  times: z.array(z.string()),
+  identities: z.array(z.string()),
+  medium: z.string(),
+  error: z.boolean().optional(),
+})
 
 export const InventorySchema = z.object({
   version: z.literal(1),
   files: z.record(z.string(), z.string()),
   pending: z.array(z.string()),
   handled: z.record(z.string(), z.string()),
+  day: z.string().optional(),
+  policy: z.string().optional(),
+  rangeKey: z.string().optional(),
+  entries: z.record(z.string(), IndexedSource).optional(),
 })
 export type Inventory = z.infer<typeof InventorySchema>
 
@@ -21,41 +37,102 @@ const MAX_MESSAGE_BYTES = 160_000
 const MAX_CONTEXT_CHARS = 100_000
 const MAX_CONTEXT_FILES = 30
 
+function messageTimes(doc: MessageDocument): string[] {
+  const headings = [...doc.markdown.matchAll(/^## (\d{4}-\d{2}-\d{2} \d{1,2}:\d{2})[^\n]*\*\*/gm)]
+  if (headings.length)
+    return [...new Set(headings.map((match) => PlainDateTime.fromString(match[1]).normalize().toString()))]
+  if (doc.yaml.when) return [doc.when.datetime.normalize().toString()]
+  return []
+}
+
+function identities(doc: MessageDocument): string[] {
+  const keys: string[] = []
+  if (typeof doc.yaml.follow === 'string') keys.push(`${doc.medium}:follow:${doc.yaml.follow}`)
+  if (doc.medium === 'Slack' && typeof doc.yaml.link === 'string') {
+    const link = parseMessageLink(doc.yaml.link)
+    if (link) keys.push(`Slack:link:${new URL(doc.yaml.link).origin}:${link.channelId}:${link.rootTs}`)
+  }
+  return keys
+}
+
 export class SavedMessages {
+  private related = new Map<string, string[]>()
   constructor(
     readonly root: string,
     readonly followDirs: Record<'Slack' | 'Email', string[]>,
   ) {}
 
-  /** Baseline old files without reading their content. New captures can carry an older message date. */
-  async discover(previous: Inventory | null, today: string): Promise<Inventory> {
+  /** Index message timestamps, including captures filed on another day. Only matching activity seeds review. */
+  async discover(previous: Inventory | null, selected: string | ScanRange): Promise<Inventory> {
+    const range = typeof selected === 'string' ? dayRange(selected) : ScanRangeSchema.parse(selected)
     const files: Record<string, string> = {}
-    const pending = new Set(previous?.pending ?? [])
-    const walk = async (dir: string): Promise<void> => {
-      let entries
+    const entries: NonNullable<Inventory['entries']> = {}
+    const pending: string[] = []
+    this.related.clear()
+    const visit = async (dir: string): Promise<void> => {
+      let children
       try {
-        entries = await readdir(dir, { withFileTypes: true })
+        children = await readdir(dir, { withFileTypes: true })
       } catch (error) {
-        if (missing(error)) return
-        throw error
+        if (!missing(error)) throw error
+        return
       }
-      for (const entry of entries) {
-        if (entry.isSymbolicLink()) continue
-        const file = path.join(dir, entry.name)
-        if (entry.isDirectory()) {
-          await walk(file)
-        } else if (entry.isFile() && entry.name.endsWith('.md') && dir.endsWith('/actions/messages')) {
-          const relative = path.relative(this.root, file)
-          const ref = toTimeRef(relative)
-          const info = await stat(file)
-          const signature = `${info.size}:${info.mtimeMs}:${info.ctimeMs}`
-          files[ref] = signature
-          if (previous ? previous.files[ref] !== signature : ref.startsWith(`${today}/`)) pending.add(ref)
+      for (const child of children) {
+        const file = path.join(dir, child.name)
+        if (child.isDirectory()) {
+          // Visit only the notebook's date hierarchy and message collections.
+          if (/^(?:\d{2,4}|x\d{2}|\d{2}-\d{2}|(?:\d{2}-)?W\d{2}|actions|messages)$/.test(child.name)) await visit(file)
+          continue
         }
+        if (
+          !child.isFile() ||
+          !child.name.endsWith('.md') ||
+          path.basename(dir) !== 'messages' ||
+          path.basename(path.dirname(dir)) !== 'actions'
+        )
+          continue
+        const ref = toTimeRef(path.relative(this.root, file))
+        const info = await stat(await notebookFile(this.root, path.relative(this.root, file)))
+        const stamp = `${info.size}:${info.mtimeMs}:${info.ctimeMs}`
+        files[ref] = stamp
+        let indexed = previous?.policy === SCAN_POLICY ? previous.entries?.[ref] : undefined
+        if (!indexed || indexed.stamp !== stamp || indexed.error) {
+          try {
+            const doc = await this.read(ref)
+            indexed = { stamp, times: messageTimes(doc), identities: identities(doc), medium: doc.medium }
+          } catch {
+            indexed = { stamp, times: [], identities: [], medium: '', error: true }
+          }
+        }
+        entries[ref] = indexed
+        for (const key of indexed.identities) {
+          const refs = this.related.get(key) ?? []
+          refs.push(ref)
+          this.related.set(key, refs)
+        }
+        if (!indexed.error && indexed.medium !== 'Slack' && indexed.medium !== 'Email') continue
+        if (
+          indexed.error ||
+          (indexed.times.length
+            ? indexed.times.some((time) => inRange(time, range))
+            : ref.slice(0, 10) >= range.start.slice(0, 10) && ref.slice(0, 10) <= range.end.slice(0, 10))
+        )
+          pending.push(ref)
       }
     }
-    await walk(path.join(this.root, 'time'))
-    return { version: 1, files, pending: [...pending], handled: previous?.handled ?? {} }
+    await visit(path.join(this.root, 'time'))
+    // Revisit the inventory, including unchanged seeds: linked history may have changed.
+    // Conversation versions below avoid repeating model work. Legacy skips must be reassessed.
+    return {
+      version: 1,
+      day: range.start.slice(0, 10),
+      policy: SCAN_POLICY,
+      files,
+      entries,
+      rangeKey: rangeKey(range),
+      pending: pending.sort(),
+      handled: previous?.rangeKey === rangeKey(range) && previous.policy === SCAN_POLICY ? previous.handled : {},
+    }
   }
 
   private async read(ref: string): Promise<MessageDocument> {
@@ -78,7 +155,7 @@ export class SavedMessages {
     return toTimeRef(full)
   }
 
-  async conversation(ref: string): Promise<Conversation | null> {
+  async conversation(ref: string, contextRefs: string[] = []): Promise<Conversation | null> {
     const seed = await this.read(ref)
     if (seed.medium !== 'Slack' && seed.medium !== 'Email') return null
     const medium = seed.medium
@@ -98,6 +175,7 @@ export class SavedMessages {
     let target: Conversation['target'] = null
     let key = `${medium}:follow:${followName}`
     const limitations: string[] = []
+    let incomplete = false
     const link = follow?.ref.link ?? (typeof seed.yaml.link === 'string' ? seed.yaml.link : undefined)
     const parsed = link ? parseMessageLink(link) : undefined
     if (medium === 'Slack' && parsed && link) {
@@ -112,15 +190,25 @@ export class SavedMessages {
       key = `Email:${target.account.toLowerCase()}:${target.thread}`
     }
     if (!target) limitations.push('The saved conversation has no verified destination for a native reply draft.')
-    if (followName && !follow)
+    if (followName && !follow) {
       limitations.push('The follow record is unavailable; some conversation history may be missing.')
+      incomplete = true
+    }
     if (follow?.merged.length) {
       target = null
       limitations.push('This capture joins several threads. Choose a destination in the native app.')
     }
 
     const docs = new Map<string, MessageDocument>([[ref, seed]])
-    const queue = (follow?.messages ?? []).map((message) => toTimeRef(message.path)).reverse()
+    const queue = [
+      ...new Set([
+        ...(follow?.messages ?? []).map((message) => toTimeRef(message.path)),
+        ...identities(seed).flatMap((key) => this.related.get(key) ?? []),
+        ...contextRefs,
+      ]),
+    ]
+      .sort()
+      .reverse()
     if (seed.previous) queue.push(this.previous(ref, seed.previous))
     let chars = seed.markdown.length
     while (queue.length) {
@@ -128,6 +216,7 @@ export class SavedMessages {
       if (docs.has(next)) continue
       if (docs.size >= MAX_CONTEXT_FILES || chars >= MAX_CONTEXT_CHARS) {
         limitations.push('Earlier history exceeds the reading limit. Read the original conversation before approving.')
+        incomplete = true
         break
       }
       try {
@@ -138,6 +227,7 @@ export class SavedMessages {
         if (doc.previous) queue.push(this.previous(next, doc.previous))
       } catch {
         limitations.push('An earlier saved message could not be read. Check the original conversation.')
+        incomplete = true
       }
     }
     const sources = [...docs]
@@ -146,7 +236,15 @@ export class SavedMessages {
         const from = typeof doc.yaml.from === 'string' ? doc.yaml.from : JSON.stringify(doc.yaml.from ?? '')
         const to = typeof doc.yaml.to === 'string' ? doc.yaml.to : JSON.stringify(doc.yaml.to ?? '')
         const body = doc.markdown.trim()
-        return { ref: sourceRef, hash: hash(JSON.stringify({ from, to, body })), from, to, body }
+        const times = messageTimes(doc)
+        return {
+          ref: sourceRef,
+          hash: hash(JSON.stringify({ from, to, body, ...(times.length ? { times } : {}) })),
+          from,
+          to,
+          body,
+          ...(times.length ? { times } : {}),
+        }
       })
     if (!target && !followName) key = `${medium}:saved:${sources[0].ref}`
     const uniqueLimitations = [...new Set(limitations)]
@@ -157,11 +255,22 @@ export class SavedMessages {
         limitations: uniqueLimitations,
       }),
     )
-    return { key, version, medium, sources, target, limitations: uniqueLimitations }
+    return {
+      key,
+      version,
+      medium,
+      sources,
+      target,
+      limitations: uniqueLimitations,
+      ...(incomplete ? { incomplete } : {}),
+    }
   }
 
   async current(conversation: Conversation): Promise<Conversation> {
-    const latest = await this.conversation(conversation.sources.at(-1)!.ref)
+    const latest = await this.conversation(
+      conversation.sources.at(-1)!.ref,
+      conversation.sources.map(({ ref }) => ref),
+    )
     if (!latest || latest.key !== conversation.key) throw new Error('The saved conversation changed identity.')
     return latest
   }

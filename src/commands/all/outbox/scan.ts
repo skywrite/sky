@@ -1,10 +1,11 @@
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
-import { createProposer } from '#lib/outbox/ai.ts'
 import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
 import { readOptional } from '#lib/outbox/files.ts'
+import { OUTBOX_MODEL_PROFILE, outboxModelId } from '#lib/outbox/model.ts'
 import { createOutboxRuntime } from '#lib/outbox/runtime.ts'
 import { scanOutbox } from '#lib/outbox/scan.ts'
+import { createTriage } from '#lib/outbox/triage.ts'
 import { OutboxError, type ScanReport } from '#lib/outbox/types.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -17,24 +18,28 @@ export default class OutboxScan extends Command {
   static override description: CommandDescription = {
     name: 'outbox:scan',
     description:
-      'Prepare Outbox decisions from new or changed saved Slack and email conversations. Creates no native drafts.',
+      'Check the saved Outbox date/time range in Slack and email captures and prepare replies for review in Sky.',
     usage: ['sky outbox:scan'],
   }
 
   async run({ context }: CommandArgs): Promise<CommandResult<ScanReport>> {
     const { store, sources } = createOutboxRuntime(context.config)
     const now = context.systemNow.toUTC().normalize().plainDateTime.toString()
+    const { value: range } = await store.scanRange(context.systemNow.date)
     try {
       const result = await scanOutbox({
         store,
         sources,
         today: context.systemNow.date,
+        range,
         now,
-        propose: createProposer(((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)),
+        propose: createTriage(((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)),
+        model: outboxModelId(),
+        modelProfile: OUTBOX_MODEL_PROFILE,
       })
       const message = describeOutboxScan(result)
       context.output.log(message)
-      return result.failed ? CommandResult.fail(message, result) : CommandResult.success(result, message)
+      return result.outcome === 'failed' ? CommandResult.fail(message, result) : CommandResult.success(result, message)
     } catch (error) {
       if (error instanceof OutboxError && error.status === 409) {
         return CommandResult.success(

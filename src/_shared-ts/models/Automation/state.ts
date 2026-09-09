@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
+import { withProcessLock } from '#lib/jobs/files.ts'
 import { exists, outputFile, readTextFile, rename } from '#shared/fs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { Trigger } from './trigger.ts'
@@ -82,6 +85,7 @@ export default class AutomationStateStore {
   readonly loadError: string | undefined
   private readonly runs: Map<string, AutomationRun>
   private readonly history: Map<string, AutomationRun[]>
+  private readonly pending: { name: string; run: AutomationRun }[] = []
 
   private constructor(
     path: string,
@@ -160,28 +164,49 @@ export default class AutomationStateStore {
     if (fields.target !== undefined) run.target = fields.target
     if (fields.lateMinutes !== undefined) run.lateMinutes = fields.lateMinutes
     if (fields.message !== undefined) run.message = fields.message
+    this.pending.push({ name, run })
     this.runs.set(name, run)
     this.history.set(name, [run, ...this.runsFor(name)].slice(0, HISTORY_KEEP))
   }
 
   /**
-   * Write through a temporary file and rename over the original. The service
-   * exits on its own schedule, and a half-written state file would read as
-   * corrupt and lose every charter's history at once.
+   * Workers can finish after another process has recorded a manual run. Merge
+   * only this instance's new records under the process lock, so a stale loaded
+   * snapshot cannot overwrite another charter or move its schedule backwards.
    */
   async save(): Promise<void> {
-    const runs: Record<string, AutomationRun> = {}
-    const history: Record<string, AutomationRun[]> = {}
-    for (const name of this.names()) {
-      const run = this.runs.get(name)
-      if (run) runs[name] = run
-      const kept = this.history.get(name)
-      if (kept?.length) history[name] = kept
-    }
+    if (!this.pending.length) return
+    await withProcessLock(`${this.path}.lock`, async () => {
+      const pending = this.pending.slice()
+      if (!pending.length) return
+      const current = await AutomationStateStore.load(this.path)
+      for (const { name, run } of pending) current.merge(name, run)
+      const runs = Object.fromEntries(current.runs)
+      const history = Object.fromEntries(current.history)
+      const contents = `${JSON.stringify({ version: STATE_VERSION, runs, history } satisfies StateFile, null, 2)}\n`
+      const temp = `${this.path}.${randomUUID()}.tmp`
+      try {
+        await outputFile(temp, contents)
+        await rename(temp, this.path)
+      } finally {
+        await rm(temp, { force: true })
+      }
+      this.pending.splice(0, pending.length)
+      this.runs.clear()
+      this.history.clear()
+      for (const [name, run] of current.runs) this.runs.set(name, run)
+      for (const [name, kept] of current.history) this.history.set(name, kept)
+      for (const { name, run } of this.pending) this.merge(name, run)
+    })
+  }
 
-    const contents = `${JSON.stringify({ version: STATE_VERSION, runs, history } satisfies StateFile, null, 2)}\n`
-    const temp = `${this.path}.tmp`
-    await outputFile(temp, contents)
-    await rename(temp, this.path)
+  private merge(name: string, run: AutomationRun): void {
+    const previous = this.runsFor(name)
+    const last = this.last(name)
+    const kept = [run, ...(previous.length ? previous : last ? [last] : [])]
+      .sort((a, b) => b.utc.localeCompare(a.utc))
+      .slice(0, HISTORY_KEEP)
+    this.history.set(name, kept)
+    this.runs.set(name, kept[0])
   }
 }

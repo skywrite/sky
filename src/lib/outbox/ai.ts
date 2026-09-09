@@ -1,8 +1,8 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { outboxModel, OUTBOX_MODEL_TIMEOUT_MS } from './model.ts'
 import type { Propose } from './scan.ts'
 
 const JUDGMENT_PROMPT = new URL('./prompts/judgment.prompt.md', import.meta.url).pathname
@@ -26,20 +26,20 @@ async function instructions(file: string): Promise<string> {
 export function createProposer(ownerContext: string): Propose {
   return async ({ conversation, preferences, examples }) => {
     const judgment = await generateObject({
-      ...aiModel('balanced'),
+      ...outboxModel(),
       schema: Judgment,
       instructions: await instructions(JUDGMENT_PROMPT),
       prompt: JSON.stringify({ ownerContext, preferences, conversation, examples }),
-      abortSignal: AbortSignal.timeout(45_000),
+      abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     const { action, title, situation, reasoning, questions, meaning } = judgment.object
     if (action === 'ignore' || !meaning.trim()) return { action, title, situation, reasoning, questions, draft: '' }
     const voiced = await generateObject({
-      ...aiModel('balanced'),
+      ...outboxModel(),
       schema: Voice,
       instructions: await instructions(VOICE_PROMPT),
       prompt: JSON.stringify({ medium: conversation.medium, preferences, meaning, examples }),
-      abortSignal: AbortSignal.timeout(45_000),
+      abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     if (!voiced.object.draft.trim()) throw new Error('The voice agent returned an empty reply.')
     return { action, title, situation, reasoning, questions, draft: voiced.object.draft.trim() }

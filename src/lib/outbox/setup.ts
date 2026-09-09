@@ -16,7 +16,7 @@ status: active
 
 Prepare replies that need my review in Outbox.
 
-Start with today's saved Slack and email conversations, then process new or changed captures. Keep existing drafts across days. Ignore messages that need no response. Explain the situation, surface missing decisions, and shape grounded replies in my voice. Learn from my approved edits. Native drafts are placed only after review in Sky; sending stays in the native app.
+Check the date and time range saved in Outbox (today until a range is chosen). Reconcile later saved replies and recorded sends before preparing another response. Keep existing drafts across days. Ignore messages that need no response. Explain the situation, surface missing decisions, and shape grounded replies in my voice. Learn from my approved edits. Native drafts are placed only after review in Sky; sending stays in the native app.
 `
 }
 

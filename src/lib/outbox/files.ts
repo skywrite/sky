@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readlink, rename, stat, symlink, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
+import { withProcessLock } from '#lib/jobs/files.ts'
 import { OutboxError } from './types.ts'
 
 export const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -60,9 +61,14 @@ export async function withLock<T>(file: string, run: () => Promise<T>, wait = tr
         } catch (probe) {
           dead = (probe as NodeJS.ErrnoException).code === 'ESRCH'
         }
-        if (dead && (await readOwner()) === owner) {
-          await unlink(file).catch((problem: unknown) => {
-            if (!missing(problem)) throw problem
+        if (dead) {
+          // Serialize stale-lock cleanup: a second reaper must re-read after
+          // the first removes the dead owner and a new scanner acquires it.
+          await withProcessLock(`${file}.reap`, async () => {
+            if ((await readOwner()) !== owner) return
+            await unlink(file).catch((problem: unknown) => {
+              if (!missing(problem)) throw problem
+            })
           })
           continue
         }

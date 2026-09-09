@@ -9,6 +9,7 @@ import type { ChatRoutesOptions } from './chat/mod.ts'
 import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
+import type { OutboxRoutesOptions } from './outbox/mod.ts'
 import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
@@ -32,6 +33,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     automations?: AutomationsRoutesOptions
+    outbox?: OutboxRoutesOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
     /** Where a dropped file's original is looked for; a test points this at its own folders, Spotlight off */
@@ -51,6 +53,7 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     automations: options.automations,
+    outbox: options.outbox,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),
