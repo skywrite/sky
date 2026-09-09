@@ -39,7 +39,7 @@ Keep changes with the feature they affect, including its responsive rules:
 | --- | --- |
 | `tokens.css` | Shared colors, spacing, dialog and card values, content sizes, dark and narrow overrides |
 | `layout.css` | App frame, sidebar, navigation, headers, columns, mobile drawer |
-| `components.css` | Shared cards, section labels, counters, chips, activity rows, disclosure links |
+| `components.css` | Shared action shapes and focus states, cards, section labels, counters, chips, activity rows, disclosure links |
 | `dialogs.css` | Modal and Drawer surfaces, headers, titles, bodies, action rows, fixed footers, mobile sheets |
 | `chat.css` | Conversation turns, replies, branch actions |
 | `composer.css` | Message input, composer controls, reading budget |
@@ -82,22 +82,27 @@ Use Mantine's `Button` and `ActionIcon` with an action role:
 | --- | --- |
 | `primary` | The main action: save, add, submit, continue |
 | `secondary` (default) | Cancel, navigation, and supporting actions |
-| `primary-quiet` | A primary-colored action with no resting fill |
+| `primary-quiet` | A quiet text action that picks up the accent on hover |
 | `danger` / `danger-quiet` | Destructive actions, or a quiet stop action |
 | `warning` | Proceeding with a known issue, such as a scheduling conflict |
 | `delivery` | Outbox's deliberate, filled delivery action |
 
-Choose the role at the call site, without a `color` prop. The role owns its
-palette and resting/hover appearance in `actionVariants`; it resolves through
-Mantine so light/dark colors, disabled states, loading and focus behavior stay
-with the existing components. Built-in variants remain available for deliberate
-appearance choices, such as the neutral New chat button and canvas tool toggles.
+Choose the role at the call site, without a `color` prop. The theme's
+`actionColors` resolves ordinary actions through shared CSS tokens. Primary
+actions have a matte slate-blue fill and pill shape; secondary actions are
+quiet text with a hover surface. `danger` is a soft red commitment and
+`danger-quiet` is an inline destructive action. Status and delivery palettes
+retain their meaning. Mantine still owns sizes, disabled/loading behavior,
+polymorphic links, and keyboard handling; `components.css` supplies the shared
+shapes and focus ring. Built-in variants remain available for selected
+navigation and canvas tools, which should not look like primary actions.
 
-Changing `skyTheme.primaryColor` updates primary buttons, icon buttons, and
-custom CSS accents together. Custom controls use `--sky-accent` and
-`--sky-accent-soft`, which derive from that same palette. Syntax highlighting
-and status colors keep their own meaning. To change only the primary button
-family, set its color in `actionVariants` instead.
+`--sky-action-primary`, `--sky-action-primary-hover`, and
+`--sky-action-primary-text` tune the button and icon-button family in both
+themes. These are separate from `skyTheme.primaryColor`: the existing blue
+links, selection states, and custom-control accents still use `--sky-accent`
+and `--sky-accent-soft`. This keeps a primary-action color change from
+recoloring the rest of the workspace.
 
 Every Mantine `Modal` and `Drawer` receives shared classes from the theme,
 including content rendered in portals. Tune `--sky-dialog-padding`,
@@ -107,6 +112,12 @@ dialog tokens in `tokens.css`. Use `.sky-dialog-actions` for an action row and
 sheet stacking, maximum height and safe-area spacing. Dialogs still choose
 their size and dismissal behavior; a bottom Drawer with `size="auto"` fits its
 content, while an explicit size supports a taller chooser.
+
+Dialogs use a continuous surface with generous titles and spacing instead of
+header and footer rules. Their footer stays fixed when the body scrolls.
+Full-screen composers retain square screen edges; bottom sheets keep only
+their top corners rounded. Feature content can add a separator where it
+clarifies the information, without rebuilding the dialog chrome.
 
 The meeting composer intentionally keeps `padding={0}` on its Modal: its
 scrolling inner body and fixed footer consume the same dialog padding token.

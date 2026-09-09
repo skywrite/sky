@@ -20,20 +20,29 @@
   --sky-green: var(--mantine-color-green-8);
   --sky-accent: var(--mantine-primary-color-8);
   --sky-accent-soft: var(--mantine-primary-color-0);
+  --sky-action-primary: #536f91;
+  --sky-action-primary-hover: #476582;
+  --sky-action-primary-text: #ffffff;
+  --sky-action-quiet-hover: var(--sky-side);
+  --sky-action-danger: var(--mantine-color-red-8);
+  --sky-action-danger-soft: color-mix(in srgb, var(--sky-action-danger) 8%, var(--sky-bg));
+  --sky-action-danger-hover: color-mix(in srgb, var(--sky-action-danger) 14%, var(--sky-bg));
+  --sky-action-focus: var(--sky-accent);
+  --sky-action-radius: 999px;
   --sky-hover: var(--mantine-color-gray-2);
   --sky-card: #ffffff;
   --sky-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   --sky-card-radius: var(--mantine-radius-xl);
-  --sky-dialog-padding: var(--sky-space-7);
-  --sky-dialog-gap: var(--sky-space-3);
-  --sky-dialog-title-size: 23px;
-  --sky-dialog-title-weight: 650;
-  --sky-dialog-radius: var(--mantine-radius-xl);
-  --sky-sheet-radius: var(--mantine-radius-lg);
-  --sky-dialog-shadow: var(--mantine-shadow-xl);
+  --sky-dialog-padding: 34px;
+  --sky-dialog-gap: var(--sky-space-4);
+  --sky-dialog-title-size: 26px;
+  --sky-dialog-title-weight: 600;
+  --sky-dialog-radius: 26px;
+  --sky-sheet-radius: var(--sky-dialog-radius);
+  --sky-dialog-shadow: 0 32px 110px rgba(28, 35, 43, 0.18), 0 0 0 1px rgba(28, 35, 43, 0.025);
   --sky-dialog-bg: var(--sky-bg);
   --sky-dialog-max-height: 92dvh;
-  --sky-dialog-actions-gap: var(--sky-space-2);
+  --sky-dialog-actions-gap: var(--sky-space-3);
   --sky-code-keyword: var(--mantine-color-grape-8);
   --sky-code-string: var(--mantine-color-green-8);
   --sky-code-number: var(--mantine-color-orange-8);
@@ -58,6 +67,12 @@
   --sky-green: var(--mantine-color-green-4);
   --sky-accent: var(--mantine-primary-color-3);
   --sky-accent-soft: color-mix(in srgb, var(--mantine-primary-color-6) 16%, transparent);
+  --sky-action-primary: #9ab4d4;
+  --sky-action-primary-hover: #acc1dc;
+  --sky-action-primary-text: #1c2939;
+  --sky-action-quiet-hover: var(--mantine-color-dark-6);
+  --sky-action-danger: var(--mantine-color-red-3);
+  --sky-dialog-shadow: 0 30px 100px rgba(0, 0, 0, 0.32), 0 0 0 1px var(--sky-border-soft);
   --sky-hover: var(--mantine-color-dark-4);
   --sky-card: var(--mantine-color-dark-5);
   --sky-card-shadow: none;
@@ -66,8 +81,8 @@
 @media (max-width: 900px) {
   :root {
     --sky-content-font-size: 18px;
-    --sky-dialog-padding: var(--sky-space-5);
-    --sky-dialog-title-size: 22px;
+    --sky-dialog-padding: var(--sky-space-6);
+    --sky-dialog-title-size: 25px;
   }
 }
 

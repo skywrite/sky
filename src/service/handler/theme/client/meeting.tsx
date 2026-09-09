@@ -62,25 +62,6 @@ function eventClock(value: string, day: string): string {
   return `${value.startsWith(day) ? '' : `${value.slice(0, 10)} · `}${clock(value.slice(11, 16))}`
 }
 
-function CalendarIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="3" y="5" width="18" height="16" rx="3" />
-      <path d="M7 3v4m10-4v4M3 11h18m-9 3v4m-2-2h4" />
-    </svg>
-  )
-}
-
 function DaySchedule({
   available,
   busy,
@@ -126,7 +107,12 @@ function DaySchedule({
               <span>Nearby free times</span>
               <div>
                 {available.alternatives.map((alternative) => (
-                  <Button key={alternative} size="compact-sm" variant="primary" onClick={() => onTime(alternative)}>
+                  <Button
+                    key={alternative}
+                    size="compact-sm"
+                    variant="primary-quiet"
+                    onClick={() => onTime(alternative)}
+                  >
                     {clock(alternative)}
                   </Button>
                 ))}
@@ -477,12 +463,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       centered
       size={draft && !job ? 1020 : 680}
       padding={0}
-      title={
-        <span className="sky-meeting-dialog-title">
-          <CalendarIcon />
-          New meeting
-        </span>
-      }
+      title="New meeting"
       closeOnClickOutside={false}
       closeOnEscape={!active}
       withCloseButton={!active}
@@ -588,7 +569,9 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
         <>
           <div className="sky-meeting-body">
             <div className="sky-meeting-prompt">
-              <label htmlFor="sky-meeting-query">Who are we meeting?</label>
+              <label className="sky-meeting-prompt-label" htmlFor="sky-meeting-query">
+                Who are we meeting?
+              </label>
               <Textarea
                 id="sky-meeting-query"
                 placeholder="Meet with Jane on Friday at 3 PM for 30 minutes. Invite Sam too."
@@ -636,9 +619,12 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               <>
                 {draft.unsupported.length > 0 && <Alert color="yellow">{draft.unsupported.join(' ')}</Alert>}
                 <div className="sky-meeting-review" aria-busy={stale || parsing}>
-                  <div className="sky-meeting-details">
+                  <section className="sky-meeting-details" aria-label="Meeting details">
+                    <div className="sky-meeting-section-label sky-meeting-details-heading">Your invitation</div>
                     <TextInput
-                      label="Meeting title"
+                      className="sky-meeting-title-field"
+                      label="Title"
+                      aria-label="Meeting title"
                       value={fields.title}
                       onChange={(event) => change('title', event.currentTarget.value)}
                     />
@@ -684,26 +670,15 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                       <p className="sky-meeting-questions">{draft.questions.join(' ')} Adjust the details above.</p>
                     )}
                     <div className="sky-meeting-zoom">
-                      <span className="sky-meeting-zoom-icon" aria-hidden="true">
-                        <svg
-                          width="22"
-                          height="22"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.6"
-                        >
-                          <rect x="2" y="5" width="13" height="14" rx="3" />
-                          <path d="m15 9 6-4v14l-6-4" />
-                        </svg>
-                      </span>
+                      <span className="sky-meeting-section-label">Where</span>
                       <span>
-                        <strong>Zoom meeting</strong>
+                        <strong>Zoom</strong>
                         <small>A fresh link will be added when you create the meeting.</small>
                       </span>
                     </div>
                     <Select
-                      label="Send from"
+                      label="From"
+                      aria-label="Send from"
                       placeholder="Choose your Google account"
                       data={setup?.accounts ?? []}
                       value={fields.account || null}
@@ -720,7 +695,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                         onChange={(event) => change('description', event.currentTarget.value)}
                       />
                     </details>
-                  </div>
+                  </section>
                   <DaySchedule
                     available={available}
                     busy={checking}
@@ -733,7 +708,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
             )}
           </div>
           <footer className="sky-dialog-footer sky-meeting-footer">
-            <div>
+            <div className="sky-meeting-footer-summary">
               {draft ? (
                 <>
                   <strong>
@@ -763,13 +738,14 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                 <span>One meeting. Everyone invited. A fresh Zoom link.</span>
               )}
             </div>
-            {draft ? (
-              <Button variant={conflicts ? 'warning' : 'primary'} disabled={!canCreate} onClick={() => void create()}>
-                Create & send invites
-              </Button>
-            ) : (
+            <div className="sky-meeting-footer-actions">
               <Button onClick={onClose}>Cancel</Button>
-            )}
+              {draft && (
+                <Button variant={conflicts ? 'warning' : 'primary'} disabled={!canCreate} onClick={() => void create()}>
+                  Create & send invites
+                </Button>
+              )}
+            </div>
           </footer>
         </>
       )}

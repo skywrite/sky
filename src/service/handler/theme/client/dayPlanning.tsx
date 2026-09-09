@@ -59,7 +59,7 @@ function PlanComposer({
     return (
       <Button
         ref={trigger}
-        variant="subtle"
+        variant="secondary"
         className="sky-plan-add"
         disabled={busy}
         onClick={onOpen}
@@ -152,7 +152,7 @@ function PlanComposer({
               </ActionIcon>
             </div>
           ) : (
-            <Button variant="subtle" disabled={busy} onClick={() => setTimed(true)}>
+            <Button variant="secondary" disabled={busy} onClick={() => setTimed(true)}>
               Add a time
             </Button>
           ))}
@@ -470,7 +470,7 @@ export function useDayPlanning(
         />
       ) : null,
     nextButton: enabled ? (
-      <Button variant="subtle" className="sky-plan-next" disabled={busy} onClick={() => open('next')}>
+      <Button variant="secondary" className="sky-plan-next" disabled={busy} onClick={() => open('next')}>
         From next lists
       </Button>
     ) : null,
@@ -497,7 +497,7 @@ export function useDayPlanning(
       enabled && undo ? (
         <div className="sky-undo sky-plan-undo" role="status" key={undo.id}>
           <span className="sky-undo-text">{error && !active ? error : undo.message}</span>
-          <Button variant="subtle" loading={busy} onClick={() => void revert()}>
+          <Button variant="secondary" loading={busy} onClick={() => void revert()}>
             Undo
           </Button>
           <ActionIcon

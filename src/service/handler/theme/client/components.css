@@ -1,4 +1,64 @@
-/* Shared cards, section labels, counters, chips, activity rows, and disclosure links. */
+/* Shared actions, cards, section labels, counters, chips, activity rows, and disclosure links. */
+
+.sky-button {
+  --button-height-md: calc(2.5rem * var(--mantine-scale));
+  --button-padding-x-md: calc(1.125rem * var(--mantine-scale));
+  font-weight: 550;
+  box-shadow: none;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sky-button:is([data-variant='primary'], [data-variant='delivery'], [data-variant='danger'], [data-variant='warning']) {
+  border-radius: var(--sky-action-radius);
+}
+
+.sky-button:is([data-variant='secondary'], [data-variant='primary-quiet'], [data-variant='danger-quiet']) {
+  border-radius: var(--mantine-radius-md);
+  font-weight: 500;
+}
+
+/* The spinner carries the pending state; keep the button's surface matte. */
+.sky-button::before {
+  border-radius: inherit;
+  background: transparent;
+  filter: none;
+}
+
+.sky-action-icon {
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sky-action-icon:is(
+  [data-variant='primary'],
+  [data-variant='delivery'],
+  [data-variant='danger'],
+  [data-variant='warning']
+) {
+  border-radius: 50%;
+}
+
+.sky-button:focus-visible,
+.sky-action-icon:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+
+.sky-action-icon-loader {
+  border-radius: inherit;
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-button,
+  .sky-button::before,
+  .sky-action-icon {
+    transition: none;
+  }
+}
 
 .sky-block {
   border-radius: var(--sky-card-radius);

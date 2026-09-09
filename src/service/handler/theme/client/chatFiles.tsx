@@ -66,7 +66,7 @@ export function FileClips({
             {onRemove && (
               <ActionIcon
                 size="sm"
-                variant="subtle"
+                variant="secondary"
                 aria-label={`Remove ${file.name}`}
                 disabled={disabled}
                 onClick={() => onRemove(index)}

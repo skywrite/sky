@@ -6,21 +6,50 @@
 }
 
 .sky-dialog-header {
-  padding: var(--sky-space-6) var(--sky-dialog-padding) var(--sky-space-4);
-  border-bottom: 1px solid var(--sky-border-soft);
+  padding: var(--sky-dialog-padding) var(--sky-dialog-padding) var(--sky-space-4);
+  border: 0;
+  gap: var(--sky-space-3);
+  align-items: flex-start;
 }
 
 .sky-dialog-title,
 .sky-confirm-title {
   font-size: var(--sky-dialog-title-size);
   font-weight: var(--sky-dialog-title-weight);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
   line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sky-dialog-body {
   /* Honor explicit padding=0 for composers with their own scrolling body and fixed footer. */
   padding: var(--mb-padding, var(--sky-dialog-padding));
+}
+
+.sky-dialog-header + .sky-dialog-body {
+  padding-top: min(var(--mb-padding, var(--sky-dialog-padding)), var(--sky-space-2));
+}
+
+.sky-dialog-close {
+  flex-shrink: 0;
+  color: var(--sky-dim);
+  border-radius: 50%;
+  align-self: flex-start;
+}
+
+.sky-dialog-close:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+
+[data-mantine-color-scheme='dark'] .sky-dialog-overlay {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Full-screen composers must remain edge-to-edge despite the desktop radius. */
+.mantine-Modal-content[data-full-screen] {
+  border-radius: 0;
 }
 
 .sky-dialog-sheet .mantine-Drawer-inner {
@@ -74,14 +103,13 @@
   justify-content: space-between;
   flex-shrink: 0;
   gap: var(--sky-space-5);
-  padding: var(--sky-space-4) var(--sky-dialog-padding);
-  border-top: 1px solid var(--sky-border-soft);
+  padding: var(--sky-space-6) var(--sky-dialog-padding) var(--sky-dialog-padding);
   background: var(--sky-dialog-bg);
 }
 
 @media (max-width: 900px) {
   .sky-dialog-header {
-    padding-top: max(var(--sky-space-4), env(safe-area-inset-top));
+    padding-top: max(var(--sky-dialog-padding), env(safe-area-inset-top));
   }
 
   .sky-dialog-footer {

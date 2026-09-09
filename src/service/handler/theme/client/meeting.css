@@ -4,14 +4,6 @@
   max-height: var(--sky-dialog-max-height);
   overflow: hidden;
 }
-.sky-meeting-dialog-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.sky-meeting-dialog-title svg {
-  color: var(--sky-accent);
-}
 .sky-meeting-modal-body {
   display: flex;
   flex-direction: column;
@@ -20,36 +12,54 @@
 }
 .sky-meeting-body {
   overflow-y: auto;
-  padding: var(--sky-space-6) var(--sky-dialog-padding) var(--sky-dialog-padding);
+  padding: 0 var(--sky-dialog-padding) var(--sky-space-4);
   min-height: 0;
 }
 .sky-meeting-prompt {
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
-.sky-meeting-prompt > label {
-  display: block;
-  font-size: 21px;
-  font-weight: 550;
-  margin-bottom: 12px;
+.sky-meeting-prompt-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .sky-meeting-prompt textarea {
-  font-size: 20px;
-  line-height: 1.5;
-  padding: 14px 16px;
+  font-size: 22px;
+  line-height: 1.55;
+  letter-spacing: -0.02em;
+  padding: 12px 10px;
+  margin-inline: -10px;
+  width: calc(100% + 20px);
+  border-color: transparent;
+  background: transparent;
+  border-radius: 10px;
+}
+.sky-meeting-prompt textarea:hover {
+  background: var(--sky-hover);
+}
+.sky-meeting-prompt textarea:focus {
+  border-color: var(--sky-accent);
+  background: var(--sky-dialog-bg);
 }
 .sky-meeting-prompt-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 .sky-meeting-prompt-foot > span {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--sky-dim);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
 }
 .sky-meeting-prompt-foot button {
@@ -59,7 +69,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
   gap: 32px;
-  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--sky-border-soft);
 }
 .sky-meeting-details {
   display: flex;
@@ -67,23 +78,52 @@
   gap: 20px;
   min-width: 0;
 }
+.sky-meeting-details > .mantine-InputWrapper-root {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
 .sky-meeting-details .mantine-InputWrapper-label {
   font-size: 14px;
-  font-weight: 550;
-  margin-bottom: 6px;
-  color: var(--sky-text-2);
+  font-weight: 400;
+  margin-bottom: 4px;
+  color: var(--sky-dim);
 }
 .sky-meeting-details .mantine-Input-input {
   font-size: 16px;
+  background: transparent;
+  border-color: transparent;
+  padding-inline: 10px;
+  border-radius: 8px;
+}
+.sky-meeting-details .mantine-Input-input:hover,
+.sky-meeting-details .mantine-Input-input[placeholder]:placeholder-shown {
+  background: var(--sky-hover);
+}
+.sky-meeting-details .mantine-Input-input:focus,
+.sky-meeting-details .mantine-Input-input:focus-within {
+  border-color: var(--sky-accent);
+  background: var(--sky-dialog-bg);
+}
+.sky-meeting-details > .mantine-InputWrapper-root > .mantine-Input-wrapper {
+  min-width: 0;
+}
+.sky-meeting-title-field .mantine-Input-input {
+  font-size: 18px;
+  font-weight: 550;
 }
 .sky-meeting-section-label {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  font-weight: 550;
-  color: var(--sky-text-2);
+  font-weight: 500;
+  color: var(--sky-dim);
   margin-bottom: 10px;
+}
+.sky-meeting-details-heading {
+  margin-bottom: 0;
 }
 .sky-meeting-section-label > span {
   color: var(--sky-dim);
@@ -92,16 +132,32 @@
 .sky-meeting-guest-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 10px;
+}
+.sky-meeting-guests {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  column-gap: 12px;
+}
+.sky-meeting-guests > .sky-meeting-section-label {
+  align-self: start;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+.sky-meeting-guests > :not(.sky-meeting-section-label) {
+  grid-column: 2;
+  min-width: 0;
+}
+.sky-meeting-guests > .sky-meeting-guest-list {
+  grid-row: 1;
 }
 .sky-meeting-guest {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border: 1px solid var(--sky-border-soft);
-  border-radius: 11px;
-  padding: 12px;
+  padding: 8px 0;
 }
 .sky-meeting-guest > button {
   margin-top: 2px;
@@ -213,7 +269,8 @@
   background: var(--sky-accent-soft);
 }
 .sky-meeting-guest[data-unresolved] {
-  border-color: var(--sky-amber);
+  border-left: 2px solid var(--sky-amber);
+  padding-left: 14px;
 }
 .sky-meeting-unresolved {
   min-width: 0;
@@ -251,27 +308,26 @@
   color: var(--sky-amber);
 }
 .sky-meeting-zoom {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: flex-start;
   gap: 12px;
-  padding: 16px;
-  border-radius: 11px;
-  background: var(--sky-accent-soft);
+  padding-block: 6px;
 }
-.sky-meeting-zoom-icon {
-  color: var(--sky-accent);
+.sky-meeting-zoom > .sky-meeting-section-label {
   flex-shrink: 0;
+  margin: 2px 0 0;
 }
 .sky-meeting-zoom strong {
   display: block;
   font-size: 16px;
-  font-weight: 550;
+  font-weight: 500;
 }
 .sky-meeting-zoom small {
   display: block;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--sky-text-2);
+  color: var(--sky-dim);
   margin-top: 3px;
 }
 .sky-meeting-description summary {
@@ -279,29 +335,32 @@
   color: var(--sky-dim);
   cursor: pointer;
   margin-bottom: 10px;
+  width: fit-content;
+}
+.sky-meeting-description summary:hover {
+  color: var(--sky-text);
 }
 .sky-meeting-schedule {
-  background: var(--sky-side);
-  border-radius: 14px;
-  padding: 20px;
+  border-left: 1px solid var(--sky-border-soft);
+  padding-left: 28px;
   align-self: start;
   min-width: 0;
 }
 .sky-meeting-schedule h3 {
-  font-size: 18px;
-  font-weight: 550;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 1.5;
-  margin: 0 0 18px;
+  margin: 0 0 24px;
 }
 .sky-meeting-availability {
-  border-left: 3px solid var(--sky-green);
+  border-left: 2px solid var(--sky-green);
   padding-left: 12px;
   margin-bottom: 18px;
 }
 .sky-meeting-availability > strong {
   color: var(--sky-green);
-  font-size: 16px;
-  font-weight: 550;
+  font-size: 15px;
+  font-weight: 500;
 }
 .sky-meeting-availability p {
   margin: 4px 0 0;
@@ -357,20 +416,24 @@
 .sky-meeting-agenda li[data-conflict] small {
   color: var(--sky-amber);
 }
-.sky-meeting-footer > div {
+.sky-meeting-footer-summary {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.sky-meeting-footer strong {
-  font-size: 15px;
-  font-weight: 550;
+.sky-meeting-footer-summary strong {
+  font-size: 14px;
+  font-weight: 500;
 }
-.sky-meeting-footer > div > span {
+.sky-meeting-footer-summary > span {
   font-size: 13px;
   color: var(--sky-dim);
 }
-.sky-meeting-footer > button {
+.sky-meeting-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
   flex-shrink: 0;
 }
 .sky-meeting-review-day {
@@ -414,12 +477,8 @@
 .sky-meeting-success {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
   color: var(--sky-green);
-  background: var(--sky-side);
-  font-size: 28px;
+  font-size: 36px;
 }
 .sky-clock-new-meeting {
   margin-left: auto;
@@ -447,7 +506,7 @@
     flex: 1;
   }
   .sky-meeting-prompt textarea {
-    font-size: 19px;
+    font-size: 20px;
   }
   .sky-meeting-prompt-foot {
     align-items: flex-start;
@@ -464,6 +523,11 @@
   .sky-meeting-details {
     gap: 18px;
   }
+  .sky-meeting-schedule {
+    border-left: 0;
+    border-top: 1px solid var(--sky-border-soft);
+    padding: 24px 0 0;
+  }
   .sky-meeting-when {
     grid-template-columns: minmax(0, 1fr) 90px;
   }
@@ -474,10 +538,32 @@
     flex-wrap: wrap;
   }
   .sky-meeting-person > span:nth-child(2) {
-    min-width: 140px;
+    min-width: 100px;
   }
-  .sky-meeting-footer > div {
+  .sky-meeting-details > .mantine-InputWrapper-root,
+  .sky-meeting-zoom {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .sky-meeting-guests {
+    display: block;
+  }
+  .sky-meeting-guest > .sky-meeting-person {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .sky-meeting-guest > .sky-meeting-person > button {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .sky-meeting-footer-summary {
     gap: 2px;
+  }
+  .sky-meeting-footer-actions > button {
+    min-height: 44px;
+  }
+  .sky-meeting-footer-actions > button:not(:only-child):last-child {
+    flex: 1;
+    max-width: 280px;
   }
   .sky-meeting-candidates button {
     min-height: 44px;
@@ -486,5 +572,17 @@
     flex: 1;
     justify-content: center;
     padding: 28px 20px;
+  }
+}
+
+@media (max-width: 380px) {
+  .sky-meeting-footer-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .sky-meeting-footer-actions > button:not(:only-child):last-child {
+    flex: initial;
+    max-width: none;
   }
 }

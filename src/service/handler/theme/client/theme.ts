@@ -1,23 +1,45 @@
 import { createTheme, defaultVariantColorsResolver, Drawer, Modal, type VariantColorsResolver } from '@mantine/core'
 
-/** Button and ActionIcon roles. Primary follows primaryColor; status and delivery keep their own meaning. */
+/** Status and delivery retain their own palettes; ordinary actions use the shared slate and quiet tokens. */
 const actionVariants: Record<string, { variant: string; color?: string }> = {
-  primary: { variant: 'light' },
-  secondary: { variant: 'subtle', color: 'gray' },
-  danger: { variant: 'light', color: 'red' },
   warning: { variant: 'light', color: 'orange' },
   delivery: { variant: 'filled', color: 'indigo' },
 }
 
 const actionColors: VariantColorsResolver = (input) => {
-  const name =
-    input.variant === 'primary-quiet' ? 'primary' : input.variant === 'danger-quiet' ? 'danger' : input.variant
-  const role = Object.hasOwn(actionVariants, name) ? actionVariants[name] : undefined
+  if (input.variant === 'primary') {
+    return {
+      background: 'var(--sky-action-primary)',
+      hover: 'var(--sky-action-primary-hover)',
+      color: 'var(--sky-action-primary-text)',
+      hoverColor: 'var(--sky-action-primary-text)',
+      border: 'transparent',
+    }
+  }
+  if (input.variant === 'secondary' || input.variant === 'primary-quiet') {
+    return {
+      background: 'transparent',
+      hover: 'var(--sky-action-quiet-hover)',
+      color: 'var(--sky-text-2)',
+      hoverColor: input.variant === 'primary-quiet' ? 'var(--sky-accent)' : 'var(--sky-text)',
+      border: 'transparent',
+    }
+  }
+  if (input.variant === 'danger' || input.variant === 'danger-quiet') {
+    return {
+      background: input.variant === 'danger' ? 'var(--sky-action-danger-soft)' : 'transparent',
+      hover: 'var(--sky-action-danger-hover)',
+      color: 'var(--sky-action-danger)',
+      hoverColor: 'var(--sky-action-danger)',
+      border: 'transparent',
+    }
+  }
+  const role = Object.hasOwn(actionVariants, input.variant) ? actionVariants[input.variant] : undefined
   return defaultVariantColorsResolver(
     role
       ? {
           ...input,
-          variant: name === input.variant ? role.variant : 'subtle',
+          variant: role.variant,
           color: role.color ?? input.theme.primaryColor,
         }
       : input,
@@ -29,16 +51,18 @@ const dialogClasses = {
   header: 'sky-dialog-header',
   title: 'sky-dialog-title',
   body: 'sky-dialog-body',
+  close: 'sky-dialog-close',
+  overlay: 'sky-dialog-overlay',
 }
 
 /**
- * The sky theme — the v4.5 design contract as a Mantine theme.
+ * Sky's shared controls. Color roles apply to buttons and icon buttons alike.
  *
  * Scale: the app HTML sets `html { font-size: 112.5% }` (18px base), which
  * grows every rem-based Mantine size uniformly. Do NOT set `theme.scale` to
  * compensate — bigger elements are the point.
  *
- * Buttons use roles from actionVariants instead of repeating a palette and
+ * Buttons use action roles instead of repeating a palette and
  * appearance at each call site. Built-in Mantine variants remain available
  * for controls such as neutral toggles and the sidebar's New chat button.
  */
@@ -57,16 +81,19 @@ export const skyTheme = createTheme({
   },
   components: {
     Button: {
-      defaultProps: { variant: 'secondary', color: 'gray', size: 'md' },
+      defaultProps: { variant: 'secondary', color: 'gray', size: 'md', loaderProps: { size: '1.1em' } },
+      classNames: { root: 'sky-button' },
     },
     ActionIcon: {
-      defaultProps: { variant: 'secondary', color: 'gray', size: 'xl', radius: 'lg' },
+      defaultProps: { variant: 'secondary', color: 'gray', size: 'xl', radius: 'md' },
+      classNames: { root: 'sky-action-icon', loader: 'sky-action-icon-loader' },
     },
     Modal: Modal.extend({
       defaultProps: {
         padding: 'var(--sky-dialog-padding)',
         radius: 'var(--sky-dialog-radius)',
         shadow: 'var(--sky-dialog-shadow)',
+        overlayProps: { backgroundOpacity: 0.15, blur: 5 },
       },
       classNames: dialogClasses,
     }),
@@ -75,6 +102,7 @@ export const skyTheme = createTheme({
         padding: 'var(--sky-dialog-padding)',
         radius: 'var(--sky-sheet-radius)',
         shadow: 'var(--sky-dialog-shadow)',
+        overlayProps: { backgroundOpacity: 0.15, blur: 5 },
       },
       classNames: (_, props) => ({
         ...dialogClasses,

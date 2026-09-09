@@ -46,7 +46,7 @@ export function SidebarUtilities({
             component="a"
             href={`/${id}`}
             className="sky-side-utility"
-            variant={active === id ? 'primary' : 'secondary'}
+            variant={active === id ? 'light' : 'secondary'}
             radius="md"
             aria-label={label}
             aria-current={active === id ? 'page' : undefined}

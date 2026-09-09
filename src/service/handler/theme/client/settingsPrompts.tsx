@@ -359,9 +359,14 @@ export function PromptsMain({
               {createNote}
             </p>
           )}
-          <Button type="submit" loading={createBusy} disabled={!name.trim()} mt="md">
-            Create prompt
-          </Button>
+          <div className="sky-dialog-actions">
+            <Button disabled={createBusy} onClick={() => setCreating(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={createBusy} disabled={!name.trim()}>
+              Create prompt
+            </Button>
+          </div>
         </form>
       </Modal>
     </div>
@@ -779,9 +784,14 @@ function PromptDetail({
         centered
       >
         <p>This removes your saved customization and replaces the current edit with the built-in text.</p>
-        <Button variant="primary" loading={busy} onClick={() => void restore()}>
-          Restore built-in
-        </Button>
+        <div className="sky-dialog-actions">
+          <Button disabled={busy} onClick={() => setRestoring(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} onClick={() => void restore()}>
+            Restore built-in
+          </Button>
+        </div>
       </Modal>
     </>
   )

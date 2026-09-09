@@ -89,8 +89,7 @@
   position: absolute;
   top: 62px;
   width: 100%;
-  background: var(--sky-bg);
-  border: 1px solid var(--sky-border-soft);
+  background: var(--sky-dialog-bg);
   border-radius: var(--sky-dialog-radius);
   box-shadow: var(--sky-dialog-shadow);
   overflow: hidden;
@@ -109,8 +108,7 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 14px 17px;
-  border-bottom: 1px solid var(--sky-border-soft);
+  padding: 17px 20px 12px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -181,17 +179,11 @@
 .sky-search-kind-icon {
   width: 40px;
   height: 40px;
-  border: 1px solid var(--sky-border-soft);
-  background: var(--sky-side);
-  border-radius: var(--mantine-radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
   color: var(--sky-text-2);
-}
-.sky-search-kind-icon[data-kind='person'] {
-  border-radius: 50%;
 }
 .sky-search-kind-icon svg {
   width: 22px;
@@ -200,8 +192,6 @@
 }
 .sky-search-row[aria-selected='true'] .sky-search-kind-icon,
 .sky-search-row[aria-pressed='true'] .sky-search-kind-icon {
-  background: var(--sky-bg);
-  border-color: transparent;
   color: var(--sky-accent);
 }
 .sky-search-row-copy {
@@ -261,9 +251,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--sky-border-soft);
-  background: var(--sky-side);
+  padding: 16px 24px 20px;
   flex: none;
 }
 .sky-search-footer > span {

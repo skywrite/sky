@@ -292,7 +292,6 @@
   height: auto;
   min-height: 42px;
   padding-block: 10px;
-  border: 1px solid var(--outbox-line);
 }
 .sky-outbox-compose-feedback {
   font-size: 16px;
