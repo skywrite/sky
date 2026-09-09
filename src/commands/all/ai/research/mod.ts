@@ -24,6 +24,7 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine, type TimingSummary } from '#shared/timing/summary.ts'
+import { describeCall } from './lib/narrate.ts'
 import { createResearchTools, type ResearchTrace } from './lib/tools.ts'
 
 // -----------------------------------------------------------------------------
@@ -118,9 +119,10 @@ export default class AiResearchTask extends Command {
       // The tool set is closed and approval-free; nothing ever asks.
       approvalHandler: () => Promise.resolve({ approved: false, reason: 'Research runs without approvals.' }),
       onEvent: (event) => {
+        // Each call in full, indented under the run: the web page reads the arrow as a call and shows it as a card.
         if (event.type === 'tool-call') {
-          const input = truncate(JSON.stringify(event.input ?? ''), 100)
-          output.log(colors.dim(`  → ${event.toolName} ${input}`))
+          const told = describeCall(event.toolName, event.input)
+          output.log(colors.dim(told.replace(/^/gm, '  ')))
         }
       },
     })
