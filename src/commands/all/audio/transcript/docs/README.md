@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # The transcript pipeline
@@ -41,6 +41,12 @@ When row of the import dialog changed by hand — reaches the summary as
 `--when`. The write-up's Time/Date section says it, the extraction takes it
 as the time and resolves "Friday" against it, and the check shows it in the
 time field. Only a correction typed at the check replaces it.
+
+Dropping on the Meetings section chooses only a date, passed as `--day`.
+The extracted meeting time is kept on that date; the proposed recording
+time is not promoted to a stated start. The original recording clock still
+anchors phrases about when the notes were made. A manual time edit or a
+drop on an individual calendar slot states the full start instead.
 
 A start sky read off the file — the dialog's proposal, left as it was — is
 not a statement, and reaches the summary as `--clock`. The prompts get it

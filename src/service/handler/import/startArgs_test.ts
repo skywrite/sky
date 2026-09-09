@@ -66,6 +66,25 @@ test('startArgs() — a selected calendar slot is stated even when it matches th
   })
 })
 
+test('startArgs() — a Meetings section drop chooses only the day', () => {
+  for (const day of ['2026-01-27', '2026-01-26']) {
+    const start = startArgs(memo, fields({ when: `${day} 14:05`, dayStated: true }), '/tmp/memo.m4a')
+    assert({
+      given: `a memo dropped on the Meetings section for ${day}, leaving the suggested clock time untouched`,
+      should: 'state only the chosen date and preserve the original recording clock as context',
+      actual: { when: String(start.args.when), day: start.args.day, clock: start.args.clock, rawArgs: start.rawArgs },
+      expected: { when: `${day} 14:05`, day, clock: PROPOSED, rawArgs: { _: [] } },
+    })
+  }
+  const edited = startArgs(memo, fields({ when: '2026-01-26 09:30', dayStated: true }), '/tmp/memo.m4a')
+  assert({
+    given: 'the time typed over after dropping on the Meetings section',
+    should: 'state the full edited time',
+    actual: { day: edited.args.day, clock: edited.args.clock, rawArgs: edited.rawArgs },
+    expected: { day: '2026-01-26', clock: undefined, rawArgs: { _: [], when: '2026-01-26 09:30' } },
+  })
+})
+
 test('startArgs() — the other doors', () => {
   const journal = startArgs(memo, fields({ kind: 'journal', journalType: 'Mood' }), '/tmp/memo.m4a')
   const note = startArgs(memo, fields({ kind: 'note', when: '2026-01-27 09:30' }), '/tmp/memo.m4a')

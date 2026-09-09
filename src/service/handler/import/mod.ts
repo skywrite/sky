@@ -156,6 +156,7 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
     kind: kind as StartFields['kind'],
     when,
     ...(b.whenStated === true ? { whenStated: true } : {}),
+    ...(b.dayStated === true ? { dayStated: true } : {}),
     category,
     journalType,
     fresh: b.fresh === true,

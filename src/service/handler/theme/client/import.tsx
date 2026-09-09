@@ -75,6 +75,7 @@ export interface ImportJob {
     kind: ImportKind
     when: string
     whenStated?: boolean
+    dayStated?: boolean
     category: 'Professional' | 'Personal'
     journalType: string | null
   } | null
@@ -674,7 +675,8 @@ function ConfirmBody({
   // A section drop chooses the day; the file supplies only the editable clock time.
   const proposedWhen =
     meeting?.when ?? (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen)
-  const whenStated = Boolean(meeting || job?.fields?.whenStated)
+  const whenStated = Boolean(meeting?.when || job?.fields?.whenStated)
+  const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const [fields, setFields] = useState<Fields>({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
@@ -726,6 +728,7 @@ function ConfirmBody({
         kind: fields.kind,
         when: fields.when.trim(),
         whenStated,
+        dayStated,
         category: fields.category,
         journalType: fields.kind === 'journal' ? fields.journalType : undefined,
         fresh: fields.fresh,
@@ -782,8 +785,11 @@ function ConfirmBody({
               onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
             />
             <span className="sky-when-note">
-              {meeting?.day && fields.when === proposedWhen
-                ? 'Time suggested from the file; adjust if needed.'
+              {fields.kind === 'meeting' &&
+              dayStated &&
+              !whenStated &&
+              fields.when.split(' ')[1] === live.suggestedWhen.split(' ')[1]
+                ? 'Day chosen here; a meeting time stated in the file wins over the suggested time.'
                 : whenNote(
                     source,
                     !whenStated && fields.when === live.suggestedWhen,

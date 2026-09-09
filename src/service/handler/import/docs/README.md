@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-06
+updated: 2026-09-08
 ---
 
 # Meeting from a file — the import
@@ -98,7 +98,7 @@ record itself is the transcript pipeline's: see
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 
@@ -176,8 +176,11 @@ a drop there belongs to Meetings. The area remains
 available while the calendar loads, when there are no meetings, or when
 the calendar cannot be read. A drop selects Meeting, keeps the viewed
 day, and takes only the clock time from the file's proposal. That time
-stays editable in the shared dialog. Start treats the confirmed date and
-time as explicit, so the file cannot move it to another day.
+stays editable in the shared dialog. Start states only the selected day
+(`dayStated`), so the file cannot move it to another day. The recording's
+clock remains a proposal: the meeting time described in the memo wins.
+Editing the clock time or dropping on an individual calendar slot states
+the full date and time.
 
 The day's Details rail accepts a transcript or recording on a timed past
 meeting marked `no record`. The row turns blue and says `drop to import`;

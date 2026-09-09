@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-19
-updated: 2026-09-03
+updated: 2026-09-08
 description: Extract structured metadata from a meeting summary
 ---
 
@@ -11,8 +11,11 @@ Today's date is {{context.notebookDate}}.
 {{#if stated.when}}
 The meeting began at {{stated.when}} — the notebook owner said so. That is its `time`, and relative dates in action items resolve against it.
 {{/if}}
+{{#if stated.day}}
+The notebook owner chose {{stated.day}} as the meeting's date, without choosing a clock time. Use that date with the meeting's start from the summary; resolve relative dates in action items against the chosen meeting date.
+{{/if}}
 {{#if clock.recorded}}
-The notes were recorded at {{clock.recorded}}, after the meeting they recount. `time` is when the meeting itself was held, as the summary states it — a bare weekday or "this morning" there is read against the recording's date, not today's — and null when the summary gives none. Relative dates in action items resolve against the recording's date.
+The notes were recorded at {{clock.recorded}}, after the meeting they recount. `time` is when the meeting itself was held, as the summary states it — a bare weekday or "this morning" there is read against the recording's date, not today's — and null when the summary gives none. Relative dates in action items resolve against the meeting's date when known, falling back to the recording's date.
 {{/if}}
 {{#if clock.start}}
 The file's clock puts the meeting's start at {{clock.start}}. `time` is the start as the summary states it, on that date when the summary gives only a clock, and null when it gives none. Relative dates in action items resolve against that date.
@@ -41,8 +44,8 @@ Return ONLY valid JSON (no markdown fences):
 ```
 
 - **title**: The meeting title — the text of the top-level `#` heading in the summary
-- **time**: The meeting time as local wall-clock time (NOT UTC). Format: YYYY-MM-DD HH:MM (24-hour, space separator). Example: "9:45 AM on January 18th" → "2026-01-18 09:45"
-- **durationMinutes**: Number of minutes if mentioned (e.g., "7 minute call"), otherwise null
+- **time**: The meeting's start as local wall-clock time (NOT UTC). Never use a timestamp labelled as dictation, recording, or notes taken when the summary states a separate meeting time. Use the start of a meeting range, not its end. Format: YYYY-MM-DD HH:MM (24-hour, space separator). Example: "9:45 AM on January 18th" → "2026-01-18 09:45". null when the meeting time is unknown.
+- **durationMinutes**: The meeting's length in minutes, from its stated duration or start/end range (e.g., "7 minute call"), otherwise null. A voice memo's recording length is not the meeting's duration.
 - **medium**: The call/meeting medium if stated (e.g., "Zoom", "Phone", "Google Meet", "Teams", "In Person"). null if not mentioned.
 - **who**: Attendees - people who were IN the meeting (from ## Attendees section)
 - **rel**: Related people - people MENTIONED or discussed but not attending. If unsure whether someone attended, put them here.

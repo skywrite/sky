@@ -2,6 +2,7 @@
 // A temp notebook and scripted imports exercise the browser without an AI call.
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { resolveTimeField } from '#commands/all/audio/transcript/lib/timeField.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -217,18 +218,27 @@ test(
         const transcript = { name: 'unscheduled.vtt', type: 'text/vtt', text: TRANSCRIPT }
         const audio = { name: 'unscheduled.m4a', type: 'audio/mp4', text: 'mock recording' }
         const cases = [
-          { calendar, target: `${SECTION} .sky-rail-sec-h`, file: transcript, time: '15:45' },
+          { calendar, target: `${SECTION} .sky-rail-sec-h`, file: transcript, time: '15:45', stated: false },
+          {
+            calendar: { read: true, meetings: [], errors: [] },
+            target: SECTION,
+            file: audio,
+            time: '15:45',
+            stated: false,
+          },
           {
             calendar: { read: true, meetings: [], errors: [] },
             target: SECTION,
             file: audio,
             time: '16:20',
+            stated: true,
           },
           {
             calendar: { read: false, meetings: [], errors: ['Calendar unavailable'] },
             target: `${SECTION} .sky-rail-sec-h`,
             file: transcript,
             time: '15:45',
+            stated: false,
           },
         ]
         for (const [index, example] of cases.entries()) {
@@ -303,16 +313,32 @@ test(
         }
         assert({
           given: 'drops with a populated, empty, or unavailable calendar, including an adjusted time',
-          should: 'start each meeting exactly once at its confirmed time on the viewed day',
+          should: 'keep the viewed day and the extracted meeting time unless the clock time was edited',
           actual: [
-            runs.map((run) => ({ command: run.command, when: String(run.args.when), rawArgs: run.rawArgs })),
+            runs.map((run) => ({
+              command: run.command,
+              when: String(run.args.when),
+              day: run.args.day,
+              clock: run.args.clock,
+              rawArgs: run.rawArgs,
+              meetingTime: resolveTimeField({
+                time: '2026-08-09 09:30',
+                kept: false,
+                stated: run.rawArgs.when ?? null,
+                day: run.args.day as string,
+                clock: (run.args.clock as string | undefined) ?? null,
+              }),
+            })),
             errors,
           ],
           expected: [
-            cases.map(({ time }) => ({
+            cases.map(({ time, stated }) => ({
               command: 'meeting:new',
               when: `${DAY.ymd} ${time}`,
-              rawArgs: { _: [], when: `${DAY.ymd} ${time}` },
+              day: DAY.ymd,
+              clock: stated ? undefined : '2026-08-09 15:45',
+              rawArgs: stated ? { _: [], when: `${DAY.ymd} ${time}` } : { _: [] },
+              meetingTime: `${DAY.ymd} ${stated ? time : '09:30'}`,
             })),
             [],
           ],

@@ -98,6 +98,10 @@ const params = {
     'The start as the caller states it — typed, or changed by hand in a dialog — in notebook time, YYYY-MM-DD HH:MM; the write-up says it and the time field keeps it over a time the transcript mentions',
     { optional: true, hidden: true },
   ),
+  day: Flag.string('The meeting date chosen by the caller, without stating its clock time, YYYY-MM-DD', {
+    optional: true,
+    hidden: true,
+  }),
   clock: Flag.string(
     "The start the file's clock gives — when a recording was made, or when a transcript began — in notebook time, YYYY-MM-DD HH:MM; sky's own reading, passed by a host: the words are resolved against it, and it fills the time field only when they give no time",
     { optional: true, hidden: true },
@@ -339,6 +343,10 @@ export default class AudioTranscriptSummaryTask extends Command {
     if (statedWhen && !NOTEBOOK_WHEN.test(statedWhen)) {
       return CommandResult.fail(`Invalid --when "${statedWhen}" — use notebook time, YYYY-MM-DD HH:MM`)
     }
+    const statedDay = args.day?.trim() || null
+    if (statedDay && !/^\d{4}-\d{2}-\d{2}$/.test(statedDay)) {
+      return CommandResult.fail(`Invalid --day "${statedDay}" — use YYYY-MM-DD`)
+    }
     // What the file's clock says — a host's reading of when a recording was
     // made or a transcript began, never the person's word. The prompts get it
     // as the fact it is, and it fills the time field only when nothing else does.
@@ -358,7 +366,7 @@ export default class AudioTranscriptSummaryTask extends Command {
         systemTimezone: context.systemNow.timezone,
       },
       // What the caller stated, for the write-up's Time/Date and the extraction; empty when nobody did.
-      stated: { when: statedWhen ?? '' },
+      stated: { when: statedWhen ?? '', day: statedDay ?? '' },
       // What the file's clock says, as the fact it is: when a recording was made, or when a transcript began.
       clock: useAudioPipeline ? { recorded: clockWhen ?? '', start: '' } : { recorded: '', start: clockWhen ?? '' },
       user: { input: transcript },
@@ -525,6 +533,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       time: extractedTime,
       kept: Boolean(keptExtract),
       stated: statedWhen,
+      day: statedDay,
       clock: clockWhen,
     })
 

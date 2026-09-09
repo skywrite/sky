@@ -9,7 +9,8 @@
  * settled at an earlier check, and stays. The clock is sky's own reading of
  * the file, never a statement: it fills a time nothing else gave, and
  * replaces nothing. A correction typed at the check is applied after this,
- * and wins.
+ * and wins. A day chosen by dropping on the Meetings section fixes only the
+ * date; it leaves the extracted meeting time intact.
  */
 
 export interface TimeFieldInputs {
@@ -19,12 +20,15 @@ export interface TimeFieldInputs {
   kept: boolean
   /** What the caller stated, YYYY-MM-DD HH:MM; null when nobody did */
   stated: string | null
+  /** Only the meeting date was chosen, YYYY-MM-DD; the extracted clock time still wins */
+  day?: string | null
   /** What the file's clock says the start is, YYYY-MM-DD HH:MM; null when no host read one */
   clock: string | null
 }
 
-export function resolveTimeField({ time, kept, stated, clock }: TimeFieldInputs): string | null {
-  if (stated && (!kept || !time)) return stated
-  if (!time && clock) return clock
-  return time
+export function resolveTimeField({ time, kept, stated, day, clock }: TimeFieldInputs): string | null {
+  if (kept && time) return time
+  if (stated) return stated
+  const resolved = time || clock
+  return day && resolved ? resolved.replace(/^\d{4}-\d{2}-\d{2}/, day) : resolved
 }

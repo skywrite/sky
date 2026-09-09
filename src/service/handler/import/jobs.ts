@@ -47,6 +47,8 @@ export interface StartFields {
   when: string
   /** Explicitly chosen, including a drop on a calendar slot whose time matches the proposal */
   whenStated?: boolean
+  /** Only the date was chosen by dropping on the Meetings section; the clock time remains a proposal */
+  dayStated?: boolean
   category: 'Professional' | 'Personal'
   journalType: string | null
   /** Start over: forget the earlier run's record */

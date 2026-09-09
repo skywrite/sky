@@ -49,6 +49,10 @@ const params = {
     optional: true,
   }),
   when: whenNBTime(),
+  day: Flag.string('The meeting date chosen in the import dialog, without stating its clock time, YYYY-MM-DD', {
+    optional: true,
+    hidden: true,
+  }),
   duration: Flag.string('Meeting length e.g. 45m, 2h', { short: 'd', optional: true }),
   category: categoryComplete(),
   medium: Flag.string('Meeting medium e.g. Zoom, Phone, etc', { short: 'm', default: () => 'Zoom' }),
@@ -168,6 +172,7 @@ export default class MeetingNewTask extends Command {
         // The start the caller stated goes with it, so the write-up and its check
         // say it; a host's reading of the file's clock goes as just that.
         when: whenStated ? when.toString() : undefined,
+        day: args.day,
         clock: args.clock,
       })
       if (!summaryResult.ok || !summaryResult.data) {

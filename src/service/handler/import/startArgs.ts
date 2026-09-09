@@ -9,6 +9,7 @@
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
  * a value the person changed or chose by dropping on a calendar slot.
+ * A drop on the Meetings section chooses only the day, not the clock time.
  * The person's choice goes as a raw
  * argument, which the doors read as a stated start that wins over anything
  * the words say. The proposal goes as what it is, the file's clock: the
@@ -41,8 +42,10 @@ export function startArgs(job: StartContext, fields: StartFields, filePath: stri
   const when = PlainDateTime.fromString(fields.when)
   const category = `${fields.category} Complete`
   const { fresh } = fields
-  // Typed or chosen from a calendar slot, the when is the person's word.
-  const stated = fields.whenStated === true || fields.when !== job.suggestedWhen
+  // A section drop changes the date without stating the proposed clock time.
+  const day = fields.kind === 'meeting' && fields.dayStated ? when.plainDate.toString() : undefined
+  const proposedWhen = day ? `${day} ${job.suggestedWhen.split(' ')[1]}` : job.suggestedWhen
+  const stated = fields.whenStated === true || fields.when !== proposedWhen
   const rawArgs = stated ? { _: [], when: fields.when } : { _: [] }
   switch (fields.kind) {
     case 'meeting':
@@ -58,7 +61,8 @@ export function startArgs(job: StartContext, fields: StartFields, filePath: stri
           when,
           fresh,
           run: job.runKey ?? undefined,
-          ...(stated ? {} : { clock: fields.when }),
+          ...(day ? { day } : {}),
+          ...(stated ? {} : { clock: job.suggestedWhen }),
         },
         rawArgs,
       }
