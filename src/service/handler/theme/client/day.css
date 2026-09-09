@@ -297,8 +297,9 @@
 }
 
 .sky-check-box[data-on='true'] {
-  background: var(--sky-green);
-  border-color: var(--sky-green);
+  background: var(--sky-action-primary);
+  border-color: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
 }
 
 [data-mantine-color-scheme='dark'] .sky-check-box {
@@ -307,9 +308,9 @@
 }
 
 [data-mantine-color-scheme='dark'] .sky-check-box[data-on='true'] {
-  background: var(--sky-green);
-  border-color: var(--sky-green);
-  color: var(--mantine-color-dark-8);
+  background: var(--sky-action-primary);
+  border-color: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
 }
 
 .sky-scheck {
