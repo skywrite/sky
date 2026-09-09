@@ -11,6 +11,7 @@ import { createHttpApp } from './http.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import type { OutboxRoutesOptions } from './outbox/mod.ts'
 import type { SettingsRoutesOptions } from './settings/mod.ts'
+import type { StreaksRoutesOptions } from './streaks/mod.ts'
 import type { TrackingRoutesOptions } from './tracking/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
@@ -35,6 +36,7 @@ export function createTestHttpApp(
     meetings?: CalendarSchedulerHost
     automations?: AutomationsRoutesOptions
     tracking?: TrackingRoutesOptions
+    streaks?: StreaksRoutesOptions
     outbox?: OutboxRoutesOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
@@ -56,6 +58,7 @@ export function createTestHttpApp(
     meetings: options.meetings,
     automations: options.automations,
     tracking: options.tracking,
+    streaks: options.streaks,
     outbox: options.outbox,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.

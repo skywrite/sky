@@ -11,6 +11,7 @@ import { type Kept, KeptToast } from './files.tsx'
 import { acceptsImports, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
+import { DayStreaks } from './streaks.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
 /**
@@ -38,12 +39,7 @@ export interface DayData {
   /** The day on the page — today unless a past day was asked for */
   day: DayRef & { dateLabel: string }
   days: DayRef[]
-  section: {
-    dateLabel: string
-    dayRelativePath: string | null
-    mostImportant: Array<{ label: string; relativePath: string }>
-    streaks: Array<{ title: string; doneToday: boolean }>
-  } | null
+  section: null
   chats: Array<{
     path: string
     time: string
@@ -931,7 +927,6 @@ export function DayView({
   // The rail beside the day: a third column on a wide window, an overlay from
   // the header on a narrow one — the same rule as a document's Details.
   const rail = useRail(view?.day.ymd ?? null)
-  const section = view?.section ?? null
   const record = view?.record ?? null
   const chats = view ? dayChatRows(view.day.ymd, view.chats, threads) : []
   const videos = record?.videos ?? []
@@ -1054,23 +1049,7 @@ export function DayView({
                     {planning.composer('reminders')}
                   </ReminderCard>
 
-                  {section && section.streaks.length > 0 && (
-                    <Block
-                      head="Streaks"
-                      mini={`${section.streaks.filter((s) => s.doneToday).length} of ${section.streaks.length} done`}
-                    >
-                      {section.streaks.map((streak) => (
-                        <div key={streak.title} className="sky-prow">
-                          <span className="sky-scheck" data-on={streak.doneToday}>
-                            {streak.doneToday && <Tick />}
-                          </span>
-                          <span className="sky-ptext" data-dim={streak.doneToday || undefined}>
-                            {streak.title}
-                          </span>
-                        </div>
-                      ))}
-                    </Block>
-                  )}
+                  <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
 
                   <DayTracking date={trackingDate} readOnly={trackingDate !== null && ended} navigate={navigate} />
 

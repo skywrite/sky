@@ -42,6 +42,7 @@ import { createMeetingRoutes } from './meetings/mod.ts'
 import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
 import { createSearchRoutes } from './search/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
+import { createStreaksRoutes, type StreaksRoutesOptions } from './streaks/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 import { createTrackingRoutes, type TrackingRoutesOptions } from './tracking/mod.ts'
 import {
@@ -85,6 +86,7 @@ export interface HttpHandlerOptions {
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
   tracking?: TrackingRoutesOptions
+  streaks?: StreaksRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
@@ -192,6 +194,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   }
   if (options.outbox) app.route('/outbox/_api', createOutboxRoutes(options.outbox))
   if (options.tracking) app.route('/tracking/_api', createTrackingRoutes(options.tracking))
+  if (options.streaks) app.route('/streaks/_api', createStreaksRoutes(options.streaks))
 
   // A file dropped on the day: the upload, its read-back, the run, its questions.
   // A navigation opens the page; a fetch of the same path reads the job.
@@ -589,6 +592,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.html(renderAppHtml('sky'))
   })
   app.get('/outbox', (c) => c.html(renderAppHtml('sky')))
+  app.get('/streaks', (c) => c.html(renderAppHtml('sky · streaks')))
+  app.get('/streaks/*', (c) =>
+    c.req.path === '/streaks/_api' || c.req.path.startsWith('/streaks/_api/')
+      ? c.json({ message: 'Streaks is unavailable.' }, 404)
+      : c.html(renderAppHtml('sky · streaks')),
+  )
   app.get('/tracking', (c) => c.html(renderAppHtml('sky · tracking')))
   app.get('/tracking/*', (c) =>
     c.req.path.startsWith('/tracking/_api/')

@@ -21,7 +21,7 @@ web app's page and builds its client.
   client and reloading the page is enough.
 - `client/` is the React client. `main.tsx` turns the path into a page: a
   day, a thread, an import, a document in the explorer, settings, voice,
-  automations, tracking, a week. `theme.ts` is the Mantine theme. `shell.css` imports
+  automations, tracking, streaks, a week. `theme.ts` is the Mantine theme. `shell.css` imports
   the shared foundations and feature styles.
 - `http.ts`, one level up, mounts the shell at `/`, at a day's date, and at
   the page paths. `/_assets/:name` serves the bundle.
@@ -50,7 +50,8 @@ Keep changes with the feature they affect, including its responsive rules:
 | `editor.css` | Editing status, visible markdown syntax, editable blocks, table tools |
 | `frontmatter.css` | Properties, completion, YAML, identity, property overrides in Details |
 | `details.css` | Shared Details rail, attachments, backlinks, document outline |
-| `day.css` | Today tasks, reminders, streaks, record, swipe deletion, undo |
+| `day.css` | Today tasks, reminders, record, swipe deletion, undo |
+| `streaks.css` | Streak check-ins, details, and month, quarter, and year history |
 | `day-rail.css` | Today's meetings, chats, work in progress, attachment footer |
 | `week.css` | Week days, priorities, goals, check-ins, scheduling controls |
 
@@ -65,6 +66,8 @@ The persistent search header and its preview column follow the
 [notebook search contract](../../search/docs/README.md).
 Tracking's check-ins, history, capture review, and file mutations follow the
 [tracking workflow](../../../../lib/tracking/docs/README.md).
+Streaks opens from the day's **View all streaks** link. Its history and day-file
+writes follow the [streaks contract](../../streaks/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

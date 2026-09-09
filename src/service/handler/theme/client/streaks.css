@@ -1,0 +1,1725 @@
+/* Streak check-ins and calendar history, using the shared app theme. */
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) * {
+  box-sizing: border-box;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) button,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) a,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) input {
+  -webkit-tap-highlight-color: transparent;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) button {
+  font-family: inherit;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) button:focus-visible,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) a:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 4px;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) button {
+  cursor: pointer;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h1,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h2,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h3,
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) p {
+  margin: 0;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h1 {
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h2 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+:is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) button:disabled {
+  cursor: default;
+}
+.sky-streaks-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.sky-streaks {
+  max-width: 1096px;
+  margin: auto;
+  padding: 0 48px 64px;
+}
+.sky-streaks-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin: 0 0 22px;
+}
+.sky-streaks-breadcrumbs button {
+  border: 0;
+  background: none;
+  padding: 6px 0;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-streaks-breadcrumbs button:hover {
+  color: var(--sky-accent);
+}
+.sky-streaks-breadcrumbs span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sky-streaks-page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 26px;
+}
+.sky-streaks-page-heading > div:first-child {
+  min-width: 0;
+}
+.sky-streaks-page-heading p {
+  font-size: 17px;
+  color: var(--sky-dim);
+  margin-top: 10px;
+  max-width: 630px;
+}
+.sky-streaks-page-heading > .mantine-Button-root {
+  margin-top: 4px;
+  flex: none;
+}
+.sky-streaks-heading-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+}
+.sky-streaks-eyebrow {
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin-bottom: 8px;
+}
+.sky-streaks-view-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--sky-border-soft);
+  margin: 0 0 30px;
+}
+.sky-streaks-view-tabs > [role='group'] {
+  display: flex;
+  gap: 26px;
+}
+.sky-streaks-view-tabs [aria-pressed] {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--sky-dim);
+  font-size: 16px;
+  padding: 10px 0 14px;
+  font-weight: 500;
+}
+.sky-streaks-view-tabs [aria-pressed][aria-pressed='true'] {
+  color: var(--sky-accent);
+  border-bottom-color: var(--sky-accent);
+}
+.sky-streaks-filter-button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: none;
+  color: var(--sky-text-2);
+  font-size: 14px;
+  padding: 10px 0 14px;
+}
+.sky-streaks-filter-button > span {
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+.sky-streaks-overview-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.sky-streaks-overview-intro h2 {
+  font-size: 21px;
+  display: flex;
+  align-items: baseline;
+  gap: 15px;
+}
+.sky-streaks-today-date {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+.sky-streaks-overview-intro p {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 5px;
+}
+.sky-streaks-progress-dashes {
+  display: flex;
+  gap: 5px;
+  width: 124px;
+}
+.sky-streaks-progress-dashes span {
+  height: 5px;
+  background: var(--sky-s2);
+  border-radius: 5px;
+  flex: 1;
+}
+.sky-streaks-progress-dashes span[data-on='true'] {
+  background: var(--sky-green);
+}
+.sky-streaks-habit-columns,
+.sky-streaks-habit-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 280px 140px;
+  gap: 30px;
+  align-items: center;
+}
+.sky-streaks-habit-columns {
+  font-size: 13px;
+  color: var(--sky-dim);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-streaks-habit-columns > span:last-child {
+  text-align: right;
+}
+.sky-streaks-habit-row {
+  min-height: 98px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-streaks-habit-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sky-streaks-habit-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: none;
+  border: 0;
+  width: 36px;
+  min-height: 44px;
+  padding: 0;
+  margin-left: -6px;
+}
+.sky-streaks-habit-check > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--mantine-color-gray-4);
+  color: var(--sky-dim);
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  transition: all 0.14s;
+}
+.sky-streaks-habit-check:hover:not(:disabled) > span {
+  border-color: var(--sky-green);
+  background: color-mix(in srgb, var(--sky-green) 6%, transparent);
+}
+.sky-streaks-habit-check[data-done='true'] > span {
+  border-color: var(--sky-green);
+  background: var(--sky-green);
+  color: white;
+}
+.sky-streaks-habit-check:disabled > span {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.sky-streaks-habit-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--sky-text);
+  padding: 14px 0;
+  font-size: 19px;
+  line-height: 1.45;
+}
+.sky-streaks-habit-title:hover > span {
+  color: var(--sky-accent);
+}
+.sky-streaks-habit-title small {
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-weight: 400;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+.sky-streaks-habit-run {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  background: none;
+  border: 0;
+  padding: 12px 0;
+  color: var(--sky-text);
+  font-size: 15px;
+}
+.sky-streaks-habit-run > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.sky-streaks-habit-run b {
+  font-size: 24px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.sky-streaks-habit-run svg {
+  margin-left: 7px;
+  color: var(--sky-dim);
+}
+.sky-streaks-habit-run small {
+  color: var(--sky-dim);
+  font-size: 13px;
+  margin-right: 28px;
+}
+.sky-streaks-marks {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.sky-streaks-mark {
+  height: 17px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-style: normal;
+  padding: 0;
+  line-height: 1;
+}
+.sky-streaks-mark[data-state='done'],
+.sky-streaks-history-cell[data-state='done'] {
+  color: var(--sky-green);
+  background: var(--mantine-color-green-1);
+}
+.sky-streaks-mark[data-state='missed'],
+.sky-streaks-history-cell[data-state='missed'] {
+  background: var(--sky-s2);
+  color: var(--sky-dim);
+}
+.sky-streaks-mark[data-state='pending'],
+.sky-streaks-history-cell[data-state='pending'] {
+  background: var(--sky-bg);
+  border-color: var(--sky-accent);
+}
+.sky-streaks-mark[data-state='off'],
+.sky-streaks-history-cell[data-state='off'] {
+  color: var(--mantine-color-gray-4);
+  background: transparent;
+}
+.sky-streaks-mark[data-state='future'],
+.sky-streaks-history-cell[data-state='future'] {
+  border-color: var(--sky-border-soft);
+  background: transparent;
+}
+.sky-streaks-mark[data-today='true'][data-state='done'],
+.sky-streaks-history-cell[data-today='true'][data-state='done'] {
+  background: var(--sky-green);
+  color: white;
+}
+.sky-streaks-mark:hover {
+  transform: translateY(-2px);
+}
+.sky-streaks-overview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding-top: 28px;
+}
+.sky-streaks-overview-footer > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.sky-streaks-overview-footer p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--sky-text-2);
+}
+.sky-streaks-overview-footer p span {
+  color: var(--sky-dim);
+  font-size: 13px;
+}
+.sky-streaks-status-circle {
+  height: 11px;
+  width: 11px;
+  border: 1.5px solid var(--sky-accent);
+  border-radius: 50%;
+  flex: none;
+  margin-top: 6px;
+}
+.sky-streaks-text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  color: var(--sky-accent);
+  font-size: 14px;
+  padding: 6px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+.sky-streaks-text-link:hover {
+  text-decoration: underline;
+}
+.sky-streaks-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.sky-streaks-section-head p {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 5px;
+}
+.sky-streaks-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.sky-streaks-month-nav strong {
+  min-width: 118px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 550;
+}
+.sky-streaks-month-nav .mantine-ActionIcon-root {
+  width: 32px;
+  min-width: 32px;
+  height: 36px;
+  min-height: 36px;
+}
+.sky-streaks-history-section {
+  padding-top: 4px;
+}
+.sky-streaks-history-scroll {
+  overflow-x: auto;
+  margin: 28px 0 20px;
+  padding-bottom: 10px;
+}
+.sky-streaks-history-grid {
+  min-width: 875px;
+}
+.sky-streaks-history-dates,
+.sky-streaks-history-row {
+  display: grid;
+  grid-template-columns: 170px repeat(var(--days), minmax(16px, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+.sky-streaks-history-dates {
+  padding-bottom: 14px;
+  color: var(--sky-dim);
+  font-size: 11px;
+  text-align: center;
+}
+.sky-streaks-history-dates > span:first-child {
+  text-align: left;
+  font-size: 13px;
+}
+.sky-streaks-history-dates small {
+  display: block;
+  font-size: 10px;
+  opacity: 0.8;
+  margin-bottom: 3px;
+}
+.sky-streaks-history-dates [data-today='true'] {
+  color: var(--sky-accent);
+  font-weight: 700;
+}
+.sky-streaks-history-row {
+  padding: 18px 0;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-streaks-history-title {
+  text-align: left;
+  font-size: 15px;
+  background: none;
+  border: 0;
+  padding: 5px 4px 5px 0;
+  color: var(--sky-text);
+}
+.sky-streaks-history-title:hover {
+  color: var(--sky-accent);
+}
+.sky-streaks-history-cell {
+  height: 26px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sky-streaks-history-cell:hover {
+  outline: 1px solid var(--sky-accent);
+  outline-offset: 2px;
+}
+.sky-streaks-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 17px;
+  color: var(--sky-dim);
+  font-size: 12px;
+}
+.sky-streaks-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sky-streaks-legend .sky-streaks-mark {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 3px;
+}
+.sky-streaks-history-note {
+  color: var(--sky-dim);
+  font-size: 13px;
+  line-height: 1.7;
+  margin-top: 19px;
+}
+.sky-streaks-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 34px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  gap: 24px;
+}
+.sky-streaks-detail-stats > div + div {
+  border-left: 1px solid var(--sky-border-soft);
+  padding-left: 30px;
+}
+.sky-streaks-detail-stats span {
+  display: block;
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+.sky-streaks-detail-stats strong {
+  display: block;
+  font-weight: 550;
+  font-size: 38px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.sky-streaks-detail-stats strong small {
+  font-size: 18px;
+  color: var(--sky-dim);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.sky-streaks-detail-stats p {
+  font-size: 13px;
+  color: var(--sky-dim);
+  line-height: 1.4;
+}
+.sky-streaks-detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 50px;
+  margin-top: 34px;
+}
+.sky-streaks-calendar-weekdays,
+.sky-streaks-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+}
+.sky-streaks-calendar-weekdays {
+  font-size: 12px;
+  color: var(--sky-dim);
+  text-align: center;
+  margin: 10px 0;
+}
+.sky-streaks-calendar-grid {
+  margin-bottom: 22px;
+}
+.sky-streaks-calendar-day {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  min-height: 63px;
+  padding: 8px 9px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: none;
+  color: var(--sky-text);
+  font-size: 14px;
+  position: relative;
+}
+.sky-streaks-calendar-day[data-state='done'] {
+  background: var(--mantine-color-green-0);
+  color: var(--sky-green);
+}
+.sky-streaks-calendar-day[data-state='missed'] {
+  background: var(--sky-s2);
+  color: var(--sky-dim);
+}
+.sky-streaks-calendar-day[data-state='off'] {
+  color: var(--sky-dim);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 5px,
+    color-mix(in srgb, var(--sky-dim) 4%, transparent) 5px,
+    color-mix(in srgb, var(--sky-dim) 4%, transparent) 6px
+  );
+}
+.sky-streaks-calendar-day[data-state='future'] {
+  color: var(--mantine-color-gray-4);
+}
+.sky-streaks-calendar-day[data-today='true'] {
+  border-color: var(--sky-accent);
+  color: var(--sky-accent);
+  background: var(--sky-accent-soft);
+}
+.sky-streaks-calendar-day[data-today='true'][data-state='done'] {
+  border-color: var(--sky-green);
+  background: var(--mantine-color-green-1);
+  color: var(--sky-green);
+}
+.sky-streaks-calendar-day > svg,
+.sky-streaks-calendar-day > i {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-style: normal;
+}
+.sky-streaks-calendar-day small {
+  font-size: 10px;
+  position: absolute;
+  bottom: 7px;
+  left: 8px;
+}
+.sky-streaks-calendar-day:hover {
+  box-shadow: inset 0 0 0 1px var(--sky-accent);
+}
+.sky-streaks-habit-context {
+  padding-top: 3px;
+}
+.sky-streaks-habit-context section {
+  margin-bottom: 26px;
+}
+.sky-streaks-habit-context h2 {
+  font-size: 15px;
+  color: var(--sky-text-2);
+  margin-bottom: 9px;
+}
+.sky-streaks-habit-context p {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--sky-text-2);
+}
+.sky-streaks-habit-context dl {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-streaks-habit-context dl > div {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+}
+.sky-streaks-habit-context dd {
+  margin: 0;
+}
+.sky-streaks-document-link {
+  font-size: 13px;
+}
+.sky-streaks-day {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 24px;
+}
+.sky-streaks-day .sky-streaks-section-head {
+  margin-bottom: 4px;
+}
+.sky-streaks-day h2 {
+  font-size: 17px;
+  display: flex;
+  align-items: baseline;
+  gap: 15px;
+}
+.sky-streaks-quiet-count {
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-streaks-compact .sky-streaks-habit-row {
+  grid-template-columns: minmax(0, 1fr) 130px;
+  min-height: 83px;
+  border-bottom: 0;
+}
+.sky-streaks-compact .sky-streaks-habit-run b {
+  font-size: 19px;
+}
+.sky-streaks-compact .sky-streaks-habit-run {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-streaks-compact .sky-streaks-habit-title small {
+  font-size: 13px;
+}
+.sky-streaks-toast {
+  position: fixed;
+  z-index: 300;
+  bottom: 24px;
+  left: calc(50% + 100px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 13px 17px;
+  background: var(--sky-text);
+  color: var(--sky-bg);
+  border-radius: 12px;
+  box-shadow: var(--mantine-shadow-md);
+  font-size: 14px;
+}
+.sky-streaks-toast > svg {
+  flex: none;
+}
+.sky-streaks-toast button {
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+}
+.sky-streaks-toast button:first-of-type {
+  text-decoration: underline;
+}
+.sky-streaks-toast span {
+  white-space: nowrap;
+}
+.sky-streaks-new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+.sky-streaks-form-intro {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-bottom: 2px;
+}
+.sky-streaks-form-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.sky-streaks-new-form .sky-dialog-actions {
+  margin-top: 6px;
+}
+.sky-streaks-day-dialog > h2 {
+  font-size: 22px;
+  margin-bottom: 13px;
+}
+.sky-streaks-day-dialog > p {
+  font-size: 16px;
+  color: var(--sky-text-2);
+  line-height: 1.7;
+}
+.sky-streaks-day-dialog > p.sky-streaks-day-status {
+  margin: 0 0 12px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-streaks-day-status.sky-streaks-done {
+  color: var(--sky-green) !important;
+}
+.sky-streaks-day-status.sky-streaks-pending {
+  color: var(--sky-accent) !important;
+}
+.sky-streaks-dialog-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+.sky-streaks-muted {
+  color: var(--sky-dim);
+  font-size: 15px !important;
+}
+.sky-streaks-empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--sky-dim);
+}
+[data-mantine-color-scheme='dark'] .sky-streaks-mark[data-state='done'],
+[data-mantine-color-scheme='dark'] .sky-streaks-history-cell[data-state='done'],
+[data-mantine-color-scheme='dark'] .sky-streaks-calendar-day[data-state='done'] {
+  background: color-mix(in srgb, var(--sky-green) 16%, transparent);
+  color: var(--sky-green);
+}
+@media (max-width: 1350px) {
+  .sky-streaks-habit-columns,
+  .sky-streaks-habit-row {
+    grid-template-columns: minmax(210px, 1fr) 230px 110px;
+    gap: 24px;
+  }
+  .sky-streaks-marks {
+    gap: 4px;
+  }
+  .sky-streaks-mark {
+    height: 15px;
+  }
+  .sky-streaks-detail-columns {
+    gap: 32px;
+    grid-template-columns: minmax(0, 1fr) 225px;
+  }
+  .sky-streaks {
+    padding-left: 38px;
+    padding-right: 38px;
+  }
+  .sky-streaks-calendar-day {
+    min-height: 55px;
+  }
+}
+@media (max-width: 1150px) and (min-width: 901px) {
+  .sky-streaks-habit-columns,
+  .sky-streaks-habit-row {
+    grid-template-columns: minmax(0, 1fr) 110px;
+  }
+  .sky-streaks-habit-columns > span:nth-child(2),
+  .sky-streaks-habit-row > .sky-streaks-marks {
+    display: none;
+  }
+  .sky-streaks-detail-columns {
+    grid-template-columns: 1fr;
+  }
+  .sky-streaks-habit-context {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .sky-streaks-detail-stats > div + div {
+    padding-left: 20px;
+  }
+  .sky-streaks-page-heading {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 900px) {
+  .sky-streaks {
+    padding: 4px 24px 60px;
+  }
+  .sky-streaks-breadcrumbs {
+    margin-bottom: 18px;
+  }
+  .sky-streaks-page-heading h1 {
+    font-size: 30px;
+  }
+  .sky-streaks-detail-columns {
+    grid-template-columns: minmax(0, 1fr) 225px;
+  }
+  .sky-streaks-toast {
+    left: 50%;
+  }
+}
+@media (max-width: 700px) {
+  .sky-streaks {
+    padding: 2px 20px 44px;
+  }
+  .sky-streaks-breadcrumbs {
+    margin-bottom: 17px;
+  }
+  .sky-streaks-page-heading {
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .sky-streaks-page-heading h1 {
+    font-size: 28px;
+  }
+  .sky-streaks-page-heading p {
+    font-size: 15px;
+    margin-top: 8px;
+  }
+  .sky-streaks-page-heading > .mantine-Button-root {
+    height: 38px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .sky-streaks-view-tabs {
+    margin-bottom: 25px;
+  }
+  .sky-streaks-view-tabs > [role='group'] {
+    gap: 24px;
+  }
+  .sky-streaks-overview-intro {
+    margin-bottom: 20px;
+  }
+  .sky-streaks-overview-intro h2 {
+    font-size: 20px;
+    gap: 10px;
+  }
+  .sky-streaks-today-date {
+    font-size: 12px;
+  }
+  .sky-streaks-overview-intro p {
+    font-size: 13px;
+  }
+  .sky-streaks-progress-dashes {
+    width: 62px;
+    gap: 3px;
+  }
+  .sky-streaks-habit-columns {
+    grid-template-columns: 1fr 98px;
+    font-size: 12px;
+  }
+  .sky-streaks-habit-columns > span:nth-child(2),
+  .sky-streaks-habit-row > .sky-streaks-marks {
+    display: none;
+  }
+  .sky-streaks-habit-row {
+    grid-template-columns: minmax(0, 1fr) 98px;
+    gap: 12px;
+    min-height: 94px;
+  }
+  .sky-streaks-habit-title {
+    font-size: 18px;
+  }
+  .sky-streaks-habit-title small {
+    font-size: 13px;
+  }
+  .sky-streaks-habit-check {
+    width: 35px;
+    margin-left: -5px;
+  }
+  .sky-streaks-habit-main {
+    gap: 7px;
+  }
+  .sky-streaks-habit-run b {
+    font-size: 22px;
+  }
+  .sky-streaks-habit-run {
+    font-size: 13px;
+  }
+  .sky-streaks-habit-run small {
+    font-size: 11px;
+  }
+  .sky-streaks-habit-run svg {
+    margin-left: 1px;
+  }
+  .sky-streaks-overview-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 17px;
+  }
+  .sky-streaks-overview-footer p {
+    font-size: 13px;
+  }
+  .sky-streaks-overview-footer p span {
+    font-size: 12px;
+  }
+  .sky-streaks-overview-footer .sky-streaks-text-link {
+    margin-left: 23px;
+  }
+  .sky-streaks-detail-stats {
+    gap: 12px;
+    margin-top: 24px;
+    padding-bottom: 24px;
+  }
+  .sky-streaks-detail-stats > div + div {
+    padding-left: 12px;
+  }
+  .sky-streaks-detail-stats strong {
+    font-size: 31px;
+  }
+  .sky-streaks-detail-stats strong small {
+    font-size: 14px;
+  }
+  .sky-streaks-detail-stats span {
+    font-size: 12px;
+  }
+  .sky-streaks-detail-stats p {
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .sky-streaks-detail-columns {
+    grid-template-columns: 1fr;
+    margin-top: 25px;
+    gap: 28px;
+  }
+  .sky-streaks-habit-context {
+    border-top: 1px solid var(--sky-border-soft);
+    padding-top: 25px;
+  }
+  .sky-streaks-calendar-day {
+    min-height: 51px;
+    padding: 6px;
+  }
+  .sky-streaks-calendar-day > svg {
+    width: 13px;
+    bottom: 6px;
+    right: 6px;
+  }
+  .sky-streaks-calendar-day small {
+    font-size: 9px;
+    left: 5px;
+    bottom: 4px;
+  }
+  .sky-streaks-calendar-grid,
+  .sky-streaks-calendar-weekdays {
+    gap: 5px;
+  }
+  .sky-streaks-legend {
+    gap: 12px;
+    font-size: 10px;
+  }
+  .sky-streaks-legend .sky-streaks-mark {
+    height: 11px;
+    width: 11px;
+  }
+  .sky-streaks-history-note {
+    font-size: 12px;
+  }
+  .sky-streaks-section-head {
+    flex-wrap: wrap;
+  }
+  .sky-streaks-section-head h2 {
+    font-size: 18px;
+  }
+  .sky-streaks-month-nav strong {
+    font-size: 14px;
+    min-width: 100px;
+  }
+  .sky-streaks-calendar-panel .sky-streaks-section-head {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .sky-streaks-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .sky-streaks-heading-actions .mantine-Button-root {
+    font-size: 14px;
+  }
+  .sky-streaks-history-section > .sky-streaks-section-head {
+    margin-bottom: 8px;
+    gap: 12px;
+  }
+  .sky-streaks-history-section > .sky-streaks-section-head .sky-streaks-month-nav {
+    margin-left: -6px;
+  }
+  .sky-streaks-history-section > .sky-streaks-section-head h2 {
+    font-size: 19px;
+  }
+  .sky-streaks-history-section > .sky-streaks-section-head p {
+    font-size: 14px;
+  }
+  .sky-streaks-history-scroll {
+    margin-top: 18px;
+  }
+  .sky-streaks-history-grid {
+    min-width: 970px;
+  }
+  .sky-streaks-history-dates,
+  .sky-streaks-history-row {
+    grid-template-columns: 170px repeat(var(--days), minmax(20px, 1fr));
+  }
+  .sky-streaks-history-title {
+    position: sticky;
+    left: 0;
+    background: var(--sky-bg);
+    z-index: 1;
+  }
+  .sky-streaks-day h2 {
+    gap: 9px;
+    font-size: 16px;
+  }
+  .sky-streaks-quiet-count {
+    font-size: 12px;
+  }
+  .sky-streaks-day .sky-streaks-text-link {
+    font-size: 12px;
+  }
+  .sky-streaks-day .sky-streaks-section-head {
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .sky-streaks-compact .sky-streaks-habit-row {
+    grid-template-columns: minmax(0, 1fr) 88px;
+  }
+  .sky-streaks-compact .sky-streaks-habit-run b {
+    font-size: 19px;
+  }
+  .sky-streaks-compact .sky-streaks-habit-run {
+    font-size: 12px;
+  }
+  .sky-streaks-compact .sky-streaks-habit-title {
+    font-size: 17px;
+  }
+  .sky-streaks-toast {
+    bottom: 14px;
+    gap: 9px;
+    font-size: 12px;
+    padding: 12px;
+  }
+  .sky-streaks-toast button {
+    font-size: 12px;
+  }
+  .sky-streaks-toast span {
+    white-space: normal;
+  }
+  .sky-streaks-form-dates {
+    gap: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.sky-streaks, .sky-streaks-day, .sky-streaks-modal) * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+.sky-streaks-detail-stats time {
+  white-space: nowrap;
+}
+.sky-streaks-period-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 8px 0 26px;
+  flex-wrap: wrap;
+}
+.sky-streaks-period-toggle {
+  display: flex;
+  background: var(--sky-side);
+  padding: 4px;
+  border-radius: 11px;
+  gap: 2px;
+  flex: none;
+}
+.sky-streaks-period-toggle button {
+  font-size: 14px;
+  line-height: 1.2;
+  border: 0;
+  background: none;
+  color: var(--sky-dim);
+  padding: 10px 16px;
+  min-height: 36px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.sky-streaks-period-toggle button[aria-pressed='true'] {
+  background: var(--sky-card);
+  color: var(--sky-text);
+  box-shadow: var(--sky-card-shadow);
+}
+.sky-streaks-period-toggle button:hover:not([aria-pressed='true']) {
+  color: var(--sky-text);
+}
+.sky-streaks-period-navigation {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.sky-streaks-period-navigation .sky-streaks-month-nav strong {
+  min-width: 126px;
+}
+.sky-streaks-back-current {
+  font-size: 12px;
+}
+.sky-streaks-history-habit-select {
+  width: 215px;
+  flex: none;
+}
+.sky-streaks-history-habit-select input {
+  font-size: 14px;
+}
+.sky-streaks-history-section > .sky-streaks-section-head {
+  margin-bottom: 24px;
+}
+.sky-streaks-history-section > .sky-streaks-history-scroll {
+  margin-top: 16px;
+}
+.sky-streaks-period-habits {
+  margin-top: 12px;
+}
+.sky-streaks-period-habit {
+  border-top: 1px solid var(--sky-border-soft);
+  padding: 23px 0 30px;
+}
+.sky-streaks-period-habit-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.sky-streaks-period-habit-heading > a {
+  border: 0;
+  background: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  color: var(--sky-text);
+  font-weight: 500;
+  text-align: left;
+}
+.sky-streaks-period-habit-heading > a:hover {
+  color: var(--sky-accent);
+}
+.sky-streaks-period-habit-heading > a svg {
+  color: var(--sky-dim);
+}
+.sky-streaks-period-habit-heading > span {
+  color: var(--sky-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sky-streaks-period-habit-heading strong {
+  color: var(--sky-text-2);
+  font-weight: 500;
+}
+.sky-streaks-period-habit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sky-dim);
+  font-size: 12px;
+  margin-top: 5px;
+}
+.sky-streaks-compact-calendars {
+  display: grid;
+  margin: 24px 0 26px;
+  gap: 27px 34px;
+  align-items: start;
+}
+.sky-streaks-compact-calendars[data-scope='quarter'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 36px;
+}
+.sky-streaks-compact-calendars[data-scope='year'] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.sky-streaks-mini-month {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 10px 12px 11px;
+  margin: -10px -12px -11px;
+  width: calc(100% + 24px);
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  color: var(--sky-text);
+}
+.sky-streaks-mini-month:hover {
+  background: var(--sky-side);
+}
+.sky-streaks-mini-month-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 13px;
+}
+.sky-streaks-mini-month-heading strong {
+  font-size: 15px;
+  font-weight: 550;
+}
+.sky-streaks-mini-month-heading > svg {
+  color: var(--sky-dim);
+  opacity: 0;
+}
+.sky-streaks-mini-month:hover .sky-streaks-mini-month-heading > svg,
+.sky-streaks-mini-month:focus-visible .sky-streaks-mini-month-heading > svg {
+  opacity: 1;
+}
+.sky-streaks-mini-weekdays,
+.sky-streaks-mini-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  width: 100%;
+}
+.sky-streaks-mini-weekdays {
+  font-size: 10px;
+  color: var(--sky-dim);
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.sky-streaks-mini-days {
+  grid-template-rows: repeat(6, 14px);
+}
+[data-scope='quarter'] .sky-streaks-mini-days {
+  grid-template-rows: repeat(6, 19px);
+  gap: 6px;
+}
+.sky-streaks-mini-day {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: var(--sky-s2);
+}
+.sky-streaks-mini-day[data-state='done'] {
+  background: var(--sky-green);
+  border-color: var(--sky-green);
+}
+.sky-streaks-mini-day[data-state='missed'] {
+  background: var(--sky-s2);
+}
+.sky-streaks-mini-day[data-state='off'] {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--sky-dim) 10%, transparent) 3px,
+    color-mix(in srgb, var(--sky-dim) 10%, transparent) 4px
+  );
+}
+.sky-streaks-mini-day[data-state='future'] {
+  background: none;
+  border-color: var(--sky-border-soft);
+}
+.sky-streaks-mini-day[data-state='pending'] {
+  background: var(--sky-accent-soft);
+  border-color: var(--sky-accent);
+}
+.sky-streaks-mini-day[data-today='true'] {
+  box-shadow:
+    0 0 0 1px var(--sky-bg),
+    0 0 0 2px var(--sky-accent);
+  position: relative;
+  z-index: 1;
+}
+.sky-streaks-mini-month-caption {
+  font-size: 11px;
+  color: var(--sky-dim);
+  margin-top: 10px;
+  line-height: 1.4;
+}
+.sky-streaks-period-habit .sky-streaks-compact-calendars {
+  margin-bottom: 10px;
+}
+.sky-streaks-period-habit [data-scope='year'] .sky-streaks-mini-days {
+  grid-template-rows: repeat(6, 11px);
+  gap: 4px;
+}
+.sky-streaks-period-habit [data-scope='quarter'] .sky-streaks-mini-days {
+  grid-template-rows: repeat(6, 15px);
+  gap: 5px;
+}
+.sky-streaks-compact-legend .sky-streaks-mark[data-state='done'] {
+  background: var(--sky-green) !important;
+}
+.sky-streaks-compact-legend .sky-streaks-mark[data-state='off'] {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 2px,
+    color-mix(in srgb, var(--sky-dim) 28%, transparent) 2px,
+    color-mix(in srgb, var(--sky-dim) 28%, transparent) 3px
+  );
+}
+.sky-streaks-detail-columns.sky-streaks-period-wide {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 30px;
+}
+.sky-streaks-period-wide .sky-streaks-habit-context {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 28px;
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 28px;
+}
+.sky-streaks-period-wide .sky-streaks-habit-context section {
+  margin-bottom: 0;
+}
+.sky-streaks-period-wide .sky-streaks-document-link {
+  grid-column: 1 / -1;
+  margin-top: -8px;
+}
+.sky-streaks-calendar-panel > .sky-streaks-section-head {
+  margin-bottom: 18px;
+}
+.sky-streaks-calendar-panel .sky-streaks-period-controls {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+.sky-streaks-calendar-panel .sky-streaks-period-toggle button {
+  padding: 9px 12px;
+  font-size: 13px;
+  min-height: 34px;
+}
+.sky-streaks-calendar-panel .sky-streaks-period-navigation {
+  gap: 7px;
+}
+.sky-streaks-calendar-panel .sky-streaks-period-navigation .sky-streaks-month-nav strong {
+  min-width: 106px;
+}
+.sky-streaks-calendar-panel > .sky-streaks-compact-calendars {
+  margin-top: 30px;
+}
+@media (max-width: 1200px) {
+  .sky-streaks-period-habit .sky-streaks-compact-calendars[data-scope='year'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sky-streaks-compact-calendars[data-scope='year'] {
+    gap: 24px;
+  }
+  .sky-streaks-compact-calendars[data-scope='quarter'] {
+    gap: 28px;
+  }
+  .sky-streaks-period-controls {
+    gap: 12px;
+  }
+  .sky-streaks-calendar-panel .sky-streaks-period-controls {
+    gap: 10px;
+  }
+  .sky-streaks-calendar-panel .sky-streaks-period-navigation {
+    margin-left: auto;
+  }
+  .sky-streaks-period-habit-heading {
+    gap: 10px;
+  }
+}
+@media (max-width: 900px) {
+  .sky-streaks-compact-calendars[data-scope='year'],
+  .sky-streaks-period-habit .sky-streaks-compact-calendars[data-scope='year'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sky-streaks-period-wide .sky-streaks-habit-context {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .sky-streaks-period-controls {
+    margin: 8px 0 24px;
+    gap: 17px;
+  }
+  .sky-streaks-period-toggle {
+    padding: 3px;
+    flex: 1;
+  }
+  .sky-streaks-period-toggle button {
+    flex: 1;
+    padding: 10px 15px;
+    min-height: 38px;
+    font-size: 14px;
+  }
+  .sky-streaks-period-navigation {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sky-streaks-period-navigation .sky-streaks-month-nav {
+    margin-left: -8px;
+  }
+  .sky-streaks-period-navigation .sky-streaks-month-nav strong {
+    min-width: 106px;
+  }
+  .sky-streaks-back-current {
+    font-size: 12px;
+  }
+  .sky-streaks-history-habit-select {
+    width: 100%;
+  }
+  .sky-streaks-history-section > .sky-streaks-section-head {
+    margin-bottom: 20px;
+    gap: 16px;
+  }
+  .sky-streaks-period-habit {
+    padding: 22px 0 24px;
+  }
+  .sky-streaks-period-habit-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sky-streaks-period-habit-heading > a {
+    font-size: 18px;
+  }
+  .sky-streaks-period-habit-heading > span {
+    font-size: 12px;
+  }
+  .sky-streaks-period-habit-meta {
+    font-size: 11px;
+    margin-top: 6px;
+    gap: 6px;
+  }
+  .sky-streaks-compact-calendars[data-scope='year'],
+  .sky-streaks-period-habit .sky-streaks-compact-calendars[data-scope='year'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 26px;
+  }
+  .sky-streaks-compact-calendars[data-scope='quarter'] {
+    grid-template-columns: 1fr;
+    gap: 27px;
+    max-width: 350px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  [data-scope='quarter'] .sky-streaks-mini-days,
+  .sky-streaks-period-habit [data-scope='quarter'] .sky-streaks-mini-days {
+    grid-template-rows: repeat(6, 19px);
+    gap: 6px;
+  }
+  [data-scope='year'] .sky-streaks-mini-days {
+    grid-template-rows: repeat(6, 13px);
+    gap: 4px;
+  }
+  .sky-streaks-period-habit [data-scope='year'] .sky-streaks-mini-days {
+    grid-template-rows: repeat(6, 12px);
+  }
+  .sky-streaks-mini-month-heading {
+    margin-bottom: 11px;
+  }
+  .sky-streaks-mini-month-heading strong {
+    font-size: 14px;
+  }
+  .sky-streaks-mini-month-heading > svg {
+    opacity: 0.6;
+  }
+  .sky-streaks-mini-month-caption {
+    font-size: 10px;
+  }
+  .sky-streaks-mini-weekdays {
+    font-size: 9px;
+    gap: 4px;
+  }
+  .sky-streaks-mini-month {
+    padding: 8px;
+    margin: -8px;
+    width: calc(100% + 16px);
+  }
+  .sky-streaks-period-wide .sky-streaks-habit-context {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .sky-streaks-calendar-panel .sky-streaks-period-toggle button {
+    font-size: 14px;
+    padding: 10px 12px;
+    min-height: 38px;
+  }
+  .sky-streaks-calendar-panel .sky-streaks-period-navigation {
+    margin-left: 0;
+  }
+  .sky-streaks-compact-legend {
+    row-gap: 10px;
+  }
+  .sky-streaks-period-wide .sky-streaks-document-link {
+    margin-top: 0;
+  }
+}
+.sky-streaks-scroll {
+  flex: 1;
+  min-width: 0;
+}
+.sky-streaks {
+  width: 100%;
+  color: var(--sky-text);
+}
+.sky-streaks a,
+.sky-streaks-day a {
+  text-decoration: none;
+}
+.sky-streaks a:hover,
+.sky-streaks-day a:hover {
+  color: var(--sky-accent);
+}
+.sky-streaks-day {
+  min-width: 0;
+  margin-top: 24px;
+}
+.sky-streaks-day h2 {
+  margin: 0;
+}
+.sky-streaks-day-empty {
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.7;
+  margin: 16px 0;
+}
+.sky-streaks-day-empty a {
+  color: var(--sky-accent);
+}
+.sky-streaks-error,
+.sky-streaks-warning {
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sky-streaks-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--sky-action-danger);
+}
+.sky-streaks-form-error {
+  color: var(--sky-action-danger);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sky-streaks-empty h2 {
+  font-size: 22px;
+  color: var(--sky-text);
+  margin-bottom: 12px;
+}
+.sky-streaks-empty p {
+  max-width: 480px;
+  margin: 12px auto 24px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+.sky-streaks-empty .sky-streaks-text-link {
+  justify-content: center;
+}
+.sky-streaks-habit-title {
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.sky-streaks-habit-title > span {
+  min-width: 0;
+}
+.sky-streaks-habit-run {
+  text-decoration: none;
+}
+.sky-streaks-history-title {
+  display: block;
+  text-decoration: none;
+}
+.sky-streaks-breadcrumbs a {
+  color: var(--sky-dim);
+  padding: 6px 0;
+}
+.sky-streaks-breadcrumbs a:hover {
+  color: var(--sky-accent);
+}
+.sky-streaks-breadcrumbs svg {
+  flex: none;
+}
+.sky-streaks-day-status[data-state='done'] {
+  color: var(--sky-green);
+}
+.sky-streaks-day-status[data-state='pending'] {
+  color: var(--sky-accent);
+}
+.sky-streaks-habit-context p {
+  white-space: pre-wrap;
+}
+.sky-streaks-document {
+  overflow-wrap: anywhere;
+}
+.sky-streaks-document > h1:first-child {
+  font-size: 20px;
+  margin-top: 0;
+}
+.sky-streaks-period-habit-heading > a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.sky-streaks-page-heading h1 {
+  overflow-wrap: anywhere;
+}
+.sky-streaks-habit-main {
+  min-width: 0;
+}
+.sky-streaks-toast button:disabled {
+  opacity: 0.65;
+}
+@media (max-width: 700px) {
+  .sky-streaks-detail-stats strong {
+    font-size: 29px;
+  }
+  .sky-streaks-error {
+    flex-wrap: wrap;
+  }
+}
+
+.sky-streaks-summary {
+  margin-top: 10px;
+  max-width: 630px;
+  font-size: 17px;
+  color: var(--sky-dim);
+}
+.sky-streaks-prose p {
+  line-height: 1.7;
+  margin: 0 0 10px;
+  white-space: normal;
+}
+.sky-streaks-prose p:last-child {
+  margin-bottom: 0;
+}
+.sky-streaks-prose a {
+  color: var(--sky-accent);
+}
+.sky-streaks-prose ul,
+.sky-streaks-prose ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.sky-streaks-definition {
+  margin-bottom: 26px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-streaks-definition summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.sky-streaks-habit-context .sky-streaks-prose {
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-streaks-period-wide .sky-streaks-definition {
+  grid-column: 1 / -1;
+  order: 1;
+}

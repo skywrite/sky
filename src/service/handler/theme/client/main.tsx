@@ -19,6 +19,7 @@ import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAp
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
 import { SidebarIcon } from './sidebarIcon.tsx'
 import { SidebarUtilities } from './sidebarUtilities.tsx'
+import { StreaksMain } from './streaks.tsx'
 import { skyTheme } from './theme.ts'
 import { TrackingMain } from './tracking.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
@@ -91,6 +92,7 @@ function Canvas() {
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
   const isOutbox = path === '/outbox'
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
+  const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
   const isSearch = path === '/search'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
@@ -118,8 +120,14 @@ function Canvas() {
     (currentChat ? threadTitle(currentChat.turns, currentChat.inherited) : null) ??
     (currentChat?.parent ? 'New branch' : 'New chat')
   useEffect(() => {
-    document.title = threadId ? `sky:chat - ${chatTitle}` : isAudition ? 'sky · audition' : 'sky'
-  }, [threadId, chatTitle, isAudition])
+    document.title = threadId
+      ? `sky:chat - ${chatTitle}`
+      : isAudition
+        ? 'sky · audition'
+        : isStreaks
+          ? 'sky · streaks'
+          : 'sky'
+  }, [threadId, chatTitle, isAudition, isStreaks])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -131,13 +139,14 @@ function Canvas() {
     !isAutomations &&
     !isOutbox &&
     !isTracking &&
+    !isStreaks &&
     !isSearch &&
     !isWeek &&
     filesRoute === null &&
     explorerFile === null
-  const showDateNav = onDayPage || isWeek || filesRoute !== null
+  const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? dayYmd
-  const todayActive = (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
+  const todayActive = isStreaks || (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
   const openImport = (id: string) => navigate(`/import/${id}`)
@@ -359,6 +368,8 @@ function Canvas() {
           <OutboxMain navigate={navigate} />
         ) : isTracking ? (
           <TrackingMain path={path} navigate={navigate} />
+        ) : isStreaks ? (
+          <StreaksMain path={path} search={search} onNavigate={navigate} />
         ) : isNewAutomation ? (
           <NewAutomation
             back={{ label: 'Automations', onClick: () => navigate('/automations') }}

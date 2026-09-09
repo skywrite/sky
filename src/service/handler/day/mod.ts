@@ -1,8 +1,8 @@
 /**
  * The day the threads live in — what the day-first shell renders around
- * its conversations. Nothing here is new to the notebook: the Today
- * section is the home page's, the day's saved chats are the store's, and
- * the days are the notebook's own layout walked backwards.
+ * its conversations. The day's saved chats are the store's, and the days
+ * are the notebook's own layout walked backwards. Streaks have their own
+ * report, shared by the day check-ins and the history page.
  */
 
 import * as path from 'node:path'
@@ -12,7 +12,7 @@ import { exists } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/today.ts'
+import { formatDateLabel } from '../home/today.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
@@ -67,8 +67,8 @@ export interface DayView {
   day: DayRef & { dateLabel: string }
   /** Today and the six days before it, newest first */
   days: DayRef[]
-  /** The home page's Today section; null on a past day, or when the clock is unavailable */
-  section: TodaySection | null
+  /** Legacy homepage field; streak check-ins now use the dedicated streak report. */
+  section: null
   /** Chats already filed under the day */
   chats: SavedChatSummary[]
   /** The day's plan, promises, meetings, messages, and what got done */
@@ -88,15 +88,13 @@ async function dayRef(day: PlainDate, offset: number, options: DayRoutesOptions)
 export async function buildDayView(options: DayRoutesOptions, ymd?: string): Promise<DayView> {
   const today = (options.today ?? (() => fetchNowSync().plainDateTime.plainDate))()
   const day = ymd ? new PlainDate(ymd) : today
-  const isToday = day.ymd === today.ymd
   const days = await Promise.all(
     Array.from({ length: DAYS_BACK + 1 }, (_, offset) => dayRef(today.addDays(-offset), offset, options)),
   )
   const ref = days.find((d) => d.ymd === day.ymd) ?? (await dayRef(day, DAYS_BACK + 1, options))
 
   const dayDirPath = path.join(options.timeDir, dayDir(day))
-  const [section, saved, record] = await Promise.all([
-    isToday ? buildTodaySection(options.markdownBaseDir) : null,
+  const [saved, record] = await Promise.all([
     listDayChats(path.join(options.timeDir, dayAIChatsDir(day))),
     buildDayRecord({
       day,
@@ -114,7 +112,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     parent: c.parent,
   }))
 
-  return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section, chats, record }
+  return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section: null, chats, record }
 }
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
