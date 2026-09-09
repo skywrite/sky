@@ -209,7 +209,8 @@ Below the day's heading, a muted task count uses the existing Done today
 record for completed work and adds open Most important, Commitments, and
 To-dos to the total. Reminders and streaks stay separate. The count follows
 the saved view after completion, deletion, or Undo, and is hidden when the
-day has no tasks.
+day has no tasks. An ended day keeps a neutral padlock + **Ended** badge here,
+including when there are no tasks. See the [day's read-only rules](../../day/docs/README.md#the-days-items).
 
 The header lives inside the day column and shares its 1000px maximum width
 and side padding. The date and progress align with the content's left edge;
@@ -232,8 +233,8 @@ Most important is the day's one filled card, including its all-done state.
 The plan starts directly below the header, with 24px of top padding on
 desktop and 12px on narrow screens, without an extra introductory heading.
 The other plan sections and the day record sit directly on the page, with
-less padding and subtle dividers between neighboring sections. "The day so
-far" introduces the record after the plan.
+less padding and subtle dividers between neighboring sections. The plan and
+record flow directly into one another without an introductory heading.
 
 Videos and Chats remain in the main column when Details is closed; both
 chat lists follow the [day's hierarchy rules](../../day/docs/README.md#videos-and-chats-in-the-days-record).
