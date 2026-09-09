@@ -70,7 +70,7 @@ test(
             choice || composing
               ? 'Jane has two pilot scopes ready. The smaller scope validates the first-run flow sooner; the wider scope includes reporting.'
               : 'Jane asked which part of the update needs clarification.',
-          reasoning: choice ? 'The scope choice changes the next step.' : 'The reply follows the owner’s direction.',
+          explanation: choice ? 'The scope choice changes the next step.' : 'The reply follows the owner’s direction.',
           questions: choice ? ['Which pilot scope should we use?'] : [],
           recommendation: choice ? 'Start with the smaller pilot to validate the flow before expanding.' : '',
           replyOptions: choice

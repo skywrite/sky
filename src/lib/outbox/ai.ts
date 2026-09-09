@@ -12,7 +12,7 @@ const Judgment = z.object({
   action: z.enum(['ignore', 'draft', 'decision']),
   title: z.string().max(160),
   situation: z.string().max(1600),
-  reasoning: z.string().max(1600),
+  explanation: z.string().max(1600).describe('Brief user-facing explanation of the proposed outcome.'),
   questions: z.array(z.string().max(500)).max(6),
   meaning: z.string().max(5000).describe('Grounded intended reply, or empty when a decision is needed first.'),
 })
@@ -32,7 +32,7 @@ export function createProposer(ownerContext: string): Propose {
       prompt: JSON.stringify({ ownerContext, preferences, conversation, examples }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    const { action, title, situation, reasoning, questions, meaning } = judgment.object
+    const { action, title, situation, explanation: reasoning, questions, meaning } = judgment.object
     if (action === 'ignore' || !meaning.trim()) return { action, title, situation, reasoning, questions, draft: '' }
     const voiced = await generateObject({
       ...outboxModel(),

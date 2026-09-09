@@ -3,9 +3,7 @@ import process from 'node:process'
 import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import { commandOutcome } from '#lib/automations/commandOutcome.ts'
-import { invokeAutomation } from '#lib/automations/invoke.ts'
-import runDueAutomations from '#lib/automations/runDue.ts'
+import { automationPassInput, createAutomationProcess } from '#lib/automations/process.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
@@ -199,6 +197,7 @@ export default async function run() {
   let heartbeatRunning = false
   let heartbeatTick = 0
   let heartbeatSleeping = false
+  const automationProcess = createAutomationProcess(config, env.toObject())
 
   function isQuietHours(): boolean {
     const hour = new Date().getHours()
@@ -370,74 +369,76 @@ export default async function run() {
         }
       }
 
-      // Declared automations: charters under the notebook's automations/ say
-      // what runs and when. A missing directory is a no-op, so this stays
-      // silent until the first charter exists.
-      //
-      // The clock is safe against the post-wake flip where Intl transiently
-      // reports UTC: TZ is pinned at boot and refreshed above, so the wall
-      // clock and the zone name resolve from the same pinned value. Wake is
-      // exactly when a missed firing catches up, which is why it matters here.
-      const pass = await runDueAutomations({
-        dir: config.DIR_AUTOMATIONS,
-        statePath: config.FILE_AUTOMATIONS_STATE,
-        systemNow: new ZonedDateTime(),
-        invoke: async ({ run, args, context }) => {
-          const outcome = await invokeAutomation(commandService, run, args, context.now)
-          return commandOutcome(outcome)
-        },
-      })
+      // Only follow capture holds the service. The scheduled pass owns its
+      // command calls and ledger in another process; a later tick, including
+      // after a restart, reads its result before launching the next pass.
+      const automationJob = await automationProcess.status()
+      const pass = automationJob?.status === 'complete' ? automationJob.result : undefined
+      tick.set({ automationsRunning: automationJob?.status === 'running' })
+      if (automationJob?.status === 'failed') {
+        logAutomations.error('Scheduled pass stopped: {message}', {
+          event: 'automation-pass-failed',
+          message: automationJob.error ?? 'worker stopped without a result',
+        })
+      }
+      if (automationJob?.status !== 'running') {
+        const started = await automationProcess.start(automationPassInput(new ZonedDateTime()))
+        if (started.status === 'failed') throw new Error(started.error ?? 'Scheduled worker could not start.')
+        tick.set({ automationsRunning: true })
+      }
 
-      tick.set({ automationsConsidered: pass.considered, automationsRan: pass.ran.length })
+      if (pass) {
+        tick.set({ automationsConsidered: pass.considered, automationsRan: pass.ran.length })
 
-      for (const ran of pass.ran) {
-        if (ran.outcome === 'failed') {
-          logAutomations.error('{name} failed: {message}', {
-            event: 'automation-failed',
-            name: ran.name,
-            run: ran.run,
-            lateMinutes: ran.lateMinutes,
-            message: ran.message ?? 'no detail given',
-          })
-        } else {
-          logAutomations.info('ran {name} → {outcome}', {
-            event: 'automation-ran',
-            name: ran.name,
-            run: ran.run,
-            outcome: ran.outcome,
-            lateMinutes: ran.lateMinutes,
-          })
+        for (const ran of pass.ran) {
+          if (ran.outcome === 'failed') {
+            logAutomations.error('{name} failed: {message}', {
+              event: 'automation-failed',
+              name: ran.name,
+              run: ran.run,
+              lateMinutes: ran.lateMinutes,
+              message: ran.message ?? 'no detail given',
+            })
+          } else {
+            logAutomations.info('ran {name} → {outcome}', {
+              event: 'automation-ran',
+              name: ran.name,
+              run: ran.run,
+              outcome: ran.outcome,
+              lateMinutes: ran.lateMinutes,
+            })
+          }
         }
-      }
 
-      for (const problem of pass.charterErrors) {
-        reportAutomationProblemOnce(`charter:${problem.path}:${problem.error}`, () =>
-          logAutomations.error('unreadable charter {path}: {error}', {
-            event: 'automation-charter-error',
-            path: problem.path,
-            error: problem.error,
-          }),
-        )
-      }
+        for (const problem of pass.charterErrors) {
+          reportAutomationProblemOnce(`charter:${problem.path}:${problem.error}`, () =>
+            logAutomations.error('unreadable charter {path}: {error}', {
+              event: 'automation-charter-error',
+              path: problem.path,
+              error: problem.error,
+            }),
+          )
+        }
 
-      for (const warning of pass.unknownKeys) {
-        reportAutomationProblemOnce(`keys:${warning.name}:${warning.keys.join(',')}`, () =>
-          logAutomations.warn('{name} carries frontmatter nothing reads: {keys}', {
-            event: 'automation-unknown-keys',
-            name: warning.name,
-            keys: warning.keys,
-          }),
-        )
-      }
+        for (const warning of pass.unknownKeys) {
+          reportAutomationProblemOnce(`keys:${warning.name}:${warning.keys.join(',')}`, () =>
+            logAutomations.warn('{name} carries frontmatter nothing reads: {keys}', {
+              event: 'automation-unknown-keys',
+              name: warning.name,
+              keys: warning.keys,
+            }),
+          )
+        }
 
-      if (pass.stateError) {
-        const stateError = pass.stateError
-        reportAutomationProblemOnce(`state:${stateError}`, () =>
-          logAutomations.error('run-state unusable, every charter reads as never run: {error}', {
-            event: 'automation-state-error',
-            error: stateError,
-          }),
-        )
+        if (pass.stateError) {
+          const stateError = pass.stateError
+          reportAutomationProblemOnce(`state:${stateError}`, () =>
+            logAutomations.error('run-state unusable, every charter reads as never run: {error}', {
+              event: 'automation-state-error',
+              error: stateError,
+            }),
+          )
+        }
       }
     } catch (err) {
       tick.fail(err)

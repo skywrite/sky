@@ -168,22 +168,55 @@ export class OutboxReview {
     instruction: string,
     reviewedChanges = false,
   ): Promise<OutboxRecord> {
+    const saved = await this.prepareCompose(id, revision, draft, instruction)
+    return this.composePrepared(saved.id, saved.revision, instruction, reviewedChanges)
+  }
+
+  async prepareCompose(id: string, revision: string, draft: string, instruction: string): Promise<OutboxRecord> {
     const item = await this.checked(id, revision)
     if (item.status !== 'needs_review' && !(item.status === 'ready' && item.stale))
       throw new OutboxError('This draft has already left review.', 409)
-    if (!this.composeReply) throw new OutboxError('Reply writing is unavailable.', 503)
     if (draft.length > 20_000 || !instruction.trim() || instruction.length > 4000)
       throw new OutboxError('Give Sky a short direction for this reply (under 4,000 characters).')
-    const latest = await this.conversation(item)
-    if (latest.version !== item.conversation.version) {
-      await this.store.put({ ...item, conversation: latest, stale: true, updated: this.now() }, revision)
+    // Saving the owner's work must not depend on source checks or a successful model call.
+    return this.store.put(
+      {
+        ...item,
+        draft,
+        replyDirections: [
+          ...(item.replyDirections ?? []),
+          { at: this.now(), text: instruction.trim(), sourceVersion: item.conversation.version },
+        ].slice(-12),
+        edited: true,
+        updated: this.now(),
+      },
+      revision,
+    )
+  }
+
+  async composePrepared(
+    id: string,
+    revision: string,
+    instruction: string,
+    reviewedChanges = false,
+  ): Promise<OutboxRecord> {
+    const saved = await this.checked(id, revision)
+    if (saved.status !== 'needs_review' && !(saved.status === 'ready' && saved.stale))
+      throw new OutboxError('This draft has already left review.', 409)
+    if (!instruction.trim() || saved.replyDirections?.at(-1)?.text !== instruction.trim())
+      throw new OutboxError('The saved revision direction changed. Reload before asking Sky to draft.', 409)
+    if (!this.composeReply) throw new OutboxError('Reply writing is unavailable.', 503)
+    const latest = await this.conversation(saved)
+    if (latest.version !== saved.conversation.version) {
+      await this.store.put({ ...saved, conversation: latest, stale: true, updated: this.now() }, saved.revision)
       throw new OutboxError('New messages arrived. Review the updated context before asking Sky to draft.', 409)
     }
-    if (item.stale && !reviewedChanges)
+    if (saved.stale && !reviewedChanges)
       throw new OutboxError('Review the changed context before asking Sky to draft.', 409)
     const proposal = await this.composeReply({
-      item,
-      draft,
+      // The current direction is supplied separately from the earlier conversation with the owner.
+      item: { ...saved, replyDirections: saved.replyDirections?.slice(0, -1) },
+      draft: saved.draft,
       instruction: instruction.trim(),
       preferences: (await this.store.preferences()).text,
       examples: (await this.store.list())
@@ -195,24 +228,22 @@ export class OutboxReview {
       throw new OutboxError('Sky could not prepare a reply. Give it a more specific direction.')
     if (proposal.action === 'draft' && !proposal.draft.trim())
       throw new OutboxError('Sky returned an empty reply. Try again.')
-    if ((await this.conversation(item)).version !== latest.version)
+    const current = await this.conversation(saved)
+    if (current.version !== latest.version) {
+      await this.store.put({ ...saved, conversation: current, stale: true, updated: this.now() }, saved.revision)
       throw new OutboxError('New messages arrived while Sky was writing. Review them and try again.', 409)
+    }
     return this.store.put(
       {
-        ...item,
-        draft: proposal.action === 'draft' ? proposal.draft : draft,
-        originalDraft: item.originalDraft || proposal.draft,
+        ...saved,
+        draft: proposal.action === 'draft' ? proposal.draft : saved.draft,
+        originalDraft: saved.originalDraft || proposal.draft,
         questions: proposal.questions,
         recommendation: proposal.recommendation,
         replyOptions: proposal.replyOptions,
-        replyDirections: [
-          ...(item.replyDirections ?? []),
-          { at: this.now(), text: instruction.trim(), sourceVersion: item.conversation.version },
-        ].slice(-12),
-        edited: true,
         updated: this.now(),
       },
-      revision,
+      saved.revision,
     )
   }
 

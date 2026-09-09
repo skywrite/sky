@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Writing voice
@@ -55,6 +55,12 @@ by default. The exact answer is saved before extracting a lesson, so a failed
 model call can resume without asking again. Drafting uses only answered, learned
 examples. Scope and the owner's explanation travel with each lesson; a one-off
 content correction cannot silently become a universal writing rule.
+
+Model-facing answer choices use a homogeneous array constrained to exactly two
+strings. A tuple emits positional JSON Schema items that Anthropic's structured
+output API rejects before generation. Keep the array shape compatible at the
+provider boundary and retain the exact count in local validation; saved examples
+remain ordinary two-element arrays.
 
 ## Compaction and concurrency
 

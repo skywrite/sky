@@ -8,7 +8,7 @@ export const QuestionSchema = z.object({
   before: z.string().max(500),
   after: z.string().max(500),
   question: Text.max(600),
-  options: z.tuple([Text.max(300), Text.max(300)]),
+  options: z.array(Text.max(300)).length(2),
 })
 
 export const LessonSchema = z.object({

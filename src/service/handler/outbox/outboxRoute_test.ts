@@ -52,8 +52,65 @@ function harness(overrides: Partial<OutboxRoutesOptions> = {}) {
     },
     ...overrides,
   }
-  return { app: createOutboxRoutes(host), actions }
+  return { app: createOutboxRoutes(host), actions, item }
 }
+
+test('Outbox revision startup holds reload until the worker is registered and always releases afterward', async () => {
+  for (const fails of [false, true]) {
+    const { item } = harness()
+    const codes: number[] = []
+    const gate = createReloadGate({
+      root: '/nowhere',
+      watch: false,
+      exit: (code) => codes.push(code),
+      log: { info: () => {}, warn: () => {} },
+      debounceMs: 1,
+      graceMs: 1,
+    })
+    let entered!: () => void
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let finish!: () => void
+    const handoff = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const { app } = harness({
+      compose: async () => {
+        entered()
+        await handoff
+        if (fails) throw new Error('Could not save the revision inputs.')
+        return { ...item, composition: { id: 'synthetic-job', status: 'running', revision: item.revision } }
+      },
+    })
+    const response = app.request(`/item/${item.id}/compose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: item.revision, draft: item.draft, instruction: 'Make it clearer.' }),
+    })
+    try {
+      await entering
+      gate.request('source changed')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const during = { exits: [...codes], held: holding().includes('outbox revision startup') }
+      finish()
+      const accepted = await response
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert({
+        given: fails
+          ? 'revision startup fails during a pending reload'
+          : 'a revision worker is being registered during a pending reload',
+        should: 'protect the short handoff and release the restart gate afterward',
+        actual: [during, accepted.status, holding().includes('outbox revision startup'), codes],
+        expected: [{ exits: [], held: true }, fails ? 400 : 202, false, [RELOAD_EXIT_CODE]],
+      })
+    } finally {
+      finish()
+      await response
+      gate.close()
+    }
+  }
+})
 
 test('Outbox check startup defers automatic reload until the worker handoff succeeds or fails', async () => {
   for (const fails of [false, true]) {

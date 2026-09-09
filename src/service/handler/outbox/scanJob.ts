@@ -1,4 +1,4 @@
-import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
+import { describeOutboxScan, outboxScanSeverity } from '#lib/outbox/describeScan.ts'
 import type { ScanProgress } from '#lib/outbox/types.ts'
 import type { OutboxCheck, OutboxScanResult } from './mod.ts'
 
@@ -37,7 +37,11 @@ export function createScanJob(execution: ScanExecution, progress: () => Promise<
           : worker?.result && (!current || previous)
             ? worker.result
             : current
-              ? { outcome: current.outcome, message: current.error ?? describeOutboxScan(current) }
+              ? {
+                  outcome: current.outcome,
+                  message: current.error ?? describeOutboxScan(current),
+                  severity: outboxScanSeverity(current),
+                }
               : (worker?.result ?? null),
       }
     },

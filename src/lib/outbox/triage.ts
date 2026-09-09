@@ -16,14 +16,20 @@ const Judgment = z.object({
   action: z.enum(['ignore', 'draft', 'decision']),
   title: z.string().min(1).max(160),
   situation: z.string().max(1600),
-  reasoning: z.string().min(1).max(1600),
+  explanation: z
+    .string()
+    .min(1)
+    .max(1600)
+    .describe('A brief user-facing explanation of the proposed reply or remaining question.'),
   questions: z.array(z.string().max(500)).max(6),
   recommendation: z.string().max(1200),
   replyOptions: z.array(ReplyOptionSchema).max(4),
   draft: z.string().max(8000),
 })
 
-function checked(proposal: DraftProposal): DraftProposal {
+function checked(result: z.infer<typeof Judgment> & Pick<DraftProposal, 'responseEvidence'>): DraftProposal {
+  const { explanation, ...fields } = result
+  const proposal: DraftProposal = { ...fields, reasoning: explanation }
   if (proposal.action === 'draft' && !proposal.draft.trim())
     throw new Error('Sky returned an empty proposed reply. Try again.')
   if (proposal.action === 'ignore')

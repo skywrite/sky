@@ -1,6 +1,11 @@
+import { createAnthropic } from '@ai-sdk/anthropic'
+import { generateObject, NoObjectGeneratedError } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
+import { z } from 'zod'
 import type { VoiceDraftInput, VoiceWriter } from '#lib/writingVoice/types.ts'
+import { PROFILES, resolveProfile } from '#shared/ai/models.ts'
 import { assert, test } from '#test'
+import { OUTBOX_MODEL_PROFILE } from './model.ts'
 import { createReplyComposer, createTriage } from './triage.ts'
 import type { Conversation, DraftProposal, OutboxRecord } from './types.ts'
 
@@ -51,9 +56,10 @@ const item: OutboxRecord = {
   placementError: null,
 }
 function modelFor(object: DraftProposal) {
+  const { reasoning, ...proposal } = object
   return new MockLanguageModelV4({
     doGenerate: {
-      content: [{ type: 'text', text: JSON.stringify(object) }],
+      content: [{ type: 'text', text: JSON.stringify({ ...proposal, explanation: reasoning }) }],
       finishReason: { unified: 'stop', raw: 'stop' },
       usage: {
         inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
@@ -63,6 +69,104 @@ function modelFor(object: DraftProposal) {
     },
   })
 }
+
+test('Outbox requests a user-facing explanation and retains its established saved reasoning field', async () => {
+  const requests: {
+    model: string
+    max_tokens: number
+    thinking: { type: string }
+    output_config: { effort: string; format: { schema: { properties: Record<string, unknown> } } }
+  }[] = []
+  const { reasoning, ...proposal } = reply
+  const provider = createAnthropic({
+    apiKey: 'test-api-key',
+    fetch: (async (_input, init) => {
+      const request = JSON.parse(String(init?.body))
+      requests.push(request)
+      const refused = Object.hasOwn(request.output_config.format.schema.properties, 'reasoning')
+      return Response.json({
+        id: 'msg_synthetic',
+        type: 'message',
+        role: 'assistant',
+        model: request.model,
+        content: refused ? [] : [{ type: 'text', text: JSON.stringify({ ...proposal, explanation: reasoning }) }],
+        stop_reason: refused ? 'refusal' : 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: refused ? 0 : 20 },
+      })
+    }) as typeof fetch,
+  })
+  const profile = PROFILES[OUTBOX_MODEL_PROFILE]
+  const resolved = { ...resolveProfile(profile), model: provider(profile.model), maxRetries: 0 }
+  let legacyFailure: unknown
+  try {
+    await generateObject({
+      ...resolved,
+      schema: z.object({ reasoning: z.string(), draft: z.string() }),
+      prompt: 'Revise the supplied reply and explain the result.',
+    })
+  } catch (error) {
+    legacyFailure = error
+  }
+  assert({
+    given: 'the provider declines the former structured reasoning request without response text',
+    should: 'reproduce the SDK failure from an empty refusal response',
+    actual: NoObjectGeneratedError.isInstance(legacyFailure)
+      ? [legacyFailure.message, legacyFailure.finishReason]
+      : legacyFailure,
+    expected: ['No object generated: the model did not return a response.', 'content-filter'],
+  })
+
+  const composed = await createReplyComposer(
+    '',
+    () => resolved,
+  )({
+    item,
+    draft: reply.draft,
+    instruction: 'Make it shorter.',
+    preferences: '',
+    examples: [],
+  })
+  const proposed = await createTriage(
+    '',
+    () => resolved,
+  )({
+    conversation,
+    today: TODAY,
+    now: TODAY,
+    preferences: '',
+    examples: [],
+  })
+  assert({
+    given: 'the composer and scanner request an explanation for the owner',
+    should: 'receive the reply and preserve the stored reasoning contract without leaking the wire field',
+    actual: [composed, proposed].map((result) => [
+      result.draft,
+      result.reasoning,
+      Object.hasOwn(result, 'explanation'),
+    ]),
+    expected: [
+      [reply.draft, reply.reasoning, false],
+      [reply.draft, reply.reasoning, false],
+    ],
+  })
+  assert({
+    given: 'the same configured model handles the former request and both corrected calls',
+    should: 'preserve its model, effort, thinking mode and output allowance',
+    actual: requests.map((request) => [
+      request.model,
+      request.output_config.effort,
+      request.thinking.type,
+      request.max_tokens,
+      Object.hasOwn(request.output_config.format.schema.properties, 'explanation'),
+    ]),
+    expected: [
+      [profile.model, 'high', 'adaptive', 128000, false],
+      [profile.model, 'high', 'adaptive', 128000, true],
+      [profile.model, 'high', 'adaptive', 128000, true],
+    ],
+  })
+})
 function sentTo(model: MockLanguageModelV4) {
   const user = model.doGenerateCalls[0].prompt.find((message) => message.role === 'user')!
   return JSON.parse(

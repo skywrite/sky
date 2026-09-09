@@ -17,11 +17,12 @@ import { executeAutomationCommands } from './execute.ts'
   problem than a slow pass, and the tick that drives this already refuses to
   start a second pass while one is in flight.
 
-  Which is also why a run cannot be allowed to hang: the tick's own guard means
-  one wedged command stops every automation for as long as the service lives. A
-  run that overruns is abandoned and recorded as failed. Abandoned rather than
-  cancelled, because a command in flight cannot be called back — it may still
-  finish later, and its result is simply ignored.
+  In-process callers abandon a run that overruns and record it as failed: one
+  wedged command otherwise holds their tick for as long as the service lives.
+  Abandoned rather than cancelled, because a command in flight cannot be called
+  back — it may still finish later, and its result is simply ignored. Detached
+  passes opt out of this timeout: exiting their worker while abandoned work is
+  still running would kill that work, defeating its independent lifetime.
 */
 
 /** Long enough for a slow sync, short enough that a wedge is not permanent */
@@ -99,8 +100,8 @@ export type RunDueOptions = {
   /** The instant this pass runs at */
   systemNow: ZonedDateTime
   invoke: Invoke
-  /** How long each command may take before it is abandoned */
-  timeoutMs?: number
+  /** How long each command may take before it is abandoned; null lets a detached worker finish. */
+  timeoutMs?: number | null
 }
 
 export default async function runDueAutomations(options: RunDueOptions): Promise<PassSummary> {
@@ -153,7 +154,9 @@ export default async function runDueAutomations(options: RunDueOptions): Promise
     let result: InvokeResult
     try {
       result = await executeAutomationCommands(automation.commands, async (command) => {
-        const settled = await withTimeout(invoke({ name, ...command, context }), timeoutMs)
+        const invocation = invoke({ name, ...command, context })
+        if (timeoutMs === null) return invocation
+        const settled = await withTimeout(invocation, timeoutMs)
         return 'timedOut' in settled
           ? { outcome: 'failed', message: `abandoned after ${Math.round(timeoutMs / 60_000)}m without finishing` }
           : settled

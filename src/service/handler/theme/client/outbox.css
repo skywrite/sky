@@ -116,15 +116,17 @@
   margin-left: 5px;
   font-size: 15px;
 }
+.sky-outbox-list-item {
+  border-bottom: 1px solid var(--sky-border-soft);
+}
 .sky-outbox-row {
   display: flex;
   gap: 18px;
   width: 100%;
   border: 0;
-  border-bottom: 1px solid var(--sky-border-soft);
   background: none;
   text-align: left;
-  padding: 28px 8px;
+  padding: 28px 8px 12px;
   font: inherit;
   color: var(--sky-text);
   cursor: pointer;
@@ -135,6 +137,19 @@
 .sky-outbox-row:focus-visible {
   outline: 2px solid var(--outbox-accent);
   outline-offset: -2px;
+}
+.sky-outbox-row-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: 70px;
+  padding: 0 8px 24px 0;
+}
+.sky-outbox-row-footer .mantine-Button-root {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .sky-outbox-avatar {
   display: grid;
@@ -399,7 +414,11 @@
   }
   .sky-outbox-row {
     gap: 12px;
-    padding: 24px 0;
+    padding: 24px 0 12px;
+  }
+  .sky-outbox-row-footer {
+    margin-left: 44px;
+    padding-right: 0;
   }
   .sky-outbox-avatar {
     width: 32px;

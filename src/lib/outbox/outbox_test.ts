@@ -1036,7 +1036,8 @@ test('Outbox preserves a newer human edit when reply composition finishes later'
       () => NOW,
       undefined,
       async () => {
-        await f.store.put({ ...item, draft: 'My newer edit.', edited: true }, item.revision)
+        const current = (await f.store.get(item.id))!
+        await f.store.put({ ...current, draft: 'My newer edit.', edited: true }, current.revision)
         return proposal
       },
     )

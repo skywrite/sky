@@ -16,7 +16,12 @@ export type OutboxReport = {
   modelLabel?: string
 }
 
-export type OutboxScanResult = { outcome: ScanReport['outcome']; message?: string; running?: boolean }
+export type OutboxScanResult = {
+  outcome: ScanReport['outcome']
+  message?: string
+  running?: boolean
+  severity?: 'info' | 'error'
+}
 
 export type OutboxCheck = {
   running: boolean
@@ -90,13 +95,23 @@ export function createOutboxRoutes(host: OutboxRoutesOptions): Hono {
   })
   app.post('/item/:id/compose', async (c) => {
     if (!host.compose) return c.json({ message: 'Reply writing is unavailable.' }, 503)
-    const data = Draft.extend({
-      instruction: z.string().trim().min(1).max(4000),
-      reviewedChanges: z.boolean().default(false),
-    }).parse(await c.req.json())
-    return c.json(
-      await host.compose(c.req.param('id'), data.revision, data.draft, data.instruction, data.reviewedChanges),
-    )
+    const release = hold('outbox revision startup')
+    try {
+      const data = Draft.extend({
+        instruction: z.string().trim().min(1).max(4000),
+        reviewedChanges: z.boolean().default(false),
+      }).parse(await c.req.json())
+      const item = await host.compose(
+        c.req.param('id'),
+        data.revision,
+        data.draft,
+        data.instruction,
+        data.reviewedChanges,
+      )
+      return c.json(item, item.composition?.status === 'running' ? 202 : 200)
+    } finally {
+      release()
+    }
   })
   app.post('/item/:id/followups', async (c) => {
     if (!host.retryFollowups) return c.json({ message: 'Follow-up drafting is unavailable.' }, 503)

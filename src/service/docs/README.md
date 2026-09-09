@@ -41,6 +41,24 @@ is "now".
 
 ## Work that survives restarts
 
+Scheduled automation passes run in a detached process through
+`lib/automations/process.ts`. The heartbeat starts or finds the notebook's
+existing worker, then releases its hold. A later tick reads the persisted
+pass result; after a restart it finds the same worker. The worker owns the
+due checks, commands and final ledger save, so a server restart cannot lose
+the schedule stamp and replay a finished pass. Commands remain sequential,
+and this worker waits for them to finish without the in-process scheduler's
+abandonment timeout. A worker that exits unexpectedly reports failure;
+liveness alone does not diagnose a hung command.
+
+Manual stamped runs and the scheduled pass merge their new ledger entries
+under a process lock. An older pass finishing later cannot erase another
+charter's history or move a newer run's schedule backward.
+
+The process lifecycle and reconnection contract live in
+[background jobs](../../lib/jobs/docs/README.md). Chat turns and imports
+still use service activity holds.
+
 Manual [Outbox checks](../../lib/outbox/docs/2026-09-08-checks-survive-restarts.md)
 also run in a detached worker, with a short activity hold protecting the HTTP
 startup request until that worker is registered.

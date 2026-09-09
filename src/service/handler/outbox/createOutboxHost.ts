@@ -5,6 +5,7 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import type { CommandResult } from '#commands/mod.ts'
 import type * as Config from '#config'
 import { createCheckProcess } from '#lib/outbox/checkProcess.ts'
+import { createComposeProcess } from '#lib/outbox/composeProcess.ts'
 import { readOptional } from '#lib/outbox/files.ts'
 import { canQueueFollowups, createFollowupPlanner, reconcileFollowups } from '#lib/outbox/followups.ts'
 import { OUTBOX_MODEL_LABEL } from '#lib/outbox/model.ts'
@@ -23,7 +24,11 @@ import type { OutboxReport, OutboxRoutesOptions } from './mod.ts'
 import { checkNativeDraft } from './native.ts'
 import { createScanJob } from './scanJob.ts'
 
-export function createOutboxHost(config: typeof Config, env: Record<string, string>): OutboxRoutesOptions {
+export function createOutboxHost(
+  config: typeof Config,
+  env: Record<string, string>,
+  options: { composeInProcess?: boolean } = {},
+): OutboxRoutesOptions {
   const { store, sources } = createOutboxRuntime(config)
   const voice = createWritingVoice(config)
   const learningJobs = new Set<string>()
@@ -109,6 +114,9 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
   )
 
   const followupJobs = new Set<string>()
+  const composition = createComposeProcess(config, env, store, (id, revision, draft, instruction) =>
+    review.prepareCompose(id, revision, draft, instruction),
+  )
   const startFollowups = (item: OutboxRecord) => {
     if (
       followupJobs.has(item.id) ||
@@ -164,7 +172,7 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
       }
       const latest = await store.list()
       return {
-        items: latest.filter((item) => item.status !== 'dismissed'),
+        items: await Promise.all(latest.filter((item) => item.status !== 'dismissed').map(composition.decorate)),
         followupsRunning: latest.some(
           (item) => canQueueFollowups(item) && ['pending', 'preparing'].includes(item.followupStatus ?? ''),
         ),
@@ -210,9 +218,14 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
     },
     dismiss: (id, revision) => review.dismiss(id, revision),
     preferences: (text, revision) => store.savePreferences(text, revision),
-    get: (id) => store.get(id),
+    get: async (id) => {
+      const item = await store.get(id)
+      return item ? composition.decorate(item) : null
+    },
     compose: (id, revision, draft, instruction, reviewedChanges) =>
-      review.compose(id, revision, draft, instruction, reviewedChanges),
+      options.composeInProcess
+        ? review.composePrepared(id, revision, instruction, reviewedChanges)
+        : composition.start(id, revision, draft, instruction, reviewedChanges),
     reportSent: async (id, revision, evidence) => {
       const before = await store.get(id)
       const item = await review.reportSent(id, revision, evidence)

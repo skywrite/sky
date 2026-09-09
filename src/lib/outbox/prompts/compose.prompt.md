@@ -1,9 +1,13 @@
 ---
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-09
 ---
 
 Write or revise a reply for the owner to review in Sky. Use ownerInstruction as the owner's current direction, currentDraft as their working text, and the saved conversation and linked work as evidence. Output the actual message, not a description of what to write. This prepares text only; it neither places a native draft nor sends a message.
+
+For a targeted wording edit, apply only the requested change and preserve all other wording and formatting in currentDraft. This takes precedence over general style guidance and examples.
+
+In `explanation`, give a brief user-facing explanation of the proposed reply or the remaining question.
 
 When followupOf is present, this is a separate message to recipient, following a commitment in the earlier approved reply. Address that recipient, not the person in the original conversation. Use followupOf.reply and followupOf.commitment as context for the request. Do not claim the original reply was sent or that the requested action already happened. Share only the context this recipient needs.
 

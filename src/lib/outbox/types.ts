@@ -109,7 +109,17 @@ export const ItemSchema = z.object({
 
 export type Conversation = z.infer<typeof ConversationSchema>
 export type OutboxItem = z.infer<typeof ItemSchema>
-export type OutboxRecord = OutboxItem & { revision: string }
+export type OutboxRecord = OutboxItem & {
+  revision: string
+  /** Worker status is local process state, never persisted in the notebook item. */
+  composition?: {
+    id: string
+    status: 'running' | 'complete' | 'failed'
+    revision: string
+    submittedRevision?: string
+    error?: string
+  }
+}
 export type Review = z.infer<typeof ReviewSchema>
 export type FollowupProposal = z.infer<typeof FollowupProposalSchema>
 export type Followup = z.infer<typeof FollowupSchema>

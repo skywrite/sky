@@ -1,15 +1,25 @@
 import { ActionIcon, Button, Checkbox, Textarea, TextInput } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
+import { describeOutboxScan, outboxScanSeverity } from '#lib/outbox/describeScan.ts'
 import { dayRange, rangeLabel, ScanRangeSchema, type SavedScanRange } from '#lib/outbox/range.ts'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import type { OutboxReport, OutboxScanResult } from '../../outbox/mod.ts'
 import { WritingVoiceQuestions } from './writingVoice.tsx'
 import './outbox.css'
 
-type Edit = { text: string; revision: string; saved: string; direction?: string }
+type Edit = { text: string; revision: string; saved: string; direction?: string; compositionId?: string }
 // Going to another Sky page must not discard an unfinished edit.
 const edits = new Map<string, Edit>()
+
+function savedEdit(record: OutboxRecord): Edit {
+  return {
+    text: record.draft,
+    revision: record.revision,
+    saved: record.draft,
+    direction: record.composition?.status === 'complete' ? undefined : record.replyDirections?.at(-1)?.text,
+    compositionId: record.composition?.status === 'running' ? record.composition.id : undefined,
+  }
+}
 
 async function request<T>(url: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`/outbox/_api${url}`, {
@@ -54,7 +64,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const [report, setReport] = useState<OutboxReport | null>(null)
   const [error, setError] = useState('')
   const [connectionError, setConnectionError] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [actionBusy, setBusy] = useState(false)
   const [startingCheck, setStartingCheck] = useState(false)
   const [scanFeedback, setScanFeedback] = useState<OutboxScanResult | null>(null)
   const [searchEdit, setSearchEdit] = useState<SavedScanRange | null>(null)
@@ -65,8 +75,18 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [linkedItem, setLinkedItem] = useState<OutboxRecord | null>(null)
   const [edit, setEdit] = useState<Edit | null>(null)
-  const [composing, setComposing] = useState(false)
+  const [startingComposition, setComposing] = useState(false)
+  const [composeError, setComposeError] = useState('')
+  const compositionInFlight = useRef(false)
+  const submittedComposition = useRef<{
+    id: string
+    revision: string
+    draft: string
+    direction: string
+    typedDirection?: string
+  } | null>(null)
   const [approving, setApproving] = useState<string | null>(null)
+  const [dismissing, setDismissing] = useState<string | null>(null)
   const [manualReply, setManualReply] = useState(false)
   const [draftNotice, setDraftNotice] = useState('')
   const selectedRef = useRef(selected)
@@ -78,10 +98,19 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const scroll = useRef<HTMLDivElement>(null)
   const actionFeedback = useRef<HTMLDivElement>(null)
   const listPosition = useRef(0)
+  const composingItem = report?.items.find((record) => record.id === selected)
+  const composition = composingItem?.composition
+  const composing =
+    startingComposition || (composition?.status === 'running' && composition.revision === composingItem?.revision)
+  const busy = actionBusy || composing
   const checking = startingCheck || report?.check?.running === true
   const progress = report?.check?.progress
+  const scanResult = scanFeedback ?? report?.check?.result
   const scanFailed =
-    !checking && (scanFeedback?.outcome ?? report?.check?.result?.outcome ?? report?.lastScan?.outcome) === 'failed'
+    !checking &&
+    (scanResult
+      ? (scanResult.severity ?? (scanResult.outcome === 'failed' ? 'error' : 'info')) === 'error'
+      : report?.lastScan && outboxScanSeverity(report.lastScan) === 'error')
   const scanMessage = checking
     ? progress?.status === 'running'
       ? `Checking saved conversations… ${progress.completed} of ${progress.total} checked. ${progress.prepared} need your review.`
@@ -102,11 +131,13 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   )
   const polling =
     checking ||
+    composing ||
     Boolean(approving) ||
     report?.followupsRunning === true ||
     Boolean(
       report?.items.some(
         (item) =>
+          item.composition?.status === 'running' ||
           item.status === 'placing' ||
           (['pending', 'preparing'].includes(item.followupStatus ?? '') && item.status === 'ready'),
       ),
@@ -160,6 +191,37 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const item =
     report?.items.find((candidate) => candidate.id === selected) ??
     (linkedItem?.id === selected ? linkedItem : undefined)
+  useEffect(() => {
+    if (!item?.composition) return
+    const pending = submittedComposition.current
+    const completed = item.composition.status === 'complete'
+    setEdit((current) => {
+      const recoveredSubmission =
+        current &&
+        pending?.id === item.id &&
+        item.composition!.submittedRevision === pending.revision &&
+        current.revision === pending.revision &&
+        current.text === pending.draft &&
+        current.direction === pending.typedDirection &&
+        item.replyDirections?.at(-1)?.text === pending.direction
+      if (
+        !current ||
+        (!recoveredSubmission &&
+          current.compositionId !== item.composition!.id &&
+          current.revision !== item.composition!.revision) ||
+        (!recoveredSubmission && current.text !== current.saved)
+      )
+        return current
+      if (item.composition!.status === 'running' && !recoveredSubmission) return current
+      // A failed worker can update source metadata, but a newer editor's words
+      // must still show as a conflict with this editor's saved submission.
+      if (!completed && item.draft !== current.text.trim()) return current
+      const next = savedEdit(item)
+      if (completed) edits.delete(item.id)
+      else edits.set(item.id, next)
+      return next
+    })
+  }, [item])
   const reviewCount = report?.items.filter(needsReview).length ?? 0
   const readyCount = (report?.items.length ?? 0) - reviewCount
   const items = report?.items.filter((candidate) => (tab === 'review') === needsReview(candidate)) ?? []
@@ -168,11 +230,12 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
     setSelected(record.id)
     setLinkedItem(record)
     if (window.matchMedia('(max-width: 1000px)').matches) setDetails(false)
-    setEdit(edits.get(record.id) ?? { text: record.draft, revision: record.revision, saved: record.draft })
+    setEdit(edits.get(record.id) ?? savedEdit(record))
     setReviewedChanges(false)
     setSentReport(null)
     setManualReply(false)
     setDraftNotice('')
+    setComposeError('')
     setError('')
   }
   const openRelated = async (id: string) => {
@@ -285,48 +348,104 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
         setApproving(null)
       }
     })
-  const dismiss = () =>
+  const dismissRecord = (record: OutboxRecord, revision = record.revision) =>
     act(async () => {
-      if (!item) return
-      await request(`/item/${item.id}/dismiss`, 'POST', {
-        revision: item.status === 'ready' && !item.stale ? item.revision : (edit?.revision ?? item.revision),
-      })
-      edits.delete(item.id)
-      setSelected(null)
-      setEdit(null)
-    })
-  const compose = (instruction?: string) =>
-    act(async () => {
-      if (!item || !edit) return
-      const id = item.id
-      setComposing(true)
-      setDraftNotice('')
+      setDismissing(record.id)
       try {
-        const result = await request<OutboxRecord>(`/item/${id}/compose`, 'POST', {
-          revision: edit.revision,
-          draft: edit.text,
-          instruction:
-            instruction ??
-            (edit.direction?.trim() ||
-              'Prepare a concise, useful reply from the saved context. Ask only for a missing decision or fact that prevents completing it.'),
-          reviewedChanges,
-        })
-        edits.delete(id)
-        if (selectedRef.current === id) {
-          setEdit({ text: result.draft, revision: result.revision, saved: result.draft })
-          setDraftNotice(
-            result.questions.length
-              ? 'Sky needs another detail to finish the reply.'
-              : 'Draft updated. Review it when you’re ready.',
-          )
+        await request(`/item/${record.id}/dismiss`, 'POST', { revision })
+        edits.delete(record.id)
+        setReport((current) =>
+          current ? { ...current, items: current.items.filter((entry) => entry.id !== record.id) } : current,
+        )
+        if (selectedRef.current === record.id) {
+          setSelected(null)
+          setEdit(null)
         }
       } finally {
-        setComposing(false)
+        setDismissing(null)
       }
     })
+  const dismiss = () =>
+    item &&
+    dismissRecord(item, item.status === 'ready' && !item.stale ? item.revision : (edit?.revision ?? item.revision))
+  const compose = async (instruction?: string) => {
+    if (busy || compositionInFlight.current || !item || !edit) return
+    compositionInFlight.current = true
+    const id = item.id
+    const direction =
+      instruction ??
+      (edit.direction?.trim() ||
+        'Prepare a concise, useful reply from the saved context. Ask only for a missing decision or fact that prevents completing it.')
+    submittedComposition.current = {
+      id,
+      revision: edit.revision,
+      draft: edit.text,
+      direction,
+      typedDirection: edit.direction,
+    }
+    setBusy(true)
+    setComposing(true)
+    setComposeError('')
+    setDraftNotice('')
+    setError('')
+    try {
+      const result = await request<OutboxRecord>(`/item/${id}/compose`, 'POST', {
+        revision: edit.revision,
+        draft: edit.text,
+        instruction: direction,
+        reviewedChanges,
+      })
+      submittedComposition.current = null
+      const running = result.composition?.status === 'running'
+      const unfinished = running || result.composition?.status === 'failed'
+      const next = { ...savedEdit(result), direction: unfinished ? direction : undefined }
+      if (unfinished) edits.set(id, next)
+      else edits.delete(id)
+      if (selectedRef.current === id) {
+        setEdit(next)
+        setLinkedItem(result)
+        setDraftNotice(
+          unfinished
+            ? ''
+            : result.questions.length
+              ? 'Your draft and instructions are saved. Sky needs another detail to finish the reply.'
+              : 'Revised draft saved.',
+        )
+      }
+    } catch (problem) {
+      if (problem instanceof TypeError) setConnectionError(true)
+      else {
+        submittedComposition.current = null
+        if (selectedRef.current === id)
+          setComposeError(problem instanceof Error ? problem.message : 'Sky could not revise this draft.')
+      }
+      try {
+        const latest = await request<OutboxRecord>(`/item/${id}`)
+        // The server may have saved the input before generation failed, or the
+        // acknowledgement may have been lost after registering the worker.
+        if (latest.draft === edit.text && latest.replyDirections?.at(-1)?.text === direction) {
+          const next = { ...savedEdit(latest), direction }
+          edits.set(id, next)
+          if (selectedRef.current === id) {
+            setEdit(next)
+            setLinkedItem(latest)
+            if (latest.composition?.status === 'running') setComposeError('')
+          }
+        }
+      } catch {
+        setConnectionError(true)
+      }
+    } finally {
+      await refresh().catch(() => setConnectionError(true))
+      setComposing(false)
+      setBusy(false)
+      compositionInFlight.current = false
+    }
+  }
   const conflicted = Boolean(
     item &&
     edit &&
+    !composing &&
     item.revision !== edit.revision &&
     approving !== item.id &&
     !(item.status === 'ready' && !item.stale && item.draft === edit.text),
@@ -335,6 +454,17 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const editable = item && (item.status === 'needs_review' || (item.stale && item.status === 'ready'))
   const nativeApp = item?.conversation.medium === 'Email' ? 'Gmail' : 'Slack'
   const followupsPending = item && ['pending', 'preparing'].includes(item.followupStatus ?? '')
+  const revisionError = composing ? '' : composeError || (composition?.status === 'failed' ? composition.error : '')
+  const revisionNotice = composing
+    ? startingComposition
+      ? 'Saving your draft and instructions…'
+      : 'Draft and instructions saved. Sky is revising…'
+    : draftNotice ||
+      (composition?.status === 'complete' && !edit?.direction?.trim() && edit?.text === edit?.saved
+        ? item?.questions.length
+          ? 'Your draft and instructions are saved. Sky needs another detail to finish the reply.'
+          : 'Revised draft saved.'
+        : '')
   const approvalFeedback =
     item?.status === 'ready' && !item.stale
       ? `Draft saved in ${nativeApp}. ${followupsPending ? 'Preparing follow-up drafts…' : item.followupError ? 'Follow-up drafts need another try.' : item.followups?.length ? `Added ${item.followups.map((followup) => `a draft for ${followup.recipient}`).join(' and ')} to Outbox.` : 'Review and send it there.'}`
@@ -377,11 +507,11 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
           <div className="sky-outbox-column">
             {connectionError && (
               <div className="sky-outbox-notice" role="status">
-                Reconnecting to Sky…{checking ? ' Your check continues in the background.' : ''}
+                Reconnecting to Sky…{checking || composing ? ' Your work continues in the background.' : ''}
               </div>
             )}
             {error && !item && (
-              <div className="sky-outbox-notice" role="alert">
+              <div ref={actionFeedback} className="sky-outbox-notice" role="alert">
                 {error}
               </div>
             )}
@@ -441,7 +571,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     {limitation}
                   </p>
                 ))}
-                <section className="sky-outbox-draft" aria-busy={composing}>
+                <section className="sky-outbox-draft" aria-label="Reply editor" aria-busy={composing}>
                   <div className="sky-outbox-draft-label">
                     {editable
                       ? edit.text.trim()
@@ -453,6 +583,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                   </div>
                   {editable && (edit.text.trim() || manualReply) ? (
                     <Textarea
+                      label="Reply draft"
                       aria-label="Reply draft"
                       autosize
                       minRows={3}
@@ -481,6 +612,12 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                         </div>
                       )}
                       <Textarea
+                        label="Instructions for Sky"
+                        description={
+                          edit.text.trim()
+                            ? 'Tell Sky what to change. Revise with Sky saves your draft and instructions, then saves the revised reply above.'
+                            : 'Describe what you want to say. Sky saves your instructions and writes the reply above.'
+                        }
                         aria-label="Direction for Sky"
                         placeholder={
                           edit.text.trim()
@@ -534,9 +671,17 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                           )
                         )}
                       </div>
-                      {(composing || draftNotice) && (
+                      {revisionError && (
+                        <div className="sky-outbox-notice" role="alert">
+                          {composition?.status === 'failed' && (
+                            <p>Your draft and instructions are saved. Sky could not finish the revision.</p>
+                          )}
+                          {revisionError}
+                        </div>
+                      )}
+                      {!revisionError && revisionNotice && (
                         <p className="sky-outbox-compose-feedback" role="status">
-                          {composing ? 'Sky is preparing your reply…' : draftNotice}
+                          {revisionNotice}
                         </p>
                       )}
                     </div>
@@ -814,38 +959,45 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 ) : (
                   <div className="sky-outbox-list">
                     {items.map((record) => (
-                      <button type="button" className="sky-outbox-row" key={record.id} onClick={() => open(record)}>
-                        <span className="sky-outbox-avatar" aria-hidden="true">
-                          {record.conversation.medium === 'Slack' ? '#' : '@'}
-                        </span>
-                        <span className="sky-outbox-row-content">
-                          <span className="sky-outbox-meta">
-                            {record.recipient ? `To ${record.recipient}` : record.conversation.sources.at(-1)?.from} ·{' '}
-                            {record.conversation.medium}
-                            <span
-                              className="sky-outbox-stage"
-                              data-drafted={Boolean(edits.get(record.id)?.text || record.draft)}
-                            >
-                              {record.stale
-                                ? 'Review new context'
-                                : record.status === 'ready'
-                                  ? 'Ready in app'
-                                  : edits.get(record.id)?.text || record.draft
-                                    ? 'Draft ready'
-                                    : 'Your decision'}
+                      <article className="sky-outbox-list-item" key={record.id}>
+                        <button type="button" className="sky-outbox-row" onClick={() => open(record)}>
+                          <span className="sky-outbox-avatar" aria-hidden="true">
+                            {record.conversation.medium === 'Slack' ? '#' : '@'}
+                          </span>
+                          <span className="sky-outbox-row-content">
+                            <span className="sky-outbox-meta">
+                              {record.recipient ? `To ${record.recipient}` : record.conversation.sources.at(-1)?.from} ·{' '}
+                              {record.conversation.medium}
+                              <span
+                                className="sky-outbox-stage"
+                                data-drafted={Boolean(edits.get(record.id)?.text || record.draft)}
+                              >
+                                {record.stale
+                                  ? 'Review new context'
+                                  : record.status === 'ready'
+                                    ? 'Ready in app'
+                                    : edits.get(record.id)?.text || record.draft
+                                      ? 'Draft ready'
+                                      : 'Your decision'}
+                              </span>
+                            </span>
+                            <strong>{record.title}</strong>
+                            <span className="sky-outbox-situation">{record.situation}</span>
+                            {record.recommendation && !record.draft && (
+                              <span className="sky-outbox-row-suggestion">{record.recommendation}</span>
+                            )}
+                            <span className="sky-outbox-preview" data-ready={!needsReview(record)}>
+                              {edits.get(record.id)?.text ||
+                                record.draft ||
+                                record.questions[0] ||
+                                'Your decision is needed.'}
                             </span>
                           </span>
-                          <strong>{record.title}</strong>
-                          <span className="sky-outbox-situation">{record.situation}</span>
-                          {record.recommendation && !record.draft && (
-                            <span className="sky-outbox-row-suggestion">{record.recommendation}</span>
-                          )}
-                          <span className="sky-outbox-preview" data-ready={!needsReview(record)}>
-                            {edits.get(record.id)?.text ||
-                              record.draft ||
-                              record.questions[0] ||
-                              'Your decision is needed.'}
+                          <span className="sky-outbox-arrow" aria-hidden="true">
+                            ›
                           </span>
+                        </button>
+                        <div className="sky-outbox-row-footer">
                           <span className="sky-outbox-meta">
                             {record.stale
                               ? 'New messages · review again'
@@ -857,11 +1009,16 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                                     ? `Follows your reply: ${record.followupOf.title}`
                                     : `${record.conversation.sources.length} saved ${record.conversation.sources.length === 1 ? 'message' : 'messages'}`}
                           </span>
-                        </span>
-                        <span className="sky-outbox-arrow" aria-hidden="true">
-                          ›
-                        </span>
-                      </button>
+                          <Button
+                            aria-label={`Dismiss ${record.title}`}
+                            loading={dismissing === record.id}
+                            disabled={busy || record.status === 'placing' || record.composition?.status === 'running'}
+                            onClick={() => void dismissRecord(record)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </article>
                     ))}
                   </div>
                 )}
