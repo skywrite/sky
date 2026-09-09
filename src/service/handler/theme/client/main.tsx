@@ -20,6 +20,7 @@ import { usePromptDraftGuard } from './settingsPrompts.tsx'
 import { SidebarIcon } from './sidebarIcon.tsx'
 import { SidebarUtilities } from './sidebarUtilities.tsx'
 import { skyTheme } from './theme.ts'
+import { TrackingMain } from './tracking.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
 
 /**
@@ -89,6 +90,7 @@ function Canvas() {
     path.startsWith('/automations/') && !isNewAutomation ? decodeURIComponent(path.slice('/automations/'.length)) : null
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
   const isOutbox = path === '/outbox'
+  const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isSearch = path === '/search'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
@@ -128,6 +130,7 @@ function Canvas() {
     !isClock &&
     !isAutomations &&
     !isOutbox &&
+    !isTracking &&
     !isSearch &&
     !isWeek &&
     filesRoute === null &&
@@ -354,6 +357,8 @@ function Canvas() {
           <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
         ) : isOutbox ? (
           <OutboxMain navigate={navigate} />
+        ) : isTracking ? (
+          <TrackingMain path={path} navigate={navigate} />
         ) : isNewAutomation ? (
           <NewAutomation
             back={{ label: 'Automations', onClick: () => navigate('/automations') }}
@@ -407,6 +412,8 @@ function Canvas() {
           </Fragment>
         ) : (
           <DayView
+            trackingDate={dayYmd}
+            navigate={navigate}
             day={day}
             threads={others}
             imports={isToday ? importRows : []}

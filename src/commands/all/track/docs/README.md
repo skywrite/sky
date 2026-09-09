@@ -8,6 +8,9 @@ updated: 2026-09-08
 Design notes for `src/commands/all/track/`. The mental model needed before
 changing the capture loop.
 
+The [web tracking workflow](../../../../lib/tracking/docs/README.md) owns
+browser capture, corrections, shared writer locks, and recoverable Undo.
+
 ## Definitions and storage
 
 A tracking definition is a markdown file under `tracking/active/` (or

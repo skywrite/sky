@@ -1,0 +1,1112 @@
+/* Tracking keeps the app's typography, action roles, surfaces, and dialog tokens. */
+.sky-tracking {
+  min-height: 0;
+}
+.sky-tracking-col {
+  max-width: 1096px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 48px 64px;
+}
+.sky-tracking h1,
+.sky-tracking h2,
+.sky-tracking h3,
+.sky-tracking p,
+.sky-tracking-day h2,
+.sky-tracking-day p {
+  margin: 0;
+}
+.sky-tracking h1 {
+  font-size: 30px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  font-weight: 650;
+}
+.sky-tracking h2,
+.sky-tracking-day h2 {
+  font-size: 22px;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+  font-weight: 620;
+}
+.sky-tracking h3 {
+  font-size: 18px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+.sky-tracking-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+}
+.sky-tracking-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sky-tracking-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+.sky-tracking-heading > div:first-child {
+  min-width: 0;
+}
+.sky-tracking-heading h1 {
+  overflow-wrap: anywhere;
+}
+.sky-tracking-heading p {
+  color: var(--sky-dim);
+  font-size: 16px;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-heading .mantine-Button-root {
+  flex: none;
+}
+.sky-tracking-hint {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--sky-dim);
+}
+.sky-tracking-accent,
+.sky-tracking-text-link {
+  color: var(--sky-accent);
+}
+.sky-tracking a {
+  color: inherit;
+  text-decoration: none;
+}
+.sky-tracking a:hover h3,
+.sky-tracking-table a:hover {
+  text-decoration: underline;
+}
+.sky-tracking-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-bottom: 22px;
+}
+.sky-tracking-breadcrumb .sky-tracking-icon {
+  width: 16px;
+  height: 16px;
+}
+.sky-tracking-breadcrumb a:hover {
+  color: var(--sky-accent);
+}
+.sky-tracking-checkin {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 26px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+  margin-bottom: 32px;
+}
+.sky-tracking-checkin-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--sky-bg);
+  color: var(--sky-accent);
+  flex: none;
+}
+.sky-tracking-checkin > div {
+  flex: 1;
+  min-width: 0;
+}
+.sky-tracking-checkin p {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 3px;
+}
+.sky-tracking-checkin .mantine-Button-root {
+  flex: none;
+}
+.sky-tracking-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.sky-tracking-tabs {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-tracking-tabs button {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0 0 12px;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.sky-tracking-tabs button[aria-selected='true'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+.sky-tracking-tabs button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--sky-accent);
+}
+.sky-tracking-toolbar > .mantine-NativeSelect-root {
+  max-width: 180px;
+}
+.sky-tracking-custom-range {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  margin: 12px 0 24px;
+}
+.sky-tracking-custom-range > .mantine-TextInput-root {
+  min-width: 0;
+  flex: 1;
+}
+.sky-tracking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.sky-tracking-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  padding: 23px 25px 18px;
+  min-width: 0;
+  transition: border-color 0.15s;
+}
+.sky-tracking-card:hover {
+  border-color: color-mix(in srgb, var(--sky-accent) 35%, var(--sky-border-soft));
+}
+.sky-tracking-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sky-tracking-card-heading > a {
+  min-width: 0;
+}
+.sky-tracking-card-heading h3 {
+  overflow-wrap: anywhere;
+}
+.sky-tracking-card-heading p {
+  font-size: 13px;
+  color: var(--sky-dim);
+  line-height: 1.4;
+}
+.sky-tracking-card-open {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  height: 40px;
+  width: 40px;
+  flex: none;
+  color: var(--sky-dim) !important;
+  border-radius: var(--mantine-radius-md);
+}
+.sky-tracking-card-open:hover {
+  background: var(--sky-hover);
+}
+.sky-tracking-symbol {
+  height: 36px;
+  width: 36px;
+  border-radius: var(--mantine-radius-md);
+  display: grid;
+  place-items: center;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  flex: none;
+}
+.sky-tracking-card-chart {
+  display: block;
+  flex: 1;
+}
+.sky-tracking-card-value {
+  margin-top: 22px;
+  font-size: 34px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-card .sky-tracking-hint {
+  margin-top: 5px;
+}
+.sky-tracking-spark {
+  color: var(--sky-accent);
+  display: block;
+  width: 100%;
+  height: 62px;
+  margin: 18px 0 14px;
+  overflow: visible;
+}
+.sky-tracking-spark-empty {
+  height: 94px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-tracking-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sky-border-soft);
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-tracking-card-footer .sky-tracking-icon {
+  width: 17px;
+  height: 17px;
+  margin-right: 4px;
+}
+.sky-tracking-saved {
+  color: var(--sky-green);
+}
+.sky-tracking-footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin-top: 22px !important;
+}
+.sky-tracking-footnote .sky-tracking-icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+.sky-tracking-stats {
+  display: grid;
+  grid-template-columns: 2fr 1.3fr 1.2fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.sky-tracking-stats > div {
+  min-width: 0;
+}
+.sky-tracking-stats span {
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-tracking-stats strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 30px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-stats strong.sky-tracking-stat-hero {
+  font-size: 43px;
+}
+.sky-tracking-stats strong small {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+.sky-tracking-chart-card {
+  padding: 24px 26px 17px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  margin-bottom: 28px;
+}
+.sky-tracking-chart-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.sky-tracking-chart-heading > .mantine-NativeSelect-root {
+  max-width: 200px;
+}
+.sky-tracking-chart-heading h3 {
+  font-size: 16px;
+}
+.sky-tracking-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sky-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sky-tracking-legend i {
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  background: var(--sky-accent);
+}
+.sky-tracking-chart {
+  height: auto;
+  width: 100%;
+  display: block;
+  overflow: visible;
+}
+.sky-tracking-chart text {
+  font-family: inherit;
+  fill: var(--sky-dim);
+  font-size: 11px;
+}
+.sky-tracking-chart-note {
+  font-size: 13px;
+  color: var(--sky-dim);
+  margin-top: 8px !important;
+}
+.sky-tracking-chart-empty {
+  padding: 65px 18px;
+  text-align: center;
+  color: var(--sky-dim);
+  font-size: 16px;
+}
+.sky-tracking-entries-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.sky-tracking-table-scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+.sky-tracking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  text-align: left;
+}
+.sky-tracking-table th {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sky-dim);
+  white-space: nowrap;
+  padding: 10px 14px 10px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-tracking-table th small {
+  font-size: inherit;
+  font-weight: 400;
+}
+.sky-tracking-table td {
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  vertical-align: middle;
+  min-width: 75px;
+}
+.sky-tracking-table td:last-child {
+  text-align: right;
+  padding-right: 0;
+  min-width: 44px;
+}
+.sky-tracking-table .sky-tracking-date {
+  white-space: nowrap;
+  font-size: 15px;
+}
+.sky-tracking-table .sky-tracking-entry-note {
+  font-size: 15px;
+  color: var(--sky-dim);
+  min-width: 180px;
+  max-width: 400px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-missing {
+  color: var(--sky-dim);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.sky-tracking-load-more {
+  margin-top: 15px;
+}
+.sky-tracking-reflection {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  border-top: 1px solid var(--sky-border-soft);
+  margin-top: 30px;
+  padding: 24px 0;
+}
+.sky-tracking-reflection > .sky-tracking-icon {
+  color: var(--sky-accent);
+}
+.sky-tracking-reflection .mantine-Button-root {
+  margin-left: auto;
+  flex: none;
+}
+.sky-tracking-tag {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  font-weight: 400;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.sky-tracking-heading p .sky-tracking-tag {
+  margin-left: 10px;
+}
+.sky-tracking-empty {
+  padding: 60px 25px;
+  text-align: center;
+  border: 1px dashed var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+}
+.sky-tracking-empty p {
+  color: var(--sky-dim);
+  font-size: 16px;
+  margin-top: 8px;
+}
+.sky-tracking-empty .mantine-Button-root {
+  margin-top: 20px;
+}
+.sky-tracking-error {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--mantine-color-red-text);
+  margin: 14px 0 !important;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-error a {
+  color: inherit;
+  text-decoration: underline;
+}
+.sky-tracking-toast {
+  position: fixed;
+  z-index: 350;
+  left: calc(50% + 138px);
+  transform: translateX(-50%);
+  bottom: 24px;
+  background: var(--sky-text);
+  color: var(--sky-bg);
+  box-shadow: var(--sky-dialog-shadow);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 40px);
+  font-size: 15px;
+}
+.sky-tracking-toast .mantine-Button-root,
+.sky-tracking-toast .mantine-ActionIcon-root {
+  color: inherit;
+  flex: none;
+}
+.sky-tracking-toast .mantine-Button-root {
+  text-decoration: underline;
+}
+.sky-tracking-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.sky-tracking-day {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 24px;
+  font-size: var(--sky-content-font-size);
+}
+.sky-tracking-day-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.sky-tracking-day-heading p {
+  margin-top: 3px;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+.sky-tracking-text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sky-tracking-text-link:hover {
+  text-decoration: underline;
+}
+.sky-tracking-log-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-tracking-log-row .sky-tracking-symbol {
+  height: 40px;
+  width: 40px;
+}
+.sky-tracking-log-info {
+  flex: 1;
+  min-width: 0;
+}
+.sky-tracking-log-info > a {
+  font-size: 18px;
+  font-weight: 550;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-log-info > a:hover {
+  text-decoration: underline;
+}
+.sky-tracking-log-info p {
+  font-size: 15px;
+  color: var(--sky-dim);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-log-value {
+  font-size: 19px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.sky-tracking-log-row > .sky-tracking-saved {
+  width: 19px;
+  height: 19px;
+}
+.sky-tracking-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sky-tracking-quick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sky-tracking-quick .mantine-TextInput-root {
+  width: 150px;
+}
+.sky-tracking-quick .mantine-TextInput-section {
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-tracking-day-later {
+  margin-top: 14px !important;
+}
+.sky-tracking-day-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 16px;
+}
+.sky-tracking-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sky-tracking-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(270px, 1fr);
+  gap: 48px;
+}
+.sky-tracking-setup > form > .mantine-InputWrapper-root {
+  margin-bottom: 22px;
+}
+.sky-tracking-form-section {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 24px;
+  margin-top: 25px;
+}
+.sky-tracking-form-section h3 {
+  margin-bottom: 5px;
+}
+.sky-tracking-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 20px;
+}
+.sky-tracking-form-grid > * {
+  min-width: 0;
+}
+.sky-tracking-field-wide {
+  grid-column: 1 / -1;
+}
+.sky-tracking-column {
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 14px;
+}
+.sky-tracking-column-fields {
+  display: grid;
+  grid-template-columns: 1.3fr 1.2fr 0.8fr;
+  gap: 12px;
+}
+.sky-tracking-column-fields > * {
+  min-width: 0;
+}
+.sky-tracking-column .mantine-Input-input {
+  font-size: 15px;
+}
+.sky-tracking-column .mantine-InputWrapper-label {
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-tracking-column-summary {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.sky-tracking-column-summary > .mantine-NativeSelect-root {
+  flex: 1;
+}
+.sky-tracking-form-section > .mantine-Checkbox-root {
+  margin: 20px 0 12px;
+}
+.sky-tracking-form-section > .sky-tracking-hint {
+  margin-top: 10px;
+}
+.sky-tracking-advanced {
+  margin-top: 24px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-tracking-advanced summary {
+  cursor: pointer;
+}
+.sky-tracking-setup-actions {
+  margin-top: 28px;
+}
+.sky-tracking-preview {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+}
+.sky-tracking-preview > .sky-tracking-hint {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.sky-tracking-preview-card {
+  padding: 26px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+.sky-tracking-preview-card h3 {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-preview-card > .sky-tracking-preview-question {
+  font-size: 19px;
+  line-height: 1.55;
+  margin: 18px 0;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-preview-answer {
+  margin-top: 14px;
+}
+.sky-tracking-preview-answer > span {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.sky-tracking-preview-answer > div {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 9px;
+  background: var(--sky-bg);
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-preview-answer small {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-tracking-preview-card > .mantine-Button-root {
+  margin-top: 22px;
+  pointer-events: none;
+}
+.sky-tracking-preview-context {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--sky-dim);
+  padding: 20px 4px;
+}
+.sky-tracking-preview-context strong {
+  font-weight: 550;
+  color: var(--sky-text-2);
+}
+.sky-tracking-dialog-sub {
+  margin: 0 0 22px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-tracking-dialog > .mantine-SegmentedControl-root {
+  margin-bottom: 4px;
+}
+.sky-tracking-dialog .sky-tracking-hint {
+  margin-top: 15px;
+}
+.sky-tracking-sentence {
+  margin-top: 22px;
+}
+.sky-tracking-review {
+  border-top: 1px solid var(--sky-border-soft);
+  margin-top: 22px;
+  padding-top: 20px;
+}
+.sky-tracking-review-head {
+  color: var(--sky-text-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+.sky-tracking-review dl {
+  padding: 18px 0 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.sky-tracking-review dt {
+  font-size: 12px;
+  color: var(--sky-dim);
+  margin-bottom: 2px;
+}
+.sky-tracking-review dd {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.sky-tracking-review-date {
+  grid-column: 1 / -1;
+  color: var(--sky-accent);
+}
+.sky-tracking-dialog-actions {
+  margin-top: 8px;
+}
+.sky-tracking-delete {
+  margin-right: auto;
+}
+
+@media (max-width: 1190px) {
+  .sky-tracking-col {
+    padding: 22px 32px 48px;
+  }
+  .sky-tracking-setup {
+    gap: 26px;
+  }
+  .sky-tracking-card {
+    padding: 20px;
+  }
+  .sky-tracking-card-value {
+    font-size: 31px;
+  }
+  .sky-tracking-log-row {
+    flex-wrap: wrap;
+  }
+  .sky-tracking-log-actions {
+    margin-left: auto;
+  }
+}
+@media (max-width: 900px) {
+  .sky-tracking-col {
+    padding: 16px 24px 40px;
+  }
+  .sky-tracking-heading {
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .sky-tracking-heading h1 {
+    font-size: 27px;
+  }
+  .sky-tracking-checkin {
+    padding: 19px;
+    gap: 12px;
+    margin-bottom: 26px;
+  }
+  .sky-tracking-checkin-icon {
+    display: none;
+  }
+  .sky-tracking-grid {
+    gap: 14px;
+  }
+  .sky-tracking-toast {
+    left: 50%;
+  }
+  .sky-tracking-setup {
+    grid-template-columns: 1.2fr 1fr;
+    gap: 24px;
+  }
+}
+@media (max-width: 600px) {
+  .sky-tracking-col {
+    padding: 12px 20px 42px;
+  }
+  .sky-tracking-heading {
+    align-items: center;
+  }
+  .sky-tracking-heading > .sky-tracking-row {
+    gap: 2px;
+  }
+  .sky-tracking-heading p {
+    font-size: 14px;
+  }
+  .sky-tracking-heading .mantine-Button-root {
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 14px;
+  }
+  .sky-tracking-heading h1 {
+    font-size: 26px;
+  }
+  .sky-tracking-grid {
+    grid-template-columns: 1fr;
+  }
+  .sky-tracking-card {
+    padding: 22px;
+  }
+  .sky-tracking-card-value {
+    font-size: 34px;
+  }
+  .sky-tracking-checkin {
+    flex-wrap: wrap;
+  }
+  .sky-tracking-checkin > div {
+    min-width: 170px;
+  }
+  .sky-tracking-checkin h3 {
+    font-size: 17px;
+  }
+  .sky-tracking-checkin p {
+    font-size: 14px;
+  }
+  .sky-tracking-checkin .mantine-Button-root {
+    font-size: 14px;
+  }
+  .sky-tracking-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .sky-tracking-tabs {
+    grid-column: 1 / -1;
+  }
+  .sky-tracking-toolbar > .mantine-NativeSelect-root {
+    max-width: none;
+    min-width: 0;
+  }
+  .sky-tracking-custom-range {
+    flex-wrap: wrap;
+  }
+  .sky-tracking-custom-range > .mantine-TextInput-root {
+    min-width: 135px;
+  }
+  .sky-tracking-stats {
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+  }
+  .sky-tracking-stats > div:last-child {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .sky-tracking-stats > div:last-child strong {
+    font-size: 18px;
+    margin-top: 0;
+  }
+  .sky-tracking-stats strong {
+    font-size: 25px;
+  }
+  .sky-tracking-stats strong.sky-tracking-stat-hero {
+    font-size: 33px;
+  }
+  .sky-tracking-stats span {
+    font-size: 13px;
+  }
+  .sky-tracking-chart-card {
+    padding: 16px 13px;
+  }
+  .sky-tracking-chart-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sky-tracking-chart-heading > .mantine-NativeSelect-root {
+    max-width: 155px;
+  }
+  .sky-tracking-legend {
+    display: none;
+  }
+  .sky-tracking-chart {
+    min-height: 175px;
+  }
+  .sky-tracking-chart text {
+    font-size: 15px;
+  }
+  .sky-tracking-chart-note {
+    font-size: 12px;
+  }
+  .sky-tracking-table td,
+  .sky-tracking-table th {
+    font-size: 14px;
+  }
+  .sky-tracking-table .sky-tracking-date {
+    font-size: 13px;
+  }
+  .sky-tracking-reflection {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .sky-tracking-reflection > div {
+    flex: 1;
+  }
+  .sky-tracking-reflection > .mantine-Button-root {
+    margin-left: 34px;
+  }
+  .sky-tracking-footnote {
+    font-size: 13px;
+  }
+  .sky-tracking-day-heading h2 {
+    font-size: 21px;
+  }
+  .sky-tracking-day-heading p {
+    font-size: 14px;
+  }
+  .sky-tracking-text-link {
+    font-size: 14px;
+    gap: 4px;
+  }
+  .sky-tracking-log-row {
+    gap: 11px;
+    padding: 17px 0;
+  }
+  .sky-tracking-log-row .sky-tracking-symbol {
+    width: 35px;
+    height: 35px;
+  }
+  .sky-tracking-log-info {
+    min-width: 140px;
+  }
+  .sky-tracking-log-info > a {
+    font-size: 17px;
+  }
+  .sky-tracking-log-info p {
+    font-size: 14px;
+  }
+  .sky-tracking-log-value {
+    font-size: 17px;
+  }
+  .sky-tracking-log-row > .mantine-ActionIcon-root {
+    width: 30px;
+    min-width: 30px;
+  }
+  .sky-tracking-log-actions {
+    width: 100%;
+    padding-left: 46px;
+    gap: 6px;
+  }
+  .sky-tracking-quick {
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+  }
+  .sky-tracking-quick .mantine-TextInput-root {
+    width: auto;
+    min-width: 0;
+    flex: 1;
+  }
+  .sky-tracking-quick .mantine-Button-root {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .sky-tracking-day-footer {
+    gap: 7px;
+  }
+  .sky-tracking-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .sky-tracking-preview {
+    position: static;
+    order: -1;
+    width: 100%;
+  }
+  .sky-tracking-preview-card {
+    padding: 22px;
+  }
+  .sky-tracking-preview-card > .mantine-Button-root,
+  .sky-tracking-preview-context {
+    display: none;
+  }
+  .sky-tracking-preview-card > .sky-tracking-preview-question {
+    font-size: 18px;
+    margin: 12px 0;
+  }
+  .sky-tracking-column-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sky-tracking-column-fields > :last-child {
+    grid-column: 1 / -1;
+  }
+  .sky-tracking-column .mantine-Input-input {
+    font-size: 16px;
+  }
+  .sky-tracking-form-grid {
+    gap: 14px;
+  }
+  .sky-tracking-dialog-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sky-tracking-dialog-actions > .mantine-Button-root {
+    flex: 1;
+  }
+  .sky-tracking-dialog-actions > .sky-tracking-delete {
+    flex-basis: 100%;
+  }
+  .sky-tracking-toast {
+    bottom: 14px;
+    font-size: 14px;
+    padding: 12px 14px;
+    gap: 12px;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+  }
+}

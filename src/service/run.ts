@@ -20,6 +20,7 @@ import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
 import { createOutboxHost } from './handler/outbox/createOutboxHost.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
+import { createTrackingHost } from './handler/tracking/createTrackingHost.ts'
 import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
 import { createWeekHost } from './handler/week/createWeekHost.ts'
 import * as jsend from './jsend.ts'
@@ -165,6 +166,7 @@ const server = createServer({
   meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),
   outbox: createOutboxHost(config, env.toObject()),
+  tracking: createTrackingHost(config),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   userDataDir: config.DIR_USER_DATA,

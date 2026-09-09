@@ -45,6 +45,7 @@ import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
+import type { TrackingRoutesOptions } from './handler/tracking/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import type { WeekCommands } from './handler/week/mod.ts'
@@ -91,6 +92,7 @@ export interface ServerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  tracking?: TrackingRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host; absent, /import is not served */
@@ -261,6 +263,7 @@ export function createServer(options: ServerOptions): Server {
       meetings: options.meetings,
       automations,
       outbox: options.outbox,
+      tracking: options.tracking,
       week,
       imports: options.imports,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,

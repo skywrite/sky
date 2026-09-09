@@ -11,6 +11,7 @@ import { createHttpApp } from './http.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import type { OutboxRoutesOptions } from './outbox/mod.ts'
 import type { SettingsRoutesOptions } from './settings/mod.ts'
+import type { TrackingRoutesOptions } from './tracking/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
 
 function createTestYoga(): YogaServerInstance<object, object> {
@@ -33,6 +34,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     automations?: AutomationsRoutesOptions
+    tracking?: TrackingRoutesOptions
     outbox?: OutboxRoutesOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
@@ -53,6 +55,7 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     automations: options.automations,
+    tracking: options.tracking,
     outbox: options.outbox,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.

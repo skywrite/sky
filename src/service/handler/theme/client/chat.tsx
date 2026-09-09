@@ -17,6 +17,7 @@ import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
+import { takeChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
 import { useChatVoice } from './chatVoice.ts'
@@ -1693,6 +1694,14 @@ export function Composer({
   const threadId = useRef(state.id)
   threadId.current = state.id
   const [sendError, setSendError] = useState<string | null>(null)
+  useEffect(() => {
+    const draft = takeChatDraft(state.id)
+    if (draft && inputRef.current && !inputRef.current.value) {
+      inputRef.current.value = draft
+      inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
+      inputRef.current.focus()
+    }
+  }, [state.id])
   useEffect(() => setSendError(null), [state.id, attach?.files])
   const busy = state.phase !== 'idle'
   const canSend = !busy && !chat.tuning && state.settings !== null && !sendDisabled

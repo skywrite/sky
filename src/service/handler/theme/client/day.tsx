@@ -5,6 +5,7 @@ import { type Note, NoteLine } from './chat.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
+import { DayTracking } from './dayTracking.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
 import { acceptsImports, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
@@ -879,6 +880,8 @@ function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
 }
 
 export function DayView({
+  trackingDate = null,
+  navigate = (path: string) => window.location.assign(path),
   day,
   threads,
   imports = [],
@@ -894,6 +897,8 @@ export function DayView({
   onUndoKept = () => {},
   onDismissKept = () => {},
 }: {
+  trackingDate?: string | null
+  navigate?: (path: string) => void
   day: DayData | null
   threads: ThreadSummary[]
   /** Files dropped on the day, running or done — rows beside the threads */
@@ -1066,6 +1071,8 @@ export function DayView({
                       ))}
                     </Block>
                   )}
+
+                  <DayTracking date={trackingDate} readOnly={trackingDate !== null && ended} navigate={navigate} />
 
                   {record.meetings.length > 0 && (
                     <Block head="Meetings" mini={String(record.meetings.length)}>

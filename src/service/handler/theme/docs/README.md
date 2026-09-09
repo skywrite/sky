@@ -21,7 +21,7 @@ web app's page and builds its client.
   client and reloading the page is enough.
 - `client/` is the React client. `main.tsx` turns the path into a page: a
   day, a thread, an import, a document in the explorer, settings, voice,
-  automations, a week. `theme.ts` is the Mantine theme. `shell.css` imports
+  automations, tracking, a week. `theme.ts` is the Mantine theme. `shell.css` imports
   the shared foundations and feature styles.
 - `http.ts`, one level up, mounts the shell at `/`, at a day's date, and at
   the page paths. `/_assets/:name` serves the bundle.
@@ -63,6 +63,8 @@ The reusable meeting dialog and its mobile layout follow the
 The shared link picker follows the [record-link design](../../links/docs/README.md).
 The persistent search header and its preview column follow the
 [notebook search contract](../../search/docs/README.md).
+Tracking's check-ins, history, capture review, and file mutations follow the
+[tracking workflow](../../../../lib/tracking/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in
