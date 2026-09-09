@@ -194,6 +194,7 @@
 .sky-day .sky-col > .sky-block:not(.sky-day-priority) {
   background: transparent;
   border-radius: 0;
+  overflow: visible;
 }
 
 .sky-day .sky-col > .sky-block:not(.sky-day-priority) > .sky-block-head {
