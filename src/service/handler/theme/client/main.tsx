@@ -13,6 +13,7 @@ import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { OutboxMain } from './outbox.tsx'
+import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
@@ -36,22 +37,22 @@ function App() {
 }
 
 /** The path is the state: `/` is today, `/<ymd>` another day, `/thread/<id>` a conversation. */
-function useRoute(): [string, (to: string) => void] {
+function useRoute(): [{ path: string; search: string }, (to: string) => void] {
   const readRoute = () => {
     if (window.location.pathname === '/voice') history.replaceState(null, '', `/thread/${crypto.randomUUID()}`)
-    return window.location.pathname
+    return { path: window.location.pathname, search: window.location.search }
   }
-  const [path, setPath] = useState(readRoute)
+  const [route, setRoute] = useState(readRoute)
   useEffect(() => {
-    const onPop = () => setPath(readRoute())
+    const onPop = () => setRoute(readRoute())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
   const navigate = useCallback((to: string) => {
     history.pushState(null, '', to)
-    setPath(to)
+    setRoute({ path: window.location.pathname, search: window.location.search })
   }, [])
-  return [path, navigate]
+  return [route, navigate]
 }
 
 /**
@@ -59,7 +60,7 @@ function useRoute(): [string, (to: string) => void] {
  * back to the day.
  */
 function Canvas() {
-  const [path, go] = useRoute()
+  const [{ path, search }, go] = useRoute()
   const [menu, setMenu] = useState(false)
   // The saved appearance — theme and text size — lands once, at start.
   useAppearanceBoot()
@@ -88,6 +89,7 @@ function Canvas() {
     path.startsWith('/automations/') && !isNewAutomation ? decodeURIComponent(path.slice('/automations/'.length)) : null
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
   const isOutbox = path === '/outbox'
+  const isSearch = path === '/search'
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const threads = useThreads()
@@ -126,6 +128,7 @@ function Canvas() {
     !isClock &&
     !isAutomations &&
     !isOutbox &&
+    !isSearch &&
     !isWeek &&
     filesRoute === null &&
     explorerFile === null
@@ -335,90 +338,92 @@ function Canvas() {
         </div>
       </nav>
 
-      {explorerFile !== null ? (
-        <DocView file={explorerFile} />
-      ) : filesRoute ? (
-        <DayFilesMain ymd={filesRoute.ymd} folder={filesRoute.folder} go={navigate} />
-      ) : isWeek ? (
-        <WeekMain
-          id={weekId}
-          onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
-          onOpenWeek={(id) => navigate(weekHref(id))}
-          onChanged={reloadWeek}
-        />
-      ) : isClock ? (
-        <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
-      ) : isOutbox ? (
-        <OutboxMain navigate={navigate} />
-      ) : isNewAutomation ? (
-        <NewAutomation
-          back={{ label: 'Automations', onClick: () => navigate('/automations') }}
-          onCreated={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
-        />
-      ) : automationName ? (
-        <AutomationDetail
-          name={automationName}
-          back={{ label: 'Automations', onClick: () => navigate('/automations') }}
-        />
-      ) : isAutomations ? (
-        <AutomationsMain
-          back={{ label: 'Today', onClick: () => navigate('/') }}
-          onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
-          onNew={() => navigate('/automations/new')}
-        />
-      ) : settingsSection ? (
-        <SettingsMain
-          section={settingsSection}
-          path={path}
-          navigate={navigate}
-          back={{ label: 'Today', onClick: () => navigate('/') }}
-        />
-      ) : isAudition ? (
-        <AuditionMain back={{ label: 'Chat', onClick: newChat }} />
-      ) : importId ? (
-        <Fragment key={importId}>
-          <ImportMain
-            id={importId}
-            back={{ label: 'Today', onClick: () => navigate('/') }}
-            onStartAgain={queue.startAgain}
+      <SearchWorkspace route={path + search} onNavigate={navigate}>
+        {explorerFile !== null ? (
+          <DocView file={explorerFile} />
+        ) : filesRoute ? (
+          <DayFilesMain ymd={filesRoute.ymd} folder={filesRoute.folder} go={navigate} />
+        ) : isWeek ? (
+          <WeekMain
+            id={weekId}
+            onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
+            onOpenWeek={(id) => navigate(weekHref(id))}
+            onChanged={reloadWeek}
           />
-        </Fragment>
-      ) : threadId ? (
-        <Fragment key={threadId}>
-          <ChatMain
-            chat={chat}
-            title={chatTitle}
-            back={{ label: 'Today', onClick: () => navigate('/') }}
-            onEnd={endThread}
-            branches={[
-              ...branchesOf(threadId).map((b) => ({ id: b.id, title: b.title, turn: b.parent?.turn ?? 0 })),
-              // Filed beside this thread's file and not live: their marks open them as threads.
-              ...chat.state.branches
-                .filter((b) => !others.some((t) => t.saved === b.chat))
-                .map((b) => ({ id: null, chat: b.chat, title: b.title, turn: b.turn })),
-            ]}
-            onBranched={openThread}
-            onOpenSaved={(saved) => void openSaved(saved)}
+        ) : isClock ? (
+          <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
+        ) : isOutbox ? (
+          <OutboxMain navigate={navigate} />
+        ) : isNewAutomation ? (
+          <NewAutomation
+            back={{ label: 'Automations', onClick: () => navigate('/automations') }}
+            onCreated={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
           />
-        </Fragment>
-      ) : (
-        <DayView
-          day={day}
-          threads={others}
-          imports={isToday ? importRows : []}
-          notes={notes}
-          onOpen={openThread}
-          onOpenSaved={(chat) => void openSaved(chat)}
-          onOpenImport={openImport}
-          onImportMeeting={queue.take}
-          dragging={drop.dragging}
-          onImportFiles={queue.take}
-          kept={kept}
-          onKept={setKept}
-          onUndoKept={undoKept}
-          onDismissKept={dismissKept}
-        />
-      )}
+        ) : automationName ? (
+          <AutomationDetail
+            name={automationName}
+            back={{ label: 'Automations', onClick: () => navigate('/automations') }}
+          />
+        ) : isAutomations ? (
+          <AutomationsMain
+            back={{ label: 'Today', onClick: () => navigate('/') }}
+            onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
+            onNew={() => navigate('/automations/new')}
+          />
+        ) : settingsSection ? (
+          <SettingsMain
+            section={settingsSection}
+            path={path}
+            navigate={navigate}
+            back={{ label: 'Today', onClick: () => navigate('/') }}
+          />
+        ) : isAudition ? (
+          <AuditionMain back={{ label: 'Chat', onClick: newChat }} />
+        ) : importId ? (
+          <Fragment key={importId}>
+            <ImportMain
+              id={importId}
+              back={{ label: 'Today', onClick: () => navigate('/') }}
+              onStartAgain={queue.startAgain}
+            />
+          </Fragment>
+        ) : threadId ? (
+          <Fragment key={threadId}>
+            <ChatMain
+              chat={chat}
+              title={chatTitle}
+              back={{ label: 'Today', onClick: () => navigate('/') }}
+              onEnd={endThread}
+              branches={[
+                ...branchesOf(threadId).map((b) => ({ id: b.id, title: b.title, turn: b.parent?.turn ?? 0 })),
+                // Filed beside this thread's file and not live: their marks open them as threads.
+                ...chat.state.branches
+                  .filter((b) => !others.some((t) => t.saved === b.chat))
+                  .map((b) => ({ id: null, chat: b.chat, title: b.title, turn: b.turn })),
+              ]}
+              onBranched={openThread}
+              onOpenSaved={(saved) => void openSaved(saved)}
+            />
+          </Fragment>
+        ) : (
+          <DayView
+            day={day}
+            threads={others}
+            imports={isToday ? importRows : []}
+            notes={notes}
+            onOpen={openThread}
+            onOpenSaved={(chat) => void openSaved(chat)}
+            onOpenImport={openImport}
+            onImportMeeting={queue.take}
+            dragging={drop.dragging}
+            onImportFiles={queue.take}
+            kept={kept}
+            onKept={setKept}
+            onUndoKept={undoKept}
+            onDismissKept={dismissKept}
+          />
+        )}
+      </SearchWorkspace>
       <ImportDialog
         pending={queue.pending}
         again={queue.again}

@@ -2,6 +2,7 @@
    Keep this import order explicit; see ../docs/README.md for ownership. */
 @import './tokens.css';
 @import './layout.css';
+@import './search.css';
 @import './components.css';
 @import './dialogs.css';
 @import './chat.css';

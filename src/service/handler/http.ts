@@ -40,6 +40,7 @@ import {
 } from './markdown-preview/mod.ts'
 import { createMeetingRoutes } from './meetings/mod.ts'
 import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
+import { createSearchRoutes } from './search/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { getThemeAsset, renderAppHtml } from './theme/mod.ts'
 import {
@@ -452,6 +453,17 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       return c.json({ message }, 500)
     }
   })
+
+  app.route(
+    '/search/_api',
+    createSearchRoutes({
+      store: markdownStore,
+      base: markdownBaseDir,
+      roots: markdownDirs,
+      scoring: store.scoring,
+    }),
+  )
+  app.get('/search', (c) => c.html(renderAppHtml('sky · search')))
 
   app.get('/docs/_api/search', (c) => {
     if (!markdownStore) {
