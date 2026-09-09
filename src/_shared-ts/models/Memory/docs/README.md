@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-09-08
 ---
 
 # The memory store — what the assistant carries between chats
@@ -12,6 +12,10 @@ and must duplicate neither:
 
 - the **notebook** (long-term, human-curated) — always wins on conflict;
 - the saved **chats** (episodic) — already hold every answer given.
+
+Writing in the owner's name has its own [writing voice](../../../../lib/writingVoice/docs/README.md)
+rules and revision examples. Memory retains preferences about how the assistant
+answers the user; it does not duplicate the writing agent's lessons.
 
 Memory is the residue: what no capture flow would take and no chat would
 be re-read for. The law that keeps it small:

@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
+import type { WritingVoiceStore } from '#lib/writingVoice/store.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from './files.ts'
@@ -15,6 +16,7 @@ export class OutboxStore {
   constructor(
     readonly dir: string,
     readonly stateDir: string,
+    readonly writingVoice?: WritingVoiceStore,
   ) {}
 
   private file(id: string): string {
@@ -61,6 +63,7 @@ export class OutboxStore {
   }
 
   async preferences(): Promise<{ text: string; revision: string }> {
+    if (this.writingVoice) return this.writingVoice.rules()
     const text = await readOptional(path.join(this.dir, 'preferences.md'))
     const doc = text === undefined ? null : Document.fromMarkdown(text)
     if (doc?.yamlError) throw new OutboxError('Communication preferences have invalid frontmatter.')
@@ -91,6 +94,10 @@ export class OutboxStore {
   }
 
   async savePreferences(text: string, revision: string): Promise<void> {
+    if (this.writingVoice) {
+      await this.writingVoice.saveRules(text, revision)
+      return
+    }
     if (text.length > 20_000) throw new OutboxError('Keep preferences under 20,000 characters.')
     await withLock(path.join(this.stateDir, 'write.lock'), async () => {
       if ((await this.preferences()).revision !== revision)

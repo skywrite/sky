@@ -108,10 +108,10 @@ export function readSkyConfigFile(configPath = SKY_CONFIG_PATH): { text: string;
   return { text, parsed: parse(text) as Partial<SkyConfig> }
 }
 
-export function loadSkyConfig(): SkyConfig {
+export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
   const config = defaults()
 
-  const file = readSkyConfigFile()
+  const file = readSkyConfigFile(configPath)
   if (file) {
     const { parsed } = file
 
@@ -141,6 +141,8 @@ export function loadSkyConfig(): SkyConfig {
     if (parsed.voice?.researcherVoice) config.voice.researcherVoice = parsed.voice.researcherVoice
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
+    if (typeof parsed.ai?.writingVoiceProfile === 'string')
+      config.ai.writingVoiceProfile = parsed.ai.writingVoiceProfile
     if (parsed.server?.port) config.server.port = parsed.server.port
     if (parsed.nbfs?.layout) {
       if (layoutByPattern(parsed.nbfs.layout)) {

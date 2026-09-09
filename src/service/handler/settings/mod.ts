@@ -14,12 +14,15 @@
  */
 
 import { Hono } from 'hono'
+import type { WritingVoice } from '#lib/writingVoice/agent.ts'
+import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
 import { createPromptRoutes } from './prompts.ts'
+import { createWritingVoiceRoutes } from './writingVoice.ts'
 
 // ── The configuration view (the Advanced pane) ──────────────────────
 
@@ -85,7 +88,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
   {
     id: 'ai',
     title: 'AI',
-    keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription'],
+    keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription', 'ai.writingVoiceProfile'],
     groups: ['ai.profiles'],
   },
   { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
@@ -235,6 +238,7 @@ export interface SettingsData {
   models: ModelRow[]
   /** Every model configuration: yours first, then the built-ins */
   profiles: ProfileRow[]
+  writingVoice: { profile: string; choices: Array<{ value: string; label: string }> }
   /** The providers a configuration may name */
   providers: string[]
   /** Notes under the notebook's ai/memory/ */
@@ -281,6 +285,7 @@ export interface SettingsHost {
   /** Accounts and keys over the keychain; absent, /connections is not served */
   connections?: ConnectionsHost
   prompts?: PromptCatalog
+  writingVoice?: WritingVoice
 }
 
 export type SettingsRoutesOptions = SettingsHost
@@ -291,6 +296,7 @@ export const SETTABLE_KEYS = {
   'web.textSize': ['web', 'textSize'],
   'voice.voice': ['voice', 'voice'],
   'voice.researcherVoice': ['voice', 'researcherVoice'],
+  'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
   editor: ['editor'],
 } as const
 
@@ -314,6 +320,10 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       const editors = await host.editors()
       return editors.includes(value) ? null : `no such editor on this machine: ${value}`
     }
+    case 'ai.writingVoiceProfile':
+      return writingVoiceSettings(host, host.load().config).choices.some((choice) => choice.value === value)
+        ? null
+        : 'Choose an available model configuration for Writing style.'
   }
 }
 
@@ -327,6 +337,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     voice: host.voices(),
     models: host.models(),
     profiles: profileRows(host, config),
+    writingVoice: writingVoiceSettings(host, config),
     providers: host.providers(),
     memoryNotes,
     notebook: {
@@ -348,6 +359,7 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   // Accounts and keys — the keychain's page, routes of its own.
   if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))
   if (options.prompts) app.route('/prompts', createPromptRoutes(options.prompts))
+  if (options.writingVoice) app.route('/writing-voice', createWritingVoiceRoutes(options.writingVoice))
 
   // Everything the page shows, read afresh per request.
   app.get('/settings', async (c) => {
@@ -435,6 +447,14 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   // Remove one of yours. The built-ins live in code and stay.
   app.delete('/profile/:name', async (c) => {
     const name = c.req.param('name')
+    if (
+      (options.load().config.ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE) === name &&
+      !options.builtinProfiles().some((profile) => profile.name === name)
+    )
+      return c.json(
+        { message: 'Choose another model in Settings > Writing Voice before removing this configuration.' },
+        409,
+      )
     if (options.builtinProfiles().some((profile) => profile.name === name)) {
       const yours = options.load().config.ai.profiles ?? {}
       if (!(name in yours)) return c.json({ message: 'that configuration is built in — it lives in code' }, 400)
@@ -463,6 +483,28 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
 
 /** Letters, digits, dots, dashes, underscores — a config key that needs no quoting games. */
 export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+function writingVoiceSettings(host: SettingsHost, config: SkyConfig): SettingsData['writingVoice'] {
+  // User definitions override built-ins with the same name, as they do in the writer.
+  const candidates = Object.fromEntries([
+    ...host.builtinProfiles().map((profile) => [profile.name, profile] as const),
+    ...Object.entries(config.ai.profiles ?? {}),
+  ]) as Record<string, ModelProfile>
+  const providers = host.providers()
+  const all = Object.fromEntries(
+    Object.entries(candidates).filter(
+      ([, profile]) =>
+        profile && providers.includes(profile.provider) && typeof profile.model === 'string' && profile.model.trim(),
+    ),
+  )
+  return {
+    profile: config.ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE,
+    choices: Object.entries(all).map(([name, profile]) => ({
+      value: name,
+      label: `${choiceLabel(name, all)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`,
+    })),
+  }
+}
 
 /** Yours first, then the built-ins; each row carries the roles pointing at it. */
 function profileRows(host: SettingsHost, config: SkyConfig): ProfileRow[] {

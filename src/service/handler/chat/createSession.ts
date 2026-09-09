@@ -29,6 +29,8 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
@@ -54,6 +56,7 @@ import type {
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
+import { restoreToolRuns } from './toolRuns.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
 const WEB_CHAT = { days: 7, contextTokens: 300_000 }
@@ -306,6 +309,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       // needsApproval is the source of truth for what asks.
       tools: async ({ onExternalFiles, onAttachments }) => ({
         tools: {
+          ...createWritingVoiceTools(createWritingVoice(config), { source: `chat:${id}` }),
           ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
           // A browser has no shell directory, so a relative path resolves from home.
           ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
@@ -375,6 +379,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
           restores.push({
             id: ref.session,
+            runs: restoreToolRuns(host?.runs),
             startTime: ref.startTime,
             state,
             approvals,

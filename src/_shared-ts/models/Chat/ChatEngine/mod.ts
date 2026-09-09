@@ -35,6 +35,7 @@ import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
+import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
 import { turnErrorMessage } from './turnErrorMessage.ts'
 
 type Message = ModelMessage
@@ -75,8 +76,9 @@ export type ApprovalHandler = (toolCall: ApprovalRequest) => Promise<ApprovalDec
  * and end) — they get events when something renders them.
  */
 export type ChatEngineEvent =
+  | ToolExecutionEvent
   | { type: 'text-delta'; text: string }
-  | { type: 'tool-call'; toolName: string; input: unknown }
+  | { type: 'tool-call'; toolName: string; toolCallId?: string; input: unknown }
   | { type: 'turn-complete'; toolRecords: ToolCallRecord[] }
 
 /** Why the engine ended a tool loop: the step cap, or the repetition guard. */
@@ -360,12 +362,13 @@ export default class ChatEngine {
     }
 
     const emit = (event: ChatEngineEvent) => this.onEvent?.(event)
+    const progress = new ToolProgress(emit)
 
     // Every tool runs behind this turn's repetition guard: the third
     // identical call — same input, same result twice — is refused unrun,
     // and three refusals end the loop.
     const guard = new RepetitionGuard()
-    const tools = guardTools(opts.tools as ToolSet, guard)
+    const tools = observeTools(guardTools(opts.tools as ToolSet, guard), progress.report)
     let cutShort: TurnCut | undefined
 
     // The reply, accumulated from exactly what was emitted. A boundary
@@ -390,9 +393,13 @@ export default class ChatEngine {
       },
     }
 
-    const onStepEnd = ({ toolCalls }: { toolCalls?: Array<{ toolName: string; input: unknown }> }) => {
+    const onStepEnd = ({
+      toolCalls,
+    }: {
+      toolCalls?: Array<{ toolName: string; toolCallId?: string; input: unknown }>
+    }) => {
       for (const tc of toolCalls ?? []) {
-        emit({ type: 'tool-call', toolName: tc.toolName, input: tc.input })
+        emit({ type: 'tool-call', toolName: tc.toolName, toolCallId: tc.toolCallId, input: tc.input })
       }
     }
 
@@ -459,6 +466,7 @@ export default class ChatEngine {
           onChunk: ({ chunk }) => {
             if (chunk.type === 'text-delta') sink.write(chunk.text)
             else if (chunk.type === 'finish-step') sink.stepEnd()
+            else progress.chunk(chunk)
           },
           onError: ({ error }) => {
             streamError ??= error
@@ -605,9 +613,11 @@ export default class ChatEngine {
         for (const request of approvalRequests) {
           // deno-lint-ignore no-explicit-any
           const { approvalId, toolCall } = request as any
+          progress.start(toolCall.toolCallId, toolCall.toolName, 'waiting', toolCall.input)
 
           // Auto-deny tools the user already rejected this turn
           if (deniedTools.has(toolCall.toolName)) {
+            progress.end(toolCall.toolCallId, toolCall.toolName, { error: 'Tool call was declined.' })
             recordDeniedTool(toolCall)
             approvals.push({
               type: 'tool-approval-response',
@@ -622,6 +632,9 @@ export default class ChatEngine {
             this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input }),
           )
           if (!decision.approved) {
+            progress.end(toolCall.toolCallId, toolCall.toolName, {
+              error: decision.reason ?? 'Tool call was declined.',
+            })
             deniedTools.add(toolCall.toolName)
             recordDeniedTool(toolCall)
           }
@@ -654,6 +667,7 @@ export default class ChatEngine {
       // Terminal event as well as a return value — a host consuming only
       // the stream can close its rendering on this without a second code
       // path for the turn ending.
+      progress.finishIncomplete('The turn ended before this tool reported completion.')
       emit({ type: 'turn-complete', toolRecords: turnTools })
 
       return {
@@ -665,6 +679,7 @@ export default class ChatEngine {
         ...(cutShort ? { cutShort } : {}),
       }
     } catch (err) {
+      progress.finishIncomplete('The turn failed before this tool reported completion.')
       // Roll back to the turn's start and rethrow clamped — the raw SDK
       // error can embed the entire message array, and hosts print and log
       // the message. The tool trail rides along for the host's records.

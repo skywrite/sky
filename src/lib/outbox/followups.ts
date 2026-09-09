@@ -50,7 +50,10 @@ function quotedSpan(reply: string, quote: string): string | undefined {
 export const canQueueFollowups = (parent: OutboxRecord) =>
   parent.status === 'ready' || Boolean(parent.delivery) || (parent.status === 'dismissed' && Boolean(parent.native))
 
-export function createFollowupPlanner(model: () => ResolvedModel = outboxModel): PrepareFollowups {
+export function createFollowupPlanner(
+  model: () => ResolvedModel = outboxModel,
+  write?: import('#lib/writingVoice/types.ts').VoiceWriter,
+): PrepareFollowups {
   return async ({ item, reply, preferences }) => {
     const result = await generateObject({
       ...model(),
@@ -66,7 +69,23 @@ export function createFollowupPlanner(model: () => ResolvedModel = outboxModel):
       }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    return result.object.followups
+    return Promise.all(
+      result.object.followups.map(async (followup) =>
+        write
+          ? {
+              ...followup,
+              draft: (
+                await write({
+                  meaning: followup.draft,
+                  medium: 'Message',
+                  recipient: followup.recipient,
+                  context: followup.situation,
+                })
+              ).draft,
+            }
+          : followup,
+      ),
+    )
   }
 }
 

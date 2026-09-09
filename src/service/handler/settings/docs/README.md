@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Settings — the web's settings section
@@ -30,6 +30,10 @@ Sections at `/settings` and `/settings/<section>`:
   [voice design](../../../../commands/lib/voice/docs/README.md).
   Microphone and speaker are the call bar's own browser-local choice
   (`sky-voice-devices`), shown here.
+- **Writing Voice** — `/settings/writing-voice`: model configuration picker, shared writing rules, draft
+  practice, revision questions, and example compaction. Storage and learning
+  belong to [writing voice](../../../../lib/writingVoice/docs/README.md).
+  The selection saves to `ai.writingVoiceProfile` and applies on the next call.
 - **AI** — the model roles (registry `ROLES`, read-only, each naming
   its configuration), every model configuration — the built-in
   `default-*` catalog and yours — and the ai/memory note count. Yours

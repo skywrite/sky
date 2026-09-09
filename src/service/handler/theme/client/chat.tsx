@@ -14,6 +14,7 @@ import {
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
@@ -26,9 +27,12 @@ import { splitLinks } from './links.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
+import { compactLine, humanize, titleOf } from './toolLines.ts'
+import { FieldsView, RunLines } from './toolLinesView.tsx'
 import { awaitReturn, frames } from './turnStream.ts'
 import { VoiceButton, VoiceStatus, VoiceTranscript } from './voice.tsx'
 import { VoicePresence } from './voicePresence.tsx'
+import { WritingVoiceQuestions } from './writingVoice.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -92,6 +96,11 @@ export interface Answered extends Approval {
 
 /** One tool call at work, with what it printed — kept with the reply it belongs to. */
 export interface Run {
+  callId?: string
+  input?: unknown
+  output?: unknown
+  error?: string
+  phase?: 'preparing' | 'waiting' | 'running'
   /** The tool as the model calls it (`google_agent`) */
   tool: string
   /** The reply's turn index */
@@ -224,7 +233,8 @@ type Action =
   | { type: 'queries'; id: string; turn: number; queries: string[] }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
-  | { type: 'tool'; id: string; name: string; subject?: string }
+  | { type: 'tool'; id: string; name: string; subject?: string; input?: unknown; callId?: string }
+  | { type: 'run-updated'; id: string; run: Run }
   | { type: 'run-started'; id: string; run: Run }
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
   | { type: 'run-finished'; id: string; tool: string; at: number; status: Run['status']; finished: number }
@@ -411,19 +421,54 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     case 'tool': {
       // The model's record of a call: the run that spoke for it takes what it was about; a quiet tool gets its chip.
       const at = replyIndexOf(state.turns)
-      const i = state.runs.findLastIndex((r) => r.tool === action.name && r.at === at && r.subject === undefined)
+      const known = action.callId ? state.runs.findIndex((r) => r.callId === action.callId) : -1
+      const i =
+        known >= 0
+          ? known
+          : state.runs.findLastIndex(
+              (r) => !r.callId && r.tool === action.name && r.at === at && r.subject === undefined,
+            )
       if (i >= 0) {
-        if (!action.subject) return state
-        return { ...state, runs: state.runs.map((r, k) => (k === i ? { ...r, subject: action.subject } : r)) }
+        return {
+          ...state,
+          runs: state.runs.map((r, k) =>
+            k === i
+              ? {
+                  ...r,
+                  subject: action.subject ?? r.subject,
+                  input: action.input ?? r.input,
+                  callId: action.callId ?? r.callId,
+                }
+              : r,
+          ),
+        }
       }
       const { subject } = action
-      const chip: Run = { tool: action.name, at, started: Date.now(), lines: [], status: 'success', subject }
+      const chip: Run = {
+        tool: action.name,
+        at,
+        started: new ZonedDateTime().epochMilliseconds,
+        lines: [],
+        status: 'success',
+        subject,
+        input: action.input,
+        callId: action.callId,
+      }
       return { ...state, runs: [...state.runs, chip] }
+    }
+    case 'run-updated': {
+      const i = state.runs.findIndex((run) => run.callId === action.run.callId)
+      return {
+        ...state,
+        runs: i < 0 ? [...state.runs, action.run] : state.runs.map((run, index) => (index === i ? action.run : run)),
+      }
     }
     case 'run-started': {
       // A call that asked first was recorded before it ran: that chip becomes the run.
       const { run } = action
-      const chip = state.runs.findIndex((r) => r.tool === run.tool && r.at === run.at && r.lines.length === 0)
+      const chip = state.runs.findIndex(
+        (r) => !r.callId && r.tool === run.tool && r.at === run.at && r.lines.length === 0,
+      )
       if (chip >= 0) {
         const runs = state.runs.map((r, i) => (i === chip ? { ...run, subject: run.subject ?? r.subject } : r))
         return { ...state, runs }
@@ -522,15 +567,6 @@ function renderMarkdown(raw: string, reply = false): string | null {
   } catch {
     return null
   }
-}
-
-export function humanize(toolName: string): string {
-  return toolName.replaceAll('_', ' ')
-}
-
-/** The tool's name as a heading: `google_agent` → `Google Agent`. */
-function titleOf(toolName: string): string {
-  return humanize(toolName).replace(/\b\p{L}/gu, (c) => c.toUpperCase())
 }
 
 /** The full first own message until its subject arrives; a branch skips what it inherited. */
@@ -867,7 +903,17 @@ export function useChat(id: string) {
               dispatch({ id, type: 'delta', text: d.text as string })
               break
             case 'tool-call':
-              dispatch({ id, type: 'tool', name: d.toolName as string, subject: d.subject as string | undefined })
+              dispatch({
+                id,
+                type: 'tool',
+                name: d.toolName as string,
+                subject: d.subject as string | undefined,
+                input: d.input,
+                callId: d.toolCallId as string | undefined,
+              })
+              break
+            case 'tool-updated':
+              dispatch({ id, type: 'run-updated', run: d.run as Run })
               break
             case 'tool-started':
               dispatch({ id, type: 'run-started', run: d.run as Run })
@@ -1137,30 +1183,26 @@ function useElapsed(since: number, active: boolean): number {
 }
 
 function elapsedLabel(seconds: number): string {
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m`
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 /**
- * A tool at work, in its own words. The chip names it, and what the call
- * was about once the model's record of it lands; while it runs, the line
- * under the chip is the last thing it said, with the time since it
- * started; a click opens everything it said. Once done the run folds to
- * one line — a caret, the tool's name, how long it took, and what it did
- * in a small model's words (its last line until that arrives) — and a
- * click on that line unfolds the record of what the tool said. The time
- * stays: a wait watched on the counter is not lost the moment it ends.
+ * Every tool exposes its phase, elapsed time, and inspection record,
+ * including calls that produce no command activity. Completion keeps
+ * an open inspector in place so the user's selection survives.
  */
 function RunView({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
   const running = run.status === null
-  // Ending folds the run, even one opened to watch it work.
-  useEffect(() => {
-    if (!running) setOpen(false)
-  }, [running])
+  const progressLabel =
+    run.phase === 'preparing' ? 'Preparing inputs' : run.phase === 'waiting' ? 'Waiting for approval' : 'Running'
+  // Keep an explicitly opened inspector and its text selection through completion.
   const seconds = useElapsed(run.started, running)
   const took = run.finished === undefined ? undefined : Math.max(0, Math.floor((run.finished - run.started) / 1000))
   const count = run.lines.length
-  const last = run.lines.at(-1)
+  // The last thing it said, on one line: a call the tool made reads as its name and what it asked.
+  const lastLine = run.lines.at(-1)
+  const last = lastLine === undefined ? undefined : compactLine(lastLine)
   const folded = !running && count > 0
   return (
     <div className="sky-tool-run" data-running={running} data-status={run.status ?? undefined}>
@@ -1171,11 +1213,12 @@ function RunView({ run }: { run: Run }) {
           data-act="true"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
+          aria-label={`${titleOf(run.tool)} details`}
         >
           <span className="sky-tool-caret" aria-hidden="true">
             {open ? '▾' : '▸'}
           </span>
-          <span className="sky-tool-fold-name">{titleOf(run.tool)} Output</span>
+          <span className="sky-tool-fold-name">{titleOf(run.tool)}</span>
           {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
           <span className="sky-tool-fold-summary">{run.summary ?? last}</span>
         </button>
@@ -1185,23 +1228,59 @@ function RunView({ run }: { run: Run }) {
           className="sky-chip sky-tool-chip"
           data-act="true"
           data-open={open}
-          onClick={count > 0 ? () => setOpen((o) => !o) : undefined}
-          aria-expanded={count > 0 ? open : undefined}
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`${titleOf(run.tool)} details`}
         >
-          {running && <span className="sky-tool-pulse" aria-hidden="true" />}
+          {running && (
+            <span className="sky-tool-pulse" role="progressbar" aria-label={`${humanize(run.tool)} progress`} />
+          )}
           {humanize(run.tool)}
           {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
-          {count > 0 && <span className="sky-tool-meta">{elapsedLabel(seconds)}</span>}
+          <span className="sky-tool-meta">
+            {running ? progressLabel : run.status === 'success' ? 'Completed' : 'Failed'}
+          </span>
+          {(running || took !== undefined) && (
+            <span className="sky-tool-meta">{elapsedLabel(running ? seconds : took!)}</span>
+          )}
         </button>
       )}
       {running && last && !open && <div className="sky-tool-last">{last}</div>}
       {open && (
-        <div className="sky-tool-lines">
-          {run.lines.map((line, i) => (
-            <div key={i} className="sky-tool-line">
-              {line}
-            </div>
-          ))}
+        <div className="sky-tool-details">
+          <div className="sky-tool-detail-label">Parameters passed</div>
+          {run.input !== undefined ? (
+            <FieldsView value={run.input} />
+          ) : (
+            <p>
+              {run.phase === 'preparing'
+                ? 'The model is preparing the tool inputs.'
+                : 'Input data is not available for this older call.'}
+            </p>
+          )}
+          {run.output !== undefined && (
+            <>
+              <div className="sky-tool-detail-label">Result</div>
+              <FieldsView value={run.output} />
+            </>
+          )}
+          {run.error && (
+            <>
+              <div className="sky-tool-detail-label">Error</div>
+              <pre role="alert">{run.error}</pre>
+            </>
+          )}
+          {running && (
+            <p role="status">
+              {progressLabel} - {elapsedLabel(seconds)}
+            </p>
+          )}
+          {count > 0 && (
+            <>
+              <div className="sky-tool-detail-label">Activity</div>
+              <RunLines lines={run.lines} />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1563,6 +1642,14 @@ export function ThreadColumn({
       {coming.length > 0 && <RunList runs={coming} />}
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
+      {state.id && (
+        <WritingVoiceQuestions
+          key={state.id}
+          source={`chat:${state.id}`}
+          refreshKey={`${state.turns.length}:${state.phase}`}
+          polling={busy}
+        />
+      )}
     </>
   )
 }

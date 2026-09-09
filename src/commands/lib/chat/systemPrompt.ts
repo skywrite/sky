@@ -1,4 +1,5 @@
 import { formatPeopleBlock, gatherPeopleEntities } from '#commands/all/ai/context/_entityContext.ts'
+import { WRITING_VOICE_CHAT_INSTRUCTIONS } from '#lib/writingVoice/tools.ts'
 /**
  * The base system prompt for a chat session, rendered once per session so
  * it stays byte-identical and prompt-cached: the interaction-ranked people
@@ -34,5 +35,5 @@ export async function renderChatSystemPrompt(
     entities: { block: formatPeopleBlock(people) },
     memory: { block: renderPreferenceBlock(memories) },
   })
-  return { prompt: output, peopleCount: people.length }
+  return { prompt: [output, WRITING_VOICE_CHAT_INSTRUCTIONS].join('\n\n'), peopleCount: people.length }
 }

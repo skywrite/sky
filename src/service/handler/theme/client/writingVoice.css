@@ -1,0 +1,91 @@
+.sky-writing-settings,
+.sky-writing-questions {
+  font-size: var(--sky-content-font-size, 19px);
+  line-height: 1.6;
+}
+
+.sky-writing-settings .mantine-Textarea-root,
+.sky-writing-settings .mantine-TextInput-root {
+  margin-bottom: 16px;
+}
+
+.sky-writing-actions,
+.sky-writing-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.sky-writing-example {
+  padding: 24px 0;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-writing-questions {
+  margin: 20px 0;
+}
+
+.sky-writing-label,
+.sky-writing-scope,
+.sky-writing-change span {
+  color: var(--sky-text-2);
+  font-size: 0.85em;
+}
+
+.sky-writing-question {
+  font-weight: 600;
+  margin: 12px 0 18px;
+}
+
+.sky-writing-change {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.sky-writing-change p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 6px 0 12px;
+}
+
+.sky-writing-choices .mantine-Button-root {
+  height: auto;
+  min-height: 44px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  max-width: 100%;
+}
+
+.sky-writing-choices .mantine-Button-label {
+  white-space: normal;
+  text-align: left;
+}
+
+.sky-writing-own {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.sky-writing-own .mantine-Textarea-root {
+  width: 100%;
+}
+
+.sky-writing-error {
+  color: var(--mantine-color-error);
+}
+
+.sky-writing-pair summary {
+  cursor: pointer;
+  color: var(--sky-text-2);
+  margin-top: 18px;
+}
+
+@media (max-width: 650px) {
+  .sky-writing-change {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}

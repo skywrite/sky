@@ -772,7 +772,7 @@ const MOCK_USAGE = {
 }
 
 /** One model step as the SDK's provider stream: the parts, then a finish. */
-function mockStep(parts: unknown[], unified: 'tool-calls' | 'stop') {
+function mockStep(parts: unknown[], unified: 'tool-calls' | 'stop' | 'error') {
   return {
     // deno-lint-ignore no-explicit-any
     stream: simulateReadableStream<any>({
@@ -831,6 +831,144 @@ test('the streaming path re-tails the cache breakpoint on every tool step', asyn
     should: 'move the mark to the tool result that closes step one',
     actual: marks(model.doStreamCalls[1].prompt),
     expected: [false, false, true],
+  })
+})
+
+test('The SDK tool loop emits live lifecycle events for a tool without command output', async () => {
+  const events: ChatEngineEvent[] = []
+  const model = new MockLanguageModelV3({
+    doStream: [
+      mockStep(
+        [
+          { type: 'tool-input-start', id: 'quiet-one', toolName: 'quiet' },
+          { type: 'tool-input-delta', id: 'quiet-one', delta: '{"message":"Ready."}' },
+          { type: 'tool-input-end', id: 'quiet-one' },
+          { type: 'tool-call', toolCallId: 'quiet-one', toolName: 'quiet', input: '{"message":"Ready."}' },
+        ],
+        'tool-calls',
+      ),
+      mockStep(
+        [
+          { type: 'text-start', id: 'text' },
+          { type: 'text-delta', id: 'text', delta: 'Done.' },
+          { type: 'text-end', id: 'text' },
+        ],
+        'stop',
+      ),
+    ],
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    onEvent: (event) => events.push(event),
+    approvalHandler: async () => DECLINE,
+  })
+  engine.appendUserMessage('Use the quiet tool.')
+  await engine.runTurn({
+    instructions: ['system'],
+    toolApproval: {},
+    tools: {
+      quiet: {
+        inputSchema: jsonSchema({ type: 'object', properties: { message: { type: 'string' } }, required: ['message'] }),
+        execute: async () => {
+          assert({
+            given: 'the tool is just beginning execution',
+            should: 'already have announced its prepared input',
+            actual: events.some((event) => event.type === 'tool-execution-start' && event.phase === 'running'),
+            expected: true,
+          })
+          return { success: true, text: 'Ready.' }
+        },
+      },
+    },
+  })
+  const lifecycle = events.filter(
+    (event) => event.type === 'tool-execution-start' || event.type === 'tool-execution-end',
+  )
+  assert({
+    given: 'the actual SDK loop with streaming tool arguments',
+    should: 'announce preparation, execution, and completion in order with a stable ID',
+    actual: lifecycle.map((event) => [event.type, event.toolCallId, 'phase' in event ? event.phase : event.output]),
+    expected: [
+      ['tool-execution-start', 'quiet-one', 'preparing'],
+      ['tool-execution-start', 'quiet-one', 'running'],
+      ['tool-execution-end', 'quiet-one', { success: true, text: 'Ready.' }],
+    ],
+  })
+})
+
+test('Provider-run tools get live progress without a local execute function', async () => {
+  const events: ChatEngineEvent[] = []
+  const model = new MockLanguageModelV3({
+    doStream: mockStep(
+      [
+        { type: 'tool-input-start', id: 'hosted-one', toolName: 'hosted_lookup', providerExecuted: true },
+        {
+          type: 'tool-call',
+          toolCallId: 'hosted-one',
+          toolName: 'hosted_lookup',
+          input: '{"query":"sample"}',
+          providerExecuted: true,
+        },
+        { type: 'tool-result', toolCallId: 'hosted-one', toolName: 'hosted_lookup', result: { found: true } },
+        { type: 'text-start', id: 'answer' },
+        { type: 'text-delta', id: 'answer', delta: 'Found it.' },
+        { type: 'text-end', id: 'answer' },
+      ],
+      'stop',
+    ),
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    onEvent: (event) => events.push(event),
+    approvalHandler: async () => DECLINE,
+  })
+  engine.appendUserMessage('Look up the sample.')
+  await engine.runTurn({
+    instructions: ['system'],
+    toolApproval: {},
+    tools: {
+      hosted_lookup: { type: 'provider', id: 'sample.lookup', args: {}, inputSchema: jsonSchema({ type: 'object' }) },
+    },
+  })
+  assert({
+    given: 'a tool executed by the provider',
+    should: 'show preparation, execution, and the provider result in order',
+    actual: events
+      .filter((event) => event.type === 'tool-execution-start' || event.type === 'tool-execution-end')
+      .map((event) => ('phase' in event ? event.phase : event.output)),
+    expected: ['preparing', 'running', { found: true }],
+  })
+})
+
+test('An interrupted argument stream stops its tool indicator before the turn fails', async () => {
+  const events: ChatEngineEvent[] = []
+  const model = new MockLanguageModelV3({
+    doStream: mockStep(
+      [
+        { type: 'tool-input-start', id: 'incomplete', toolName: 'future_tool' },
+        { type: 'error', error: new Error('Test stream disconnected') },
+      ],
+      'error',
+    ),
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    onEvent: (event) => events.push(event),
+    approvalHandler: async () => DECLINE,
+  })
+  engine.appendUserMessage('Read the sample.')
+  let failed = false
+  try {
+    await engine.runTurn({ instructions: ['system'], tools: {}, toolApproval: {} })
+  } catch {
+    failed = true
+  }
+  const end = events.find((event) => event.type === 'tool-execution-end')
+  assert({
+    given: 'a model stream that fails while preparing tool inputs',
+    should: 'end the tool activity and propagate the failed turn',
+    actual: [failed, end?.toolCallId, Boolean(end?.error)],
+    expected: [true, 'incomplete', true],
   })
 })
 

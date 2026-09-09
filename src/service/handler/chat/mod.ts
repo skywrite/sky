@@ -31,13 +31,14 @@ import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { chatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_FILES, splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
-import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
 import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { timelineOf } from './timeline.ts'
+import { inspectablePayload, recordToolExecution, toolRunsFromMessages } from './toolRuns.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -89,6 +90,11 @@ export type ToolOutputEvent =
 
 /** One tool call at work, kept with the thread like the cards — the page shows it under the reply it belongs to. */
 export interface ToolRun {
+  callId?: string
+  input?: unknown
+  output?: unknown
+  error?: string
+  phase?: 'preparing' | 'waiting' | 'running'
   /** The tool as the model calls it (`google_agent`) */
   tool: string
   /** The reply's turn index — the run sits with that reply */
@@ -114,6 +120,7 @@ export interface ToolRun {
  */
 export interface ThreadRestore {
   id: string
+  runs?: ToolRun[]
   prefs?: ThreadPrefs
   title?: string | null
   /** When the thread started; absent, it starts now — a fresh branch does */
@@ -287,6 +294,7 @@ export interface ThreadSummary {
 /** What travels the turn's stream: the session's events, and what the routes add around them — approvals and tool runs. */
 type WireEvent =
   | ChatSessionEvent
+  | { type: 'tool-updated'; run: ToolRun }
   | { type: 'approval-request'; approval: PendingApproval }
   | { type: 'approval-answered'; id: string; approved: boolean; at: number }
   | { type: 'tool-call'; toolName: string; input: unknown; subject?: string }
@@ -389,7 +397,9 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
     case 'tool-started': {
       if (open) return null
       // A call that asked first was recorded before it ran: that record becomes the run.
-      const record = thread.runs.findLast((run) => run.tool === event.tool && run.at === at && run.lines.length === 0)
+      const record = thread.runs.findLast(
+        (run) => !run.callId && run.tool === event.tool && run.at === at && run.lines.length === 0,
+      )
       if (record) {
         record.status = null
         record.started = Date.now()
@@ -412,6 +422,8 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
     }
     case 'tool-finished': {
       if (!open) return null
+      // Command activity can finish before its enclosing tool returns. The engine owns that lifecycle.
+      if (open.callId) return null
       open.status = event.status
       open.finished = Date.now()
       return { type: 'tool-finished', tool: open.tool, at: open.at, status: event.status, finished: open.finished }
@@ -435,14 +447,33 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
  * gets a run for the record alone, so the page can name the call and a
  * reload still shows it.
  */
-function recordToolCall(thread: Thread, tool: string, subject: string | undefined): void {
+function recordToolCall(
+  thread: Thread,
+  tool: string,
+  subject: string | undefined,
+  input?: unknown,
+  callId?: string,
+): void {
   const at = thread.session.turns.length
-  const run = thread.runs.findLast((r) => r.tool === tool && r.at === at && r.subject === undefined)
+  const run =
+    (callId ? thread.runs.find((r) => r.callId === callId) : undefined) ??
+    thread.runs.findLast((r) => !r.callId && r.tool === tool && r.at === at && r.subject === undefined)
   if (run) {
     if (subject) run.subject = subject
+    run.input = inspectablePayload(input)
+    run.callId = callId ?? run.callId
     return
   }
-  thread.runs.push({ tool, at, started: Date.now(), lines: [], status: 'success', subject })
+  thread.runs.push({
+    tool,
+    at,
+    started: new ZonedDateTime().epochMilliseconds,
+    lines: [],
+    status: 'success',
+    subject,
+    input: inspectablePayload(input),
+    callId,
+  })
 }
 
 function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
@@ -578,6 +609,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           (event) => {
             const thread = threads.get(id)
             if (!thread) return
+            if (event.type === 'tool-execution-start' || event.type === 'tool-execution-end') {
+              const run = recordToolExecution(thread.runs, thread.session.turns.length, event)
+              thread.updatedAt = ++tick
+              thread.sink?.({ type: 'tool-updated', run })
+              void thread.session.snapshot()
+              return
+            }
             if (
               event.type === 'tool-started' ||
               event.type === 'tool-line' ||
@@ -590,10 +628,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               return
             }
             if (event.type === 'tool-call') {
-              const subject = callSubject(event.input)
-              recordToolCall(thread, event.toolName, subject)
+              const subject = callSubject(inspectablePayload(event.input))
+              recordToolCall(thread, event.toolName, subject, event.input, event.toolCallId)
               thread.updatedAt = ++tick
-              thread.sink?.({ ...event, subject })
+              thread.sink?.({ ...event, input: inspectablePayload(event.input), subject })
               return
             }
             const next = stateAfter(event)
@@ -627,7 +665,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             sink: null,
             pending: new Map(),
             answered: [],
-            runs: [],
+            runs: restore?.runs ?? toolRunsFromMessages(restore?.state.modelMessages),
             liveQueries: null,
             usage: new Map(),
             timings: new Map(),
@@ -666,6 +704,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             title: thread.title,
             parentId: thread.parent?.id ?? null,
             saved: savedOf(thread, baseDir),
+            runs: thread.runs,
           })
           pending.delete(id)
           return thread

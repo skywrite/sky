@@ -13,7 +13,7 @@
 
 import truncate from '#shared/strings/truncate.ts'
 
-const SUBJECT_KEYS = ['query', 'url', 'path', 'mission', 'message', 'text']
+const SUBJECT_KEYS = ['query', 'url', 'path', 'mission', 'message', 'text', 'meaning']
 const SUBJECT_CHARS = 80
 
 export function callSubject(input: unknown): string | undefined {

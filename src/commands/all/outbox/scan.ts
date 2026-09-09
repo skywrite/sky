@@ -7,6 +7,7 @@ import { createOutboxRuntime } from '#lib/outbox/runtime.ts'
 import { scanOutbox } from '#lib/outbox/scan.ts'
 import { createTriage } from '#lib/outbox/triage.ts'
 import { OutboxError, type ScanReport } from '#lib/outbox/types.ts'
+import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -24,6 +25,7 @@ export default class OutboxScan extends Command {
 
   async run({ context }: CommandArgs): Promise<CommandResult<ScanReport>> {
     const { store, sources } = createOutboxRuntime(context.config)
+    const voice = createWritingVoice(context.config)
     const now = context.systemNow.toUTC().normalize().plainDateTime.toString()
     const { value: range } = await store.scanRange(context.systemNow.date)
     try {
@@ -33,7 +35,11 @@ export default class OutboxScan extends Command {
         today: context.systemNow.date,
         range,
         now,
-        propose: createTriage(((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)),
+        propose: createTriage(
+          ((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000),
+          undefined,
+          (input) => voice.draft(input),
+        ),
         model: outboxModelId(),
         modelProfile: OUTBOX_MODEL_PROFILE,
       })

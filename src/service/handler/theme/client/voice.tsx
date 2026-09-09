@@ -1,8 +1,8 @@
 /** Voice inside Chat: Sky hosts; Sonny returns from deeper research. */
 import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { humanize } from './chat.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
+import { humanize } from './toolLines.ts'
 import { VoiceAudioLevels } from './voiceAudio.ts'
 import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 import './voice.css'

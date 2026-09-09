@@ -240,40 +240,55 @@ a person can see and touch:
   receipts without asking; sending or saving uses an asynchronous formatter to
   show the stored event details before approval. See the
   [calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice).
-- **A tool at work, in its own words.** Every line a command prints in the
-  terminal reaches the page while the tool runs: the session's tools get
-  their own command service whose output is an `EventOutput`, and
-  `toolOutputSink` in `createSession.ts` turns lines, stages, closing
-  ticks, and command boundaries into `tool-started`, `tool-line`, and
-  `tool-finished` events for the routes. The routes keep one `ToolRun` per
-  call with the thread (`runs` on `GET /chat/:id`, like the cards) and
-  stream the same three as frames. On the page the running tool's chip
-  carries the time since it started and the last thing it said sits
-  under it; a click opens everything it said. Once it ends the run folds
-  to one line — a caret, the tool's name, how long it took (the routes
-  stamp `finished` on the run beside `started`, so the time survives a
-  reload), and what it did in a small model's words: as a run ends with
-  more than one line the sink asks
-  `summarizeToolRun` (the fast role, twelve words at most) and the routes
-  stream the answer as `tool-summary`, kept on the run as `summary`;
-  until it lands, or when none comes, the run's last line stands in, and
-  a page whose turn ended before the line reads the thread back for it. A
-  click on the line unfolds the record of what the tool said. The day's
-  list shows the running tool's latest line for a thread that is
-  thinking. A tool that prints nothing keeps its chip from the model's
-  own record of the call; the two never double up. That record — the
-  session's `tool-call`, as the model's step ends — carries the call's
-  input, and `callSubject` (`callSubject.ts`) turns it into one line on
-  what the call was about: the field a tool acts on when it has one of
-  the usual names (query, url, path, mission, message, text), else its
-  first string; the first line only, spaces collapsed, cut to a chip's
-  width; an address without its scheme. The routes stream it on the frame
-  as `subject` and keep it on the run: a run that spoke for itself takes
-  it once the record lands; a tool that ran without a word — a web search
-  — gets a run for its record alone, so a reload keeps its chip; a call
-  that asked first is recorded before it runs, and the run that follows
-  takes that record over. The chip shows it after the name: `web search ·
-  atlas roadmap reviews`. Two searches in one step are two chips.
+- **Tool progress and inspection.** The engine emits `tool-execution-start`
+  as streamed arguments begin (`preparing`) and immediately before execution
+  (`running`), then `tool-execution-end` with the result or error. The routes
+  correlate these by provider call ID, keep `ToolRun` records on the thread,
+  and stream `tool-updated` frames. This makes silent tools visible before
+  they finish and keeps repeated calls of the same tool separate. The chip
+  shows phase, completion status, and elapsed time; every chip expands to
+  parameters, result, error, and any command activity. An expanded inspector
+  stays open through completion and preserves text selection during polling.
+  `callSubject` provides a short input summary beside the tool name.
+
+  Progress is a shared engine contract: new tools require no individual UI
+  wiring. `ToolProgress` merges local execution and provider stream events,
+  including provider-run tools, approval waits, and failures before execution.
+  Late stream callbacks cannot restart a completed call. When a turn exits,
+  any call still open ends with an incomplete-result error instead of leaving
+  a running indicator behind. Timers keep displaying seconds past one minute.
+
+  Command output still arrives through `toolOutputSink` as `tool-started`,
+  `tool-line`, and `tool-finished`; it enriches the matching run with activity.
+  A command boundary cannot finish an engine-tracked tool before it returns.
+  `summarizeToolRun` uses the fast role for a short completion summary when
+  there are multiple lines. The later step-end `tool-call` record merges into
+  the existing call instead of creating another chip.
+
+  Inputs, outputs, errors, and timings are persisted in recovery host state
+  and returned by `GET /chat/:id`. Dedicated credential fields are redacted
+  from the inspection record without changing the arguments sent to tools.
+  Older snapshots recover arguments and results from provider message history
+  when available, without inventing timings. Unfinished recovered calls are
+  marked interrupted. Filed context logs remain concise digests; the recovery
+  snapshot holds the detailed record. Parameters show what the caller passed,
+  not additional context a tool loads internally.
+
+  What a tool said is read, not echoed (`toolLines.ts`, `toolLinesView.tsx`,
+  `toolLines.css`). A line that begins with `→` is a call the tool made of
+  its own — the name, and what it asked on the line or dedented from beneath
+  it; the older JSON form is read too, a record cut mid-way as far as it
+  goes. Every entry is a card: a call carries its name and what it asked, a
+  query as a block colored by token, a notebook file as a link to its page;
+  any other line is the tool's words, several paragraphs as markdown. The
+  cards flow with the page and the fold above closes them. Parameters and
+  result go through `FieldsView` — field by field, a string as its text, a
+  `graphql` string as the colored block, a list one item per line, anything
+  nested as JSON — so no escaped query reaches the page. `ai:research`
+  narrates its calls this way (`describeCall` in `research/lib/narrate.ts`,
+  the query as graphql-js prints it); a tool that narrates its own calls
+  prints the arrow, the name, and the input whole. See
+  [2026-09-03-tool-lines-on-the-page.md](2026-09-03-tool-lines-on-the-page.md).
 - **The message a restart took.** Every active thread's snapshot is written
   as each turn begins as well as when it ends (the session's
   `snapshotOnSend`, always enabled by the web host), so a service that
@@ -376,6 +391,11 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-08 — a tool's lines read as cards: parse, compact, dedent, and
+  token tests on the page's reader; `describeCall` tests on the research
+  narration; headless captures over synthetic threads (the older cut record,
+  the new narration, a running chip) in light and dark.
 
 - 2026-09-08 — draft rendering tests cover legacy and labelled Slack fences,
   quoted drafts with commentary outside, preserved code, and inert HTML.

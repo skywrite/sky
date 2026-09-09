@@ -1,4 +1,5 @@
 import { MockLanguageModelV4 } from 'ai/test'
+import type { VoiceDraftInput, VoiceWriter } from '#lib/writingVoice/types.ts'
 import { assert, test } from '#test'
 import { createReplyComposer, createTriage } from './triage.ts'
 import type { Conversation, DraftProposal, OutboxRecord } from './types.ts'
@@ -71,6 +72,60 @@ function sentTo(model: MockLanguageModelV4) {
       .join(''),
   )
 }
+
+test('Outbox uses the shared writer for new and revised replies while leaving unresolved decisions to the owner', async () => {
+  const requests: VoiceDraftInput[] = []
+  const write: VoiceWriter = async (input) => {
+    requests.push(input)
+    return { draft: 'The first-run instructions need work. Everything else looks good.', rulesRevision: 'rules-v2' }
+  }
+  const model = modelFor(reply)
+  const triageInput = {
+    conversation,
+    today: TODAY,
+    now: TODAY,
+    preferences: 'Keep it direct.',
+    examples: [{ original: 'Old wording.', final: 'An unconfirmed edit.', at: TODAY, sourceVersion: 'old' }],
+  }
+  const proposed = await createTriage('', () => ({ model }), write)(triageInput)
+  const composed = await createReplyComposer(
+    '',
+    () => ({ model }),
+    write,
+  )({
+    item: { ...item, recipient: 'Jane Doe' },
+    draft: 'My unsaved edit.',
+    instruction: 'Shorten the introduction.',
+    preferences: triageInput.preferences,
+    examples: triageInput.examples,
+  })
+  const decision = await createTriage(
+    '',
+    () => ({ model: modelFor({ ...reply, action: 'decision', questions: ['Which scope do you prefer?'] }) }),
+    write,
+  )(triageInput)
+  assert({
+    given: 'the shared writing agent is connected to Outbox',
+    should: 'present its wording, carry the owner’s revision direction, and avoid inventing answers to decisions',
+    actual: [
+      proposed.draft,
+      composed.draft,
+      requests.map(({ meaning, medium, instruction, recipient }) => ({ meaning, medium, instruction, recipient })),
+      sentTo(model).examples,
+      decision.draft,
+    ],
+    expected: [
+      'The first-run instructions need work. Everything else looks good.',
+      'The first-run instructions need work. Everything else looks good.',
+      [
+        { meaning: reply.draft, medium: 'Slack', instruction: undefined, recipient: undefined },
+        { meaning: reply.draft, medium: 'Slack', instruction: 'Shorten the introduction.', recipient: 'Jane Doe' },
+      ],
+      [],
+      '',
+    ],
+  })
+})
 
 test('Outbox preserves the model’s proposed reply instead of replacing it with an empty draft', async () => {
   const model = modelFor(reply)

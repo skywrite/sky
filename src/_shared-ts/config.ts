@@ -72,6 +72,7 @@ export const DIR_DECISIONS = path.join(DIR_BASE, 'decisions')
 export const DIR_GOALS = path.join(DIR_BASE, 'goals')
 export const DIR_IDEAS = path.join(DIR_BASE, 'ideas')
 export const DIR_LIBRARY = path.join(DIR_BASE, 'library')
+export const DIR_ME = path.join(DIR_BASE, 'me')
 export const DIR_PEOPLE = path.join(DIR_BASE, 'people')
 export const DIR_PEOPLE_OLD = path.join(DIR_BASE, 'people-old')
 export const DIR_PLACES = path.join(DIR_BASE, 'places')
@@ -90,6 +91,7 @@ export const DIRS_MARKDOWN = [
   DIR_GOALS,
   DIR_IDEAS,
   DIR_LIBRARY,
+  DIR_ME,
   DIR_ORGS,
   DIR_PEOPLE,
   DIR_PEOPLE_OLD,

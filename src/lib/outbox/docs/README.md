@@ -17,6 +17,10 @@ Check now runs the triage prompt, with one judgment and proposed reply per chang
 
 Judgment follows authors and timestamps inside captured message bodies, since top-level sender metadata can describe the original message. An earlier owner question is not a final approval; a subsequent recommendation, scheduling choice, or substantive reply can still need the owner. Clear acknowledgments and completed or delegated matters stay quiet. Plausible unresolved owner requests with uncertain context are surfaced for review.
 
+Production drafting uses the shared [writing voice](../../writingVoice/docs/README.md). Your voice and Settings → Writing Voice edit `me/voice/rules.md`, initially seeded from existing `outbox/preferences.md`. Saved edits and accepted revisions become individual examples with one question, two suggested reasons, and the owner's answer. Confirmed lessons improve later drafts and compact into the rules. Examples teach writing, never transferable facts or standing permission for commitments.
+
+The check establishes the intended reply, then the shared writer applies the current voice before the draft reaches review. Reply composition and follow-ups use that writer too. Outbox judgment resolves through `model.ts`; writing and learning use their owning module's model adapter. The writing pass reads current rules and confirmed lessons, with bounded excerpts from relevant examples. Legacy callers without a writer retain the original single-call behavior.
+
 ## Files and concurrency
 
 Decisions live in `outbox/items/<conversation-hash>.md`. The body is the current draft; frontmatter retains the situation, reasoning, questions, source snapshots, original draft, approved pairs, and native draft reference. Ordinary reads survive service restarts. Scanner metadata and locks live under the user-data state directory, scoped by notebook root. A damaged checkpoint is an error, not permission to reset the baseline and replay work.

@@ -1,8 +1,8 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
-import { humanize } from './chat.tsx'
 import { GraphQLQueries } from './chatActivity.tsx'
 import { fileHref } from './explorer.tsx'
+import { humanize } from './toolLines.ts'
 
 /**
  * What sky read — the thread's context as a story, and the hand on it.

@@ -1,0 +1,185 @@
+/* What a tool said and what it was given, read as cards and fields rather than raw text. */
+
+/* Everything it said, opened: one card per entry on a quiet ground, like messages in a thread.
+   It flows with the page — one scroll, and the fold above closes it again. */
+.sky-tool-lines {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: none;
+  overflow: visible;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--sky-s2);
+}
+
+.sky-tool-entry {
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px 12px 8px;
+  border-radius: 12px;
+  background: var(--sky-card);
+  box-shadow: var(--sky-card-shadow);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+  overflow-wrap: anywhere;
+}
+
+[data-mantine-color-scheme='dark'] .sky-tool-entry {
+  background: var(--mantine-color-dark-6);
+  box-shadow: none;
+}
+
+/* What the tool said: its words, line breaks kept; several paragraphs read as markdown */
+.sky-tool-said {
+  white-space: pre-wrap;
+}
+
+.sky-tool-said.sky-rendered,
+.sky-tool-text.sky-rendered {
+  white-space: normal;
+}
+
+.sky-tool-said.sky-rendered p,
+.sky-tool-said.sky-rendered ul,
+.sky-tool-said.sky-rendered ol,
+.sky-tool-text.sky-rendered p,
+.sky-tool-text.sky-rendered ul,
+.sky-tool-text.sky-rendered ol {
+  margin: 0 0 8px;
+  max-width: none;
+}
+
+.sky-tool-said.sky-rendered > :last-child,
+.sky-tool-text.sky-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+/* A call the tool made: its name like a sender's, what it asked below */
+.sky-tool-call-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sky-accent);
+}
+
+.sky-tool-call-text {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sky-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A line that is a file reads in the file's own type, and opens it */
+a.sky-tool-file {
+  display: block;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+}
+
+a.sky-tool-call-text,
+a.sky-tool-file,
+.sky-tool-list a {
+  color: var(--sky-accent);
+  text-decoration: none;
+}
+
+a.sky-tool-call-text:hover,
+a.sky-tool-file:hover,
+.sky-tool-list a:hover {
+  text-decoration: underline;
+}
+
+/* A query as a block, colored by token; the same block wherever a query appears */
+.sky-tool-code,
+.sky-tool-json,
+.sky-tool-details .sky-tool-code,
+.sky-tool-details .sky-tool-json {
+  margin: 3px 0 0;
+  max-height: none;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sky-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+.sky-tool-cut,
+.sky-gql-punct {
+  color: var(--sky-dim);
+}
+
+.sky-gql-arg {
+  color: var(--sky-text-2);
+}
+
+.sky-gql-string {
+  color: var(--sky-code-string);
+}
+
+.sky-gql-number {
+  color: var(--sky-code-number);
+}
+
+.sky-gql-keyword {
+  color: var(--sky-code-keyword);
+}
+
+/* A tool's input or output, field by field: the name at the left, its value beside */
+.sky-tool-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 18px;
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.sky-tool-fields dt {
+  color: var(--sky-dim);
+  font-weight: 500;
+}
+
+.sky-tool-fields dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.sky-tool-fields .sky-tool-code,
+.sky-tool-fields .sky-tool-json {
+  margin-top: 0;
+}
+
+/* A value can be a whole brief or a document's worth of result: it scrolls in place past this, the page does not grow by it */
+.sky-tool-fields .sky-tool-text,
+.sky-tool-fields .sky-tool-code,
+.sky-tool-fields .sky-tool-json,
+.sky-tool-fields .sky-tool-list {
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.sky-tool-text {
+  color: var(--sky-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sky-tool-empty {
+  color: var(--sky-dim);
+}
+
+.sky-tool-list {
+  margin: 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}

@@ -114,3 +114,49 @@ because the run recorded when it started and not when it ended.
 - The folded row reads `Google Agent Output · 19m28s — what it did`. A
   run from before this has no end time and shows no time, rather than a
   wrong one.
+
+## 2026-09-08: a call, readable
+
+A research run's lines reached the page as the terminal had them: `→
+notebook_query {"graphql":"{ documents(where: {bodyContains: \"Atlas\"…`,
+the call's input as JSON, its quotes escaped, cut at a hundred characters
+so a query lost its date bounds and its fields. Asked: any query should be
+presented nicely, no escapes — and the whole record should read like a
+conversation, not a log.
+
+- The research command narrates each call in full. `describeCall`
+  (`research/lib/narrate.ts`) prints `→ notebook_query` and the query
+  under it as graphql-js prints it — a long argument list breaks where a
+  reader would break it — and `→ notebook_read <path>`, `→ person_lookup
+  <name>` with the field whole on the line. A query that does not parse
+  is shown as the model wrote it. The terminal gets the same lines, dimmed
+  and indented under the run.
+- The page reads a line that begins with the arrow as a call
+  (`toolLines.ts`): the name, and what it asked on the line or dedented
+  from beneath it. The older JSON form is read too, and a record cut
+  mid-way is read as far as it goes and marked cut, so the runs already
+  on the service render without escapes the moment the page reloads.
+- Everything a tool said is a card (`toolLinesView.tsx`, `toolLines.css`):
+  a call carries its name like a sender's and what it asked — a query as
+  a block colored by token, a notebook file as a link to its page; any
+  other line is the tool's words, and several paragraphs read as
+  markdown. The cards flow with the page rather than in a scroll of their
+  own; the fold above closes them.
+- The same reading serves the run's parameters and result: `FieldsView`
+  shows an object field by field, a string as its text with its
+  paragraphs kept, a `graphql` string as the colored block, a list one
+  item per line, anything nested as JSON — where `JSON.stringify` had put
+  the escapes back. A value the size of a brief scrolls in place; the page
+  does not grow by it.
+- The last thing a running tool said, under its chip, is one line:
+  `notebook query · { documents(…) { path markdown } }`.
+
+What it is not: a structured channel for calls. The arrow at the start of
+a line is the convention, spoken by the terminal's words; a tool that
+narrates its calls prints the arrow, the name, and the input whole.
+
+Verified 2026-09-08: parse, compact, dedent, and token tests (client);
+`describeCall` tests (research); tsc, oxfmt, oxlint on the touched files;
+headless captures over synthetic threads — the older cut record, the new
+narration, a running chip — in light and dark, and a saved thread's real
+mission run opened on the page.

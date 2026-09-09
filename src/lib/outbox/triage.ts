@@ -1,5 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import type { VoiceWriter } from '#lib/writingVoice/types.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
@@ -39,8 +40,12 @@ function writingExamples(examples: Review[]) {
     .map(({ original, final }) => ({ original: original.slice(0, 1500), final: final.slice(0, 1500) }))
 }
 
-/** Ground the proposed reply in the conversation and the owner’s direction. */
-export function createTriage(ownerContext: string, model: () => ResolvedModel = outboxModel): Propose {
+/** Ground the reply in the conversation, then apply the shared writing voice. */
+export function createTriage(
+  ownerContext: string,
+  model: () => ResolvedModel = outboxModel,
+  write?: VoiceWriter,
+): Propose {
   return async ({
     conversation,
     preferences,
@@ -65,7 +70,7 @@ export function createTriage(ownerContext: string, model: () => ResolvedModel = 
         checkedAtUtc: now,
         ownerContext,
         preferences,
-        examples: writingExamples(examples),
+        examples: write ? [] : writingExamples(examples),
         searchRange: { ...range, clock: 'Notebook message timestamps; both endpoint minutes are included.' },
         triggerSources:
           triggerSources ??
@@ -76,11 +81,23 @@ export function createTriage(ownerContext: string, model: () => ResolvedModel = 
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     const proposal = checked(judgment.object)
+    if (proposal.action === 'draft' && write)
+      proposal.draft = (
+        await write({
+          meaning: proposal.draft,
+          medium: conversation.medium,
+          context: proposal.situation,
+        })
+      ).draft
     return proposal
   }
 }
 
-export function createReplyComposer(ownerContext: string, model: () => ResolvedModel = outboxModel): ComposeReply {
+export function createReplyComposer(
+  ownerContext: string,
+  model: () => ResolvedModel = outboxModel,
+  write?: VoiceWriter,
+): ComposeReply {
   return async ({ item, draft, instruction, preferences, examples }) => {
     const now = new ZonedDateTime()
     const result = await generateObject({
@@ -92,7 +109,7 @@ export function createReplyComposer(ownerContext: string, model: () => ResolvedM
         checkedAtUtc: now.toUTC().normalize().plainDateTime.toString(),
         ownerContext,
         preferences,
-        examples: writingExamples(examples),
+        examples: write ? [] : writingExamples(examples),
         ownerInstruction: instruction,
         previousOwnerDirections: item.replyDirections?.slice(-6),
         currentDraft: draft,
@@ -106,6 +123,16 @@ export function createReplyComposer(ownerContext: string, model: () => ResolvedM
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     const proposal = checked(result.object)
+    if (proposal.action === 'draft' && write)
+      proposal.draft = (
+        await write({
+          meaning: proposal.draft,
+          medium: item.conversation.medium,
+          recipient: item.recipient ?? '',
+          context: proposal.situation,
+          instruction,
+        })
+      ).draft
     return proposal
   }
 }

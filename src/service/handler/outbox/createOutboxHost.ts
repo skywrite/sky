@@ -14,6 +14,8 @@ import { OutboxReview } from '#lib/outbox/review.ts'
 import { createOutboxRuntime } from '#lib/outbox/runtime.ts'
 import { createReplyComposer } from '#lib/outbox/triage.ts'
 import { OutboxError, type OutboxRecord } from '#lib/outbox/types.ts'
+import { captureOutboxRevision } from '#lib/writingVoice/outbox.ts'
+import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -23,6 +25,28 @@ import { createScanJob } from './scanJob.ts'
 
 export function createOutboxHost(config: typeof Config, env: Record<string, string>): OutboxRoutesOptions {
   const { store, sources } = createOutboxRuntime(config)
+  const voice = createWritingVoice(config)
+  const learningJobs = new Set<string>()
+  const startLearning = (id: string) => {
+    if (learningJobs.has(id)) return
+    learningJobs.add(id)
+    void runWithUsageSource('me:voice:learn', () => voice.prepare(id))
+      .catch(() => {})
+      .finally(() => learningJobs.delete(id))
+  }
+  const learnRevision = async (before: OutboxRecord | null, after: OutboxRecord, accepted = false) => {
+    if (!before) return after
+    try {
+      const example = await captureOutboxRevision(voice, before, after, accepted)
+      if (example && !example.question && !example.lesson && !example.error) startLearning(example.id)
+      return after
+    } catch (error) {
+      return {
+        ...after,
+        writingVoiceError: `Your draft is saved, but the writing example could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`,
+      }
+    }
+  }
   const service = () => new CommandService(CommandContext.server(config, env))
   const automation = async () => {
     const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
@@ -74,9 +98,14 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
       }),
     async (input) => {
       const owner = ((await readOptional(config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)
-      return runWithUsageSource('outbox:compose', () => createReplyComposer(owner)(input))
+      return runWithUsageSource('outbox:compose', () =>
+        createReplyComposer(owner, undefined, (draft) => voice.draft(draft))(input),
+      )
     },
-    (input) => runWithUsageSource('outbox:followups', () => createFollowupPlanner()(input)),
+    (input) =>
+      runWithUsageSource('outbox:followups', () =>
+        createFollowupPlanner(undefined, (draft) => voice.draft(draft))(input),
+      ),
   )
 
   const followupJobs = new Set<string>()
@@ -96,6 +125,15 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
 
   return {
     report: async () => {
+      for (const example of await voice.store.list()) {
+        if (
+          example.source.startsWith('outbox:') &&
+          !example.lesson &&
+          !example.error &&
+          (!example.question || example.answer)
+        )
+          startLearning(example.id)
+      }
       const [items, preferences, job, last, check] = await Promise.all([
         store.list(),
         store.preferences(),
@@ -155,11 +193,15 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
       }
       return scanJob.start()
     },
-    save: (id, revision, draft) => review.save(id, revision, draft),
+    save: async (id, revision, draft) => {
+      const before = await store.get(id)
+      return learnRevision(before, await review.save(id, revision, draft))
+    },
     approve: async (id, revision, draft, reviewedChanges) => {
+      const before = await store.get(id)
       const item = await review.approve(id, revision, draft, reviewedChanges)
       startFollowups(item)
-      return item
+      return learnRevision(before, item, true)
     },
     retryFollowups: async (id, revision) => {
       const item = await review.retryFollowups(id, revision)
@@ -171,6 +213,10 @@ export function createOutboxHost(config: typeof Config, env: Record<string, stri
     get: (id) => store.get(id),
     compose: (id, revision, draft, instruction, reviewedChanges) =>
       review.compose(id, revision, draft, instruction, reviewedChanges),
-    reportSent: (id, revision, evidence) => review.reportSent(id, revision, evidence),
+    reportSent: async (id, revision, evidence) => {
+      const before = await store.get(id)
+      const item = await review.reportSent(id, revision, evidence)
+      return learnRevision(before, item, true)
+    },
   }
 }

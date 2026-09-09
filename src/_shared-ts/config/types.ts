@@ -45,6 +45,8 @@ export interface SkyConfig {
       transcription: string
     }
     profiles?: Record<string, AiProfileConfig>
+    /** Model configuration used for writing voice drafting, learning, and compaction. */
+    writingVoiceProfile?: string
   }
   server: {
     port: number

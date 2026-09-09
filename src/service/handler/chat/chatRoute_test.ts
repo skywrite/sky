@@ -28,6 +28,7 @@ import type { BranchPoint } from './branchPoint.ts'
 import { createChatHost } from './createSession.ts'
 import { interruptedOf } from './interrupted.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
+import { restoreToolRuns } from './toolRuns.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -2383,4 +2384,83 @@ test('chat route - a continuation never silently creates an empty replacement th
     expected: { status: 409, creates: 0, threads: 0 },
   })
   await rm(host.tmp, { recursive: true, force: true })
+})
+
+test('Tool parameters are visible while running and retained with results through chat recovery', async () => {
+  let report!: (event: ChatSessionEvent | ToolOutputEvent) => void
+  let began!: () => void
+  let release!: () => void
+  const started = new Promise<void>((resolve) => {
+    began = resolve
+  })
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const input = { action: 'draft', meaning: 'The draft is ready.', medium: 'Email', context: 'A familiar colleague.' }
+  const output = { success: true, draft: 'The draft is ready.', rulesRevision: 'sample-rules' }
+  const host = await testHost({
+    capture: (sink) => {
+      report = sink
+    },
+    invokeModel: async (args) => {
+      report({
+        type: 'tool-execution-start',
+        phase: 'running',
+        toolCallId: 'voice-one',
+        toolName: 'me_voice',
+        input,
+        started: 1000,
+      })
+      report({ type: 'tool-started', tool: 'me_voice' })
+      report({ type: 'tool-finished', tool: 'me_voice', status: 'success' })
+      began()
+      await waiting
+      report({ type: 'tool-execution-end', toolCallId: 'voice-one', toolName: 'me_voice', output, finished: 3000 })
+      report({ type: 'tool-call', toolCallId: 'voice-one', toolName: 'me_voice', input })
+      args.sink.write('The draft is ready.')
+      return EMPTY
+    },
+  })
+  try {
+    const app = appWith(host)
+    const response = await send(app, 'http://localhost/chat/inspect/messages', {
+      message: 'Draft an update.',
+    })
+    await started
+    const during = await getJson(app, 'http://localhost/chat/inspect')
+    assert({
+      given: 'an unfinished tool whose command activity has already ended',
+      should: 'keep showing its full parameters and running state until the tool itself returns',
+      actual: [during.runs.length, during.runs[0].input, during.runs[0].status],
+      expected: [1, input, null],
+    })
+    release()
+    const frames = parseSSE(await response.text())
+    const after = await getJson(app, 'http://localhost/chat/inspect')
+    const loaded = await loadResumeSession(path.join(host.tmp, 'inspect.autosave.md'), {
+      baseDir: BASE_DIR,
+      snapshot: true,
+    })
+    const restoredRuns = restoreToolRuns(loaded.recovery?.host?.runs)!
+    const restoredApp = appWith({
+      ...host,
+      snapshots: async () => [{ id: 'inspect', state: loaded.state, runs: restoredRuns }],
+    })
+    const restored = await getJson(restoredApp, 'http://localhost/chat/inspect')
+    assert({
+      given: 'completion followed by a page reload and recovery from the saved snapshot',
+      should: 'retain one inspectable call, its result, and its elapsed time',
+      actual: [
+        frames.filter((frame) => frame.event === 'tool-updated').length,
+        after.runs.length,
+        restored.runs[0].input,
+        restored.runs[0].output,
+        restored.runs[0].finished - restored.runs[0].started,
+      ],
+      expected: [2, 1, input, output, 2000],
+    })
+  } finally {
+    release()
+    await rm(host.tmp, { recursive: true, force: true })
+  }
 })

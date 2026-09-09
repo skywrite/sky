@@ -19,6 +19,8 @@ import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { usageLine } from '#shared/ai/usage.ts'
@@ -571,7 +573,29 @@ export default class AiChatTask extends Command {
           },
         })
         return {
-          tools: { ...webTools, ...fileTools, ...notebookTools },
+          tools: {
+            ...webTools,
+            ...fileTools,
+            ...notebookTools,
+            ...createWritingVoiceTools(createWritingVoice(context.config), {
+              source: `chat:terminal:${startTime.toString()}`,
+              onQuestion: async (example) => {
+                const question = example.question!
+                const selected = await p.select({
+                  message: question.question,
+                  options: [
+                    { value: '0', label: question.options[0] },
+                    { value: '1', label: question.options[1] },
+                    { value: 'own', label: 'Write my own' },
+                  ],
+                })
+                if (p.isCancel(selected)) return undefined
+                if (selected !== 'own') return { option: Number(selected) }
+                const text = await p.text({ message: 'What would you like Sky to learn from this revision?' })
+                return p.isCancel(text) || !text.trim() ? undefined : { text }
+              },
+            }),
+          },
           toolApproval: createToolApprovalConfig({
             isBlessed: (toolName, key) => blessings.has(toolName, key),
             onAutoApproved: (toolName, key) => {

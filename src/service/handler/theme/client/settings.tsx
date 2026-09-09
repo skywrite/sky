@@ -17,6 +17,7 @@ import { ConnectionsPane } from './settingsConnections.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
+import { WritingVoicePane } from './writingVoice.tsx'
 import './settings.css'
 
 // ── What the service answers (mirrors handler/settings/mod.ts) ──────
@@ -62,6 +63,7 @@ export interface SettingsData {
   voice: { current: string; researcherCurrent: string; groups: { male: string[]; female: string[] } }
   models: ModelRow[]
   profiles: ProfileRow[]
+  writingVoice: { profile: string; choices: Array<{ value: string; label: string }> }
   providers: string[]
   memoryNotes: number
   notebook: {
@@ -81,6 +83,7 @@ export interface SettingsData {
 export const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'voice', label: 'Voice' },
+  { id: 'writing-voice', label: 'Writing Voice' },
   { id: 'ai', label: 'AI' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'connections', label: 'Connections' },
@@ -95,7 +98,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
 export function settingsSectionOf(pathname: string): SettingsSection | null {
   if (!pathname.startsWith('/settings')) return null
   if (pathname === '/settings/prompts' || pathname.startsWith('/settings/prompts/')) return 'prompts'
-  const id = pathname.match(/^\/settings\/([a-z]+)$/)?.[1]
+  const id = pathname.match(/^\/settings\/([a-z-]+)$/)?.[1]
   return SETTINGS_SECTIONS.some((section) => section.id === id) ? (id as SettingsSection) : 'appearance'
 }
 
@@ -646,11 +649,16 @@ function ProfileForm({
 function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
   const [editing, setEditing] = useState<'new' | string | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const remove = async (name: string) => {
     setConfirming(null)
-    await fetch(`/settings/_api/profile/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => null)
-    reload()
+    const response = await fetch(`/settings/_api/profile/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(
+      () => null,
+    )
+    const refusal = await refusalOf(response)
+    setError(refusal)
+    if (!refusal) reload()
   }
   const done = () => {
     setEditing(null)
@@ -659,6 +667,11 @@ function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
 
   return (
     <>
+      {error && (
+        <p className="sky-set-warn" role="alert">
+          {error}
+        </p>
+      )}
       <Block head="Models" note="What Sky thinks with. Pointing a role at a configuration comes next.">
         {data.models.map((model, index) => (
           <Fragment key={model.role}>
@@ -897,6 +910,16 @@ export function SettingsMain({
               <AppearancePane data={data} change={change} />
             ) : section === 'voice' ? (
               <VoicePane data={data} change={change} />
+            ) : section === 'writing-voice' ? (
+              <WritingVoicePane
+                model={data.writingVoice}
+                onModelChange={(profile) =>
+                  change('ai.writingVoiceProfile', profile, (current) => ({
+                    ...current,
+                    writingVoice: { ...current.writingVoice, profile },
+                  }))
+                }
+              />
             ) : section === 'ai' ? (
               <AIPane data={data} reload={reload} />
             ) : section === 'connections' ? (

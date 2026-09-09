@@ -233,6 +233,58 @@ test({ name: 'settings route - reveal opens only known targets' }, async () => {
   })
 })
 
+test('Writing Voice settings select available configurations and protect the selected custom model', async () => {
+  const config: SkyConfig = {
+    ...CONFIG,
+    ai: {
+      ...CONFIG.ai,
+      profiles: {
+        'my-writer': { provider: 'ollama', model: 'synthetic-writer' },
+      },
+    },
+  }
+  const { host, writes, profileDeletes } = hostWith(config)
+  const app = await appWith(host)
+  const read = async () => (await (await app.request('/settings/_api/settings')).json()) as SettingsData
+  const initial = await read()
+  const good = await post(app, '/settings/_api/set', { key: 'ai.writingVoiceProfile', value: 'my-writer' })
+  const bad = await post(app, '/settings/_api/set', { key: 'ai.writingVoiceProfile', value: 'missing' })
+  const inherited = await post(app, '/settings/_api/set', { key: 'ai.writingVoiceProfile', value: '__proto__' })
+  config.ai.writingVoiceProfile = 'my-writer'
+  const selected = await read()
+  const blocked = await app.request('/settings/_api/profile/my-writer', { method: 'DELETE' })
+  config.ai.writingVoiceProfile = 'default-opus-5'
+  const removed = await app.request('/settings/_api/profile/my-writer', { method: 'DELETE' })
+  assert({
+    given: 'a custom configuration selected for the writing agent',
+    should: 'list it, validate selection, reflect the saved choice, and require another selection before deletion',
+    actual: [
+      initial.writingVoice.profile,
+      initial.writingVoice.choices.map(({ value }) => value),
+      good.status,
+      bad.status,
+      inherited.status,
+      writes,
+      selected.writingVoice.profile,
+      blocked.status,
+      removed.status,
+      profileDeletes,
+    ],
+    expected: [
+      'default-fable-5.1-high',
+      ['default-opus-5', 'my-writer'],
+      200,
+      400,
+      400,
+      [['ai.writingVoiceProfile', 'my-writer']],
+      'my-writer',
+      409,
+      200,
+      ['my-writer'],
+    ],
+  })
+})
+
 test({ name: 'settings route - the page is the shell; without a host the api is not served' }, async () => {
   const { host } = hostWith()
   const app = await appWith(host)

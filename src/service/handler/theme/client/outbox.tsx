@@ -4,6 +4,7 @@ import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
 import { dayRange, rangeLabel, ScanRangeSchema, type SavedScanRange } from '#lib/outbox/range.ts'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import type { OutboxReport, OutboxScanResult } from '../../outbox/mod.ts'
+import { WritingVoiceQuestions } from './writingVoice.tsx'
 import './outbox.css'
 
 type Edit = { text: string; revision: string; saved: string; direction?: string }
@@ -72,7 +73,6 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   selectedRef.current = selected
   const [reviewedChanges, setReviewedChanges] = useState(false)
   const [details, setDetails] = useState(true)
-  const [voice, setVoice] = useState<{ text: string; revision: string } | null>(null)
   const [sentReport, setSentReport] = useState<string | null>(null)
   const initialItem = useRef(new URLSearchParams(window.location.search).get('item'))
   const scroll = useRef<HTMLDivElement>(null)
@@ -147,15 +147,12 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   }, [polling, connectionError, receiveReport])
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
-      if (
-        [...edits.values()].some((value) => value.text !== value.saved || value.direction?.trim()) ||
-        (voice?.text !== undefined && voice.text !== report?.preferences.text)
-      )
+      if ([...edits.values()].some((value) => value.text !== value.saved || value.direction?.trim()))
         event.preventDefault()
     }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
-  }, [voice, report?.preferences.text])
+  }, [])
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = selected ? 0 : listPosition.current
   }, [selected])
@@ -257,11 +254,12 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const save = () =>
     act(async () => {
       if (!item || !edit) return
-      const result = await request<OutboxRecord>(`/item/${item.id}`, 'PUT', {
+      const result = await request<OutboxRecord & { writingVoiceError?: string }>(`/item/${item.id}`, 'PUT', {
         revision: edit.revision,
         draft: edit.text,
       })
       edits.delete(item.id)
+      if (result.writingVoiceError) setError(result.writingVoiceError)
       if (selectedRef.current === item.id)
         setEdit({ text: result.draft, revision: result.revision, saved: result.draft })
     })
@@ -270,12 +268,17 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
       if (!item || !edit) return
       setApproving(item.id)
       try {
-        const result = await request<OutboxRecord>(`/item/${item.id}/approve`, 'POST', {
-          revision: edit.revision,
-          draft: edit.text,
-          reviewedChanges,
-        })
+        const result = await request<OutboxRecord & { writingVoiceError?: string }>(
+          `/item/${item.id}/approve`,
+          'POST',
+          {
+            revision: edit.revision,
+            draft: edit.text,
+            reviewedChanges,
+          },
+        )
         edits.delete(item.id)
+        if (result.writingVoiceError) setError(result.writingVoiceError)
         if (selectedRef.current === item.id)
           setEdit({ text: result.draft, revision: result.revision, saved: result.draft })
       } finally {
@@ -360,7 +363,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
           Outbox
         </span>
         <span className="sky-spacer" />
-        <Button leftSection={<Pen />} onClick={() => setVoice(report?.preferences ?? null)}>
+        <Button leftSection={<Pen />} onClick={() => navigate('/settings/writing-voice')}>
           Your voice
         </Button>
         {selected && (
@@ -382,38 +385,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 {error}
               </div>
             )}
-            {voice ? (
-              <section className="sky-outbox-voice">
-                <h2>Your voice</h2>
-                <p>How you communicate, and how you want Sky to handle requests.</p>
-                <Textarea
-                  aria-label="Communication preferences"
-                  autosize
-                  minRows={7}
-                  value={voice.text}
-                  onChange={(event) => setVoice({ ...voice, text: event.currentTarget.value })}
-                />
-                <p className="sky-outbox-meta">
-                  Sky uses your approved before-and-after drafts as examples. Facts from one conversation stay in that
-                  conversation.
-                </p>
-                <div className="sky-outbox-actions">
-                  <Button
-                    variant="delivery"
-                    loading={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        await request('/preferences', 'PUT', voice)
-                        setVoice(null)
-                      })
-                    }
-                  >
-                    Save preferences
-                  </Button>
-                  <Button onClick={() => setVoice(null)}>Close</Button>
-                </div>
-              </section>
-            ) : item && edit ? (
+            {item && edit ? (
               <>
                 <div className="sky-outbox-meta">
                   {item.conversation.medium} ·{' '}
@@ -427,6 +399,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     <Button onClick={() => void openRelated(item.followupOf!.id)}>{item.followupOf.title} ↗</Button>
                   </div>
                 )}
+                <WritingVoiceQuestions key={item.id} source={`outbox:${item.id}`} refreshKey={item.revision} />
                 {item.stale && (
                   <div className="sky-outbox-notice">
                     New messages arrived. Your draft is preserved; read the updated conversation before approving.
@@ -954,7 +927,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
             )}
           </div>
         </div>
-        {item && details && !voice && (
+        {item && details && (
           <aside className="sky-outbox-details">
             <div className="sky-outbox-details-head">
               <ActionIcon aria-label="Hide details" onClick={() => setDetails(false)}>
