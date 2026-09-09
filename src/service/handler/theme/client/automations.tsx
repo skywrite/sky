@@ -1,5 +1,6 @@
 import { ActionIcon, Button, SegmentedControl, Switch, Textarea } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import type { AutomationCommandStep } from '#shared/models/Automation/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { AutomationSetup } from '../../automations/configure.ts'
 import { AutomationBuilder, automationRequest } from './automationBuilder.tsx'
@@ -42,6 +43,7 @@ export interface AutomationRow {
   name: string
   kind?: 'personal' | 'system'
   run: string
+  commands?: AutomationCommandStep[]
   /** As written: "every 5m", "EVERY-WEEKDAY 07:15", "06:00, 11:00" */
   trigger: string
   /** "elapsed" for every:, else "local" or an IANA zone */
@@ -119,6 +121,7 @@ export interface DraftWire {
   name: string
   contents: string
   run: string
+  commands?: AutomationCommandStep[]
   trigger: string
   frame: string
   brief: string
@@ -495,7 +498,6 @@ function ProposalCard({
   onAccept,
   onDiscard,
   onCustomize,
-  previewOnly = false,
 }: {
   draft: DraftWire
   accept: string
@@ -504,7 +506,6 @@ function ProposalCard({
   onAccept: () => void
   onDiscard: () => void
   onCustomize?: () => void
-  previewOnly?: boolean
 }) {
   const [fileOpen, setFileOpen] = useState(false)
   const briefHtml = useMemo(() => renderMarkdown(draft.brief), [draft.brief])
@@ -522,7 +523,16 @@ function ProposalCard({
         </div>
         <div className="sky-auto-spec">
           <span className="sky-auto-spec-key">Runs</span>
-          <span>{draft.run}</span>
+          <ol className="sky-auto-command-list">
+            {(draft.commands ?? [{ run: draft.run, args: draft.args ?? {} }]).map((command, index) => (
+              <li key={`${index}-${command.run}`}>
+                <span>{command.run}</span>
+                {draft.commands && draft.commands.length > 1 && command.args.day !== undefined && (
+                  <small>{command.args.day === 'yesterday' ? 'Previous day' : String(command.args.day)}</small>
+                )}
+              </li>
+            ))}
+          </ol>
         </div>
         {draft.args?.day !== undefined && (
           <div className="sky-auto-spec">
@@ -552,22 +562,20 @@ function ProposalCard({
         </button>
         {fileOpen && <pre className="sky-auto-file">{draft.contents.trimEnd()}</pre>}
 
-        {!previewOnly && (
-          <div className="sky-auto-actions">
-            <Button variant="primary" onClick={onAccept} disabled={busy}>
-              {busy ? 'Writing…' : accept}
+        <div className="sky-auto-actions">
+          <Button variant="primary" onClick={onAccept} disabled={busy}>
+            {busy ? 'Writing…' : accept}
+          </Button>
+          {onCustomize && (
+            <Button onClick={onCustomize} disabled={busy}>
+              Customize
             </Button>
-            {onCustomize && (
-              <Button onClick={onCustomize} disabled={busy}>
-                Customize
-              </Button>
-            )}
-            <Button onClick={onDiscard} disabled={busy}>
-              Discard
-            </Button>
-            {error && <span className="sky-auto-problem">{error}</span>}
-          </div>
-        )}
+          )}
+          <Button onClick={onDiscard} disabled={busy}>
+            Discard
+          </Button>
+          {error && <span className="sky-auto-problem">{error}</span>}
+        </div>
       </div>
     </section>
   )
@@ -588,66 +596,50 @@ export function NewAutomation({
   const [mode, setMode] = useState('describe')
   const [initialSetup, setInitialSetup] = useState<AutomationSetup>()
   const [drafting, setDrafting] = useState(false)
-  const [drafts, setDrafts] = useState<DraftWire[]>([])
-  const [saved, setSaved] = useState<string[]>([])
+  const [draft, setDraft] = useState<DraftWire | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [writing, setWriting] = useState(false)
   const [writeProblem, setWriteProblem] = useState<string | null>(null)
 
+  const clearPreview = () => {
+    setDraft(null)
+    setWriteProblem(null)
+    setProblem(null)
+  }
   const ask = (request: string) => {
     setAsked(request)
     setMode('describe')
     setDrafting(true)
-    setProblem(null)
-    setDrafts([])
-    setSaved([])
-    setWriteProblem(null)
+    clearPreview()
     void postDraft(request).then((answer) => {
       setDrafting(false)
       if (answer.ok) {
-        setDrafts([answer.draft])
+        setDraft(answer.draft)
         setInitialSetup(answer.setup)
       } else setProblem(answer.message)
     })
   }
-
   const preview = (setup: AutomationSetup) => {
     setDrafting(true)
-    setProblem(null)
-    setDrafts([])
-    setSaved([])
-    setWriteProblem(null)
-    void automationRequest<DraftWire[]>('preview', setup)
-      .then(setDrafts)
-      .catch((error: unknown) => {
-        setProblem(error instanceof Error ? error.message : 'Could not prepare the automations.')
-      })
+    clearPreview()
+    void automationRequest<DraftWire>('preview', setup)
+      .then(setDraft)
+      .catch((error: unknown) =>
+        setProblem(error instanceof Error ? error.message : 'Could not prepare the automation.'),
+      )
       .finally(() => setDrafting(false))
   }
-
-  const clearPreview = () => {
-    setDrafts([])
-    setSaved([])
-    setWriteProblem(null)
-    setProblem(null)
-  }
-  const turnOn = async () => {
-    if (!drafts.length || writing) return
+  const turnOn = () => {
+    if (!draft || writing) return
     setWriting(true)
     setWriteProblem(null)
-    for (const draft of drafts) {
-      if (saved.includes(draft.name)) continue
-      const outcome = await postCreate(draft.name, draft.contents)
-      if (!outcome.ok) {
-        setWriteProblem(`${titleOf(draft.name)}: ${outcome.message}`)
-        setWriting(false)
-        return
-      }
-      setSaved((names) => [...names, draft.name])
-      window.dispatchEvent(new Event(CHANGED))
-    }
-    setWriting(false)
-    onCreated(drafts[0]!.name)
+    void postCreate(draft.name, draft.contents).then((outcome) => {
+      setWriting(false)
+      if (outcome.ok) {
+        window.dispatchEvent(new Event(CHANGED))
+        onCreated(draft.name)
+      } else setWriteProblem(outcome.message)
+    })
   }
 
   return (
@@ -658,20 +650,18 @@ export function NewAutomation({
         </Button>
         <span className="sky-title">New automation</span>
       </header>
-
       <div className="sky-scroll">
         <div className="sky-col sky-automations">
           <div>
             <h2 className="sky-auto-hero">What should sky take care of?</h2>
             <p className="sky-auto-herosub">
-              Describe what you want. Sky will draft it, then you can customize the commands, schedule and conditions
-              before turning it on.
+              Describe what you want. Sky will draft one automation, then you can customize its commands, schedule and
+              conditions before turning it on.
             </p>
           </div>
-
           <div>
             <AskInput placeholder="Every weekday at 7…" busy={drafting || writing} onAsk={ask} />
-            {mode === 'describe' && !drafts.length && !drafting && (
+            {mode === 'describe' && !draft && !drafting && (
               <Button
                 size="sm"
                 variant="primary-quiet"
@@ -693,58 +683,23 @@ export function NewAutomation({
               onChange={clearPreview}
             />
           )}
-
           {drafting && <div className="sky-condensed">— preparing your preview… —</div>}
           {problem && (
             <div className="sky-condensed" data-tone="failed">
               — {problem} —
             </div>
           )}
-
-          {drafts.length > 0 && (
+          {draft && (
             <>
-              {drafts.map((draft) => (
-                <Fragment key={draft.name}>
-                  <ProposalCard
-                    draft={draft}
-                    accept="Turn it on"
-                    busy={writing}
-                    error={null}
-                    onAccept={turnOn}
-                    onDiscard={clearPreview}
-                    previewOnly
-                  />
-                </Fragment>
-              ))}
-              <div className="sky-auto-actions">
-                <Button variant="primary" disabled={writing} onClick={turnOn}>
-                  {writing
-                    ? 'Writing…'
-                    : drafts.length === 1
-                      ? 'Turn it on'
-                      : saved.length
-                        ? `Turn on ${drafts.length - saved.length} remaining`
-                        : `Turn on ${drafts.length} automations`}
-                </Button>
-                {mode === 'describe' && initialSetup && (
-                  <Button disabled={writing || drafting} onClick={() => setMode('commands')}>
-                    Customize
-                  </Button>
-                )}
-                <Button disabled={writing} onClick={clearPreview}>
-                  Discard preview
-                </Button>
-                {saved.length > 0 && (
-                  <span className="sky-auto-help" role="status">
-                    {saved.length} of {drafts.length} saved and active.
-                  </span>
-                )}
-                {writeProblem && (
-                  <span className="sky-auto-problem" role="alert">
-                    {writeProblem}
-                  </span>
-                )}
-              </div>
+              <ProposalCard
+                draft={draft}
+                accept="Turn it on"
+                busy={writing}
+                error={writeProblem}
+                onAccept={turnOn}
+                onDiscard={clearPreview}
+                onCustomize={mode === 'describe' && initialSetup ? () => setMode('commands') : undefined}
+              />
               {mode === 'describe' && (
                 <div className="sky-auto-adjust">
                   <AskInput
@@ -783,8 +738,8 @@ function ChangeIt({ name, onSaved }: { name: string; onSaved: (note: string) => 
     setDraft(null)
     setProblem(null)
     setWriteProblem(null)
-    void automationRequest<DraftWire[]>('preview', setup)
-      .then((drafts) => setDraft(drafts[0] ?? null))
+    void automationRequest<DraftWire>('preview', setup)
+      .then(setDraft)
       .catch((error: unknown) => setProblem(error instanceof Error ? error.message : 'Could not prepare the changes.'))
       .finally(() => setDrafting(false))
   }
@@ -943,7 +898,6 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
         </Button>
         <span className="sky-title">{titleOf(name)}</span>
         <span className="sky-spacer" style={{ flex: 1 }} />
-        {note && <span className="sky-head-count">{note}</span>}
         {row && (
           <div className="sky-auto-detail-actions">
             <Button
@@ -976,11 +930,18 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
 
           {row && (
             <>
+              {note && (
+                <div className="sky-auto-run-note" role="status">
+                  {note}
+                </div>
+              )}
               <section className="sky-block">
                 <div className="sky-block-head">
                   What it does
                   <span className="sky-spacer" />
-                  <span className="sky-count">runs {row.run}</span>
+                  <span className="sky-count">
+                    {row.commands && row.commands.length > 1 ? `${row.commands.length} commands` : `runs ${row.run}`}
+                  </span>
                 </div>
                 <div className="sky-block-pad">
                   {row.brief ? (

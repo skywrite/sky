@@ -8,7 +8,7 @@ import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.t
 import Automation from '#shared/models/Automation/mod.ts'
 import { setAutomationStatus } from '#shared/models/Automation/setStatus.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { automationCommands, configureAutomations, setupFromCharter } from './configure.ts'
+import { automationCommands, configureAutomation, setupFromCharter } from './configure.ts'
 import type {
   AutomationsReport,
   AutomationsRoutesOptions,
@@ -43,22 +43,22 @@ export function createAutomationsHost(
     preview: async (setup) => {
       const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
       const entry = setup.revise ? byName.get(setup.revise) : undefined
-      const drafts = configureAutomations(setup, {
+      const draft = configureAutomation(setup, {
         commands: automationCommands(await getManifest()),
         existingNames: new Set(byName.keys()),
         today: PlainDate.today(),
         current: entry ? { name: setup.revise!, contents: await readTextFile(entry.path) } : undefined,
       })
-      for (const draft of drafts) {
-        const command = await service().get(draft.run)
-        const automation = Automation.fromMarkdown(draft.contents, draft.name)
+      const automation = Automation.fromMarkdown(draft.contents, draft.name)
+      for (const step of automation.commands) {
+        const command = await service().get(step.run)
         for (const [name, param] of Object.entries(command.description.params ?? {})) {
-          if (!param.optional && param.default === undefined && automation.args[name] === undefined) {
-            throw new Error(`${draft.run} needs an argument: ${name}.`)
+          if (!param.optional && param.default === undefined && step.args[name] === undefined) {
+            throw new Error(`${step.run} needs an argument: ${name}.`)
           }
         }
       }
-      return drafts
+      return draft
     },
 
     status: async (): Promise<AutomationsReport> => {

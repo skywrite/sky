@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { AutomationCommandStep } from '#shared/models/Automation/mod.ts'
 import { AutomationSetupSchema, setupFromDraft, type AutomationCommand, type AutomationSetup } from './configure.ts'
 
 /**
@@ -32,8 +33,9 @@ export interface AutomationLastRun {
 export interface AutomationRow {
   name: string
   kind?: 'personal' | 'system'
-  /** The command the charter points at */
+  /** Command names summarized for display; execution uses the command list. */
   run: string
+  commands?: AutomationCommandStep[]
   /** The trigger as written: "every 5m", "EVERY-WEEKDAY 07:15", "06:00, 11:00" */
   trigger: string
   /** "elapsed" for every:, else the zone — "local" or an IANA name */
@@ -73,6 +75,7 @@ export interface DraftReport {
   name: string
   contents: string
   run: string
+  commands?: AutomationCommandStep[]
   trigger: string
   frame: string
   brief: string
@@ -87,7 +90,7 @@ export type SaveOutcome = { kind: 'saved' } | { kind: 'missing' } | { kind: 'inv
 export interface AutomationsRoutesOptions {
   commands: () => Promise<AutomationCommand[]>
   configuration: (name: string) => Promise<AutomationSetup | null>
-  preview: (setup: AutomationSetup) => Promise<DraftReport[]>
+  preview: (setup: AutomationSetup) => Promise<DraftReport>
   /** The report, built fresh — production runs automations:status, tests script it */
   status: () => Promise<AutomationsReport>
   /** Flip a charter's status: line; false when no charter has that name */
@@ -183,7 +186,13 @@ export function createAutomationRoutes(options: AutomationsRoutesOptions): Hono 
     try {
       const draft = await options.draft(request, revise)
       const setup = setupFromDraft(draft)
-      return c.json({ ...draft, args: setup.commands[0]!.args, until: setup.until, setup })
+      return c.json({
+        ...draft,
+        commands: setup.commands,
+        args: setup.commands.length === 1 ? setup.commands[0]!.args : undefined,
+        until: setup.until,
+        setup,
+      })
     } catch (err) {
       // The drafter is a model call away; its failure is upstream of this route.
       return c.json({ message: err instanceof Error ? err.message : String(err) }, 502)

@@ -8,7 +8,7 @@ import { DIR_AUTOMATIONS } from '#config'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
-import Automation from '#shared/models/Automation/mod.ts'
+import Automation, { type AutomationCommandStep } from '#shared/models/Automation/mod.ts'
 import { describeTrigger, frameOf } from '#shared/models/Automation/trigger.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -31,6 +31,7 @@ type Result = {
   /** The complete charter file, validated but not written */
   contents: string
   run: string
+  commands: AutomationCommandStep[]
   trigger: string
   frame: string
   brief: string
@@ -75,8 +76,8 @@ export function validateCharterDraft(
   if (automation.unknownKeys.length) {
     return `frontmatter keys nothing reads: ${automation.unknownKeys.join(', ')}`
   }
-  if (!options.commandNames.has(automation.run)) {
-    return `run: ${automation.run} is not a command in the catalog`
+  for (const command of automation.commands) {
+    if (!options.commandNames.has(command.run)) return `run: ${command.run} is not a command in the catalog`
   }
   return null
 }
@@ -195,6 +196,7 @@ export default class AutomationsDraftTask extends Command {
       name,
       contents,
       run: automation.run,
+      commands: automation.commands,
       trigger: describeTrigger(automation.trigger),
       frame: frameOf(automation.trigger),
       brief: automation.brief,

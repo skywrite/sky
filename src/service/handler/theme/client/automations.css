@@ -85,6 +85,29 @@ button.sky-auto-txt:hover .sky-auto-name {
   font-weight: 550;
 }
 
+.sky-auto-command-list {
+  margin: 0;
+  padding-left: 22px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-auto-command-list li + li {
+  margin-top: 8px;
+}
+
+.sky-auto-command-list small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+
+.sky-auto-run-note {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--sky-text-2);
+}
+
 .sky-auto-due {
   margin-top: 4px;
   font-size: 15px;
@@ -120,6 +143,7 @@ button.sky-auto-txt:hover .sky-auto-name {
 }
 
 .sky-auto-runtxt {
+  white-space: pre-line;
   flex: 1;
   min-width: 0;
 }

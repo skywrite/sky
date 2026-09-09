@@ -23,6 +23,7 @@ import { parseTrigger, type Trigger } from './trigger.ts'
 
 export type AutomationStatus = 'active' | 'paused'
 export type AutomationKind = 'personal' | 'system'
+export type AutomationCommandStep = { run: string; args: Record<string, unknown> }
 
 const STATUSES = new Set<string>(['active', 'paused'])
 
@@ -34,6 +35,7 @@ const STATUSES = new Set<string>(['active', 'paused'])
 const KNOWN_KEYS = new Set([
   'kind',
   'run',
+  'commands',
   'every',
   'at',
   'tz',
@@ -99,15 +101,34 @@ function parseArgs(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function parseCommands(yaml: Record<string, unknown>): AutomationCommandStep[] {
+  if (yaml.commands === undefined) return [{ run: parseRun(yaml.run), args: parseArgs(yaml.args) }]
+  if (yaml.run !== undefined || yaml.args !== undefined)
+    throw new AutomationError('Use commands: or run:/args:, not both.')
+  if (!Array.isArray(yaml.commands) || !yaml.commands.length || yaml.commands.length > 50)
+    throw new AutomationError('commands: needs a list of 1 to 50 commands, each with run: and optional args:.')
+  return yaml.commands.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+      throw new AutomationError(`commands: entry ${index + 1} needs run: and optional args:.`)
+    const unknown = Object.keys(entry).filter((key) => key !== 'run' && key !== 'args')
+    if (unknown.length)
+      throw new AutomationError(`commands: entry ${index + 1} has unread keys: ${unknown.join(', ')}.`)
+    return { run: parseRun(entry.run), args: parseArgs(entry.args) }
+  })
+}
+
 export default class Automation {
   readonly name: string
   readonly kind: AutomationKind
-  readonly run: string
+  readonly commands: AutomationCommandStep[]
+  /** A display summary. Execution uses commands, never this joined label. */
+  get run(): string {
+    return this.commands.map((command) => command.run).join(', ')
+  }
   readonly trigger: Trigger
   readonly status: AutomationStatus
   readonly until: PlainDate | undefined
-  readonly args: Record<string, unknown>
-  /** The prose body, verbatim — a brief for whatever `run` points at */
+  /** The prose body, verbatim — the brief for this automation's commands */
   readonly brief: string
   /**
    * Frontmatter keys this model does not read. A misspelled key would otherwise
@@ -120,21 +141,19 @@ export default class Automation {
   private constructor(fields: {
     name: string
     kind: AutomationKind
-    run: string
+    commands: AutomationCommandStep[]
     trigger: Trigger
     status: AutomationStatus
     until: PlainDate | undefined
-    args: Record<string, unknown>
     brief: string
     unknownKeys: string[]
   }) {
     this.name = fields.name
     this.kind = fields.kind
-    this.run = fields.run
+    this.commands = fields.commands
     this.trigger = fields.trigger
     this.status = fields.status
     this.until = fields.until
-    this.args = fields.args
     this.brief = fields.brief
     this.unknownKeys = fields.unknownKeys
   }
@@ -150,17 +169,16 @@ export default class Automation {
       throw new AutomationError(`Frontmatter is not valid YAML: ${doc.yamlError}`)
     }
     if (!Object.keys(yaml).length) {
-      throw new AutomationError('Needs frontmatter carrying run: and a trigger')
+      throw new AutomationError('Needs frontmatter carrying run: or commands: and a trigger')
     }
 
     return new Automation({
       name,
       kind: parseKind(yaml.kind),
-      run: parseRun(yaml.run),
+      commands: parseCommands(yaml),
       trigger: parseTrigger(yaml),
       status: parseStatus(yaml.status),
       until: parseUntil(yaml.until),
-      args: parseArgs(yaml.args),
       brief: doc.markdown.trim(),
       unknownKeys: Object.keys(yaml).filter((key) => !KNOWN_KEYS.has(key)),
     })

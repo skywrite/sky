@@ -3,6 +3,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
 import { commandOutcome } from '#lib/automations/commandOutcome.ts'
+import { executeAutomationCommands } from '#lib/automations/execute.ts'
 import { invokeAutomation } from '#lib/automations/invoke.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import AutomationStateStore, { type RunOutcome } from '#shared/models/Automation/state.ts'
@@ -40,8 +41,8 @@ export default class AutomationsRunTask extends Command {
     name: 'automations:run',
     description: 'Run one declared automation now, whether or not it is due.',
     descriptionLong: [
-      'Runs the command a charter names, with the charter args, and reports what',
-      'it did. By default the run is not recorded, so forcing one by hand does',
+      'Runs the charter commands in order, with each command’s args, and reports',
+      'their outcomes. By default the run is not recorded, so forcing one by hand does',
       'not move the schedule; pass --stamp to record it the way a scheduled pass',
       'would. Paused and expired charters still run when asked directly — the',
       'point of asking is to override.',
@@ -85,8 +86,9 @@ export default class AutomationsRunTask extends Command {
     let outcome: RunOutcome = 'acted'
     let message: string | undefined
     try {
-      const result = await invokeAutomation(tasks, automation.run, automation.args, now)
-      ;({ outcome, message } = commandOutcome(result))
+      ;({ outcome, message } = await executeAutomationCommands(automation.commands, async ({ run, args }) =>
+        commandOutcome(await invokeAutomation(tasks, run, args, now)),
+      ))
     } catch (err) {
       outcome = 'failed'
       message = err instanceof Error ? err.message : String(err)

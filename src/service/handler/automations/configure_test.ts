@@ -3,7 +3,7 @@ import Automation from '#shared/models/Automation/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { automationCommands, configureAutomations, setupFromCharter, type AutomationCommand } from './configure.ts'
+import { automationCommands, configureAutomation, setupFromCharter, type AutomationCommand } from './configure.ts'
 
 const flags: CommandEntry['flags'] = [
   { name: 'day', kind: 'arg', type: 'plainDate', description: 'Day to recap' },
@@ -15,7 +15,11 @@ const commands: AutomationCommand[] = ['recap:journal', 'recap:notes'].map((name
   source: 'local',
   flags,
 }))
-const options = { commands, existingNames: new Set(['recap-journal']), today: new PlainDate('2025-03-15') }
+const options = {
+  commands,
+  existingNames: new Set(['recap-journal', 'morning-recaps']),
+  today: new PlainDate('2025-03-15'),
+}
 
 test('automation catalog matches execution precedence and omits file paths', () => {
   const entry = (name: string, description: string): CommandEntry => ({
@@ -52,8 +56,8 @@ test('automation catalog matches execution precedence and omits file paths', () 
   })
 })
 
-test('morning recap proposals keep relative days, shared conditions and separate names', () => {
-  const drafts = configureAutomations(
+test('several recap commands produce one automation with a shared schedule', () => {
+  const draft = configureAutomation(
     {
       commands: commands.map((command) => ({ run: command.name, args: { day: 'yesterday', 'no-editor': true } })),
       at: ['EVERY-MON 07:30', 'EVERY-THU 07:30'],
@@ -62,37 +66,20 @@ test('morning recap proposals keep relative days, shared conditions and separate
     },
     options,
   )
+  const automation = Automation.fromMarkdown(draft.contents, draft.name)
   assert({
-    given: 'two recap commands and an existing name',
-    should: 'produce two collision-free charters with the selected conditions',
-    actual: drafts.map((draft) => {
-      const automation = Automation.fromMarkdown(draft.contents, draft.name)
-      return {
-        name: draft.name,
-        run: automation.run,
-        args: automation.args,
-        until: automation.until?.ymd,
-        trigger: draft.trigger,
-        frame: draft.frame,
-      }
-    }),
+    given: 'several selected commands and an existing morning-recaps automation',
+    should: 'create one collision-free charter containing every command and one schedule',
+    actual: [draft.name, automation.commands, draft.trigger, draft.frame, draft.until],
     expected: [
-      {
-        name: 'recap-journal-2',
-        run: 'recap:journal',
-        args: { day: 'yesterday', noEditor: true },
-        until: '2025-12-31',
-        trigger: 'EVERY-MON 07:30, EVERY-THU 07:30',
-        frame: 'Europe/Paris',
-      },
-      {
-        name: 'recap-notes',
-        run: 'recap:notes',
-        args: { day: 'yesterday', noEditor: true },
-        until: '2025-12-31',
-        trigger: 'EVERY-MON 07:30, EVERY-THU 07:30',
-        frame: 'Europe/Paris',
-      },
+      'morning-recaps-2',
+      [
+        { run: 'recap:journal', args: { day: 'yesterday', noEditor: true } },
+        { run: 'recap:notes', args: { day: 'yesterday', noEditor: true } },
+      ],
+      'EVERY-MON 07:30, EVERY-THU 07:30',
+      'Europe/Paris',
+      '2025-12-31',
     ],
   })
 })
@@ -104,7 +91,7 @@ test('automation editing preserves status, metadata, comments and an unchanged b
   delete setup.at
   delete setup.tz
   setup.every = '2h'
-  const [draft] = configureAutomations(setup, { ...options, current: { name: 'recap-journal', contents } })
+  const draft = configureAutomation(setup, { ...options, current: { name: 'recap-journal', contents } })
   const result = Automation.fromMarkdown(draft!.contents, draft!.name)
   assert({
     given: 'an existing paused system charter changing to an interval',
@@ -112,7 +99,7 @@ test('automation editing preserves status, metadata, comments and an unchanged b
     actual: [
       result.status,
       result.kind,
-      result.args,
+      result.commands[0]!.args,
       draft!.trigger,
       draft!.name,
       draft!.contents.includes('# Keep this note'),
@@ -144,7 +131,7 @@ test('automation proposals reject unsupported settings and invalid schedules', (
     { ...base, commands: [{ run: 'not:a:command', args: {} }] },
     { ...base, commands: [{ run: 'recap:notes', args: { invented: true } }] },
     { ...base, commands: [{ run: 'recap:notes', args: { noEditor: 'true' } }] },
-    { ...base, commands: [{ run: 'recap:notes', name: '../escape', args: {} }] },
+    { ...base, name: '../escape' },
     { ...base, at: ['EVERY-MONDAY 07:00'] },
     { ...base, every: '2h' },
     { ...base, tz: 'Imaginary/Place' },
@@ -152,7 +139,7 @@ test('automation proposals reject unsupported settings and invalid schedules', (
     { ...base, revise: 'missing' },
   ].map((setup) => {
     try {
-      configureAutomations(setup, options)
+      configureAutomation(setup, options)
       return false
     } catch {
       return true
@@ -163,5 +150,51 @@ test('automation proposals reject unsupported settings and invalid schedules', (
     should: 'reject every invalid proposal before any file can be saved',
     actual: rejected,
     expected: Array(9).fill(true),
+  })
+})
+
+test('automation editing can add and remove commands without changing its identity', () => {
+  const contents =
+    '---\n# Keep the original note\nrun: recap:journal\nargs:\n  day: yesterday\nat: 07:00\nstatus: paused\ncreated: 2025-01-01\n---\n\nKeep the recaps.\n'
+  const setup = setupFromCharter('recap-journal', contents)
+  setup.commands.push({ run: 'recap:notes', args: { day: 'yesterday' } })
+  const group = configureAutomation(setup, { ...options, current: { name: 'recap-journal', contents } })
+  const singleSetup = setupFromCharter(group.name, group.contents)
+  singleSetup.commands = singleSetup.commands.slice(0, 1)
+  const single = configureAutomation(singleSetup, {
+    ...options,
+    current: { name: group.name, contents: group.contents },
+  })
+  assert({
+    given: 'adding a command to a legacy file and then removing it',
+    should: 'preserve the same paused charter, arguments and comments in both forms',
+    actual: [group, single].map((draft) => {
+      const automation = Automation.fromMarkdown(draft.contents, draft.name)
+      return [
+        draft.name,
+        automation.commands.length,
+        automation.commands[0]!.args,
+        automation.status,
+        draft.contents.includes('# Keep the original note'),
+      ]
+    }),
+    expected: [
+      ['recap-journal', 2, { day: 'yesterday' }, 'paused', true],
+      ['recap-journal', 1, { day: 'yesterday' }, 'paused', true],
+    ],
+  })
+})
+
+test('automation editing still replaces a single command and adds new arguments', () => {
+  const contents = '---\n# Keep this context\nrun: recap:journal\nat: 07:00\nstatus: paused\n---\n\nKeep the recap.\n'
+  const setup = setupFromCharter('recap-journal', contents)
+  setup.commands = [{ run: 'recap:notes', args: { day: 'yesterday', noEditor: true } }]
+  const draft = configureAutomation(setup, { ...options, current: { name: setup.revise!, contents } })
+  const saved = Automation.fromMarkdown(draft.contents, draft.name)
+  assert({
+    given: 'replacing the only command and setting its arguments',
+    should: 'save the replacement under the same paused charter with its original context',
+    actual: [saved.commands, saved.status, draft.contents.includes('# Keep this context')],
+    expected: [[{ run: 'recap:notes', args: { day: 'yesterday', noEditor: true } }], 'paused', true],
   })
 })

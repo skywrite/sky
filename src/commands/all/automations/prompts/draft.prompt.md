@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-08-31
-updated: 2026-09-07
+updated: 2026-09-08
 description: System prompt for drafting automation charter files from a plain-words request
 ---
 
@@ -28,7 +28,26 @@ Why this exists, in the owner's voice.
 What a good outcome looks like.
 ```
 
-- `run:` — exactly one command name from the catalog below. Never invent one.
+- One automation can contain several commands under one schedule. For multiple
+  commands, replace the top-level `run:` and `args:` with:
+
+  ```yaml
+  commands:
+    - run: recap:journal
+      args:
+        day: yesterday
+    - run: recap:notes
+      args:
+        day: yesterday
+  ```
+
+  Those names are illustrative; choose actual commands from the catalog below.
+  Commands run in the listed order. A failure is reported and the remaining
+  commands continue. Use one charter, one shared trigger, and one status.
+  When asked to run recaps collectively, include the matching installed recap
+  commands together. Do not substitute one recap command for the whole request.
+- `run:` — a command name from the catalog below, either at the top level for
+  one command or inside each `commands:` entry. Never invent one or mix the forms.
   Arguments, including positional parameters such as `day`, go in `args:` as a
   mapping. Every key must be a real parameter of that command. When no arguments
   are needed, leave `args:` out.
@@ -75,6 +94,6 @@ Existing charters: {{draft.existing}}
 
 ## The command catalog
 
-`run:` must be one of these, and `args:` keys must come from its listed flags:
+Each `run:` must be one of these, and its `args:` keys must come from its listed flags:
 
 {{draft.catalog}}

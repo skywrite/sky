@@ -118,7 +118,6 @@ export function AutomationBuilder({
   }, [revise, initialSetup, attempt])
 
   const byName = useMemo(() => new Map(catalog?.map((command) => [command.name, command])), [catalog])
-  const singleCommand = !!revise || !!initialSetup?.commands[0]?.template
   const update = (next: AutomationSetup) => {
     setSetup(next)
     onChange()
@@ -127,12 +126,7 @@ export function AutomationBuilder({
     update({
       ...setup,
       commands: names.map(
-        (run) =>
-          setup.commands.find((selection) => selection.run === run) ?? {
-            ...selectionFor(byName.get(run)!),
-            name: revise ?? (singleCommand ? setup.commands[0]?.name : undefined),
-            template: singleCommand ? setup.commands[0]?.template : undefined,
-          },
+        (run) => setup.commands.find((selection) => selection.run === run) ?? selectionFor(byName.get(run)!),
       ),
     })
   const changeArgs = (run: string, key: string, value: unknown) =>
@@ -216,31 +210,24 @@ export function AutomationBuilder({
     <section className="sky-block">
       <div className="sky-block-head">Commands & conditions</div>
       <fieldset className="sky-block-pad sky-auto-builder" disabled={busy}>
-        {singleCommand ? (
-          <Select
-            {...commandPickerProps}
-            ref={commandRef}
-            label="Command"
-            description="Search or browse commands to change what this automation runs."
-            value={setup.commands[0]?.run ?? null}
-            allowDeselect={false}
-            onChange={(run) => {
-              if (run) choose([run])
-            }}
-          />
-        ) : (
-          <MultiSelect
-            {...commandPickerProps}
-            ref={commandRef}
-            label="Commands"
-            description="Search by command name or what it does."
-            clearable
-            hidePickedOptions
-            value={setup.commands.map((selection) => selection.run)}
-            onChange={choose}
-            maxValues={50}
-          />
-        )}
+        <TextInput
+          label="Automation name"
+          placeholder="Choose automatically"
+          value={setup.name ?? ''}
+          disabled={!!revise || busy}
+          onChange={(event) => update({ ...setup, name: event.currentTarget.value })}
+        />
+        <MultiSelect
+          {...commandPickerProps}
+          ref={commandRef}
+          label="Commands"
+          description="All selected commands run together in this automation. Search by name or what each does."
+          clearable
+          hidePickedOptions
+          value={setup.commands.map((selection) => selection.run)}
+          onChange={choose}
+          maxValues={50}
+        />
         <div className="sky-auto-command-browse">
           <Button
             size="sm"
@@ -256,14 +243,16 @@ export function AutomationBuilder({
           </Button>
           <span className="sky-auto-help">{catalog?.length ?? 0} installed commands</span>
         </div>
-        {!singleCommand && catalog?.some((command) => command.name.startsWith('recap:')) && (
+        {catalog?.some((command) => command.name.startsWith('recap:')) && (
           <div>
             <Button
               size="sm"
               onClick={() => {
+                const { every: _every, ...rest } = setup
                 setRepeat('EVERY-DAY')
                 setClockTime('07:00')
                 update({
+                  ...rest,
                   commands: catalog
                     .filter((command) => command.name.startsWith('recap:'))
                     .slice(0, 50)
@@ -396,19 +385,6 @@ export function AutomationBuilder({
                 {selection.run} <span className="sky-auto-help">options</span>
               </summary>
               <div className="sky-auto-fields">
-                <TextInput
-                  label="Automation name"
-                  placeholder="Choose automatically"
-                  value={selection.name ?? ''}
-                  disabled={!!revise}
-                  onChange={(event) => {
-                    const name = event.currentTarget.value
-                    update({
-                      ...setup,
-                      commands: setup.commands.map((item) => (item === selection ? { ...item, name } : item)),
-                    })
-                  }}
-                />
                 {!command && (
                   <p className="sky-auto-problem">This command is no longer in the catalog. Choose another command.</p>
                 )}
@@ -468,7 +444,7 @@ export function AutomationBuilder({
         })}
         <Textarea
           label="What this is for"
-          placeholder="Optional context for these automations"
+          placeholder="Optional context for this automation"
           autosize
           minRows={2}
           value={setup.brief ?? ''}
@@ -480,10 +456,13 @@ export function AutomationBuilder({
             disabled={busy || !setup.commands.length || (repeat !== 'interval' && !atList(setup).length)}
             onClick={() => onPreview(setup)}
           >
-            {busy ? 'Preparing…' : 'Preview automation' + (setup.commands.length > 1 ? 's' : '')}
+            {busy ? 'Preparing…' : 'Preview automation'}
           </Button>
           {setup.commands.length > 1 && (
-            <span className="sky-auto-help">{setup.commands.length} commands, each with its own run history.</span>
+            <span className="sky-auto-help">
+              {setup.commands.length} commands in one automation. Runs in order; failures are reported and remaining
+              commands continue.
+            </span>
           )}
         </div>
       </fieldset>

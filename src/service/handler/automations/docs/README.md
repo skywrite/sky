@@ -1,6 +1,6 @@
 ---
 created: 2026-08-31
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Automations — the machine's own jobs, on a page
@@ -27,8 +27,8 @@ same switch — and "Edit automation", with direct command/condition controls
 and the option to describe a change in words. `/automations/new` starts with
 describing the automation. The generated preview offers **Customize**, which
 opens command and condition controls already filled from that proposal.
-**Choose commands instead** is a secondary option for direct setup and batches.
-Read the proposed files, then turn them on. The sidebar
+**Choose commands instead** is a secondary option for direct setup.
+Read the proposed automation, then turn it on. The sidebar
 swaps to the roster, one row a page, with
 ＋ New automation at its foot.
 
@@ -36,7 +36,10 @@ Command completion searches names and descriptions from all installed command
 sources, using the same local → global → core precedence as execution. The
 Morning recaps preset selects the installed `recap:*` commands for 07:00 daily,
 sets `day: yesterday` for commands with a date argument, and enables `noEditor`
-where supported. Each command gets its own charter, switch and run ledger.
+where supported. All selected commands belong to **one automation** with one
+charter, schedule, switch and run ledger. They run in selection order, with
+separate arguments for each command. The charter uses `commands: [{run, args}, …]`
+for multiple commands; existing single-command `run:` / `args:` files still work.
 Days, time, intervals, time zone and an inclusive end date are selectable.
 Existing complex schedules remain editable as their original trigger entries.
 These controls expose scheduler conditions; they do not invent file-existence
@@ -44,10 +47,11 @@ checks or day-start event triggers.
 
 Saved automations have an **Edit automation** action in the page header that
 brings the command controls into view. **Browse commands** opens the installed
-catalog in both create and edit flows. Editing uses a searchable single selector:
-choosing another command replaces the current selection immediately. Customizing
-a described proposal uses the same single selector; direct creation keeps multiple
-selection for batches. See [the replacement bug](2026-09-07-replacing-a-selected-command.md).
+catalog in both create and edit flows. All flows use the same searchable multiple
+selector: remove a selected command or add commands from the catalog. Adding to
+an existing single-command automation expands that same charter. The automation
+has one name regardless of how many commands it runs. See
+[one automation, many commands](2026-09-08-one-automation-many-commands.md).
 
 Description and customization are consecutive steps on the same proposal.
 The name, arguments, trigger, time zone, end date and brief come from its contents,
@@ -59,7 +63,7 @@ file. See [describe, then customize](2026-09-07-describe-then-customize.md).
   carries every page. `GET …/commands` returns the command catalog without
   filesystem paths; `GET …/automation/:name/configuration` loads saved settings.
   `POST …/preview` validates selected commands, arguments and trigger fields and
-  returns deterministic charter proposals without a model call or write.
+  returns one deterministic charter proposal without a model call or write.
   The writes are as narrow as they sound:
   `POST …/automation/:name/status {status}` flips the charter's
   `status:` line (a textual edit via the model's `setAutomationStatus`,
@@ -79,23 +83,29 @@ file. See [describe, then customize](2026-09-07-describe-then-customize.md).
   prompt carries the charter format, the trigger grammar, quiet hours,
   the real command catalog from the manifest, and the existing names;
   the draft is validated (`validateCharterDraft`: parseable, no unread
-  keys, `run:` in the catalog, kebab name, no collision) with one
+  keys, every command in the catalog, kebab name, no collision) with one
   retry that feeds the complaint back — nothing invalid ever leaves.
   Drafting never writes; approving is the separate step.
 - `createAutomationsHost.ts` — production wiring: reads are one
   in-process `automations:status` run per request, so the page and the
   CLI can never disagree about charters, run-state, or due arithmetic.
 - `configure.ts` — proposals and settings round-trips. Generated names avoid
-  existing charters and other names within a batch. Revisions retain status,
+  existing charters. Revisions retain status,
   kind, metadata, YAML comments and an unchanged prose body. The host also
-  checks required arguments against the selected command's actual definition.
-  `setupFromDraft` carries the unsaved charter as a command's `template` so a
+  checks required arguments against every selected command's actual definition.
+  `setupFromDraft` carries the unsaved charter as the setup's `template` so a
   customized proposal preserves the described result, including its metadata.
 - `lib/automations/invoke.ts` — the shared scheduled/manual execution boundary.
   Raw YAML arguments must be parsed before entering `CommandService`, whose
   explicit overrides otherwise replace parsed dates with raw strings. `today`
   and `yesterday` for `plainDate` parameters are resolved against the firing's
   clock on each invocation, including jobs running before `day:start`.
+- `lib/automations/execute.ts` — both scheduled and manual runs execute the
+  command list sequentially. A failed command is reported and remaining commands
+  continue. Any failure makes the group failed; otherwise any work makes it acted,
+  and all commands having nothing to do makes it nothing. A scheduled group leaves
+  one history record containing each command's result. Each command keeps its own
+  timeout; a hung command is reported as failed and remaining commands continue.
 - `theme/client/automations.tsx` — the pages. They speak person:
   triggers arrive as written (`EVERY-WEEKDAY 07:15`, `every 5m`) and
   render as words ("Weekdays at 7:15", "every 5 minutes"); outcomes
@@ -113,8 +123,8 @@ its last word. Files written before the ledger read as an empty one.
 
 - Direct controls and written requests both produce readable proposals before
   saving. The proposal card shows When / Runs / Day / Why and "The whole file".
-  A batch saves sequentially; partial success is reported and retry skips
-  files already saved. Editing any setting invalidates the old preview.
+  One preview creates one file, including when five commands were selected.
+  A failed save retries that one file. Editing any setting invalidates the old preview.
 - The charter file stays the source of truth. The switch rewrites one
   line; a draft becomes real only through create/save, and a person
   editing the file by hand is always equally valid — the pages just
@@ -123,10 +133,15 @@ its last word. Files written before the ledger read as an empty one.
   the runner's three outcomes distinct because a quiet automation and a
   broken one must never look alike.
 - No invented data: there is no needs-you producer yet, so no needs-you
-  surface; a forced run shows its outcome in the header rather than
+  surface; a forced run shows its outcome on the detail page rather than
   pretending to be a scheduled one.
 
 ## Verified
+
+2026-09-08: grouped charter parsing and validation, shared schedule/history/pause,
+ordered execution with failure continuation, timeout abandonment, legacy file
+conversion, and browser coverage for five commands producing one preview and file,
+description-first customization, grouped editing, create retry and phone layout.
 
 2026-09-07: browser coverage for description as the default, generated settings
 carrying into Customize, changing the command and time before creation, preserving

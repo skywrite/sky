@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import AutomationStateStore from '#shared/models/Automation/state.ts'
 import { assert, test } from '#test'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import runDueAutomations, { type Invoke, type TriggerContext } from './runDue.ts'
@@ -42,6 +43,20 @@ run: day:start
 at: EVERY-MONDAY 09:00
 ---
 Misspelled pattern.
+`
+
+const RECAPS = `---
+commands:
+  - run: recap:journal
+    args:
+      day: yesterday
+  - run: recap:notes
+    args:
+      day: yesterday
+  - run: recap:tasks
+at: 06:30
+---
+Prepare the morning recaps.
 `
 
 /** Monday 2026-08-24, 09:35 local */
@@ -131,6 +146,92 @@ test('runDueAutomations - a second pass finds nothing owed', async () => {
       should: 'stay quiet, because the stamp from the first pass was kept',
       actual: { ran: summary.ran.length, invoked: second.calls.length, notDue: summary.notDue },
       expected: { ran: 0, invoked: 0, notDue: ['email-fetch'] },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('runDueAutomations - grouped commands share one firing, history and pause control', async () => {
+  const { root, dir, statePath } = await makeDirs({ 'morning-recaps.md': RECAPS })
+  try {
+    const calls: { name: string; run: string; args: Record<string, unknown>; context: TriggerContext }[] = []
+    const invoke: Invoke = async (job) => {
+      calls.push(job)
+      return job.run === 'recap:notes'
+        ? { outcome: 'failed', message: 'Mock source unavailable' }
+        : { outcome: 'acted' }
+    }
+    const first = await runDueAutomations({ dir, statePath, systemNow: mondayMorning(), invoke })
+    const second = await runDueAutomations({ dir, statePath, systemNow: mondayMorning('09:37'), invoke })
+    const state = await AutomationStateStore.load(statePath)
+    assert({
+      given: 'three commands where the second fails, followed by another scheduler tick',
+      should: 'run every command once and record one failed firing with all command outcomes',
+      actual: [
+        calls.map(({ name, run, args, context }) => [
+          name,
+          run,
+          args,
+          context.target,
+          context.now.date,
+          context.now.time,
+        ]),
+        first.ran.map(({ name, outcome }) => [name, outcome]),
+        second.notDue,
+        state.names(),
+        state.runsFor('morning-recaps').map(({ outcome, message }) => [outcome, message]),
+      ],
+      expected: [
+        [
+          ['morning-recaps', 'recap:journal', { day: 'yesterday' }, '06:30', '2026-08-24', '09:35'],
+          ['morning-recaps', 'recap:notes', { day: 'yesterday' }, '06:30', '2026-08-24', '09:35'],
+          ['morning-recaps', 'recap:tasks', {}, '06:30', '2026-08-24', '09:35'],
+        ],
+        [['morning-recaps', 'failed']],
+        ['morning-recaps'],
+        ['morning-recaps'],
+        [['failed', 'recap:journal: acted\nrecap:notes: failed — Mock source unavailable\nrecap:tasks: acted']],
+      ],
+    })
+    await writeFile(path.join(dir, 'morning-recaps.md'), RECAPS.replace('at: 06:30', 'at: 06:30\nstatus: paused'))
+    const paused = await runDueAutomations({ dir, statePath, systemNow: mondayMorning('10:00'), invoke })
+    assert({
+      given: 'pausing the single charter',
+      should: 'stand down the whole group without another invocation',
+      actual: [paused.stoodDown, calls.length],
+      expected: [[{ name: 'morning-recaps', reason: 'paused' }], 3],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('runDueAutomations - a command timeout leaves the remaining group commands runnable', async () => {
+  const { root, dir, statePath } = await makeDirs({ 'morning-recaps.md': RECAPS })
+  try {
+    const calls: string[] = []
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const invoke: Invoke = async ({ run }) => {
+      calls.push(run)
+      if (run === 'recap:journal') await pending
+      return { outcome: 'acted' }
+    }
+    const summary = await runDueAutomations({ dir, statePath, systemNow: mondayMorning(), invoke, timeoutMs: 20 })
+    finish()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert({
+      given: 'a command timing out and then finishing after the group has continued',
+      should: 'record one failure and attempt each remaining command exactly once',
+      actual: [
+        summary.ran.map(({ outcome }) => outcome),
+        calls,
+        summary.ran[0]?.message?.includes('without finishing'),
+      ],
+      expected: [['failed'], ['recap:journal', 'recap:notes', 'recap:tasks'], true],
     })
   } finally {
     await rm(root, { recursive: true, force: true })

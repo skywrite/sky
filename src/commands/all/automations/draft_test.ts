@@ -70,3 +70,25 @@ test('validateCharterDraft - a revision keeps its name without collision checks'
     expected: null,
   })
 })
+
+test('validateCharterDraft - validates every command in one grouped draft', () => {
+  const contents = `---
+commands:
+  - run: prices:atlas:fetch
+  - run: day:start
+at: 06:30
+---
+Prepare the day.
+`
+  assert({
+    given: 'a valid group and a group with an unknown second command',
+    should: 'accept the complete group and reject the unknown command',
+    actual: [
+      validateCharterDraft('morning-prep', contents, OPTIONS),
+      validateCharterDraft('morning-prep', contents.replace('day:start', 'day:invented'), OPTIONS)?.includes(
+        'not a command',
+      ),
+    ],
+    expected: [null, true],
+  })
+})

@@ -38,7 +38,7 @@ test('Automation.fromMarkdown - reads the machine surface and keeps the brief', 
       run: automation.run,
       kind: automation.trigger.kind,
       intervalMs: automation.trigger.kind === 'every' ? automation.trigger.intervalMs : null,
-      args: automation.args,
+      args: automation.commands[0]!.args,
       status: automation.status,
     },
     expected: {
@@ -67,6 +67,59 @@ test('Automation.fromMarkdown - status defaults to active', () => {
     should: 'default to active',
     actual: [automation.status, automation.isRunnable(new PlainDate('2026-08-23'))],
     expected: ['active', true],
+  })
+})
+
+test('Automation.fromMarkdown - multiple commands share one charter', () => {
+  const automation = Automation.fromMarkdown(
+    `---
+commands:
+  - run: recap:journal
+    args:
+      day: yesterday
+  - run: recap:notes
+at: 06:30
+status: paused
+---
+Prepare the morning recaps.
+`,
+    'morning-recaps',
+  )
+  assert({
+    given: 'two commands with one schedule and status',
+    should: 'keep their order and arguments under one automation',
+    actual: [automation.commands, automation.run, automation.status, automation.unknownKeys],
+    expected: [
+      [
+        { run: 'recap:journal', args: { day: 'yesterday' } },
+        { run: 'recap:notes', args: {} },
+      ],
+      'recap:journal, recap:notes',
+      'paused',
+      [],
+    ],
+  })
+})
+
+test('Automation.fromMarkdown - rejects ambiguous or malformed command lists', () => {
+  const fixtures = [
+    ['empty list', 'commands: []', 'commands:'],
+    ['not a list', 'commands: recap:journal', 'commands:'],
+    ['inline command', 'commands: [recap:journal]', 'entry 1'],
+    ['mixed command forms', 'run: day:start\ncommands: [{run: recap:journal}]', 'not both'],
+    ['shared args', 'args: {day: yesterday}\ncommands: [{run: recap:journal}]', 'not both'],
+    ['missing command', 'commands: [{args: {day: yesterday}}]', 'run:'],
+    ['invalid step args', 'commands: [{run: recap:journal, args: [yesterday]}]', 'args:'],
+    ['unread step field', 'commands: [{run: recap:journal, arg: yesterday}]', 'unread keys'],
+  ]
+  assert({
+    given: 'invalid multi-command charters',
+    should: 'reject each with the relevant problem',
+    actual: fixtures.map(([label, yaml, problem]) => [
+      label,
+      errorFor(`---\n${yaml}\nat: 06:30\n---\n`).includes(problem!),
+    ]),
+    expected: fixtures.map(([label]) => [label, true]),
   })
 })
 

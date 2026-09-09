@@ -62,7 +62,7 @@ function scripted(overrides: Partial<AutomationsRoutesOptions> = {}): Automation
   return {
     commands: () => Promise.resolve([]),
     configuration: () => Promise.resolve(null),
-    preview: () => Promise.resolve([DRAFT]),
+    preview: () => Promise.resolve(DRAFT),
     status: () => Promise.resolve(REPORT),
     setStatus: () => Promise.resolve(true),
     runNow: () => Promise.resolve({ outcome: 'nothing' }),
@@ -84,7 +84,7 @@ test('automations routes expose commands and validate previews without writing',
       configuration: async (name) => (name === 'morning-brief' ? setup : null),
       preview: async (input) => {
         seen.push(input)
-        return [DRAFT]
+        return DRAFT
       },
       create: async () => {
         writes++
@@ -117,7 +117,7 @@ test('automations routes expose commands and validate previews without writing',
       seen,
       writes,
     ],
-    expected: [catalog, setup, 404, [DRAFT], 400, 400, [setup], 0],
+    expected: [catalog, setup, 404, DRAFT, 400, 400, [setup], 0],
   })
 })
 
@@ -253,8 +253,11 @@ test({ name: 'automations route - draft relays the request, refuses a blank, rep
       {
         ...DRAFT,
         args: {},
+        commands: [{ run: 'day:start', args: {} }],
         setup: {
-          commands: [{ name: 'morning-brief', run: 'day:start', args: {}, template: DRAFT.contents }],
+          name: 'morning-brief',
+          template: DRAFT.contents,
+          commands: [{ run: 'day:start', args: {} }],
           at: ['EVERY-WEEKDAY 07:00'],
           brief: 'Brief me.',
         },

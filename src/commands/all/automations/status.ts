@@ -4,6 +4,7 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
+import type { AutomationCommandStep } from '#shared/models/Automation/mod.ts'
 import AutomationStateStore, { type AutomationRun } from '#shared/models/Automation/state.ts'
 import { describeTrigger, dueFiring, frameOf, resolveNow } from '#shared/models/Automation/trigger.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -18,6 +19,7 @@ type StatusRow = {
   name: string
   kind: 'personal' | 'system'
   run: string
+  commands: AutomationCommandStep[]
   trigger: string
   frame: string
   state: 'active' | 'paused' | 'expired'
@@ -85,6 +87,7 @@ export default class AutomationsStatusTask extends Command {
         name,
         kind: automation.kind,
         run: automation.run,
+        commands: automation.commands,
         trigger: describeTrigger(trigger),
         frame: frameOf(trigger),
         state: automation.status === 'paused' ? 'paused' : runnable ? 'active' : 'expired',

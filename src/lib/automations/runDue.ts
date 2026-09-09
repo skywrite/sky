@@ -2,6 +2,7 @@ import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.t
 import AutomationStateStore, { type RunOutcome } from '#shared/models/Automation/state.ts'
 import { dueFiring, resolveNow } from '#shared/models/Automation/trigger.ts'
 import type { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { executeAutomationCommands } from './execute.ts'
 
 /*
   One pass over the declared automations: read the charters, ask each whether it
@@ -98,7 +99,7 @@ export type RunDueOptions = {
   /** The instant this pass runs at */
   systemNow: ZonedDateTime
   invoke: Invoke
-  /** How long a single run may take before it is abandoned */
+  /** How long each command may take before it is abandoned */
   timeoutMs?: number
 }
 
@@ -151,14 +152,12 @@ export default async function runDueAutomations(options: RunDueOptions): Promise
 
     let result: InvokeResult
     try {
-      const settled = await withTimeout(
-        invoke({ name, run: automation.run, args: automation.args, context }),
-        timeoutMs,
-      )
-      result =
-        'timedOut' in settled
+      result = await executeAutomationCommands(automation.commands, async (command) => {
+        const settled = await withTimeout(invoke({ name, ...command, context }), timeoutMs)
+        return 'timedOut' in settled
           ? { outcome: 'failed', message: `abandoned after ${Math.round(timeoutMs / 60_000)}m without finishing` }
           : settled
+      })
     } catch (err) {
       // A command that throws still has to leave a stamp, or it is retried on
       // every tick for as long as it keeps throwing.
