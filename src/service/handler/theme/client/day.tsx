@@ -902,18 +902,11 @@ export function DayView({
                   <TodoCard items={record.todos} checkOff={checkOff} at={at} />
                   <ReminderCard items={record.reminders} checkOff={checkOff} at={at} />
 
-                  {section && (section.streaks.length > 0 || section.mostImportant.length > 0) && (
+                  {section && section.streaks.length > 0 && (
                     <Block
-                      head={section.mostImportant.length > 0 ? 'Today' : 'Streaks'}
+                      head="Streaks"
                       mini={`${section.streaks.filter((s) => s.doneToday).length} of ${section.streaks.length} done`}
                     >
-                      {section.mostImportant.map((item) => (
-                        <div key={item.relativePath} className="sky-rec-line">
-                          <span className="sky-rec-txt">
-                            <a href={fileHref(item.relativePath)}>{item.label}</a>
-                          </span>
-                        </div>
-                      ))}
                       {section.streaks.map((streak) => (
                         <div key={streak.title} className="sky-prow">
                           <span className="sky-scheck" data-on={streak.doneToday}>
