@@ -7,6 +7,7 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import { OutboxError } from '#lib/outbox/types.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -15,6 +16,7 @@ import { buildTodaySection, formatDateLabel, type TodaySection } from '../home/t
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
+import type { ItemRoutesOptions } from './itemContext.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
 import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
 
@@ -33,6 +35,8 @@ export interface DayRoutesOptions {
   files?: DayFilesOptions
   /** The day's calendar schedule for the rail; without it the schedule route stays off */
   schedule?: ScheduleHost
+  /** Test seam for a failed planning write. */
+  writePlanning?: ItemRoutesOptions['writePlanning']
 }
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
@@ -115,6 +119,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
   const app = new Hono()
+  app.onError((error, c) => c.json({ error: error.message }, error instanceof OutboxError ? error.status : 500))
   app.get('/', async (c) => c.json(await buildDayView(options)))
   app.get('/:ymd', async (c) => {
     const ymd = c.req.param('ymd')
@@ -122,7 +127,16 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     return c.json(await buildDayView(options, ymd))
   })
   // The day view's writes to one item — checkbox, delete, undo — each answering with the fresh view.
-  app.route('/', createItemRoutes({ timeDir: options.timeDir, view: (ymd) => buildDayView(options, ymd) }))
+  app.route(
+    '/',
+    createItemRoutes({
+      timeDir: options.timeDir,
+      markdownBaseDir: options.markdownBaseDir,
+      stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
+      writePlanning: options.writePlanning,
+      view: (ymd) => buildDayView(options, ymd),
+    }),
+  )
   // The day's files: listed, served, kept from a drop, put back, removed.
   if (options.files) app.route('/', createDayFilesRoutes(options.files))
   // The day's schedule: the calendar's meetings against the notebook clock, for the rail.

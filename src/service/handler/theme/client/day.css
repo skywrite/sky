@@ -133,11 +133,37 @@
 }
 
 .sky-day-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   grid-column: 1 / -1;
   font-size: 14px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   color: var(--sky-dim);
+}
+
+.sky-day-ended {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 25px;
+  padding: 0 8px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 6px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.sky-day-ended:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 3px;
 }
 
 .sky-day .sky-col {
@@ -243,6 +269,18 @@
 
 .sky-check:hover .sky-check-box {
   border-color: var(--sky-dim);
+}
+
+.sky-check-static {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.sky-check-static .sky-check-box:not([data-on='true']) {
+  border-color: var(--sky-border-soft);
+  background: transparent;
 }
 
 .sky-check-box[data-on='true'] {

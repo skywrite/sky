@@ -6,39 +6,14 @@
  * `isItemDone`: a line in the day file changes, every other byte stays.
  */
 
+import { tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { type Context, Hono } from 'hono'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { Hono, type MiddlewareHandler } from 'hono'
+import { hash, withLock } from '#lib/outbox/files.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
-import { dayFile } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import isDay from './isDay.ts'
-import type { DayView } from './mod.ts'
-
-export interface ItemRoutesOptions {
-  /** Notebook time root — where the day files are */
-  timeDir: string
-  /** The view to answer with once the file is written */
-  view: (ymd: string) => Promise<DayView>
-}
-
-/** The day file the request addresses, read — or the refusal to send instead. */
-async function dayFileOf(
-  c: Context,
-  timeDir: string,
-): Promise<{ ymd: string; file: string; content: string } | Response> {
-  const ymd = c.req.param('ymd') ?? ''
-  if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
-  const file = path.join(timeDir, dayFile(new PlainDate(ymd)))
-  if (!(await exists(file))) return c.json({ error: `no day file for ${ymd}` }, 404)
-  return { ymd, file, content: await readTextFile(file) }
-}
-
-/** The body as an object, or null when it is not one. */
-async function bodyOf(c: Context): Promise<Record<string, unknown> | null> {
-  const body = (await c.req.json().catch(() => null)) as unknown
-  return body && typeof body === 'object' ? (body as Record<string, unknown>) : null
-}
+import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
+import { createPlanningRoutes } from './planning.ts'
 
 type ItemAddress = Record<string, unknown> & { list: string; raw: string }
 
@@ -48,13 +23,25 @@ function isItemAddress(body: Record<string, unknown> | null): body is ItemAddres
 
 export function createItemRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
+  const guard: MiddlewareHandler = async (c, next) => {
+    if (c.req.method !== 'POST' || !/\/item(?:\/(?:delete|restore|add|pull|undo))?$/.test(c.req.path)) return next()
+    const origin = c.req.header('Origin')
+    if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('Sec-Fetch-Site') === 'cross-site')
+      return c.json({ error: 'Open the day from the Sky app.' }, 403)
+    if (!c.req.header('Content-Type')?.startsWith('application/json'))
+      return c.json({ error: 'Expected a JSON request.' }, 400)
+    const stateDir = options.stateDir ?? path.join(tmpdir(), `sky-day-${hash(options.timeDir)}`)
+    // Next lists are shared across days; keep these locks outside the synced notebook.
+    await withLock(path.join(stateDir, 'planning.lock'), next)
+  }
+  app.use('*', guard)
 
   // The checkbox: mark one item done (strike) or not (un-strike).
   app.post('/:ymd/item', async (c) => {
     const body = await bodyOf(c)
     if (!isItemAddress(body) || typeof body.done !== 'boolean')
       return c.json({ error: 'expected {list, raw, done}' }, 400)
-    const day = await dayFileOf(c, options.timeDir)
+    const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.toggleItem(day.content, body.list, body.raw, body.done)
     if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
@@ -67,7 +54,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   app.post('/:ymd/item/delete', async (c) => {
     const body = await bodyOf(c)
     if (!isItemAddress(body)) return c.json({ error: 'expected {list, raw}' }, 400)
-    const day = await dayFileOf(c, options.timeDir)
+    const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.deleteItem(day.content, body.list, body.raw)
     if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
@@ -81,7 +68,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     if (!isItemAddress(body) || typeof body.at !== 'number' || !Number.isInteger(body.at) || body.at < 0) {
       return c.json({ error: 'expected {list, raw, at}' }, 400)
     }
-    const day = await dayFileOf(c, options.timeDir)
+    const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.restoreItem(day.content, body.list, body.raw, body.at)
     if (result.kind === 'missing') return c.json({ error: 'no such list — the day changed under the view' }, 404)
@@ -89,5 +76,6 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     return c.json(await options.view(day.ymd))
   })
 
+  app.route('/', createPlanningRoutes(options))
   return app
 }

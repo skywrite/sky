@@ -119,6 +119,76 @@ date: 2026-01-27
 - Water the plants
 `
 
+test('day view uses the recorded end even after midnight, while unended past days stay open', async () => {
+  const base = await notebookWithOneChat()
+  const timeDir = path.join(base, 'time')
+  const file = path.join(timeDir, dayFile(TODAY))
+  const app = createDayRoutes({ markdownBaseDir: base, timeDir, today: () => TODAY.addDays(1) })
+  for (const [marker, ended, endedAt] of [
+    ['', false, null],
+    ['ended:\n', false, null],
+    ['ended: 0h\n', true, '2026-01-27 08:00'],
+    ['ended: 13.5h\n', true, '2026-01-27 21:30'],
+    ['ended: 17h\n', true, '2026-01-28 01:00'],
+    ['ended: unreadable\n', true, null],
+  ] as const) {
+    await writeFile(file, TOGGLE_DAY_MD.replace('date: 2026-01-27\n', `started: 08:00\ntz: America/Chicago\n${marker}`))
+    const response = await app.request(`/${TODAY.ymd}`)
+    const view = (await response.json()) as DayView
+    assert({
+      given: `a past day with ${marker.trim() || 'no end marker'}`,
+      should: 'keep the tasks and report the end marker even when its time cannot be read',
+      actual: { ended: view.record.ended, endedAt: view.record.endedAt, todos: view.record.todos.length },
+      expected: { ended, endedAt, todos: 2 },
+    })
+  }
+})
+
+test('ended day routes reject completion, reopening, deletion and restoration from stale views', async () => {
+  const base = await notebookWithOneChat()
+  const timeDir = path.join(base, 'time')
+  const file = path.join(timeDir, dayFile(TODAY))
+  await writeFile(file, TOGGLE_DAY_MD)
+  const app = createDayRoutes({ markdownBaseDir: base, timeDir, today: () => TODAY })
+  const open = (await (await app.request(`/${TODAY.ymd}`)).json()) as DayView
+  const closed = TOGGLE_DAY_MD.replace('date: 2026-01-27', 'started: 08:00\nended: 13.5h\ntz: America/Chicago').replace(
+    '- File the expense report',
+    '- ~~File the expense report~~',
+  )
+  await writeFile(file, closed)
+  for (const [route, body] of [
+    ['', { list: 'Professional Todos', raw: 'Reply to the vendor shortlist', done: true }],
+    ['', { list: 'Professional Todos', raw: '~~File the expense report~~', done: false }],
+    ['/delete', { list: 'Reminders', raw: 'Water the plants' }],
+    ['/restore', { list: 'Reminders', raw: 'A previously deleted reminder', at: 0 }],
+  ] as const) {
+    const response = await app.request(`/${TODAY.ymd}/item${route}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const result = (await response.json()) as { error: string; view: DayView }
+    assert({
+      given: `a stale open view posting ${route || 'a checkbox change'} after day end`,
+      should: 'refuse the write, preserve the complete file, and return the ended view',
+      actual: {
+        wasOpen: open.record.endedAt === null,
+        status: response.status,
+        error: result.error,
+        endedAt: result.view.record.endedAt,
+        unchanged: (await readFile(file, 'utf8')) === closed,
+      },
+      expected: {
+        wasOpen: true,
+        status: 409,
+        error: 'This day has ended. Tasks are read-only.',
+        endedAt: '2026-01-27 21:30',
+        unchanged: true,
+      },
+    })
+  }
+})
+
 /** POST a checkbox toggle and hand back status plus the served view. */
 async function toggleRequest(
   app: ReturnType<typeof createDayRoutes>,

@@ -6,6 +6,7 @@
  */
 
 import * as path from 'node:path'
+import { Lexer, type Token, type Tokens } from 'marked'
 import gatherDayDocs from '#commands/all/summary/lib/gatherDayDocs.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
@@ -14,6 +15,7 @@ import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
 import { ACTIONS_DIR, dayFile, isActionPath, readDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { dayEnd } from './ended.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
 export interface DayItem {
@@ -59,6 +61,9 @@ export interface VideoRow extends DayDocRow {
 }
 
 export interface DayRecord {
+  ended: boolean
+  /** Recorded end in the day's timezone; null when open or the time cannot be read. */
+  endedAt: string | null
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -101,8 +106,18 @@ export async function loadOwnerNames(aboutMePath: string | undefined): Promise<s
 // --- the day file's bullets -----------------------------------------------------
 
 const TIMED = /^(\d{1,2}:\d{2})\s*>?\s*(.*)$/
-const LINK = /\[([^\]]+)\]\(([^)]+)\)/
 const STRUCK = /^~~(.*)~~$/
+
+function firstItemLink(tokens: Token[]): Tokens.Link | null {
+  for (const token of tokens) {
+    if (token.type === 'link') return token as Tokens.Link
+    if ('tokens' in token && Array.isArray(token.tokens)) {
+      const link = firstItemLink(token.tokens)
+      if (link) return link
+    }
+  }
+  return null
+}
 
 function parseItem(raw: string, category: string | null, list: string): DayItem {
   const done = DayDocument.isItemDone(raw)
@@ -115,9 +130,9 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
   }
   // The strike may wrap only what follows the time: `09:30 > ~~[t](p)~~`.
   text = text.replace(STRUCK, '$1').trim()
-  const linked = text.match(LINK)
-  const link = linked ? { title: linked[1], path: linked[2] } : null
-  if (linked) text = text.replace(linked[0], linked[1]).trim()
+  const linked = firstItemLink(Lexer.lexInline(text))
+  const link = linked ? { title: linked.text, path: linked.href } : null
+  if (linked) text = text.replace(linked.raw, linked.text).trim()
   return { text, done, category, time, link, list, raw }
 }
 
@@ -186,6 +201,8 @@ function journalRow(row: DayDocRow): DayDocRow {
 
 export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> {
   const record: DayRecord = {
+    ended: false,
+    endedAt: null,
     mostImportant: [],
     commitments: [],
     todos: [],
@@ -202,6 +219,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
   // The plan and its outcome: the day file's own lists, by heading.
   try {
     const dayDoc = await readDay(input.day, input.timeDir)
+    Object.assign(record, dayEnd(dayDoc))
     for (const meeting of dayDoc.meetings) {
       record.meetings.push({
         title: meeting.title,

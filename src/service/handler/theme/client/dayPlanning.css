@@ -1,0 +1,233 @@
+.sky-plan-add {
+  margin-top: var(--sky-space-2);
+  padding-inline: 0 var(--sky-space-3);
+  min-height: 44px;
+  color: var(--sky-dim);
+  font-weight: 400;
+}
+
+.sky-plan-next {
+  padding-inline: var(--sky-space-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.sky-plan-composer {
+  margin-top: var(--sky-space-4);
+  padding: var(--sky-space-4);
+  border: 1px solid color-mix(in srgb, var(--sky-accent) 45%, var(--sky-border-soft));
+  border-radius: var(--mantine-radius-md);
+  background: var(--sky-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sky-accent) 6%, transparent);
+}
+
+.sky-plan-composer textarea {
+  font-size: var(--sky-content-font-size);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.sky-plan-compose-actions,
+.sky-plan-time {
+  display: flex;
+  align-items: center;
+  gap: var(--sky-space-2);
+}
+
+.sky-plan-compose-actions {
+  margin-top: var(--sky-space-3);
+  flex-wrap: wrap;
+}
+
+.sky-plan-compose-actions > .sky-spacer {
+  flex: 1;
+}
+
+.sky-plan-category {
+  width: 165px;
+}
+
+.sky-plan-time .mantine-TextInput-root {
+  width: 88px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-plan-note {
+  color: var(--sky-dim);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: var(--sky-space-2) 0 0;
+}
+
+.sky-plan-error {
+  color: var(--mantine-color-error);
+  font-size: 0.85rem;
+  margin: var(--sky-space-2) 0 0;
+}
+
+.sky-next-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(920px, 90dvh);
+}
+
+.sky-next-dialog-body {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sky-next-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+}
+
+.sky-next-tools,
+.sky-next-options,
+.sky-next-error {
+  padding: var(--sky-space-4) var(--sky-dialog-padding);
+}
+
+.sky-next-tools > p {
+  margin: 0 0 var(--sky-space-4);
+}
+
+.sky-next-filters {
+  display: flex;
+  gap: var(--sky-space-1);
+  margin-top: var(--sky-space-3);
+}
+
+.sky-next-filters > button {
+  padding-inline: var(--sky-space-3);
+  font-size: 0.85rem;
+  min-width: max-content;
+}
+
+.sky-next-options {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 100px;
+  padding-top: 0;
+}
+
+.sky-next-group + .sky-next-group {
+  margin-top: var(--sky-space-5);
+}
+
+.sky-next-source {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sky-space-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding-bottom: var(--sky-space-2);
+}
+
+.sky-next-source a {
+  margin-left: auto;
+  color: var(--sky-dim);
+  font-size: 0.75rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.sky-next-option {
+  padding: var(--sky-space-3);
+  margin-inline: calc(-1 * var(--sky-space-3));
+  border-radius: var(--mantine-radius-md);
+}
+
+.sky-next-option[data-selected='true'] {
+  background: var(--sky-accent-soft);
+}
+
+.sky-next-option .mantine-Checkbox-label {
+  font-size: var(--sky-content-font-size);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sky-next-option .mantine-Checkbox-inner {
+  margin-top: 4px;
+}
+
+.sky-next-option small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 0.75rem;
+}
+
+.sky-next-footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sky-space-1);
+}
+
+.sky-next-move-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sky-space-3);
+  font-size: 0.85rem;
+}
+
+.sky-next-move-controls .mantine-Select-root {
+  width: 140px;
+  margin-left: auto;
+}
+
+.sky-plan-undo .sky-undo-text {
+  white-space: normal;
+}
+
+@media (max-width: 900px) {
+  .sky-plan-composer {
+    padding: var(--sky-space-3);
+  }
+
+  .sky-plan-compose-actions > .sky-spacer {
+    display: none;
+  }
+
+  .sky-plan-compose-actions > button:nth-last-child(-n + 2) {
+    flex: 1 1 auto;
+    min-width: max-content;
+    min-height: 44px;
+    padding-inline: var(--sky-space-3);
+  }
+
+  .sky-plan-category {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .sky-next-dialog-body {
+    flex: 1;
+  }
+
+  .sky-next-tools,
+  .sky-next-footer {
+    flex-shrink: 0;
+  }
+
+  .sky-next-options {
+    flex: 1;
+  }
+
+  .sky-next-move-controls {
+    flex-wrap: wrap;
+  }
+
+  .sky-next-move-controls > button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .sky-plan-next {
+    font-size: 0.75rem;
+  }
+}

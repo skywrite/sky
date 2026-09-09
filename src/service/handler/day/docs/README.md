@@ -9,7 +9,7 @@ Design notes for `src/service/handler/day/` and the page that drives it,
 `theme/client/day.tsx` with `dayRail.tsx`.
 
 The day view shows the plan and record. Conversations open on their own chat
-pages; the day has no embedded chat or composer. Add a file in the header
+pages; the day has no embedded chat composer. Add a file in the header
 opens the import picker on desktop and mobile.
 
 ## The day's items
@@ -17,8 +17,31 @@ opens the import picker on desktop and mobile.
 The plan on the page — Most important, Commitments, To-dos, Reminders — is
 the day file's own lists, read by heading (`record.ts`). Each row writes
 back to the file through `item.ts`, and every write answers with the fresh
-view so the page shows what the file now says. The edits are the Day
-model's, beside `isItemDone`: one line changes, every other byte stays.
+view so the page shows what the file now says. Check, delete and restore use
+the Day model's line edits, beside `isItemDone`: one line changes, every other
+byte stays.
+
+Inline forms add to-dos, reminders, and commitments, including when their
+sections are empty. A time makes a task a commitment; times accept the
+notebook's extended hours. Adding requires an existing, open day file.
+
+**From next lists** moves unfinished, untimed items from `next-professional.md`
+and `next-personal.md` into To-dos or Reminders. Category follows the source.
+Schedule files stay with the existing day-start flow. `planning.ts` checks
+selected items again, resolves reference links and rebases relative links for
+the day file. It writes the destination first and rolls back failed writes
+only while its own bytes still match. These moves share a local lock across
+days because their Next sources are shared. Undo lasts eight seconds in the
+UI, with a short-lived server token; it restores original bytes when unchanged,
+otherwise reverses only those items and preserves unrelated edits. Changed
+items or source references require reviewing the files instead of overwriting
+them. Request IDs make retries of a successful save idempotent.
+
+The day file's nonempty `ended` marker makes its task lists read-only, including Done today,
+deletion and Undo. A padlock with **Ended** appears beside the task count. Item
+routes recheck the file before a write and return 409 with the ended view to a
+stale client. Calendar midnight alone does not close a day. Filed documents and
+attachments can still be opened and added.
 
 - **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
   item `HH:MM > ~~task~~`, the time kept readable) and un-strikes it from
@@ -40,11 +63,17 @@ model's, beside `isItemDone`: one line changes, every other byte stays.
 
 | Route | Does |
 | --- | --- |
+| `POST /day/:ymd/item/add` | `{kind, text, category?, time?, requestId}` → add an item, answers `{view, undo, message}` |
+| `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |
+| `POST /day/:ymd/item/pull` | `{kind, ids, requestId}` → move selected Next items, answers `{view, undo, message}` |
+| `POST /day/:ymd/item/undo` | `{id}` → reverse an addition or move, answers the view |
 | `POST /day/:ymd/item` | `{list, raw, done}` → strike or un-strike, answers the view |
 | `POST /day/:ymd/item/delete` | `{list, raw}` → delete an item or complete a reminder, answers `{at, view}` |
 | `POST /day/:ymd/item/restore` | `{list, raw, at}` → the line returns at `at`, answers the view |
 
 A miss — the day changed under the page — is a 404 and writes nothing.
+
+Day item requests check their origin and serialize app writes.
 The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 
@@ -56,7 +85,7 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 
 ## Reflections and notes in the day's record
 
-Under **The day so far**, journal entries appear in **Reflections** and notes
+In the day's record, journal entries appear in **Reflections** and notes
 appear in **Notes**, each with its own count. Empty sections stay hidden.
 Both retain their document links and times. A reflection with a nonblank
 `summary:` shows that text below its title, with line breaks preserved and
@@ -66,7 +95,7 @@ unrelated renders and polling.
 
 ## Videos and chats in the day's record
 
-The main column lists Videos and Chats under **The day so far**, including
+The main column lists Videos and Chats in the day's record, including
 when Details is closed. Video rows come from `actions/videos/`: their
 saved summary names the recording, with its time, sender, recipients, and
 platform. The row opens the notebook's video record and transcript.

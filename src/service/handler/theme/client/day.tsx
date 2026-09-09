@@ -1,7 +1,9 @@
-import { ActionIcon, Button } from '@mantine/core'
+import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type Note, NoteLine } from './chat.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
+import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
@@ -12,7 +14,7 @@ import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
 /**
  * The day is the page. Its column is what needs to get done — with
- * checkboxes that write back to the day file — then the day so far, the
+ * checkboxes that write back to the day file — then the day's record, the
  * conversations listed in its record. A checked
  * to-do slides into Done today; a checked reminder just leaves; an item
  * can also be taken off the day, by the × a hover shows or a swipe on the
@@ -73,6 +75,8 @@ export interface DayDocRow {
 }
 
 export interface DayRecord {
+  ended: boolean
+  endedAt: string | null
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -182,8 +186,7 @@ function mediumLabel(medium: string | null): string | null {
 }
 
 function currentMinutes(): number {
-  const now = new Date()
-  return now.getHours() * 60 + now.getMinutes()
+  return minutesOf(new PlainDateTime().time) ?? 0
 }
 
 /** A checked row shows its strike, then collapses; a deleted row only collapses. */
@@ -205,12 +208,14 @@ interface UndoState {
 }
 
 interface CheckOff {
+  readOnly: boolean
   phases: Record<string, ItemPhase>
   undo: UndoState | null
   check: (item: DayItem) => void
   /** Take an item off the day — the row's ×, or the phone's swipe */
   remove: (item: DayItem) => void
   revert: () => void
+  dismissUndo: () => void
   /** Put a done item back — the Done today row's own un-check */
   uncheck: (item: DayItem) => void
 }
@@ -221,12 +226,22 @@ interface CheckOff {
  * un-strikes the task. Completing a reminder uses deletion: the row
  * collapses, the line leaves the file, and Undo puts it back where it was.
  */
-function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff {
+function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: boolean): CheckOff {
   const [phases, setPhases] = useState<Record<string, ItemPhase>>({})
   const [undo, setUndo] = useState<UndoState | null>(null)
   // A row unmounts only after the collapse has played AND the write came back.
   const gate = useRef<Record<string, { anim: boolean; resp: boolean }>>({})
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    setPhases({})
+    setUndo(null)
+    gate.current = {}
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    return () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current)
+    }
+  }, [ymd, readOnly])
 
   const dropPhase = (key: string) =>
     setPhases((p) => {
@@ -247,12 +262,18 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
 
   /** A write to the item routes; null when it did not land. */
   const send = async <T,>(route: string, body: unknown): Promise<T | null> => {
+    if (readOnly) return null
     try {
       const response = await fetch(`/day/${ymd}/item${route}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
+      if (response.status === 409) {
+        const rejected = (await response.json()) as { view?: DayData }
+        if (rejected.view) applyView(rejected.view)
+        return null
+      }
       return response.ok ? ((await response.json()) as T) : null
     } catch {
       return null
@@ -267,6 +288,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
   }
 
   const check = (item: DayItem) => {
+    if (readOnly) return
     if (/^reminders$/i.test(item.list.trim())) {
       remove(item, 'cleared')
       return
@@ -293,6 +315,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
   }
 
   const remove = (item: DayItem, how: 'cleared' | 'deleted' = 'deleted') => {
+    if (readOnly) return
     const key = itemKey(item)
     if (phases[key]) return
     setPhases((p) => ({ ...p, [key]: 'removed' }))
@@ -312,6 +335,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
   }
 
   const revert = () => {
+    if (readOnly) return
     const held = undo
     if (!held) return
     if (undoTimer.current) clearTimeout(undoTimer.current)
@@ -328,6 +352,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
   }
 
   const uncheck = (item: DayItem) => {
+    if (readOnly) return
     const key = itemKey(item)
     delete gate.current[key]
     dropPhase(key)
@@ -344,7 +369,16 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void): CheckOff 
     })
   }
 
-  return { phases, undo, check, remove, revert, uncheck }
+  return {
+    readOnly,
+    phases,
+    undo: readOnly ? null : undo,
+    check,
+    remove,
+    revert,
+    uncheck,
+    dismissUndo: () => setUndo(null),
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -377,6 +411,38 @@ export function Cross() {
   )
 }
 
+function StaticCheck({ done }: { done: boolean }) {
+  return (
+    <span className="sky-check-static" role="img" aria-label={done ? 'Complete' : 'Incomplete'}>
+      <span className="sky-check-box" data-on={done}>
+        {done && <Tick />}
+      </span>
+    </span>
+  )
+}
+
+function EndedBadge({ at }: { at: string | null }) {
+  return (
+    <Tooltip
+      label={
+        at ? `Ended at ${clock(at.slice(11, 16))}. Tasks are read-only.` : 'This day has ended. Tasks are read-only.'
+      }
+      withArrow
+      events={{ hover: true, focus: true, touch: true }}
+    >
+      <span className="sky-day-ended" tabIndex={0}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5" y="10" width="14" height="11" rx="2.5" />
+            <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14.5v2.5" />
+          </g>
+        </svg>
+        Ended
+      </span>
+    </Tooltip>
+  )
+}
+
 /** A page with a folded corner: the day's own file, beside its date. */
 function DayFileIcon() {
   return (
@@ -391,11 +457,13 @@ function DayFileIcon() {
 export function Block({
   head,
   mini,
+  action,
   children,
   className,
 }: {
   head: string
   mini?: string
+  action?: ReactNode
   children: ReactNode
   className?: string
 }) {
@@ -405,10 +473,25 @@ export function Block({
         {head}
         <span className="sky-spacer" />
         {mini && <span className="sky-count">{mini}</span>}
+        {action}
       </div>
       <div className="sky-block-pad">{children}</div>
     </div>
   )
+}
+
+/** Markdown URLs encode filenames and carry fragments separately from the Explorer file path. */
+function itemHref(item: DayItem, at: string): string {
+  const link = item.link?.path ?? ''
+  if (/^https?:\/\//i.test(link)) return link
+  const [, encoded, suffix] = /^([^?#]*)(.*)$/.exec(link)!
+  let file = encoded
+  try {
+    file = decodeURIComponent(encoded)
+  } catch {
+    /* A literal percent sign is still a valid filename. */
+  }
+  return fileHref(resolvePath(at, file).replace(/^\/+/, '')) + suffix
 }
 
 /**
@@ -419,6 +502,7 @@ export function Block({
  */
 function PlanRow({
   item,
+  readOnly,
   phase,
   timed,
   tone,
@@ -429,6 +513,7 @@ function PlanRow({
   onDelete,
 }: {
   item: DayItem
+  readOnly: boolean
   phase: ItemPhase | undefined
   /** Render the time gutter (the card has timed items) */
   timed: boolean
@@ -446,11 +531,11 @@ function PlanRow({
   const swipe = useSwipeToDelete(() => onDelete(item))
   // A row whose write did not land stands where it was — slid back if it had gone.
   useEffect(() => {
-    if (!phase) swipe.close()
-  }, [phase])
+    if (!phase || readOnly) swipe.close()
+  }, [phase, readOnly])
   return (
     <div className="sky-prow sky-irow" data-phase={phase} data-soft={soft || undefined} ref={swipe.ref}>
-      {swipe.offset < 0 && (
+      {!readOnly && swipe.offset < 0 && (
         <div className="sky-irow-back" style={{ width: -swipe.offset }}>
           <button
             type="button"
@@ -465,37 +550,46 @@ function PlanRow({
       )}
       <div
         className="sky-irow-front"
-        data-dragging={swipe.dragging || undefined}
-        style={swipe.offset ? { transform: `translateX(${swipe.offset}px)` } : undefined}
+        data-dragging={(!readOnly && swipe.dragging) || undefined}
+        style={!readOnly && swipe.offset ? { transform: `translateX(${swipe.offset}px)` } : undefined}
         onClickCapture={(event) => {
           // A tap on an open row puts it back; nothing under the finger fires.
-          if (!swipe.open) return
+          if (readOnly || !swipe.open) return
           event.preventDefault()
           event.stopPropagation()
           swipe.close()
         }}
-        {...swipe.handlers}
+        {...(readOnly ? {} : swipe.handlers)}
       >
-        <button
-          type="button"
-          className="sky-check"
-          aria-label={struck ? 'Done' : 'Mark done'}
-          onClick={() => !struck && onCheck(item)}
-        >
-          <span className="sky-check-box" data-on={struck}>
-            {struck && <Tick />}
-          </span>
-        </button>
+        {readOnly ? (
+          <StaticCheck done={struck} />
+        ) : (
+          <button
+            type="button"
+            className="sky-check"
+            aria-label={struck ? 'Done' : 'Mark done'}
+            onClick={() => {
+              if (struck) return
+              onCheck(item)
+            }}
+          >
+            <span className="sky-check-box" data-on={struck}>
+              {struck && <Tick />}
+            </span>
+          </button>
+        )}
         {timed && (
           <span className="sky-when" data-tone={struck ? undefined : tone}>
             {item.time ? clock(item.time) : '—'}
           </span>
         )}
         <span className="sky-ptext" data-done={struck}>
-          {item.link ? <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a> : item.text}
-          <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
-            <Cross />
-          </button>
+          {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+          {!readOnly && (
+            <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
+              <Cross />
+            </button>
+          )}
         </span>
         {tone === 'late' && !struck && <span className="sky-late">overdue</span>}
         {chip && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
@@ -512,6 +606,7 @@ function PlanCard({
   checkOff,
   at,
   className,
+  children,
 }: {
   head: string
   items: DayItem[]
@@ -519,25 +614,27 @@ function PlanCard({
   checkOff: CheckOff
   at: string
   className?: string
+  children?: ReactNode
 }) {
-  if (items.length === 0) return null
+  if (items.length === 0 && !children) return null
   const sorted = [...items].sort((a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME))
   const timed = sorted.some((i) => i.time)
-  const nowMin = today ? currentMinutes() : null
+  const nowMin = today && !checkOff.readOnly ? currentMinutes() : null
   const open = (item: DayItem) => !item.done && !checkOff.phases[itemKey(item)]
   const next = nowMin === null ? null : sorted.find((i) => open(i) && (minutesOf(i.time) ?? -1) >= nowMin)
   const doneCount = sorted.filter((i) => i.done).length
   const mini = `${doneCount} of ${sorted.length} done` + (next?.time ? ` · next at ${clock(next.time)}` : '')
   const visible = sorted.filter((i) => !i.done || checkOff.phases[itemKey(i)])
-  if (visible.length === 0 && doneCount === sorted.length) {
+  if (visible.length === 0 && sorted.length > 0 && doneCount === sorted.length) {
     return (
-      <Block head={head} mini={mini} className={className}>
+      <Block head={head} mini={items.length ? mini : undefined} className={className}>
         <div className="sky-alldone">All done.</div>
+        {children}
       </Block>
     )
   }
   return (
-    <Block head={head} mini={mini} className={className}>
+    <Block head={head} mini={items.length ? mini : undefined} className={className}>
       {visible.map((item) => {
         const key = itemKey(item)
         const minutes = minutesOf(item.time)
@@ -551,6 +648,7 @@ function PlanCard({
           <Fragment key={key}>
             <PlanRow
               item={item}
+              readOnly={checkOff.readOnly}
               phase={checkOff.phases[key]}
               timed={timed}
               tone={tone}
@@ -563,13 +661,26 @@ function PlanCard({
           </Fragment>
         )
       })}
+      {children}
     </Block>
   )
 }
 
 /** To-dos, grouped by the category their heading filed them under. */
-function TodoCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOff; at: string }) {
-  if (items.length === 0) return null
+function TodoCard({
+  items,
+  checkOff,
+  at,
+  children,
+  action,
+}: {
+  items: DayItem[]
+  checkOff: CheckOff
+  at: string
+  children?: ReactNode
+  action?: ReactNode
+}) {
+  if (items.length === 0 && !children) return null
   const order: Array<string | null> = []
   const groups = new Map<string | null, DayItem[]>()
   for (const item of items) {
@@ -581,7 +692,7 @@ function TodoCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOf
   }
   const doneCount = items.filter((i) => i.done).length
   return (
-    <Block head="To-dos" mini={`${doneCount} of ${items.length} done`}>
+    <Block head="To-dos" mini={items.length ? `${doneCount} of ${items.length} done` : undefined} action={action}>
       {order.map((label) => {
         const rows = (groups.get(label) ?? []).filter((i) => !i.done || checkOff.phases[itemKey(i)])
         if (rows.length === 0) return null
@@ -592,6 +703,7 @@ function TodoCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOf
               <Fragment key={itemKey(item)}>
                 <PlanRow
                   item={item}
+                  readOnly={checkOff.readOnly}
                   phase={checkOff.phases[itemKey(item)]}
                   timed={false}
                   tone={undefined}
@@ -606,14 +718,25 @@ function TodoCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOf
           </Fragment>
         )
       })}
+      {children}
     </Block>
   )
 }
 
 /** Reminders: lighter rows; a checked one leaves and lands nowhere. */
-function ReminderCard({ items, checkOff, at }: { items: DayItem[]; checkOff: CheckOff; at: string }) {
+function ReminderCard({
+  items,
+  checkOff,
+  at,
+  children,
+}: {
+  items: DayItem[]
+  checkOff: CheckOff
+  at: string
+  children?: ReactNode
+}) {
   const visible = items.filter((i) => !i.done || checkOff.phases[itemKey(i)])
-  if (visible.length === 0) return null
+  if (visible.length === 0 && !children) return null
   const open = items.filter((i) => !i.done).length
   return (
     <Block head="Reminders" mini={String(open)}>
@@ -621,6 +744,7 @@ function ReminderCard({ items, checkOff, at }: { items: DayItem[]; checkOff: Che
         <Fragment key={itemKey(item)}>
           <PlanRow
             item={item}
+            readOnly={checkOff.readOnly}
             phase={checkOff.phases[itemKey(item)]}
             timed={false}
             tone={undefined}
@@ -632,11 +756,12 @@ function ReminderCard({ items, checkOff, at }: { items: DayItem[]; checkOff: Che
           />
         </Fragment>
       ))}
+      {children}
     </Block>
   )
 }
 
-/** A filed document with its time — the day-so-far row. */
+/** A filed document with its time in the day's record. */
 function DocLine({ when, tag, children }: { when: string | null; tag?: string | null; children: ReactNode }) {
   return (
     <div className="sky-rec-line">
@@ -794,7 +919,10 @@ export function DayView({
   // Checking a box answers with the fresh view; it lands here, over the prop.
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
-  const checkOff = useCheckOff(view?.day.ymd ?? '', setView)
+  const endedAt = view?.record.endedAt ?? null
+  const ended = view?.record.ended ?? false
+  const checkOff = useCheckOff(view?.day.ymd ?? '', setView, ended)
+  const planning = useDayPlanning(view, setView, checkOff.dismissUndo, checkOff.undo)
   // The rail beside the day: a third column on a wide window, an overlay from
   // the header on a narrow one — the same rule as a document's Details.
   const rail = useRail(view?.day.ymd ?? null)
@@ -819,16 +947,6 @@ export function DayView({
   const completedTasks = doneToday.length
   const totalTasks = completedTasks + tasks.filter((item) => !item.done).length
 
-  const hasDayFar =
-    record !== null &&
-    (record.meetings.length > 0 ||
-      videos.length > 0 ||
-      chats.length > 0 ||
-      record.messages.involved.length > 0 ||
-      doneToday.length > 0 ||
-      record.journals.length + record.notes.length > 0 ||
-      record.messages.archive.length > 0)
-
   return (
     <div className="sky-main sky-day">
       <div className="sky-split">
@@ -850,9 +968,15 @@ export function DayView({
                 </ActionIcon>
               )}
             </span>
-            {totalTasks > 0 && (
+            {(ended || totalTasks > 0) && (
               <span className="sky-day-progress" role="status" aria-atomic="true">
-                {completedTasks} of {count(totalTasks, 'task')} complete
+                {ended && <EndedBadge at={endedAt} />}
+                {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
+                {totalTasks > 0 && (
+                  <span>
+                    {completedTasks} of {count(totalTasks, 'task')} complete
+                  </span>
+                )}
               </span>
             )}
             <nav className="sky-tabs">
@@ -871,9 +995,26 @@ export function DayView({
                       if (files.length > 0) onImportFiles(files)
                     }}
                   />
-                  <ActionIcon aria-label="Add a file" title="Import a file" onClick={() => fileRef.current?.click()}>
-                    ＋
-                  </ActionIcon>
+                  <Button
+                    aria-label="Add a file"
+                    title="Import a file"
+                    onClick={() => fileRef.current?.click()}
+                    leftSection={
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        aria-hidden="true"
+                      >
+                        <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9a7 7 0 0 1 10 10l-9 9" />
+                      </svg>
+                    }
+                  >
+                    Add file
+                  </Button>
                 </>
               )}
               {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
@@ -898,9 +1039,15 @@ export function DayView({
                     checkOff={checkOff}
                     at={at}
                   />
-                  <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at} />
-                  <TodoCard items={record.todos} checkOff={checkOff} at={at} />
-                  <ReminderCard items={record.reminders} checkOff={checkOff} at={at} />
+                  <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
+                    {planning.composer('commitments')}
+                  </PlanCard>
+                  <TodoCard items={record.todos} checkOff={checkOff} at={at} action={planning.nextButton}>
+                    {planning.composer('todos')}
+                  </TodoCard>
+                  <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
+                    {planning.composer('reminders')}
+                  </ReminderCard>
 
                   {section && section.streaks.length > 0 && (
                     <Block
@@ -919,8 +1066,6 @@ export function DayView({
                       ))}
                     </Block>
                   )}
-
-                  {hasDayFar && <div className="sky-sect">The day so far</div>}
 
                   {record.meetings.length > 0 && (
                     <Block head="Meetings" mini={String(record.meetings.length)}>
@@ -975,7 +1120,7 @@ export function DayView({
                         rows={doneToday}
                         render={({ item, undoable }) => (
                           <div className="sky-prow">
-                            {undoable ? (
+                            {undoable && !checkOff.readOnly ? (
                               <button
                                 type="button"
                                 className="sky-check"
@@ -987,6 +1132,8 @@ export function DayView({
                                   <Tick />
                                 </span>
                               </button>
+                            ) : undoable ? (
+                              <StaticCheck done />
                             ) : (
                               <span className="sky-done-tick">
                                 <Tick />
@@ -994,11 +1141,7 @@ export function DayView({
                             )}
                             <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
                             <span className="sky-ptext sky-done-text">
-                              {item.link ? (
-                                <a href={fileHref(resolvePath(at, item.link.path))}>{item.text}</a>
-                              ) : (
-                                item.text
-                              )}
+                              {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
                             </span>
                             {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
                           </div>
@@ -1054,7 +1197,10 @@ export function DayView({
         )}
       </div>
 
-      {checkOff.undo && (
+      {planning.picker}
+      {planning.toast}
+
+      {checkOff.undo && !planning.toast && (
         <div className="sky-undo" key={checkOff.undo.key}>
           <span className="sky-undo-tick" data-how={checkOff.undo.how}>
             {checkOff.undo.how === 'deleted' ? <Cross /> : <Tick />}
@@ -1071,7 +1217,7 @@ export function DayView({
         </div>
       )}
 
-      {kept.length > 0 && !checkOff.undo && (
+      {kept.length > 0 && !checkOff.undo && !planning.toast && (
         <KeptToast kept={kept} todayYmd={view?.today.ymd ?? null} onUndo={onUndoKept} onDone={onDismissKept} />
       )}
 
