@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # Browser voice
@@ -127,7 +127,13 @@ read before choosing, unless a relevant result was already fetched in the
 conversation. Delivery checks apply to secondary recommendations too; an
 irrelevant old task can simply be omitted. Recorded plans and unchecked boxes
 do not establish unfinished work; the user's completion corrections take
-precedence over older notes.
+precedence over older notes. When a question rests on a diagnosis of a
+person or situation, Sky checks the diagnosis against the record before
+commenting on the response to it, and keeps assessments to what the person
+said or did, the strongest contrary fact, and observed versus inferred.
+Saved chats found by lookup or research are past output; Sky's own earlier
+turns carry no weight of their own. See
+[past chats are not evidence](../../chat/docs/2026-09-10-past-chats-are-not-evidence.md).
 
 Browser-only `search_email` searches Gmail messages and reads matching bodies,
 including Sent mail. It uses known topic, recipient, and date context to
@@ -176,6 +182,8 @@ changes take effect in newly started sessions.
 
 ## Notes
 
+- Test a diagnosis before judging the response to it; weigh saved chats as past output:
+  [2026-09-10 — past chats are not evidence](../../chat/docs/2026-09-10-past-chats-are-not-evidence.md)
 - Carry questions and answers across speakers and leave room after a reply:
   [2026-09-08 — shared conversation continuity](2026-09-08-shared-conversation-continuity.md)
 - Remove the terminal transport while preserving browser calls and previews:
