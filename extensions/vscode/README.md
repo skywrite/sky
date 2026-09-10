@@ -1,5 +1,5 @@
 ---
-updated: 2026-08-29
+updated: 2026-09-10
 ---
 
 # VSCode Extension
@@ -91,3 +91,24 @@ follow role repoints automatically; the titles cannot. Run the script bare
 after a repoint to re-bake them (`node scripts/syncTitles.ts`, then reload
 the window); its `--check` mode fails `npm run check` while they're stale,
 so a model bump can't leave the dropdown lying.
+
+## Tests
+
+`npm test` runs every `*_test.ts` under `src/` inside a real VS Code window.
+`@vscode/test-electron` launches VS Code with the extension loaded and calls
+`run()` in `src/test/suite/index.ts` from inside the extension host. The tests
+need that host: they open documents and fire commands through the `vscode`
+API, which exists nowhere else.
+
+The runner is that one file, and it depends on nothing. It installs a `test()`
+global, imports the test files so their top-level `test()` calls register, then
+runs them one at a time with a 10 s timeout. Each test prints a ✔ or ✖ line
+under its file. A failure prints the stack, and any failure makes the run exit
+non-zero. The tests are flat `test(title, fn)` calls using the shared riteway
+assert — no hooks, no focus, no reporters — so a runner with those features
+bought nothing but a dependency tree to keep patched. Node's built-in runner
+was tried and cannot serve here: in-process it finalizes only when the process
+is about to exit, and an extension host never is.
+
+Locally the host is the VS Code under `/Applications`; CI downloads one and
+runs it under `xvfb`.

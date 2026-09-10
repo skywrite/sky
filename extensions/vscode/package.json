@@ -136,17 +136,9 @@
     "test": "node src/test/runTest.ts"
   },
   "devDependencies": {
-    "@types/mocha": "10.0.6",
     "@types/node": "^24.0.0",
     "@types/vscode": "1.100.0",
     "@vscode/test-electron": "2.5.2",
-    "mocha": "11.7.6",
     "typescript": "^7.0.2"
-  },
-  "overrides": {
-    "brace-expansion": "5.0.9",
-    "diff": "8.0.3",
-    "js-yaml": "4.3.1",
-    "serialize-javascript": "7.0.5"
   }
 }
