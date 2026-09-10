@@ -477,8 +477,8 @@ function itemHref(item: DayItem, at: string): string {
 
 /**
  * One plan item: checkbox, its time when the list is timed, the text,
- * Personal when it's the exception — and the way off the day: an × right
- * after the text, shown on hover, or on the phone a swipe left that bares
+ * Personal when it's the exception — and the way off the day: an × at
+ * the row's end, shown on hover, or on the phone a swipe left that bares
  * Delete.
  */
 function PlanRow({
@@ -565,14 +565,14 @@ function PlanRow({
         )}
         <span className="sky-ptext" data-done={struck}>
           {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
-          {!readOnly && (
-            <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
-              <Cross />
-            </button>
-          )}
         </span>
         {tone === 'late' && !struck && <span className="sky-late">overdue</span>}
         {chip && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
+        {!readOnly && (
+          <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
+            <Cross />
+          </button>
+        )}
       </div>
     </div>
   )

@@ -362,6 +362,7 @@
 .sky-ptext {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sky-ptext[data-done='true'] {
@@ -540,6 +541,22 @@
   transition: none;
 }
 
+/* Task controls follow the first line, even when the text wraps. */
+.sky-prow > .sky-irow-front {
+  align-items: baseline;
+}
+
+.sky-prow .sky-check {
+  align-self: flex-start;
+  font: inherit;
+  margin-top: calc((1lh - 22px) / 2 - 6px);
+}
+
+.sky-prow .sky-check-static {
+  align-self: flex-start;
+  margin-top: calc((1lh - 22px) / 2);
+}
+
 /* the pane the row slides off: as wide as the pull, Delete inside once there is room */
 .sky-irow-back {
   position: absolute;
@@ -586,6 +603,14 @@
     opacity 0.12s ease,
     color 0.12s ease,
     background 0.12s ease;
+}
+
+/* A separate column keeps the hidden delete button from making an empty text line. */
+.sky-prow .sky-x {
+  flex: none;
+  align-self: flex-start;
+  font: inherit;
+  margin: calc((1lh - 24px) / 2) 0 0;
 }
 
 .sky-irow:hover .sky-x,
