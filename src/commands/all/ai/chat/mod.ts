@@ -18,6 +18,7 @@ import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
@@ -523,7 +524,8 @@ export default class AiChatTask extends Command {
         peopleCount = rendered.peopleCount
         return rendered.prompt
       },
-      tools: async ({ onExternalFiles, onAttachments }) => {
+      tools: async (hooks) => {
+        const { onExternalFiles, onAttachments } = hooks
         const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
         // A file the user points at: read into the conversation, copied
         // into the chat's day attachments, recorded on the transcript.
@@ -534,6 +536,7 @@ export default class AiChatTask extends Command {
           onAttachments,
         })
         const notebookTools = await createNotebookTools(tasks, {
+          legalReviewContext: legalReviewContext(hooks, DIR_ATTACHMENTS, `chat:terminal:${startTime.toString()}`),
           // Native question breakout: settle a tool's openQuestions in-place —
           // Enter accepts the proposed answer, typing overrides, ESC accepts
           // all remaining. No chat turns, no context pipeline.
@@ -573,6 +576,7 @@ export default class AiChatTask extends Command {
           },
         })
         return {
+          instructions: await legalReviewBrief(hooks, context.config),
           tools: {
             ...webTools,
             ...fileTools,

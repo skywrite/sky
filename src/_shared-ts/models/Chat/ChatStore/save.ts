@@ -47,12 +47,14 @@ import { dayAIChatsDir, dayFile, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
-import { branchDir } from '../document/lineage.ts'
+import { branchDir, replyThreadsDir } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent, firstWordsSummary, userSpeakerLabel } from '../document/mod.ts'
 import { universeOf, verifyResumeCandidate } from '../document/resume.ts'
+import { chatStatistics } from '../document/statistics.ts'
 import { buildChatTranscript, buildPersonTranscript, CHAT_ENRICH } from '../enrich.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
+import type { ChatRecovery } from './recovery.ts'
 
 // -----------------------------------------------------------------------------
 // Enrichment — the AI-backed choices a save makes
@@ -163,7 +165,15 @@ export function chatFilePath(input: {
   parent?: ChatParent | null
 }): string {
   const name = chatFilename(input.startTime, input.summary)
-  if (input.parent) return path.join(branchDir(path.join(path.dirname(input.timeDir), input.parent.chat)), name)
+  if (input.parent) {
+    const parentPath = path.join(path.dirname(input.timeDir), input.parent.chat)
+    if (input.parent.kind === 'thread') {
+      // Two different responses can start identically named threads in the same minute.
+      const key = input.parent.key?.slice(0, 12) ?? String(input.parent.turn)
+      return path.join(replyThreadsDir(parentPath), name.replace(/\.md$/, `_${key}.md`))
+    }
+    return path.join(branchDir(parentPath), name)
+  }
   return path.join(input.timeDir, dayAIChatsDir(input.day), name)
 }
 
@@ -172,6 +182,8 @@ export function chatFilePath(input: {
 // -----------------------------------------------------------------------------
 
 export interface SaveChatInput {
+  /** Continuation and tool activity live in the file's JSON block, alongside its statistics. */
+  continuation?: ChatRecovery
   /** The full conversation, oldest first — a branch's parent turns included */
   turns: ConversationMessage[]
   /** Per-turn context log, including entries a resume carried forward */
@@ -453,7 +465,13 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   // conversation text, so resumes carry it and never re-seal.
   const fence = unclosedFence(doc.markdown)
   const seal = fence ? `${fence.marker.repeat(fence.length)}\n` : ''
-  const markdown = doc.toMarkdown() + seal + serializeContextLog(logEntries)
+  const markdown =
+    doc.toMarkdown() +
+    seal +
+    serializeContextLog(logEntries, {
+      statistics: chatStatistics(logEntries, turns.length),
+      ...(input.continuation ? { session: input.continuation } : {}),
+    })
 
   const report: SaveChatReport = { path: savePath, exchanges, resumed: resume !== null, summary }
   if (autoTags) report.autoTags = autoTags
@@ -479,7 +497,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     await writeTextFile(savePath, markdown)
   }
 
-  if (input.logToDay) {
+  if (input.logToDay && parent?.kind !== 'thread') {
     report.dayLog = await logChatToDay({
       timeDir,
       day,

@@ -1,149 +1,189 @@
+import { rm } from 'node:fs/promises'
+import * as path from 'node:path'
+import { getAIChatToolOptions } from '#commands/lib/AIChatTool.ts'
+import { runToolCommand } from '#commands/lib/chat/notebookTools.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
+import type CommandService from '#commands/lib/core/CommandService.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
-import { CommandResult } from '#commands/mod.ts'
 import * as config from '#config'
+import { reviewFixture, REVIEW_CONTEXT, scriptedAnalysis } from '#lib/legalReview/testHelpers.ts'
 import { assert, test } from '#test'
-import type { MissionFile } from '../google/agent/lib/tools.ts'
+import LegalAnnotateTask from './annotate.ts'
 import LegalReviewTask from './review.ts'
 
-function createContext() {
-  const output = new BufferedOutput()
-  const context = CommandContext.test(config).fork({ output })
-  return { output, context }
-}
-
-function createTasks(result: CommandResult<unknown>) {
-  const calls: Array<{ name: string; args: Record<string, unknown> }> = []
-  const tasks = {
-    run: async (name: string, args: Record<string, unknown>) => {
-      calls.push({ name, args })
-      return result
-    },
+test('legal:review uses trusted chat context, keeps one review and makes zero Google calls', async () => {
+  const fixture = await reviewFixture()
+  try {
+    const context = CommandContext.test({
+      ...config,
+      DIR_BASE: fixture.root,
+      DIR_TIME: path.join(fixture.root, 'time'),
+      DIR_STATE: path.join(fixture.root, 'state'),
+    }).fork({ output: new BufferedOutput() })
+    const task = new LegalReviewTask(() => fixture.reviewer)
+    const called: string[] = []
+    let linked: string | undefined
+    const tasks = {
+      run: async (name: string, args: Record<string, unknown>) => {
+        called.push(name)
+        if (name !== 'legal:review') throw new Error('Unexpected external action')
+        return task.run({ args, context, tasks } as unknown as Parameters<LegalReviewTask['run']>[0])
+      },
+    } as unknown as CommandService
+    const options = {
+      legalReviewContext: {
+        id: () => linked,
+        link: async (id: string) => {
+          linked = id
+        },
+        sources: () => fixture.sources,
+        context: REVIEW_CONTEXT,
+      },
+    }
+    const first = await runToolCommand(
+      tasks,
+      { commandName: 'legal:review', toolName: 'legal_review' },
+      { expected: 5 },
+      options,
+    )
+    const status = await runToolCommand(
+      tasks,
+      { commandName: 'legal:review', toolName: 'legal_review' },
+      { action: 'status' },
+      options,
+    )
+    assert({
+      given: 'a five-file chat review followed by a status request',
+      should: 'use a single saved review with no upload or annotation call',
+      actual: {
+        success: first.success,
+        same: first.reviewId === status.reviewId && linked === first.reviewId,
+        calls: called,
+        reviewApproval: getAIChatToolOptions(LegalReviewTask)?.needsApproval,
+        annotateApproval: getAIChatToolOptions(LegalAnnotateTask)?.needsApproval,
+        source: (await fixture.store.read(linked!))?.source,
+      },
+      expected: {
+        success: true,
+        same: true,
+        calls: ['legal:review', 'legal:review'],
+        reviewApproval: false,
+        annotateApproval: true,
+        source: 'chat:mock-review',
+      },
+    })
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true })
   }
-  return { calls, tasks }
-}
-
-const DOC_URL = 'https://docs.google.com/document/d/1AtlasDocId_abcdefghijk/edit'
-
-const missionFiles: MissionFile[] = [
-  { id: '1AtlasDocId_abcdefghijk', title: 'Atlas MSA', url: DOC_URL, kind: 'doc', action: 'created' },
-]
-
-const agentSuccess = () =>
-  CommandResult.success({ report: 'Two high findings', files: missionFiles, artifact: 'artifacts/atlas-msa.md' })
-
-test('legal:review - rejects unusable documents without running a mission', async () => {
-  const { context } = createContext()
-  const { calls, tasks } = createTasks(agentSuccess())
-  const task = new LegalReviewTask()
-
-  const blank = await task.run({ args: { document: '  ' }, context, tasks } as any)
-  const png = await task.run({ args: { document: '/deals/scan.png' }, context, tasks } as any)
-
-  assert({
-    given: 'a blank document argument',
-    should: 'fail with usage guidance',
-    expected: true,
-    actual: blank.failed && (blank.message ?? '').includes('Provide a document'),
-  })
-
-  assert({
-    given: 'a local file Drive cannot convert to a Doc',
-    should: 'fail naming the importable extensions',
-    expected: true,
-    actual: png.failed && (png.message ?? '').includes('.pdf'),
-  })
-
-  assert({
-    given: 'only unusable documents',
-    should: 'never start a mission',
-    expected: 0,
-    actual: calls.length,
-  })
 })
 
-test('legal:review - sends a Google Doc URL as the mission file target', async () => {
-  const { context } = createContext()
-  const { calls, tasks } = createTasks(agentSuccess())
-  const task = new LegalReviewTask()
-
-  const result = await task.run({ args: { document: DOC_URL }, context, tasks } as any)
-  const call = calls[0]
-  const mission = String(call?.args.mission ?? '')
-
-  assert({
-    given: 'a Google Doc URL',
-    should: 'run one google:agent mission targeting it as file, not import',
-    expected: { count: 1, name: 'google:agent', file: DOC_URL, import: undefined },
-    actual: { count: calls.length, name: call?.name, file: call?.args.file, import: call?.args.import },
-  })
-
-  assert({
-    given: 'the legal-review brief',
-    should: 'render fully with the summary-comment instruction and no leftover template syntax',
-    expected: true,
-    actual: mission.includes('[Summary] Contract review') && !mission.includes('{{'),
-  })
-
-  assert({
-    given: 'no focus argument',
-    should: 'omit the focus weighting from the brief',
-    expected: false,
-    actual: mission.includes('Weight the review toward'),
-  })
-
-  assert({
-    given: 'a successful mission',
-    should: 'surface the report and the reviewed Doc url',
-    expected: { ok: true, report: 'Two high findings', url: DOC_URL, artifact: 'artifacts/atlas-msa.md' },
-    actual: {
-      ok: result.ok,
-      report: result.data?.report,
-      url: result.data?.url,
-      artifact: result.data?.artifact,
-    },
-  })
+test('legal:review rejects Google URLs and malformed selections without creating a review', async () => {
+  const fixture = await reviewFixture()
+  try {
+    const context = CommandContext.test(config).fork({ output: new BufferedOutput() })
+    const task = new LegalReviewTask(() => fixture.reviewer)
+    const run = (args: Record<string, unknown>) =>
+      task.run({ args, context } as unknown as Parameters<LegalReviewTask['run']>[0])
+    const results = await Promise.all([
+      run({ document: 'https://docs.google.com/document/d/mock-document/edit' }),
+      run({ documents: '[1]' }),
+      run({ action: 'status' }),
+    ])
+    assert({
+      given: 'requests that cannot perform a local review',
+      should: 'return actionable failures without falling through to annotation',
+      actual: results.map((result) => result.status),
+      expected: ['fail', 'fail', 'fail'],
+    })
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true })
+  }
 })
 
-test('legal:review - imports a local document and weights the brief by focus', async () => {
-  const { context } = createContext()
-  const { calls, tasks } = createTasks(agentSuccess())
-  const task = new LegalReviewTask()
-
-  await task.run({
-    args: { document: '~/deals/atlas-msa.pdf', focus: 'the indemnity cap and renewal window' },
-    context,
-    tasks,
-  } as any)
-  const call = calls[0]
-  const mission = String(call?.args.mission ?? '')
-
-  assert({
-    given: 'a local PDF path',
-    should: 'run the mission with import set and file unset',
-    expected: { file: undefined, import: '~/deals/atlas-msa.pdf' },
-    actual: { file: call?.args.file, import: call?.args.import },
+test('a failed legal analysis cannot restart in the same chat turn, and a later request reuses the saved set', async () => {
+  let analyses = 0
+  const fixture = await reviewFixture(async (input) => {
+    if (++analyses === 1) throw new Error('Mock analysis timed out.')
+    return scriptedAnalysis(input)
   })
-
-  assert({
-    given: 'a focus argument',
-    should: 'weight the rendered brief toward it',
-    expected: true,
-    actual: mission.includes('the indemnity cap and renewal window'),
-  })
-})
-
-test('legal:review - passes a failed mission through', async () => {
-  const { context } = createContext()
-  const { tasks } = createTasks(CommandResult.fail('Drive quota exhausted'))
-  const task = new LegalReviewTask()
-
-  const result = await task.run({ args: { document: DOC_URL }, context, tasks } as any)
-
-  assert({
-    given: 'a mission that fails',
-    should: 'fail with the mission message',
-    expected: { failed: true, message: 'Drive quota exhausted' },
-    actual: { failed: result.failed, message: result.message },
-  })
+  try {
+    const output = new BufferedOutput()
+    const context = CommandContext.test(config).fork({ output })
+    const task = new LegalReviewTask(() => fixture.reviewer)
+    const tasks = {
+      run: (_name: string, args: Record<string, unknown>) =>
+        task.run({ args, context } as unknown as Parameters<LegalReviewTask['run']>[0]),
+    } as unknown as CommandService
+    let linked: string | undefined
+    const envelope = {
+      id: () => linked,
+      link: async (id: string) => {
+        linked = id
+      },
+      sources: () => fixture.sources,
+      context: REVIEW_CONTEXT,
+    }
+    const entry = { commandName: 'legal:review', toolName: 'legal_review' }
+    const run = (input: Record<string, unknown>) =>
+      runToolCommand(tasks, entry, input, { legalReviewContext: envelope })
+    const first = await run({ expected: 5 })
+    const repeat = await run({ focus: 'Reworded priorities for the same agreements' })
+    const status = await run({ action: 'status' })
+    assert({
+      given: 'a timeout followed by a model-authored retry with different wording',
+      should: 'block the repeat before model work and make retained originals available through status',
+      actual: {
+        analyses,
+        first: first.success,
+        retryable: first.retryable,
+        retained: String(first.error).includes('5 original agreements'),
+        repeat: repeat.success,
+        blocked: String(repeat.error).includes('already failed in this turn'),
+        status: status.success,
+        linked: status.reviewId === linked,
+        documents: (await fixture.store.read(linked!))?.documents.length,
+      },
+      expected: {
+        analyses: 1,
+        first: false,
+        retryable: false,
+        retained: true,
+        repeat: false,
+        blocked: true,
+        status: true,
+        linked: true,
+        documents: 5,
+      },
+    })
+    const next = await runToolCommand(
+      tasks,
+      entry,
+      {},
+      {
+        legalReviewContext: {
+          ...envelope,
+          context: {
+            ...REVIEW_CONTEXT,
+            conversation: [
+              ...REVIEW_CONTEXT.conversation,
+              { role: 'user', content: 'Try the review again using the saved agreements.' },
+            ],
+          },
+        },
+      },
+    )
+    assert({
+      given: 'another user turn requesting a new attempt',
+      should: 'complete against the same retained review without duplicate documents',
+      actual: {
+        analyses,
+        success: next.success,
+        id: next.reviewId,
+        documents: (await fixture.store.read(linked!))?.documents.length,
+      },
+      expected: { analyses: 2, success: true, id: linked, documents: 5 },
+    })
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true })
+  }
 })

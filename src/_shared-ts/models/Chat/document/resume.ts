@@ -17,6 +17,8 @@ import type { ContextTurnLog } from './ContextLog/mod.ts'
 import ChatDocument from './mod.ts'
 
 export interface ResumeState {
+  /** Shared agreement review, linked when the tool first creates it. */
+  legalReview?: { id: string; turn: number }
   /** A recovery snapshot preserves the full model history, including tool results. */
   modelMessages?: ModelMessage[]
   /** Role-tagged conversation ready to seed a session's message history */

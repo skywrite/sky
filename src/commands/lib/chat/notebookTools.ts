@@ -14,6 +14,7 @@ import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { ApprovalSessionKeyFn, FormatApprovalFn, NeedsApprovalForFn } from '#commands/lib/AIChatTool.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
+import { legalReviewChat, type LegalReviewChatContext } from '#lib/legalReview/chat.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import type { ToolApprovalConfig } from '#shared/models/Chat/ChatEngine/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -77,6 +78,7 @@ export interface ExternalFileRef {
 }
 
 export interface CreateNotebookToolsOptions {
+  legalReviewContext?: LegalReviewChatContext
   onOpenQuestions?: OnOpenQuestions
   /** The host can retain local artifacts and add browser URLs before the result enters model history. */
   prepareResult?: (commandName: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -199,6 +201,10 @@ export async function discoverAIChatTools(): Promise<DiscoveredTool[]> {
  */
 const MAX_TOOL_ERROR_CHARS = 2000
 
+// This trusted envelope is rebuilt for each user turn. A failed analysis cannot become a new minutes-long
+// attempt just because the model rewords focus or splits the same file list. Status and add remain available.
+const reviewAttempts = new WeakMap<LegalReviewChatContext, { failure?: string }>()
+
 /**
  * Run one tool call: execute the command and shape its CommandResult into
  * the model-facing tool output. The output is embedded raw into the next
@@ -229,7 +235,39 @@ export async function runToolCommand(
   input: Record<string, unknown>,
   options: CreateNotebookToolsOptions = {},
 ): Promise<Record<string, unknown>> {
-  const result = await tasks.run(entry.commandName, withoutBlankStrings(input))
+  const reviewTurn =
+    entry.commandName === 'legal:review' && (withoutBlankStrings(input).action ?? 'review') === 'review'
+      ? options.legalReviewContext
+      : undefined
+  const previous = reviewTurn ? reviewAttempts.get(reviewTurn) : undefined
+  if (previous) {
+    return {
+      success: false,
+      status: 'fail',
+      retryable: false,
+      error: truncate(
+        previous.failure
+          ? `Legal review already failed in this turn. Do not start another analysis, including with reworded focus or a subset of the files. Use action=status and explain the failure to the user. Earlier error: ${previous.failure}`
+          : 'Legal review is already running in this turn. Wait for that result instead of starting another analysis.',
+        MAX_TOOL_ERROR_CHARS,
+      ),
+    }
+  }
+  if (reviewTurn) reviewAttempts.set(reviewTurn, {})
+  const run = () => tasks.run(entry.commandName, withoutBlankStrings(input))
+  let result
+  try {
+    result =
+      (entry.commandName === 'legal:review' || entry.commandName === 'legal:annotate') && options.legalReviewContext
+        ? await legalReviewChat.run(options.legalReviewContext, run)
+        : await run()
+  } catch (error) {
+    if (reviewTurn)
+      reviewAttempts.set(reviewTurn, {
+        failure: truncate(error instanceof Error ? error.message : String(error), MAX_TOOL_ERROR_CHARS),
+      })
+    throw error
+  }
   if (result.status !== 'success') {
     // Failures cross this boundary as message strings only — never the
     // Error instance. A class instance fails the next step's validation
@@ -240,13 +278,18 @@ export async function runToolCommand(
       .filter((m): m is string => Boolean(m))
       .filter((m, i, all) => all.indexOf(m) === i)
       .join(': ')
+    const error = truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS)
+    if (reviewTurn) reviewAttempts.set(reviewTurn, { failure: error })
     return {
       success: false,
       // Business-rule 'fail' vs unexpected 'error' — the model reads this.
       status: result.status,
-      error: truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS),
+      error,
+      ...(reviewTurn ? { retryable: false } : {}),
     }
   }
+
+  if (reviewTurn) reviewAttempts.delete(reviewTurn)
 
   const raw: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
   const payload = options.prepareResult ? await options.prepareResult(entry.commandName, raw) : raw

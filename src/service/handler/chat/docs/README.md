@@ -12,6 +12,8 @@ Reply timing starts at prompt acceptance, includes thread creation and the
 first context load, and is saved on each turn through the
 [shared timing system](../../../../_shared-ts/timing/docs/README.md).
 
+The shared agreement summary, reviewer context, sources and user decisions follow the [legal review design](../../../../commands/all/legal/docs/README.md).
+
 ## What is built
 
 ### Files in the conversation
@@ -19,13 +21,29 @@ first context load, and is saved on each turn through the
 Drop files anywhere in a text conversation, choose them with the composer's
 paperclip, or paste a file. Each appears as a removable clip before sending;
 Send accepts a file with or without a typed question. Pending files stay in
-the browser. A rejected upload keeps the draft and its clips for correction.
+the browser. Unsent text and attachments are saved by chat ID and restored
+after refresh or navigation, including before the first message. Main chats
+and reply threads own separate drafts. A rejected upload keeps the draft and its clips for correction.
 There can be up to ten files totaling 20 MB in one message.
+
+`theme/client/chatDraft.ts` owns this browser draft, separate from the server's
+conversation history. Text and the current attachment revision are written
+synchronously to local storage; IndexedDB retains the files' actual bytes and
+MIME types. Attachment writes run in order, and restoration must match the
+revision so an older list cannot bring back removed files. Acceptance clears
+only the submitted text and files. The synchronous metadata also prevents
+accepted attachments from reappearing if their background deletion is interrupted.
+Storage failures remain visible with a retry action; Send waits for restoration
+and cannot silently omit attachments that failed to load. These drafts belong
+to this browser and origin; they are not notebook records or device sync.
 
 Pending clips sit inside the rounded composer surface, above its message row.
 The files, textarea, paperclip, Send, and voice control share the composer's
-centered width; errors align with that same container. Long lists scroll
-inside the field, and hovering a shortened filename reveals its full name.
+centered width; errors align with that same container. A count and total size
+remain visible when the file grid is collapsed. Up to five files appear without
+an inner scrollbar; larger collections scroll beneath the count. Images have
+thumbnails and documents have format icons. Hovering a shortened filename
+reveals its full name.
 See [2026-09-07 — Clips belong to the composer](2026-09-07-clips-belong-to-the-composer.md).
 
 The message route accepts multipart uploads with the same model, budget, and
@@ -96,6 +114,66 @@ until the handoff succeeds. See [the integration note](2026-09-07-voice-inside-c
 Saved voice replies omit "New chat from here…"; their retained speaker labels
 also identify transcripts reopened from older calls. Completed text replies
 continue to offer branching.
+
+### Reply threads
+
+**Reply in thread** on a completed text response opens a right-hand panel
+with the original response, its replies, and a separate composer. The main
+composer keeps its draft. Closing the panel leaves its agent running; the
+source response shows the reply count and working or approval status.
+Opening the same response again returns to the same thread. On a narrow
+screen the panel fills the conversation area.
+
+The person chooses this boundary. Messages sent in the main conversation
+stay there. Tools and specialists run inside whichever conversation invoked
+them; drafting and then creating a document can continue in one thread.
+Reply threads cannot contain either reply threads or branches. Both routes
+enforce this, beyond hiding their controls.
+
+The thread inherits the conversation **through its source response**,
+including native file inputs and tool results, then accumulates its own
+history. Later parent messages do not enter that snapshot. This supports
+reviewing related documents together in the main conversation and opening
+a thread afterward to draft a response using the combined review.
+Automatic notebook retrieval excludes a conversation's own transcript and
+reply directory, plus those of its ancestors, so it cannot silently bring
+refinement chatter back into its parent or a new fork.
+
+Each chat file owns its companion directory:
+
+```text
+Review.md
+Review/
+  _threads/
+    Response.md
+  Alternative.md
+  Alternative/
+    _threads/
+      Response.md
+```
+
+The child records `parent: { chat, turn, kind: thread, key }` in YAML.
+`chat` is notebook-relative; `key` identifies the selected response and its
+preceding conversation. The parent discovers its children from this backlink
+and does not keep a second authoritative list. Ordinary branches keep their
+existing parent format. Branches own their threads; a fork inherits no
+reply-thread histories. GraphQL exposes `branches` and `replyThreads`
+separately, and the day and sidebar lists show the parent conversations.
+
+Recovery snapshots keep active threads under either filing preference.
+Saving a parent files its replies too, after reserving all participants and
+filing any unfiled ancestors first. Saving waits for running replies; closing
+the panel does not. The parent title is pinned before the first child is
+created and survives recovery, preserving the folder's identity.
+
+The existing v2 `CONTEXT-LOG` JSON block has two optional additions:
+`statistics` aggregates this file's messages, replies, token usage, elapsed
+time, model calls, and tool calls; `session` retains provider history and
+host state for continuation. Statistics exclude inherited turns and child
+threads. Recorded model timings include nested agents, so the turn's main
+usage is not added a second time. Saved Markdown still holds only each
+file's own dialogue. A conversation digest guards restoring provider history
+after a transcript is edited; older files continue from their readable text.
 
 ### Text chat and thread controls
 

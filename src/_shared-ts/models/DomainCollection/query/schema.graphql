@@ -321,18 +321,20 @@ type Chat {
   rel: [String!]! # Related entities
   markdown: String! # The file as written — a branch's own turns only
   path: String! # File path
-  parent: ChatParent # The chat this one branched from; null for a chat that began on its own
+  parent: ChatParent # The conversation this branch or reply thread belongs to; null for a root chat
   inherited: Int! # Messages at the head of the thread that are the parent's (two per inherited turn)
   branches: [Chat!]! # The chats that branched from this one (one level; their own branches are not filled in)
+  replyThreads: [Chat!]! # Replies attached to this chat's responses; branches have their own threads
   thread: String! # The whole conversation a branch is: its parents' turns through the branch point, then its own
 }
 
 """
-Where a branch came from.
+Where a branch or reply thread came from.
 """
 type ChatParent {
   path: String! # The parent chat's path, relative to the notebook root
   turn: Int! # The turn the branch left after
+  kind: String! # branch or thread
 }
 
 """

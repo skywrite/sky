@@ -80,6 +80,46 @@ test('runToolCommand failure shaping', async () => {
   })
 })
 
+test('legal review prevents concurrent attempts and keeps blocked failure messages bounded', async () => {
+  let finish!: (result: CommandResult<unknown>) => void
+  const pending = new Promise<CommandResult<unknown>>((resolve) => {
+    finish = resolve
+  })
+  let calls = 0
+  const tasks = {
+    run: () => {
+      calls++
+      return pending
+    },
+  } as unknown as CommandService
+  const entry = { toolName: 'legal_review', commandName: 'legal:review' }
+  const options = {
+    legalReviewContext: {
+      id: () => undefined,
+      link: async () => {},
+      sources: () => [],
+      context: { source: 'chat:mock-review', instructions: '', conversation: [] },
+    },
+  }
+  const first = runToolCommand(tasks, entry, {}, options)
+  const concurrent = await runToolCommand(tasks, entry, { action: 'review' }, options)
+  finish(CommandResult.fail('x'.repeat(8000)))
+  await first
+  const repeated = await runToolCommand(tasks, entry, { focus: 'Different wording' }, options)
+  assert({
+    given: 'concurrent analysis and a repeat after a large failure',
+    should: 'invoke the command only once and return bounded schema-valid failures',
+    actual: {
+      calls,
+      running: String(concurrent.error).includes('already running'),
+      failed: String(repeated.error).includes('already failed'),
+      bounded: String(repeated.error).length <= 2000,
+      valid: toolModelMessageSchema.safeParse(asToolMessage(repeated)).success,
+    },
+    expected: { calls: 1, running: true, failed: true, bounded: true, valid: true },
+  })
+})
+
 test('runToolCommand outputs satisfy the SDK message schema', async () => {
   const cause = new FakeApiError('prompt is too long: 111 tokens > 100 maximum', { body: 'x'.repeat(4096) })
   const shaped = await runToolCommand(stubTasks(CommandResult.error(cause, 'Drafting failed')), ENTRY, {})

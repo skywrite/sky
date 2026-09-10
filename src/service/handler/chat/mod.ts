@@ -14,6 +14,7 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
+import type { LegalReviewStore } from '#lib/legalReview/store.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
@@ -37,8 +38,10 @@ import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
 import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
+import { registerLegalReviewRoutes } from './legalReview.ts'
+import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { timelineOf } from './timeline.ts'
-import { inspectablePayload, recordToolExecution, toolRunsFromMessages } from './toolRuns.ts'
+import { inspectablePayload, recordToolExecution, restoreToolRuns, toolRunsFromMessages } from './toolRuns.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -215,6 +218,7 @@ export interface ChatSettingsHost {
 }
 
 export interface ChatRoutesOptions {
+  legalReviews?: LegalReviewStore
   createSession: ChatSessionFactory
   /** The console reader's attachment directory; uploads and their permanent download links use it too. */
   attachmentsRoot?: string
@@ -304,7 +308,7 @@ type WireEvent =
   | { type: 'tool-summary'; tool: string; at: number; text: string }
   | { type: 'title'; title: string }
 
-interface Thread {
+export interface Thread {
   session: ChatSession
   /** The generated subject; null until the thread has been named */
   title: string | null
@@ -518,7 +522,7 @@ async function savedBranchesOf(saved: string | null, baseDir: string): Promise<S
   if (!saved) return []
   const rows = await listDayChats(branchDir(path.join(baseDir, saved))).catch(() => [])
   return rows
-    .filter((row) => row.parent?.chat === saved)
+    .filter((row) => row.parent?.chat === saved && row.parent.kind !== 'thread')
     .map((row) => ({
       chat: path.relative(baseDir, row.path),
       turn: row.parent!.turn,
@@ -648,6 +652,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           restore,
         )
         .then((session) => {
+          if (restore?.title) session.pinTitle(restore.title)
           const thread: Thread = {
             session,
             // A continued chat goes by its saved title from the start.
@@ -665,7 +670,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             sink: null,
             pending: new Map(),
             answered: [],
-            runs: restore?.runs ?? toolRunsFromMessages(restore?.state.modelMessages),
+            runs:
+              restore?.runs ??
+              restoreToolRuns(restore?.resume?.recovery?.host?.runs) ??
+              toolRunsFromMessages(restore?.state.modelMessages),
             liveQueries: null,
             usage: new Map(),
             timings: new Map(),
@@ -770,6 +778,18 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       }
     }
   })()
+
+  const replyHost: ReplyThreadHost = {
+    threads,
+    baseDir,
+    options,
+    ready: restored,
+    open,
+    changed: (thread) => {
+      thread.updatedAt = ++tick
+    },
+  }
+  const openingReply = registerReplyThreads(app, replyHost)
 
   // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
   const windowOf = (host: ChatSettingsHost, profile: string) =>
@@ -1066,10 +1086,18 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   app.get('/', async (c) => {
     await restored
     const list = [...threads.entries()]
+      .filter(([, thread]) => thread.parent?.kind !== 'thread')
       .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
       .map(([id, thread]) => summarize(id, thread, baseDir))
     return c.json({ threads: list })
   })
+
+  if (options.legalReviews)
+    registerLegalReviewRoutes(app, options.legalReviews, async (id) => {
+      await restored
+      const thread = threads.get(id)
+      return thread ? { reviewId: thread.session.legalReviewId } : null
+    })
 
   app.get('/:id', async (c) => {
     await restored
@@ -1171,6 +1199,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       resume: found.resume,
       parent: found.resume.parent,
       parentId: null,
+      approvals: found.resume.approvals,
+      attachments: found.resume.attachments,
     })
     return c.json({ id, opened: true }, 201)
   })
@@ -1191,6 +1221,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       )
     }
     if (source.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
+    if (source.session.parent?.kind === 'thread')
+      return c.json({ message: 'Continue in this thread. Threads cannot contain more conversations.' }, 409)
     const body = (await c.req.json().catch(() => null)) as { turn?: unknown; key?: unknown } | null
     const turn = body?.turn
     if (!(typeof turn === 'number' && Number.isInteger(turn) && turn >= 1)) {
@@ -1349,35 +1381,71 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   app.post('/:id/end', async (c) => {
     await restored
     const id = c.req.param('id')
+    const body = (await c.req.json().catch(() => null)) as { save?: unknown } | null
     const thread = threads.get(id)
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
-    const body = (await c.req.json().catch(() => null)) as { save?: unknown } | null
+    if (openingReply(id)) return c.json({ message: 'A reply thread is opening. Try saving in a moment.' }, 409)
     // The thread's own setting decides; a caller may still say so outright.
     const save = typeof body?.save === 'boolean' ? body.save : thread.saves
 
-    // A branch files beside its parent, so a parent that has no file yet
-    // gets one first — a light save it goes on talking after. A parent
-    // still working cannot be filed mid-turn.
-    const parentThread = thread.parent?.id ? threads.get(thread.parent.id) : undefined
-    if (save && parentThread && !parentThread.session.resume) {
-      if (parentThread.busy) return c.json({ message: 'the chat this one branched from is still working' }, 409)
-      await parentThread.session.fileNow()
-      parentThread.updatedAt = ++tick
+    const ownerPath = thread.session.filePath(thread.title ?? undefined)
+    const children = [...threads.entries()].filter(
+      ([, child]) =>
+        child.parent?.kind === 'thread' &&
+        (child.parent.id === id || (ownerPath && child.parent.chat === path.relative(baseDir, ownerPath))),
+    )
+    if (children.some(([, child]) => child.busy))
+      return c.json(
+        {
+          message:
+            'A reply thread is still working. Close its panel to keep chatting, or wait before saving this conversation.',
+        },
+        409,
+      )
+
+    // File the full lineage before its descendants. Reserve every participant
+    // before awaiting a write so another tab cannot start a turn mid-save.
+    const ancestors: Thread[] = []
+    const seen = new Set([thread])
+    let above = thread.parent?.id ? threads.get(thread.parent.id) : undefined
+    while (save && above && !seen.has(above)) {
+      if (above.busy) return c.json({ message: 'an earlier chat in this conversation is still working' }, 409)
+      seen.add(above)
+      ancestors.unshift(above)
+      above = above.parent?.id ? threads.get(above.parent.id) : undefined
     }
 
     // The thread stays until the end succeeds, so a failed save can be retried.
-    thread.busy = true
-    thread.state = 'saving'
+    const participants = [thread, ...children.map(([, child]) => child), ...ancestors]
+    const priorStates = new Map(participants.map((participant) => [participant, participant.state]))
+    for (const participant of participants) {
+      participant.busy = true
+      participant.state = 'saving'
+    }
     const release = hold('chat save')
     try {
-      const saved = await thread.session.end({ ...options.endDefaults, save })
+      for (const ancestor of ancestors) {
+        const filed = await ancestor.session.fileNow()
+        if (filed?.aborted) return c.json({ saved: filed })
+        ancestor.updatedAt = ++tick
+      }
+      const checkpoint = save && children.length ? await thread.session.fileNow(options.endDefaults) : null
+      if (checkpoint?.aborted) return c.json({ saved: checkpoint })
+      for (const [childId, child] of children) {
+        const childSaved = await child.session.end({ ...options.endDefaults, save, logToDay: null })
+        if (childSaved?.aborted) return c.json({ saved: childSaved })
+        threads.delete(childId)
+      }
+      const saved = (await thread.session.end({ ...options.endDefaults, save })) ?? checkpoint
       threads.delete(id)
       return c.json({ saved })
     } finally {
       release()
-      thread.busy = false
-      if (threads.has(id)) thread.state = 'done'
+      for (const participant of participants) {
+        participant.busy = false
+        participant.state = priorStates.get(participant) ?? 'done'
+      }
     }
   })
 

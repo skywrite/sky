@@ -1665,7 +1665,11 @@ test('resolvers - a branch carries its parent, its parent lists it, and its thre
       ownMarkdownStandsAlone: !branch.markdown.includes('widget launch?'),
     },
     expected: {
-      parent: { path: 'time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md', turn: 1 },
+      parent: {
+        path: 'time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
+        turn: 1,
+        kind: 'branch',
+      },
       inherited: 2,
       parentBranches: ['First Cohort Size'],
       launchBranchesFilledIn: [],

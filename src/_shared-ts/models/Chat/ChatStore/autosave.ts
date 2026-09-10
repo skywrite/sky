@@ -32,6 +32,7 @@ import { type PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { type ChatParent, firstWordsSummary } from '../document/mod.ts'
+import { chatStatistics } from '../document/statistics.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
 import type { ChatRecovery } from './recovery.ts'
@@ -144,7 +145,14 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     parent: input.parent ?? input.resume?.parent ?? null,
   })
   if (input.recovery) doc.yaml['recovery'] = input.recovery
-  const markdown = doc.toMarkdown() + serializeContextLog(input.contextLog)
+  const parent = input.parent ?? input.resume?.parent
+  const inherited = parent ? parent.turn * 2 : 0
+  const ownLog = parent ? input.contextLog.filter((entry) => entry.turn > parent.turn) : input.contextLog
+  const markdown =
+    doc.toMarkdown() +
+    serializeContextLog(input.contextLog, {
+      statistics: chatStatistics(ownLog, Math.max(0, input.turns.length - inherited)),
+    })
 
   // Atomic replace: a crash mid-write must never leave a truncated snapshot.
   await mkdir(path.dirname(filePath), { recursive: true })

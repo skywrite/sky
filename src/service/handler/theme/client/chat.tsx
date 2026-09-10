@@ -18,7 +18,7 @@ import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
-import { takeChatDraft } from './chatDraft.ts'
+import { useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
@@ -26,9 +26,18 @@ import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
+import { LegalReviewSummary } from './legalReview.tsx'
 import { splitLinks } from './links.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
+import {
+  ReplyThreadLink,
+  ReplyThreadPanel,
+  ThreadIcon,
+  useReplyThreads,
+  type OpenReplyThread,
+  type ReplyThreadSummary,
+} from './replyThreads.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { compactLine, humanize, titleOf } from './toolLines.ts'
 import { FieldsView, RunLines } from './toolLinesView.tsx'
@@ -143,6 +152,8 @@ export interface ThreadParent {
   id: string | null
   /** The parent's name, when the service knows it */
   title: string | null
+  kind?: 'thread'
+  key?: string
 }
 
 /** A branch filed beside this thread's file, not live on this page */
@@ -1505,6 +1516,10 @@ export function ThreadColumn({
   branches = [],
   onBranched,
   onOpenSaved,
+  onReplyThread,
+  replyThreads = [],
+  activeReplyId,
+  replyMode = false,
 }: {
   chat: Chat
   /** The branches that left this thread, live or saved */
@@ -1513,6 +1528,10 @@ export function ThreadColumn({
   onBranched?: (id: string) => void
   /** Opens a saved branch as a thread to continue; absent, its mark links to the file */
   onOpenSaved?: (chat: string) => void
+  onReplyThread?: (point: BranchPoint) => void
+  replyThreads?: ReplyThreadSummary[]
+  activeReplyId?: string
+  replyMode?: boolean
 }) {
   const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
@@ -1571,65 +1590,88 @@ export function ThreadColumn({
       ))
   return (
     <>
-      {state.turns.map((turn, i) => (
-        <Fragment key={i}>
-          {turn.role === 'user' && settled(i)}
-          <TurnView
-            turn={turn}
-            streaming={busy && i === state.turns.length - 1 && turn.role === 'assistant'}
-            cards={turn.role === 'assistant' ? settled(i) : undefined}
-            runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
-            labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
-            shared={i < state.inherited}
-            onBranch={
-              branchFrom && !busy && turn.role === 'assistant' && turn.branchPoint
-                ? () => void branchFrom(turn.branchPoint!)
-                : undefined
-            }
-            branching={branching !== null && branching === turn.branchPoint?.key}
-          />
-          {turn.role === 'user' && (
-            <Fragment key={`${state.id}-${i}`}>
-              <ChatActivity
-                active={state.phase === 'busy' && i === lastUser}
-                text={state.approvals.length > 0 || running ? null : state.gather}
-                queries={state.queries.find((entry) => entry.turn === Math.floor(i / 2) + 1)?.queries}
-              />
-            </Fragment>
-          )}
-          {state.parent && state.inherited > 0 && i === state.inherited - 1 && (
-            <div className="sky-condensed">
-              — continues{' '}
-              {state.parent.id ? (
-                <a href={`/thread/${state.parent.id}`}>{state.parent.title ?? 'the chat it left'}</a>
-              ) : (
-                <a href={`/explorer/${state.parent.chat}`}>{state.parent.title ?? 'the chat it left'}</a>
-              )}{' '}
-              from turn {state.parent.turn} —
-            </div>
-          )}
-          {turn.role === 'assistant' && leftAt(turn.branchPoint).length > 0 && (
-            <div className="sky-condensed">
-              — {leftAt(turn.branchPoint).length === 1 ? 'a branch left here: ' : 'branches left here: '}
-              {leftAt(turn.branchPoint).map((b, k) => (
-                <Fragment key={b.id ?? b.chat}>
-                  {k > 0 && ', '}
-                  {b.id !== null ? (
-                    <a href={`/thread/${b.id}`}>{b.title ?? 'a new chat'}</a>
-                  ) : onOpenSaved && b.chat ? (
-                    <button type="button" className="sky-link" onClick={() => onOpenSaved(b.chat!)}>
-                      {b.title ?? 'a saved chat'}
-                    </button>
-                  ) : (
-                    <a href={`/explorer/${b.chat}`}>{b.title ?? 'a saved chat'}</a>
-                  )}
-                </Fragment>
-              ))}{' '}
-              —
-            </div>
-          )}
-        </Fragment>
-      ))}
+      {state.turns.map((turn, i) =>
+        replyMode && i < state.inherited - 1 ? null : (
+          <Fragment key={i}>
+            {turn.role === 'user' && settled(i)}
+            <TurnView
+              turn={turn}
+              streaming={busy && i === state.turns.length - 1 && turn.role === 'assistant'}
+              cards={turn.role === 'assistant' ? settled(i) : undefined}
+              runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
+              labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
+              shared={!replyMode && i < state.inherited}
+              onReplyThread={
+                !replyMode && turn.branchPoint && onReplyThread ? () => onReplyThread(turn.branchPoint!) : undefined
+              }
+              onBranch={
+                !replyMode && branchFrom && !busy && turn.role === 'assistant' && turn.branchPoint
+                  ? () => void branchFrom(turn.branchPoint!)
+                  : undefined
+              }
+              branching={branching !== null && branching === turn.branchPoint?.key}
+            />
+            {!replyMode &&
+              turn.branchPoint &&
+              onReplyThread &&
+              replyThreads
+                .filter((thread) => thread.turn === turn.branchPoint!.turn && thread.key === turn.branchPoint!.key)
+                .map((thread) => (
+                  <ReplyThreadLink
+                    key={thread.key}
+                    thread={thread}
+                    active={thread.id === activeReplyId}
+                    onOpen={() => onReplyThread(turn.branchPoint!)}
+                  />
+                ))}
+            {replyMode && i === state.inherited - 1 && (
+              <div className="sky-reply-divider">
+                <span>Replies</span>
+              </div>
+            )}
+            {turn.role === 'user' && (
+              <Fragment key={`${state.id}-${i}`}>
+                <ChatActivity
+                  active={state.phase === 'busy' && i === lastUser}
+                  text={state.approvals.length > 0 || running ? null : state.gather}
+                  queries={state.queries.find((entry) => entry.turn === Math.floor(i / 2) + 1)?.queries}
+                />
+              </Fragment>
+            )}
+            {!replyMode && state.parent && state.inherited > 0 && i === state.inherited - 1 && (
+              <div className="sky-condensed">
+                — continues{' '}
+                {state.parent.id ? (
+                  <a href={`/thread/${state.parent.id}`}>{state.parent.title ?? 'the chat it left'}</a>
+                ) : (
+                  <a href={`/explorer/${state.parent.chat}`}>{state.parent.title ?? 'the chat it left'}</a>
+                )}{' '}
+                from turn {state.parent.turn} —
+              </div>
+            )}
+            {turn.role === 'assistant' && leftAt(turn.branchPoint).length > 0 && (
+              <div className="sky-condensed">
+                — {leftAt(turn.branchPoint).length === 1 ? 'a branch left here: ' : 'branches left here: '}
+                {leftAt(turn.branchPoint).map((b, k) => (
+                  <Fragment key={b.id ?? b.chat}>
+                    {k > 0 && ', '}
+                    {b.id !== null ? (
+                      <a href={`/thread/${b.id}`}>{b.title ?? 'a new chat'}</a>
+                    ) : onOpenSaved && b.chat ? (
+                      <button type="button" className="sky-link" onClick={() => onOpenSaved(b.chat!)}>
+                        {b.title ?? 'a saved chat'}
+                      </button>
+                    ) : (
+                      <a href={`/explorer/${b.chat}`}>{b.title ?? 'a saved chat'}</a>
+                    )}
+                  </Fragment>
+                ))}{' '}
+                —
+              </div>
+            )}
+          </Fragment>
+        ),
+      )}
       {state.answered
         .filter((card) => card.at >= state.turns.length)
         .map((card) => (
@@ -1680,11 +1722,11 @@ export interface ComposerAttach {
   onFiles: (files: File[]) => void
   files?: File[]
   onRemove?: (index: number) => void
-  onSent?: (files: File[]) => void
 }
 
 export function Composer({
   chat,
+  draft,
   placeholder,
   hints,
   attach,
@@ -1693,8 +1735,11 @@ export function Composer({
   onSend,
   sendDisabled = false,
   hidden = false,
+  autoFocus = true,
+  showSaves = true,
 }: {
   chat: Chat
+  draft: ChatDraft
   placeholder: string
   hints: ReactNode
   /** A + before the input that picks files — the door for people who don't drag */
@@ -1706,6 +1751,8 @@ export function Composer({
   sendDisabled?: boolean
   /** Keep the draft in its textarea while voice owns the conversation surface. */
   hidden?: boolean
+  autoFocus?: boolean
+  showSaves?: boolean
 }) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -1713,17 +1760,20 @@ export function Composer({
   const threadId = useRef(state.id)
   threadId.current = state.id
   const [sendError, setSendError] = useState<string | null>(null)
-  useEffect(() => {
-    const draft = takeChatDraft(state.id)
-    if (draft && inputRef.current && !inputRef.current.value) {
-      inputRef.current.value = draft
-      inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
-      inputRef.current.focus()
-    }
-  }, [state.id])
   useEffect(() => setSendError(null), [state.id, attach?.files])
   const busy = state.phase !== 'idle'
-  const canSend = !busy && !chat.tuning && state.settings !== null && !sendDisabled
+  const positionedDraft = useRef<string | null>(null)
+  useEffect(() => {
+    if (!autoFocus || hidden || draft.loading || busy || positionedDraft.current === state.id) return
+    const input = inputRef.current
+    if (!input) return
+    positionedDraft.current = state.id
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(input.value.length, input.value.length)
+    input.scrollTop = input.scrollHeight
+  }, [state.id, autoFocus, hidden, draft.loading, busy])
+  const canSend =
+    !busy && !chat.tuning && state.settings !== null && !sendDisabled && !draft.loading && !draft.missingFiles
 
   const submit = () => {
     if (!canSend) return
@@ -1734,14 +1784,12 @@ export function Composer({
     if (!text.trim() && files.length === 0) return
     setSendError(null)
     if (onSend) {
-      el.value = ''
+      draft.accepted(text, files)
       onSend(text)
     } else {
       const id = state.id
       void send(text, files, () => {
-        if (threadId.current !== id) return
-        el.value = ''
-        attach?.onSent?.(files)
+        draft.accepted(text, files)
       }).then((result) => {
         if (!result.ok && threadId.current === id) setSendError(result.error ?? 'Wait a moment and try again.')
       })
@@ -1759,13 +1807,26 @@ export function Composer({
     <div className="sky-composer-zone" hidden={hidden} style={hidden ? { display: 'none' } : undefined}>
       <div className="sky-composer">
         {status}
+        {(draft.loading || draft.saving) && (
+          <p className="sky-chat-draft-status" role="status">
+            {draft.loading ? 'Restoring draft…' : 'Saving attachments…'}
+          </p>
+        )}
+        {draft.error && (
+          <p className="sky-chat-file-error" role="alert">
+            {draft.error}{' '}
+            <button type="button" className="sky-link" onClick={draft.retry}>
+              Retry
+            </button>
+          </p>
+        )}
         {sendError && (
           <p className="sky-chat-file-error" role="alert">
             {sendError}
           </p>
         )}
         <div className="sky-composer-shell">
-          <FileClips files={attach?.files ?? []} onRemove={attach?.onRemove} disabled={busy || sendDisabled} />
+          <FileClips files={attach?.files ?? []} onRemove={attach?.onRemove} disabled={busy || sendDisabled} pending />
           <div className="sky-composer-row">
             {attach && (
               <>
@@ -1774,7 +1835,7 @@ export function Composer({
                   type="file"
                   hidden
                   multiple
-                  disabled={busy || sendDisabled}
+                  disabled={busy || sendDisabled || draft.loading}
                   accept={attach.accept}
                   onChange={(event) => {
                     const list = event.target.files
@@ -1786,7 +1847,7 @@ export function Composer({
                 <ActionIcon
                   aria-label="Add a file"
                   title="Add a file"
-                  disabled={busy || sendDisabled}
+                  disabled={busy || sendDisabled || draft.loading}
                   onClick={() => fileRef.current?.click()}
                 >
                   <Paperclip />
@@ -1800,9 +1861,11 @@ export function Composer({
                 classNames={{ root: 'sky-input-root', input: 'sky-input-field' }}
                 autosize
                 minRows={1}
-                maxRows={8}
+                maxRows={attach?.files?.length ? 4 : 8}
                 placeholder={placeholder}
                 aria-label={placeholder}
+                value={draft.text}
+                onChange={(event) => draft.setText(event.currentTarget.value)}
                 onKeyDown={onKeyDown}
                 onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
                   const files: File[] = Array.from(event.clipboardData.files)
@@ -1810,8 +1873,8 @@ export function Composer({
                   event.preventDefault()
                   attach.onFiles(files)
                 }}
-                disabled={busy}
-                autoFocus
+                disabled={busy || draft.loading}
+                autoFocus={autoFocus}
               />
             </div>
             <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
@@ -1827,8 +1890,12 @@ export function Composer({
             <ModelControl chat={chat} />
             <span className="sky-hint">·</span>
             <BudgetControl chat={chat} />
-            <span className="sky-hint">·</span>
-            <SavesControl chat={chat} />
+            {showSaves && (
+              <>
+                <span className="sky-hint">·</span>
+                <SavesControl chat={chat} />
+              </>
+            )}
           </>
         )}
         {/* The keys are worth a word before the first message; after it the tuning takes the room. */}
@@ -1886,9 +1953,48 @@ export function ChatMain({
   const scrollRef = useRef<HTMLDivElement>(null)
   useFollow(scrollRef, [state.turns, state.runs, state.gather, call.voice.state.turns, voiceMode], !voiceMode)
   const busy = state.phase !== 'idle'
-  const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved)
+  const draft = useChatDraft(state.id)
+  const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved, draft)
   const empty = state.turns.length === 0 && !state.gather && !call.visible
   const [panel, setPanel] = useState(false)
+  const replyMode = state.parent?.kind === 'thread'
+  const [replyVersion, setReplyVersion] = useState(0)
+  const replies = useReplyThreads(state.id, !replyMode, replyVersion)
+  const [openReplies, setOpenReplies] = useState<OpenReplyThread[]>([])
+  const [activeReply, setActiveReply] = useState<string | null>(null)
+  const [openingReply, setOpeningReply] = useState<BranchPoint | null>(null)
+  const [replyError, setReplyError] = useState<string | null>(null)
+  const replyRequest = useRef(0)
+  const closeReply = useCallback(() => {
+    replyRequest.current++
+    setActiveReply(null)
+    setOpeningReply(null)
+  }, [])
+  const openReply = async (point: BranchPoint) => {
+    if (openingReply || replyMode) return
+    const request = ++replyRequest.current
+    setPanel(false)
+    setActiveReply(null)
+    setOpeningReply(point)
+    setReplyError(null)
+    try {
+      const response = await fetch(`/chat/${state.id}/replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(point),
+      })
+      const result = (await response.json()) as { id?: string; message?: string }
+      if (!response.ok || !result.id) throw new Error(result.message ?? 'The thread could not be opened.')
+      const id = result.id
+      setOpenReplies((prior) => (prior.some((thread) => thread.id === id) ? prior : [...prior, { id, point }]))
+      setReplyVersion((version) => version + 1)
+      if (request === replyRequest.current) setActiveReply(id)
+    } catch (error) {
+      if (request === replyRequest.current) setReplyError((error as Error).message)
+    } finally {
+      if (request === replyRequest.current) setOpeningReply(null)
+    }
+  }
   useEffect(() => {
     if (!endRequested) return
     setEndRequested(false)
@@ -1915,12 +2021,23 @@ export function ChatMain({
               </Button>
             )}
             {!voiceMode && state.documents !== null && (
-              <Button size="sm" onClick={() => setPanel((open) => !open)} data-active={panel}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  closeReply()
+                  setPanel((open) => !open)
+                }}
+                data-active={panel}
+              >
                 Context · {state.documents}
               </Button>
             )}
             {!voiceMode && (state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
-              <Button size="sm" onClick={() => void endConversation()} disabled={busy || call.syncing}>
+              <Button
+                size="sm"
+                onClick={() => void endConversation()}
+                disabled={busy || call.syncing || replies.some((reply) => reply.busy)}
+              >
                 {state.settings?.saves === false
                   ? state.phase === 'saving'
                     ? 'Closing…'
@@ -1934,8 +2051,12 @@ export function ChatMain({
         )}
       </header>
 
-      <div className="sky-split">
+      <div
+        className="sky-split"
+        data-reply-open={(!voiceMode && (activeReply !== null || openingReply !== null)) || undefined}
+      >
         <div className="sky-split-main sky-chat-drop-target" {...attachments.drop}>
+          {!replyMode && !voiceMode && <LegalReviewSummary chatId={state.id} busy={busy} />}
           {attachments.dragging && (
             <div className="sky-chat-drop" role="status">
               <Paperclip />
@@ -1954,7 +2075,21 @@ export function ChatMain({
               </div>
             ) : (
               <div className="sky-col">
-                <ThreadColumn chat={chat} branches={branches} onBranched={onBranched} onOpenSaved={onOpenSaved} />
+                <ThreadColumn
+                  chat={chat}
+                  branches={branches}
+                  onBranched={replyMode ? undefined : onBranched}
+                  onOpenSaved={onOpenSaved}
+                  replyMode={replyMode}
+                  onReplyThread={replyMode ? undefined : (point) => void openReply(point)}
+                  replyThreads={replies}
+                  activeReplyId={activeReply ?? undefined}
+                />
+                {replyError && (
+                  <p className="sky-chat-file-error" role="alert">
+                    {replyError}
+                  </p>
+                )}
                 {call.visible && <VoiceTranscript voice={call.voice} />}
               </div>
             )}
@@ -1970,6 +2105,7 @@ export function ChatMain({
           />
           <Composer
             chat={chat}
+            draft={draft}
             hidden={voiceMode}
             placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
             hints={KEY_HINTS}
@@ -2006,6 +2142,27 @@ export function ChatMain({
             onClose={() => setPanel(false)}
           />
         )}
+        {openingReply && !voiceMode && (
+          <aside className="sky-reply-panel" aria-label="Thread" aria-busy="true">
+            <header className="sky-reply-panel-head">
+              <h2>Thread</h2>
+              <ActionIcon aria-label="Close thread" onClick={closeReply}>
+                ×
+              </ActionIcon>
+            </header>
+            <p className="sky-reply-empty" role="status">
+              Opening thread…
+            </p>
+          </aside>
+        )}
+        {openReplies.map((reply) => (
+          <ReplyThreadPanel
+            key={reply.id}
+            thread={reply}
+            visible={!voiceMode && activeReply === reply.id}
+            onClose={closeReply}
+          />
+        ))}
       </div>
       <audio ref={call.voice.audioRef} autoPlay />
       <audio ref={call.voice.sonnyAudioRef} autoPlay />
@@ -2022,6 +2179,7 @@ export function TurnView({
   onBranch,
   branching = false,
   labelOf,
+  onReplyThread,
 }: {
   turn: Turn
   streaming: boolean
@@ -2037,6 +2195,7 @@ export function TurnView({
   branching?: boolean
   /** The settings' label for a profile name, for the usage line; the name itself when absent */
   labelOf?: (profile: string) => string
+  onReplyThread?: () => void
 }) {
   if (turn.role === 'user') {
     const { text, files } = splitChatFiles(turn.content)
@@ -2101,24 +2260,37 @@ export function TurnView({
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
-        {!streaming && (turn.usage || turn.timing || branch) && (
+        {!streaming && (turn.usage || turn.timing || branch || onReplyThread) && (
           <div className="sky-reply-foot">
             <ReplyDetails
               usage={turn.usage}
               model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
               timing={turn.timing}
             />
-            {branch && (
+            {(branch || onReplyThread) && (
               <div className="sky-reply-acts">
-                <button
-                  type="button"
-                  className="sky-act"
-                  onClick={branch}
-                  disabled={branching}
-                  data-busy={branching || undefined}
-                >
-                  {branching ? 'Starting…' : 'New chat from here…'}
-                </button>
+                {onReplyThread && (
+                  <Button
+                    size="compact-sm"
+                    variant="primary-quiet"
+                    className="sky-reply-action"
+                    leftSection={<ThreadIcon />}
+                    onClick={onReplyThread}
+                  >
+                    Reply in thread
+                  </Button>
+                )}
+                {branch && (
+                  <button
+                    type="button"
+                    className="sky-act"
+                    onClick={branch}
+                    disabled={branching}
+                    data-busy={branching || undefined}
+                  >
+                    {branching ? 'Starting…' : 'New chat from here…'}
+                  </button>
+                )}
               </div>
             )}
           </div>

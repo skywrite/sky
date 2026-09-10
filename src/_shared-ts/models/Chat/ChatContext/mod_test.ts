@@ -301,6 +301,39 @@ test('ChatContext.firstTurn - own chat exclusion', async () => {
   })
 })
 
+test('ChatContext keeps its own and ancestor reply threads out of baseline and retrieval', async () => {
+  const branch = FIX.ownChat.replace(/\.md$/, '/Option.md')
+  const hidden = [
+    FIX.ownChat,
+    branch,
+    FIX.ownChat.replace(/\.md$/, '/_threads/response.md'),
+    branch.replace(/\.md$/, '/_threads/refinement.md'),
+  ]
+  const unrelated = abs('time/2026/W05/01-27/actions/ai-chats/11-00_Other/_threads/response.md')
+  const { context } = makeContext({
+    ancestors: [FIX.ownChat],
+    fetchContext: async (query) =>
+      query.includes('date:')
+        ? [...hidden, unrelated].map((file) => ({ path: file, doc: Document.fromMarkdown('Mock discussion.') }))
+        : [],
+    producers: {
+      produceInitialQuery: async () => ok({ paths: [...hidden, FIX.person] }),
+      evolveQueries: async () => ok({ queries: [], changed: false }),
+      executeQuery: async () => ok({ paths: [] }),
+    },
+  })
+  // The title can become fixed after construction, when the first reply thread is opened.
+  context.excludeConversation(branch)
+  await context.seedBaseline()
+  await context.firstTurn('What should we do next?')
+  assert({
+    given: 'a branch whose baseline and query both match its own refinement history and its parent’s',
+    should: 'leave those conversations out while retaining unrelated context',
+    actual: context.paths.toSorted(),
+    expected: [unrelated, FIX.person].toSorted(),
+  })
+})
+
 test('ChatContext.firstTurn - producer failure', async () => {
   const { context, errorEntries } = makeContext({
     producers: {

@@ -41,6 +41,8 @@ import type { QueryTruncation } from '#shared/models/DomainCollection/query/reso
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
+import { readChatRecovery, type ChatRecovery } from '../../ChatStore/recovery.ts'
+import type { ChatStatistics } from '../statistics.ts'
 
 export const CONTEXT_LOG_VERSION = 2
 
@@ -150,8 +152,13 @@ export interface ContextTurnLog {
 
 const MARKER = '<!-- CONTEXT-LOG'
 
-export function serializeContextLog(entries: ContextTurnLog[]): string {
-  if (entries.length === 0) return ''
+export interface ContextLogDetails {
+  statistics?: ChatStatistics
+  session?: ChatRecovery
+}
+
+export function serializeContextLog(entries: ContextTurnLog[], details?: ContextLogDetails): string {
+  if (entries.length === 0 && !details) return ''
 
   const lines: string[] = ['{', `  "version": ${CONTEXT_LOG_VERSION},`, '  "turns": [']
   entries.forEach((entry, i) => {
@@ -171,7 +178,14 @@ export function serializeContextLog(entries: ContextTurnLog[]): string {
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })
-  lines.push('  ]', '}')
+  lines.push('  ]')
+  for (const key of ['statistics', 'session'] as const) {
+    if (details?.[key] !== undefined) {
+      lines[lines.length - 1] += ','
+      lines.push(`  "${key}": ${JSON.stringify(details[key])}`)
+    }
+  }
+  lines.push('}')
 
   // `-->` inside a string value would terminate the HTML comment early.
   // \u003e survives JSON.parse as `>`, so the escape is round-trip exact.
@@ -200,9 +214,18 @@ function recordArrayField(name: string, records: object[]): string {
  * stripped before documents reach the model). Legacy `<!-- TURN` runs at
  * EOF are split off without being parsed.
  */
-export function splitContextLog(markdown: string): { body: string; entries: ContextTurnLog[] } {
+export function splitContextLog(markdown: string): {
+  body: string
+  entries: ContextTurnLog[]
+  details?: ContextLogDetails
+} {
   const v2 = findLogBlock(markdown)
-  if (v2) return { body: trimBody(markdown.slice(0, v2.start)), entries: v2.entries }
+  if (v2)
+    return {
+      body: trimBody(markdown.slice(0, v2.start)),
+      entries: v2.entries,
+      ...(v2.details ? { details: v2.details } : {}),
+    }
 
   const legacyStart = legacyLogStartIndex(markdown)
   if (legacyStart !== -1) return { body: trimBody(markdown.slice(0, legacyStart)), entries: [] }
@@ -220,7 +243,9 @@ function trimBody(body: string): string {
 // trailing \n* tolerates a normalizer-collapsed final newline.
 const LOG_BLOCK = /^<!-- CONTEXT-LOG\n((?:(?!-->)[\s\S])*)\n-->\n*$/
 
-function findLogBlock(markdown: string): { start: number; entries: ContextTurnLog[] } | null {
+function findLogBlock(
+  markdown: string,
+): { start: number; entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
   let from = 0
   let idx: number
   while ((idx = markdown.indexOf(MARKER, from)) !== -1) {
@@ -228,21 +253,29 @@ function findLogBlock(markdown: string): { start: number; entries: ContextTurnLo
     if (atLineStart) {
       const match = markdown.slice(idx).match(LOG_BLOCK)
       const entries = match ? parseLogJson(match[1]) : null
-      if (entries) return { start: idx, entries }
+      if (entries) return { start: idx, ...entries }
     }
     from = idx + 1
   }
   return null
 }
 
-function parseLogJson(text: string): ContextTurnLog[] | null {
+function parseLogJson(text: string): { entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
   try {
     const parsed = JSON.parse(text)
     if (parsed?.version !== CONTEXT_LOG_VERSION || !Array.isArray(parsed.turns)) return null
     for (const t of parsed.turns) {
       if (typeof t?.turn !== 'number' || !Array.isArray(t.queries)) return null
     }
-    return parsed.turns as ContextTurnLog[]
+    const session = readChatRecovery(parsed.session)
+    const statistics =
+      parsed.statistics && typeof parsed.statistics === 'object' ? (parsed.statistics as ChatStatistics) : undefined
+    return {
+      entries: parsed.turns as ContextTurnLog[],
+      ...(session || statistics
+        ? { details: { ...(session ? { session } : {}), ...(statistics ? { statistics } : {}) } }
+        : {}),
+    }
   } catch {
     return null
   }

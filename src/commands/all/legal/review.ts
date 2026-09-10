@@ -1,30 +1,36 @@
 import * as path from 'node:path'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { GOOGLE_BROWSER_PROFILE_DIR, findChromiumBrowser } from '#lib/google/browserSession.ts'
-import { resolveFileRef } from '#lib/google/mod.ts'
-import { exists } from '#shared/fs/mod.ts'
-import { readPromptFile } from '#shared/prompts/load.ts'
-import { renderPromptFile } from '#shared/prompts/mod.ts'
-import { IMPORT_EXTENSIONS, resolveImportSource } from '../google/agent/lib/importFile.ts'
-import type { MissionFile } from '../google/agent/lib/tools.ts'
-
-const PROMPT_NAME = 'review.prompt.md'
+import { profileContext } from '#commands/lib/chat/profileContext.ts'
+import {
+  ArgOrFlag,
+  Command,
+  CommandResult,
+  Flag,
+  type CommandArgs,
+  type CommandDescription,
+  type InferParams,
+} from '#commands/mod.ts'
+import { legalReviewChat } from '#lib/legalReview/chat.ts'
+import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
+import { activeDocuments, openFindings, type LegalReview, type ReviewSource } from '#lib/legalReview/types.ts'
+import { env } from '#shared/sys/mod.ts'
 
 const params = {
-  document: ArgOrFlag.string('Legal document to review — a local .pdf/.docx/.md path, or a Google Doc URL/id', {
-    required: true,
+  document: ArgOrFlag.string(
+    'Local agreement path or attached filename; omit to use the agreements attached in this chat',
+    { optional: true },
+  ),
+  documents: Flag.string('JSON array of local agreement paths or attached filenames, when selecting several files'),
+  review: Flag.string('Saved review ID to continue; defaults to this conversation’s linked review'),
+  focus: Flag.string('Known priorities or areas to weight, while still reading the whole set', { short: 'f' }),
+  expected: Flag.number('Total agreements expected, when the user has stated it'),
+  replaces: Flag.string('Prior document ID when this upload is explicitly a revised replacement'),
+  action: Flag.string('review (default), add (register without analysis), or status (read saved results)', {
+    default: 'review',
   }),
-  focus: ArgOrFlag.string('What to weight the review toward (e.g. "indemnity and the renewal window")', {
-    short: 'f',
-  }),
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
 }
-
 type Params = InferParams<typeof params>
-type Result = { report: string; files: MissionFile[]; url?: string; artifact?: string }
+type Result = { report: string; reviewId: string; artifact: string; review: LegalReview }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -32,99 +38,122 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-@AIChatTool({ needsApproval: true })
+export function reviewReport(review: LegalReview): string {
+  const documents = activeDocuments(review)
+  const findings = openFindings(review)
+  const highlights = findings.filter((finding) => finding.severity === 'glaring')
+  for (const finding of findings) {
+    if (highlights.length >= 3) break
+    if (!highlights.includes(finding)) highlights.push(finding)
+  }
+  return [
+    `${documents.length}${review.expectedDocuments ? ` of ${review.expectedDocuments}` : ''} agreements · ${documents.filter((doc) => doc.status === 'reviewed').length} reviewed · ${findings.length} ${findings.length === 1 ? 'issue' : 'issues'} to discuss`,
+    review.comparison.status === 'needed'
+      ? 'Some coverage or findings still need review; see the review summary.'
+      : 'The supplied agreements have been compared together.',
+    ...(review.lastError ? [`Last analysis failed: ${review.lastError}`] : []),
+    ...highlights.map((finding) => `- ${finding.title}: ${finding.explanation}`),
+    ...(findings.length > highlights.length
+      ? [`${findings.length - highlights.length} more findings are available in the review summary.`]
+      : []),
+    ...(review.missingDocuments.length ? [`Missing: ${review.missingDocuments.join('; ')}`] : []),
+    ...(review.perspective?.uncertainties ?? []),
+  ].join('\n\n')
+}
+
+@AIChatTool({ needsApproval: false })
 export default class LegalReviewTask extends Command {
+  constructor(private readonly createReviewer: typeof createLegalReviewer = createLegalReviewer) {
+    super()
+  }
   static override description: CommandDescription = {
     name: 'legal:review',
     description:
-      'Review a legal document — contract, NDA, lease, terms — and leave the findings as comments and suggested edits on a Google Doc copy.',
-    descriptionLong: [
-      'Uploads a local document (PDF, docx, markdown) to Drive converted to a',
-      'Google Doc — or reviews a Google Doc already in Drive — then runs the',
-      'Google agent over it with a legal-review brief: money, term and',
-      'renewal, termination, liability and indemnity, IP, confidentiality,',
-      'data and compliance, assignment, and dispute terms. Findings land on',
-      'the document as severity-tagged anchored comments, concrete rewrites',
-      'as suggested edits, plus one summary comment. Needs the automation',
-      'browser session (sky google:browser) — findings anchor to the text',
-      'itself, never the comments panel. The document text itself is never',
-      'edited. A careful review, not legal advice.',
-    ],
+      'Review related agreements directly from PDFs or local documents. Maintain a shared document map, evidence and material findings in chat. No Google upload, comments, or edits. Reuse the same review across files and revisions.',
     usage: [
-      'sky legal:review ~/deals/atlas-msa.pdf',
-      'sky legal:review ~/deals/atlas-nda.pdf -f "indemnity and the renewal window"',
-      'sky legal:review <google-doc-url>',
-      'sky legal:review ~/deals/atlas-msa.pdf -a work',
+      'sky legal:review ~/deals/atlas-msa.pdf --expected 5',
+      'sky legal:review ~/deals/atlas-schedule.pdf --review <review-id>',
+      'sky legal:review --review <review-id> --action status',
     ],
     params,
   }
 
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
-    output.log(`  Document: ${String(input.document ?? '')}`)
-    if (input.focus) output.log(`  Focus:    ${String(input.focus)}`)
-    output.log(`  Account:  ${input.account ? String(input.account) : '(default)'}`)
-  }
-
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output } = context
-    const { document, focus, account } = args
-
-    if (!document?.trim()) {
-      return CommandResult.fail('Provide a document, e.g. sky legal:review ~/deals/atlas-msa.pdf')
-    }
-
-    // A Google file goes to the agent as-is; anything else is a local path to
-    // import. Checked in this order so a URL is never treated as a file path.
-    const target = resolveFileRef(document.trim())
-    if (!target && !resolveImportSource(document.trim())) {
-      return CommandResult.fail(
-        `Not a Google Doc URL/id, and not a document sky can import (${IMPORT_EXTENSIONS}): ${document}`,
-      )
-    }
-
-    // Findings land as browser-anchored comments; without the automation
-    // browser the mission could only degrade to file-level panel comments,
-    // so refuse to start. (Test contexts skip the machine probe.)
-    if (context.platform !== CommandPlatform.Test) {
-      if (!(await findChromiumBrowser())) {
-        return CommandResult.fail(
-          'Anchored comments need Chromium or Google Chrome installed — legal:review does not degrade to panel comments',
-        )
+  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
+    let reviewer: ReturnType<typeof createLegalReviewer> | undefined
+    let reviewId = args.review
+    try {
+      const chat = legalReviewChat.getStore()
+      reviewer = this.createReviewer(context.config)
+      const id = args.review ?? chat?.id()
+      reviewId = id
+      const action = args.action ?? 'review'
+      if (!['review', 'add', 'status'].includes(action)) return CommandResult.fail('Choose review, add, or status.')
+      let review: LegalReview
+      if (action === 'status') {
+        const saved = id ? await reviewer.store.read(id) : null
+        if (!saved) return CommandResult.fail('No saved review is linked yet. Attach an agreement to begin.')
+        review = saved
+        await chat?.link(review.id)
+      } else {
+        const attached = chat?.sources() ?? []
+        const raw = args.documents
+          ? (JSON.parse(args.documents) as unknown)
+          : args.document
+            ? [args.document]
+            : undefined
+        if (raw !== undefined && (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')))
+          return CommandResult.fail('documents must be a JSON array of paths or attached filenames.')
+        const sources: ReviewSource[] =
+          raw === undefined
+            ? attached
+            : (raw as string[]).map((file) => {
+                if (/^https?:\/\//.test(file))
+                  throw new Error(
+                    'Attach or download the original agreement to review it in chat. Google annotation is a separate action.',
+                  )
+                const matches = attached.filter(
+                  (item) => item.path === file || item.name === file || item.name.endsWith(`_${file}`),
+                )
+                if (matches.length > 1)
+                  throw new Error(`Several attachments match ${file}; use the complete attached filename.`)
+                if (matches[0]) return matches[0]
+                const resolved = file.startsWith('~/')
+                  ? path.join(context.config.DIR_HOME, file.slice(2))
+                  : path.resolve(chat ? context.config.DIR_HOME : env.get('SKY_USER_CWD') || '.', file)
+                return { path: resolved, name: path.basename(resolved) }
+              })
+        const input = {
+          id,
+          sources,
+          replaces: args.replaces,
+          focus: args.focus,
+          expectedDocuments: args.expected,
+          context: chat?.context ?? {
+            source: 'legal:review',
+            instructions: await profileContext(context.config),
+            conversation: [],
+          },
+          onCreated: async (id: string) => {
+            reviewId = id
+            await chat?.link(id)
+          },
+        }
+        review =
+          action === 'add'
+            ? await reviewer.register(input)
+            : await reviewer.review(input, (line) => context.output.log(line))
       }
-      if (!(await exists(GOOGLE_BROWSER_PROFILE_DIR))) {
-        return CommandResult.fail(
-          'Anchored comments need the Google automation browser session — run sky google:browser once to set it up',
-        )
-      }
+      const report = reviewReport(review)
+      context.output.log(report)
+      context.output.log(`Review: ${review.id}`)
+      return CommandResult.success({ report, reviewId: review.id, artifact: reviewer.store.file(review.id), review })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const saved = reviewer && reviewId ? await reviewer.store.read(reviewId).catch(() => null) : null
+      if (!saved) return CommandResult.fail(message)
+      const retained = `No new analysis was saved. ${activeDocuments(saved).length} original agreements and ${saved.findings.length} earlier findings are retained in review ${saved.id}. Use action=status to inspect saved work. Do not repeat analysis in this turn.`
+      context.output.log(retained)
+      return CommandResult.fail(`${message}\n\n${retained}`)
     }
-
-    if (!import.meta.dirname) return CommandResult.error('Cannot locate the legal prompt directory')
-    const promptPath = path.join(import.meta.dirname, 'prompts', PROMPT_NAME)
-    const { output: mission } = renderPromptFile(await readPromptFile(promptPath), PROMPT_NAME, {
-      review: { focus: focus?.trim() },
-    })
-
-    // Both target params are passed explicitly: composition merges the parent's
-    // args into the child, so leaving one unset could let a stale value stand.
-    const result = await tasks.run<{ report: string; files: MissionFile[]; artifact?: string }>('google:agent', {
-      mission,
-      file: target ? document.trim() : undefined,
-      import: target ? undefined : document.trim(),
-      account,
-    })
-
-    if (result.status !== 'success' || !result.data) {
-      if (result.error) return CommandResult.error(result.error, 'The review mission failed')
-      return CommandResult.fail(result.message ?? 'The review mission failed')
-    }
-
-    const { report, files, artifact } = result.data
-    const url = files.find((file) => file.kind === 'doc')?.url ?? files[0]?.url
-    if (url) {
-      output.log('')
-      output.log(`Reviewed document: ${url}`)
-    }
-
-    return CommandResult.success({ report, files, url, artifact })
   }
 }

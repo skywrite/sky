@@ -1,7 +1,9 @@
 import { ActionIcon } from '@mantine/core'
-import { type DragEvent, useEffect, useRef, useState } from 'react'
+import { type DragEvent, useEffect, useId, useRef, useState } from 'react'
 import { chatFileError, type ChatFileRef } from '#universal/ai/chatFiles.ts'
 import { imagePreviewUrl, isChatImage } from '#universal/ai/chatImages.ts'
+import type { ChatDraft } from './chatDraft.ts'
+import { ChatFileIcon } from './chatFileIcon.tsx'
 
 export function Paperclip() {
   return (
@@ -21,7 +23,7 @@ export function Paperclip() {
   )
 }
 
-function FileThumbnail({ file }: { file: { name: string; url?: string } }) {
+function FileThumbnail({ file }: { file: { name: string; url?: string; type?: string } }) {
   const image =
     file instanceof File &&
     (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|avif|bmp|ico|heic|heif)$/i.test(file.name))
@@ -37,7 +39,7 @@ function FileThumbnail({ file }: { file: { name: string; url?: string } }) {
   }, [image])
   const saved = isChatImage(file) && /\.(png|jpe?g|webp)$/i.test(file.name) ? imagePreviewUrl(file) : undefined
   const src = saved ?? (preview?.file === image ? preview?.url : undefined)
-  if (!src || src === failed) return <Paperclip />
+  if (!src || src === failed) return <ChatFileIcon file={file} />
   return (
     <img
       className="sky-chat-file-thumbnail"
@@ -54,78 +56,110 @@ export function FileClips({
   files,
   onRemove,
   disabled = false,
+  pending = false,
 }: {
-  files: readonly { name: string; url?: string; size?: number }[]
+  files: readonly { name: string; url?: string; size?: number; type?: string }[]
   onRemove?: (index: number) => void
   disabled?: boolean
+  pending?: boolean
 }) {
+  const listId = useId()
+  const [expanded, setExpanded] = useState(true)
+  useEffect(() => setExpanded(true), [files.length])
   if (files.length === 0) return null
+  const totalBytes = files.every((file) => file.size !== undefined)
+    ? files.reduce((total, file) => total + file.size!, 0)
+    : undefined
   return (
-    <div className="sky-chat-files" aria-label="Attached files">
-      {files.map((file, index) => {
-        const type = file.name.includes('.') ? file.name.split('.').at(-1)!.toUpperCase() : 'File'
-        const size =
-          file.size === undefined
-            ? ''
-            : file.size < 1024 * 1024
-              ? ` · ${Math.max(1, Math.ceil(file.size / 1024))} KB`
-              : ` · ${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        const label = (
-          <>
-            <FileThumbnail file={file} />
-            <span className="sky-chat-file-label">
-              <span className="sky-chat-file-name" title={file.name}>
-                {file.name}
+    <div className="sky-chat-attachments" data-pending={pending || undefined} data-many={files.length > 5 || undefined}>
+      {(pending || files.length > 1) && (
+        <div className="sky-chat-attachments-head">
+          <span role={pending ? 'status' : undefined}>
+            <strong>
+              {files.length} {files.length === 1 ? 'file' : 'files'} attached
+            </strong>
+            {totalBytes !== undefined && <span className="sky-chat-attachments-size"> · {fileSize(totalBytes)}</span>}
+          </span>
+          {pending && (
+            <button
+              type="button"
+              className="sky-chat-attachments-toggle"
+              aria-expanded={expanded}
+              aria-controls={listId}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? 'Hide files' : 'Show files'}
+            </button>
+          )}
+        </div>
+      )}
+      <div id={listId} className="sky-chat-files" role="list" aria-label="Attached files" hidden={pending && !expanded}>
+        {files.map((file, index) => {
+          const type = file.name.includes('.') ? file.name.split('.').at(-1)!.toUpperCase() : 'File'
+          const size = file.size === undefined ? '' : ` · ${fileSize(file.size)}`
+          const label = (
+            <>
+              <FileThumbnail file={file} />
+              <span className="sky-chat-file-label">
+                <span className="sky-chat-file-name" title={file.name}>
+                  {file.name}
+                </span>
+                <span className="sky-chat-file-meta">
+                  {type}
+                  {size}
+                </span>
               </span>
-              <span className="sky-chat-file-meta">
-                {type}
-                {size}
-              </span>
-            </span>
-          </>
-        )
-        return (
-          <div className="sky-chat-file" key={`${file.name}-${index}`}>
-            {file.url ? (
-              <a href={file.url} target="_blank" rel="noopener noreferrer" title={`Download ${file.name}`}>
-                {label}
-              </a>
-            ) : (
-              <span className="sky-chat-file-content">{label}</span>
-            )}
-            {onRemove && (
-              <ActionIcon
-                size="sm"
-                variant="secondary"
-                aria-label={`Remove ${file.name}`}
-                disabled={disabled}
-                onClick={() => onRemove(index)}
-              >
-                ×
-              </ActionIcon>
-            )}
-          </div>
-        )
-      })}
+            </>
+          )
+          return (
+            <div className="sky-chat-file" role="listitem" key={`${file.name}-${index}`}>
+              {file.url ? (
+                <a href={file.url} target="_blank" rel="noopener noreferrer" title={`Download ${file.name}`}>
+                  {label}
+                </a>
+              ) : (
+                <span className="sky-chat-file-content">{label}</span>
+              )}
+              {onRemove && (
+                <ActionIcon
+                  size="sm"
+                  variant="secondary"
+                  aria-label={`Remove ${file.name}`}
+                  disabled={disabled}
+                  onClick={() => onRemove(index)}
+                >
+                  ×
+                </ActionIcon>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-export function useChatFiles(id: string, disabled: boolean) {
-  const [{ files, error }, setSelection] = useState<{ files: File[]; error: string | null }>({ files: [], error: null })
+function fileSize(bytes: number): string {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.ceil(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export function useChatFiles(id: string, disabled: boolean, draft: ChatDraft) {
+  const { files } = draft
+  const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const depth = useRef(0)
   useEffect(() => {
-    setSelection({ files: [], error: null })
+    setError(null)
     setDragging(false)
     depth.current = 0
   }, [id])
   const add = (added: File[]) => {
-    if (disabled) return
-    setSelection((prior) => {
-      const next = [...prior.files, ...added]
+    if (disabled || draft.loading) return
+    draft.setFiles((prior) => {
+      const next = [...prior, ...added]
       const refusal = chatFileError(next)
-      return { files: refusal ? prior.files : next, error: refusal }
+      setError(refusal)
+      return refusal ? prior : next
     })
   }
   const isFileDrag = (event: DragEvent) => event.dataTransfer.types.includes('Files')
@@ -164,10 +198,9 @@ export function useChatFiles(id: string, disabled: boolean) {
       files,
       onFiles: add,
       onRemove: (index: number) => {
-        setSelection((prior) => ({ files: prior.files.filter((_, i) => i !== index), error: null }))
+        draft.setFiles((prior) => prior.filter((_, i) => i !== index))
+        setError(null)
       },
-      onSent: (sent: File[]) =>
-        setSelection((prior) => ({ files: prior.files.filter((file) => !sent.includes(file)), error: null })),
     },
   }
 }

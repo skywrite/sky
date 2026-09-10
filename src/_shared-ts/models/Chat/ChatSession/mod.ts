@@ -51,6 +51,7 @@ import ChatEngine, {
 import { clearChatAutosave, writeChatAutosave } from '../ChatStore/autosave.ts'
 import { loadResumeSession, type ResumeSession } from '../ChatStore/mod.ts'
 import { chatFilePath, type SaveChatReport, type SaveEnricher, type SaveProgress, saveChat } from '../ChatStore/save.ts'
+import { conversationKey, hasCompleteModelHistory, modelHistoryThrough } from '../document/history.ts'
 import { inheritedMessages, prefixOf } from '../document/lineage.ts'
 import type { ChatParent } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
@@ -95,6 +96,10 @@ export type ChatSessionEvent =
 // -----------------------------------------------------------------------------
 
 export interface ToolHooks {
+  /** The context actually supplied to this turn, with conversation roles preserved. */
+  context: { instructions: string; conversation: readonly ConversationMessage[] }
+  attachments: () => Attachment[]
+  legalReview: { id: () => string | undefined; link: (id: string) => Promise<void> }
   /** A tool reported touching external files — the session records them for the transcript's rel. */
   onExternalFiles: (files: ExternalFileRef[]) => void
   /** A tool copied files into the day's attachments — the session records them for the transcript's attachments. */
@@ -106,7 +111,7 @@ export interface ToolHooks {
 /** Builds the turn's tool set. Called every turn; hosts cache discovery themselves. */
 export type ToolFactory = (
   hooks: ToolHooks,
-) => Promise<{ tools: Record<string, unknown>; toolApproval: ToolApprovalConfig }>
+) => Promise<{ tools: Record<string, unknown>; toolApproval: ToolApprovalConfig; instructions?: string }>
 
 export interface ChatSessionOptions {
   today: PlainDate
@@ -235,6 +240,12 @@ export default class ChatSession {
   /** The host's settings and identity, recorded with every recovery snapshot. */
   snapshotHostState?: () => Record<string, unknown>
 
+  private legalReview: ResumeState['legalReview']
+
+  get legalReviewId(): string | undefined {
+    return this.legalReview?.id
+  }
+
   constructor(opts: ChatSessionOptions) {
     this.opts = opts
     this.profile = opts.profile
@@ -243,6 +254,7 @@ export default class ChatSession {
     // thread read back from a snapshot, or a branch, has turns before its
     // next message.
     const seed = this.seed
+    this.legalReview = seed?.legalReview
     if (seed) this.turns.push(...seed.conversation)
     for (const file of opts.attachments ?? []) this.attachments.set(file.file, file)
     // A recovered continuation may contain replies not yet filed in its original transcript.
@@ -330,6 +342,8 @@ export default class ChatSession {
    */
   pinTitle(title: string): void {
     if (this.pinnedTitle === null && title.trim()) this.pinnedTitle = title.trim()
+    const file = this.filePath()
+    if (file) this.context.excludeConversation(file)
   }
 
   /**
@@ -356,15 +370,31 @@ export default class ChatSession {
    * or the whole thread when no turn is given. Pure derivation over what
    * the session holds; nothing is read or written.
    */
-  stateAt(turn?: number): ResumeState {
+  stateAt(turn?: number, includeTools = false): ResumeState {
     const whole: ResumeState = {
       conversation: [...this.turns],
       universePaths: [],
       queries: [],
       lastTurn: 0,
       contextLog: [...this.contextLog],
+      ...(this.legalReview ? { legalReview: this.legalReview } : {}),
     }
-    return prefixOf(whole, turn ?? Math.floor(this.turns.length / 2))
+    const through = turn ?? Math.floor(this.turns.length / 2)
+    const state = prefixOf(whole, through)
+    if (includeTools) {
+      const history = modelHistoryThrough(this.engine.snapshotMessages(), through)
+      if (hasCompleteModelHistory(history, state.conversation)) state.modelMessages = history
+    }
+    return state
+  }
+
+  /** A reply thread inherits the completed review, file clips, and existing file-scoped approvals. */
+  threadSeedAt(turn: number) {
+    return {
+      state: this.stateAt(turn, true),
+      attachments: [...this.attachments.values()],
+      approvals: [...(this.opts.approvals?.() ?? this.resumeSession?.approvals ?? [])],
+    }
   }
 
   /** The state a session picks up from, whether it writes back to a file or not; null for a fresh chat. */
@@ -582,7 +612,21 @@ export default class ChatSession {
     const report: TurnReport = { context, sourceUrls: [], approvalRoundsExhausted: false }
     const replyImages: ChatImage[] = []
     try {
-      const { tools, toolApproval } = await this.opts.tools({
+      const { tools, toolApproval, instructions } = await this.opts.tools({
+        context: {
+          instructions: [this.systemPrompt, this.contextPrompt].join('\n\n'),
+          conversation: this.turns.map((turn) => ({ ...turn })),
+        },
+        attachments: () => [...(this.resumeSession?.attachments ?? []), ...this.attachments.values()],
+        legalReview: {
+          id: () => this.legalReview?.id,
+          link: async (id) => {
+            if (this.legalReview?.id === id) return
+            this.legalReview = { id, turn: Math.ceil(this.turns.length / 2) }
+            this.newMessages = true
+            await this.snapshot()
+          },
+        },
         onExternalFiles: (files) => recordExternalFiles(this.externalFiles, files),
         onAttachments: (files) => {
           for (const file of files) this.attachments.set(file.file, file)
@@ -596,7 +640,7 @@ export default class ChatSession {
       this.emit({ type: 'model-start' })
 
       const result = await this.engine.runTurn({
-        instructions: [this.systemPrompt, this.contextPrompt],
+        instructions: [this.systemPrompt, this.contextPrompt, ...(instructions ? [instructions] : [])],
         tools,
         toolApproval,
       })
@@ -671,10 +715,17 @@ export default class ChatSession {
    * the session writes back to that file like a resumed chat. Already filed,
    * it answers with where. Returns null when there is nothing to file.
    */
-  async fileNow(): Promise<SaveChatReport | null> {
-    if (this.resumeSession) return null
+  async fileNow(options?: Omit<EndOptions, 'save'>): Promise<SaveChatReport | null> {
+    if (this.resumeSession && !this.newMessages) return null
     if (this.turns.length <= this.inherited) return null
-    const saved = await this.save({ save: true, autoTag: false, autoRel: false, memoryDir: null, people: false })
+    const saved = await this.save({
+      save: true,
+      autoTag: false,
+      autoRel: false,
+      memoryDir: null,
+      people: false,
+      ...options,
+    })
     if (!saved.aborted) {
       this.resumeSession = await loadResumeSession(saved.path, { baseDir: path.dirname(this.opts.timeDir) })
       this.newMessages = false
@@ -683,7 +734,16 @@ export default class ChatSession {
   }
 
   private async save(opts: EndOptions): Promise<SaveChatReport> {
+    const history = this.engine.snapshotMessages()
     return saveChat({
+      continuation: {
+        version: 1,
+        historyKey: conversationKey(this.turns),
+        legalReview: this.legalReview,
+        modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
+        contextTokens: this.contextTokens,
+        host: this.snapshotHostState?.(),
+      },
       turns: this.turns,
       contextLog: this.contextLog,
       resume: this.resumeSession,
@@ -739,6 +799,7 @@ export default class ChatSession {
         approvals: this.opts.approvals?.(),
         recovery: {
           version: 1,
+          legalReview: this.legalReview,
           modelMessages: this.engine.snapshotMessages(),
           contextTokens: this.contextTokens,
           host: this.snapshotHostState?.(),

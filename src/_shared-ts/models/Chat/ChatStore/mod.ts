@@ -15,6 +15,8 @@
 import * as path from 'node:path'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
+import { splitContextLog } from '../document/ContextLog/mod.ts'
+import { conversationKey } from '../document/history.ts'
 import { inheritedMessages, joinLineage, prefixOf } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent } from '../document/mod.ts'
 import { reconstructResumeState, type ResumeState } from '../document/resume.ts'
@@ -36,7 +38,7 @@ export interface SavedChatRef {
 
 /** Everything the save path needs to write a resumed chat back to its file. */
 export interface ResumeSession {
-  /** Present only when loading a recovery snapshot. */
+  /** Continuation data from a recovery snapshot or a filed chat's JSON block. */
   recovery?: ChatRecovery
   filePath: string
   /** The transcript's own created date; null when it has none — the caller stamps it */
@@ -127,8 +129,11 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
   const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
   const created = doc.yaml['created']
   const own = reconstructResumeState(doc)
-  const recovery = options.snapshot ? readChatRecovery(doc.yaml['recovery']) : undefined
-  if (recovery?.modelMessages) own.modelMessages = recovery.modelMessages
+  const recovery = options.snapshot
+    ? readChatRecovery(doc.yaml['recovery'])
+    : splitContextLog(doc.markdown).details?.session
+  if (options.snapshot && recovery?.modelMessages) own.modelMessages = recovery.modelMessages
+  if (recovery?.legalReview) own.legalReview = recovery.legalReview
   const parent = doc.parent
 
   let state = own
@@ -148,6 +153,10 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
       inherited = prefix.conversation.length
       ancestors = [parentPath, ...above.ancestors]
     }
+  }
+
+  if (!options.snapshot && recovery?.modelMessages && recovery.historyKey === conversationKey(state.conversation)) {
+    state.modelMessages = recovery.modelMessages
   }
 
   return {

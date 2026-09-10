@@ -1,4 +1,4 @@
-import ChatDocument from '#shared/models/Chat/document/mod.ts'
+import ChatDocument, { type ChatParent } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript } from '#shared/models/Chat/enrich.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import type { Document } from '#shared/models/Markdown/mod.ts'
@@ -39,11 +39,13 @@ export function matchesChatFilter(
 }
 
 /** The parent key as the file records it, or null. */
-function parentOf(doc: Document): { chat: string; turn: number } | null {
+function parentOf(doc: Document): ChatParent | null {
   const raw = doc.yaml['parent']
   if (!raw || typeof raw !== 'object') return null
-  const { chat, turn } = raw as { chat?: unknown; turn?: unknown }
-  return typeof chat === 'string' && chat && typeof turn === 'number' ? { chat, turn } : null
+  const { chat, turn, kind } = raw as { chat?: unknown; turn?: unknown; kind?: unknown }
+  return typeof chat === 'string' && chat && typeof turn === 'number'
+    ? { chat, turn, ...(kind === 'thread' ? { kind } : {}) }
+    : null
 }
 
 /** Whether a collection path is the file a notebook-relative key names. */
@@ -92,13 +94,13 @@ export function docToChat(doc: Document, path: string, day: MappedDay | null = n
     provider: getOptionalStringField(doc, 'provider'),
     model: getOptionalStringField(doc, 'model'),
     turns: typeof turns === 'number' ? turns : 0,
-    parent: parent ? { path: parent.chat, turn: parent.turn } : null,
+    parent: parent ? { path: parent.chat, turn: parent.turn, kind: parent.kind ?? 'branch' } : null,
     inherited: parent ? parent.turn * 2 : 0,
     ...docBase(doc, path),
   }
 }
 
-type ChatRow = ReturnType<typeof docToChat> & { branches: ChatRow[]; thread: string }
+type ChatRow = ReturnType<typeof docToChat> & { branches: ChatRow[]; replyThreads: ChatRow[]; thread: string }
 
 export default {
   type: 'chat',
@@ -115,10 +117,19 @@ export default {
         ? chats
             .filter((c) => {
               const parent = parentOf(c.doc)
-              return parent !== null && namesFile(path, parent.chat)
+              return parent !== null && parent.kind !== 'thread' && namesFile(path, parent.chat)
             })
             .map((c) => row(c.doc, c.path, false))
         : [],
+      replyThreads:
+        withBranches && parentOf(doc)?.kind !== 'thread'
+          ? chats
+              .filter((c) => {
+                const parent = parentOf(c.doc)
+                return parent?.kind === 'thread' && namesFile(path, parent.chat)
+              })
+              .map((c) => row(c.doc, c.path, false))
+          : [],
       thread: threadOf(doc, chats),
     })
     return (entries) => entries.map(({ doc, path }) => row(doc, path, true))

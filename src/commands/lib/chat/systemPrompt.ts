@@ -1,4 +1,5 @@
 import { formatPeopleBlock, gatherPeopleEntities } from '#commands/all/ai/context/_entityContext.ts'
+import { LEGAL_REVIEW_CHAT_INSTRUCTIONS } from '#lib/legalReview/chat.ts'
 import { WRITING_VOICE_CHAT_INSTRUCTIONS } from '#lib/writingVoice/tools.ts'
 /**
  * The base system prompt for a chat session, rendered once per session so
@@ -12,6 +13,7 @@ import { WRITING_VOICE_CHAT_INSTRUCTIONS } from '#lib/writingVoice/tools.ts'
 import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
+import { profileContext } from './profileContext.ts'
 
 const PROMPT_FILE = new URL('./prompts/chat.prompt.md', import.meta.url).pathname
 
@@ -25,15 +27,21 @@ export interface ChatSystemPromptInput {
 export async function renderChatSystemPrompt(
   input: ChatSystemPromptInput,
 ): Promise<{ prompt: string; peopleCount: number }> {
-  const [people, memories, template] = await Promise.all([
+  const [people, memories, template, profile] = await Promise.all([
     gatherPeopleEntities(input.config),
     loadMemories(input.memoryDir),
     readPromptFile(PROMPT_FILE),
+    profileContext(input.config),
   ])
   const { output } = renderPromptFile(template, 'chat.prompt.md', {
     context: input.clock,
     entities: { block: formatPeopleBlock(people) },
     memory: { block: renderPreferenceBlock(memories) },
   })
-  return { prompt: [output, WRITING_VOICE_CHAT_INSTRUCTIONS].join('\n\n'), peopleCount: people.length }
+  return {
+    prompt: [output, profile, WRITING_VOICE_CHAT_INSTRUCTIONS, LEGAL_REVIEW_CHAT_INSTRUCTIONS]
+      .filter(Boolean)
+      .join('\n\n'),
+    peopleCount: people.length,
+  }
 }

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Chat model — the pieces under every chat host
@@ -17,6 +17,11 @@ updated: 2026-09-08
 
 Save-time person curation uses full dated turns; its evidence and write rules
 live in [Person profiles](../../Person/docs/README.md).
+
+Reply-thread ownership, inherited tool history, filing, and per-file statistics
+are defined in the [chat host's design](../../../../service/handler/chat/docs/README.md#reply-threads).
+
+Agreement-review context and continuation links follow the [legal review design](../../../../commands/all/legal/docs/README.md).
 
 ## Relationships to records discussed in the chat
 

@@ -28,6 +28,8 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
+import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
+import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
@@ -304,36 +306,46 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           memoryDir: config.DIR_AI_MEMORY,
         })
         const files = chatFileContext(restore?.state.conversation ?? [], config.DIR_ATTACHMENTS)
-        return files ? `${prompt}\n\n${files}` : prompt
+        const parent = restore?.parent ?? restore?.resume?.parent
+        const thread =
+          parent?.kind === 'thread'
+            ? 'You are continuing a reply thread attached to an earlier response. The inherited conversation is context for this work. Answer the user and run all needed specialist tools here, in this same thread. Continue refining existing drafts and documents using the earlier review and tool results. Do not create nested conversations or send messages into the parent chat. Keep the current result easy to identify.'
+            : ''
+        return [prompt, files, thread].filter(Boolean).join('\n\n')
       },
       // Every tool the terminal offers, gated the same way: the decorator's
       // needsApproval is the source of truth for what asks.
-      tools: async ({ onExternalFiles, onAttachments, onImages }) => ({
-        tools: {
-          ...createWritingVoiceTools(createWritingVoice(config), { source: `chat:${id}` }),
-          ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
-          // A browser has no shell directory, so a relative path resolves from home.
-          ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
-          ...(await createNotebookTools(toolTasks, {
-            prepareResult: prepareChatImageResult({
-              today,
-              attachmentsRoot: config.DIR_ATTACHMENTS,
-              onAttachments,
-              onImages,
-            }),
-            onExternalFiles: (_toolName, files) => {
-              // A file this thread created is blessed: editing it again is
-              // the same intent that created it.
-              for (const file of files) {
-                if (file.action !== 'created' || !file.id) continue
-                for (const tool of sessionKeyToolNames()) blessed.blessDurably(tool, file.id)
-              }
-              onExternalFiles(files)
-            },
-          })),
-        },
-        toolApproval: createToolApprovalConfig({ isBlessed: (toolName, key) => blessed.has(toolName, key) }),
-      }),
+      tools: async (hooks) => {
+        const { onExternalFiles, onAttachments, onImages } = hooks
+        return {
+          instructions: await legalReviewBrief(hooks, config),
+          tools: {
+            ...createWritingVoiceTools(createWritingVoice(config), { source: `chat:${id}` }),
+            ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
+            // A browser has no shell directory, so a relative path resolves from home.
+            ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
+            ...(await createNotebookTools(toolTasks, {
+              legalReviewContext: legalReviewContext(hooks, config.DIR_ATTACHMENTS, `chat:${id}`),
+              prepareResult: prepareChatImageResult({
+                today,
+                attachmentsRoot: config.DIR_ATTACHMENTS,
+                onAttachments,
+                onImages,
+              }),
+              onExternalFiles: (_toolName, files) => {
+                // A file this thread created is blessed: editing it again is
+                // the same intent that created it.
+                for (const file of files) {
+                  if (file.action !== 'created' || !file.id) continue
+                  for (const tool of sessionKeyToolNames()) blessed.blessDurably(tool, file.id)
+                }
+                onExternalFiles(files)
+              },
+            })),
+          },
+          toolApproval: createToolApprovalConfig({ isBlessed: (toolName, key) => blessed.has(toolName, key) }),
+        }
+      },
       // The card is the tool's own description of the call; the answer is the
       // person's, from the page. A card scoped to a file offers "allow for
       // this file"; that answer blesses the file for the thread.
@@ -427,6 +439,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    legalReviews: createLegalReviewer(config).store,
     attachmentsRoot: config.DIR_ATTACHMENTS,
     // A pasted Google file reference is permission to work on that file —
     // for this process; a paste is not a standing grant.

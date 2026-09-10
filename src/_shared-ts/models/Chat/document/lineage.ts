@@ -24,7 +24,10 @@ export function inheritedMessages(turn: number): number {
 export function prefixOf(state: ResumeState, turn: number): ResumeState {
   const conversation = state.conversation.slice(0, inheritedMessages(turn))
   const contextLog = state.contextLog.filter((entry) => entry.turn <= turn)
-  return stateOfLog(conversation, contextLog)
+  return {
+    ...stateOfLog(conversation, contextLog),
+    ...(state.legalReview && state.legalReview.turn <= turn ? { legalReview: state.legalReview } : {}),
+  }
 }
 
 /**
@@ -41,6 +44,7 @@ export function joinLineage(prefix: ResumeState, own: ResumeState): ResumeState 
     queries: own.queries.length > 0 ? [...own.queries] : [...prefix.queries],
     lastTurn: Math.max(prefix.lastTurn, own.lastTurn),
     contextLog,
+    ...((own.legalReview ?? prefix.legalReview) ? { legalReview: own.legalReview ?? prefix.legalReview } : {}),
   }
 }
 
@@ -52,15 +56,20 @@ export function joinLineage(prefix: ResumeState, own: ResumeState): ResumeState 
 export function ownOf(whole: ResumeState, inherited: number, parentTurn: number): ResumeState {
   const conversation = whole.conversation.slice(inherited)
   const contextLog = whole.contextLog.filter((entry) => entry.turn > parentTurn)
-  return stateOfLog(conversation, contextLog)
+  return { ...stateOfLog(conversation, contextLog), ...(whole.legalReview ? { legalReview: whole.legalReview } : {}) }
 }
 
 /**
  * Where a parent's branches file: the folder beside the parent carrying
  * its name. `09-12_Help-with-the-week.md` keeps its branches in
- * `09-12_Help-with-the-week/`. A branch of a branch files in the same
- * folder as its parent, flat — the parent key says who is whose.
+ * `09-12_Help-with-the-week/`. Each branch has its own companion folder
+ * for further branches and its own `_threads/` directory.
  */
 export function branchDir(parentPath: string): string {
   return parentPath.replace(/\.md$/, '')
+}
+
+/** Each conversation, including a fork, owns its own single level of reply threads. */
+export function replyThreadsDir(parentPath: string): string {
+  return `${branchDir(parentPath)}/_threads`
 }

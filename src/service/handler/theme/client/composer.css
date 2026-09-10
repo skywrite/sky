@@ -16,6 +16,12 @@
   background: var(--sky-s2);
 }
 
+.sky-chat-draft-status {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
 .sky-composer-shell:focus-within {
   box-shadow: 0 0 0 2px var(--sky-accent-soft);
 }
@@ -27,14 +33,44 @@
   padding: 6px 8px;
 }
 
-.sky-composer-shell > .sky-chat-files {
-  padding: 14px 14px 6px;
-  max-height: 190px;
+.sky-composer-shell > .sky-chat-attachments {
+  padding: 12px 12px 4px;
+}
+
+.sky-composer-shell .sky-chat-files {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 8px;
+}
+
+.sky-composer-shell .sky-chat-attachments[data-many] .sky-chat-files {
+  max-height: min(320px, 40dvh);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .sky-composer-shell .sky-chat-file {
   background: var(--sky-bg);
+  padding: 8px 10px;
+}
+
+.sky-composer-shell .sky-chat-file-thumbnail {
+  width: 42px;
+  height: 42px;
+}
+
+.sky-composer-shell .sky-chat-file-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Keep the autosizing text field from pushing Send below the viewport after a resize. */
+.sky-composer-shell:has(.sky-chat-attachments) .sky-input-field {
+  max-height: 6em;
+  overflow-y: auto;
 }
 
 .sky-composer-row > .sky-input {

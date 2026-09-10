@@ -37,6 +37,7 @@ import {
   type ToolCallRecord,
   type TurnStats,
 } from '../document/ContextLog/mod.ts'
+import { replyThreadsDir } from '../document/lineage.ts'
 import type { ResumeState } from '../document/resume.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import createDayLabeler from './dayLabel.ts'
@@ -241,9 +242,9 @@ export default class ChatContext {
   private readonly days: number
   private readonly baseDir: string
   private maxTokens: number
-  private readonly ownChatPath: string | null
-  /** The session's own transcript and its lineage, never retrieved into its own context. */
-  private readonly ownPaths: ReadonlySet<string>
+  /** The session's transcript, lineage, and their reply threads stay out of automatic retrieval. */
+  private readonly ownPaths = new Set<string>()
+  private readonly ownReplyDirs = new Set<string>()
   private readonly summaryBaseline: boolean
   private readonly producers: ContextProducers
   private readonly onProgress?: (event: ContextProgressEvent) => void
@@ -284,8 +285,8 @@ export default class ChatContext {
     this.days = opts.days
     this.baseDir = opts.baseDir
     this.maxTokens = opts.maxTokens ?? 300_000
-    this.ownChatPath = opts.ownChatPath ?? null
-    this.ownPaths = new Set([...(opts.ownChatPath ? [opts.ownChatPath] : []), ...(opts.ancestors ?? [])])
+    for (const file of [...(opts.ownChatPath ? [opts.ownChatPath] : []), ...(opts.ancestors ?? [])])
+      this.excludeConversation(file)
     this.summaryBaseline = opts.summaryBaseline ?? false
     this.producers = opts.producers
     this.onProgress = opts.onProgress
@@ -313,6 +314,13 @@ export default class ChatContext {
   /** Zero closes the notebook: turns read nothing and query nothing until a budget opens it again. */
   setBudget(tokens: number): void {
     this.maxTokens = tokens
+  }
+
+  /** A new conversation gains its storage identity when a branch or reply thread pins its title. */
+  excludeConversation(file: string): void {
+    const absolute = path.resolve(file)
+    this.ownPaths.add(absolute)
+    this.ownReplyDirs.add(`${replyThreadsDir(absolute)}${path.sep}`)
   }
 
   // ---------------------------------------------------------------------------
@@ -404,7 +412,7 @@ export default class ChatContext {
     const seen = new Set<string>()
     const allDocs: Array<{ doc: Document; path: string }> = []
     for (const d of [...todayDocs, ...prevDocs, ...goalDocs, ...decisionDocs, ...memoryDocs]) {
-      if (!seen.has(d.path)) {
+      if (!seen.has(d.path) && !this.isOwnChat(d.path)) {
         seen.add(d.path)
         allDocs.push(d)
       }
@@ -779,7 +787,12 @@ export default class ChatContext {
   // ---------------------------------------------------------------------------
 
   private excludeOwnChat(paths: string[]): string[] {
-    return this.ownPaths.size > 0 ? paths.filter((p) => !this.ownPaths.has(p)) : paths
+    return paths.filter((p) => !this.isOwnChat(p))
+  }
+
+  private isOwnChat(file: string): boolean {
+    const absolute = path.resolve(file)
+    return this.ownPaths.has(absolute) || [...this.ownReplyDirs].some((dir) => absolute.startsWith(dir))
   }
 
   /**
@@ -793,7 +806,7 @@ export default class ChatContext {
     for (const p of paths) {
       if (!isAIChatPath(p)) continue
       for (const above of await ancestorsOf(p, this.baseDir)) {
-        if (seen.has(above) || this.ownPaths.has(above)) continue
+        if (seen.has(above) || this.isOwnChat(above)) continue
         seen.add(above)
         out.push(above)
       }

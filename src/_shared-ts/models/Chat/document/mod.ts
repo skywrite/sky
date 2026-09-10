@@ -27,6 +27,10 @@ export interface ChatTurn {
 export interface ChatParent {
   chat: string
   turn: number
+  /** A reply thread stays attached to one response. Absent for an independent fork. */
+  kind?: 'thread'
+  /** Stable reference to the source response, including its conversation prefix. */
+  key?: string
 }
 
 /**
@@ -170,10 +174,10 @@ export default class ChatDocument extends SectionDocument {
   get parent(): ChatParent | null {
     const raw = this.yaml['parent']
     if (!raw || typeof raw !== 'object') return null
-    const { chat, turn } = raw as { chat?: unknown; turn?: unknown }
+    const { chat, turn, kind, key } = raw as { chat?: unknown; turn?: unknown; kind?: unknown; key?: unknown }
     if (typeof chat !== 'string' || !chat || typeof turn !== 'number' || !Number.isInteger(turn) || turn < 0)
       return null
-    return { chat, turn }
+    return { chat, turn, ...(kind === 'thread' ? { kind, ...(typeof key === 'string' ? { key } : {}) } : {}) }
   }
 
   /** Approval keys (`tool:fileId`) the user blessed durably — created files and "always" answers. */
@@ -267,7 +271,7 @@ export default class ChatDocument extends SectionDocument {
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
       tags: input.tags && input.tags.length > 0 ? input.tags.join('; ') : null,
     }
-    if (input.parent) yaml.parent = { chat: input.parent.chat, turn: input.parent.turn }
+    if (input.parent) yaml.parent = { ...input.parent }
     if (input.attachments && input.attachments.length > 0) yaml.attachments = attachmentsToYaml(input.attachments)
     if (input.approvals && input.approvals.length > 0) yaml.approvals = [...input.approvals]
     const markdown = ChatDocument.buildMarkdown(input)
