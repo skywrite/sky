@@ -202,33 +202,49 @@ async function toggleRequest(
   return { status: response.status, view: response.status === 200 ? ((await response.json()) as DayView) : null }
 }
 
-test({ name: 'day route - the checkbox strikes an item, and un-striking brings it back verbatim' }, async () => {
-  const base = await notebookWithOneChat()
-  const file = path.join(base, 'time', dayFile(TODAY))
-  await writeFile(file, TOGGLE_DAY_MD)
-  const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })
+test(
+  { name: 'day route - checking groups completed tasks first, and unchecking returns a task to the open group' },
+  async () => {
+    const base = await notebookWithOneChat()
+    const file = path.join(base, 'time', dayFile(TODAY))
+    await writeFile(file, TOGGLE_DAY_MD)
+    const app = createDayRoutes({ markdownBaseDir: base, timeDir: path.join(base, 'time'), today: () => TODAY })
 
-  const struck = await toggleRequest(app, { list: 'Professional Todos', raw: 'File the expense report', done: true })
-  const afterStrike = await readFile(file, 'utf8')
-  const undone = await toggleRequest(app, {
-    list: 'Professional Todos',
-    raw: '~~File the expense report~~',
-    done: false,
-  })
+    const struck = await toggleRequest(app, { list: 'Professional Todos', raw: 'File the expense report', done: true })
+    const afterStrike = await readFile(file, 'utf8')
+    const undone = await toggleRequest(app, {
+      list: 'Professional Todos',
+      raw: '~~File the expense report~~',
+      done: false,
+    })
 
-  assert({
-    given: 'a todo checked and then unchecked by its exact list and text',
-    should: 'strike it in the file, report it done in the served record, and restore the original line on undo',
-    actual: {
-      struckStatus: struck.status,
-      struckLine: afterStrike.includes('- ~~File the expense report~~'),
-      recordSaysDone: struck.view?.record.todos.find((t) => t.text === 'File the expense report')?.done,
-      undoneStatus: undone.status,
-      restored: (await readFile(file, 'utf8')) === TOGGLE_DAY_MD,
-    },
-    expected: { struckStatus: 200, struckLine: true, recordSaysDone: true, undoneStatus: 200, restored: true },
-  })
-})
+    assert({
+      given: 'a todo checked and then unchecked by its exact list and text',
+      should: 'save the checked group first and preserve the open group order when reopened',
+      actual: {
+        struckStatus: struck.status,
+        struckLine: afterStrike.includes('- ~~File the expense report~~'),
+        recordSaysDone: struck.view?.record.todos.find((t) => t.text === 'File the expense report')?.done,
+        undoneStatus: undone.status,
+        checkedOrder: struck.view?.record.todos.map((item) => item.text),
+        restored:
+          (await readFile(file, 'utf8')) ===
+          TOGGLE_DAY_MD.replace(
+            '- Reply to the vendor shortlist\n- File the expense report',
+            '- File the expense report\n- Reply to the vendor shortlist',
+          ),
+      },
+      expected: {
+        struckStatus: 200,
+        struckLine: true,
+        recordSaysDone: true,
+        undoneStatus: 200,
+        checkedOrder: ['File the expense report', 'Reply to the vendor shortlist'],
+        restored: true,
+      },
+    })
+  },
+)
 
 test({ name: 'day route - a timed commitment strikes with its time outside the marks' }, async () => {
   const base = await notebookWithOneChat()

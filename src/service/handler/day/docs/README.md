@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -18,8 +18,8 @@ The plan on the page — Most important, Commitments, To-dos, Reminders — is
 the day file's own lists, read by heading (`record.ts`). Each row writes
 back to the file through `item.ts`, and every write answers with the fresh
 view so the page shows what the file now says. Check, delete and restore use
-the Day model's line edits, beside `isItemDone`: one line changes, every other
-byte stays.
+the Day model's line edits, beside `isItemDone`. Completion then orders whole
+task blocks within the list, preserving their notes, links and surrounding text.
 
 Inline forms add to-dos, reminders, and commitments, including when their
 sections are empty. A time makes a task a commitment; times accept the
@@ -44,11 +44,15 @@ stale client. Calendar midnight alone does not close a day. Filed documents and
 attachments can still be opened and added.
 
 - **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
-  item `HH:MM > ~~task~~`, the time kept readable) and un-strikes it from
-  Done today. A checked to-do or commitment slides into Done today; a
-  checked reminder is deleted from the file through the same action as
-  the ×. Its row collapses without a strike, and the pill says "Reminder
-  cleared".
+  item `HH:MM > ~~task~~`, the time kept readable). Checked tasks remain in
+  their original list, grouped at the top, and can be unchecked there.
+  To-dos keep their relative order within the checked and unchecked groups,
+  matching the VS Code extension's Cmd+Shift+C behavior. Commitments sort
+  by time within each group. The view and file use the same ordering;
+  additions and restores preserve it too. Done today shows entries from the
+  separate Complete lists, without repeating checked plan items. The header's
+  progress counts both. A checked reminder is deleted through the same action
+  as the ×; its row collapses and the pill says "Reminder cleared".
 - **The ×**, right after the item's text and shown when the pointer rests
   on the row, takes the item out of the file. On a phone, where nothing hovers, the row swipes left instead:
   a short pull bares Delete and holds it until it is tapped or anything

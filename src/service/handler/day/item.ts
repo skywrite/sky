@@ -3,7 +3,8 @@
  * un-strikes it, the × (or the phone's swipe) that takes it out, and the
  * Undo that puts it back. Each answers with the fresh view so the page
  * renders what the file now says. The edits are the Day model's, beside
- * `isItemDone`: a line in the day file changes, every other byte stays.
+ * `isItemDone`: completion changes one line, then groups finished tasks first.
+ * Reordering carries whole task blocks; the rest of the file stays intact.
  */
 
 import { tmpdir } from 'node:os'
@@ -13,6 +14,7 @@ import { hash, withLock } from '#lib/outbox/files.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
+import { orderPlanList } from './order.ts'
 import { createPlanningRoutes } from './planning.ts'
 
 type ItemAddress = Record<string, unknown> & { list: string; raw: string }
@@ -45,7 +47,8 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     if (day instanceof Response) return day
     const result = DayDocument.toggleItem(day.content, body.list, body.raw, body.done)
     if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
-    if (result.kind === 'written') await writeTextFile(day.file, result.content)
+    const content = orderPlanList(result.kind === 'written' ? result.content : day.content, body.list)
+    if (content !== day.content) await writeTextFile(day.file, content)
     return c.json(await options.view(day.ymd))
   })
 
@@ -72,7 +75,8 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     if (day instanceof Response) return day
     const result = DayDocument.restoreItem(day.content, body.list, body.raw, body.at)
     if (result.kind === 'missing') return c.json({ error: 'no such list — the day changed under the view' }, 404)
-    if (result.kind === 'written') await writeTextFile(day.file, result.content)
+    const content = orderPlanList(result.kind === 'written' ? result.content : day.content, body.list)
+    if (content !== day.content) await writeTextFile(day.file, content)
     return c.json(await options.view(day.ymd))
   })
 

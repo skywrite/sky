@@ -1,6 +1,7 @@
 import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { comparePlanItems } from '../../day/planningTypes.ts'
 import { type Note, NoteLine } from './chat.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { useDayPlanning } from './dayPlanning.tsx'
@@ -18,7 +19,7 @@ import { revealOpacity, useSwipeToDelete } from './swipe.ts'
  * The day is the page. Its column is what needs to get done — with
  * checkboxes that write back to the day file — then the day's record, the
  * conversations listed in its record. A checked
- * to-do slides into Done today; a checked reminder just leaves; an item
+ * task stays at the top of its list; a checked reminder leaves; an item
  * can also be taken off the day, by the × a hover shows or a swipe on the
  * phone. Undo holds the door for eight seconds whichever way a row left.
  */
@@ -186,10 +187,15 @@ function currentMinutes(): number {
   return minutesOf(new PlainDateTime().time) ?? 0
 }
 
-/** A checked row shows its strike, then collapses; a deleted row only collapses. */
-type ItemPhase = 'struck' | 'gone' | 'removed'
+/* Checking stays visible; only deletion collapses a row. */
+type ItemPhase = 'struck' | 'reopened' | 'removed'
 
-/** How a row left: checked off, a reminder cleared, or deleted */
+function itemDone(item: DayItem, phases: Record<string, ItemPhase>): boolean {
+  const phase = phases[itemKey(item)]
+  return phase === 'struck' || (phase !== 'reopened' && item.done)
+}
+
+/** The action offered by Undo: checked off, a reminder cleared, or deleted. */
 type Leaving = 'done' | 'cleared' | 'deleted'
 
 const UNDO_WORDS: Record<Leaving, string> = { done: 'Done', cleared: 'Reminder cleared', deleted: 'Deleted' }
@@ -213,27 +219,21 @@ interface CheckOff {
   remove: (item: DayItem) => void
   revert: () => void
   dismissUndo: () => void
-  /** Put a done item back — the Done today row's own un-check */
-  uncheck: (item: DayItem) => void
 }
 
 /**
- * Task checkboxes strike locally at once, write to the day file, and let
- * the row leave once both the animation and the write are done. Undo
- * un-strikes the task. Completing a reminder uses deletion: the row
+ * Task checkboxes strike locally, stay in their lists, and can be unchecked
+ * there or through Undo. Completing a reminder uses deletion: the row
  * collapses, the line leaves the file, and Undo puts it back where it was.
  */
 function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: boolean): CheckOff {
   const [phases, setPhases] = useState<Record<string, ItemPhase>>({})
   const [undo, setUndo] = useState<UndoState | null>(null)
-  // A row unmounts only after the collapse has played AND the write came back.
-  const gate = useRef<Record<string, { anim: boolean; resp: boolean }>>({})
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     setPhases({})
     setUndo(null)
-    gate.current = {}
     if (undoTimer.current) clearTimeout(undoTimer.current)
     return () => {
       if (undoTimer.current) clearTimeout(undoTimer.current)
@@ -247,15 +247,6 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       delete next[key]
       return next
     })
-
-  const settle = (key: string, side: 'anim' | 'resp') => {
-    const flags = (gate.current[key] ??= { anim: false, resp: false })
-    flags[side] = true
-    if (flags.anim && flags.resp) {
-      delete gate.current[key]
-      dropPhase(key)
-    }
-  }
 
   /** A write to the item routes; null when it did not land. */
   const send = async <T,>(route: string, body: unknown): Promise<T | null> => {
@@ -290,23 +281,17 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       remove(item, 'cleared')
       return
     }
+    if (item.done) {
+      uncheck(item)
+      return
+    }
     const key = itemKey(item)
     if (phases[key]) return
-    gate.current[key] = { anim: false, resp: false }
     setPhases((p) => ({ ...p, [key]: 'struck' }))
-    window.setTimeout(() => {
-      setPhases((p) => (p[key] === 'struck' ? { ...p, [key]: 'gone' } : p))
-      window.setTimeout(() => settle(key, 'anim'), 420)
-    }, 650)
     void post(item.list, item.raw, true).then((view) => {
-      if (!view) {
-        // The write did not land — the row pops back untouched.
-        delete gate.current[key]
-        dropPhase(key)
-        return
-      }
+      dropPhase(key)
+      if (!view) return
       applyView(view)
-      settle(key, 'resp')
       hold({ key, list: item.list, raw: item.raw, text: item.text, how: 'done', at: null })
     })
   }
@@ -342,7 +327,6 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
         ? send<DayData>('/restore', { list: held.list, raw: held.raw, at: held.at })
         : post(held.list, held.raw, false)
     void back.then((view) => {
-      delete gate.current[held.key]
       dropPhase(held.key)
       if (view) applyView(view)
     })
@@ -351,8 +335,8 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
   const uncheck = (item: DayItem) => {
     if (readOnly) return
     const key = itemKey(item)
-    delete gate.current[key]
-    dropPhase(key)
+    if (phases[key]) return
+    setPhases((p) => ({ ...p, [key]: 'reopened' }))
     // If this very item's undo pill is up, this IS the undo — take the pill down with it.
     setUndo((held) => {
       if (held && held.key === key) {
@@ -362,6 +346,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       return held
     })
     void post(item.list, item.raw, false).then((view) => {
+      dropPhase(key)
       if (view) applyView(view)
     })
   }
@@ -373,7 +358,6 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
     check,
     remove,
     revert,
-    uncheck,
     dismissUndo: () => setUndo(null),
   }
 }
@@ -524,7 +508,7 @@ function PlanRow({
   onCheck: (item: DayItem) => void
   onDelete: (item: DayItem) => void
 }) {
-  const struck = item.done || phase === 'struck' || phase === 'gone'
+  const struck = phase === 'struck' || (phase !== 'reopened' && item.done)
   const swipe = useSwipeToDelete(() => onDelete(item))
   // A row whose write did not land stands where it was — slid back if it had gone.
   useEffect(() => {
@@ -564,11 +548,10 @@ function PlanRow({
           <button
             type="button"
             className="sky-check"
-            aria-label={struck ? 'Done' : 'Mark done'}
-            onClick={() => {
-              if (struck) return
-              onCheck(item)
-            }}
+            aria-label={struck ? 'Mark not done' : 'Mark done'}
+            aria-pressed={struck}
+            disabled={Boolean(phase)}
+            onClick={() => onCheck(item)}
           >
             <span className="sky-check-box" data-on={struck}>
               {struck && <Tick />}
@@ -614,25 +597,18 @@ function PlanCard({
   children?: ReactNode
 }) {
   if (items.length === 0 && !children) return null
-  const sorted = [...items].sort((a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME))
-  const timed = sorted.some((i) => i.time)
+  const timed = items.some((item) => item.time)
+  const sorted = [...items].sort((a, b) =>
+    comparePlanItems({ ...a, done: itemDone(a, checkOff.phases) }, { ...b, done: itemDone(b, checkOff.phases) }, timed),
+  )
   const nowMin = today && !checkOff.readOnly ? currentMinutes() : null
-  const open = (item: DayItem) => !item.done && !checkOff.phases[itemKey(item)]
+  const open = (item: DayItem) => !itemDone(item, checkOff.phases) && !checkOff.phases[itemKey(item)]
   const next = nowMin === null ? null : sorted.find((i) => open(i) && (minutesOf(i.time) ?? -1) >= nowMin)
-  const doneCount = sorted.filter((i) => i.done).length
+  const doneCount = sorted.filter((item) => itemDone(item, checkOff.phases)).length
   const mini = `${doneCount} of ${sorted.length} done` + (next?.time ? ` · next at ${clock(next.time)}` : '')
-  const visible = sorted.filter((i) => !i.done || checkOff.phases[itemKey(i)])
-  if (visible.length === 0 && sorted.length > 0 && doneCount === sorted.length) {
-    return (
-      <Block head={head} mini={items.length ? mini : undefined} className={className}>
-        <div className="sky-alldone">All done.</div>
-        {children}
-      </Block>
-    )
-  }
   return (
     <Block head={head} mini={items.length ? mini : undefined} className={className}>
-      {visible.map((item) => {
+      {sorted.map((item) => {
         const key = itemKey(item)
         const minutes = minutesOf(item.time)
         const tone =
@@ -687,11 +663,17 @@ function TodoCard({
     }
     groups.get(item.category)?.push(item)
   }
-  const doneCount = items.filter((i) => i.done).length
+  const doneCount = items.filter((item) => itemDone(item, checkOff.phases)).length
   return (
     <Block head="To-dos" mini={items.length ? `${doneCount} of ${items.length} done` : undefined} action={action}>
       {order.map((label) => {
-        const rows = (groups.get(label) ?? []).filter((i) => !i.done || checkOff.phases[itemKey(i)])
+        const rows = [...(groups.get(label) ?? [])].sort((a, b) =>
+          comparePlanItems(
+            { ...a, done: itemDone(a, checkOff.phases) },
+            { ...b, done: itemDone(b, checkOff.phases) },
+            false,
+          ),
+        )
         if (rows.length === 0) return null
         return (
           <Fragment key={label ?? ''}>
@@ -935,17 +917,12 @@ export function DayView({
   const at = view?.day.dayRelativePath ? view.day.dayRelativePath.split('/').slice(0, -1).join('/') : ''
   const tasks = record ? [...record.mostImportant, ...record.commitments, ...record.todos] : []
 
-  // What got done, wherever it was promised: struck plan items join the Complete
-  // lists. A struck plan item can be put back (its list still holds it); a
-  // Complete-list entry is the day's own record and stays as written.
-  const doneToday: Array<{ item: DayItem; undoable: boolean }> = record
-    ? [
-        ...record.done.map((item) => ({ item, undoable: false })),
-        ...tasks.filter((i) => i.done).map((item) => ({ item, undoable: true })),
-      ].sort((a, b) => (minutesOf(a.item.time) ?? NO_TIME) - (minutesOf(b.item.time) ?? NO_TIME))
-    : []
-  const completedTasks = doneToday.length
-  const totalTasks = completedTasks + tasks.filter((item) => !item.done).length
+  // Checked tasks stay in the plan; Done today holds the separate Complete lists.
+  const doneToday = [...(record?.done ?? [])].sort(
+    (a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME),
+  )
+  const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
+  const totalTasks = doneToday.length + tasks.length
 
   return (
     <div className="sky-main sky-day">
@@ -1104,27 +1081,11 @@ export function DayView({
                     <Block head="Done today" mini={String(doneToday.length)}>
                       <Fold
                         rows={doneToday}
-                        render={({ item, undoable }) => (
+                        render={(item: DayItem) => (
                           <div className="sky-prow">
-                            {undoable && !checkOff.readOnly ? (
-                              <button
-                                type="button"
-                                className="sky-check"
-                                aria-label="Put back"
-                                title="Put back"
-                                onClick={() => checkOff.uncheck(item)}
-                              >
-                                <span className="sky-check-box" data-on="true">
-                                  <Tick />
-                                </span>
-                              </button>
-                            ) : undoable ? (
-                              <StaticCheck done />
-                            ) : (
-                              <span className="sky-done-tick">
-                                <Tick />
-                              </span>
-                            )}
+                            <span className="sky-done-tick">
+                              <Tick />
+                            </span>
                             <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
                             <span className="sky-ptext sky-done-text">
                               {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}

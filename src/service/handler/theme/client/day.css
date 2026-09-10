@@ -242,12 +242,6 @@
     padding 0.35s ease;
 }
 
-.sky-prow[data-phase='gone'] {
-  grid-template-rows: 0fr;
-  opacity: 0;
-  padding: 0;
-}
-
 .sky-prow[data-soft] {
   font-size: calc(var(--sky-content-font-size) - 1px);
 }
