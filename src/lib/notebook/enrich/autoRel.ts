@@ -1,6 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import type { PlaceMatch } from '#lib/places/catalog.ts'
+import { matchPlace, type PlaceMatch } from '#lib/places/catalog.ts'
 import { ensurePlaceRef } from '#lib/places/geography.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
@@ -56,6 +56,7 @@ export const autoRelServices: AutoRelServices = {
 export interface AutoRelProposal {
   rel: string[]
   unresolvedPlaces: PlaceMatch[]
+  placeEvidence?: Array<{ ref: string; quote: string }>
   error?: string
 }
 
@@ -133,7 +134,8 @@ export async function proposeRel(
     const request = { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from }
     const { subjects, error } = await services.extract(request, 'fast')
     if (error) return { rel: [], unresolvedPlaces: [], error }
-    const resolved = resolveSubjects({ ...subjects, places: groundedPlaces(subjects.places, request) }, index, scores, {
+    const places = groundedPlaces(subjects.places, request)
+    const resolved = resolveSubjects({ ...subjects, places }, index, scores, {
       projectStatuses: ['open'],
     })
     const parties = partyExclusionSet([input.from, input.to], { index, scores })
@@ -188,9 +190,14 @@ export async function proposeRel(
       },
       'balanced',
     )
+    const rel = validateSelection(selection.rel, candidates)
     return {
-      rel: validateSelection(selection.rel, candidates),
+      rel,
       unresolvedPlaces: resolved.unresolvedPlaces,
+      placeEvidence: places.flatMap((mention) => {
+        const ref = matchPlace(mention, index.places?.choices ?? []).ref
+        return ref && rel.includes(ref) ? [{ ref, quote: mention.quote }] : []
+      }),
       ...(selection.error ? { error: selection.error } : {}),
     }
   } catch (error) {

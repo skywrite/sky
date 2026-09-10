@@ -77,18 +77,42 @@ with existing relationships also checks new turns for place subjects,
 preserving its prior links and adding only new place identities.
 `--no-auto-rel` disables both paths.
 
-## Backfill preview
+## Reviewed backfill
 
 `places:backfill` checks existing `rel` targets across the requested date and
 medium range, then analyzes the newest twenty records for missing place
 relationships (`--limit`, `--since`, and `--medium` control the scope).
-Only sampled document bodies are fetched. The preview strips YAML and HTML
-comments before extraction and uses history from strictly earlier days.
+`--sample spread` balances record types and spans each type's date range;
+the default `recent` sample stays newest-first. Only sampled document bodies
+are fetched. The preview strips YAML and HTML comments before extraction and
+uses history from strictly earlier days. Relationships and summaries come
+from the fetched source, so stale index metadata cannot supply an already
+removed link or summary as evidence.
 
-Reports in a temporary directory contain proposed `rel` additions, country
-records to create, ambiguous candidates, and analysis failures. The command
-never changes a source record or creates a country. Legacy references count
-as existing links, so they do not acquire duplicate canonical references.
+Reports in a temporary directory contain proposed `rel` additions with source
+quotes, country records to create, ambiguous candidates, and analysis failures.
+Preview never changes a source record or creates a country. Legacy references
+count as existing links, so they do not acquire duplicate canonical references.
+
+Review `preview.md`, remove rejected rows or individual `add`/`create` entries
+from `preview.json`, then run `places:backfill --apply <report.json>`. The JSON
+report binds proposals to the notebook and fingerprints the exact source
+contents, including YAML and comments. Older reports without these fields
+must be regenerated. Apply uses the retained per-document proposals; the
+whole-range repair summary and ambiguous candidates are informational.
+
+Apply calls no model. It validates the report before writing, rechecks place
+identities and destinations, and adds links through the shared YAML link
+editor and the document service's version-checked save. Existing relationships,
+other metadata, comments and the exact markdown body survive. A source changed
+since preview or during apply is skipped. Already-satisfied proposals write
+nothing, so retrying a report does not add duplicates.
+
+Only retained country creations still needed by an existing or retained new
+link are materialized. Missing cities and venues require confirmed records;
+unknown names never become invented places. A target must exist before its
+link is saved. If a source save then conflicts or fails, the country remains
+and the apply receipt reports it alongside the skipped or failed source.
 
 ## Readers
 
@@ -101,8 +125,7 @@ when reopening older saved links or resuming an import.
 VS Code's directory completion continues to emit the existing logical paths;
 geographic `.md` files can be completed beside their child directories.
 
-Descendant-place query filters and applying a reviewed relationship backfill
-remain future work.
+Descendant-place query filters remain future work.
 
 ## Verification
 

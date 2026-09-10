@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { previewPlaceBackfill } from '#lib/places/backfill.ts'
+import { placeSourceFingerprint, previewPlaceBackfill } from '#lib/places/backfill.ts'
 import { placeChoices } from '#lib/places/catalog.ts'
 import PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import { assert, test } from '#test'
@@ -55,8 +55,8 @@ test('automatic place links create only selected countries and a preview creates
     assert({
       given: 'two country subjects and one selected relationship',
       should: 'preview the link without materializing either country',
-      actual: [proposal.rel, await readdir(dir)],
-      expected: [['places/FR'], []],
+      actual: [proposal.rel, proposal.placeEvidence, await readdir(dir)],
+      expected: [['places/FR'], [{ ref: 'places/FR', quote: 'Compare France with Canada.' }], []],
     })
     const rel = await autoRelMessage({ body }, { mediums: ['note'] }, services)
     assert({
@@ -83,6 +83,47 @@ test('automatic place links create only selected countries and a preview creates
       should: 'add no duplicate relationship and preserve the country bytes',
       actual: [repeated, await readFile(file, 'utf8')],
       expected: [undefined, annotated],
+    })
+  })
+})
+
+test('backfill uses the exact fetched source for its fingerprint, summary and existing links', async () => {
+  await notebook(async (dir, _store, services) => {
+    const source =
+      '\uFEFF---\r\nsummary: France is the focus.\r\nlocation: places/CA\r\n---\r\n\r\nCompare France with Canada. France is the focus.\r\n<!-- hidden -->\r\n'
+    const preview = await previewPlaceBackfill(
+      {
+        path: 'time/note.md',
+        date: '2026-01-01',
+        medium: 'note',
+        tags: [],
+        rel: ['places/FR'],
+        summary: 'A stale indexed summary.',
+        body: source,
+      },
+      {
+        ...services,
+        extract: async (req) => {
+          assert({
+            given: 'a CRLF/BOM source whose index still has an older summary and rel',
+            should: 'extract only current prose and its summary',
+            actual: [req.summary, req.body.includes('location:'), req.body.includes('hidden')],
+            expected: ['France is the focus.', false, false],
+          })
+          return { subjects }
+        },
+      },
+    )
+    assert({
+      given: 'a selected country missing from the actual source YAML',
+      should: 'propose its link with evidence and fingerprint the original bytes without writing',
+      actual: [preview.add, preview.evidence, preview.fingerprint, await readdir(dir)],
+      expected: [
+        ['places/FR'],
+        [{ ref: 'places/FR', quote: 'Compare France with Canada.' }],
+        placeSourceFingerprint(source),
+        [],
+      ],
     })
   })
 })
