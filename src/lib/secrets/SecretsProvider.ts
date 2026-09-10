@@ -12,4 +12,7 @@ export interface SecretsProvider {
 
   /** List known secrets. Optionally filter by category. Returns metadata only, no values. */
   list(category?: string): Promise<IndexEntry[]>
+
+  /** Explicit user action permitting OS authentication; background callers must never use this. */
+  restoreAccess?(category?: string): Promise<void>
 }

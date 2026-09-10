@@ -7,6 +7,37 @@ import { loadAccountTokens, saveAccountTokens } from './tokens.ts'
 const EMAIL = 'jane@example.com'
 const OAUTH_CLIENT = { clientId: 'id', clientSecret: 'sec' }
 
+test('GoogleClient shares a pending refresh between clients for the same account', async () => {
+  const secrets = new TestSecretsProvider()
+  await saveAccountTokens(secrets, EMAIL, { refreshToken: 'mock-refresh', scopes: [] })
+  let release!: () => void
+  let started!: () => void
+  const began = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let refreshes = 0
+  const fetchFn = (async () => {
+    refreshes++
+    started()
+    await waiting
+    return tokenResponse('fresh')
+  }) as unknown as typeof fetch
+  const first = new GoogleClient({ secrets, email: EMAIL, client: OAUTH_CLIENT, fetchFn })
+  const second = new GoogleClient({ secrets, email: EMAIL, client: OAUTH_CLIENT, fetchFn })
+  const tokens = Promise.all([first.accessToken(), first.accessToken(), second.accessToken()])
+  await began
+  release()
+  assert({
+    given: 'concurrent requests using two clients',
+    should: 'refresh and persist once',
+    actual: [await tokens, refreshes],
+    expected: [['fresh', 'fresh', 'fresh'], 1],
+  })
+})
+
 interface Call {
   url: string
   authorization?: string

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -139,7 +139,9 @@ scrolls; its foot is anchored.
   unmatched records. Rows sort by time; inline records link to the day and
   say `noted`, saved files say `filed`. Current calendar events still offer
   `join`. Local records remain visible if the calendar fails. The existing
-  `GET /day/:ymd/schedule` route refreshes every minute.
+  `GET /day/:ymd/schedule` route refreshes one minute after the previous request
+  settles. Failed refreshes keep the last schedule visible with a stale warning
+  and a link to Connections. See the [Keychain contract](../../../../lib/secrets/docs/README.md).
   Calendar attendees resolve by exact email against the current notebook
   contacts, ignoring address case. At a shared familiarity score of at least
   100, known people use their recorded short name, or the first word of their

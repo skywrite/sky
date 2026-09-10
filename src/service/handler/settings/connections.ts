@@ -51,6 +51,7 @@ export interface SecretRow {
 }
 
 export interface ConnectionsData {
+  accessError?: string
   google: {
     /** The OAuth client pair is stored — a sign-in can start */
     client: boolean
@@ -143,11 +144,16 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
   const { secrets } = host
   const index = await secrets.list()
   const has = (category: string, name: string) => index.some((e) => e.category === category && e.name === name)
+  let accessError: string | undefined
+  const unavailable = (error: unknown) => {
+    accessError = error instanceof Error ? error.message : 'Keychain access is unavailable.'
+    return null
+  }
 
   const accounts = await Promise.all(
     (await listAccountEmails(secrets)).map(async (email) => ({
       email,
-      grants: grantsOf(await loadAccountTokens(secrets, email).catch(() => null)),
+      grants: grantsOf(await loadAccountTokens(secrets, email).catch(unavailable)),
     })),
   )
 
@@ -156,10 +162,11 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
     .filter((e) => e.category !== GOOGLE_SECRETS_CATEGORY)
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
   const rows = await Promise.all(
-    rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(() => null), providers)),
+    rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(unavailable), providers)),
   )
 
   return {
+    ...(accessError ? { accessError } : {}),
     google: { client: has(GOOGLE_SECRETS_CATEGORY, CLIENT_ENTRY_NAME), accounts, setup: [...GOOGLE_CLOUD_SETUP_STEPS] },
     secrets: rows,
   }
@@ -223,6 +230,20 @@ const message = (err: unknown) => ({ message: err instanceof Error ? err.message
 
 export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   const app = new Hono()
+  let restoring: Promise<void> | undefined
+  app.post('/restore', async (c) => {
+    if (!host.secrets.restoreAccess) return c.json({ message: 'Interactive Keychain access is unavailable.' }, 503)
+    // Repeated clicks/tabs join the same deliberate attempt.
+    restoring ??= host.secrets.restoreAccess().finally(() => {
+      restoring = undefined
+    })
+    try {
+      await restoring
+      return c.json({ ok: true })
+    } catch (err) {
+      return c.json(message(err), 503)
+    }
+  })
 
   // Everything the page shows — presence, never a value.
   app.get('/', async (c) => {

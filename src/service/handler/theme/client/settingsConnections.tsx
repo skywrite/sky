@@ -31,6 +31,7 @@ interface SecretRow {
 }
 
 export interface ConnectionsData {
+  accessError?: string
   google: { client: boolean; accounts: GoogleAccountRow[]; setup: string[] }
   secrets: SecretRow[]
 }
@@ -617,9 +618,35 @@ function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () =
 
 export function ConnectionsPane() {
   const { data, note, reload } = useConnections()
+  const [restoring, setRestoring] = useState(false)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const restore = async () => {
+    if (restoring) return
+    setRestoring(true)
+    setRestoreError(null)
+    try {
+      const response = await postJson(`${API}/restore`, {})
+      if (!response?.ok) setRestoreError(await refusalOf(response))
+      reload()
+    } finally {
+      setRestoring(false)
+    }
+  }
   return (
     <>
       {note && <div className="sky-condensed">— {note} —</div>}
+      {data && (
+        <Block
+          head="Keychain access"
+          note="Background checks stay quiet. Restore access here if macOS needs your approval."
+        >
+          {(restoreError || data.accessError) && <p className="sky-set-warn">{restoreError ?? data.accessError}</p>}
+          <Button size="sm" variant="secondary" loading={restoring} onClick={() => void restore()}>
+            Restore access
+          </Button>
+          {restoring && <p>Complete the macOS Keychain prompt. Sky will wait for your approval.</p>}
+        </Block>
+      )}
       {data && (
         <>
           <AccountsBlock data={data} reload={reload} />

@@ -1,4 +1,5 @@
 import { loadOAuthClient, serializeStoredTokens } from '#lib/google/mod.ts'
+import { KeychainAccessError } from '#lib/secrets/keychainProtocol.ts'
 import { createLogin, createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import type { SecretEntry } from '#lib/secrets/types.ts'
@@ -44,6 +45,45 @@ const CONNECTED: SlackStatus = {
 
 const SIGN_IN = { id: 'c1', url: 'https://accounts.google.com/o/oauth2/v2/auth?state=s' }
 
+test('connections preserves account presence on denied access and combines recovery requests', async () => {
+  const { host } = hostWith()
+  let recoveries = 0
+  let release!: () => void
+  let started!: () => void
+  const began = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  host.secrets.get = async () => {
+    throw new KeychainAccessError('access')
+  }
+  host.secrets.restoreAccess = async () => {
+    recoveries++
+    started()
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+  }
+  const app = createConnectionsRoutes(host)
+  const listing = (await (await app.request('/')).json()) as ConnectionsData
+  assert({
+    given: 'Keychain refuses reads',
+    should: 'retain the account and explain access is blocked',
+    actual: [listing.google.accounts.length, Boolean(listing.accessError)],
+    expected: [1, true],
+  })
+  const first = app.request('/restore', { method: 'POST' })
+  const second = app.request('/restore', { method: 'POST' })
+  await began
+  release()
+  const replies = await Promise.all([first, second])
+  assert({
+    given: 'two simultaneous Restore access clicks',
+    should: 'share one recovery and return only success status',
+    actual: [recoveries, ...(await Promise.all(replies.map((r) => r.json())))],
+    expected: [1, { ok: true }, { ok: true }],
+  })
+})
+
 function hostWith(seed: Record<string, SecretEntry> = seeded()) {
   const secrets = new TestSecretsProvider(seed)
   const slackCalls: string[] = []
@@ -74,7 +114,7 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
   const withoutClient = () => {
     signIn = null
   }
-  return { app, secrets, slackCalls, withoutClient }
+  return { app, host, secrets, slackCalls, withoutClient }
 }
 
 type App = ReturnType<typeof hostWith>['app']

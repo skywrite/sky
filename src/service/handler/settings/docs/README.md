@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Settings — the web's settings section
@@ -98,6 +98,9 @@ serves is read fresh per request (`load()`), and the voice is resolved
 per session, so no restart is needed for any settable key.
 
 ### Writes into the keychain
+
+Keychain timeouts, background access, and the explicit Restore access action
+follow the [shared Keychain contract](../../../../lib/secrets/docs/README.md).
 
 Under `/settings/_api/connections/`: `POST secret { category, name,
 type: 'secret', value }` or `{ …, type: 'login', user, pass }` stores one

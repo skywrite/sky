@@ -33,6 +33,7 @@ export interface ScheduledMeeting {
 }
 
 export interface DaySchedule {
+  stale?: boolean
   /** Whether the calendar answered; local meetings may still be present */
   read: boolean
   errors: string[]
@@ -48,16 +49,34 @@ export function useSchedule(ymd: string | null): DaySchedule | null {
     setSchedule(null)
     if (!ymd) return
     let alive = true
-    const read = () =>
-      fetch(`/day/${ymd}/schedule`)
-        .then((r) => (r.ok ? r.json() : { read: false, errors: [], meetings: [] }))
-        .then((body) => alive && setSchedule(body as DaySchedule))
-        .catch(() => alive && setSchedule({ read: false, errors: [], meetings: [] }))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let request: AbortController | undefined
+    const update = (body: DaySchedule) => {
+      if (!alive) return
+      setSchedule((previous) =>
+        !body.read && previous?.meetings.length ? { ...previous, read: false, stale: true, errors: body.errors } : body,
+      )
+    }
+    const read = async () => {
+      request = new AbortController()
+      // Initial loading can need two serialized Keychain reads and a token write.
+      const deadline = setTimeout(() => request?.abort(), 90_000)
+      try {
+        const response = await fetch(`/day/${ymd}/schedule`, { signal: request.signal })
+        if (!response.ok) throw new Error('Calendar unavailable')
+        update((await response.json()) as DaySchedule)
+      } catch {
+        update({ read: false, errors: ['Calendar refresh failed. Sky will retry.'], meetings: [] })
+      } finally {
+        clearTimeout(deadline)
+        if (alive) timer = setTimeout(read, SCHEDULE_MS)
+      }
+    }
     void read()
-    const timer = setInterval(read, SCHEDULE_MS)
     return () => {
       alive = false
-      clearInterval(timer)
+      clearTimeout(timer)
+      request?.abort()
     }
   }, [ymd])
   return schedule
@@ -190,7 +209,12 @@ function ScheduleSection({
   const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
   return (
     <Section title="Meetings" count={schedule?.meetings.length} drop={onImportMeeting ? drop : undefined}>
-      {schedule && !schedule.read && <p className="sky-rail-empty">Calendar not read.</p>}
+      {schedule && !schedule.read && (
+        <p className="sky-rail-empty">
+          {schedule.stale ? 'Showing the last available schedule. ' : ''}
+          {schedule.errors[0] ?? 'Calendar not read.'} <a href="/settings/connections">Connections</a>
+        </p>
+      )}
       {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
       {schedule?.meetings.map((m, i) => (
         <Fragment key={`${ymd}-${m.start}-${i}`}>

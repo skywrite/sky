@@ -8,6 +8,7 @@ const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
 const MAX_ATTEMPTS = 3
 /** Per-request ceiling: a silently dead socket must error (and retry), never hang a mission. */
 const REQUEST_TIMEOUT_MS = 60_000
+const pendingRefreshes = new WeakMap<SecretsProvider, Map<string, Promise<StoredTokens>>>()
 
 // Gmail send endpoints, denied at this chokepoint: sending mail is
 // deliberately impossible through this client — drafts are reviewed and sent
@@ -67,6 +68,7 @@ export class GoogleClient {
   private readonly fetchFn: typeof fetch
   private readonly sleep: (ms: number) => Promise<void>
   private tokens?: StoredTokens
+  private loading?: Promise<StoredTokens | null>
 
   constructor(options: GoogleClientOptions) {
     this.secrets = options.secrets
@@ -77,13 +79,36 @@ export class GoogleClient {
   }
 
   async accessToken(options: { forceRefresh?: boolean } = {}): Promise<string> {
-    const tokens = this.tokens ?? (await loadAccountTokens(this.secrets, this.email))
+    const tokens =
+      this.tokens ??
+      (await (this.loading ??= loadAccountTokens(this.secrets, this.email).finally(() => {
+        this.loading = undefined
+      })))
     if (!tokens) {
       throw new GoogleAuthError(`No stored tokens for ${this.email}. Run: sky google:auth`)
     }
     this.tokens = tokens
     if (tokens.accessToken && !options.forceRefresh) return tokens.accessToken
 
+    let refreshes = pendingRefreshes.get(this.secrets)
+    if (!refreshes) {
+      refreshes = new Map()
+      pendingRefreshes.set(this.secrets, refreshes)
+    }
+    let refreshing = refreshes.get(this.email)
+    if (!refreshing) {
+      refreshing = this.refreshTokens(tokens)
+      refreshes.set(this.email, refreshing)
+      const clear = () => {
+        if (refreshes.get(this.email) === refreshing) refreshes.delete(this.email)
+      }
+      void refreshing.then(clear, clear)
+    }
+    this.tokens = await refreshing
+    return this.tokens.accessToken!
+  }
+
+  private async refreshTokens(tokens: StoredTokens): Promise<StoredTokens> {
     let response
     try {
       response = await refreshAccessToken({
@@ -106,9 +131,8 @@ export class GoogleClient {
       // Google may rotate the refresh token; keep the newest one
       refreshToken: response.refresh_token ?? tokens.refreshToken,
     }
-    this.tokens = updated
     await saveAccountTokens(this.secrets, this.email, updated)
-    return response.access_token
+    return updated
   }
 
   /** Authenticated fetch with one forced-refresh retry on 401 and backoff on transient errors. */
