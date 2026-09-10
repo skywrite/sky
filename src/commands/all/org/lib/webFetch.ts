@@ -1,5 +1,7 @@
 import { generateObject } from 'ai'
+import { chromium } from 'playwright'
 import { z } from 'zod'
+import { findChromiumBrowser } from '#lib/browser/persistentContext.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
 
@@ -11,6 +13,42 @@ const MAX_CONTENT_TOKENS = 50000
 
 /** Hard ceiling on the site-analysis call — see categorize.ts for why generateObject needs one. */
 const AI_TIMEOUT_MS = 2 * 60 * 1000
+
+const BROWSER_TIMEOUT_MS = 60_000
+
+/** Render the site in an isolated browser; some sites reject plain HTTP clients. */
+async function fetchWebsiteHtml(url: string): Promise<string> {
+  const browser = await chromium.launch({
+    executablePath: (await findChromiumBrowser()) ?? undefined,
+    headless: true,
+    chromiumSandbox: true,
+    timeout: BROWSER_TIMEOUT_MS,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled'],
+  })
+
+  try {
+    // Keep the installed browser's current user agent, without the headless marker
+    // that some sites reject before serving any HTML or JavaScript.
+    const probe = await browser.newPage()
+    const userAgent = (await probe.evaluate(() => navigator.userAgent)).replace('HeadlessChrome/', 'Chrome/')
+    await probe.close()
+
+    const page = await browser.newPage({ userAgent, locale: 'en-US' })
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+    })
+    const response = await page.goto(url, { waitUntil: 'load', timeout: BROWSER_TIMEOUT_MS })
+    if (!response || !response.ok()) {
+      const status = response ? `${response.status()} ${response.statusText()}`.trim() : 'No response'
+      throw new Error(`Failed to fetch ${url}: ${status}`)
+    }
+
+    return await page.content()
+  } finally {
+    await browser.close()
+  }
+}
 
 /**
  * Truncates content if it exceeds the maximum token limit.
@@ -53,13 +91,8 @@ export async function webFetch(url: string): Promise<WebFetchResult> {
   // Normalize URL
   const normalizedUrl = normalizeUrl(url)
 
-  // Fetch the website content
-  const response = await fetch(normalizedUrl)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${normalizedUrl}: ${response.statusText}`)
-  }
-
-  const html = await response.text()
+  // Close the browser before starting the AI call, including on fetch failures.
+  const html = await fetchWebsiteHtml(normalizedUrl)
   const truncatedHtml = truncateIfExceedsTokenLimit(html)
 
   const analysisPrompt = `Analyze this organization's website and extract key information.
