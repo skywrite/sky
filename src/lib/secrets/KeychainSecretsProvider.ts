@@ -3,6 +3,7 @@ import { DIR_BASE, DIR_STATE } from '#config'
 import { outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { parse as parseYaml, stringify as stringifyYaml } from '#shared/yaml/mod.ts'
 import { KeychainAccess } from './keychainAccess.ts'
+import { KeychainAccessError } from './keychainProtocol.ts'
 import { createSecret, marshal, unmarshal } from './marshal.ts'
 import type { SecretsProvider } from './SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from './types.ts'
@@ -65,13 +66,24 @@ export class KeychainSecretsProvider implements SecretsProvider {
 
   /** Only called after an explicit Restore access action. Values never leave this provider. */
   async restoreAccess(category?: string): Promise<void> {
-    for (const entry of await this.list(category)) {
-      const service = `${SERVICE_PREFIX}-${entry.category}`
-      const value = await this.keychain.get(service, entry.name, true)
-      // Token refreshes also need write access. Authorize the unchanged value once,
-      // here, rather than prompting later during a background refresh.
-      if (value !== null) await this.keychain.mutate('set', service, entry.name, value, true)
+    const entries = await this.list(category)
+    if (entries.length === 0) return
+    await this.keychain.restore()
+    const failures: unknown[] = []
+    for (const entry of entries) {
+      try {
+        const service = `${SERVICE_PREFIX}-${entry.category}`
+        const value = await this.keychain.get(service, entry.name, true)
+        // Token refreshes also need write access. Authorize the unchanged value once,
+        // here, rather than prompting later during a background refresh.
+        if (value !== null) await this.keychain.mutate('set', service, entry.name, value, true)
+      } catch (error) {
+        if (error instanceof KeychainAccessError && error.status === -128) throw error
+        // A denied entry must not prevent the remaining accounts from recovering.
+        failures.push(error)
+      }
     }
+    if (failures.length > 0) throw failures[0]
   }
 
   private updateIndex(work: () => Promise<void>): Promise<void> {

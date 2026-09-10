@@ -84,6 +84,28 @@ test('connections preserves account presence on denied access and combines recov
   })
 })
 
+test('connections explains a failed recovery and allows a fresh attempt', async () => {
+  const { host, app } = hostWith()
+  host.secrets.restoreAccess = async () => {
+    throw new KeychainAccessError('access', -25293)
+  }
+  const refused = await app.request('/restore', { method: 'POST' })
+  const body = (await refused.json()) as { message: string }
+  host.secrets.restoreAccess = async () => {}
+  const recovered = await app.request('/restore', { method: 'POST' })
+  assert({
+    given: 'macOS refuses explicit recovery, then the next attempt succeeds',
+    should: 'give a useful next step and release the previous failed attempt',
+    actual: [refused.status, body.message, recovered.status, await recovered.json()],
+    expected: [
+      503,
+      'macOS could not restore Keychain access. Open Keychain Access, lock and unlock your login keychain, then try again.',
+      200,
+      { ok: true },
+    ],
+  })
+})
+
 function hostWith(seed: Record<string, SecretEntry> = seeded()) {
   const secrets = new TestSecretsProvider(seed)
   const slackCalls: string[] = []

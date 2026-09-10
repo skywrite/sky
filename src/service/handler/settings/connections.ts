@@ -22,6 +22,7 @@ import {
   saveOAuthClient,
   type StoredTokens,
 } from '#lib/google/mod.ts'
+import { KeychainAccessError } from '#lib/secrets/keychainProtocol.ts'
 import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from '#lib/secrets/types.ts'
@@ -228,6 +229,20 @@ export function entryFor(input: SecretInput, existing: SecretEntry | null): Secr
 
 const message = (err: unknown) => ({ message: err instanceof Error ? err.message : String(err) })
 
+function restoreFailure(err: unknown): { message: string } {
+  if (!(err instanceof KeychainAccessError)) return message(err)
+  if (err.status === -128) {
+    return { message: 'Keychain recovery was cancelled. Try again when you are ready to approve the macOS prompt.' }
+  }
+  if (err.kind === 'timeout') {
+    return { message: 'Keychain recovery timed out. Try again and complete the macOS approval prompt.' }
+  }
+  return {
+    message:
+      'macOS could not restore Keychain access. Open Keychain Access, lock and unlock your login keychain, then try again.',
+  }
+}
+
 export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   const app = new Hono()
   let restoring: Promise<void> | undefined
@@ -241,7 +256,7 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       await restoring
       return c.json({ ok: true })
     } catch (err) {
-      return c.json(message(err), 503)
+      return c.json(restoreFailure(err), 503)
     }
   })
 

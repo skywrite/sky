@@ -6,7 +6,7 @@ import {
   KEYCHAIN_INTERACTIVE_TIMEOUT_MS,
   KEYCHAIN_TIMEOUT_MS,
   type KeychainReply,
-  type KeychainRequest,
+  type KeychainEntryRequest,
 } from './keychainProtocol.ts'
 
 interface AttemptState {
@@ -28,7 +28,7 @@ async function save(file: string, value: unknown): Promise<void> {
 
 /** Called under the machine lock; the failure reservation survives a hung/killed helper. */
 export async function gatedKeychainAttempt(
-  request: KeychainRequest,
+  request: KeychainEntryRequest,
   access: () => KeychainReply | Promise<KeychainReply>,
   now: () => number = () => calendarInstant(instantNow()),
 ): Promise<KeychainReply> {

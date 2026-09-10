@@ -2,10 +2,16 @@
 import { dlopen, ptr, toArrayBuffer } from 'bun:ffi'
 import { closeSync, openSync } from 'node:fs'
 import path from 'node:path'
-import type { KeychainReply, KeychainRequest } from './keychainProtocol.ts'
+import type { KeychainEntryRequest, KeychainReply } from './keychainProtocol.ts'
+import { restoreKeychainSession } from './keychainRecovery.ts'
 
 const security = dlopen('/System/Library/Frameworks/Security.framework/Security', {
   SecKeychainSetUserInteractionAllowed: { args: ['bool'], returns: 'i32' },
+  SecKeychainCopyDefault: { args: ['ptr'], returns: 'i32' },
+  SecKeychainGetStatus: { args: ['ptr', 'ptr'], returns: 'i32' },
+  SecKeychainCopySettings: { args: ['ptr', 'ptr'], returns: 'i32' },
+  SecKeychainLock: { args: ['ptr'], returns: 'i32' },
+  SecKeychainUnlock: { args: ['ptr', 'u32', 'ptr', 'bool'], returns: 'i32' },
   SecKeychainFindGenericPassword: { args: ['ptr', 'u32', 'ptr', 'u32', 'ptr', 'ptr', 'ptr', 'ptr'], returns: 'i32' },
   SecKeychainAddGenericPassword: { args: ['ptr', 'u32', 'ptr', 'u32', 'ptr', 'u32', 'ptr', 'ptr'], returns: 'i32' },
   SecKeychainItemModifyAttributesAndData: { args: ['ptr', 'ptr', 'u32', 'ptr'], returns: 'i32' },
@@ -39,7 +45,36 @@ export function darwinReply(status: number, value: string | null = null): Keycha
   return { ok: false, kind: [-128, -25293, -25308, -25315].includes(status) ? 'access' : 'unavailable', status }
 }
 
-export function accessDarwinKeychain(request: KeychainRequest): KeychainReply {
+export function restoreDarwinKeychain(): KeychainReply {
+  const allowed = security.SecKeychainSetUserInteractionAllowed(true)
+  if (allowed !== 0) return darwinReply(allowed)
+  const keychain = new BigUint64Array(1)
+  const copied = security.SecKeychainCopyDefault(ptr(keychain))
+  if (copied !== 0) return darwinReply(copied)
+  try {
+    return darwinReply(
+      restoreKeychainSession({
+        status: () => {
+          const flags = new Uint32Array(1)
+          const status = security.SecKeychainGetStatus(keychain[0], ptr(flags))
+          return { status, unlocked: (flags[0] & 1) !== 0 }
+        },
+        check: () => {
+          // SecKeychainSettings: UInt32 version, two Boolean fields, UInt32 interval.
+          const settings = new Uint32Array([1, 0, 0])
+          return security.SecKeychainCopySettings(keychain[0], ptr(settings))
+        },
+        lock: () => security.SecKeychainLock(keychain[0]),
+        // macOS owns the password prompt; no password ever enters Sky.
+        unlock: () => security.SecKeychainUnlock(keychain[0], 0, null, false),
+      }),
+    )
+  } finally {
+    if (keychain[0]) core.CFRelease(keychain[0])
+  }
+}
+
+export function accessDarwinKeychain(request: KeychainEntryRequest): KeychainReply {
   const allowed = security.SecKeychainSetUserInteractionAllowed(request.interactive === true)
   if (allowed !== 0) return darwinReply(allowed)
   const service = Buffer.from(request.service)

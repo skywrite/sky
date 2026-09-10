@@ -98,15 +98,25 @@ test(
         await page.route('**/settings/_api/settings', (route) =>
           route.fulfill({ json: { theme: 'light', textSize: 'default' } }),
         )
-        await page.route('**/settings/_api/connections', (route) =>
-          route.fulfill({
+        let recovered = false
+        let finishRefresh!: () => void
+        const refreshPending = new Promise<void>((resolve) => {
+          finishRefresh = resolve
+        })
+        await page.route('**/settings/_api/connections', async (route) => {
+          if (recovered) await refreshPending
+          await route.fulfill({
             json: {
-              accessError: 'Keychain access needs your attention.',
-              google: { client: true, accounts: [{ email: 'jane@example.com', grants: [] }], setup: [] },
+              ...(recovered ? {} : { accessError: 'Keychain access needs your attention.' }),
+              google: {
+                client: true,
+                accounts: [{ email: 'jane@example.com', grants: recovered ? ['Mail', 'Calendar'] : [] }],
+                setup: [],
+              },
               secrets: [],
             },
-          }),
-        )
+          })
+        })
         await page.route('**/settings/_api/connections/slack', (route) => route.fulfill({ json: { installed: false } }))
         let restores = 0
         let finish!: () => void
@@ -115,12 +125,22 @@ test(
           await new Promise<void>((resolve) => {
             finish = resolve
           })
-          await route.fulfill({ json: { ok: true } })
+          if (restores === 1) {
+            await route.fulfill({
+              status: 503,
+              json: {
+                message: 'macOS could not restore Keychain access. Open Keychain Access and unlock your keychain.',
+              },
+            })
+          } else {
+            recovered = true
+            await route.fulfill({ json: { ok: true } })
+          }
         })
         await page.goto(`${origin}/settings/connections`)
         const restore = page.getByRole('button', { name: 'Restore access', exact: true })
         await restore.click()
-        await page.getByText('Complete the macOS Keychain prompt.', { exact: false }).waitFor()
+        await page.getByRole('status').getByText('Restoring access…', { exact: false }).waitFor()
         assert({
           given: 'an explicit recovery is pending',
           should: 'disable repeated clicks and keep the account visible',
@@ -132,12 +152,40 @@ test(
           expected: [true, 1, 1],
         })
         finish()
-        await page.getByText('Complete the macOS Keychain prompt.', { exact: false }).waitFor({ state: 'detached' })
+        await page.getByRole('alert').getByText('macOS could not restore Keychain access.', { exact: false }).waitFor()
+        assert({
+          given: 'macOS refuses recovery',
+          should: 'show the failure and allow another attempt',
+          actual: [
+            await restore.isEnabled(),
+            await page.getByText('Keychain access restored.', { exact: true }).count(),
+          ],
+          expected: [true, 0],
+        })
+        const retryRequest = page.waitForRequest('**/settings/_api/connections/restore')
+        await restore.click()
+        await page.getByRole('status').getByText('Restoring access…', { exact: false }).waitFor()
+        await retryRequest
+        const refreshing = page.waitForRequest('**/settings/_api/connections')
+        finish()
+        await refreshing
+        assert({
+          given: 'recovery succeeded but the account refresh is still pending',
+          should: 'keep the action busy until refreshed access is verified',
+          actual: await restore.isDisabled(),
+          expected: true,
+        })
+        finishRefresh()
+        await page.getByRole('status').getByText('Keychain access restored.', { exact: true }).waitFor()
         assert({
           given: 'the calendar and recovery interactions',
-          should: 'raise no browser errors',
-          actual: errors,
-          expected: [],
+          should: 'show recovered Google grants, clear the warning, and raise no unexpected browser errors',
+          actual: [
+            await page.locator('.sky-set-chips .sky-set-chip').allTextContents(),
+            await page.getByRole('alert').count(),
+            errors.filter((error) => !error.includes('503 (Service Unavailable)')),
+          ],
+          expected: [['Mail', 'Calendar'], 0, []],
         })
       },
     )

@@ -130,3 +130,79 @@ test('a failed Keychain delete preserves the secret index', async () => {
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('Keychain recovery repairs the session and reaches Google after an unrelated denial', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-keychain-recovery-'))
+  try {
+    const index = path.join(dir, 'index.yaml')
+    await writeFile(
+      index,
+      '- category: test\n  name: main\n- category: google\n  name: client\n- category: google\n  name: jane@example.com\n',
+    )
+    const calls: string[] = []
+    const writes: string[] = []
+    const access = new KeychainAccess(
+      dir,
+      async (request) => {
+        if (!request.interactive) throw new Error('Recovery must be interactive')
+        if (request.operation === 'restore') {
+          calls.push('restore')
+          return null
+        }
+        calls.push(`${request.operation} ${request.service}/${request.account}`)
+        if (request.service === 'sky-test') throw new KeychainAccessError('access', -25293)
+        if (request.operation === 'set') writes.push(request.value!)
+        return request.operation === 'get' ? 'synthetic-value' : null
+      },
+      () => 0,
+      async () => '',
+    )
+    const provider = new KeychainSecretsProvider(access, index)
+    const error = await provider.restoreAccess().catch((err: unknown) => err)
+    assert({
+      given: 'the first entry refuses access before the Google credentials',
+      should: 'repair the session first, recover the remaining credentials unchanged, and report the failure',
+      actual: { calls, writes, status: error instanceof KeychainAccessError && error.status },
+      expected: {
+        calls: [
+          'restore',
+          'get sky-test/main',
+          'get sky-google/client',
+          'set sky-google/client',
+          'get sky-google/jane@example.com',
+          'set sky-google/jane@example.com',
+        ],
+        writes: ['synthetic-value', 'synthetic-value'],
+        status: -25293,
+      },
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('Keychain recovery stops on cancellation and skips an empty store', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-keychain-cancel-'))
+  try {
+    const index = path.join(dir, 'index.yaml')
+    await writeFile(index, '- category: test\n  name: first\n- category: test\n  name: second\n')
+    const calls: string[] = []
+    const access = new KeychainAccess(dir, async (request) => {
+      calls.push(request.operation)
+      if (request.operation === 'get') throw new KeychainAccessError('access', -128)
+      return null
+    })
+    const provider = new KeychainSecretsProvider(access, index)
+    const error = await provider.restoreAccess().catch((err: unknown) => err)
+    await writeFile(index, '')
+    await provider.restoreAccess()
+    assert({
+      given: 'a cancelled item prompt, followed by recovery with no saved entries',
+      should: 'stop without more prompts and leave the empty keychain alone',
+      actual: [calls, error instanceof KeychainAccessError && error.status],
+      expected: [['restore', 'get'], -128],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

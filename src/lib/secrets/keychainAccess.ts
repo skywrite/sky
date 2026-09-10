@@ -43,6 +43,13 @@ export class KeychainAccess {
     return result
   }
 
+  restore(): Promise<void> {
+    return this.serialize(async () => {
+      await this.run({ operation: 'restore', interactive: true, stateDir: this.stateDir })
+      this.cache.clear()
+    })
+  }
+
   get(service: string, account: string, interactive = false): Promise<string | null> {
     const key = this.key(service, account)
     const pending = this.pending.get(key)

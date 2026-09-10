@@ -69,20 +69,25 @@ function useConnections() {
   const [data, setData] = useState<ConnectionsData | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
-  const reload = useCallback(() => {
-    fetch(API)
-      .then(async (r) => {
-        if (r.ok) {
-          setData((await r.json()) as ConnectionsData)
-          setNote(null)
-        } else {
-          setNote(await refusalOf(r))
-        }
-      })
-      .catch(() => setNote(UNREACHABLE))
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetch(API)
+      if (r.ok) {
+        const next = (await r.json()) as ConnectionsData
+        setData(next)
+        setNote(null)
+        return next
+      }
+      setNote(await refusalOf(r))
+    } catch {
+      setNote(UNREACHABLE)
+    }
+    return null
   }, [])
 
-  useEffect(reload, [reload])
+  useEffect(() => {
+    void reload()
+  }, [reload])
 
   return { data, note, reload }
 }
@@ -620,14 +625,18 @@ export function ConnectionsPane() {
   const { data, note, reload } = useConnections()
   const [restoring, setRestoring] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [restoreNote, setRestoreNote] = useState<string | null>(null)
   const restore = async () => {
     if (restoring) return
     setRestoring(true)
     setRestoreError(null)
+    setRestoreNote(null)
     try {
       const response = await postJson(`${API}/restore`, {})
-      if (!response?.ok) setRestoreError(await refusalOf(response))
-      reload()
+      const refusal = await refusalOf(response)
+      if (refusal) setRestoreError(refusal)
+      const refreshed = await reload()
+      if (!refusal && refreshed && !refreshed.accessError) setRestoreNote('Keychain access restored.')
     } finally {
       setRestoring(false)
     }
@@ -640,11 +649,16 @@ export function ConnectionsPane() {
           head="Keychain access"
           note="Background checks stay quiet. Restore access here if macOS needs your approval."
         >
-          {(restoreError || data.accessError) && <p className="sky-set-warn">{restoreError ?? data.accessError}</p>}
+          {!restoring && (restoreError || data.accessError) && (
+            <p className="sky-set-warn" role="alert">
+              {restoreError ?? data.accessError}
+            </p>
+          )}
           <Button size="sm" variant="secondary" loading={restoring} onClick={() => void restore()}>
             Restore access
           </Button>
-          {restoring && <p>Complete the macOS Keychain prompt. Sky will wait for your approval.</p>}
+          {restoring && <p role="status">Restoring access… Approve any macOS Keychain prompts.</p>}
+          {!restoring && restoreNote && <p role="status">{restoreNote}</p>}
         </Block>
       )}
       {data && (

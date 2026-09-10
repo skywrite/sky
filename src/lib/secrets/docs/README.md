@@ -1,6 +1,6 @@
 ---
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # Keychain access
@@ -39,7 +39,17 @@ seconds to five minutes. Authentication failures wait for explicit recovery.
 
 Only Settings → Connections → Restore access permits authentication dialogs.
 Its requests join one pending recovery; each helper has a two-minute deadline.
+Before reading entries, a helper checks the default keychain session. A locked
+keychain is unlocked through macOS's own password dialog. If it reports unlocked
+but `SecKeychainCopySettings` returns `errSecAuthFailed`, recovery locks and
+unlocks that keychain once, then verifies access. An unlock alone is a no-op in
+this stale state ([macOS issue discussed with Apple DTS](https://developer.apple.com/forums/thread/822120)).
+Healthy keychains and unrelated errors never trigger the lock/unlock cycle;
+background requests never perform session recovery. Passwords stay in the macOS
+dialog. Recovery never resets a keychain, deletes entries, or changes ACLs.
 Recovery reads and writes the unchanged value to authorize token refreshes too.
+An individual entry failure does not skip the remaining accounts; cancellation
+stops recovery. Failures remain visible after partial recovery.
 The sidebar polls after the previous request settles, keeps its last schedule
 on a failed refresh, and exposes the error with a link to Connections.
 

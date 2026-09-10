@@ -1,7 +1,7 @@
 export type KeychainOperation = 'get' | 'set' | 'delete'
 export type KeychainFailure = 'access' | 'timeout' | 'busy' | 'unavailable'
 
-export interface KeychainRequest {
+export interface KeychainEntryRequest {
   operation: KeychainOperation
   service: string
   account: string
@@ -9,6 +9,8 @@ export interface KeychainRequest {
   interactive?: boolean
   stateDir: string
 }
+
+export type KeychainRequest = KeychainEntryRequest | { operation: 'restore'; interactive: true; stateDir: string }
 
 export type KeychainReply =
   | { ok: true; value: string | null }
