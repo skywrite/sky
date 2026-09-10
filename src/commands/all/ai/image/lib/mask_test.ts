@@ -1,5 +1,6 @@
 import sharp from 'sharp'
 import { assert, test } from '#test'
+import { testMaskPlan } from './imageEditTestHelpers.ts'
 import { compositeImageEdit, imageCanvas, maskFromPlan, prepareExplicitMask, validateEditMask } from './mask.ts'
 import type { ImageMaskPlan } from './maskPlan.ts'
 import type { ImageReference } from './references.ts'
@@ -14,6 +15,7 @@ const rectangle = (left: number, top: number, right: number, bottom: number) => 
   ],
 })
 const plan: ImageMaskPlan = {
+  ...testMaskPlan(),
   scope: 'localized',
   reason: 'Replace the test tile, preserving the inset and surrounding texture.',
   editRegions: [rectangle(100, 100, 900, 900)],

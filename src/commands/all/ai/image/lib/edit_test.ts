@@ -2,11 +2,13 @@ import sharp from 'sharp'
 import { assert, test } from '#test'
 import { prepareImageEdit } from './edit.ts'
 import type { ImageEditRequest, PreparedImageEdit } from './edit.ts'
+import { testMaskPlan } from './imageEditTestHelpers.ts'
 import type { ImageMaskPlan } from './maskPlan.ts'
 import { validateSize } from './options.ts'
-import { photoEditSize } from './resolution.ts'
+import { graphicEditSize, photoEditSize } from './resolution.ts'
 
 const localized: ImageMaskPlan = {
+  ...testMaskPlan(),
   scope: 'localized',
   reason: 'Change only the center tile.',
   editRegions: [
@@ -71,6 +73,45 @@ test('Automatic photo edits resolve a large canvas before the mask planner sees 
   })
 })
 
+test('Graphic preservation keeps a supported native grid and sends complexity to the mask planner', async () => {
+  const small = await request()
+  const input = {
+    ...small,
+    refs: [{ ...small.refs[0]!, data: await sharp(small.refs[0]!.data).resize(1024, 768).png().toBuffer() }],
+  }
+  let effort: string | undefined
+  const result = await prepareImageEdit(
+    { ...input, intent: 'preserve_image', complexity: 'complex' },
+    async (request) => {
+      effort = request.complexity
+      return { ...localized, edges: 'hard' }
+    },
+  )
+  const mask = await sharp(result.edit!.mask.data).extractChannel('alpha').raw().toBuffer()
+  const working = await sharp(result.edit!.generationMask!.data).extractChannel('alpha').raw().toBuffer()
+  const margin = 200 * 1024 + 200
+  assert({
+    given: 'a graphic whose original dimensions are supported and whose replacement needs more room',
+    should: 'retain the native grid, use careful planning, and preserve pixels allowed only as generation context',
+    actual: [result.size, effort, mask[margin], working[margin], result.edit?.plan?.edges],
+    expected: ['1024x768', 'complex', 255, 0, 'hard'],
+  })
+  assert({
+    given: 'small, unsupported or oversized graphic canvases',
+    should: 'choose valid dimensions while retaining supported native dimensions exactly',
+    actual: [
+      graphicEditSize(1024, 768),
+      [
+        [32, 32],
+        [513, 777],
+        [8000, 9000],
+        [1, 8],
+      ].every(([w, h]) => validateSize(graphicEditSize(w!, h!)) === null),
+    ],
+    expected: ['1024x768', true],
+  })
+})
+
 test('Explicit size and mask choices work independently of automatic resolution', async () => {
   const input = await request()
   const first = await prepareImageEdit({ ...input, size: '768x1024' }, async () => localized)
@@ -116,6 +157,7 @@ test('Creation and creative transformations do not receive photographic masks or
 test('Whole-image requests are explicit in the result; uncertain masks and planner failures stop the edit', async () => {
   const input = { ...(await request()), size: '768x1024' }
   const whole = await prepareImageEdit(input, async () => ({
+    ...testMaskPlan(),
     scope: 'whole_image',
     reason: 'Adjust lighting throughout.',
     editRegions: [],
@@ -124,6 +166,7 @@ test('Whole-image requests are explicit in the result; uncertain masks and plann
   const errors: string[] = []
   for (const planner of [
     async (): Promise<ImageMaskPlan> => ({
+      ...testMaskPlan(),
       scope: 'uncertain',
       reason: 'The requested object is ambiguous.',
       editRegions: [],

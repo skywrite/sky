@@ -12,8 +12,13 @@ const PREFLIGHT_TIMEOUT_MS = 45_000
 
 const decisionSchema = z.object({
   intent: z
-    .enum(['create', 'transform', 'preserve_photo', 'other_edit'])
-    .describe('preserve_photo means editing an original photograph while maintaining its fidelity.'),
+    .enum(['create', 'transform', 'preserve_photo', 'preserve_image', 'other_edit'])
+    .describe(
+      'Use preserve_photo for photographic fidelity; preserve_image for localized edits to existing graphics or artwork.',
+    ),
+  complexity: z
+    .enum(['simple', 'complex'])
+    .describe('Complex edits change silhouettes, involve overlaps, fine contours or precise text/layout.'),
   model: z.enum(['flare', 'sunburst']),
   quality: z.enum(RENDER_QUALITIES),
   reason: z.string().min(1).max(280).describe('One short sentence explaining the selection.'),
@@ -36,6 +41,7 @@ export interface ImageSelectionRequest {
 
 export interface ImageSelection {
   intent: ImageDecision['intent']
+  complexity: ImageDecision['complexity']
   model: (typeof IMAGE_MODELS)[ImageModelName]
   quality: ImageQuality
   reason: string
@@ -96,6 +102,7 @@ export async function selectImageSettings(
   if (request.model && request.quality && !request.refs.length) {
     return {
       intent: 'create',
+      complexity: 'simple',
       model: IMAGE_MODELS[request.model],
       quality: request.quality,
       reason: 'Explicit model and quality requested; preflight skipped.',
@@ -119,6 +126,7 @@ export async function selectImageSettings(
     : decision.reason
   return {
     intent: request.refs.length ? decision.intent : 'create',
+    complexity: decision.complexity,
     model: IMAGE_MODELS[model],
     quality,
     reason: `${reason}${overrides.length ? ` Explicit ${overrides.join(' and ')} honored.` : ''}`,

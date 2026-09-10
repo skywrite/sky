@@ -9,6 +9,10 @@ export interface MaskedImageEdit {
   canvas: ImageReference
   /** PNG alpha: transparent edits, opaque preserves. Same dimensions as canvas. */
   mask: ImageReference
+  /** Broader working space sent to the model; also bounds any reviewed mask correction. */
+  generationMask?: ImageReference
+  plan?: ImageMaskPlan
+  complexity?: 'simple' | 'complex'
   description: string
 }
 
@@ -44,14 +48,17 @@ export async function maskFromPlan(
     `<polygon fill="${fill}" points="${region.points.map(({ x, y }) => `${x},${y}`).join(' ')}"/>`
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 1000 1000" preserveAspectRatio="none"><rect width="1000" height="1000" fill="black"/>${plan.editRegions.map((region) => polygon(region, 'white')).join('')}${plan.protectedRegions.map((region) => polygon(region, 'black')).join('')}</svg>`
   const raw = await sharp(Buffer.from(svg)).removeAlpha().extractChannel(0).raw().toBuffer()
-  const blurred = await sharp(raw, { raw: { width, height, channels: 1 } })
-    .blur(Math.max(1, Math.min(width, height) / 1000))
-    .extractChannel(0)
-    .raw()
-    .toBuffer()
+  const blurred =
+    plan.edges === 'hard'
+      ? undefined
+      : await sharp(raw, { raw: { width, height, channels: 1 } })
+          .blur(Math.max(1, Math.min(width, height) / 1000))
+          .extractChannel(0)
+          .raw()
+          .toBuffer()
   const rgba = Buffer.alloc(raw.length * 4)
   for (let i = 0; i < raw.length; i++) {
-    rgba[i * 4 + 3] = 255 - Math.round((raw[i]! * blurred[i]!) / 255)
+    rgba[i * 4 + 3] = 255 - (blurred ? Math.round((raw[i]! * blurred[i]!) / 255) : raw[i]!)
   }
   const data = await sharp(rgba, { raw: { width, height, channels: 4 } })
     .png()
@@ -59,6 +66,29 @@ export async function maskFromPlan(
   signal?.throwIfAborted()
   await validateEditMask(data, canvas)
   return { name: 'edit-mask.png', mediaType: 'image/png', data }
+}
+
+/** Intersect permissions, including antialiased edges: no correction may open protected source pixels. */
+export async function limitEditMask(
+  mask: ImageReference,
+  limit: ImageReference,
+  canvas: ImageReference,
+  signal?: AbortSignal,
+): Promise<ImageReference> {
+  signal?.throwIfAborted()
+  await validateEditMask(mask.data, canvas)
+  await validateEditMask(limit.data, canvas)
+  const { width, height } = await sharp(canvas.data).metadata()
+  const alpha = await sharp(mask.data).extractChannel('alpha').raw().toBuffer()
+  const boundary = await sharp(limit.data).extractChannel('alpha').raw().toBuffer()
+  const rgba = Buffer.alloc(alpha.length * 4)
+  for (let i = 0; i < alpha.length; i++) rgba[i * 4 + 3] = Math.max(alpha[i]!, boundary[i]!)
+  const data = await sharp(rgba, { raw: { width, height, channels: 4 } })
+    .png()
+    .toBuffer()
+  signal?.throwIfAborted()
+  await validateEditMask(data, canvas)
+  return { ...mask, data }
 }
 
 export async function validateEditMask(data: Uint8Array, canvas: ImageReference): Promise<void> {

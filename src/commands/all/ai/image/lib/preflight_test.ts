@@ -11,6 +11,7 @@ const png = new Uint8Array(
 const request: ImageSelectionRequest = { prompt: 'A watercolor lighthouse at dawn.', refs: [], count: 1 }
 const ordinary: ImageDecision = {
   intent: 'create',
+  complexity: 'simple',
   model: 'flare',
   quality: 'high',
   reason: 'An everyday illustration.',
@@ -26,6 +27,19 @@ test('Fidelity-preserving photo edits enforce Sunburst/max after classification'
     should: 'enforce Sunburst/max and explain the preservation requirement',
     actual: [selected.model, selected.quality, selected.reason.includes('fidelity')],
     expected: ['gpt-image-2.5-sunburst', 'max', true],
+  })
+})
+
+test('Graphic preservation retains its own quality selection and geometric complexity', async () => {
+  const selected = await selectImageSettings(
+    { ...request, prompt: 'Replace the badge icon; preserve the lettering and transparent background.', refs: [png] },
+    async () => ({ ...ordinary, intent: 'preserve_image', complexity: 'complex', model: 'sunburst', quality: 'xhigh' }),
+  )
+  assert({
+    given: 'a precise graphic edit that needs preservation and careful geometry',
+    should: 'enable preservation without forcing the photo quality rule',
+    actual: [selected.intent, selected.complexity, selected.model, selected.quality],
+    expected: ['preserve_image', 'complex', 'gpt-image-2.5-sunburst', 'xhigh'],
   })
 })
 

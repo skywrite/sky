@@ -30,6 +30,8 @@ export interface ImageArtifactInput {
   size?: string
   preservation?: string
   mask?: string
+  evidence?: string[]
+  reviews?: string[]
   /** Basenames of the reference images the generation drew from. */
   refs: string[]
   /** Absolute paths of the saved images. */
@@ -60,6 +62,10 @@ export function buildImageArtifact(input: ImageArtifactInput): string {
     ...(input.selectionReason ? ['', `**Selection:** ${input.selectionReason}`] : []),
     ...(input.preservation ? ['', `**Preservation:** ${input.preservation}`] : []),
     ...(input.mask ? ['', `**Edit mask:** ${input.mask}`] : []),
+    ...(input.reviews?.length ? ['', '**Visual review:**', ...input.reviews.map((review) => `- ${review}`)] : []),
+    ...(input.evidence?.length
+      ? ['', '**Edit evidence:**', ...input.evidence.map((directory) => `- ${directory}`)]
+      : []),
     ...(input.refs.length > 0 ? ['', `**Reference images:** ${input.refs.join(', ')}`] : []),
     '',
     ...input.files.map((file) => `- ${file}`),

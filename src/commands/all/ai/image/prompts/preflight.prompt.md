@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-10
 description: Choose GPT Image 2.5 model and quality from the creative brief and references.
 ---
 
@@ -22,13 +22,25 @@ Classify the intended result first:
   photographic edit. Retouching, restoration, removing an object, replacing a
   background while keeping the subject intact, and changing one detail in an
   otherwise unchanged photo qualify. Choose Sunburst/max for these edits.
-- other_edit: editing reference material without the above photographic fidelity
-  requirement, such as revising an illustration or a diagram.
+- preserve_image: a localized edit to an existing illustration, logo, icon,
+  diagram, chart, poster, screenshot, design or other graphic where untouched
+  content should remain fixed. Changing a label, replacing a symbol, adjusting
+  one character's outfit or adding an object while retaining the rest qualifies.
+  Preserve the original medium, linework, typography, palette and transparency
+  where applicable. This needs preservation masks but not necessarily max quality.
+- other_edit: an edit that changes the whole reference without local preservation,
+  such as changing the palette of an entire illustration.
 
 Judge what must remain faithful to the original and how strictly. Having reference
 images, the word "photo", or an edit request alone does not imply preserve_photo.
 Inspect the supplied references alongside the prompt. With no reference image,
 classify as create; there is no original photograph available to preserve.
+
+Classify geometric complexity separately from image-model quality. Use complex
+for new or expanded silhouettes, additions, removals, overlapping objects,
+clothing/accessories, fine contours, transparency edges, or exact text/layout.
+Use simple for a clearly bounded change such as recoloring one isolated shape.
+This selects planning and review effort; it does not upgrade image quality.
 
 Choose the least expensive effort that meets the brief:
 

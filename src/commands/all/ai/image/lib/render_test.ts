@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import sharp from 'sharp'
 import { assert, test } from '#test'
+import { passedReview, testMaskPlan } from './imageEditTestHelpers.ts'
 import { imageCanvas, maskFromPlan } from './mask.ts'
 import type { ImageReference } from './references.ts'
 import { renderImages } from './render.ts'
@@ -75,7 +76,7 @@ test('Image edits send named multipart files with their MIME types and exact byt
           })),
         ),
         settings: ['model', 'quality', 'size', 'background', 'n', 'output_format'].map((field) => form.get(field)),
-        output: Buffer.from(images[0]!).equals(png),
+        output: Buffer.from(images[0]!.data).equals(png),
       },
       expected: {
         endpoint: '/v1/images/edits',
@@ -171,6 +172,7 @@ test('Masked edits send aligned named PNG parts and return the composited image,
   const canvas = await imageCanvas(original, '80x80')
   const mask = await maskFromPlan(
     {
+      ...testMaskPlan(),
       scope: 'localized',
       reason: 'Change the center tile.',
       protectedRegions: [],
@@ -203,12 +205,13 @@ test('Masked edits send aligned named PNG parts and return the composited image,
       edit: { canvas, mask, description: 'Center tile.' },
     },
     client,
+    async () => passedReview,
   )
   const form = await requests[0]!.formData()
   const uploadedMask = form.get('mask') as File
   const uploads = form.getAll('image[]') as File[]
   const maskInfo = await sharp(await uploadedMask.arrayBuffer()).metadata()
-  const output = await sharp(outputs[0]).ensureAlpha().raw().toBuffer()
+  const output = await sharp(outputs[0]!.data).ensureAlpha().raw().toBuffer()
   const center = (40 * 80 + 40) * 4
   assert({
     given: 'a masked edit whose provider response changed even the protected border',
@@ -225,7 +228,7 @@ test('Masked edits send aligned named PNG parts and return the composited image,
       center: [...output.subarray(center, center + 4)],
     },
     expected: {
-      mask: ['edit-mask.png', 'image/png', 80, 80, true],
+      mask: ['generation-mask.png', 'image/png', 80, 80, true],
       files: ['edit-canvas.png', 'synthetic-source.png'],
       maskBytes: true,
       size: '80x80',
@@ -235,4 +238,42 @@ test('Masked edits send aligned named PNG parts and return the composited image,
       center: [224, 32, 64, 255],
     },
   })
+})
+
+test('Masked graphics request real output transparency without overriding opaque backgrounds', async () => {
+  for (const [alpha, background, expected] of [
+    [0, undefined, 'transparent'],
+    [0, 'auto', 'transparent'],
+    [1, undefined, null],
+    [0, 'opaque', 'opaque'],
+  ] as const) {
+    const data = await sharp({
+      create: { width: 80, height: 80, channels: 4, background: { r: 32, g: 64, b: 128, alpha } },
+    })
+      .png()
+      .toBuffer()
+    const canvas: ImageReference = { name: 'synthetic-graphic.png', mediaType: 'image/png', data }
+    const mask = await maskFromPlan(testMaskPlan(), canvas)
+    const { client, requests } = imageApi({ data: [{ b64_json: data.toString('base64') }] })
+    const [image] = await renderImages(
+      {
+        prompt: 'Replace the center symbol; preserve the background.',
+        refs: [canvas],
+        edit: { canvas, mask, description: 'Center symbol.' },
+        size: '80x80',
+        model: 'gpt-image-2.5-sunburst',
+        quality: 'max',
+        background,
+        count: 1,
+      },
+      client,
+      async () => passedReview,
+    )
+    assert({
+      given: `a graphic with alpha ${alpha} and background ${background ?? 'omitted'}`,
+      should: 'request and retain the resolved background setting, using actual alpha rather than channel presence',
+      actual: [(await requests[0]!.formData()).get('background'), image!.background ?? null],
+      expected: [expected, expected],
+    })
+  }
 })

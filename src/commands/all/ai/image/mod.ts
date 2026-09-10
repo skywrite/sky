@@ -16,6 +16,8 @@ import { env } from '#shared/sys/mod.ts'
 import { writeImageArtifact } from './lib/artifact.ts'
 import { prepareImageEdit } from './lib/edit.ts'
 import type { PreparedImageEdit } from './lib/edit.ts'
+import { writeImageEvidence } from './lib/evidence.ts'
+import type { ImageReviewSummary } from './lib/finish.ts'
 import {
   imageModelName,
   MAX_COUNT,
@@ -58,11 +60,11 @@ const params = {
     default: 'auto',
   }),
   size: Flag.string(
-    'auto (or omit) uses about 8 MP for fidelity-preserving photo edits and model-selected size otherwise; explicit WIDTHxHEIGHT overrides this (edges multiples of 16, at most 3840, aspect at most 3:1, 655360–8294400 pixels)',
+    'auto (or omit) uses about 8 MP for photo preservation, retains supported source dimensions for graphic preservation, and lets the model choose for creation; explicit WIDTHxHEIGHT overrides this (edges multiples of 16, at most 3840, aspect at most 3:1, 655360–8294400 pixels)',
     { short: 's' },
   ),
   mask: Flag.string(
-    'auto (default) identifies editable areas in fidelity-preserving photos and keeps original pixels elsewhere. Or supply a local PNG alpha mask matching the upright first reference or output canvas: transparent edits, opaque protects. Use none only when the user explicitly requests whole-image editing.',
+    'auto (default) plans working space and preserves untouched areas in photos, illustrations, logos, diagrams and other graphics. Or supply a local PNG alpha mask matching the upright first reference or output canvas: transparent edits, opaque protects. Supplied masks remain fixed. Use none only for an explicit whole-image edit.',
     { default: 'auto' },
   ),
   quality: Flag.string(
@@ -90,6 +92,8 @@ type Result = {
   size?: string
   preservation?: string
   mask?: string
+  evidence?: string[]
+  reviews?: ImageReviewSummary[]
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -105,7 +109,7 @@ export default class AiImageTask extends Command {
   static override description: CommandDescription = {
     name: 'ai:image',
     description:
-      'Generate or edit images with GPT Image 2.5. Astra selects Flare or Sunburst and quality from the prompt, brief, and references. Give a full visual description, pass local references for edits (base image first), and include user priorities and prior edit context in brief. Leave model/quality/size/mask auto unless the user explicitly chooses them. Photo edits preserving fidelity use Sunburst/max, about 8 MP in the original proportions, and an automatic edit mask; original pixels outside the mask are retained at output resolution. Creative transformations such as photo-to-illustration follow normal selection. Mask failures need a clearer target or supplied mask; do not disable preservation to retry.',
+      'Generate or edit images with GPT Image 2.5. Astra selects Flare or Sunburst and quality from the prompt, brief, and references. Give a full visual description, pass local references for edits (base image first), and include user priorities and prior edit context in brief. Leave model/quality/size/mask auto unless explicitly chosen. Localized edits to photos, illustrations, logos, diagrams and other graphics plan the replacement shape, preserve untouched pixels at output resolution and receive a visual review. Photo preservation uses Sunburst/max and about 8 MP. Graphics retain supported source dimensions and select quality by requirements. Creative restyling follows normal selection. Report any review caveats with the result; do not claim a failed or unavailable review passed. Mask failures need clearer targets or a supplied mask; do not disable preservation to retry.',
     descriptionLong: [
       'Renders the prompt with GPT Image 2.5, saves the result to the Desktop',
       '(or --out), opens it in Preview, and records prompt + settings in the',
@@ -117,8 +121,13 @@ export default class AiImageTask extends Command {
       'normally Flare/high, Flare/medium for drafts, Sunburst for precision,',
       'and Sunburst/max for photo edits that preserve the original fidelity.',
       'Those photo edits default to about 8 MP, bounded by the API canvas limits.',
-      'Localized edits use an automatic alpha mask and composite changed areas',
-      'over the original at output resolution. The mask is saved beside the result.',
+      'Localized photo and graphic edits plan the new silhouette and separate',
+      'working space from the final blend. Untouched pixels are copied from the',
+      'original at output resolution. Graphics keep native dimensions when supported.',
+      'Visual review checks the requested change, preservation and integration.',
+      'One boundary correction may reuse the generated image within the allowed',
+      'working space; a supplied mask is never expanded. Review caveats are reported.',
+      'Raw output, both masks, the source canvas and review are kept beside the result.',
       'Global edits (such as changing all lighting) use the whole image.',
       'Creative restyling (such as photo to illustration) uses normal selection.',
       'Pass --brief for priorities or relevant prior edits. Explicit --model and',
@@ -131,6 +140,7 @@ export default class AiImageTask extends Command {
       'sky ai:image "Make the sky stormy and add rain" -r ~/Pictures/lighthouse.png',
       'sky ai:image "Sticker of a happy robot waving" -b transparent -n 4 -q medium',
       'sky ai:image "Remove the background; preserve the product exactly" -r ~/Pictures/watch.png',
+      'sky ai:image "Replace the center icon; keep the lettering and layout unchanged" -r ~/Pictures/atlas-logo.png',
       'sky ai:image "A rough pencil sketch of a lighthouse" -m flare -q low',
     ],
     params,
@@ -231,14 +241,15 @@ export default class AiImageTask extends Command {
         requestedMask === 'auto' || requestedMask === 'none'
           ? requestedMask
           : new Uint8Array(await readFile(expandHome(requestedMask)))
-      if (selection.intent === 'preserve_photo' && mask !== 'none') {
-        log('Preparing a detailed photo edit and identifying the areas to preserve…')
+      if (['preserve_photo', 'preserve_image'].includes(selection.intent) && mask !== 'none') {
+        log('Planning the replacement and identifying the areas to preserve…')
       }
       prepared = await prepareImageEdit({
         prompt,
         brief: args.brief?.trim(),
         refs: refImages,
         intent: selection.intent,
+        complexity: selection.complexity,
         size: args.size,
         mask,
         signal: context.signal,
@@ -267,6 +278,7 @@ export default class AiImageTask extends Command {
       generated = await renderImages({
         model,
         prompt,
+        brief: args.brief?.trim(),
         refs: refImages,
         count,
         size,
@@ -274,6 +286,7 @@ export default class AiImageTask extends Command {
         quality,
         background: args.background as ImageBackground | undefined,
         signal,
+        onProgress: log,
       })
     } catch (err) {
       if (context.signal?.aborted) return CommandResult.error('Image creation cancelled.')
@@ -301,6 +314,9 @@ export default class AiImageTask extends Command {
     const title = args.name?.trim() || prompt
     const slug = slugify(title, { preserveCase: true, suggestedLength: 40 })
     const saved: string[] = []
+    const evidence: string[] = []
+    const reviews: ImageReviewSummary[] = []
+    let maskPath: string | undefined
     for (const image of generated) {
       let fileName = `${now.date}_image_${slug}.png`
       let n = 1
@@ -309,18 +325,27 @@ export default class AiImageTask extends Command {
         fileName = `${now.date}_image_${slug}-${n}.png`
       }
       const filePath = path.join(outDir, fileName)
-      await writeFile(filePath, image)
+      await writeFile(filePath, image.data)
       saved.push(filePath)
-      log(`Saved ${fileName} (${Math.round(image.length / 1024)} KB)`)
-    }
-    let maskPath: string | undefined
-    if (prepared.edit) {
-      try {
-        const candidate = saved[0]!.replace(/\.png$/, '.mask.png')
-        await writeFile(candidate, prepared.edit.mask.data, { flag: 'wx' })
-        maskPath = candidate
-      } catch (err) {
-        log(`Image saved, but the mask copy could not be saved: ${(err as Error).message}`)
+      log(`Saved ${fileName} (${Math.round(image.data.length / 1024)} KB)`)
+      if (image.review) {
+        reviews.push(image.review)
+        log(`Review ${image.review.status === 'passed' ? 'passed' : 'needs attention'}: ${image.review.reason}`)
+      }
+      if (prepared.edit) {
+        try {
+          const retained = await writeImageEvidence(filePath, image, prepared.edit, {
+            prompt,
+            brief: args.brief?.trim(),
+            model,
+            quality,
+            size,
+          })
+          evidence.push(retained.directory)
+          maskPath ??= retained.mask
+        } catch (err) {
+          log(`Image saved, but edit evidence could not be saved: ${(err as Error).message}`)
+        }
       }
     }
 
@@ -335,6 +360,7 @@ export default class AiImageTask extends Command {
       `Selection: ${selectionReason}`,
       ...(preservation ? [`Preservation: ${preservation}`] : []),
       ...(maskPath ? [`Edit mask: ${maskPath}`] : []),
+      ...reviews.map((review, i) => `Image ${i + 1} review (${review.status}): ${review.reason}`),
       ...saved.map((filePath) => `- ${filePath}`),
     ].join('\n')
 
@@ -352,6 +378,8 @@ export default class AiImageTask extends Command {
           size,
           preservation,
           mask: maskPath,
+          evidence,
+          reviews: reviews.map((review) => `${review.status}: ${review.reason}`),
           refs: refPaths.map((refPath) => path.basename(refPath)),
           files: saved,
           report,
@@ -374,6 +402,8 @@ export default class AiImageTask extends Command {
       size,
       preservation,
       mask: maskPath,
+      evidence,
+      reviews,
     })
   }
 }

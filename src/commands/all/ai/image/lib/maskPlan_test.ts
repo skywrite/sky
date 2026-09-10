@@ -2,12 +2,14 @@ import { createOpenAI } from '@ai-sdk/openai'
 import sharp from 'sharp'
 import { aiModelByProfile } from '#shared/ai/models.ts'
 import { assert, test } from '#test'
+import { testMaskPlan } from './imageEditTestHelpers.ts'
 import { planImageMask } from './maskPlan.ts'
 
 test('Mask planning uses a detailed view, normalized structured contours and cancellation', async () => {
   let body: Record<string, unknown> = {}
   let signal: AbortSignal | null | undefined
   const decision = {
+    ...testMaskPlan(),
     scope: 'localized',
     reason: 'Change the large tile; protect its inset.',
     editRegions: [
@@ -60,8 +62,9 @@ test('Mask planning uses a detailed view, normalized structured contours and can
       prompt: 'Repaint the tile.',
       brief: 'Keep all surrounding texture and the inset.',
       reference: { name: 'tile.png', mediaType: 'image/png', data },
+      complexity: 'complex',
     },
-    { model: { ...aiModelByProfile('default-gpt-6-astra-low'), model: provider('gpt-6-astra') } },
+    { model: { ...aiModelByProfile('default-gpt-6-astra-high'), model: provider('gpt-6-astra') } },
   )
   const input = body.input as Array<{ role: string; content: Array<Record<string, unknown>> }>
   const content = input.find((message) => message.role === 'user')!.content
@@ -69,7 +72,7 @@ test('Mask planning uses a detailed view, normalized structured contours and can
   const preview = await sharp(Buffer.from(String(image.image_url).split(',')[1]!, 'base64')).metadata()
   assert({
     given: 'the mask planner receives an output canvas and preservation context',
-    should: 'use Astra low with high image detail, a larger preview and structured edit/protection contours',
+    should: 'use Astra high with detailed previews and separate working, blending and protection contours',
     actual: [
       body.model,
       (body.reasoning as { effort: string }).effort,
@@ -80,6 +83,6 @@ test('Mask planning uses a detailed view, normalized structured contours and can
       !!signal,
       plan,
     ],
-    expected: ['gpt-6-astra', 'low', 'high', 1536, 1152, 'json_schema', true, decision],
+    expected: ['gpt-6-astra', 'high', 'high', 1536, 1152, 'json_schema', true, decision],
   })
 })
