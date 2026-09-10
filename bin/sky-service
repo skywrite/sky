@@ -16,8 +16,8 @@ cleanup () {
 trap cleanup EXIT
 
 
-## launchd doesn't source shell profiles, so ensure bun is in PATH
-export PATH="$HOME/.bun/bin:$HOME/.bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+## launchd doesn't source shell profiles, so include Bun and Homebrew tools
+export PATH="$HOME/.bun/bin:$HOME/.bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 if ! command -v bun &> /dev/null
 then
