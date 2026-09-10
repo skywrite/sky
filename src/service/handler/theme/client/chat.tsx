@@ -7,6 +7,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -27,7 +28,6 @@ import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
-import { splitLinks } from './links.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import {
@@ -574,7 +574,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
 // The wire
 // -----------------------------------------------------------------------------
 
-/** A reply's markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
+/** Markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
 function renderMarkdown(raw: string, reply = false): string | null {
   try {
     return reply ? renderChatMarkdown(raw) : renderStatic(raw)
@@ -2197,25 +2197,23 @@ export function TurnView({
   labelOf?: (profile: string) => string
   onReplyThread?: () => void
 }) {
-  if (turn.role === 'user') {
+  const userMessage = useMemo(() => {
+    if (turn.role !== 'user') return null
     const { text, files } = splitChatFiles(turn.content)
-    // What the person typed, verbatim — an address in it is a link out.
+    return { text, files, html: text ? renderMarkdown(text) : null }
+  }, [turn.role, turn.content])
+
+  if (userMessage) {
+    const { text, files, html } = userMessage
     return (
       <div className="sky-turn sky-turn-user" data-shared={shared || undefined}>
         <div className="sky-bubble">
-          {text && (
-            <div className="sky-bubble-text">
-              {splitLinks(text).map((run, i) =>
-                run.url ? (
-                  <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
-                    {run.text}
-                  </a>
-                ) : (
-                  <Fragment key={i}>{run.text}</Fragment>
-                ),
-              )}
-            </div>
-          )}
+          {text &&
+            (html ? (
+              <RenderedHtml className="sky-bubble-text sky-rendered" html={html} />
+            ) : (
+              <div className="sky-bubble-text">{text}</div>
+            ))}
           <FileClips files={files.length ? files : (turn.files ?? [])} />
         </div>
       </div>

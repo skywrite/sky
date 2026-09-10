@@ -264,12 +264,14 @@
   overflow-wrap: anywhere;
 }
 
-.sky-body p {
+.sky-body p,
+.sky-bubble-text p {
   margin: 0 0 11px;
   max-width: 72ch;
 }
 
-.sky-body p:last-child {
+.sky-body p:last-child,
+.sky-bubble-text p:last-child {
   margin-bottom: 0;
 }
 
@@ -279,6 +281,26 @@
 
 .sky-bubble-text {
   white-space: pre-wrap;
+}
+
+.sky-bubble-text.sky-rendered {
+  white-space: normal;
+}
+
+.sky-bubble-text > :first-child {
+  margin-top: 0;
+}
+
+.sky-bubble-text > :last-child {
+  margin-bottom: 0;
+}
+
+.sky-bubble-text p {
+  white-space: pre-wrap;
+}
+
+.sky-bubble-text.sky-rendered pre {
+  background: var(--sky-card);
 }
 
 .sky-bubble .sky-chat-file {
@@ -315,7 +337,7 @@
   }
 }
 
-/* rendered replies: the reply is a document, so it gets the record's type */
+/* Rendered messages share the record's typography. */
 .sky-rendered ul,
 .sky-rendered ol {
   margin: 0 0 11px;
