@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # Writing voice
@@ -28,12 +28,39 @@ a selected custom configuration without choosing another one first.
 me/voice/
   rules.md
   examples/<id>.md
+  drafts/<id>.md
 ```
 
 The rules body is the editable guide. The first draft or example initializes it
 from existing `outbox/preferences.md`, or the default guide. Production Outbox
 preference reads and writes use this same file. Reads do not cache its contents;
 a change applies to the next draft in an existing session.
+
+### Editable drafts in chat
+
+Web drafts have stable IDs and append-only text versions in `drafts/`. The
+transcript retains the wording originally shown; the frame replaces only a
+matching writer-owned quote with the current version. Later revisions link back
+to that frame. Ordinary quotations remain read-only. Older recorded `me_voice`
+outputs acquire records when the owner first edits or discusses them.
+
+Chat continuation metadata carries draft IDs and the turn where each appeared.
+Reply threads share those IDs, so a revision in a draft discussion updates its
+parent frame. A separate branch copies the records instead. Each new model turn
+receives the current text, including direct edits; model revisions check the
+version again after generation, refusing to overwrite intervening edits.
+
+Saving an owner edit captures its original, revised text and optional explanation.
+An explicit explanation goes straight to learning without generating a redundant
+question. Otherwise the existing optional learning question applies. AI revisions
+remain proposals until the owner accepts them, using the actual conversation
+direction as evidence. Restoring a version appends a new version without creating
+a writing preference. Draft history retains the edits and reasons after example
+compaction, and draft records survive closing or discarding their conversation.
+
+The browser keeps unsaved editor text independently of polling and restores it
+after navigation. A newer saved version requires an explicit choice before that
+edit can replace it. Read-only draft text uses `RenderedHtml` to preserve selection.
 
 Each example is one Markdown document with YAML frontmatter holding the source,
 medium, recipient, context, owner direction, exact original and revised text,

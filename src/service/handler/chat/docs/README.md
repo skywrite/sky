@@ -182,7 +182,13 @@ its active life, including when it will not be filed. A message is a POST whose 
 renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
-- **Drafts read as documents in chat.** The shared chat prompt puts each
+- **Drafts can be edited in chat.** The shared writer's drafts have a frame
+  with Edit, Copy, Undo, previous versions, and Ask Sky to revise. The latter
+  opens the response's existing reply thread, focused on the same draft ID.
+  The current draft updates in place; the transcript keeps its original text.
+  Storage, learning, and conflict behavior belong to
+  [writing voice](../../../../lib/writingVoice/docs/README.md#editable-drafts-in-chat).
+  The shared chat prompt puts each
   message draft in one Markdown blockquote during review and revision,
   including drafts destined for Slack. Introductions and editing notes stay
   outside the quote; the enclosing review quote is removed for delivery.

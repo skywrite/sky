@@ -24,6 +24,8 @@ import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chat
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
 import { useChatVoice } from './chatVoice.ts'
+import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
+import { useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
@@ -1528,13 +1530,28 @@ export function ThreadColumn({
   onBranched?: (id: string) => void
   /** Opens a saved branch as a thread to continue; absent, its mark links to the file */
   onOpenSaved?: (chat: string) => void
-  onReplyThread?: (point: BranchPoint) => void
+  onReplyThread?: (point: BranchPoint, draftId?: string) => void
   replyThreads?: ReplyThreadSummary[]
   activeReplyId?: string
   replyMode?: boolean
 }) {
   const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
+  const writing = useWritingDrafts(state.id, `${state.turns.length}:${state.phase}`)
+  const draftAt = (turn: number) => (replyMode ? Math.max(turn * 2 - 1, state.inherited - 1) : turn * 2 - 1)
+  const askAboutDraft = async (draft: import('#lib/writingVoice/draftTypes.ts').WritingDraftView) => {
+    const point = state.turns[draftAt(draft.turn)]?.branchPoint
+    if (!replyMode && point && onReplyThread) {
+      onReplyThread(point, draft.id)
+      return
+    }
+    try {
+      writing.update(await writingDraftRequest(state.id, draft.id, { action: 'focus' }))
+      window.dispatchEvent(new CustomEvent('sky-draft-focus', { detail: state.id }))
+    } catch (error) {
+      setRefusal((error as Error).message)
+    }
+  }
   const leftAt = (point?: BranchPoint) => (point ? branches.filter((b) => b.turn === point.turn) : [])
   // Why a branch did not open, said under the turns for a moment; and which
   // turn's branch is being made, so its button says so meanwhile.
@@ -1596,6 +1613,14 @@ export function ThreadColumn({
             {turn.role === 'user' && settled(i)}
             <TurnView
               turn={turn}
+              writingDrafts={{
+                chatId: state.id,
+                drafts: writing.drafts,
+                placed: writing.drafts.filter((draft) => draftAt(draft.turn) === i),
+                disabled: busy,
+                onChange: writing.update,
+                onAsk: (draft) => void askAboutDraft(draft),
+              }}
               streaming={busy && i === state.turns.length - 1 && turn.role === 'assistant'}
               cards={turn.role === 'assistant' ? settled(i) : undefined}
               runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
@@ -1671,6 +1696,24 @@ export function ThreadColumn({
             )}
           </Fragment>
         ),
+      )}
+      {writing.drafts
+        .filter((draft) => draftAt(draft.turn) >= state.turns.length)
+        .map((draft) => (
+          <Fragment key={draft.id}>
+            <ChatWritingDraft
+              chatId={state.id}
+              draft={draft}
+              disabled={busy}
+              onChange={writing.update}
+              onAsk={(item) => void askAboutDraft(item)}
+            />
+          </Fragment>
+        ))}
+      {writing.error && writing.drafts.length > 0 && (
+        <p className="sky-chat-file-error" role="alert">
+          {writing.error}
+        </p>
       )}
       {state.answered
         .filter((card) => card.at >= state.turns.length)
@@ -1756,6 +1799,13 @@ export function Composer({
 }) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const focus = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === state.id) inputRef.current?.focus()
+    }
+    window.addEventListener('sky-draft-focus', focus)
+    return () => window.removeEventListener('sky-draft-focus', focus)
+  }, [state.id])
   const fileRef = useRef<HTMLInputElement>(null)
   const threadId = useRef(state.id)
   threadId.current = state.id
@@ -1970,7 +2020,7 @@ export function ChatMain({
     setActiveReply(null)
     setOpeningReply(null)
   }, [])
-  const openReply = async (point: BranchPoint) => {
+  const openReply = async (point: BranchPoint, draftId?: string) => {
     if (openingReply || replyMode) return
     const request = ++replyRequest.current
     setPanel(false)
@@ -1981,12 +2031,16 @@ export function ChatMain({
       const response = await fetch(`/chat/${state.id}/replies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(point),
+        body: JSON.stringify({ ...point, ...(draftId ? { draftId } : {}) }),
       })
       const result = (await response.json()) as { id?: string; message?: string }
       if (!response.ok || !result.id) throw new Error(result.message ?? 'The thread could not be opened.')
       const id = result.id
-      setOpenReplies((prior) => (prior.some((thread) => thread.id === id) ? prior : [...prior, { id, point }]))
+      setOpenReplies((prior) =>
+        prior.some((thread) => thread.id === id)
+          ? prior.map((thread) => (thread.id === id ? { ...thread, draftId: draftId ?? thread.draftId } : thread))
+          : [...prior, { id, point, draftId }],
+      )
       setReplyVersion((version) => version + 1)
       if (request === replyRequest.current) setActiveReply(id)
     } catch (error) {
@@ -2081,7 +2135,7 @@ export function ChatMain({
                   onBranched={replyMode ? undefined : onBranched}
                   onOpenSaved={onOpenSaved}
                   replyMode={replyMode}
-                  onReplyThread={replyMode ? undefined : (point) => void openReply(point)}
+                  onReplyThread={replyMode ? undefined : (point, draftId) => void openReply(point, draftId)}
                   replyThreads={replies}
                   activeReplyId={activeReply ?? undefined}
                 />
@@ -2180,6 +2234,7 @@ export function TurnView({
   branching = false,
   labelOf,
   onReplyThread,
+  writingDrafts,
 }: {
   turn: Turn
   streaming: boolean
@@ -2196,6 +2251,7 @@ export function TurnView({
   /** The settings' label for a profile name, for the usage line; the name itself when absent */
   labelOf?: (profile: string) => string
   onReplyThread?: () => void
+  writingDrafts?: Omit<Parameters<typeof WritingDraftReply>[0], 'content' | 'html'>
 }) {
   const userMessage = useMemo(() => {
     if (turn.role !== 'user') return null
@@ -2236,7 +2292,9 @@ export function TurnView({
         <span className="sky-who">
           <span>sky{turn.time ? ` · ${turn.time}` : ''}</span>
         </span>
-        {turn.html ? (
+        {!streaming && writingDrafts && writingDrafts.drafts.length > 0 ? (
+          <WritingDraftReply {...writingDrafts} content={content} html={turn.html} />
+        ) : turn.html ? (
           <RenderedHtml className="sky-body sky-rendered" html={turn.html} />
         ) : (
           <div className="sky-body">

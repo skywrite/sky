@@ -2,7 +2,8 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import type { WritingVoice } from './agent.ts'
-import { DraftInputSchema, ExampleId, ExampleInputSchema, type VoiceExampleRecord } from './types.ts'
+import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
+import { ExampleId, ExampleInputSchema, type VoiceExampleRecord } from './types.ts'
 
 export const WRITING_VOICE_TOOL = 'me_voice'
 export const WRITING_VOICE_CHAT_INSTRUCTIONS = `
@@ -16,8 +17,13 @@ Use action rules to inspect the shared guide. All voice learning belongs to me/v
 `
 
 const Input = z.discriminatedUnion('action', [
-  DraftInputSchema.extend({ action: z.literal('draft') }),
-  ExampleInputSchema.omit({ source: true }).extend({ action: z.literal('learn') }),
+  ChatDraftInputSchema.extend({ action: z.literal('draft') }),
+  ExampleInputSchema.omit({ source: true }).extend({
+    action: z.literal('learn'),
+    draftId: ExampleId.optional(),
+    draftRevision: z.number().int().positive().optional(),
+  }),
+  z.object({ action: z.literal('accept'), draftId: ExampleId, draftRevision: z.number().int().positive() }),
   z.object({
     action: z.literal('answer'),
     id: ExampleId,
@@ -30,8 +36,8 @@ const Input = z.discriminatedUnion('action', [
 ])
 
 // Providers receive an object schema; action-specific requirements are checked before execution.
-const ToolInput = DraftInputSchema.partial().extend({
-  action: z.enum(['draft', 'learn', 'answer', 'rules', 'compact']),
+const ToolInput = ChatDraftInputSchema.partial().extend({
+  action: z.enum(['draft', 'learn', 'answer', 'rules', 'compact', 'accept']),
   original: ExampleInputSchema.shape.original.optional(),
   revised: ExampleInputSchema.shape.revised.optional(),
   id: ExampleId.optional(),
@@ -44,6 +50,7 @@ export function createWritingVoiceTools(
   voice: WritingVoice,
   options: {
     source: string
+    drafts?: WritingDraftToolHost
     onQuestion?: (example: VoiceExampleRecord) => Promise<{ option?: number; text?: string } | undefined>
   },
 ): Record<string, unknown> {
@@ -58,12 +65,17 @@ export function createWritingVoiceTools(
             const input = Input.parse(raw)
             switch (input.action) {
               case 'draft':
-                return { success: true, ...(await voice.draft(input)) }
+                return { success: true, ...(await (options.drafts ? options.drafts.draft(input) : voice.draft(input))) }
+              case 'accept':
+                if (!options.drafts)
+                  return { success: false, error: 'Editable draft acceptance is available in web chat.' }
+                return options.drafts.accept(input.draftId, input.draftRevision)
               case 'rules': {
                 const { text, revision } = await voice.store.rules()
                 return { success: true, text, revision }
               }
               case 'learn': {
+                if (options.drafts) return options.drafts.learn({ ...input, source: options.source })
                 let example = await voice.capture({ ...input, source: options.source })
                 if (example?.question && !example.answer && options.onQuestion) {
                   const answer = await options.onQuestion(example)

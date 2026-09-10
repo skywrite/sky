@@ -1,0 +1,160 @@
+.sky-writing-draft {
+  margin: 20px 0;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-bg);
+  overflow: hidden;
+  scroll-margin-top: 24px;
+}
+
+.sky-writing-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+
+.sky-writing-draft-head > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.sky-writing-draft-head strong {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+.sky-writing-draft-version {
+  flex-shrink: 0;
+  color: var(--sky-dim);
+  font-size: 12px;
+}
+.sky-writing-draft-body,
+.sky-writing-draft-edit {
+  padding: 22px 26px;
+}
+.sky-writing-draft-body {
+  font-size: var(--sky-content-font-size);
+  line-height: 1.65;
+}
+.sky-writing-draft-body > :first-child {
+  margin-top: 0;
+}
+.sky-writing-draft-body > :last-child {
+  margin-bottom: 0;
+}
+.sky-writing-draft-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 16px 14px;
+}
+.sky-writing-draft-edit {
+  display: grid;
+  gap: 18px;
+}
+.sky-writing-draft-edit .sky-writing-draft-actions {
+  padding: 0;
+}
+.sky-writing-draft-textarea textarea {
+  font-size: var(--sky-content-font-size);
+  line-height: 1.65;
+}
+.sky-writing-draft-history {
+  padding: 22px 26px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-writing-draft-history > .sky-rendered {
+  margin-top: 22px;
+  font-size: var(--sky-content-font-size);
+}
+[aria-expanded='true'] .sky-writing-draft-caret {
+  transform: rotate(180deg);
+}
+.sky-writing-draft-comparison {
+  margin-top: 22px;
+}
+.sky-writing-draft-comparison-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sky-writing-draft-diff-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0 0 18px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-writing-draft-diff {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--sky-content-font-size);
+  line-height: 1.65;
+}
+.sky-writing-draft-diff ins,
+.sky-writing-draft-added {
+  color: var(--sky-green);
+  background: color-mix(in srgb, var(--sky-green) 10%, var(--sky-bg));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sky-writing-draft-diff del,
+.sky-writing-draft-removed {
+  color: var(--sky-action-danger);
+  background: var(--sky-action-danger-soft);
+  text-decoration: line-through;
+}
+.sky-writing-draft-diff-legend span {
+  padding-inline: 4px;
+  border-radius: 3px;
+}
+.sky-writing-draft-diff del + ins {
+  margin-left: 0.2em;
+}
+.sky-writing-draft-reason {
+  color: var(--sky-text-2);
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+.sky-writing-draft-error {
+  padding: 0 26px 18px;
+  color: var(--sky-action-danger);
+  font-size: 14px;
+}
+.sky-writing-draft-conflict {
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-writing-draft .sky-writing-questions {
+  padding: 0 20px 18px;
+}
+.sky-writing-draft-reference {
+  font-size: 14px;
+}
+.sky-writing-draft-fallback {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 600px) {
+  .sky-writing-draft-head {
+    padding: 14px 16px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sky-writing-draft-body,
+  .sky-writing-draft-edit,
+  .sky-writing-draft-history {
+    padding: 18px 16px;
+  }
+  .sky-writing-draft-actions {
+    padding-inline: 8px;
+    gap: 4px;
+  }
+}

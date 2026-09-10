@@ -45,8 +45,12 @@ export class WritingVoice {
     return { draft, rulesRevision: rules.revision }
   }
 
-  async capture(input: VoiceExampleInput): Promise<VoiceExampleRecord | null> {
-    const example = await this.store.capture(input)
+  async capture(input: VoiceExampleInput, explanation?: string): Promise<VoiceExampleRecord | null> {
+    let example = await this.store.capture(input)
+    if (example && explanation?.trim() && !example.answer) {
+      if (explanation.length > 4000) throw new WritingVoiceError('Keep your explanation under 4,000 characters.')
+      example = await this.store.update(example.id, example.revision, { answer: explanation })
+    }
     return example ? this.prepare(example.id) : null
   }
 

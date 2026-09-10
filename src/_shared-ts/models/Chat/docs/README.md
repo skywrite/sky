@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # Chat model — the pieces under every chat host
@@ -22,6 +22,8 @@ Reply-thread ownership, inherited tool history, filing, and per-file statistics
 are defined in the [chat host's design](../../../../service/handler/chat/docs/README.md#reply-threads).
 
 Agreement-review context and continuation links follow the [legal review design](../../../../commands/all/legal/docs/README.md).
+
+Draft continuation links and version ownership follow the [writing voice design](../../../../lib/writingVoice/docs/README.md#editable-drafts-in-chat).
 
 ## Relationships to records discussed in the chat
 

@@ -24,8 +24,13 @@ export function inheritedMessages(turn: number): number {
 export function prefixOf(state: ResumeState, turn: number): ResumeState {
   const conversation = state.conversation.slice(0, inheritedMessages(turn))
   const contextLog = state.contextLog.filter((entry) => entry.turn <= turn)
+  const drafts = state.writingDrafts?.filter((ref) => ref.turn <= turn)
   return {
     ...stateOfLog(conversation, contextLog),
+    ...(drafts ? { writingDrafts: drafts } : {}),
+    ...(drafts?.some((ref) => ref.id === state.writingDraftFocus)
+      ? { writingDraftFocus: state.writingDraftFocus }
+      : {}),
     ...(state.legalReview && state.legalReview.turn <= turn ? { legalReview: state.legalReview } : {}),
   }
 }
@@ -38,12 +43,16 @@ export function prefixOf(state: ResumeState, turn: number): ResumeState {
  */
 export function joinLineage(prefix: ResumeState, own: ResumeState): ResumeState {
   const contextLog: ContextTurnLog[] = [...prefix.contextLog, ...own.contextLog]
+  const writingDrafts = own.writingDrafts ?? prefix.writingDrafts
+  const writingDraftFocus = own.writingDrafts ? own.writingDraftFocus : prefix.writingDraftFocus
   return {
     conversation: [...prefix.conversation, ...own.conversation],
     universePaths: universeOf(contextLog),
     queries: own.queries.length > 0 ? [...own.queries] : [...prefix.queries],
     lastTurn: Math.max(prefix.lastTurn, own.lastTurn),
     contextLog,
+    ...(writingDrafts ? { writingDrafts } : {}),
+    ...(writingDrafts?.some((ref) => ref.id === writingDraftFocus) ? { writingDraftFocus } : {}),
     ...((own.legalReview ?? prefix.legalReview) ? { legalReview: own.legalReview ?? prefix.legalReview } : {}),
   }
 }
@@ -56,7 +65,12 @@ export function joinLineage(prefix: ResumeState, own: ResumeState): ResumeState 
 export function ownOf(whole: ResumeState, inherited: number, parentTurn: number): ResumeState {
   const conversation = whole.conversation.slice(inherited)
   const contextLog = whole.contextLog.filter((entry) => entry.turn > parentTurn)
-  return { ...stateOfLog(conversation, contextLog), ...(whole.legalReview ? { legalReview: whole.legalReview } : {}) }
+  return {
+    ...stateOfLog(conversation, contextLog),
+    ...(whole.legalReview ? { legalReview: whole.legalReview } : {}),
+    ...(whole.writingDrafts ? { writingDrafts: whole.writingDrafts } : {}),
+    ...(whole.writingDraftFocus ? { writingDraftFocus: whole.writingDraftFocus } : {}),
+  }
 }
 
 /**

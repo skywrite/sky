@@ -121,3 +121,28 @@ test('lineage - branches file in the folder beside the parent, carrying its name
     expected: '/nb/time/2026/W36/09-03/actions/ai-chats/09-12_Help-with-the-week',
   })
 })
+
+test('draft links respect the source turn and a branch cannot inherit a later parent selection', () => {
+  const parent: ResumeState = {
+    ...PARENT,
+    writingDrafts: [
+      { id: 'a'.repeat(32), turn: 1 },
+      { id: 'b'.repeat(32), turn: 2 },
+    ],
+    writingDraftFocus: 'b'.repeat(32),
+  }
+  const prefix = prefixOf(parent, 1)
+  const branch: ResumeState = { ...prefix, writingDrafts: [{ id: 'c'.repeat(32), turn: 1 }] }
+  const joined = joinLineage({ ...prefix, writingDraftFocus: 'a'.repeat(32) }, branch)
+  assert({
+    given: 'a turn before a later draft and a branch with its own copied draft',
+    should: 'exclude future references and keep the branch selection scoped to its own records',
+    actual: [
+      prefix.writingDrafts?.map((ref) => ref.id),
+      prefix.writingDraftFocus,
+      joined.writingDrafts?.map((ref) => ref.id),
+      joined.writingDraftFocus,
+    ],
+    expected: [['a'.repeat(32)], undefined, ['c'.repeat(32)], undefined],
+  })
+})

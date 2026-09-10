@@ -103,7 +103,7 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
   app.post('/:id/replies', async (c) => {
     await host.ready
     const id = c.req.param('id')
-    const body = (await c.req.json().catch(() => null)) as BranchPoint | null
+    const body = (await c.req.json().catch(() => null)) as (BranchPoint & { draftId?: string }) | null
     const source = host.threads.get(id)
     if (!source) return c.json({ message: 'Reopen this conversation before starting a thread.' }, 409)
     if (source.state === 'saving')
@@ -115,6 +115,11 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
     const point = branchPoints(source.session.turns)[body.turn * 2 - 1]
     if (!point || point.key !== body.key)
       return c.json({ message: 'This response changed. Reload the conversation before starting its thread.' }, 409)
+    if (
+      body.draftId &&
+      !source.session.writingDraftLinks.some((ref) => ref.id === body.draftId && ref.turn <= point.turn)
+    )
+      return c.json({ message: 'That draft is not attached to this response.' }, 400)
     const key = `${id}:${point.key}`
     let pending = creating.get(key)
     if (!pending) {
@@ -174,7 +179,15 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
       creating.set(key, pending)
     }
     try {
-      return c.json({ id: await pending }, 201)
+      const childId = await pending
+      if (body.draftId) {
+        const child = host.threads.get(childId)!
+        if (child.busy) return c.json({ message: 'Wait for the current reply before selecting another draft.' }, 409)
+        const ref = source.session.writingDraftLinks.find((entry) => entry.id === body.draftId)!
+        await child.session.linkWritingDraft(ref.id, ref.turn)
+        await child.session.focusWritingDraft(ref.id)
+      }
+      return c.json({ id: childId }, 201)
     } catch (error) {
       return c.json({ message: (error as Error).message }, 409)
     }

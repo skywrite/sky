@@ -31,6 +31,8 @@ import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.
 import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
+import { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
@@ -242,6 +244,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
 }
 
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
+  const writingDrafts = new WritingDraftStore(createWritingVoice(config))
   /** A thread's crash copy: the service's own snapshot, named by the thread id. */
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
@@ -318,9 +321,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments, onImages } = hooks
         return {
-          instructions: await legalReviewBrief(hooks, config),
+          instructions: [await legalReviewBrief(hooks, config), await writingDraftBrief(hooks, writingDrafts)]
+            .filter(Boolean)
+            .join('\n\n'),
           tools: {
-            ...createWritingVoiceTools(createWritingVoice(config), { source: `chat:${id}` }),
+            ...createWritingVoiceTools(writingDrafts.voice, {
+              source: `chat:${id}`,
+              drafts: writingDraftTools(hooks, writingDrafts, `chat:${id}`),
+            }),
             ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
             // A browser has no shell directory, so a relative path resolves from home.
             ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
@@ -439,6 +447,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    writingDrafts,
     legalReviews: createLegalReviewer(config).store,
     attachmentsRoot: config.DIR_ATTACHMENTS,
     // A pasted Google file reference is permission to work on that file —

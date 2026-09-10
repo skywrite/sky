@@ -100,6 +100,11 @@ export interface ToolHooks {
   context: { instructions: string; conversation: readonly ConversationMessage[] }
   attachments: () => Attachment[]
   legalReview: { id: () => string | undefined; link: (id: string) => Promise<void> }
+  writingDrafts?: {
+    list: () => readonly { id: string; turn: number }[]
+    focus: () => string | undefined
+    link: (id: string) => Promise<void>
+  }
   /** A tool reported touching external files — the session records them for the transcript's rel. */
   onExternalFiles: (files: ExternalFileRef[]) => void
   /** A tool copied files into the day's attachments — the session records them for the transcript's attachments. */
@@ -241,6 +246,30 @@ export default class ChatSession {
   snapshotHostState?: () => Record<string, unknown>
 
   private legalReview: ResumeState['legalReview']
+  private writingDrafts: NonNullable<ResumeState['writingDrafts']> = []
+  private writingDraftFocus?: string
+
+  get writingDraftLinks(): readonly { id: string; turn: number }[] {
+    return this.writingDrafts
+  }
+
+  get focusedWritingDraft(): string | undefined {
+    return this.writingDraftFocus
+  }
+
+  async linkWritingDraft(id: string, turn = Math.ceil(this.turns.length / 2)): Promise<void> {
+    if (!this.writingDrafts.some((ref) => ref.id === id)) this.writingDrafts.push({ id, turn })
+    this.newMessages = true
+    await this.snapshot()
+  }
+
+  async focusWritingDraft(id: string): Promise<void> {
+    if (!this.writingDrafts.some((ref) => ref.id === id))
+      throw new Error('This draft is not linked to the conversation.')
+    this.writingDraftFocus = id
+    this.newMessages = true
+    await this.snapshot()
+  }
 
   get legalReviewId(): string | undefined {
     return this.legalReview?.id
@@ -255,6 +284,8 @@ export default class ChatSession {
     // next message.
     const seed = this.seed
     this.legalReview = seed?.legalReview
+    this.writingDrafts = seed?.writingDrafts?.map((ref) => ({ ...ref })) ?? []
+    this.writingDraftFocus = seed?.writingDraftFocus
     if (seed) this.turns.push(...seed.conversation)
     for (const file of opts.attachments ?? []) this.attachments.set(file.file, file)
     // A recovered continuation may contain replies not yet filed in its original transcript.
@@ -378,6 +409,8 @@ export default class ChatSession {
       lastTurn: 0,
       contextLog: [...this.contextLog],
       ...(this.legalReview ? { legalReview: this.legalReview } : {}),
+      ...(this.writingDrafts.length ? { writingDrafts: this.writingDrafts } : {}),
+      ...(this.writingDraftFocus ? { writingDraftFocus: this.writingDraftFocus } : {}),
     }
     const through = turn ?? Math.floor(this.turns.length / 2)
     const state = prefixOf(whole, through)
@@ -618,6 +651,11 @@ export default class ChatSession {
           conversation: this.turns.map((turn) => ({ ...turn })),
         },
         attachments: () => [...(this.resumeSession?.attachments ?? []), ...this.attachments.values()],
+        writingDrafts: {
+          list: () => this.writingDraftLinks,
+          focus: () => this.writingDraftFocus,
+          link: (id) => this.linkWritingDraft(id),
+        },
         legalReview: {
           id: () => this.legalReview?.id,
           link: async (id) => {
@@ -740,6 +778,8 @@ export default class ChatSession {
         version: 1,
         historyKey: conversationKey(this.turns),
         legalReview: this.legalReview,
+        writingDrafts: this.writingDrafts,
+        writingDraftFocus: this.writingDraftFocus,
         modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
         contextTokens: this.contextTokens,
         host: this.snapshotHostState?.(),
@@ -800,6 +840,8 @@ export default class ChatSession {
         recovery: {
           version: 1,
           legalReview: this.legalReview,
+          writingDrafts: this.writingDrafts,
+          writingDraftFocus: this.writingDraftFocus,
           modelMessages: this.engine.snapshotMessages(),
           contextTokens: this.contextTokens,
           host: this.snapshotHostState?.(),

@@ -134,6 +134,8 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
     : splitContextLog(doc.markdown).details?.session
   if (options.snapshot && recovery?.modelMessages) own.modelMessages = recovery.modelMessages
   if (recovery?.legalReview) own.legalReview = recovery.legalReview
+  if (recovery?.writingDrafts) own.writingDrafts = recovery.writingDrafts
+  if (recovery?.writingDraftFocus) own.writingDraftFocus = recovery.writingDraftFocus
   const parent = doc.parent
 
   let state = own

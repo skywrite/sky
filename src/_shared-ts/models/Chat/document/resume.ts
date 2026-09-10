@@ -17,6 +17,9 @@ import type { ContextTurnLog } from './ContextLog/mod.ts'
 import ChatDocument from './mod.ts'
 
 export interface ResumeState {
+  /** Stable draft identities; reply threads share these records with their parent. */
+  writingDrafts?: { id: string; turn: number }[]
+  writingDraftFocus?: string
   /** Shared agreement review, linked when the tool first creates it. */
   legalReview?: { id: string; turn: number }
   /** A recovery snapshot preserves the full model history, including tool results. */

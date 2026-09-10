@@ -15,6 +15,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 import type { LegalReviewStore } from '#lib/legalReview/store.ts'
+import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
@@ -36,6 +37,7 @@ import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
+import { registerWritingDraftRoutes } from './drafts.ts'
 import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { registerLegalReviewRoutes } from './legalReview.ts'
@@ -218,6 +220,7 @@ export interface ChatSettingsHost {
 }
 
 export interface ChatRoutesOptions {
+  writingDrafts?: WritingDraftStore
   legalReviews?: LegalReviewStore
   createSession: ChatSessionFactory
   /** The console reader's attachment directory; uploads and their permanent download links use it too. */
@@ -1099,6 +1102,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return thread ? { reviewId: thread.session.legalReviewId } : null
     })
 
+  if (options.writingDrafts) registerWritingDraftRoutes(app, options.writingDrafts, replyHost)
+
   app.get('/:id', async (c) => {
     await restored
     const id = c.req.param('id')
@@ -1258,7 +1263,19 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!parentPath) return c.json({ message: 'the thread has no file to branch beside' }, 409)
     const parent: ChatParent = { chat: path.relative(baseDir, parentPath), turn }
     const branchId = crypto.randomUUID()
-    await open(branchId, { id: branchId, state: source.session.stateAt(turn), parent, parentId: id })
+    const state = source.session.stateAt(turn)
+    if (options.writingDrafts && state.writingDrafts) {
+      const store = options.writingDrafts
+      state.writingDrafts = await Promise.all(
+        state.writingDrafts.map(async (ref) => {
+          const draft = await store.fork(ref.id, `chat:${branchId}`)
+          if (state.writingDraftFocus === ref.id) state.writingDraftFocus = draft.id
+          return { ...ref, id: draft.id }
+        }),
+      )
+    }
+    const branch = await open(branchId, { id: branchId, state, parent, parentId: id })
+    await branch.session.snapshot()
     source.updatedAt = ++tick
     return c.json({ id: branchId, parent }, 201)
   })

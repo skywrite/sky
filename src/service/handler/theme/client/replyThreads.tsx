@@ -65,6 +65,7 @@ export function useReplyThreads(id: string, enabled: boolean, version: number) {
 export interface OpenReplyThread {
   id: string
   point: BranchPoint
+  draftId?: string
 }
 
 export function ReplyThreadPanel({
@@ -89,7 +90,7 @@ export function ReplyThreadPanel({
   useEffect(() => {
     if (!visible || !state.loaded) return
     panel.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
-  }, [visible, state.loaded])
+  }, [visible, state.loaded, thread.draftId])
   useEffect(() => {
     if (!visible) return
     const close = (event: globalThis.KeyboardEvent) => {
@@ -106,7 +107,7 @@ export function ReplyThreadPanel({
     <aside className="sky-reply-panel" aria-label="Thread" hidden={!visible} ref={panel}>
       <header className="sky-reply-panel-head">
         <div>
-          <h2>Thread</h2>
+          <h2>{thread.draftId ? 'Draft discussion' : 'Thread'}</h2>
           <span>
             {busy
               ? state.approvals.length
@@ -146,15 +147,21 @@ export function ReplyThreadPanel({
           )}
           {state.loaded && state.turns.length === state.inherited && (
             <p className="sky-reply-empty">
-              Ask a follow-up or work on the next step. Sky has the conversation leading up to this response.
+              {thread.draftId
+                ? 'Describe what to change. Sky will update the same draft in chat.'
+                : 'Ask a follow-up or work on the next step. Sky has the conversation leading up to this response.'}
             </p>
           )}
         </div>
         <Composer
           chat={chat}
           draft={draft}
-          placeholder="Reply in thread…"
-          hints={<span className="sky-hint">Replies stay in this thread</span>}
+          placeholder={thread.draftId ? 'Ask Sky to revise this draft…' : 'Reply in thread…'}
+          hints={
+            <span className="sky-hint">
+              {thread.draftId ? 'Revisions update the draft in chat' : 'Replies stay in this thread'}
+            </span>
+          }
           attach={files.attach}
           autoFocus={visible}
           showSaves={false}

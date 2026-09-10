@@ -9,6 +9,8 @@ export interface ChatRecovery {
   modelMessages?: ModelMessage[]
   contextTokens?: number
   legalReview?: { id: string; turn: number }
+  writingDrafts?: { id: string; turn: number }[]
+  writingDraftFocus?: string
   /** The host's thread settings and identity. */
   host?: Record<string, unknown>
 }
@@ -17,6 +19,24 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
   if (!value || typeof value !== 'object' || !('version' in value) || value.version !== 1) return undefined
   const raw = value as Record<string, unknown>
   const recovery: ChatRecovery = { version: 1 }
+  if (Array.isArray(raw.writingDrafts)) {
+    recovery.writingDrafts = raw.writingDrafts.flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return []
+      const value = entry as Record<string, unknown>
+      return typeof value.id === 'string' &&
+        /^[a-f0-9]{32}$/.test(value.id) &&
+        typeof value.turn === 'number' &&
+        Number.isSafeInteger(value.turn) &&
+        value.turn >= 0
+        ? [{ id: value.id, turn: value.turn }]
+        : []
+    })
+    if (
+      typeof raw.writingDraftFocus === 'string' &&
+      recovery.writingDrafts.some((ref) => ref.id === raw.writingDraftFocus)
+    )
+      recovery.writingDraftFocus = raw.writingDraftFocus
+  }
   if (raw.legalReview && typeof raw.legalReview === 'object') {
     const review = raw.legalReview as Record<string, unknown>
     if (
