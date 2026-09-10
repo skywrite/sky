@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Menu } from '@mantine/core'
+import { ActionIcon, Button, Menu, Tooltip } from '@mantine/core'
 import {
   type CSSProperties,
   Fragment,
@@ -456,6 +456,7 @@ function Editor({
         )
         handle.current = mounted
         onFrontmatter(mounted.frontmatter())
+        mounted.focusStart()
       } catch (err) {
         if (alive)
           onStatus({ kind: 'error', text: err instanceof Error ? err.message : 'Could not open the file to edit' })
@@ -516,6 +517,44 @@ export function DocView({ file }: { file: string }) {
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const editing = file !== '' && editingFile === file
   const { doc, listing, missing } = useDoc(file, editing)
+  const canToggleEditing = file !== '' && !missing && (editing || doc?.path === file)
+  const viewRef = useRef<HTMLDivElement>(null)
+  const editButton = useRef<HTMLButtonElement>(null)
+  const toggleEditing = useCallback(() => {
+    if (!canToggleEditing) return
+    // Commit a focused property field before the editor is unmounted.
+    editButton.current?.focus({ preventScroll: true })
+    setEditingFile((current) => (current === file ? null : file))
+  }, [canToggleEditing, file])
+  useEffect(() => {
+    if (!canToggleEditing) return
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        !event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== 'e'
+      )
+        return
+      if (document.querySelector('[role="dialog"]')) return
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, [contenteditable]') &&
+        !viewRef.current?.contains(target)
+      )
+        return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat) toggleEditing()
+    }
+    // Explorer's mode toggle takes precedence over the editor's inline-code shortcut.
+    window.addEventListener('keydown', shortcut, true)
+    return () => window.removeEventListener('keydown', shortcut, true)
+  }, [canToggleEditing, toggleEditing])
   const [scale, setScale] = useDocScale()
   const [note, say] = useNote()
   const [exporting, setExporting] = useState(false)
@@ -570,7 +609,7 @@ export function DocView({ file }: { file: string }) {
   }
 
   return (
-    <div className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
+    <div ref={viewRef} className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
       <div className="sky-doc-column">
         <header className="sky-head">
           {file ? (
@@ -608,15 +647,17 @@ export function DocView({ file }: { file: string }) {
                   </Button>
                 </>
               )}
-              {editing ? (
-                <Button size="sm" onClick={() => setEditingFile(null)}>
-                  Done
+              <Tooltip label={`${editing ? 'Done' : 'Edit'} (⌘E)`} events={{ hover: true, focus: true, touch: false }}>
+                <Button
+                  ref={editButton}
+                  size="sm"
+                  aria-keyshortcuts="Meta+E"
+                  rightSection={<kbd aria-hidden="true">⌘ E</kbd>}
+                  onClick={toggleEditing}
+                >
+                  {editing ? 'Done' : 'Edit'}
                 </Button>
-              ) : (
-                <Button size="sm" onClick={() => setEditingFile(file)}>
-                  Edit
-                </Button>
-              )}
+              </Tooltip>
               {!railOpen && <RailToggle open={false} onClick={toggleRail} />}
               <Menu position="bottom-end" shadow="md" width={220}>
                 <Menu.Target>
