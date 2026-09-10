@@ -46,6 +46,7 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
 import { chatFileContext } from './files.ts'
+import { prepareChatImageResult } from './images.ts'
 import { interruptedOf } from './interrupted.ts'
 import type {
   ChatRoutesOptions,
@@ -307,13 +308,19 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       },
       // Every tool the terminal offers, gated the same way: the decorator's
       // needsApproval is the source of truth for what asks.
-      tools: async ({ onExternalFiles, onAttachments }) => ({
+      tools: async ({ onExternalFiles, onAttachments, onImages }) => ({
         tools: {
           ...createWritingVoiceTools(createWritingVoice(config), { source: `chat:${id}` }),
           ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
           // A browser has no shell directory, so a relative path resolves from home.
           ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
           ...(await createNotebookTools(toolTasks, {
+            prepareResult: prepareChatImageResult({
+              today,
+              attachmentsRoot: config.DIR_ATTACHMENTS,
+              onAttachments,
+              onImages,
+            }),
             onExternalFiles: (_toolName, files) => {
               // A file this thread created is blessed: editing it again is
               // the same intent that created it.

@@ -1,23 +1,27 @@
 /**
- * gpt-image-2 request constraints, encoded from the OpenAI Image API docs
- * (developers.openai.com/api/docs/guides/image-generation, checked 2026-08).
+ * GPT Image 2.5 request constraints, encoded from the OpenAI Image API docs
+ * (developers.openai.com/api/docs/guides/image-generation, checked 2026-09).
  * The API rejects out-of-range values anyway — validating here turns a slow
  * failed network call into an instant, actionable message, and gives ai:chat
  * a correctable tool error before any money is spent.
  */
 
 /**
- * The model behind ChatGPT Images 2.0 — OpenAI's recommended image model for
- * API use (verified 2026-08: the `chatgpt-image-latest` alias points to the
- * PREVIOUS ChatGPT snapshot, not this one). Not in the aiModel registry on
- * purpose: that registry resolves LanguageModels only (see its docblock) —
- * image generation is a different modality with its own call shape.
+ * Image models stay outside the language-model registry: generation uses
+ * a different modality and call shape. The preflight uses that registry.
  */
-export const IMAGE_MODEL = 'gpt-image-2'
+export const IMAGE_MODELS = {
+  flare: 'gpt-image-2.5-flare',
+  sunburst: 'gpt-image-2.5-sunburst',
+} as const
+export type ImageModelName = keyof typeof IMAGE_MODELS
 
-export const QUALITIES = ['low', 'medium', 'high', 'auto'] as const
+export const RENDER_QUALITIES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type ImageQuality = (typeof RENDER_QUALITIES)[number]
+export const QUALITIES = [...RENDER_QUALITIES, 'auto'] as const
 
 export const BACKGROUNDS = ['transparent', 'opaque', 'auto'] as const
+export type ImageBackground = (typeof BACKGROUNDS)[number]
 
 export const MAX_COUNT = 4
 export const MAX_REF_IMAGES = 16
@@ -32,10 +36,11 @@ const MAX_ASPECT = 3
 const MIN_PIXELS = 655_360
 const MAX_PIXELS = 8_294_400
 
-/** Validate a WIDTHxHEIGHT size against gpt-image-2's rules; null when fine. */
+/** Validate automatic sizing or WIDTHxHEIGHT against GPT Image 2.5's rules; null when fine. */
 export function validateSize(size: string): string | null {
+  if (size === 'auto') return null
   const match = SIZE_RE.exec(size)
-  if (!match) return `size must be WIDTHxHEIGHT in pixels (e.g. 1536x1024), got "${size}"`
+  if (!match) return `size must be auto or WIDTHxHEIGHT in pixels (e.g. 1536x1024), got "${size}"`
   const width = Number(match[1])
   const height = Number(match[2])
   if (width % EDGE_MULTIPLE !== 0 || height % EDGE_MULTIPLE !== 0) {
@@ -62,6 +67,18 @@ export function validateSize(size: string): string | null {
 export function validateQuality(quality: string): string | null {
   if ((QUALITIES as readonly string[]).includes(quality)) return null
   return `quality must be one of ${QUALITIES.join(', ')}, got "${quality}"`
+}
+
+/** Accept the short command names and their full API model IDs. */
+export function imageModelName(model: string): ImageModelName | undefined {
+  if (model === 'flare' || model === IMAGE_MODELS.flare) return 'flare'
+  if (model === 'sunburst' || model === IMAGE_MODELS.sunburst) return 'sunburst'
+  return undefined
+}
+
+export function validateModel(model: string): string | null {
+  if (model === 'auto' || imageModelName(model)) return null
+  return `model must be auto, flare, or sunburst (or their full GPT Image 2.5 IDs), got "${model}"`
 }
 
 export function validateBackground(background: string): string | null {

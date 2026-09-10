@@ -1,5 +1,12 @@
 import { assert, test } from '#test'
-import { parseRefs, validateBackground, validateQuality, validateSize } from './options.ts'
+import {
+  imageModelName,
+  parseRefs,
+  validateBackground,
+  validateModel,
+  validateQuality,
+  validateSize,
+} from './options.ts'
 
 test('validateSize', () => {
   assert({
@@ -24,10 +31,17 @@ test('validateSize', () => {
   })
 
   assert({
-    given: 'a word instead of dimensions (auto is expressed by omitting size)',
+    given: 'automatic sizing supplied explicitly by a chat tool call',
+    should: 'accept it like an omitted size',
+    expected: null,
+    actual: validateSize('auto'),
+  })
+
+  assert({
+    given: 'an unknown word instead of dimensions',
     should: 'name the expected format',
     expected: true,
-    actual: (validateSize('auto') ?? '').includes('WIDTHxHEIGHT'),
+    actual: (validateSize('large') ?? '').includes('WIDTHxHEIGHT'),
   })
 
   assert({
@@ -67,18 +81,38 @@ test('validateSize', () => {
 })
 
 test('validateQuality', () => {
-  assert({
-    given: 'a supported quality',
-    should: 'accept it',
-    expected: null,
-    actual: validateQuality('high'),
-  })
+  for (const quality of ['low', 'medium', 'high', 'xhigh', 'max', 'auto']) {
+    assert({
+      given: `quality ${quality}`,
+      should: 'accept it',
+      expected: null,
+      actual: validateQuality(quality),
+    })
+  }
 
   assert({
     given: 'an unknown quality',
     should: 'list the supported ones',
     expected: true,
-    actual: (validateQuality('ultra') ?? '').includes('low, medium, high, auto'),
+    actual: (validateQuality('ultra') ?? '').includes('low, medium, high, xhigh, max, auto'),
+  })
+})
+
+test('validateModel accepts both aliases and full API IDs', () => {
+  for (const model of ['auto', 'flare', 'sunburst', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+    assert({ given: model, should: 'accept it', actual: validateModel(model), expected: null })
+  }
+  assert({
+    given: 'a stale or unknown image model',
+    should: 'reject it before a paid request',
+    actual: [validateModel('gpt-image-2'), validateModel('best')].every(Boolean),
+    expected: true,
+  })
+  assert({
+    given: 'a full API model ID',
+    should: 'resolve the same explicit choice as the short name',
+    actual: imageModelName('gpt-image-2.5-sunburst'),
+    expected: 'sunburst',
   })
 })
 

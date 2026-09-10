@@ -12,6 +12,7 @@ import {
   useState,
 } from 'react'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
+import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -19,6 +20,7 @@ import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { takeChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
+import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
 import { useChatVoice } from './chatVoice.ts'
 import { ContextPanel } from './context.tsx'
@@ -811,7 +813,7 @@ export function useChat(id: string) {
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
       attached.current = true
-      dispatch({ id, type: 'sent', content: message, files: files.map((file) => ({ name: file.name })) })
+      dispatch({ id, type: 'sent', content: message, files })
       const replyIndex = state.turns.length + 1
 
       // A message the service never received is safe to send again: when it
@@ -1105,9 +1107,16 @@ export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[]
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const wasNearBottom = lastHeight.current - el.scrollTop - el.clientHeight < 160
-    if (active && wasNearBottom) el.scrollTop = el.scrollHeight
-    lastHeight.current = el.scrollHeight
+    const follow = () => {
+      const wasNearBottom = lastHeight.current - el.scrollTop - el.clientHeight < 160
+      if (active && wasNearBottom) el.scrollTop = el.scrollHeight
+      lastHeight.current = el.scrollHeight
+    }
+    follow()
+    // Images acquire their dimensions after the reply has rendered.
+    const observer = new ResizeObserver(follow)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 }
@@ -1640,7 +1649,17 @@ export function ThreadColumn({
         <InterruptedTurn interrupted={state.interrupted} onResend={(message) => void chat.send(message)} />
       )}
       {/* Runs for a reply that has not begun sit where it will land. */}
-      {coming.length > 0 && <RunList runs={coming} />}
+      {coming.length > 0 && (
+        <>
+          <ChatImages
+            images={replyImages(
+              '',
+              coming.map((run) => run.output),
+            )}
+          />
+          <RunList runs={coming} />
+        </>
+      )}
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
       {state.id && (
@@ -1865,7 +1884,7 @@ export function ChatMain({
   const voiceMode = call.active
   const [endRequested, setEndRequested] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  useFollow(scrollRef, [state.turns, state.gather, call.voice.state.turns, voiceMode], !voiceMode)
+  useFollow(scrollRef, [state.turns, state.runs, state.gather, call.voice.state.turns, voiceMode], !voiceMode)
   const busy = state.phase !== 'idle'
   const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved)
   const empty = state.turns.length === 0 && !state.gather && !call.visible
@@ -2024,26 +2043,33 @@ export function TurnView({
     // What the person typed, verbatim — an address in it is a link out.
     return (
       <div className="sky-turn sky-turn-user" data-shared={shared || undefined}>
-        {text && (
-          <div className="sky-bubble">
-            {splitLinks(text).map((run, i) =>
-              run.url ? (
-                <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
-                  {run.text}
-                </a>
-              ) : (
-                <Fragment key={i}>{run.text}</Fragment>
-              ),
-            )}
-          </div>
-        )}
-        <FileClips files={files.length ? files : (turn.files ?? [])} />
+        <div className="sky-bubble">
+          {text && (
+            <div className="sky-bubble-text">
+              {splitLinks(text).map((run, i) =>
+                run.url ? (
+                  <a key={i} href={run.url} target="_blank" rel="noopener noreferrer">
+                    {run.text}
+                  </a>
+                ) : (
+                  <Fragment key={i}>{run.text}</Fragment>
+                ),
+              )}
+            </div>
+          )}
+          <FileClips files={files.length ? files : (turn.files ?? [])} />
+        </div>
       </div>
     )
   }
 
   // Voice replies keep these speaker labels when saved and reopened.
   const branch = /^(?:Sky|Sonny): /.test(turn.content) ? undefined : onBranch
+  const content = splitChatImages(turn.content).text
+  const images = replyImages(
+    turn.content,
+    runs?.map((run) => run.output),
+  )
 
   return (
     <>
@@ -2058,19 +2084,20 @@ export function TurnView({
         ) : (
           <div className="sky-body">
             {/* A reply that has only called tools so far has no paragraph yet — one caret, below. */}
-            {(turn.content === '' ? [] : turn.content.split(/\n{2,}/)).map((para, i, all) => (
+            {(content === '' ? [] : content.split(/\n{2,}/)).map((para, i, all) => (
               <p key={i} className="sky-para">
                 {para}
                 {streaming && i === all.length - 1 && <span className="sky-caret" aria-hidden="true" />}
               </p>
             ))}
-            {streaming && turn.content === '' && (
+            {streaming && content === '' && (
               <p className="sky-para">
                 <span className="sky-caret" aria-hidden="true" />
               </p>
             )}
           </div>
         )}
+        <ChatImages images={images} />
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}

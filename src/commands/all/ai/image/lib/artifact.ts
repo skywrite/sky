@@ -23,9 +23,13 @@ export interface ImageArtifactInput {
   date: string
   time: string
   prompt: string
+  brief?: string
   model: string
   quality: string
+  selectionReason?: string
   size?: string
+  preservation?: string
+  mask?: string
   /** Basenames of the reference images the generation drew from. */
   refs: string[]
   /** Absolute paths of the saved images. */
@@ -43,14 +47,19 @@ export function buildImageArtifact(input: ImageArtifactInput): string {
     '---',
     `created: ${input.date} ${input.time}`,
     `model: ${input.model}`,
+    `quality: ${input.quality}`,
     'tags: images',
     '---',
     '',
     `# ${promptTitle(input.prompt)}`,
     '',
     `**Prompt:** ${input.prompt}`,
+    ...(input.brief ? ['', `**Brief:** ${input.brief}`] : []),
     '',
     `Settings: ${input.model}, quality ${input.quality}${input.size ? `, ${input.size}` : ''}`,
+    ...(input.selectionReason ? ['', `**Selection:** ${input.selectionReason}`] : []),
+    ...(input.preservation ? ['', `**Preservation:** ${input.preservation}`] : []),
+    ...(input.mask ? ['', `**Edit mask:** ${input.mask}`] : []),
     ...(input.refs.length > 0 ? ['', `**Reference images:** ${input.refs.join(', ')}`] : []),
     '',
     ...input.files.map((file) => `- ${file}`),

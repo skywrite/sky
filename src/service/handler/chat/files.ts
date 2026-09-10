@@ -1,4 +1,4 @@
-import { mkdtemp, readFile as readBytes, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile as readBytes, realpath, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Hono } from 'hono'
@@ -7,8 +7,10 @@ import type { ChatMessageFiles } from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { type ChatFileRef, MAX_CHAT_FILE_BYTES, splitChatFiles, withChatFiles } from '#universal/ai/chatFiles.ts'
+import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
+import { chatImageMediaType } from './images.ts'
 
 function attachmentPath(root: string, day: string, file: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || safeAttachmentName(file) !== file || /[/\\]/.test(file))
@@ -20,8 +22,8 @@ function attachmentPath(root: string, day: string, file: string): string {
 export function chatFileContext(turns: readonly ConversationMessage[], attachmentsRoot: string): string {
   const paths = new Map<string, string>()
   for (const turn of turns) {
-    if (turn.role !== 'user') continue
-    for (const ref of splitChatFiles(turn.content).files) {
+    const refs = turn.role === 'user' ? splitChatFiles(turn.content).files : splitChatImages(turn.content).images
+    for (const ref of refs) {
       try {
         const [, , , day, file] = ref.url.split('/')
         paths.set(attachmentPath(attachmentsRoot, day!, decodeURIComponent(file!)), ref.name)
@@ -91,9 +93,15 @@ export function createChatFileRoutes(attachmentsRoot: string): Hono {
       return c.json({ message: 'Invalid chat attachment.' }, 400)
     }
     try {
-      return c.body(await readBytes(target), 200, {
-        'content-type': 'application/octet-stream',
-        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(target))}`,
+      const [root, resolved] = await Promise.all([realpath(attachmentsRoot), realpath(target)])
+      if (!resolved.startsWith(root + path.sep)) return c.json({ message: 'Invalid chat attachment.' }, 400)
+      const data = await readBytes(resolved)
+      const preview = c.req.query('preview') === '1'
+      const mediaType = preview ? chatImageMediaType(data) : 'application/octet-stream'
+      if (!mediaType) return c.json({ message: 'This file cannot be previewed as an image.' }, 415)
+      return c.body(data, 200, {
+        'content-type': mediaType,
+        'content-disposition': `${preview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(path.basename(target))}`,
         'x-content-type-options': 'nosniff',
         'cache-control': 'no-cache',
       })

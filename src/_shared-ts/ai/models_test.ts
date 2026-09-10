@@ -228,7 +228,7 @@ test('default-opus-5-medium profile resolves to opus 5 at effort medium', () => 
   })
 })
 
-for (const effort of ['high', 'xhigh'] as const) {
+for (const effort of ['low', 'high', 'xhigh'] as const) {
   test(`default-gpt-6-astra-${effort} routes openai options under providerOptions.openai`, () => {
     const resolved = aiModelByProfile(`default-gpt-6-astra-${effort}`)
     assert({

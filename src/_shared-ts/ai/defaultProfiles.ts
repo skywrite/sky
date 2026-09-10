@@ -62,6 +62,11 @@ export const PROFILES = {
     model: 'gpt-6-astra',
     options: { reasoningEffort: 'high', serviceTier: 'priority' },
   }),
+  'default-gpt-6-astra-low': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6-astra',
+    options: { reasoningEffort: 'low', serviceTier: 'priority' },
+  }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',

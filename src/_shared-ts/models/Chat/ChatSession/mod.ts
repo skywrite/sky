@@ -27,6 +27,7 @@ import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { currentTimingSpan, thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
+import { type ChatImage, withChatImages } from '#universal/ai/chatImages.ts'
 import { withSources } from '#universal/ai/sources.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type ExternalFileRef, recordExternalFiles } from '../artifactRel.ts'
@@ -98,6 +99,8 @@ export interface ToolHooks {
   onExternalFiles: (files: ExternalFileRef[]) => void
   /** A tool copied files into the day's attachments — the session records them for the transcript's attachments. */
   onAttachments: (files: Attachment[]) => void
+  /** Renderable results are appended to the reply even when the model omits their links. */
+  onImages: (images: ChatImage[]) => void
 }
 
 /** Builds the turn's tool set. Called every turn; hosts cache discovery themselves. */
@@ -577,12 +580,14 @@ export default class ChatSession {
     if (this.snapshotOnSend) await this.snapshot()
 
     const report: TurnReport = { context, sourceUrls: [], approvalRoundsExhausted: false }
+    const replyImages: ChatImage[] = []
     try {
       const { tools, toolApproval } = await this.opts.tools({
         onExternalFiles: (files) => recordExternalFiles(this.externalFiles, files),
         onAttachments: (files) => {
           for (const file of files) this.attachments.set(file.file, file)
         },
+        onImages: (images) => replyImages.push(...images),
       })
       if (!this.toolsAnnounced) {
         this.toolsAnnounced = true
@@ -602,12 +607,13 @@ export default class ChatSession {
       this.context.recordTurnModel(this.profile.model)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
-      const assistant: ConversationMessage = { role: 'assistant', content: withSources(result.text, sourceUrls) }
+      const text = withChatImages(result.text, replyImages)
+      const assistant: ConversationMessage = { role: 'assistant', content: withSources(text, sourceUrls) }
       const when = await this.stamp()
       if (when) assistant.when = when
       this.turns.push(assistant)
 
-      report.text = result.text
+      report.text = text
       report.sourceUrls = sourceUrls
       report.approvalRoundsExhausted = result.approvalRoundsExhausted
       if (result.cutShort) report.cutShort = result.cutShort
@@ -621,6 +627,16 @@ export default class ChatSession {
       // a validation failure embeds the whole message array in .message.
       const message = truncate((err as Error).message ?? String(err), MAX_ERROR_CHARS)
       report.error = message
+      if (replyImages.length > 0) {
+        // A completed image must survive filing even if the model's final
+        // reply fails after the paid generation has finished.
+        const text = withChatImages('The images were created, but the reply was interrupted.', replyImages)
+        const assistant: ConversationMessage = { role: 'assistant', content: text }
+        if (turnWhen) assistant.when = turnWhen
+        this.turns.push(assistant)
+        this.engine.seedConversation([assistant])
+        report.text = text
+      }
       await this.logError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
     }
 

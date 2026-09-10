@@ -6,6 +6,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { withTiming, withTimingEnvironment } from '#shared/timing/mod.ts'
 import { assert, test } from '#test'
+import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ProducerResult } from '../ChatContext/mod.ts'
 import type { ModelInvoker } from '../ChatEngine/mod.ts'
@@ -394,6 +395,75 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     should: 'retain error timing without treating it as a successful latency sample',
     actual: failed.state.contextLog.at(-1)?.timing?.outcome,
     expected: 'error',
+  })
+})
+
+test('ChatSession keeps generated images through recovery, filing, branching, and later replies', async () => {
+  const image = { name: 'lighthouse.png', url: '/chat/files/2026-01-27/lighthouse.png' }
+  let calls = 0
+  const { session, tmp } = await makeSession({
+    contextTokens: 0,
+    tools: async ({ onImages, onAttachments }) => {
+      if (calls++ === 0) {
+        onImages([image, image])
+        onAttachments([{ file: image.name }])
+      }
+      return { tools: {}, toolApproval: {} }
+    },
+  })
+  await session.start()
+  const first = await session.send('Create a lighthouse illustration.')
+  const recovered = await loadResumeSession(path.join(tmp, 'autosave.md'), { snapshot: true })
+  const branch = session.stateAt(1)
+  await session.send('What colors did you choose?')
+  const saved = await session.end({ save: true, autoTag: false, autoRel: false, enricher: stubEnricher })
+  const filed = await loadResumeSession(saved!.path)
+  assert({
+    given: 'a tool creates an image but the model omits the image link in its reply',
+    should: 'keep one preview on that reply in every durable conversation without repeating it on later replies',
+    actual: {
+      reported: splitChatImages(first.text!).images,
+      recovered: splitChatImages(recovered.state.conversation[1]!.content).images,
+      branched: splitChatImages(branch.conversation[1]!.content).images,
+      filed: splitChatImages(filed.state.conversation[1]!.content).images,
+      following: splitChatImages(filed.state.conversation[3]!.content).images,
+      attachments: ChatDocument.fromMarkdown(await readTextFile(saved!.path)).attachments,
+    },
+    expected: {
+      reported: [image],
+      recovered: [image],
+      branched: [image],
+      filed: [image],
+      following: [],
+      attachments: [{ file: image.name }],
+    },
+  })
+})
+
+test('ChatSession retains completed images when the model fails after generation', async () => {
+  const image = { name: 'lighthouse.png', url: '/chat/files/2026-01-27/lighthouse.png' }
+  const { session, tmp } = await makeSession({
+    contextTokens: 0,
+    tools: async ({ onImages }) => {
+      onImages([image])
+      return { tools: {}, toolApproval: {} }
+    },
+    invokeModel: async () => {
+      throw new Error('Reply interrupted')
+    },
+  })
+  await session.start()
+  const turn = await session.send('Create a lighthouse illustration.')
+  const recovered = await loadResumeSession(path.join(tmp, 'autosave.md'), { snapshot: true })
+  assert({
+    given: 'image generation finished before the chat model failed',
+    should: 'report the failure and keep the completed image in the conversation for recovery and filing',
+    actual: {
+      error: turn.error,
+      images: splitChatImages(recovered.state.conversation[1]!.content).images,
+      history: JSON.stringify(recovered.state.modelMessages).includes(image.url),
+    },
+    expected: { error: 'Reply interrupted', images: [image], history: true },
   })
 })
 

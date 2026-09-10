@@ -1,6 +1,7 @@
 import { ActionIcon } from '@mantine/core'
 import { type DragEvent, useEffect, useRef, useState } from 'react'
 import { chatFileError, type ChatFileRef } from '#universal/ai/chatFiles.ts'
+import { imagePreviewUrl, isChatImage } from '#universal/ai/chatImages.ts'
 
 export function Paperclip() {
   return (
@@ -17,6 +18,35 @@ export function Paperclip() {
     >
       <path d="m21 11-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8L15 6" />
     </svg>
+  )
+}
+
+function FileThumbnail({ file }: { file: { name: string; url?: string } }) {
+  const image =
+    file instanceof File &&
+    (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|avif|bmp|ico|heic|heif)$/i.test(file.name))
+      ? file
+      : null
+  const [preview, setPreview] = useState<{ file: File; url: string } | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
+  useEffect(() => {
+    if (!image) return
+    const url = URL.createObjectURL(image)
+    setPreview({ file: image, url })
+    return () => URL.revokeObjectURL(url)
+  }, [image])
+  const saved = isChatImage(file) && /\.(png|jpe?g|webp)$/i.test(file.name) ? imagePreviewUrl(file) : undefined
+  const src = saved ?? (preview?.file === image ? preview?.url : undefined)
+  if (!src || src === failed) return <Paperclip />
+  return (
+    <img
+      className="sky-chat-file-thumbnail"
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(src)}
+    />
   )
 }
 
@@ -42,7 +72,7 @@ export function FileClips({
               : ` · ${(file.size / (1024 * 1024)).toFixed(1)} MB`
         const label = (
           <>
-            <Paperclip />
+            <FileThumbnail file={file} />
             <span className="sky-chat-file-label">
               <span className="sky-chat-file-name" title={file.name}>
                 {file.name}

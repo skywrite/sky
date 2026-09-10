@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -36,12 +36,24 @@ limits. These contents enter conversation history even with notebook reading
 set to Nothing. Original bytes are copied to the thread's day attachments.
 
 The accepted user message carries ordinary markdown attachment links, rendered
-as clickable clips beside its bubble. These survive reloads, recovery, filing,
+as clickable clips inside the same bubble as its text, with thumbnails for images. These survive reloads, recovery, filing,
 and branching without a second browser-only attachment record. Recovery keeps
 the native model content and attachment metadata; a saved chat or branch also
 gives `read_file` the paths behind its earlier clips when it needs to reread.
 Download links remain available after the thread closes. See
 [2026-09-07 — Files clipped into chat](2026-09-07-files-clipped-into-chat.md).
+
+Generated images use the same attachment store. The web host retains each
+successful `ai:image` result before it reaches the model, adding browser URLs
+and durable local paths for subsequent edits. Completed tool results display
+immediately; the session also appends ordinary image Markdown to the assistant
+reply so previews survive filing and branching without provider history.
+This happens even if generation succeeds and the final model reply fails.
+Only validated PNG, JPEG, and WebP bytes are served inline; the original
+download URL remains an attachment. Server image commands do not open a
+desktop viewer. The rendering lives in `theme/client/chatImages.tsx`.
+Photo sizing, automatic edit masks and pixel preservation belong to the
+[image command](../../../../commands/all/ai/image/docs/README.md).
 
 ### Voice in the conversation
 

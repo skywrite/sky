@@ -1,3 +1,4 @@
+import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
 import { parseDocument, parseLines } from './wysiwyg/parser.ts'
 import { contextFor, renderExport } from './wysiwyg/render.ts'
@@ -7,7 +8,7 @@ const SLACK_SUBJECT = /^([ \t]*\*[^*\n]+\*)[ \t]*\n[ \t]*\*={3,}\*[ \t]*(?:\n|$)
 
 /** Render legacy Slack drafts as quoted prose without changing the conversation or a tool's payload. */
 export function renderChatMarkdown(source: string): string {
-  const doc = parseDocument(source)
+  const doc = parseDocument(splitChatImages(source).text)
   // Visit only the original blocks: code quoted inside a recovered draft stays code.
   const fences = [...doc.root.walk()].filter((node) => node.type === 'fence' && !node.indented)
   for (const node of fences) {

@@ -90,3 +90,28 @@ test('buildImageArtifact — reference images', () => {
     actual: artifact.includes('Settings: gpt-image-2, quality medium\n'),
   })
 })
+
+test('buildImageArtifact records automatic selection for subsequent edits', () => {
+  const artifact = buildImageArtifact({
+    date: '2026-09-08',
+    time: '10:00',
+    prompt: 'Remove the background and keep the watch unchanged.',
+    brief: 'Catalog photograph; preserve the case and dial exactly.',
+    model: 'gpt-image-2.5-sunburst',
+    quality: 'max',
+    selectionReason: 'Preserve the original product photograph.',
+    refs: ['watch.png'],
+    files: ['/tmp/watch-cutout.png'],
+    report: 'Generated 1 image.',
+  })
+  assert({
+    given: 'a fidelity-preserving edit selected by preflight',
+    should: 'retain the actual settings, selection reason, and brief',
+    actual: [
+      artifact.includes('model: gpt-image-2.5-sunburst\nquality: max'),
+      artifact.includes('**Selection:** Preserve the original product photograph.'),
+      artifact.includes('**Brief:** Catalog photograph; preserve the case and dial exactly.'),
+    ],
+    expected: [true, true, true],
+  })
+})

@@ -78,6 +78,8 @@ export interface ExternalFileRef {
 
 export interface CreateNotebookToolsOptions {
   onOpenQuestions?: OnOpenQuestions
+  /** The host can retain local artifacts and add browser URLs before the result enters model history. */
+  prepareResult?: (commandName: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>
   /**
    * Fires after a tool succeeds with a `files` array naming external
    * artifacts (Google Docs/Sheets/Slides today). The host records them —
@@ -246,7 +248,8 @@ export async function runToolCommand(
     }
   }
 
-  const payload: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
+  const raw: Record<string, unknown> = { success: true, ...(result.data as Record<string, unknown>) }
+  const payload = options.prepareResult ? await options.prepareResult(entry.commandName, raw) : raw
 
   if (options.onExternalFiles) {
     const files = extractExternalFiles(payload)

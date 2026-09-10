@@ -25,10 +25,6 @@
   max-width: 100%;
 }
 
-.sky-turn-user > .sky-chat-files {
-  justify-content: flex-end;
-}
-
 .sky-chat-file {
   display: flex;
   align-items: center;
@@ -60,6 +56,16 @@
   color: var(--sky-dim);
 }
 
+.sky-chat-file-thumbnail {
+  display: block;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--sky-s2);
+}
+
 .sky-chat-file-label {
   display: flex;
   flex-direction: column;
@@ -87,6 +93,60 @@
   font-size: 14px;
 }
 
+.sky-chat-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 900px;
+  margin: 8px 0;
+}
+
+.sky-chat-image {
+  margin: 0;
+  min-width: 0;
+}
+
+.sky-chat-image-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--sky-s2);
+  border: 1px solid var(--sky-border-soft);
+}
+
+.sky-chat-image-preview img {
+  display: block;
+  width: 100%;
+  max-height: min(680px, 60vh);
+  object-fit: contain;
+}
+
+.sky-chat-image figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+}
+
+.sky-chat-image-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-chat-image-error {
+  padding: 24px;
+  color: var(--sky-dim);
+}
+
 .sky-chat-drop-target {
   position: relative;
 }
@@ -109,6 +169,9 @@
 }
 
 .sky-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   background: var(--sky-s2);
   border-radius: 18px 18px 6px 18px;
   padding: 12px 19px;
@@ -143,7 +206,19 @@
 }
 
 .sky-bubble {
+  white-space: normal;
+}
+
+.sky-bubble-text {
   white-space: pre-wrap;
+}
+
+.sky-bubble .sky-chat-file {
+  background: var(--sky-card);
+}
+
+.sky-bubble .sky-chat-file > a:hover {
+  text-decoration: none;
 }
 
 .sky-para {
