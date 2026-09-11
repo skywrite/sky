@@ -25,6 +25,21 @@ Inline forms add to-dos, reminders, and commitments, including when their
 sections are empty. A time makes a task a commitment; times accept the
 notebook's extended hours. Adding requires an existing, open day file.
 
+Task text edits in place by double-click on desktop or a tap on touch screens;
+links retain their normal navigation. Details opens the same draft in a dialog
+or a mobile bottom sheet for text, type, category and time. Moving from inline
+editing into Details does not save. Save commits; Cancel discards. Refreshes
+preserve drafts, including when a changed or ended day prevents saving.
+
+`editing.ts` addresses the exact task heading and first line, refusing ambiguous
+or stale matches. `editingText.ts` edits or moves its entire Markdown block so
+notes and nested items travel with it; text fields retain inline Markdown and
+reference definitions stay in the file. The day label reads only the first line,
+while `raw` retains attached notes. Destination bullet markers must match to
+avoid accidentally splitting one Markdown list into two. Edit retries use an
+operation ID; Undo preserves unrelated later changes and refuses to overwrite
+changed task blocks.
+
 **From next lists** moves unfinished, untimed items from `next-professional.md`
 and `next-personal.md` into To-dos or Reminders. Category follows the source.
 Schedule files stay with the existing day-start flow. `planning.ts` checks
@@ -52,9 +67,9 @@ attachments can still be opened and added.
   additions and restores preserve it too. Done today shows entries from the
   separate Complete lists, without repeating checked plan items. The header's
   progress counts both. A checked reminder is deleted through the same action
-  as the ×; its row collapses and the pill says "Reminder cleared".
-- **The ×**, right after the item's text and shown when the pointer rests
-  on the row, takes the item out of the file. On a phone, where nothing hovers, the row swipes left instead:
+  as Delete; its row collapses and the pill says "Reminder cleared".
+- **Delete**, the × beside Details on desktop or the button inside the Details
+  editor, takes the item out of the file. On a phone, the row can also swipe left:
   a short pull bares Delete and holds it until it is tapped or anything
   else is touched; a long pull deletes on release. The row folds shut
   without a strike. When the item was its list's last, a bare `-` stays
@@ -67,6 +82,8 @@ attachments can still be opened and added.
 
 | Route | Does |
 | --- | --- |
+| `POST /day/:ymd/item/edit` | `{list, raw, text, kind?, category?, time?, requestId}` → edit or move a task block, answers `{view, undo, item}` |
+| `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
 | `POST /day/:ymd/item/add` | `{kind, text, category?, time?, requestId}` → add an item, answers `{view, undo, message}` |
 | `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |
 | `POST /day/:ymd/item/pull` | `{kind, ids, requestId}` → move selected Next items, answers `{view, undo, message}` |

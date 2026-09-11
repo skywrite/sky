@@ -13,6 +13,7 @@ import { Hono, type MiddlewareHandler } from 'hono'
 import { hash, withLock } from '#lib/outbox/files.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { createEditingRoutes } from './editing.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList } from './order.ts'
 import { createPlanningRoutes } from './planning.ts'
@@ -26,7 +27,8 @@ function isItemAddress(body: Record<string, unknown> | null): body is ItemAddres
 export function createItemRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
   const guard: MiddlewareHandler = async (c, next) => {
-    if (c.req.method !== 'POST' || !/\/item(?:\/(?:delete|restore|add|pull|undo))?$/.test(c.req.path)) return next()
+    if (c.req.method !== 'POST' || !/\/item(?:\/(?:delete|restore|add|pull|undo|edit(?:\/undo)?))?$/.test(c.req.path))
+      return next()
     const origin = c.req.header('Origin')
     if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('Sec-Fetch-Site') === 'cross-site')
       return c.json({ error: 'Open the day from the Sky app.' }, 403)
@@ -81,5 +83,6 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   })
 
   app.route('/', createPlanningRoutes(options))
+  app.route('/', createEditingRoutes(options))
   return app
 }

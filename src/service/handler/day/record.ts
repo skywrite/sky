@@ -120,8 +120,10 @@ function firstItemLink(tokens: Token[]): Tokens.Link | null {
 }
 
 function parseItem(raw: string, category: string | null, list: string): DayItem {
-  const done = DayDocument.isItemDone(raw)
-  let text = raw.replace(STRUCK, '$1')
+  // Attached notes stay in raw for file operations; only the first line is the task label.
+  const head = raw.split(/\r?\n/)[0]
+  const done = DayDocument.isItemDone(head)
+  let text = head.replace(STRUCK, '$1')
   let time: string | null = null
   const timed = text.match(TIMED)
   if (timed) {

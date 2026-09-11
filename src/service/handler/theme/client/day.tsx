@@ -4,6 +4,7 @@ import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
 import { type Note, NoteLine } from './chat.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
+import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
 import { DayTracking } from './dayTracking.tsx'
@@ -20,7 +21,7 @@ import { revealOpacity, useSwipeToDelete } from './swipe.ts'
  * checkboxes that write back to the day file — then the day's record, the
  * conversations listed in its record. A checked
  * task stays at the top of its list; a checked reminder leaves; an item
- * can also be taken off the day, by the × a hover shows or a swipe on the
+ * can also be taken off the day through Delete or a swipe on the
  * phone. Undo holds the door for eight seconds whichever way a row left.
  */
 
@@ -477,9 +478,8 @@ function itemHref(item: DayItem, at: string): string {
 
 /**
  * One plan item: checkbox, its time when the list is timed, the text,
- * Personal when it's the exception — and the way off the day: an × at
- * the row's end, shown on hover, or on the phone a swipe left that bares
- * Delete.
+ * Personal when it's the exception, and Details and Delete controls.
+ * Plain text edits in place; on the phone a swipe left still bares Delete.
  */
 function PlanRow({
   item,
@@ -509,13 +509,27 @@ function PlanRow({
   onDelete: (item: DayItem) => void
 }) {
   const struck = phase === 'struck' || (phase !== 'reopened' && item.done)
+  const editor = useItemEditing()
+  const active = editor.draft?.item.list === item.list && editor.draft.item.raw === item.raw
+  const inline = active && editor.draft?.mode === 'inline'
+  const locked = Boolean(editor.draft) || editor.busy
+  const editable = !readOnly && !phase
+  const late = tone === 'late' && !struck
+  const personal = chip && item.category === 'Personal'
+  const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
   const swipe = useSwipeToDelete(() => onDelete(item))
   // A row whose write did not land stands where it was — slid back if it had gone.
   useEffect(() => {
-    if (!phase || readOnly) swipe.close()
-  }, [phase, readOnly])
+    if (!phase || readOnly || locked) swipe.close()
+  }, [phase, readOnly, locked])
   return (
-    <div className="sky-prow sky-irow" data-phase={phase} data-soft={soft || undefined} ref={swipe.ref}>
+    <div
+      className="sky-prow sky-irow"
+      data-phase={phase}
+      data-soft={soft || undefined}
+      data-editing={inline || undefined}
+      ref={swipe.ref}
+    >
       {!readOnly && swipe.offset < 0 && (
         <div className="sky-irow-back" style={{ width: -swipe.offset }}>
           <button
@@ -540,7 +554,7 @@ function PlanRow({
           event.stopPropagation()
           swipe.close()
         }}
-        {...(readOnly ? {} : swipe.handlers)}
+        {...(readOnly || locked ? {} : swipe.handlers)}
       >
         {readOnly ? (
           <StaticCheck done={struck} />
@@ -550,7 +564,7 @@ function PlanRow({
             className="sky-check"
             aria-label={struck ? 'Mark not done' : 'Mark done'}
             aria-pressed={struck}
-            disabled={Boolean(phase)}
+            disabled={Boolean(phase) || locked}
             onClick={() => onCheck(item)}
           >
             <span className="sky-check-box" data-on={struck}>
@@ -563,16 +577,83 @@ function PlanRow({
             {item.time ? clock(item.time) : '—'}
           </span>
         )}
-        <span className="sky-ptext" data-done={struck}>
-          {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
-        </span>
-        {tone === 'late' && !struck && <span className="sky-late">overdue</span>}
-        {chip && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
-        {!readOnly && (
-          <button type="button" className="sky-x" aria-label="Delete" title="Delete" onClick={() => onDelete(item)}>
-            <Cross />
-          </button>
-        )}
+        <div className="sky-item-body">
+          <div className="sky-item-title">
+            {inline ? (
+              <InlineItemEditor />
+            ) : (
+              <span
+                className="sky-ptext"
+                data-done={struck}
+                role={editable && !item.link ? 'button' : undefined}
+                tabIndex={editable && !item.link ? 0 : undefined}
+                aria-label={editable && !item.link ? `Edit text: ${item.text}` : undefined}
+                onDoubleClick={() => {
+                  if (editable && !item.link) editor.begin(item, 'inline', window.getSelection()?.toString())
+                }}
+                onKeyDown={(event) => {
+                  if (editable && !item.link && (event.key === 'Enter' || event.key === 'F2')) {
+                    event.preventDefault()
+                    editor.begin(item, 'inline')
+                  }
+                }}
+                onPointerDown={(event) => {
+                  pointer.current =
+                    event.pointerType === 'touch' ? { x: event.clientX, y: event.clientY, at: performance.now() } : null
+                }}
+                onPointerCancel={() => {
+                  pointer.current = null
+                }}
+                onPointerUp={(event) => {
+                  const start = pointer.current
+                  pointer.current = null
+                  if (
+                    editable &&
+                    !item.link &&
+                    start &&
+                    performance.now() - start.at < 450 &&
+                    Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8 &&
+                    !window.getSelection()?.toString()
+                  )
+                    editor.begin(item, 'inline')
+                }}
+              >
+                {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+              </span>
+            )}
+            {!readOnly && !inline && (
+              <span className="sky-item-actions">
+                <button
+                  type="button"
+                  className="sky-item-details"
+                  data-item={JSON.stringify([item.list, item.raw.split(/\r?\n/)[0]])}
+                  aria-label="Item details"
+                  title="Item details"
+                  disabled={Boolean(phase) || editor.busy || (locked && !active)}
+                  onClick={() => editor.begin(item, 'details')}
+                >
+                  <ItemDetailsIcon />
+                </button>
+                <button
+                  type="button"
+                  className="sky-x"
+                  aria-label="Delete"
+                  title="Delete"
+                  disabled={Boolean(phase) || locked}
+                  onClick={() => onDelete(item)}
+                >
+                  <Cross />
+                </button>
+              </span>
+            )}
+          </div>
+          {(late || personal) && (
+            <span className="sky-item-meta">
+              {late && <span className="sky-late">overdue</span>}
+              {personal && <span className="sky-pchip">Personal</span>}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -924,7 +1005,7 @@ export function DayView({
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
-  return (
+  const content = (
     <div className="sky-main sky-day">
       <div className="sky-split">
         <div className="sky-split-main">
@@ -1170,5 +1251,19 @@ export function DayView({
 
       {dragging && <DropOverlay />}
     </div>
+  )
+  return (
+    <DayItemEditing
+      day={view}
+      applyView={setView}
+      onDelete={checkOff.remove}
+      otherUndo={checkOff.undo ?? planning.undo}
+      dismissOtherUndo={() => {
+        checkOff.dismissUndo()
+        planning.dismissUndo()
+      }}
+    >
+      {content}
+    </DayItemEditing>
   )
 }

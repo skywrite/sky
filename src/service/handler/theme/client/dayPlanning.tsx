@@ -452,6 +452,8 @@ export function useDayPlanning(
     setError(null)
   }
   return {
+    undo,
+    dismissUndo: () => setUndo(null),
     composer: (kind: DayPlanKind) =>
       enabled ? (
         <PlanComposer
