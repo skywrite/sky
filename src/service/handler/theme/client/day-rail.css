@@ -99,10 +99,19 @@
   text-decoration: underline;
 }
 
-.sky-dr-chat-continue {
-  grid-column: 2 / -1;
-  justify-self: start;
-  margin: 3px 0;
+.sky-dr-chat-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sky-dr-chat-heading > .sky-dr-open {
+  width: auto;
+}
+
+.sky-dr-chat-heading > .sky-action-icon {
+  flex-shrink: 0;
 }
 
 .sky-dr-mark {

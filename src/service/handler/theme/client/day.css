@@ -45,12 +45,16 @@
 
 .sky-day-chat-heading {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 6px;
+}
+
+.sky-day-chat-heading > .sky-action-icon {
+  flex-shrink: 0;
 }
 
 .sky-day-chat-open {
+  min-width: 0;
   border: 0;
   background: none;
   padding: 0;

@@ -1,6 +1,7 @@
 import { Button, FileButton } from '@mantine/core'
 import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
 import type { DayData, ThreadSummary } from './day.tsx'
+import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
 import { fileHref } from './explorer.tsx'
 import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
@@ -264,40 +265,34 @@ function ChatsSection({
           key={row.key}
         >
           <span className="sky-dr-time">{row.time}</span>
-          {row.path ? (
-            <a
-              className="sky-dr-label sky-dr-open"
-              style={{ paddingInlineStart: row.depth * 14 }}
-              title={row.title}
-              href={fileHref(row.path)}
-            >
-              {row.title}
-            </a>
-          ) : (
-            <button
-              type="button"
-              className="sky-dr-label sky-dr-open"
-              style={{ paddingInlineStart: row.depth * 14 }}
-              title={row.title}
-              onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
-            >
-              {row.title}
-            </button>
-          )}
+          <span className="sky-dr-chat-heading" style={{ paddingInlineStart: row.depth * 14 }}>
+            {row.path ? (
+              <a className="sky-dr-label sky-dr-open" title={row.title} href={fileHref(row.path)}>
+                {row.title}
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="sky-dr-label sky-dr-open"
+                title={row.title}
+                onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
+              >
+                {row.title}
+              </button>
+            )}
+            {row.path && (
+              <DayChatResume
+                onClick={() =>
+                  row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
+                }
+              />
+            )}
+          </span>
           <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
           {row.parent && (
             <span className="sky-dr-who" title={`From turn ${row.parent.turn} of ${row.parent.title}`}>
               {row.state !== null && `${chatTurnCount(row)} · `}from turn {row.parent.turn} of {row.parent.title}
             </span>
-          )}
-          {row.path && (
-            <Button
-              className="sky-dr-chat-continue"
-              size="compact-sm"
-              onClick={() => (row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path))}
-            >
-              Continue chat
-            </Button>
           )}
         </div>
       ))}

@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
 import { type Note, NoteLine } from './chat.tsx'
+import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { useDayPlanning } from './dayPlanning.tsx'
@@ -867,14 +868,11 @@ function ChatsCard({
                 </button>
               )}
               {row.path && (
-                <Button
-                  size="compact-sm"
+                <DayChatResume
                   onClick={() =>
                     row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
                   }
-                >
-                  Continue chat
-                </Button>
+                />
               )}
             </span>
             <span className="sky-day-chat-meta">
