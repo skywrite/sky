@@ -2,26 +2,29 @@ import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
-import skyPrompt, { SkyPromptStatus } from '#lib/gui/sky-prompt.ts'
+import skyPrompt, { GUI_PROMPT, GUI_PROMPT_INSTALL, SkyPromptStatus } from '#lib/gui/sky-prompt.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { readDir, rename } from '#shared/fs/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { REGEX_YMD_EXACT } from '#universal/dates/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
+// macOS 15 and later ship this; the absolute path keeps a Homebrew `trash` with other flags from shadowing it
+const TRASH = '/usr/bin/trash'
+
 export default class UtilDesktopRenameTask extends Command {
   static override description: CommandDescription = {
     name: 'util:desktop:rename',
-    description: 'GUI Prompt to rename or move desktop files',
+    description: 'GUI prompt to rename, move, or trash desktop files',
   }
 
   async run(commandArgs: CommandArgs): Promise<CommandResult> {
     const { config, output } = commandArgs.context
 
-    // Check if sky-prompt is available in PATH
-    const { code } = await runCommand('which', ['sky-prompt'])
+    // The dialog has to be on the PATH of whatever runs this command — for a launchd job that is not the shell's PATH
+    const { code } = await runCommand('which', [GUI_PROMPT])
     if (code !== 0) {
-      return CommandResult.error('sky-prompt not found in PATH. Run setup/scripts/bin.sh to install bin utilities.')
+      return CommandResult.error(`${GUI_PROMPT} not found in PATH. ${GUI_PROMPT_INSTALL}`)
     }
 
     output.log('Desktop renamer is starting...')
@@ -65,6 +68,7 @@ export default class UtilDesktopRenameTask extends Command {
         selectRange: { start: selectStart, length: selectLength },
         action1: 'Move to Today',
         action2: 'Move to Date',
+        action3: 'Trash',
       })
 
       // Parse date from the answer text (for Move to Date)
@@ -103,6 +107,18 @@ export default class UtilDesktopRenameTask extends Command {
             output.log(`Moved ${entry.name} -> ${destPath}`)
           } else {
             output.log(`No date found in "${response.answer}" - skipping`)
+          }
+          break
+        }
+
+        case SkyPromptStatus.Action3: {
+          // Into the Mac's Trash, where the Finder's Put Back still works; `-s` makes a failed move a non-zero exit
+          const trashed = await runCommand(TRASH, ['-s', srcPath])
+          if (trashed.success) {
+            output.log(`Trashed ${entry.name}`)
+          } else {
+            const reason = trashed.stderr.trim().split('\n')[0] || `exit code ${trashed.code}`
+            output.error(`Could not trash ${entry.name}: ${reason}`)
           }
           break
         }

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-11
-updated: 2026-08-29
+updated: 2026-09-09
 ---
 
 # Dependencies
@@ -38,6 +38,7 @@ If you never run those commands, you never need the tool.
 | **pandoc** | `summary:doc` on `.pptx` and `.keynote` files | `brew install pandoc` |
 | **agent-slack** | every `slack:*` command | [stablyai/agent-slack](https://github.com/stablyai/agent-slack) |
 | **device-location** | `util:location`, `day:location`, and the location lookup inside `day:start` | [skywrite/DeviceLocation](https://github.com/skywrite/DeviceLocation) |
+| **gui-prompt** | the dialog in `util:desktop:rename` | [skywrite/gui-prompt](https://github.com/skywrite/gui-prompt) |
 | **librsvg** | `google:agent` background art | `brew install librsvg` |
 | A Chromium-family browser | all `google:*` browser automation | Brave, Chrome, Chromium, or Edge in `/Applications` |
 | VS Code's `code` CLI | the review step of `person:move:bulk` | VS Code → *Shell Command: Install 'code' in PATH* |
@@ -56,6 +57,13 @@ follow-up commands assume it is already there and fail less helpfully.
 only a signed app bundle can request, so a plain CLI cannot ask for coordinates.
 Without it, `--mobile` still works — that path gets a fix from your phone over a
 QR code and needs nothing installed.
+
+**gui-prompt** is a native dialog that asks a question and prints the answer;
+`util:desktop:rename` is its only caller. Its `install.sh` compiles the Swift
+source with `swiftc`, so Apple's Command Line Tools are needed once, at install
+time — the binary itself needs nothing beyond macOS. Put it in a directory on the
+PATH of whatever runs the command: a launchd job does not read your shell
+profile, so a directory added only in `.zshrc` is invisible to it.
 
 **librsvg** is the preferred SVG renderer but not the only one. If it is missing,
 `google:agent` falls back to a Chromium-family browser, then to `qlmanage`, and
@@ -88,11 +96,4 @@ Listed so a port has a checklist rather than a surprise.
 | `qlmanage` | last-resort SVG rasterizer |
 | `ioreg` | idle detection |
 | `ps` | recovering a wedged automation browser |
-
-## Known gaps
-
-`util:desktop:rename` calls a `sky-prompt` helper that has never been published,
-and its error message points at a `setup/scripts/bin.sh` that does not exist in
-this repository. There is no way for anyone but the original author to satisfy
-that dependency today. `lib/gui/prompt.ts` calls a similar `gui-prompt` helper
-that currently has no callers at all.
+| `trash` | the Trash button in `util:desktop:rename` (macOS 15 and later) |
