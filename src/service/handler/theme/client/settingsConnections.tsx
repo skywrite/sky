@@ -129,23 +129,28 @@ function SlackRow() {
   const trouble = warn ?? (status?.installed && !status.ok ? status.error : null)
 
   return (
-    <>
-      <Row label="Slack" sub={sub}>
-        {status?.installed && status.ok && <span className="sky-set-status">Connected</span>}
-        {status?.installed && !status.ok && <span className="sky-set-off">Not connected</span>}
-        {status?.installed &&
-          (status.ok ? (
-            <Button size="compact-sm" disabled={busy} onClick={check}>
-              {busy ? 'Checking…' : 'Check'}
-            </Button>
-          ) : (
-            <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
-              {busy ? 'Reconnecting…' : 'Reconnect'}
-            </Button>
-          ))}
-      </Row>
-      {trouble && <p className="sky-set-warn">{trouble}</p>}
-    </>
+    <Row
+      label="Slack"
+      sub={
+        <>
+          {sub}
+          {trouble && <p className="sky-set-warn">{trouble}</p>}
+        </>
+      }
+    >
+      {status?.installed && status.ok && <span className="sky-set-status">Connected</span>}
+      {status?.installed && !status.ok && <span className="sky-set-off">Not connected</span>}
+      {status?.installed &&
+        (status.ok ? (
+          <Button size="compact-sm" disabled={busy} onClick={check}>
+            {busy ? 'Checking…' : 'Check'}
+          </Button>
+        ) : (
+          <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
+            {busy ? 'Reconnecting…' : 'Reconnect'}
+          </Button>
+        ))}
+    </Row>
   )
 }
 
