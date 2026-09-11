@@ -232,13 +232,13 @@
   transition: all 0.14s;
 }
 .sky-streaks-habit-check:hover:not(:disabled) > span {
-  border-color: var(--sky-green);
-  background: color-mix(in srgb, var(--sky-green) 6%, transparent);
+  border-color: var(--sky-action-primary);
+  background: color-mix(in srgb, var(--sky-action-primary) 6%, transparent);
 }
 .sky-streaks-habit-check[data-done='true'] > span {
-  border-color: var(--sky-green);
-  background: var(--sky-green);
-  color: white;
+  border-color: var(--sky-action-primary);
+  background: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
 }
 .sky-streaks-habit-check:disabled > span {
   border-style: dashed;
