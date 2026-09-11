@@ -35,7 +35,6 @@ import { ReplyDetails } from './replyDetails.tsx'
 import {
   ReplyThreadLink,
   ReplyThreadPanel,
-  ThreadIcon,
   useReplyThreads,
   type OpenReplyThread,
   type ReplyThreadSummary,
@@ -1629,6 +1628,10 @@ export function ThreadColumn({
               onReplyThread={
                 !replyMode && turn.branchPoint && onReplyThread ? () => onReplyThread(turn.branchPoint!) : undefined
               }
+              replyThread={replyThreads.find(
+                (thread) => thread.turn === turn.branchPoint?.turn && thread.key === turn.branchPoint?.key,
+              )}
+              activeReplyId={activeReplyId}
               onBranch={
                 !replyMode && branchFrom && !busy && turn.role === 'assistant' && turn.branchPoint
                   ? () => void branchFrom(turn.branchPoint!)
@@ -1636,19 +1639,6 @@ export function ThreadColumn({
               }
               branching={branching !== null && branching === turn.branchPoint?.key}
             />
-            {!replyMode &&
-              turn.branchPoint &&
-              onReplyThread &&
-              replyThreads
-                .filter((thread) => thread.turn === turn.branchPoint!.turn && thread.key === turn.branchPoint!.key)
-                .map((thread) => (
-                  <ReplyThreadLink
-                    key={thread.key}
-                    thread={thread}
-                    active={thread.id === activeReplyId}
-                    onOpen={() => onReplyThread(turn.branchPoint!)}
-                  />
-                ))}
             {replyMode && i === state.inherited - 1 && (
               <div className="sky-reply-divider">
                 <span>Replies</span>
@@ -2234,6 +2224,8 @@ export function TurnView({
   branching = false,
   labelOf,
   onReplyThread,
+  replyThread,
+  activeReplyId,
   writingDrafts,
 }: {
   turn: Turn
@@ -2251,6 +2243,8 @@ export function TurnView({
   /** The settings' label for a profile name, for the usage line; the name itself when absent */
   labelOf?: (profile: string) => string
   onReplyThread?: () => void
+  replyThread?: ReplyThreadSummary
+  activeReplyId?: string
   writingDrafts?: Omit<Parameters<typeof WritingDraftReply>[0], 'content' | 'html'>
 }) {
   const userMessage = useMemo(() => {
@@ -2326,15 +2320,11 @@ export function TurnView({
             {(branch || onReplyThread) && (
               <div className="sky-reply-acts">
                 {onReplyThread && (
-                  <Button
-                    size="compact-sm"
-                    variant="primary-quiet"
-                    className="sky-reply-action"
-                    leftSection={<ThreadIcon />}
-                    onClick={onReplyThread}
-                  >
-                    Reply in thread
-                  </Button>
+                  <ReplyThreadLink
+                    thread={replyThread}
+                    active={replyThread?.id != null && replyThread.id === activeReplyId}
+                    onOpen={onReplyThread}
+                  />
                 )}
                 {branch && (
                   <button

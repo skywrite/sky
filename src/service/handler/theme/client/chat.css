@@ -530,37 +530,13 @@
   background: var(--sky-border-soft);
 }
 
-.sky-reply-thread-link {
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 10px;
-  max-width: 100%;
-  margin-top: -16px;
-  padding: 9px 11px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
+.sky-reply-thread-link[data-has-replies] {
   color: var(--sky-accent);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
 }
 
-.sky-reply-thread-link > span {
+.sky-reply-thread-status {
+  margin-left: 10px;
   color: var(--sky-dim);
-}
-
-.sky-reply-thread-link:hover,
-.sky-reply-thread-link[aria-expanded='true'] {
-  background: var(--sky-s2);
-  border-color: var(--sky-border-soft);
-}
-
-.sky-reply-thread-link:focus-visible {
-  outline: 2px solid var(--sky-accent);
-  outline-offset: 3px;
 }
 
 .sky-split[data-reply-open] > .sky-split-main .sky-col {

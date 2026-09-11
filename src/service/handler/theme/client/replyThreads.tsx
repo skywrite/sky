@@ -1,4 +1,4 @@
-import { ActionIcon } from '@mantine/core'
+import { ActionIcon, Button } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import { formatTokens, totalInput } from '#universal/ai/tokenUsage.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
@@ -183,29 +183,29 @@ export function ReplyThreadLink({
   active,
   onOpen,
 }: {
-  key?: string
-  thread: ReplyThreadSummary
+  thread?: ReplyThreadSummary
   active: boolean
   onOpen: () => void
 }) {
-  const status = thread.busy
-    ? thread.state === 'waiting'
-      ? 'Needs your input'
-      : 'Working…'
-    : thread.replies
-      ? 'View latest reply'
-      : 'Continue thread'
-  const usage = thread.statistics?.usage
+  const status = thread?.busy ? (thread.state === 'waiting' ? 'Needs your input' : 'Working…') : null
+  const replies = thread?.replies ?? 0
+  const usage = thread?.statistics?.usage
   const stats = usage
     ? `${formatTokens(totalInput(usage))} input tokens · ${formatTokens(usage.output)} output tokens`
     : undefined
   return (
-    <button type="button" className="sky-reply-thread-link" onClick={onOpen} aria-expanded={active} title={stats}>
-      <ThreadIcon />
-      <strong>
-        {thread.replies} {thread.replies === 1 ? 'reply' : 'replies'}
-      </strong>
-      <span className={thread.busy ? 'sky-reply-thread-status' : undefined}>{status}</span>
-    </button>
+    <Button
+      size="compact-sm"
+      variant="primary-quiet"
+      className="sky-reply-action sky-reply-thread-link"
+      leftSection={<ThreadIcon />}
+      onClick={onOpen}
+      aria-expanded={active}
+      data-has-replies={replies > 0 || undefined}
+      title={stats}
+    >
+      {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply in thread'}
+      {status && <span className="sky-reply-thread-status">{status}</span>}
+    </Button>
   )
 }

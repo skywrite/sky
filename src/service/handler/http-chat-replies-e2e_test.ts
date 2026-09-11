@@ -97,7 +97,7 @@ test(
           await replyComposer.fill('Make the response warmer.')
           await panel.getByRole('button', { name: 'Send', exact: true }).click()
           await panel.getByText('2 replies', { exact: true }).waitFor()
-          await main.getByRole('button', { name: '2 replies View latest reply', exact: true }).waitFor()
+          await main.getByRole('button', { name: '2 replies', exact: true }).waitFor()
 
           // A paragraph-spanning selection survives parent polling and thread activity refreshes.
           const selection = await panel
