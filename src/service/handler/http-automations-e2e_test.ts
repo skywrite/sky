@@ -17,7 +17,7 @@ import { createTestHttpApp } from './httpTestHelpers.ts'
 
 test(
   {
-    name: 'five commands create and run as one automation, with description-first customization and editing',
+    name: 'five commands create through a wizard and run as one automation, with customization and editing',
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
     timeout: 90000,
   },
@@ -176,12 +176,25 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
       page.on('pageerror', (error) => errors.push(error.message))
       const base = `http://127.0.0.1:${address.port}`
       await page.goto(`${base}/automations/new`)
-      const describe = page.getByRole('textbox', { name: 'Every weekday at 7…', exact: true })
+      const describe = page.getByRole('textbox', { name: 'Describe your automation', exact: true })
+      const currentStep = page.locator('.sky-auto-steps [aria-current="step"]')
+      const review = page.getByRole('button', { name: 'Review automation', exact: true })
+      const back = page.getByRole('button', { name: 'Back', exact: true })
+      const screenshots = env.get('SKY_AUTOMATIONS_SCREENSHOTS')
+      if (screenshots) {
+        await mkdir(screenshots, { recursive: true })
+        await page.screenshot({ path: path.join(screenshots, 'describe-desktop.png'), fullPage: true })
+      }
       assert({
         given: 'a new automation',
         should: 'start with describing it and keep the command form out of the way',
-        actual: [await describe.isVisible(), await page.locator('.sky-auto-builder').count()],
-        expected: [true, 0],
+        actual: [
+          await describe.isVisible(),
+          await page.locator('.sky-auto-builder').count(),
+          await currentStep.textContent(),
+          await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled(),
+        ],
+        expected: [true, 0, '1Describe', true],
       })
       await page.getByRole('button', { name: 'Choose commands instead', exact: true }).click()
       const picker = page.getByRole('combobox', { name: 'Commands', exact: true })
@@ -199,7 +212,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
       await page.getByRole('combobox', { name: 'Repeat', exact: true }).click()
       await page.getByRole('option', { name: 'At an interval', exact: true }).click()
       await page.getByRole('button', { name: 'Morning recaps', exact: true }).click()
-      await page.getByRole('button', { name: 'Preview automation', exact: true }).click()
+      await review.click()
       await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
       assert({
         given: 'the morning preset after an interval schedule',
@@ -207,34 +220,94 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         actual: [
           await page.locator('.sky-auto-command-list').count(),
           await page.locator('.sky-auto-command-list li').count(),
-          await page.getByLabel('Time', { exact: true }).inputValue(),
+          await page.locator('.sky-auto-spec').first().textContent(),
+          await currentStep.textContent(),
+          await page.locator('.sky-auto-builder').isVisible(),
+          await describe.isVisible(),
           await readdir(dir),
           requests.length,
         ],
-        expected: [1, 5, '07:00', ['legacy-recap.md'], 0],
+        expected: [1, 5, 'WhenEvery day at 7:00', '3Review', false, false, ['legacy-recap.md'], 0],
+      })
+      assert({
+        given: 'continuing from the bottom of a long configuration form',
+        should: 'open the review at the top and move keyboard focus to its heading',
+        actual: await page.evaluate(() => [
+          document.querySelector('.sky-main > .sky-scroll')!.scrollTop,
+          document.activeElement?.textContent,
+        ]),
+        expected: [0, 'Ready to turn it on?'],
+      })
+      await back.click()
+      await page.getByLabel('Time', { exact: true }).fill('08:15')
+      await page.getByLabel('What this is for', { exact: true }).fill('Prepare the mock activity summary.')
+      await back.click()
+      await page.getByRole('button', { name: 'Choose commands instead', exact: true }).click()
+      assert({
+        given: 'going back through both earlier steps of a manual setup',
+        should: 'preserve commands, timing and context without a model call or a save action',
+        actual: [
+          await page.locator('.mantine-MultiSelect-pill').allTextContents(),
+          await page.getByLabel('Time', { exact: true }).inputValue(),
+          await page.getByLabel('What this is for', { exact: true }).inputValue(),
+          await page.getByRole('button', { name: 'Turn it on', exact: true }).count(),
+          requests.length,
+          creates.length,
+        ],
+        expected: [catalog.map(({ name }) => name), '08:15', 'Prepare the mock activity summary.', 0, 0, 0],
+      })
+      await page.getByLabel('Automation name', { exact: true }).fill('invalid name')
+      await review.click()
+      await page.getByRole('alert').filter({ hasText: 'Use letters, digits and dashes' }).waitFor()
+      assert({
+        given: 'invalid settings at the review boundary',
+        should: 'stay on Configure with the values available to correct and nothing written',
+        actual: [await currentStep.textContent(), await page.locator('.sky-auto-builder').isVisible(), creates.length],
+        expected: ['2Configure', true, 0],
+      })
+      await page.getByLabel('Automation name', { exact: true }).fill('mock-recaps')
+      await review.click()
+      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
+      assert({
+        given: 'correcting the settings and reviewing again',
+        should: 'use the latest schedule in the new proposal',
+        actual: await page.locator('.sky-auto-spec').first().textContent(),
+        expected: 'WhenEvery day at 8:15',
       })
 
       await page.goto(`${base}/automations/new`)
       await describe.fill('Run the previous day’s recaps every morning at 06:30.')
+      await page.route(
+        '**/automations/_api/draft',
+        (route) =>
+          route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ message: 'Mock drafting unavailable; try again.' }),
+          }),
+        { times: 1 },
+      )
       await describe.press('Enter')
-      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
+      await page.getByRole('alert').filter({ hasText: 'Mock drafting unavailable' }).waitFor()
       assert({
-        given: 'a described automation with five commands',
-        should: 'show one proposal and one create action',
+        given: 'a failed description request',
+        should: 'keep the description ready to retry on its own step',
         actual: [
-          await page.locator('.sky-auto-command-list').count(),
-          await page.locator('.sky-auto-command-list li').count(),
+          await currentStep.textContent(),
+          await describe.inputValue(),
           await page.getByRole('button', { name: 'Turn it on', exact: true }).count(),
         ],
-        expected: [1, 5, 1],
+        expected: ['1Describe', 'Run the previous day’s recaps every morning at 06:30.', 0],
       })
-      await page.getByRole('button', { name: 'Customize', exact: true }).click()
-      await page.getByRole('button', { name: 'Preview automation', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      await review.waitFor()
       await page.getByText('More conditions', { exact: true }).click()
       assert({
-        given: 'Customize after a described group',
-        should: 'load every command and the shared settings without writing a file',
+        given: 'a described group advancing to Configure',
+        should: 'load every command and shared setting on its own step without writing a file',
         actual: [
+          await currentStep.textContent(),
+          await describe.isVisible(),
           await page.locator('.mantine-MultiSelect-pill').allTextContents(),
           await page.getByLabel('Time', { exact: true }).inputValue(),
           await page.getByRole('combobox', { name: 'Day to recap', exact: true }).inputValue(),
@@ -245,6 +318,8 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
           files.size,
         ],
         expected: [
+          '2Configure',
+          false,
           catalog.map(({ name }) => name),
           '06:30',
           'Previous day',
@@ -255,6 +330,9 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
           1,
         ],
       })
+      await review.click()
+      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
+      await back.click()
       await page.getByLabel('Time', { exact: true }).fill('06:45')
       assert({
         given: 'an adjustment after preview',
@@ -262,28 +340,82 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         actual: await page.getByRole('button', { name: 'Turn it on', exact: true }).count(),
         expected: 0,
       })
-      await page.getByRole('button', { name: 'Preview automation', exact: true }).click()
-      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
-      const screenshots = env.get('SKY_AUTOMATIONS_SCREENSHOTS')
       if (screenshots) {
-        await mkdir(screenshots, { recursive: true })
-        await page.getByRole('button', { name: 'Turn it on', exact: true }).scrollIntoViewIfNeeded()
+        await page.locator('.sky-auto-hero').scrollIntoViewIfNeeded()
+        await page.screenshot({ path: path.join(screenshots, 'configure-desktop.png'), fullPage: true })
+      }
+      await review.click()
+      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
+      if (screenshots) {
         await page.screenshot({ path: path.join(screenshots, 'desktop.png'), fullPage: true })
       }
       await page.setViewportSize({ width: 390, height: 844 })
       const closeNavigation = page.getByRole('button', { name: 'Close', exact: true })
       if (await closeNavigation.isVisible()) await closeNavigation.click()
+      await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
       assert({
-        given: 'a five-command editor and proposal at phone width',
+        given: 'a five-command review at phone width',
         should: 'fit without horizontal overflow',
         actual: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         expected: true,
       })
       if (screenshots) {
-        await page.getByRole('button', { name: 'Turn it on', exact: true }).scrollIntoViewIfNeeded()
         await page.screenshot({ path: path.join(screenshots, 'mobile.png'), fullPage: true })
       }
+      await back.click()
+      assert({
+        given: 'Back from Review at phone width',
+        should: 'restore the edited schedule on Configure without a stale proposal or overflow',
+        actual: [
+          await page.getByLabel('Time', { exact: true }).inputValue(),
+          await page.locator('.sky-auto-command-list').count(),
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        ],
+        expected: ['06:45', 0, true],
+      })
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, 'configure-mobile.png'), fullPage: true })
+      await back.click()
+      assert({
+        given: 'Back from Configure at phone width',
+        should: 'restore the original description without overflowing the page',
+        actual: [
+          await describe.inputValue(),
+          await page.locator('.sky-auto-builder').isVisible(),
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        ],
+        expected: ['Run the previous day’s recaps every morning at 06:30.', false, true],
+      })
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, 'describe-mobile.png'), fullPage: true })
+      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      assert({
+        given: 'continuing with the same description after going back',
+        should: 'keep the manual edits without another model request',
+        actual: [await page.getByLabel('Time', { exact: true }).inputValue(), requests.length],
+        expected: ['06:45', 1],
+      })
+      await review.click()
+      await page.getByRole('button', { name: 'Turn it on', exact: true }).waitFor()
       await page.setViewportSize({ width: 1500, height: 1100 })
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: 'mantine-color-scheme-value',
+            newValue: 'dark',
+            storageArea: window.localStorage,
+          }),
+        ),
+      )
+      await page.locator('html[data-mantine-color-scheme="dark"]').waitFor()
+      if (screenshots) await page.screenshot({ path: path.join(screenshots, 'review-dark.png'), fullPage: true })
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: 'mantine-color-scheme-value',
+            newValue: 'light',
+            storageArea: window.localStorage,
+          }),
+        ),
+      )
       await page.getByRole('button', { name: 'Turn it on', exact: true }).click()
       await page.getByText('Mock write failed; retry this automation.', { exact: true }).waitFor()
       assert({

@@ -70,12 +70,14 @@ export function AutomationBuilder({
   initialSetup,
   onPreview,
   onChange,
+  onBack,
 }: {
   busy: boolean
   revise?: string
   initialSetup?: AutomationSetup
   onPreview: (setup: AutomationSetup) => void
   onChange: () => void
+  onBack?: () => void
 }) {
   const [catalog, setCatalog] = useState<AutomationCommand[] | null>(null)
   const [setup, setSetup] = useState<AutomationSetup>(initialSetup ?? { commands: [], at: ['07:00'] })
@@ -450,20 +452,25 @@ export function AutomationBuilder({
           value={setup.brief ?? ''}
           onChange={(event) => update({ ...setup, brief: event.currentTarget.value })}
         />
-        <div className="sky-auto-actions">
+        {setup.commands.length > 1 && (
+          <span className="sky-auto-help">
+            {setup.commands.length} commands in one automation. Runs in order; failures are reported and remaining
+            commands continue.
+          </span>
+        )}
+        <div className={`sky-auto-actions${onBack ? ' sky-auto-wizard-actions' : ''}`}>
+          {onBack && (
+            <Button disabled={busy} onClick={onBack}>
+              Back
+            </Button>
+          )}
           <Button
             variant="primary"
             disabled={busy || !setup.commands.length || (repeat !== 'interval' && !atList(setup).length)}
             onClick={() => onPreview(setup)}
           >
-            {busy ? 'Preparing…' : 'Preview automation'}
+            {busy ? 'Preparing…' : onBack ? 'Review automation' : 'Preview automation'}
           </Button>
-          {setup.commands.length > 1 && (
-            <span className="sky-auto-help">
-              {setup.commands.length} commands in one automation. Runs in order; failures are reported and remaining
-              commands continue.
-            </span>
-          )}
         </div>
       </fieldset>
     </section>

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-31
-updated: 2026-09-08
+updated: 2026-09-11
 ---
 
 # Automations — the machine's own jobs, on a page
@@ -24,11 +24,11 @@ charter that never fires looks exactly like one that had nothing to do.
 `/automations/<name>` is one charter's page: the brief in full (rendered
 with the document renderer), the schedule, the run ledger, Run now, the
 same switch — and "Edit automation", with direct command/condition controls
-and the option to describe a change in words. `/automations/new` starts with
-describing the automation. The generated preview offers **Customize**, which
-opens command and condition controls already filled from that proposal.
-**Choose commands instead** is a secondary option for direct setup.
-Read the proposed automation, then turn it on. The sidebar
+and the option to describe a change in words. `/automations/new` is a three-step
+wizard: **Describe**, **Configure**, **Review**. Describing fills the command and
+condition controls; **Choose commands instead** opens direct setup. Review
+replaces the form, and **Back** preserves the description and unfinished settings.
+Only the review step offers **Turn it on**. The sidebar
 swaps to the roster, one row a page, with
 ＋ New automation at its foot.
 

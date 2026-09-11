@@ -498,14 +498,16 @@ function ProposalCard({
   onAccept,
   onDiscard,
   onCustomize,
+  onBack,
 }: {
   draft: DraftWire
   accept: string
   busy: boolean
   error: string | null
   onAccept: () => void
-  onDiscard: () => void
+  onDiscard?: () => void
   onCustomize?: () => void
+  onBack?: () => void
 }) {
   const [fileOpen, setFileOpen] = useState(false)
   const briefHtml = useMemo(() => renderMarkdown(draft.brief), [draft.brief])
@@ -562,7 +564,17 @@ function ProposalCard({
         </button>
         {fileOpen && <pre className="sky-auto-file">{draft.contents.trimEnd()}</pre>}
 
-        <div className="sky-auto-actions">
+        {error && (
+          <div className="sky-auto-problem" role="alert">
+            {error}
+          </div>
+        )}
+        <div className={`sky-auto-actions${onBack ? ' sky-auto-wizard-actions' : ''}`}>
+          {onBack && (
+            <Button onClick={onBack} disabled={busy}>
+              Back
+            </Button>
+          )}
           <Button variant="primary" onClick={onAccept} disabled={busy}>
             {busy ? 'Writing…' : accept}
           </Button>
@@ -571,10 +583,11 @@ function ProposalCard({
               Customize
             </Button>
           )}
-          <Button onClick={onDiscard} disabled={busy}>
-            Discard
-          </Button>
-          {error && <span className="sky-auto-problem">{error}</span>}
+          {onDiscard && (
+            <Button onClick={onDiscard} disabled={busy}>
+              Discard
+            </Button>
+          )}
         </div>
       </div>
     </section>
@@ -585,6 +598,28 @@ function ProposalCard({
 // New automation — describe it, customize the proposal, then turn it on
 // -----------------------------------------------------------------------------
 
+const CREATION_STEPS = [
+  {
+    id: 'describe',
+    label: 'Describe',
+    title: 'What should Sky take care of?',
+    description: 'Tell Sky what to do and when. You can adjust the details before turning it on.',
+  },
+  {
+    id: 'configure',
+    label: 'Configure',
+    title: 'Set up your automation',
+    description: 'Choose what runs and when, then review your automation.',
+  },
+  {
+    id: 'review',
+    label: 'Review',
+    title: 'Ready to turn it on?',
+    description: 'Check the commands and schedule. Go back to make any changes.',
+  },
+] as const
+type CreationStep = (typeof CREATION_STEPS)[number]['id']
+
 export function NewAutomation({
   back,
   onCreated,
@@ -592,38 +627,68 @@ export function NewAutomation({
   back: { label: string; onClick: () => void }
   onCreated: (name: string) => void
 }) {
-  const [asked, setAsked] = useState('')
-  const [mode, setMode] = useState('describe')
+  const [request, setRequest] = useState('')
+  const [draftedRequest, setDraftedRequest] = useState('')
+  const [step, setStep] = useState<CreationStep>('describe')
+  const [builderOpened, setBuilderOpened] = useState(false)
   const [initialSetup, setInitialSetup] = useState<AutomationSetup>()
   const [drafting, setDrafting] = useState(false)
   const [draft, setDraft] = useState<DraftWire | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [writing, setWriting] = useState(false)
   const [writeProblem, setWriteProblem] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const busy = drafting || writing
+  const stepIndex = CREATION_STEPS.findIndex((entry) => entry.id === step)
+  const currentStep = CREATION_STEPS[stepIndex]!
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+    headingRef.current?.focus({ preventScroll: true })
+  }, [step])
 
   const clearPreview = () => {
     setDraft(null)
     setWriteProblem(null)
     setProblem(null)
   }
-  const ask = (request: string) => {
-    setAsked(request)
-    setMode('describe')
+  const goTo = (next: CreationStep) => {
+    if (busy) return
+    clearPreview()
+    setStep(next)
+  }
+  const configure = () => {
+    setBuilderOpened(true)
+    goTo('configure')
+  }
+  const ask = () => {
+    if (!request.trim() || busy) return
+    if (request.trim() === draftedRequest) {
+      configure()
+      return
+    }
     setDrafting(true)
     clearPreview()
-    void postDraft(request).then((answer) => {
+    void postDraft(request.trim()).then((answer) => {
       setDrafting(false)
       if (answer.ok) {
-        setDraft(answer.draft)
+        setDraftedRequest(request.trim())
         setInitialSetup(answer.setup)
+        setBuilderOpened(true)
+        setStep('configure')
       } else setProblem(answer.message)
     })
   }
   const preview = (setup: AutomationSetup) => {
+    if (busy) return
     setDrafting(true)
     clearPreview()
     void automationRequest<DraftWire>('preview', setup)
-      .then(setDraft)
+      .then((proposal) => {
+        setDraft(proposal)
+        setStep('review')
+      })
       .catch((error: unknown) =>
         setProblem(error instanceof Error ? error.message : 'Could not prepare the automation.'),
       )
@@ -644,72 +709,111 @@ export function NewAutomation({
 
   return (
     <div className="sky-main">
-      <header className="sky-head">
-        <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
+      <header className="sky-head sky-auto-detail-head">
+        <Button size="sm" className="sky-auto-back" onClick={back.onClick} disabled={busy}>
           ‹ {back.label}
         </Button>
         <span className="sky-title">New automation</span>
       </header>
-      <div className="sky-scroll">
-        <div className="sky-col sky-automations">
+      <div className="sky-scroll" ref={scrollRef}>
+        <div className="sky-col sky-automations sky-auto-wizard">
+          <nav aria-label="Automation creation">
+            <ol className="sky-auto-steps">
+              {CREATION_STEPS.map((entry, index) => (
+                <li key={entry.id} aria-current={step === entry.id ? 'step' : undefined}>
+                  {index < stepIndex ? (
+                    <Button size="sm" className="sky-auto-step" disabled={busy} onClick={() => goTo(entry.id)}>
+                      <span className="sky-auto-step-number" aria-hidden="true">
+                        ✓
+                      </span>
+                      {entry.label}
+                    </Button>
+                  ) : (
+                    <span className="sky-auto-step">
+                      <span className="sky-auto-step-number" aria-hidden="true">
+                        {index + 1}
+                      </span>
+                      {entry.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
           <div>
-            <h2 className="sky-auto-hero">What should sky take care of?</h2>
-            <p className="sky-auto-herosub">
-              Describe what you want. Sky will draft one automation, then you can customize its commands, schedule and
-              conditions before turning it on.
-            </p>
+            <h2 className="sky-auto-hero" ref={headingRef} tabIndex={-1}>
+              {currentStep.title}
+            </h2>
+            <p className="sky-auto-herosub">{currentStep.description}</p>
           </div>
-          <div>
-            <AskInput placeholder="Every weekday at 7…" busy={drafting || writing} onAsk={ask} />
-            {mode === 'describe' && !draft && !drafting && (
-              <Button
-                size="sm"
-                variant="primary-quiet"
-                style={{ marginTop: 12 }}
-                onClick={() => {
-                  setInitialSetup(undefined)
-                  setMode('commands')
-                }}
-              >
-                Choose commands instead
-              </Button>
+          <div hidden={step !== 'describe'}>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                ask()
+              }}
+            >
+              <div className="sky-input">
+                <Textarea
+                  variant="unstyled"
+                  classNames={{ root: 'sky-input-root', input: 'sky-input-field' }}
+                  autosize
+                  minRows={3}
+                  maxRows={6}
+                  placeholder="Every weekday at 7…"
+                  aria-label="Describe your automation"
+                  value={request}
+                  onChange={(event) => setRequest(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault()
+                      ask()
+                    }
+                  }}
+                  disabled={busy}
+                />
+              </div>
+              <div className="sky-auto-actions sky-auto-wizard-actions">
+                <Button size="sm" variant="primary-quiet" onClick={configure} disabled={busy}>
+                  Choose commands instead
+                </Button>
+                <Button type="submit" variant="primary" disabled={busy || !request.trim()}>
+                  {drafting ? 'Preparing…' : 'Continue'}
+                </Button>
+              </div>
+            </form>
+          </div>
+          {/* Keep the builder mounted so Back preserves every unfinished field. */}
+          <div hidden={step !== 'configure'}>
+            {builderOpened && (
+              <AutomationBuilder
+                initialSetup={initialSetup}
+                busy={busy}
+                onPreview={preview}
+                onChange={clearPreview}
+                onBack={() => goTo('describe')}
+              />
             )}
           </div>
-          {mode === 'commands' && (
-            <AutomationBuilder
-              initialSetup={initialSetup}
-              busy={drafting || writing}
-              onPreview={preview}
-              onChange={clearPreview}
-            />
-          )}
-          {drafting && <div className="sky-condensed">— preparing your preview… —</div>}
-          {problem && (
-            <div className="sky-condensed" data-tone="failed">
-              — {problem} —
+          {drafting && (
+            <div className="sky-condensed" role="status">
+              Preparing your automation…
             </div>
           )}
-          {draft && (
-            <>
-              <ProposalCard
-                draft={draft}
-                accept="Turn it on"
-                busy={writing}
-                error={writeProblem}
-                onAccept={turnOn}
-                onDiscard={clearPreview}
-                onCustomize={mode === 'describe' && initialSetup ? () => setMode('commands') : undefined}
-              />
-              {mode === 'describe' && (
-                <div className="sky-auto-adjust">
-                  <AskInput
-                    placeholder="Adjust it — “make it 8:00”, “skip fridays”…"
-                    busy={drafting || writing}
-                    onAsk={(adjustment) => ask(`${asked}\n\nAdjustment: ${adjustment}`)}
-                  />
-                </div>
-              )}
-            </>
+          {problem && (
+            <div className="sky-auto-problem" role="alert">
+              {problem}
+            </div>
+          )}
+          {step === 'review' && draft && (
+            <ProposalCard
+              draft={draft}
+              accept="Turn it on"
+              busy={writing}
+              error={writeProblem}
+              onAccept={turnOn}
+              onBack={() => goTo('configure')}
+            />
           )}
         </div>
       </div>
