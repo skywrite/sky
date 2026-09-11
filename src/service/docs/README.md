@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # The service process
@@ -58,6 +58,9 @@ charter's history or move a newer run's schedule backward.
 The process lifecycle and reconnection contract live in
 [background jobs](../../lib/jobs/docs/README.md). Chat turns and imports
 still use service activity holds.
+
+[Chat recovery](../handler/chat/docs/2026-09-10-chat-recovery-blocked-server.md)
+parses saved state in bounded workers so one file cannot block HTTP startup.
 
 Manual [Outbox checks](../../lib/outbox/docs/2026-09-08-checks-survive-restarts.md)
 also run in a detached worker, with a short activity hold protecting the HTTP

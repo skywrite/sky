@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import { exists, makeTempDir, readDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
+import { type ContextTurnLog, serializeContextLog, splitContextLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import {
@@ -15,6 +15,7 @@ import {
   writeChatAutosave,
 } from './autosave.ts'
 import { loadResumeSession, type ResumeSession } from './mod.ts'
+import type { ChatRecovery } from './recovery.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -85,6 +86,84 @@ test('writeChatAutosave - a snapshot loads back like a saved transcript', async 
       conversation: TURNS.map((m) => [m.role, m.content, m.when]),
       contextLog: [{ turn: 1, queries: ['project = "Atlas"'] }],
     },
+  })
+})
+
+test('writeChatAutosave keeps malformed tool input losslessly in JSON recovery metadata', async () => {
+  const dir = await tmpStateDir()
+  const filePath = path.join(dir, chatAutosaveFilename(START, 'sample-thread'))
+  const invalidInput = '{"message":"Sample request"' + '\n  '.repeat(20_000)
+  const error = `Invalid JSON: ${invalidInput}\nExpected closing brace`
+  const recovery: ChatRecovery = {
+    version: 1,
+    modelMessages: [
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'sample-call',
+            toolName: 'sample_tool',
+            output: { type: 'error-text', value: error },
+          },
+        ],
+      },
+    ],
+    host: { runs: [{ input: invalidInput, error }] },
+  }
+  await writeChatAutosave(filePath, autosaveInput({ recovery }))
+  const raw = await readTextFile(filePath)
+  const doc = ChatDocument.fromMarkdown(raw)
+  const loaded = await loadResumeSession(filePath, { snapshot: true })
+  assert({
+    given: 'a failed tool call containing a long whitespace run',
+    should: 'escape its metadata in JSON and recover the exact original values',
+    actual: {
+      yamlRecovery: doc.yaml['recovery'],
+      jsonRecovery: splitContextLog(doc.markdown).details?.session,
+      recovered: loaded.recovery,
+      modelMessages: loaded.state.modelMessages,
+      expandedWhitespace: raw.includes('\n  '.repeat(20_000)),
+    },
+    expected: {
+      yamlRecovery: undefined,
+      jsonRecovery: recovery,
+      recovered: recovery,
+      modelMessages: recovery.modelMessages,
+      expandedWhitespace: false,
+    },
+  })
+})
+
+test('loadResumeSession still reads legacy recovery metadata from YAML', async () => {
+  const dir = await tmpStateDir()
+  const filePath = path.join(dir, chatAutosaveFilename(START, 'legacy-thread'))
+  const recovery: ChatRecovery = {
+    version: 1,
+    modelMessages: [{ role: 'user', content: 'Original request' }],
+    host: { saves: false, title: 'Sample chat' },
+  }
+  const doc = ChatDocument.create({
+    summary: 'Sample chat',
+    messages: TURNS,
+    created: '2026-01-27',
+    updated: '2026-01-27',
+    provider: 'sample',
+    model: 'sample-model',
+  })
+  doc.yaml['recovery'] = recovery
+  const original = doc.toMarkdown() + serializeContextLog(LOG)
+  await writeTextFile(filePath, original)
+  const loaded = await loadResumeSession(filePath, { snapshot: true })
+  assert({
+    given: 'a snapshot written in the older YAML format',
+    should: 'restore its provider history and settings without rewriting the file',
+    actual: {
+      recovery: loaded.recovery,
+      messages: loaded.state.modelMessages,
+      unchanged: (await readTextFile(filePath)) === original,
+    },
+    expected: { recovery, messages: recovery.modelMessages, unchanged: true },
   })
 })
 

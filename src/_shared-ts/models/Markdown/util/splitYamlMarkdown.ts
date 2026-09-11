@@ -31,7 +31,9 @@ export default function splitYamlMarkdown(markdownWithYaml: string): SplitYamlMa
     if (!match) return { yaml: '', markdown: markdownWithYaml }
 
     const markdown = markdownWithYaml.replace(match[0], '')
-    const yaml = match[match.length - 1].replace(/^\s+|\s+$/g, '')
+    // An unanchored trailing-whitespace regex retries at every interior blank.
+    // Recovery metadata can contain long whitespace runs from failed tool input.
+    const yaml = match[match.length - 1].trim()
 
     return { yaml, markdown }
   } else {

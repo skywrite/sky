@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-08-31
+updated: 2026-09-10
 ---
 
 # Markdown models
@@ -8,6 +8,9 @@ updated: 2026-08-31
 Design notes for `src/_shared-ts/models/Markdown/`. Only reference links are
 written up so far. Extend this file as other parts of the family need a
 mental model.
+
+The frontmatter splitter's whitespace performance constraint is explained in
+[chat recovery](../../../../service/handler/chat/docs/2026-09-10-chat-recovery-blocked-server.md).
 
 ## Reference links: two maps, one key
 

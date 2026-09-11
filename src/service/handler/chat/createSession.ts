@@ -39,9 +39,10 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { exists } from '#shared/fs/mod.ts'
+import { logger } from '#shared/log.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
-import { loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
+import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -61,10 +62,12 @@ import type {
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
+import { readSession } from './readSession.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
 const WEB_CHAT = { days: 7, contextTokens: 300_000 }
+const logRecovery = logger('chat.recovery')
 
 /** The terminal's bullet on a progress line; the page draws its own marks. */
 const BULLET = /^[◦•]\s+/
@@ -383,7 +386,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     for (const ref of refs) {
       try {
         // A snapshot holds the whole thread, parent turns included; the key says which are inherited.
-        const loaded = await loadResumeSession(ref.path, { baseDir: config.DIR_BASE, snapshot: true })
+        const loaded = await readSession(ref.path, { baseDir: config.DIR_BASE, snapshot: true })
         // A snapshot ending on the person's message is a thread the service went down answering.
         const { state, interrupted } = interruptedOf(loaded.state)
         if (state.conversation.length > 0 || interrupted) {
@@ -421,8 +424,12 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               : {}),
           })
         }
-      } catch {
+      } catch (error) {
         // An unreadable snapshot stays for the sweep; it must not stop the others.
+        logRecovery.warn('Could not restore chat snapshot {file}: {error}', {
+          file: ref.path,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     }
     return restores
@@ -436,7 +443,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     const timeRoot = path.resolve(config.DIR_TIME)
     if (!abs.startsWith(`${timeRoot}${path.sep}`) || !isAIChatPath(abs) || !abs.endsWith('.md')) return null
     if (!(await exists(abs))) return null
-    const resume = await loadResumeSession(abs, { baseDir: config.DIR_BASE })
+    const resume = await readSession(abs, { baseDir: config.DIR_BASE })
     const info = parseTimePath(abs)
     const time = path.basename(abs).match(/^(\d{1,3})-(\d{2})_/)
     const day = info?.kind === 'day' ? info.date.ymd : resume.created

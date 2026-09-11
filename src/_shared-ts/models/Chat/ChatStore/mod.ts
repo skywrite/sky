@@ -129,9 +129,11 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
   const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
   const created = doc.yaml['created']
   const own = reconstructResumeState(doc)
-  const recovery = options.snapshot
-    ? readChatRecovery(doc.yaml['recovery'])
-    : splitContextLog(doc.markdown).details?.session
+  // Older snapshots kept provider history in YAML. New ones share the saved
+  // transcript's JSON block, which does not expand blank lines with indentation.
+  const recovery =
+    (options.snapshot ? readChatRecovery(doc.yaml['recovery']) : undefined) ??
+    splitContextLog(doc.markdown).details?.session
   if (options.snapshot && recovery?.modelMessages) own.modelMessages = recovery.modelMessages
   if (recovery?.legalReview) own.legalReview = recovery.legalReview
   if (recovery?.writingDrafts) own.writingDrafts = recovery.writingDrafts

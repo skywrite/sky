@@ -144,7 +144,6 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     approvals: [...new Set([...(input.resume?.approvals ?? []), ...(input.approvals ?? [])])],
     parent: input.parent ?? input.resume?.parent ?? null,
   })
-  if (input.recovery) doc.yaml['recovery'] = input.recovery
   const parent = input.parent ?? input.resume?.parent
   const inherited = parent ? parent.turn * 2 : 0
   const ownLog = parent ? input.contextLog.filter((entry) => entry.turn > parent.turn) : input.contextLog
@@ -152,6 +151,7 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     doc.toMarkdown() +
     serializeContextLog(input.contextLog, {
       statistics: chatStatistics(ownLog, Math.max(0, input.turns.length - inherited)),
+      session: input.recovery,
     })
 
   // Atomic replace: a crash mid-write must never leave a truncated snapshot.

@@ -100,3 +100,17 @@ test(splitYamlMarkdown.name, () => {
     expected: { yaml: '', markdown: FIXTURE_MARKDOWN.trimStart() },
   })
 })
+
+test('splitYamlMarkdown keeps large interior whitespace without blocking', () => {
+  const yaml = `recovery:\n  error: |-\n    Invalid tool input\n${'    \n'.repeat(20_000)}    Expected closing brace`
+  const started = performance.now()
+  const result = splitYamlMarkdown(`---\n${yaml}\n---\n# Sample chat\n`)
+  const elapsedMs = performance.now() - started
+
+  assert({
+    given: 'recovery metadata with a long whitespace run followed by text',
+    should: 'preserve its contents and split in under one second',
+    actual: { ...result, fast: elapsedMs < 1000 },
+    expected: { yaml, markdown: '# Sample chat\n', fast: true },
+  })
+})

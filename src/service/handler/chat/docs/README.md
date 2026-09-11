@@ -275,6 +275,11 @@ a person can see and touch:
   completed turns. A browser continuation whose thread cannot be restored
   is refused before a new session can silently replace it. See
   [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
+  Recovery and saved-chat reads parse in a worker with a ten-second deadline;
+  a slow snapshot is logged and left intact while other snapshots continue.
+  New snapshots keep provider history and host state in the existing
+  `CONTEXT-LOG` JSON `session` field. Older YAML recovery fields still read.
+  See [2026-09-10 — recovery cannot block HTTP](2026-09-10-chat-recovery-blocked-server.md).
 - **A new chat from here.** Every completed text reply offers it. The branch is a thread
   that keeps the turns through that reply and goes its own way after them;
   on its page the inherited turns read dimmed, then a line says where it
