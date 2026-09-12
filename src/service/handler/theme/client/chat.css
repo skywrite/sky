@@ -599,7 +599,7 @@
   text-decoration: none;
 }
 
-/* Turn activity stays beside its query disclosure as the reply arrives. */
+/* Query disclosures stay with their user message; progress follows the current reply. */
 .sky-chat-activity {
   min-width: 0;
   color: var(--sky-text-2);

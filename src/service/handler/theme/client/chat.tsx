@@ -477,12 +477,17 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         input: action.input,
         callId: action.callId,
       }
-      return { ...state, runs: [...state.runs, chip] }
+      return { ...state, gather: state.phase === 'busy' ? 'thinking' : state.gather, runs: [...state.runs, chip] }
     }
     case 'run-updated': {
       const i = state.runs.findIndex((run) => run.callId === action.run.callId)
       return {
         ...state,
+        // A completed tool hands control back to the model, even after earlier text cleared the indicator.
+        gather:
+          state.phase === 'busy' && action.run.status !== null && (i < 0 || state.runs[i]!.status === null)
+            ? 'thinking'
+            : state.gather,
         runs: i < 0 ? [...state.runs, action.run] : state.runs.map((run, index) => (index === i ? action.run : run)),
       }
     }
@@ -511,6 +516,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       if (i < 0) return state
       return {
         ...state,
+        gather: state.phase === 'busy' ? 'thinking' : state.gather,
         runs: state.runs.map((r, k) => (k === i ? { ...r, status: action.status, finished: action.finished } : r)),
       }
     }
@@ -1652,7 +1658,15 @@ export function ThreadColumn({
     : undefined
   // A tool at work speaks for the wait; the quiet line would only say "thinking" over it.
   const running = state.runs.some((run) => run.status === null)
-  const lastUser = state.turns.findLastIndex((turn) => turn.role === 'user')
+  const thinkingAfterTool =
+    (state.gather === 'thinking' || state.gather === 'still working') &&
+    state.runs.some((run) => run.at === replyIndexOf(state.turns) && run.status !== null)
+  const activity =
+    state.phase === 'busy' && state.approvals.length === 0 && !running
+      ? thinkingAfterTool
+        ? 'Sky is thinking through the results'
+        : state.gather
+      : null
   const coming = state.runs.filter((run) => run.at >= state.turns.length)
   // An answered card sits before the reply it preceded; past the last turn while that reply is still coming.
   const settled = (at: number) =>
@@ -1719,8 +1733,8 @@ export function ThreadColumn({
             {turn.role === 'user' && (
               <Fragment key={`${state.id}-${i}`}>
                 <ChatActivity
-                  active={state.phase === 'busy' && i === lastUser}
-                  text={state.approvals.length > 0 || running ? null : state.gather}
+                  active={false}
+                  text={null}
                   queries={state.queries.find((entry) => entry.turn === Math.floor(i / 2) + 1)?.queries}
                 />
               </Fragment>
@@ -1814,6 +1828,7 @@ export function ThreadColumn({
         </>
       )}
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
+      <ChatActivity active={Boolean(activity)} text={activity} />
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
       {state.id && (
         <WritingVoiceQuestions

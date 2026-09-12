@@ -1,6 +1,5 @@
 import { identifyAgentSlackFiles } from '#commands/all/slack/cli/lib/agent-slack/files.ts'
 import {
-  type AgentSlackFile,
   type AgentSlackMessage,
   collectChannelIds,
   collectSubteamIds,
@@ -24,7 +23,7 @@ import {
   resolveUserNames,
 } from '#commands/all/slack/lib/resolveNames.ts'
 import { slackApiCall } from '#commands/all/slack/lib/slack-api.ts'
-import { enrichSlackVoiceFiles, type SlackCaptureFile } from '#commands/all/slack/lib/voiceFiles.ts'
+import { enrichSlackFiles, type SlackCaptureFile } from '#commands/all/slack/lib/voiceFiles.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 
@@ -154,16 +153,24 @@ export default class SlackCliExportTask extends Command {
     // Resolve all user IDs (the users.info fallback needs the workspace URL)
     const workspaceUrl =
       (args.workspace ? extractWorkspaceUrl(args.workspace) : undefined) ?? extractWorkspaceUrl(args.link)
-    const enrichedFiles = await enrichSlackVoiceFiles(
+    const enrichedFiles = await enrichSlackFiles(
       identifyAgentSlackFiles(allAgentMessages.flatMap((message) => message.files ?? [])) ?? [],
       workspaceUrl,
     )
-    const voiceMemos = new Map(enrichedFiles.map((file) => [file.id, file.voiceMemo]))
-    const captureFiles = (files: AgentSlackFile[] | undefined): SlackCaptureFile[] | undefined =>
-      identifyAgentSlackFiles(files)?.map((file) => ({
-        ...file,
-        ...(voiceMemos.get(file.id) ? { voiceMemo: voiceMemos.get(file.id) } : {}),
-      }))
+    const fileMetadata = new Map(enrichedFiles.filter((file) => file.id).map((file) => [file.id, file]))
+    const captureFiles = (source: AgentSlackMessage): SlackCaptureFile[] | undefined =>
+      identifyAgentSlackFiles(source.files)?.map((file) => {
+        const enriched = fileMetadata.get(file.id)
+        return {
+          ...file,
+          mode: enriched?.mode ?? file.mode,
+          externalUrl: enriched?.externalUrl,
+          sourceUrl:
+            enriched?.sourceUrl ??
+            (workspaceUrl ? `${workspaceUrl}/archives/${source.channel_id}/p${source.ts.replace('.', '')}` : args.link),
+          voiceMemo: enriched?.voiceMemo,
+        }
+      })
     const userIds = collectUserIds(allAgentMessages)
     const userNames = await resolveUserNames(userIds, workspaceUrl)
 
@@ -210,7 +217,7 @@ export default class SlackCliExportTask extends Command {
       userName: data.message.author?.user_id ? userNames.get(data.message.author.user_id) : undefined,
       threadTs: data.message.thread_ts,
       permalink,
-      files: captureFiles(data.message.files),
+      files: captureFiles(data.message),
     }
 
     let thread: ThreadData | undefined
@@ -225,7 +232,7 @@ export default class SlackCliExportTask extends Command {
             text: normalizeFences(resolveContent(m.content || '', userNames, channelNames, usergroupNames)),
             userId: m.author?.user_id,
             userName: m.author?.user_id ? userNames.get(m.author.user_id) : undefined,
-            files: captureFiles(m.files),
+            files: captureFiles(m),
           }),
         ),
       }

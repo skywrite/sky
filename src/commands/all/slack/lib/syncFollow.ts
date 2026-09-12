@@ -3,7 +3,7 @@ import type { FollowMessage } from '#shared/models/Follow/mod.ts'
 import type MessageDocument from '#shared/models/Message/mod.ts'
 import { parseSlackConversation, type SlackConversation } from '#shared/models/Message/slack/parse.ts'
 import { voiceTranscriptIds } from '#shared/models/Message/slack/transcripts.ts'
-import { matchSlackMessages } from '#shared/models/Message/slack/write.ts'
+import { matchSlackMessages, pendingSlackAttachment } from '#shared/models/Message/slack/write.ts'
 import { PlainDate, type PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { writeMessage, type SlackCaptureMessage } from './captureMessages.ts'
 
@@ -59,9 +59,11 @@ export async function syncSlackFollow(
     if (!groups.has(key)) groups.set(key, { messages: [], when, saved: owner, needsUpdate: false })
     const group = groups.get(key)!
     group.messages.push(source)
-    const missingFiles = (source.files ?? []).some(
-      (file) => !file.id || !match?.attachmentIds.includes(`attachment-slack-${file.id}`),
-    )
+    const missingFiles = (source.files ?? []).some((file) => {
+      const id = file.id ? `attachment-slack-${file.id}` : undefined
+      const attachment = id ? existing?.parsed.attachments.find((saved) => saved.id === id) : undefined
+      return !id || !match?.attachmentIds.includes(id) || !attachment || !!pendingSlackAttachment(attachment)
+    })
     const voiceIds = (source.files ?? [])
       .filter((file) => file.voiceMemo && file.id)
       .map((file) => `attachment-slack-${file.id}`)

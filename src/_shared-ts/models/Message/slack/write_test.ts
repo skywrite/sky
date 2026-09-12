@@ -1,6 +1,13 @@
 import { assert, test } from '#test'
 import { parseSlackConversation } from './parse.ts'
-import { sectionSlackConversation, slackMessageId, updateSlackConversation, type SlackWriteMessage } from './write.ts'
+import {
+  pendingSlackAttachment,
+  sectionSlackConversation,
+  slackAttachmentFile,
+  slackMessageId,
+  updateSlackConversation,
+  type SlackWriteMessage,
+} from './write.ts'
 
 const message = (ts: string, text: string, timestamp = '2026-04-10 09:00'): SlackWriteMessage => ({
   id: slackMessageId('C0ATLAS', ts),
@@ -138,5 +145,49 @@ test('Slack writer refuses to guess legacy identities from author and minute alo
     should: 'stop before risking a duplicate or wrong attachment association',
     actual: failed,
     expected: true,
+  })
+})
+
+test('Slack writer resolves only the pending attachment block while retaining edited CRLF content', () => {
+  const file = { id: 'attachment-slack-F0REPORT', name: 'report.pdf', pending: true as const }
+  const source = { ...message('1770000000.000001', ''), attachments: [file] }
+  const marker = '<!-- slack-attachment-pending -->'
+  const end = '<!-- /slack-attachment-pending -->'
+  const example = `[example]: https://example.com\n\n\u0060\u0060\u0060html\n${marker}\nExample content.\n${end}\n\u0060\u0060\u0060\n\n`
+  const initial = (
+    updateSlackConversation('# Atlas\n\n', [source])
+      .replace('### report.pdf', '### My report')
+      .replace(marker, example + marker) + 'My attachment summary.\n\n## Notes\n\nKeep this note.\n'
+  ).replaceAll('\n', '\r\n')
+  const resolved = updateSlackConversation(initial, [
+    { ...source, attachments: [{ ...file, pending: false, file: 'atlas-follow/report.pdf' }] },
+  ])
+  const managed = `${marker}\r\n\r\n*Original file unavailable; retry pending.*\r\n\r\n${end}`
+  assert({
+    given: 'a pending entry with edited title, CRLF, notes, a reference definition and a fenced marker example',
+    should: 'replace only the actual pending block and leave every other byte intact',
+    actual: [resolved, pendingSlackAttachment(parseSlackConversation(resolved).attachments[0])],
+    expected: [initial.replace(managed, '[Original file](<atlas-follow/report.pdf>)'), undefined],
+  })
+})
+
+test('Slack attachment originals are distinct from local links in user notes', () => {
+  const saved =
+    updateSlackConversation(
+      '# Atlas\n\n',
+      [],
+      [
+        { id: 'attachment-slack-F0DECK', name: 'Atlas slides', url: 'https://example.com/slides/atlas' },
+        { id: 'attachment-slack-F0REPORT', name: 'report.pdf', pending: true },
+      ],
+    ).replace(
+      '[Original file](<https://example.com/slides/atlas>)',
+      '[Original file](<https://example.com/slides/atlas>)\n\n[My notes](<notes.md>)',
+    ) + '\n[More notes](<more-notes.md>)\n'
+  assert({
+    given: 'remote and pending entries with local links in attachment notes',
+    should: 'avoid treating those notes as downloaded originals',
+    actual: parseSlackConversation(saved).attachments.map(slackAttachmentFile),
+    expected: [undefined, undefined],
   })
 })

@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { runCommand } from '#lib/sys/mod.ts'
 import { assert, test } from '#test'
 
-test('slack:new recaptures in place and a failed attachment leaves the saved document intact', async () => {
+test('slack:new recaptures in place and retains new messages when an attachment is unavailable', async () => {
   const temp = await mkdtemp(path.join(tmpdir(), 'slack-new-test-'))
   try {
     // Config is resolved on import. A child process isolates both notebook and
@@ -21,6 +21,7 @@ test('slack:new recaptures in place and a failed attachment leaves the saved doc
       import { DIR_TIME } from '#config'
       import MessageDocument from '#shared/models/Message/mod.ts'
       import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
+      import { pendingSlackAttachment } from '#shared/models/Message/slack/write.ts'
       import dayFile from '#shared/nbfs/dayFile.ts'
       import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
       const when = new PlainDateTime('2026-04-10 09:00')
@@ -54,8 +55,16 @@ test('slack:new recaptures in place and a failed attachment leaves the saved doc
       check.equal(await readFile(file, 'utf8'), saved)
       const daily = await readFile(dayPath, 'utf8')
       check.equal(daily.split(created.data.filePath).length - 1, 1)
-      await check.rejects(() => capture([first, second, { ...second, ts: '1770000000.000003', files: [{ id: 'F0MISSING', name: 'report.pdf', error: 'Unavailable' }] }]))
-      check.equal(await readFile(file, 'utf8'), saved)
+      const pending = await capture([first, second, { ...second, ts: '1770000000.000003', files: [{ id: 'F0MISSING', name: 'report.pdf', error: 'Unavailable' }] }])
+      check.equal(pending.ok, true, pending.message)
+      const pendingDoc = MessageDocument.fromMarkdown(await readFile(file, 'utf8'))
+      const conversation = parseSlackConversation(pendingDoc.markdown)
+      check.equal(conversation.messages.length, 3)
+      check.deepEqual(conversation.messages.slice(0, 2).map(m => m.markdown), parseSlackConversation(parsed.markdown).messages.map(m => m.markdown))
+      check.ok(pendingSlackAttachment(conversation.attachments[0]))
+      check.equal(pendingDoc.yaml.custom, 'keep')
+      check.ok(pendingDoc.markdown.includes('Keep this note.'))
+      check.equal(pendingDoc.attachments.length, 0)
       check.equal(await readFile(dayPath, 'utf8'), daily)
     `,
       ],

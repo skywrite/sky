@@ -83,7 +83,7 @@ function activityLabel(text: string, seconds: number): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Lives with the user message, so opening a query survives the first token and the end of the reply. */
+/** Query disclosures stay with their user message; the active wait sits below the current reply. */
 export function ChatActivity({
   active,
   text,

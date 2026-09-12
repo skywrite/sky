@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
-import { slackAttachmentFile, updateSlackConversation } from '#shared/models/Message/slack/write.ts'
+import {
+  pendingSlackAttachment,
+  slackAttachmentFile,
+  updateSlackConversation,
+} from '#shared/models/Message/slack/write.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -163,28 +167,121 @@ test('Slack capture does not save download-error receipts as original attachment
   try {
     const receipt = path.join(temp, 'F0FILE.download-error.txt')
     await writeFile(receipt, 'Not authorized')
-    let error = ''
-    try {
-      await updateSlackCapture({
-        doc: doc(),
-        messages: [
-          {
-            ...source('1770000000.000001'),
-            files: [{ id: 'F0FILE', name: 'report.pdf', path: receipt, error: 'Download failed' }],
-          },
-        ],
-        day,
-        output,
-        attachmentsRoot: temp,
-      })
-    } catch (caught) {
-      error = String(caught)
-    }
+    const saved = await updateSlackCapture({
+      doc: doc(),
+      messages: [
+        {
+          ...source('1770000000.000001'),
+          files: [{ id: 'F0FILE', name: 'report.pdf', path: receipt, error: 'Download failed' }],
+        },
+      ],
+      day,
+      output,
+      attachmentsRoot: temp,
+    })
+    const parsed = parseSlackConversation(saved.markdown)
     assert({
       given: 'agent-slack returned a download error with a receipt path',
-      should: 'fail before a document can be saved and keep the receipt out of attachments',
-      actual: [error.includes('unavailable'), await readdir(path.join(temp, dayAttachmentsDir(day))).catch(() => [])],
-      expected: [true, []],
+      should: 'save the message and a named pending reference while keeping the receipt out of attachments',
+      actual: [
+        parsed.messages[0].attachmentIds,
+        parsed.attachments[0].name,
+        !!pendingSlackAttachment(parsed.attachments[0]),
+        saved.attachments,
+        await readdir(path.join(temp, dayAttachmentsDir(day))).catch(() => []),
+      ],
+      expected: [['attachment-slack-F0FILE'], 'report.pdf', true, [], []],
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
+
+test('Slack capture preserves external links and recovers unavailable originals in place', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'slack-file-retry-test-'))
+  try {
+    const receipt = path.join(temp, 'F0DECK.download-error.txt')
+    await writeFile(receipt, '<!DOCTYPE html><html>Sign in</html>')
+    const unavailable = path.join(temp, 'missing.pdf')
+    const messages: SlackCaptureMessage[] = [
+      {
+        ...source('1770000000.000001'),
+        files: [
+          {
+            id: 'F0DECK',
+            name: 'Atlas [slides]',
+            mode: 'external',
+            path: receipt,
+            error: 'Downloaded HTML instead of file',
+            externalUrl: 'https://example.com/slides/atlas',
+          },
+          {
+            id: 'F0REPORT',
+            name: 'report.pdf',
+            path: unavailable,
+            sourceUrl: 'https://atlas.slack.com/files/F0REPORT',
+          },
+          { name: 'other.pdf', error: 'Unavailable' },
+        ],
+      },
+    ]
+    const saved = await updateSlackCapture({ doc: doc(), messages, day, output, attachmentsRoot: temp })
+    const initial = parseSlackConversation(saved.markdown)
+    assert({
+      given: 'a linked document with a failed download, a missing source file and a file without a provider ID',
+      should: 'preserve the link and pending originals without creating local attachment records',
+      actual: [
+        initial.attachments.map((a) => !!pendingSlackAttachment(a)),
+        initial.attachments[0].body.includes('https://example.com/slides/atlas'),
+        initial.attachments[1].body.includes('https://atlas.slack.com/files/F0REPORT'),
+        saved.attachments,
+      ],
+      expected: [[false, true, true], true, true, []],
+    })
+    const repeat = await updateSlackCapture({ doc: saved, messages, day, output, attachmentsRoot: temp })
+    assert({
+      given: 'another failed fetch',
+      should: 'leave saved bytes stable',
+      actual: repeat.toMarkdown(),
+      expected: saved.toMarkdown(),
+    })
+    await writeFile(unavailable, 'Original PDF bytes')
+    const other = path.join(temp, 'other.pdf')
+    await writeFile(other, 'Other PDF bytes')
+    messages[0].files![2] = { name: 'other.pdf', path: other }
+    const edited = new MessageDocument(
+      saved.yaml,
+      saved.markdown + '\nKeep this attachment note.\n\n## Notes\n\nKeep this conversation note.\n',
+    )
+    const recovered = await updateSlackCapture({ doc: edited, messages, day, output, attachmentsRoot: temp })
+    const parsed = parseSlackConversation(recovered.markdown)
+    assert({
+      given: 'a later successful fetch after manual notes were added',
+      should: 'fill the pending entries using their existing IDs and save only original bytes',
+      actual: [
+        parsed.messages[0].attachmentIds,
+        parsed.attachments.map((a) => a.id),
+        parsed.attachments.some((a) => !!pendingSlackAttachment(a)),
+        recovered.markdown.endsWith('Keep this conversation note.\n'),
+        recovered.markdown.includes('Keep this attachment note.'),
+        await Promise.all(
+          recovered.attachments.map((a) => readFile(path.join(temp, dayAttachmentsDir(day), a.file), 'utf8')),
+        ),
+      ],
+      expected: [
+        initial.messages[0].attachmentIds,
+        initial.attachments.map((a) => a.id),
+        false,
+        true,
+        true,
+        ['Original PDF bytes', 'Other PDF bytes'],
+      ],
+    })
+    assert({
+      given: 'a completed retry repeated once more',
+      should: 'preserve all document bytes',
+      actual: (await updateSlackCapture({ doc: recovered, messages, day, output, attachmentsRoot: temp })).toMarkdown(),
+      expected: recovered.toMarkdown(),
     })
   } finally {
     await rm(temp, { recursive: true, force: true })

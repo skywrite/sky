@@ -1,5 +1,17 @@
 import { Lexer, Tokenizer, type Token, type Tokens } from 'marked'
 
+/** Keep source links usable in Markdown without accepting non-web URL schemes. */
+export function slackSourceUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return undefined
+    return url.href.replaceAll('<', '%3C').replaceAll('>', '%3E')
+  } catch {
+    return undefined
+  }
+}
+
 /** A path relative to the day's attachments, including an optional follow folder. */
 export function isSlackAttachmentPath(file: string): boolean {
   return (

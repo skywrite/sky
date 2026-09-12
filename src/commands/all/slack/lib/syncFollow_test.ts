@@ -1,11 +1,13 @@
 import Follow from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
-import { updateSlackConversation } from '#shared/models/Message/slack/write.ts'
+import { pendingSlackAttachment, updateSlackConversation } from '#shared/models/Message/slack/write.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { writeMessage, type SlackCaptureMessage } from './captureMessages.ts'
 import { syncSlackFollow, type SlackFollowSyncHost } from './syncFollow.ts'
+import { updateSlackCapture } from './updateCapture.ts'
 
 const source = (ts: string, timeLabel: string, text: string): SlackCaptureMessage => ({
   channelId: 'C0ATLAS',
@@ -200,3 +202,82 @@ test('Slack follow retains intentionally assigned capture days for known message
     expected: [1, ['2026-04-09 09:00', '2026-04-10 09:01']],
   })
 })
+
+test('Slack follow retries pending files before the checkpoint and stops writing after recovery', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'slack-follow-file-retry-'))
+  try {
+    const f = fixture()
+    const ref = '2026-04-10/atlas.md'
+    const day = new PlainDateTime(root.timeLabel).plainDate
+    const original = path.join(temp, 'report.pdf')
+    const messages: SlackCaptureMessage[] = [
+      {
+        ...root,
+        files: [
+          {
+            id: 'F0DECK',
+            name: 'Atlas slides',
+            externalUrl: 'https://example.com/slides/atlas',
+            error: 'Downloaded HTML instead of file',
+          },
+          { id: 'F0REPORT', name: 'report.pdf', error: 'Unavailable' },
+        ],
+      },
+    ]
+    const capture = (doc: MessageDocument, incoming: SlackCaptureMessage[]) =>
+      updateSlackCapture({
+        doc,
+        messages: incoming,
+        day,
+        attachmentsRoot: temp,
+        output: { log() {} },
+        captureSlug: 'atlas-follow',
+      })
+    f.docs.set(ref, await capture(f.docs.get(ref)!, messages))
+    f.host.update = async (file, doc, incoming) => {
+      f.writes.push(file)
+      f.docs.set(file, await capture(doc, incoming))
+    }
+    const follow = Follow.create({
+      source: 'Slack',
+      ref: { channel: root.channelId },
+      summary: 'Atlas',
+      lastChecked: new PlainDateTime('2026-04-11 10:00'),
+      messages: [{ date: day.toString(), path: ref }],
+    })
+    const failed = await syncSlackFollow(follow, messages, f.host)
+    assert({
+      given: 'a pending attachment on a message older than the checkpoint',
+      should: 'retry the existing message without counting it as a new reply',
+      actual: [
+        f.writes.length,
+        failed.newReplies,
+        !!pendingSlackAttachment(parseSlackConversation(f.docs.get(ref)!.markdown).attachments[1]),
+      ],
+      expected: [1, 0, true],
+    })
+    await writeFile(original, 'Original PDF bytes')
+    messages[0].files![1] = { id: 'F0REPORT', name: 'report.pdf', path: original }
+    const recovered = await syncSlackFollow(follow, messages, f.host)
+    const saved = f.docs.get(ref)!
+    await syncSlackFollow(follow, messages, f.host)
+    assert({
+      given: 'a successful retry followed by another poll with no new messages',
+      should: 'save the missing original once and consider both the remote link and local file complete',
+      actual: [
+        f.writes.length,
+        recovered.newReplies,
+        parseSlackConversation(saved.markdown).messages.length,
+        parseSlackConversation(saved.markdown).attachments.some((a) => !!pendingSlackAttachment(a)),
+        await readFile(path.join(temp, dayAttachmentsDir(day), saved.attachments[0].file), 'utf8'),
+        f.docs.get(ref)!.toMarkdown(),
+      ],
+      expected: [2, 0, 1, false, 'Original PDF bytes', saved.toMarkdown()],
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'

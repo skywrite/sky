@@ -1,9 +1,10 @@
 import { Lexer, walkTokens } from 'marked'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { isSlackAttachmentPath, slackFileHref } from './files.ts'
+import { isSlackAttachmentPath, slackFileHref, slackSourceUrl } from './files.ts'
 import {
   isAttachmentsSection,
   isConversationSection,
+  normalizeNewlines,
   parseSlackConversation,
   type SlackAttachment,
   type SlackMessage,
@@ -14,6 +15,48 @@ export interface SlackSavedFile {
   id: string
   name: string
   file: string
+  pending?: false
+}
+
+export type SlackSavedAttachment =
+  | SlackSavedFile
+  | { id: string; name: string; file?: never; url: string; pending?: false }
+  | { id: string; name: string; file?: never; url?: string; pending: true }
+
+export function isSlackSavedFile(attachment: SlackSavedAttachment): attachment is SlackSavedFile {
+  return typeof attachment.file === 'string'
+}
+
+const PENDING_START = '<!-- slack-attachment-pending -->'
+const PENDING_END = '<!-- /slack-attachment-pending -->'
+
+/** Only the managed pending block is replaced; attachment headings and user notes remain intact. */
+export function pendingSlackAttachment(attachment: SlackAttachment): { start: number; end: number } | undefined {
+  const { text, originalOffset } = normalizeNewlines(attachment.body)
+  let cursor = 0
+  let start: number | undefined
+  for (const token of new Lexer().blockTokens(text)) {
+    const at = text.indexOf(token.raw, cursor)
+    if (at < 0) throw new Error('Cannot locate Slack attachment block.')
+    cursor = at + token.raw.length
+    if (token.type !== 'html') continue
+    if (token.raw.trim() === PENDING_START) start = at
+    if (start !== undefined && token.raw.trim() === PENDING_END)
+      return {
+        start: originalOffset(start),
+        end: originalOffset(at + token.raw.indexOf(PENDING_END) + PENDING_END.length),
+      }
+  }
+  return undefined
+}
+
+function attachmentContent(attachment: SlackSavedAttachment): string {
+  if (isSlackSavedFile(attachment)) return `[Original file](<${slackFileHref(attachment.file)}>)`
+  const url = slackSourceUrl(attachment.url)
+  if (attachment.pending)
+    return `${PENDING_START}\n\n*Original file unavailable; retry pending.*${url ? `\n\n[Source](<${url}>)` : ''}\n\n${PENDING_END}`
+  if (!url) throw new Error('Invalid Slack attachment source URL.')
+  return `[Original file](<${url}>)`
 }
 
 export interface SlackWriteMessage {
@@ -21,7 +64,7 @@ export interface SlackWriteMessage {
   timestamp: string
   author: string
   text: string
-  attachments?: SlackSavedFile[]
+  attachments?: SlackSavedAttachment[]
   transcripts?: { attachmentId: string; text: string }[]
   voiceAttachmentIds?: string[]
 }
@@ -125,9 +168,13 @@ function legacyKey(timestamp: string, author: string): string {
 
 /** The stored filename in an attachment entry; fragments and remote links are not local files. */
 export function slackAttachmentFile(attachment: SlackAttachment): string | undefined {
+  if (pendingSlackAttachment(attachment)) return undefined
   let file: string | undefined
+  let originalFound = false
   walkTokens(Lexer.lex(attachment.body), (token) => {
-    if (file || token.type !== 'link') return
+    if (file || originalFound || token.type !== 'link') return
+    // A remote original is complete even when a user note links to a local file.
+    if (token.text === 'Original file') originalFound = true
     let href: string
     try {
       href = decodeURIComponent(token.href)
@@ -143,7 +190,7 @@ export function slackAttachmentFile(attachment: SlackAttachment): string | undef
 export function updateSlackConversation(
   markdown: string,
   messages: readonly SlackWriteMessage[],
-  files: readonly SlackSavedFile[] = [],
+  files: readonly SlackSavedAttachment[] = [],
 ): string {
   const original = parseSlackConversation(markdown)
   const originalMatches = matchSlackMessages(original.messages, messages)
@@ -220,7 +267,17 @@ export function updateSlackConversation(
   for (const file of inventory) {
     validateId(file.id)
     let parsed = parseSlackConversation(markdown)
-    if (parsed.attachments.some((attachment) => attachment.id === file.id)) continue
+    const existing = parsed.attachments.find((attachment) => attachment.id === file.id)
+    if (existing) {
+      const pending = pendingSlackAttachment(existing)
+      if (pending && !file.pending) {
+        markdown =
+          markdown.slice(0, existing.bodyStart + pending.start) +
+          attachmentContent(file) +
+          markdown.slice(existing.bodyStart + pending.end)
+      }
+      continue
+    }
     if (!parsed.sections.some(isAttachmentsSection)) {
       markdown = appendBlock(markdown, '## Attachments')
       parsed = parseSlackConversation(markdown)
@@ -228,7 +285,7 @@ export function updateSlackConversation(
     markdown = insertBlock(
       markdown,
       parsed.sections.filter(isAttachmentsSection).at(-1)!.end,
-      `<a id="${file.id}"></a>\n\n### ${markdownLabel(file.name)}\n\n[Original file](<${slackFileHref(file.file)}>)`,
+      `<a id="${file.id}"></a>\n\n### ${markdownLabel(file.name)}\n\n${attachmentContent(file)}`,
     )
   }
   const final = parseSlackConversation(markdown)

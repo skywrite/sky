@@ -43,12 +43,23 @@ attachment identity. The CLI compatibility adapter recovers file IDs from
 agent-slack's documented download filenames until its JSON includes them.
 Files without provider IDs get local content IDs; legacy frontmatter-only
 files get local IDs and remain unassociated until their source can be matched.
+Unavailable files without provider IDs use a deterministic message-and-position
+anchor, which remains stable when their original bytes become available.
 
 Each message is an H3 under Conversation. Its file links target standalone
 anchors before H3 filename entries under Attachments; those entries link to
-the original stored files. Original filenames stay visible, including for
-attachment-only messages. Captures do not inspect photos or generate file
-summaries. Existing inline transcripts and optional summaries are preserved.
+the original stored files or provider-confirmed external documents. Original
+filenames stay visible, including for attachment-only messages. Captures do not
+inspect photos or generate file summaries. Existing inline transcripts and
+optional summaries are preserved.
+
+Remote Slack files are pointers: `files.info` restores their external URL when
+the compact CLI only returns a failed download receipt. Never archive that receipt
+or treat a linked document's HTML as an original file. Unavailable downloads keep
+a named attachment entry with a managed pending block, so conversation saves and
+follow registration can finish. Only local originals enter YAML `attachments`.
+Follow updates revisit pending entries even after the message checkpoint advances;
+a successful retry replaces only that block, preserving its anchor and user notes.
 
 Updates promote legacy headings in place and insert replies before the next
 H2, retaining manual sections and metadata. Recovering an old message's ID

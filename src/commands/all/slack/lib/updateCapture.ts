@@ -7,10 +7,13 @@ import { relocateSlackFileLinks } from '#shared/models/Message/slack/files.ts'
 import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
 import { voiceTranscriptIds } from '#shared/models/Message/slack/transcripts.ts'
 import {
+  isSlackSavedFile,
   markdownLabel,
   matchSlackMessages,
+  pendingSlackAttachment,
   slackAttachmentFile,
   updateSlackConversation,
+  type SlackSavedAttachment,
   type SlackSavedFile,
   type SlackWriteMessage,
 } from '#shared/models/Message/slack/write.ts'
@@ -48,19 +51,24 @@ export async function updateSlackCapture(input: {
       : (input.captureSlug ??
         doc.attachments.find((a) => a.file.includes('/'))?.file.split('/')[0] ??
         `${day}_slack_${slugify(doc.summary || 'Conversation', { preserveCase: true })}`)
-  const storage = { folder, attachmentsRoot: input.attachmentsRoot }
+  const storage = {
+    folder,
+    attachmentsRoot: input.attachmentsRoot,
+    pendingIds: new Set(parsed.attachments.filter((a) => a.id && pendingSlackAttachment(a)).map((a) => a.id!)),
+  }
   const renamed = await relocateSlackFiles([...doc.attachments, ...originalFiles], day, storage)
   const relocated = <T extends Attachment>(file: T): T => ({ ...file, file: renamed.get(file.file) ?? file.file })
   const prior = doc.attachments.map(relocated)
   const known = originalFiles.map(relocated)
-  const savedFiles: SlackSavedFile[] = []
+  const savedFiles: SlackSavedAttachment[] = []
   const messages: SlackWriteMessage[] = []
   const matched = matchSlackMessages(parsed.messages, input.messages.map(writeMessage))
   for (const message of input.messages) {
     const files = await storeSlackFiles(message.files ?? [], day, output, {
       ...storage,
-      prior: [...prior, ...savedFiles],
-      known: [...known, ...savedFiles],
+      sourceId: writeMessage(message).id,
+      prior: [...prior, ...savedFiles.filter(isSlackSavedFile)],
+      known: [...known, ...savedFiles.filter(isSlackSavedFile)],
     })
     savedFiles.push(...files)
     const written = { ...writeMessage(message), attachments: files }
@@ -74,12 +82,13 @@ export async function updateSlackCapture(input: {
     const transcripts: NonNullable<SlackWriteMessage['transcripts']> = []
     for (const file of voiceFiles) {
       if (present.has(file.saved.id) || file.source.voiceTranscript === null) continue
+      if (!isSlackSavedFile(file.saved) && !file.source.voiceTranscript) continue
       try {
         const text =
           file.source.voiceTranscript ??
           (await (input.transcribe ?? transcribeSlackVoiceMemo)(
             file.source,
-            path.join(input.attachmentsRoot ?? DIR_ATTACHMENTS, dayAttachmentsDir(day), file.saved.file),
+            path.join(input.attachmentsRoot ?? DIR_ATTACHMENTS, dayAttachmentsDir(day), file.saved.file!),
             { ...input.transcriptionOptions, signal: input.signal, runs: input.transcriptRuns },
           ))
         transcripts.push({ attachmentId: file.saved.id, text })
@@ -96,15 +105,16 @@ export async function updateSlackCapture(input: {
   savedFiles.push(
     ...(await storeSlackFiles(input.files ?? [], day, output, {
       ...storage,
-      prior: [...prior, ...savedFiles],
-      known: [...known, ...savedFiles],
+      prior: [...prior, ...savedFiles.filter(isSlackSavedFile)],
+      known: [...known, ...savedFiles.filter(isSlackSavedFile)],
     })),
   )
-  for (const file of savedFiles) {
+  const originals = savedFiles.filter(isSlackSavedFile)
+  for (const file of originals) {
     const original = originalFiles.find((known) => known.id === file.id)
     if (original && original.file !== file.file) renamed.set(original.file, file.file)
   }
-  const represented = new Set([...known, ...savedFiles].map((file) => file.file))
+  const represented = new Set([...known, ...originals].map((file) => file.file))
   const inventory = [
     ...savedFiles,
     ...doc.attachments
@@ -132,7 +142,7 @@ export async function updateSlackCapture(input: {
       : entry,
   )
   const names = new Set(doc.attachments.map((attachment) => relocated(attachment).file))
-  for (const file of savedFiles) {
+  for (const file of originals) {
     if (names.has(file.file)) continue
     names.add(file.file)
     attachments.push({ file: file.file } satisfies Attachment)

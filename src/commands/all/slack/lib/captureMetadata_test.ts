@@ -19,6 +19,8 @@ test('Slack capture commands classify speech before allocating titles and preser
       import { mock } from 'bun:test'
       import { DIR_BASE, DIR_TIME, DIR_USER_DATA } from '#config'
       import MessageDocument from '#shared/models/Message/mod.ts'
+      import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
+      import { pendingSlackAttachment } from '#shared/models/Message/slack/write.ts'
       import Follow from '#shared/models/Follow/mod.ts'
       import dayFile from '#shared/nbfs/dayFile.ts'
       import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -84,6 +86,10 @@ test('Slack capture commands classify speech before allocating titles and preser
       } }
       for (const mode of ['direct', 'explicit', 'follow', 'smart', 'archive', 'merge']) {
         const data = await makeExport()
+        if (mode === 'smart') data.thread.replies[0].files.push(
+          { id: 'F0DECK', name: 'Atlas slides', mode: 'external', externalUrl: 'https://example.com/slides/atlas', error: 'Downloaded HTML instead of file' },
+          { id: 'F0REPORT', name: 'report.pdf', error: 'Download failed' },
+        )
         const before = { summaries: classified.summaries.length, tags: classified.tags.length, rel: classified.rel.length, recognitions }
         let result
         let paths
@@ -122,6 +128,13 @@ test('Slack capture commands classify speech before allocating titles and preser
           check.deepEqual(doc.yaml.rel, mode === 'explicit' ? 'projects/Widget-V2' : ['projects/Atlas'])
         }
         for (const word of words) check.ok(docs.some(doc => doc.markdown.includes(word)))
+        if (mode === 'smart') {
+          const attachments = parseSlackConversation(docs[1].markdown).attachments
+          check.equal(attachments.length, 3)
+          check.ok(attachments.find(a => a.id === 'attachment-slack-F0DECK').body.includes('https://example.com/slides/atlas'))
+          check.ok(pendingSlackAttachment(attachments.find(a => a.id === 'attachment-slack-F0REPORT')))
+          check.equal(docs[1].attachments.length, 1)
+        }
         check.equal(recognitions - before.recognitions, mode === 'merge' ? 3 : 1)
         check.equal(classified.tags.length - before.tags, mode === 'explicit' ? 0 : 1)
         check.equal(classified.rel.length - before.rel, mode === 'explicit' ? 0 : 1)

@@ -168,7 +168,7 @@ function readAttachmentIds(body: string, sourceLexer: Lexer, attachments: SlackA
   return [...ids]
 }
 
-function normalizeNewlines(markdown: string): { text: string; originalOffset: (offset: number) => number } {
+export function normalizeNewlines(markdown: string): { text: string; originalOffset: (offset: number) => number } {
   if (!markdown.includes('\r')) return { text: markdown, originalOffset: (offset) => offset }
   const characters: string[] = []
   const offsets: number[] = []
