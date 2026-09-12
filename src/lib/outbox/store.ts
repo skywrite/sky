@@ -1,8 +1,13 @@
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
+import { changeDraft, type DraftMutation } from '#lib/writingVoice/draftActions.ts'
+import { acceptDraft, reviseDraft } from '#lib/writingVoice/draftChanges.ts'
+import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
+import { currentDraftVersion, type WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import type { WritingVoiceStore } from '#lib/writingVoice/store.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { outboxDraftInput } from './draftContext.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from './files.ts'
 import { dayRange, ScanRangeSchema, type SavedScanRange, type ScanRange } from './range.ts'
 import { ItemSchema, OutboxError, type OutboxItem, type OutboxRecord } from './types.ts'
@@ -12,11 +17,14 @@ Do not invent facts, commitments, availability, or certainty.
 Do not propose a meeting unless I explicitly ask you to. Prefer resolving things in writing.
 `
 
+export type DraftWrite = { author?: 'sky' | 'you'; direction?: string; accept?: boolean; mutation?: DraftMutation }
+
 export class OutboxStore {
   constructor(
     readonly dir: string,
     readonly stateDir: string,
     readonly writingVoice?: WritingVoiceStore,
+    readonly writingDrafts?: WritingDraftStore,
   ) {}
 
   private file(id: string): string {
@@ -31,7 +39,19 @@ export class OutboxStore {
     if (doc.yamlError) throw new OutboxError('An Outbox item has invalid frontmatter.')
     const item = ItemSchema.parse({ ...doc.yaml, draft: doc.markdown.trim() })
     if (item.id !== id) throw new OutboxError('The Outbox item does not match its file.')
-    return { ...item, revision: hash(text) }
+    if (!item.draftId) return { ...item, revision: hash(text) }
+    if (!this.writingDrafts) throw new OutboxError('The shared draft store is unavailable.', 503)
+    const writingDraft = await this.writingDrafts.require(item.draftId)
+    this.writingDrafts.learn(item.draftId)
+    const draft = currentDraftVersion(writingDraft).text
+    return {
+      ...item,
+      draft,
+      writingDraft,
+      edited: item.edited || writingDraft.revision > 1,
+      stale: item.stale || (item.status === 'ready' && item.reviews.at(-1)?.final !== draft),
+      revision: hash(`${text}\n${writingDraft.id}:${writingDraft.revision}`),
+    }
   }
 
   async list(): Promise<OutboxRecord[]> {
@@ -50,16 +70,92 @@ export class OutboxStore {
     return items.sort((a, b) => b.updated.localeCompare(a.updated))
   }
 
-  async put(item: OutboxItem, revision: string | null): Promise<OutboxRecord> {
-    return withLock(path.join(this.stateDir, 'write.lock'), async () => {
-      const current = await this.get(item.id)
-      if ((current?.revision ?? null) !== revision) {
-        throw new OutboxError('This decision changed. Reload it before saving; your text is still here.', 409)
+  private async initialDraft(item: OutboxItem, importing: boolean): Promise<WritingDraft> {
+    const store = this.writingDrafts!
+    const first = importing ? item.originalDraft.trim() || item.draft.trim() : item.draft.trim()
+    const created = await store.start(outboxDraftInput(item), first, `outbox:${item.id}`)
+    if (!importing) return created
+    return store.transaction(created.id, created.revision, async (draft, save) => {
+      for (const review of item.reviews) {
+        if (review.original.trim()) reviseDraft(draft, review.original, 'sky', review.at)
+        if (review.final.trim()) {
+          reviseDraft(draft, review.final, 'you', review.at)
+          acceptDraft(draft, review.at)
+        }
       }
-      const { draft, ...yaml } = ItemSchema.parse(item)
-      await atomicWrite(this.file(item.id), new Document(yaml, `${draft.trim()}\n`).toMarkdown())
+      reviseDraft(draft, item.draft.trim(), item.edited ? 'you' : 'sky', item.updated)
+      // Existing Outbox examples have their own receipts; migration must not teach them twice.
+      for (const version of draft.versions) version.learningDone = true
+      await save()
+      return draft
+    })
+  }
+
+  async put(item: OutboxItem, revision: string | null, change: DraftWrite = {}): Promise<OutboxRecord> {
+    const before = await this.get(item.id)
+    if ((before?.revision ?? null) !== revision)
+      throw new OutboxError('This decision changed. Reload it before saving; your text is still here.', 409)
+    const next = ItemSchema.parse(item)
+    if (before?.status === 'dismissed' && next.status !== 'dismissed') next.draftId = undefined
+    if (!next.draft.trim()) next.draftId = undefined
+    // Naming happens before either writer lock, and the item revision is checked again afterward.
+    const initial =
+      this.writingDrafts && !next.draftId && next.draft.trim()
+        ? await this.initialDraft(next, Boolean(before && !before.draftId))
+        : undefined
+    if (initial) next.draftId = initial.id
+    const result = await withLock(path.join(this.stateDir, 'write.lock'), async () => {
+      const current = await this.get(item.id)
+      if ((current?.revision ?? null) !== revision)
+        throw new OutboxError('This decision changed. Reload it before saving; your text is still here.', 409)
+      const write = async () => {
+        const { draft, ...yaml } = ItemSchema.parse(next)
+        const body = next.draftId ? `[Draft](../../me/voice/drafts/${next.draftId}.md)\n` : `${draft.trim()}\n`
+        await atomicWrite(this.file(item.id), new Document(yaml, body).toMarkdown())
+      }
+      if (next.draftId && this.writingDrafts) {
+        await this.writingDrafts.transaction(
+          next.draftId,
+          initial?.revision ?? current?.writingDraft?.revision,
+          async (draft, save) => {
+            if (change.mutation) {
+              await this.writingDrafts!.beforeChange(draft, 'you')
+              changeDraft(draft, change.mutation, this.writingDrafts!.clock())
+              next.draft = currentDraftVersion(draft).text
+              next.edited = true
+            } else {
+              reviseDraft(draft, next.draft.trim(), change.author ?? 'sky', next.updated, change.direction)
+              if (change.accept) acceptDraft(draft, next.updated, change.direction)
+            }
+            draft.input = { ...draft.input, ...outboxDraftInput(next) }
+            await save()
+            await write()
+          },
+        )
+      } else await write()
       return (await this.get(item.id))!
     })
+    if (result.draftId) this.writingDrafts?.learn(result.draftId, change.mutation?.action === 'retry-learning')
+    return result
+  }
+
+  async ensureDraft(id: string): Promise<OutboxRecord | null> {
+    const item = await this.get(id)
+    if (!item || item.draftId || !item.draft.trim() || !this.writingDrafts) return item
+    try {
+      return await this.put(item, item.revision)
+    } catch (error) {
+      if (error instanceof OutboxError && error.status === 409) return this.get(id)
+      throw error
+    }
+  }
+
+  async changeDraft(id: string, revision: string, mutation: DraftMutation): Promise<OutboxRecord> {
+    const item = await this.get(id)
+    if (!item || !item.draftId || !this.writingDrafts) throw new OutboxError('Open the draft before editing it.', 409)
+    if (['placing', 'placement_unknown'].includes(item.status))
+      throw new OutboxError('Check the native app before changing this draft.', 409)
+    return this.put(item, revision, { mutation })
   }
 
   async preferences(): Promise<{ text: string; revision: string }> {

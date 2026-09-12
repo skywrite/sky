@@ -1,12 +1,14 @@
-import { randomUUID } from 'node:crypto'
-import { lstat } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { atomicWrite, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
-import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { instantNow } from '#universal/dates/nbdt/mod.ts'
 import type { WritingVoice } from './agent.ts'
+import { acceptDraft, restoreDraft, reviseDraft } from './draftChanges.ts'
+import { WritingDraftId } from './draftId.ts'
+import { createDraftName, draftSlug, draftStamp, type DraftName } from './draftName.ts'
 import { currentDraftVersion, WritingDraftSchema, type DraftVersion, type WritingDraft } from './draftTypes.ts'
-import { DraftInputSchema, ExampleId, MAX_WRITING_CHARS, WritingVoiceError, type VoiceDraftInput } from './types.ts'
+import { DraftInputSchema, WritingVoiceError, type VoiceDraftInput } from './types.ts'
 
 /** Draft history stays in the notebook, independently of learning-example compaction. */
 export class WritingDraftStore {
@@ -14,11 +16,13 @@ export class WritingDraftStore {
 
   constructor(
     readonly voice: WritingVoice,
-    readonly clock: () => string = () => ZonedDateTime.now().toUTC().normalize().toString(),
+    readonly clock: () => string = instantNow,
+    readonly name: DraftName = createDraftName(),
+    readonly beforeChange: (draft: WritingDraft, author: 'sky' | 'you') => Promise<void> = async () => {},
   ) {}
 
   private async file(id: string): Promise<string> {
-    ExampleId.parse(id)
+    WritingDraftId.parse(id)
     let at = this.voice.store.notebookDir
     for (const part of ['me', 'voice', 'drafts', `${id}.md`]) {
       at = path.join(at, part)
@@ -32,7 +36,7 @@ export class WritingDraftStore {
   }
 
   private lock<T>(id: string, run: () => Promise<T>): Promise<T> {
-    ExampleId.parse(id)
+    WritingDraftId.parse(id)
     return withLock(path.join(this.voice.store.stateDir, 'drafts', `${id}.lock`), run)
   }
 
@@ -60,7 +64,12 @@ export class WritingDraftStore {
     return draft
   }
 
-  initial(input: VoiceDraftInput, text: string, source: string, id = randomUUID().replaceAll('-', '')): WritingDraft {
+  initial(
+    input: VoiceDraftInput,
+    text: string,
+    source: string,
+    id = `${draftStamp(this.clock())}_${draftSlug(text)}`,
+  ): WritingDraft {
     const now = this.clock()
     return WritingDraftSchema.parse({
       id,
@@ -82,18 +91,56 @@ export class WritingDraftStore {
     })
   }
 
+  /** Allocate under one process lock: two equal summaries in the same second never alias. */
+  async start(input: VoiceDraftInput, text: string, source: string): Promise<WritingDraft> {
+    const base = `${draftStamp(this.clock())}_${draftSlug(await this.name(input, text))}`
+    return this.allocate(base, (id) => this.initial(input, text, source, id))
+  }
+
+  private async allocate(base: string, build: (id: string) => WritingDraft): Promise<WritingDraft> {
+    return withLock(path.join(this.voice.store.stateDir, 'drafts', 'create.lock'), async () => {
+      // Check the directory before listing it, including its parents.
+      await this.file(base)
+      const files = await readdir(path.join(this.voice.store.dir, 'drafts')).catch((error) => {
+        if (missing(error)) return [] as string[]
+        throw error
+      })
+      const used = new Set(files.map((file) => file.toLowerCase()))
+      let id = base
+      for (let suffix = 2; used.has(`${id}.md`.toLowerCase()); suffix++) id = `${base}-${suffix}`
+      const draft = build(id)
+      await this.write(draft)
+      return draft
+    })
+  }
+
   async fork(id: string, source: string): Promise<WritingDraft> {
     const original = await this.require(id)
-    const draft = structuredClone(original)
-    draft.id = randomUUID().replaceAll('-', '')
-    draft.source = source
-    draft.created = this.clock()
-    draft.updated = draft.created
-    for (const version of draft.versions) {
-      version.learningDone = true
-      version.learningError = undefined
-    }
-    return this.create(draft)
+    const base = `${draftStamp(this.clock())}_${draftSlug(await this.name(original.input, currentDraftVersion(original).text))}`
+    return this.allocate(base, (newId) => {
+      const draft = structuredClone(original)
+      draft.id = newId
+      draft.source = source
+      draft.created = this.clock()
+      draft.updated = draft.created
+      for (const version of draft.versions) {
+        version.learningDone = true
+        version.learningError = undefined
+      }
+      return draft
+    })
+  }
+
+  /** The caller may coordinate its own metadata write while the text version stays locked. */
+  async transaction<T>(
+    id: string,
+    revision: number | undefined,
+    run: (draft: WritingDraft, save: () => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    return this.lock(id, async () => {
+      const draft = await this.require(id, revision)
+      return run(draft, () => this.write(draft))
+    })
   }
 
   async revise(
@@ -103,66 +150,32 @@ export class WritingDraftStore {
     author: 'sky' | 'you',
     direction = '',
     input?: VoiceDraftInput,
+    expectedInput?: VoiceDraftInput,
   ): Promise<WritingDraft> {
-    if (!text.trim() || text.length > MAX_WRITING_CHARS)
-      throw new WritingVoiceError('Enter a nonempty draft within 40,000 characters.')
-    return this.lock(id, async () => {
-      const draft = await this.require(id, revision)
-      if (currentDraftVersion(draft).text === text) return draft
-      const now = this.clock()
-      const version: DraftVersion = {
-        version: revision + 1,
-        text,
-        author,
-        created: now,
-        direction,
-        accepted: author === 'you',
-        ...(author === 'you' ? { learnFrom: revision, explanation: direction } : {}),
-      }
-      draft.versions.push(version)
-      draft.revision++
-      draft.updated = now
-      if (input) draft.input = DraftInputSchema.parse(input)
-      await this.write(draft)
+    return this.transaction(id, revision, async (draft, save) => {
+      if (expectedInput && JSON.stringify(draft.input) !== JSON.stringify(expectedInput))
+        throw new WritingVoiceError('The draft context changed while Sky was writing. Review it and try again.', 409)
+      await this.beforeChange(draft, author)
+      reviseDraft(draft, text, author, this.clock(), direction, input)
+      await save()
       return draft
     })
   }
 
   async accept(id: string, revision: number, explanation = ''): Promise<WritingDraft> {
-    return this.lock(id, async () => {
-      const draft = await this.require(id, revision)
-      const version = currentDraftVersion(draft)
-      if (version.accepted) return draft
-      version.accepted = true
-      if (revision > 1 && !version.restoredFrom) {
-        version.learnFrom = revision - 1
-        version.explanation = explanation || version.direction
-      }
-      draft.updated = this.clock()
-      await this.write(draft)
+    return this.transaction(id, revision, async (draft, save) => {
+      await this.beforeChange(draft, 'you')
+      acceptDraft(draft, this.clock(), explanation)
+      await save()
       return draft
     })
   }
 
   async restore(id: string, revision: number, from: number): Promise<WritingDraft> {
-    return this.lock(id, async () => {
-      const draft = await this.require(id, revision)
-      const previous = draft.versions.find((v) => v.version === from)
-      if (!previous) throw new WritingVoiceError('Choose an existing version to restore.')
-      if (currentDraftVersion(draft).text === previous.text) return draft
-      const now = this.clock()
-      draft.versions.push({
-        version: revision + 1,
-        text: previous.text,
-        author: 'you',
-        created: now,
-        direction: '',
-        accepted: true,
-        restoredFrom: from,
-      })
-      draft.revision++
-      draft.updated = now
-      await this.write(draft)
+    return this.transaction(id, revision, async (draft, save) => {
+      await this.beforeChange(draft, 'you')
+      restoreDraft(draft, from, this.clock())
+      await save()
       return draft
     })
   }

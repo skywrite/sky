@@ -1,4 +1,5 @@
 import type { ModelMessage } from 'ai'
+import { WRITING_DRAFT_ID } from '#lib/writingVoice/draftId.ts'
 
 /** Runtime continuation kept in recovery snapshots and the saved transcript's JSON metadata. */
 export interface ChatRecovery {
@@ -24,7 +25,7 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
       if (!entry || typeof entry !== 'object') return []
       const value = entry as Record<string, unknown>
       return typeof value.id === 'string' &&
-        /^[a-f0-9]{32}$/.test(value.id) &&
+        WRITING_DRAFT_ID.test(value.id) &&
         typeof value.turn === 'number' &&
         Number.isSafeInteger(value.turn) &&
         value.turn >= 0

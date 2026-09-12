@@ -1,7 +1,15 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { ScanRangeSchema, type SavedScanRange, type ScanRange } from '#lib/outbox/range.ts'
-import { OutboxError, type OutboxRecord, type ScanProgress, type ScanReport } from '#lib/outbox/types.ts'
+import {
+  MAX_OUTBOX_DRAFT_CHARS,
+  OutboxError,
+  type OutboxRecord,
+  type ScanProgress,
+  type ScanReport,
+} from '#lib/outbox/types.ts'
+import { DraftMutationSchema, type DraftMutation } from '#lib/writingVoice/draftActions.ts'
+import { WritingVoiceError } from '#lib/writingVoice/types.ts'
 import { hold } from '../../activity.ts'
 
 export type OutboxReport = {
@@ -47,10 +55,11 @@ export type OutboxRoutesOptions = {
   reportSent?: (id: string, revision: string, evidence: string) => Promise<OutboxRecord>
   get?: (id: string) => Promise<OutboxRecord | null>
   retryFollowups?: (id: string, revision: string) => Promise<OutboxRecord>
+  changeDraft?: (id: string, revision: string, mutation: DraftMutation) => Promise<OutboxRecord>
 }
 
 const Revision = z.object({ revision: z.string().min(1) })
-const Draft = Revision.extend({ draft: z.string().max(20_000) })
+const Draft = Revision.extend({ draft: z.string().max(MAX_OUTBOX_DRAFT_CHARS) })
 
 export function createOutboxRoutes(host: OutboxRoutesOptions): Hono {
   const app = new Hono()
@@ -64,12 +73,23 @@ export function createOutboxRoutes(host: OutboxRoutesOptions): Hono {
     }
     await next()
   })
-  app.onError((error, c) => c.json({ message: error.message }, error instanceof OutboxError ? error.status : 400))
+  app.onError((error, c) =>
+    c.json(
+      { message: error.message },
+      error instanceof OutboxError || error instanceof WritingVoiceError ? error.status : 400,
+    ),
+  )
   app.get('/status', async (c) => c.json(await host.report()))
   app.get('/item/:id', async (c) => {
     const item = await host.get?.(c.req.param('id'))
     if (!item) return c.json({ message: 'This Outbox item is no longer available.' }, 404)
     return c.json(item)
+  })
+  app.post('/item/:id/draft', async (c) => {
+    if (!host.changeDraft) return c.json({ message: 'Draft editing is unavailable.' }, 503)
+    const input = z.object({ itemRevision: z.string().min(1), mutation: DraftMutationSchema }).parse(await c.req.json())
+    const item = await host.changeDraft(c.req.param('id'), input.itemRevision, input.mutation)
+    return c.json({ item, draft: item.writingDraft })
   })
   app.post('/setup', async (c) => c.json(await host.setup()))
   app.post('/scan', async (c) => {

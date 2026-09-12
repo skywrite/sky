@@ -32,8 +32,7 @@ import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
-import { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
-import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createWritingDrafts } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
@@ -247,7 +246,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
 }
 
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
-  const writingDrafts = new WritingDraftStore(createWritingVoice(config))
+  const writingDrafts = createWritingDrafts(config)
   /** A thread's crash copy: the service's own snapshot, named by the thread id. */
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))

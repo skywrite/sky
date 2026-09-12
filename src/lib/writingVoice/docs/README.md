@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Writing voice
@@ -36,9 +36,26 @@ from existing `outbox/preferences.md`, or the default guide. Production Outbox
 preference reads and writes use this same file. Reads do not cache its contents;
 a change applies to the next draft in an existing session.
 
-### Editable drafts in chat
+### Shared drafts in chat and Outbox
 
-Web drafts have stable IDs and append-only text versions in `drafts/`. The
+Chat and Outbox use the same draft record, mutations, editor, and learning path.
+`drafts/` owns the current wording and append-only text history. Outbox items link
+to the record through `draftId`; their own files retain source snapshots, review,
+dismissal, and native handoff state. Draft acceptance or editing never establishes
+that a message was sent. Opening an older inline Outbox draft adopts its known
+original, approved pairs, and current text without duplicating past learning.
+A new request after dismissal gets a separate draft, preserving the old history.
+
+New drafts and branches use a UTC date/time prefix and a short Haiku-generated
+summary, slugified without changing capitalization, for example
+`2025-03-15_12-34-56Z_Atlas-API-Update.md`. Allocation checks filenames under a
+shared lock, including case-insensitive collisions, adding a numeric suffix only
+when necessary. Naming failure falls back to words from the completed draft;
+it cannot discard successful writing. Existing IDs remain valid in records and
+saved chat links.
+
+The shared `WritingDraftEditor` supplies editing, revision discussions, copying,
+version comparisons, restoration, and learning questions in both surfaces. The
 transcript retains the wording originally shown; the frame replaces only a
 matching writer-owned quote with the current version. Later revisions link back
 to that frame. Ordinary quotations remain read-only. Older recorded `me_voice`
@@ -49,6 +66,18 @@ Reply threads share those IDs, so a revision in a draft discussion updates its
 parent frame. A separate branch copies the records instead. Each new model turn
 receives the current text, including direct edits; model revisions check the
 version again after generation, refusing to overwrite intervening edits.
+Outbox's Ask Sky action opens a persistent draft discussion referencing this same
+record. Saved conversation context is checked before and after an AI
+revision, using the same follow directories as Outbox. A context-only update also
+invalidates an in-flight proposal, even when its text revision has not changed.
+
+Outbox's content revision includes the shared draft's text revision, so a chat
+edit invalidates obsolete approval and save requests. Outbox writes acquire its
+metadata lock before the draft lock and hold the draft lock through metadata
+replacement. Direct draft mutations inspect linked Outbox state while holding
+the draft lock; an in-progress or unconfirmed native handoff freezes its wording.
+Later edits preserve the approved snapshot and require review before updating the
+native draft. Learning metadata does not create spurious text conflicts.
 
 Saving an owner edit captures its original, revised text and optional explanation.
 An explicit explanation goes straight to learning without generating a redundant

@@ -47,6 +47,7 @@ export function writingDraftTools(hooks: ToolHooks, store: WritingDraftStore, so
       if (id) {
         linked(id)
         const before = await store.require(id, input.draftRevision)
+        await store.beforeChange(before, 'sky')
         const current = currentDraftVersion(before)
         const writing = {
           ...input,
@@ -64,12 +65,12 @@ export function writingDraftTools(hooks: ToolHooks, store: WritingDraftStore, so
           instruction: input.instruction || direction(),
         }
         const result = await store.voice.draft(writing)
-        const saved = await store.revise(id, before.revision, result.draft, 'sky', direction(), writing)
+        const saved = await store.revise(id, before.revision, result.draft, 'sky', direction(), writing, before.input)
         store.learn(id)
         return { ...result, draftId: id, draftRevision: saved.revision }
       }
       const result = await store.voice.draft(input)
-      const saved = await store.create(store.initial(input, result.draft, source))
+      const saved = await store.start(input, result.draft, source)
       await links.link(saved.id)
       return { ...result, draftId: saved.id, draftRevision: saved.revision }
     },

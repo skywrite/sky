@@ -4,7 +4,13 @@ import { withLock } from './files.ts'
 import { canQueueFollowups, prepareFollowups, reconcileFollowups } from './followups.ts'
 import type { SavedMessages } from './sources.ts'
 import type { OutboxStore } from './store.ts'
-import { OutboxError, type ComposeReply, type OutboxRecord, type PrepareFollowups } from './types.ts'
+import {
+  MAX_OUTBOX_DRAFT_CHARS,
+  OutboxError,
+  type ComposeReply,
+  type OutboxRecord,
+  type PrepareFollowups,
+} from './types.ts'
 
 export type PlaceDraft = (item: OutboxRecord) => Promise<{ id: string; url: string }>
 
@@ -41,8 +47,8 @@ export class OutboxReview {
   async save(id: string, revision: string, draft: string): Promise<OutboxRecord> {
     const item = await this.checked(id, revision)
     if (item.status !== 'needs_review') throw new OutboxError('This draft has already left review.', 409)
-    if (draft.length > 20_000) throw new OutboxError('Keep a reply under 20,000 characters.')
-    return this.store.put({ ...item, draft, edited: true, updated: this.now() }, revision)
+    if (draft.length > MAX_OUTBOX_DRAFT_CHARS) throw new OutboxError('Keep a reply under 40,000 characters.')
+    return this.store.put({ ...item, draft, edited: true, updated: this.now() }, revision, { author: 'you' })
   }
 
   async dismiss(id: string, revision: string): Promise<OutboxRecord> {
@@ -83,6 +89,7 @@ export class OutboxReview {
         updated: this.now(),
       },
       revision,
+      { author: 'you', accept: true },
     )
     return this.planFollowups ? this.completeFollowups(sent.id) : sent
   }
@@ -176,7 +183,7 @@ export class OutboxReview {
     const item = await this.checked(id, revision)
     if (item.status !== 'needs_review' && !(item.status === 'ready' && item.stale))
       throw new OutboxError('This draft has already left review.', 409)
-    if (draft.length > 20_000 || !instruction.trim() || instruction.length > 4000)
+    if (draft.length > MAX_OUTBOX_DRAFT_CHARS || !instruction.trim() || instruction.length > 4000)
       throw new OutboxError('Give Sky a short direction for this reply (under 4,000 characters).')
     // Saving the owner's work must not depend on source checks or a successful model call.
     return this.store.put(
@@ -191,6 +198,7 @@ export class OutboxReview {
         updated: this.now(),
       },
       revision,
+      { author: 'you' },
     )
   }
 
@@ -244,6 +252,7 @@ export class OutboxReview {
         updated: this.now(),
       },
       saved.revision,
+      { author: 'sky', direction: instruction },
     )
   }
 
@@ -252,8 +261,8 @@ export class OutboxReview {
     if (item.status === 'dismissed' || (item.status === 'ready' && !item.stale))
       throw new OutboxError('This decision has already been reviewed.', 409)
     const text = draft.trim()
-    if (!text || text.length > 20_000)
-      throw new OutboxError('Provide the reply you want to approve (under 20,000 characters).')
+    if (!text || text.length > MAX_OUTBOX_DRAFT_CHARS)
+      throw new OutboxError('Provide the reply you want to approve (under 40,000 characters).')
     const latest = await this.conversation(item)
     if (latest.version !== item.conversation.version) {
       await this.store.put({ ...item, conversation: latest, stale: true, updated: this.now() }, revision)
@@ -294,6 +303,7 @@ export class OutboxReview {
         followupError: undefined,
       },
       revision,
+      { author: 'you', accept: true },
     )
     let ready: OutboxRecord
     try {

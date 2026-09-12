@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import type { WritingVoice } from './agent.ts'
+import { WritingDraftId } from './draftId.ts'
 import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
 import { ExampleId, ExampleInputSchema, type VoiceExampleRecord } from './types.ts'
 
@@ -24,10 +25,10 @@ const Input = z.discriminatedUnion('action', [
   ChatDraftInputSchema.extend({ action: z.literal('draft') }),
   ExampleInputSchema.omit({ source: true }).extend({
     action: z.literal('learn'),
-    draftId: ExampleId.optional(),
+    draftId: WritingDraftId.optional(),
     draftRevision: z.number().int().positive().optional(),
   }),
-  z.object({ action: z.literal('accept'), draftId: ExampleId, draftRevision: z.number().int().positive() }),
+  z.object({ action: z.literal('accept'), draftId: WritingDraftId, draftRevision: z.number().int().positive() }),
   z.object({
     action: z.literal('answer'),
     id: ExampleId,

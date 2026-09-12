@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
+import type * as Config from '#config'
 import { threadIdFromDecimal } from '#lib/google/gmail.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
@@ -12,6 +13,22 @@ import { dayRange, inRange, rangeKey, ScanRangeSchema, type ScanRange } from './
 import type { Conversation } from './types.ts'
 
 export const SCAN_POLICY = 'range-responses-v4'
+
+export type SavedMessagesConfig = Pick<
+  typeof Config,
+  | 'DIR_BASE'
+  | 'DIR_STATE_FOLLOW_SLACK_ACTIVE'
+  | 'DIR_STATE_FOLLOW_SLACK_ARCHIVE'
+  | 'DIR_STATE_FOLLOW_EMAIL_ACTIVE'
+  | 'DIR_STATE_FOLLOW_EMAIL_ARCHIVE'
+>
+
+export function createSavedMessages(config: SavedMessagesConfig): SavedMessages {
+  return new SavedMessages(config.DIR_BASE, {
+    Slack: [config.DIR_STATE_FOLLOW_SLACK_ACTIVE, config.DIR_STATE_FOLLOW_SLACK_ARCHIVE],
+    Email: [config.DIR_STATE_FOLLOW_EMAIL_ACTIVE, config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE],
+  })
+}
 
 const IndexedSource = z.object({
   stamp: z.string(),

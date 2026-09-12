@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WritingDraftId } from './draftId.ts'
 import { DraftInputSchema, ExampleId, MAX_WRITING_CHARS, type VoiceDraft, type VoiceExampleInput } from './types.ts'
 
 export const DraftVersionSchema = z.object({
@@ -17,7 +18,7 @@ export const DraftVersionSchema = z.object({
 })
 
 export const WritingDraftSchema = z.object({
-  id: ExampleId,
+  id: WritingDraftId,
   source: z.string(),
   created: z.string(),
   updated: z.string(),
@@ -27,7 +28,7 @@ export const WritingDraftSchema = z.object({
 })
 
 export const ChatDraftInputSchema = DraftInputSchema.extend({
-  draftId: ExampleId.optional(),
+  draftId: WritingDraftId.optional(),
   draftRevision: z.number().int().positive().optional(),
   newDraft: z.boolean().optional(),
 })

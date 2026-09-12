@@ -17,6 +17,9 @@
   flex: 1;
   min-height: 0;
 }
+.sky-outbox-layout[data-reply-open] {
+  position: relative;
+}
 .sky-outbox-layout > .sky-scroll {
   flex: 1;
   min-width: 0;

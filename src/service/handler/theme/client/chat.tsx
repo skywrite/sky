@@ -1624,6 +1624,18 @@ export function ThreadColumn({
       ))
   return (
     <>
+      {writing.drafts
+        .filter((draft) => draft.turn === 0)
+        .map((draft) => (
+          <ChatWritingDraft
+            key={draft.id}
+            chatId={state.id}
+            draft={draft}
+            disabled={busy}
+            onChange={writing.update}
+            onAsk={(record) => void askAboutDraft(record)}
+          />
+        ))}
       {state.turns.map((turn, i) =>
         replyMode && i < state.inherited - 1 ? null : (
           <Fragment key={i}>

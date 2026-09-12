@@ -21,10 +21,12 @@ test('a slow AI revision cannot overwrite an owner edit and compaction preserves
       })
     },
   })
-  const store = new WritingDraftStore(f.voice)
+  const store = new WritingDraftStore(f.voice, undefined, async () => 'Atlas Reply')
   try {
-    const initial = await store.create(
-      store.initial({ meaning: 'The proposal is ready.', medium: 'Email' }, 'The proposal is ready.', 'chat:sample'),
+    const initial = await store.start(
+      { meaning: 'The proposal is ready.', medium: 'Email' },
+      'The proposal is ready.',
+      'chat:sample',
     )
     const hooks = {
       context: { instructions: '', conversation: [{ role: 'user', content: 'Make the proposal warmer.' }] },
@@ -65,15 +67,13 @@ test('a slow AI revision cannot overwrite an owner edit and compaction preserves
 
 test('draft storage refuses paths outside its records, including symbolic links', async () => {
   const f = await voiceFixture()
-  const store = new WritingDraftStore(f.voice)
+  const store = new WritingDraftStore(f.voice, undefined, async () => 'Atlas Reply')
   try {
     const outside = path.join(f.root, 'outside')
     await mkdir(outside)
     await mkdir(path.join(f.store.dir), { recursive: true })
     await symlink(outside, path.join(f.store.dir, 'drafts'))
-    const failed = await failure(
-      store.create(store.initial({ meaning: 'A mock draft.' }, 'A mock draft.', 'chat:sample')),
-    )
+    const failed = await failure(store.start({ meaning: 'A mock draft.' }, 'A mock draft.', 'chat:sample'))
     assert({
       given: 'a drafts directory replaced with a symbolic link',
       should: 'refuse to follow it when saving a draft',
@@ -98,11 +98,9 @@ test('an explanation saved with an edit survives a failed learning model and ret
       return { scope: 'Email updates', text: example.answer! }
     },
   })
-  const store = new WritingDraftStore(f.voice)
+  const store = new WritingDraftStore(f.voice, undefined, async () => 'Atlas Reply')
   try {
-    const draft = await store.create(
-      store.initial({ meaning: 'The draft is ready.' }, 'The draft is ready.', 'chat:sample'),
-    )
+    const draft = await store.start({ meaning: 'The draft is ready.' }, 'The draft is ready.', 'chat:sample')
     await store.revise(draft.id, 1, 'Please review the draft.', 'you', 'Say what I need the recipient to do.')
     store.learn(draft.id)
     await store.idle()

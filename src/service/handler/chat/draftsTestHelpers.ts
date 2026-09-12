@@ -29,7 +29,7 @@ export function writingDraftTestHost(root: string, calls: { inputs?: VoiceDraftI
       options: ['Make the requested action explicit.', 'This wording only fits this situation.'],
     }),
   })
-  const drafts = new WritingDraftStore(voice)
+  const drafts = new WritingDraftStore(voice, undefined, async () => 'Atlas Review')
   let execute: (input: unknown) => Promise<Record<string, unknown>>
   let currentId: string | undefined
   let currentRevision: number | undefined

@@ -1,32 +1,18 @@
 import type { Hono } from 'hono'
 import { z } from 'zod'
 import { hash } from '#lib/outbox/files.ts'
+import { DraftMutationSchema, mutateWritingDraft } from '#lib/writingVoice/draftActions.ts'
+import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { currentDraftVersion, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
-import { ExampleId, MAX_WRITING_CHARS, WritingVoiceError } from '#lib/writingVoice/types.ts'
+import { MAX_WRITING_CHARS, WritingVoiceError } from '#lib/writingVoice/types.ts'
 import type { Thread } from './mod.ts'
 import type { ReplyThreadHost } from './replyThreads.ts'
 
-const Mutation = z.discriminatedUnion('action', [
-  z.object({
-    action: z.literal('edit'),
-    revision: z.number().int().positive(),
-    text: z.string().min(1).max(MAX_WRITING_CHARS),
-    explanation: z.string().max(4000).default(''),
-  }),
-  z.object({
-    action: z.literal('accept'),
-    revision: z.number().int().positive(),
-    explanation: z.string().max(4000).default(''),
-  }),
-  z.object({
-    action: z.literal('restore'),
-    revision: z.number().int().positive(),
-    version: z.number().int().positive(),
-  }),
+const Mutation = z.union([
+  DraftMutationSchema,
   z.object({ action: z.literal('adopt') }),
   z.object({ action: z.literal('focus') }),
-  z.object({ action: z.literal('retry-learning') }),
 ])
 
 /** Only recorded successful writer outputs can acquire editing controls in older chats. */
@@ -100,6 +86,47 @@ export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, 
     error instanceof WritingVoiceError ? error.status : error instanceof z.ZodError ? 400 : 500
   const message = (error: unknown) => (error instanceof Error ? error.message : 'Sky could not save this draft.')
 
+  const discussions = new Map<string, Promise<string>>()
+  app.post('/drafts/:draft/discuss', async (c) => {
+    try {
+      await host.ready
+      const draftId = WritingDraftId.parse(c.req.param('draft'))
+      const draft = await store.require(draftId)
+      await store.beforeChange(draft, 'sky')
+      let opening = discussions.get(draftId)
+      if (!opening) {
+        opening = (async () => {
+          const id = `draft-${draftId}`
+          const thread =
+            host.threads.get(id) ??
+            (await host.open(id, {
+              id,
+              title: draft.input.recipient ? `Draft to ${draft.input.recipient}` : 'Draft discussion',
+              state: {
+                conversation: [],
+                universePaths: [],
+                queries: [],
+                lastTurn: 0,
+                contextLog: [],
+                writingDrafts: [{ id: draftId, turn: 0 }],
+                writingDraftFocus: draftId,
+              },
+            }))
+          if (!thread.session.writingDraftLinks.some((ref) => ref.id === draftId))
+            await thread.session.linkWritingDraft(draftId, 0)
+          if (!thread.busy) await thread.session.focusWritingDraft(draftId)
+          await thread.session.snapshot()
+          host.changed(thread)
+          return id
+        })().finally(() => discussions.delete(draftId))
+        discussions.set(draftId, opening)
+      }
+      return c.json({ id: await opening }, 201)
+    } catch (error) {
+      return c.json({ message: message(error) }, status(error))
+    }
+  })
+
   app.get('/:id/drafts', async (c) => {
     try {
       const id = c.req.param('id')
@@ -115,7 +142,7 @@ export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, 
       const id = c.req.param('id')
       const thread = await read(id)
       if (thread.busy) throw new WritingVoiceError('Wait for Sky to finish this turn before changing the draft.', 409)
-      const draftId = ExampleId.parse(c.req.param('draft'))
+      const draftId = WritingDraftId.parse(c.req.param('draft'))
       const input = Mutation.parse(await c.req.json())
       let ref = thread.session.writingDraftLinks.find((entry) => entry.id === draftId)
       if (!ref) {
@@ -126,23 +153,8 @@ export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, 
         ref = { id: candidate.id, turn: candidate.turn }
       }
       let draft = await store.require(draftId)
-      switch (input.action) {
-        case 'edit':
-          draft = await store.revise(draftId, input.revision, input.text, 'you', input.explanation)
-          break
-        case 'accept':
-          draft = await store.accept(draftId, input.revision, input.explanation)
-          break
-        case 'restore':
-          draft = await store.restore(draftId, input.revision, input.version)
-          break
-        case 'focus':
-          await thread.session.focusWritingDraft(draftId)
-          break
-        case 'adopt':
-        case 'retry-learning':
-          break
-      }
+      if (input.action === 'focus') await thread.session.focusWritingDraft(draftId)
+      else if (input.action !== 'adopt') draft = await mutateWritingDraft(store, draftId, input)
       store.learn(draftId, input.action === 'retry-learning')
       host.changed(thread)
       return c.json({ draft: { ...draft, turn: ref.turn }, text: currentDraftVersion(draft).text })

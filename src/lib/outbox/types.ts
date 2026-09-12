@@ -1,5 +1,9 @@
 import { z } from 'zod'
+import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
+import type { WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import { ScanRangeSchema, type ScanRange } from './range.ts'
+
+export const MAX_OUTBOX_DRAFT_CHARS = 40_000
 
 export const SourceSchema = z.object({
   ref: z.string(),
@@ -67,6 +71,7 @@ export const ItemSchema = z.object({
     .optional(),
   originalDraft: z.string(),
   draft: z.string(),
+  draftId: WritingDraftId.optional(),
   edited: z.boolean(),
   stale: z.boolean(),
   reviews: z.array(ReviewSchema),
@@ -111,6 +116,7 @@ export type Conversation = z.infer<typeof ConversationSchema>
 export type OutboxItem = z.infer<typeof ItemSchema>
 export type OutboxRecord = OutboxItem & {
   revision: string
+  writingDraft?: WritingDraft
   /** Worker status is local process state, never persisted in the notebook item. */
   composition?: {
     id: string

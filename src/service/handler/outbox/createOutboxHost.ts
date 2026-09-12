@@ -40,7 +40,7 @@ export function createOutboxHost(
       .finally(() => learningJobs.delete(id))
   }
   const learnRevision = async (before: OutboxRecord | null, after: OutboxRecord, accepted = false) => {
-    if (!before) return after
+    if (!before || after.draftId) return after
     try {
       const example = await captureOutboxRevision(voice, before, after, accepted)
       if (example && !example.question && !example.lesson && !example.error) startLearning(example.id)
@@ -217,9 +217,10 @@ export function createOutboxHost(
       return item
     },
     dismiss: (id, revision) => review.dismiss(id, revision),
+    changeDraft: (id, revision, mutation) => store.changeDraft(id, revision, mutation),
     preferences: (text, revision) => store.savePreferences(text, revision),
     get: async (id) => {
-      const item = await store.get(id)
+      const item = await store.ensureDraft(id)
       return item ? composition.decorate(item) : null
     },
     compose: (id, revision, draft, instruction, reviewedChanges) =>

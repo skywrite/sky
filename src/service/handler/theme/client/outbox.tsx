@@ -4,6 +4,8 @@ import { describeOutboxScan, outboxScanSeverity } from '#lib/outbox/describeScan
 import { dayRange, rangeLabel, ScanRangeSchema, type SavedScanRange } from '#lib/outbox/range.ts'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import type { OutboxReport, OutboxScanResult } from '../../outbox/mod.ts'
+import { ReplyThreadPanel, type OpenReplyThread } from './replyThreads.tsx'
+import { WritingDraftEditor } from './writingDraft.tsx'
 import { WritingVoiceQuestions } from './writingVoice.tsx'
 import './outbox.css'
 
@@ -88,6 +90,9 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const [approving, setApproving] = useState<string | null>(null)
   const [dismissing, setDismissing] = useState<string | null>(null)
   const [manualReply, setManualReply] = useState(false)
+  const [sharedEditing, setSharedEditing] = useState(false)
+  const [discussion, setDiscussion] = useState<OpenReplyThread | null>(null)
+  const [discussionOpen, setDiscussionOpen] = useState(false)
   const [draftNotice, setDraftNotice] = useState('')
   const selectedRef = useRef(selected)
   selectedRef.current = selected
@@ -131,6 +136,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   )
   const polling =
     checking ||
+    Boolean(selected) ||
     composing ||
     Boolean(approving) ||
     report?.followupsRunning === true ||
@@ -222,12 +228,48 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
       return next
     })
   }, [item])
+  useEffect(() => {
+    if (!item?.writingDraft) return
+    setEdit((current) =>
+      current?.direction?.trim()
+        ? { ...current, text: item.draft, saved: item.draft, revision: item.revision }
+        : savedEdit(item),
+    )
+  }, [item?.revision, item?.id])
+  const receiveItem = (record: OutboxRecord) => {
+    setReport((current) =>
+      current
+        ? { ...current, items: current.items.map((entry) => (entry.id === record.id ? record : entry)) }
+        : current,
+    )
+    if (selectedRef.current === record.id) {
+      setLinkedItem(record)
+      setEdit(savedEdit(record))
+    }
+  }
+  const askAboutDraft = () =>
+    void act(async () => {
+      if (!item?.writingDraft) return
+      const response = await fetch(`/chat/drafts/${encodeURIComponent(item.writingDraft.id)}/discuss`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      const result = (await response.json()) as { id?: string; message?: string }
+      if (!response.ok || !result.id) throw new Error(result.message ?? 'Sky could not open the draft discussion.')
+      setDiscussion({ id: result.id, point: { turn: 0, key: item.writingDraft.id }, draftId: item.writingDraft.id })
+      setDiscussionOpen(true)
+    })
   const reviewCount = report?.items.filter(needsReview).length ?? 0
   const readyCount = (report?.items.length ?? 0) - reviewCount
   const items = report?.items.filter((candidate) => (tab === 'review') === needsReview(candidate)) ?? []
   const open = (record: OutboxRecord) => {
     listPosition.current = scroll.current?.scrollTop ?? 0
     setSelected(record.id)
+    selectedRef.current = record.id
+    setDiscussion(null)
+    setDiscussionOpen(false)
+    setSharedEditing(false)
     setLinkedItem(record)
     if (window.matchMedia('(max-width: 1000px)').matches) setDetails(false)
     setEdit(edits.get(record.id) ?? savedEdit(record))
@@ -237,6 +279,11 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
     setDraftNotice('')
     setComposeError('')
     setError('')
+    void request<OutboxRecord>(`/item/${record.id}`)
+      .then(receiveItem)
+      .catch((problem) => {
+        if (selectedRef.current === record.id) setError((problem as Error).message)
+      })
   }
   const openRelated = async (id: string) => {
     try {
@@ -335,8 +382,8 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
           `/item/${item.id}/approve`,
           'POST',
           {
-            revision: edit.revision,
-            draft: edit.text,
+            revision: item.writingDraft ? item.revision : edit.revision,
+            draft: item.writingDraft ? item.draft : edit.text,
             reviewedChanges,
           },
         )
@@ -502,7 +549,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
           </ActionIcon>
         )}
       </header>
-      <div className="sky-outbox-layout">
+      <div className="sky-outbox-layout" data-reply-open={discussionOpen || undefined}>
         <div className="sky-scroll" ref={scroll}>
           <div className="sky-outbox-column">
             {connectionError && (
@@ -571,122 +618,153 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     {limitation}
                   </p>
                 ))}
-                <section className="sky-outbox-draft" aria-label="Reply editor" aria-busy={composing}>
-                  <div className="sky-outbox-draft-label">
-                    {editable
-                      ? edit.text.trim()
-                        ? 'Sky’s draft · yours to refine'
-                        : 'Give Sky the direction'
-                      : item.status === 'ready'
-                        ? 'Ready in app'
-                        : 'Approved reply'}
-                  </div>
-                  {editable && (edit.text.trim() || manualReply) ? (
-                    <Textarea
-                      label="Reply draft"
-                      aria-label="Reply draft"
-                      autosize
-                      minRows={3}
-                      value={edit.text}
-                      onChange={(event) => change(event.currentTarget.value)}
-                      disabled={busy}
+                {item.writingDraft ? (
+                  <>
+                    <WritingDraftEditor
+                      key={item.writingDraft.id}
+                      draft={item.writingDraft}
+                      disabled={busy || placing}
+                      onEditingChange={setSharedEditing}
+                      onAsk={editable ? askAboutDraft : undefined}
+                      onChange={() => {}}
+                      mutate={async (mutation) => {
+                        const result = await request<{
+                          item: OutboxRecord
+                          draft: NonNullable<OutboxRecord['writingDraft']>
+                        }>(`/item/${item.id}/draft`, 'POST', { itemRevision: item.revision, mutation })
+                        receiveItem(result.item)
+                        return result.draft
+                      }}
                     />
-                  ) : !editable ? (
-                    <p className="sky-outbox-text">{item.draft}</p>
-                  ) : (
-                    <p className="sky-outbox-compose-hint">A few words are enough. Sky will write the reply.</p>
-                  )}
-                  {editable && (
-                    <div className="sky-outbox-compose">
-                      {Boolean(item.replyOptions?.length) && (
-                        <div className="sky-outbox-reply-options" aria-label="Ways to reply">
-                          {item.replyOptions!.map((option) => (
-                            <Button
-                              key={option.label}
-                              disabled={busy || conflicted || (item.stale && !reviewedChanges)}
-                              onClick={() => void compose(option.instruction)}
-                            >
-                              {option.label}
-                            </Button>
-                          ))}
-                        </div>
-                      )}
+                    {composing && (
+                      <p className="sky-outbox-compose-feedback" role="status">
+                        {revisionNotice}
+                      </p>
+                    )}
+                    {revisionError && (
+                      <div className="sky-outbox-notice" role="alert">
+                        {revisionError}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <section className="sky-outbox-draft" aria-label="Reply editor" aria-busy={composing}>
+                    <div className="sky-outbox-draft-label">
+                      {editable
+                        ? edit.text.trim()
+                          ? 'Sky’s draft · yours to refine'
+                          : 'Give Sky the direction'
+                        : item.status === 'ready'
+                          ? 'Ready in app'
+                          : 'Approved reply'}
+                    </div>
+                    {editable && (edit.text.trim() || manualReply) ? (
                       <Textarea
-                        label="Instructions for Sky"
-                        description={
-                          edit.text.trim()
-                            ? 'Tell Sky what to change. Revise with Sky saves your draft and instructions, then saves the revised reply above.'
-                            : 'Describe what you want to say. Sky saves your instructions and writes the reply above.'
-                        }
-                        aria-label="Direction for Sky"
-                        placeholder={
-                          edit.text.trim()
-                            ? 'What would you like to change?'
-                            : 'Your decision, or the gist of what you want to say…'
-                        }
-                        value={edit.direction ?? ''}
-                        onChange={(event) => changeDirection(event.currentTarget.value)}
+                        label="Reply draft"
+                        aria-label="Reply draft"
                         autosize
-                        minRows={2}
-                        maxLength={4000}
+                        minRows={3}
+                        value={edit.text}
+                        onChange={(event) => change(event.currentTarget.value)}
                         disabled={busy}
                       />
-                      <div className="sky-outbox-actions">
-                        <Button
-                          variant="primary"
-                          loading={composing}
-                          disabled={busy || conflicted || (item.stale && !reviewedChanges)}
-                          onClick={() => void compose()}
-                        >
-                          {composing ? 'Sky is writing…' : edit.text.trim() ? 'Revise with Sky' : 'Draft reply'}
-                        </Button>
-                        {edit.text.trim() ? (
-                          <>
-                            <Button
-                              disabled={busy || conflicted || (item.stale && !reviewedChanges)}
-                              onClick={() =>
-                                void compose(
-                                  'Make this reply shorter and more direct. Preserve its meaning and all necessary facts.',
-                                )
-                              }
-                            >
-                              Shorter
-                            </Button>
-                            <Button
-                              disabled={busy || conflicted || (item.stale && !reviewedChanges)}
-                              onClick={() =>
-                                void compose(
-                                  'Make this reply warmer while staying brief and direct. Preserve its meaning and do not add commitments.',
-                                )
-                              }
-                            >
-                              Warmer
-                            </Button>
-                          </>
-                        ) : (
-                          !manualReply && (
-                            <Button disabled={busy} onClick={() => setManualReply(true)}>
-                              Write it myself
-                            </Button>
-                          )
+                    ) : !editable ? (
+                      <p className="sky-outbox-text">{item.draft}</p>
+                    ) : (
+                      <p className="sky-outbox-compose-hint">A few words are enough. Sky will write the reply.</p>
+                    )}
+                    {editable && (
+                      <div className="sky-outbox-compose">
+                        {Boolean(item.replyOptions?.length) && (
+                          <div className="sky-outbox-reply-options" aria-label="Ways to reply">
+                            {item.replyOptions!.map((option) => (
+                              <Button
+                                key={option.label}
+                                disabled={busy || conflicted || (item.stale && !reviewedChanges)}
+                                onClick={() => void compose(option.instruction)}
+                              >
+                                {option.label}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        <Textarea
+                          label="Instructions for Sky"
+                          description={
+                            edit.text.trim()
+                              ? 'Tell Sky what to change. Revise with Sky saves your draft and instructions, then saves the revised reply above.'
+                              : 'Describe what you want to say. Sky saves your instructions and writes the reply above.'
+                          }
+                          aria-label="Direction for Sky"
+                          placeholder={
+                            edit.text.trim()
+                              ? 'What would you like to change?'
+                              : 'Your decision, or the gist of what you want to say…'
+                          }
+                          value={edit.direction ?? ''}
+                          onChange={(event) => changeDirection(event.currentTarget.value)}
+                          autosize
+                          minRows={2}
+                          maxLength={4000}
+                          disabled={busy}
+                        />
+                        <div className="sky-outbox-actions">
+                          <Button
+                            variant="primary"
+                            loading={composing}
+                            disabled={busy || conflicted || (item.stale && !reviewedChanges)}
+                            onClick={() => void compose()}
+                          >
+                            {composing ? 'Sky is writing…' : edit.text.trim() ? 'Revise with Sky' : 'Draft reply'}
+                          </Button>
+                          {edit.text.trim() ? (
+                            <>
+                              <Button
+                                disabled={busy || conflicted || (item.stale && !reviewedChanges)}
+                                onClick={() =>
+                                  void compose(
+                                    'Make this reply shorter and more direct. Preserve its meaning and all necessary facts.',
+                                  )
+                                }
+                              >
+                                Shorter
+                              </Button>
+                              <Button
+                                disabled={busy || conflicted || (item.stale && !reviewedChanges)}
+                                onClick={() =>
+                                  void compose(
+                                    'Make this reply warmer while staying brief and direct. Preserve its meaning and do not add commitments.',
+                                  )
+                                }
+                              >
+                                Warmer
+                              </Button>
+                            </>
+                          ) : (
+                            !manualReply && (
+                              <Button disabled={busy} onClick={() => setManualReply(true)}>
+                                Write it myself
+                              </Button>
+                            )
+                          )}
+                        </div>
+                        {revisionError && (
+                          <div className="sky-outbox-notice" role="alert">
+                            {composition?.status === 'failed' && (
+                              <p>Your draft and instructions are saved. Sky could not finish the revision.</p>
+                            )}
+                            {revisionError}
+                          </div>
+                        )}
+                        {!revisionError && revisionNotice && (
+                          <p className="sky-outbox-compose-feedback" role="status">
+                            {revisionNotice}
+                          </p>
                         )}
                       </div>
-                      {revisionError && (
-                        <div className="sky-outbox-notice" role="alert">
-                          {composition?.status === 'failed' && (
-                            <p>Your draft and instructions are saved. Sky could not finish the revision.</p>
-                          )}
-                          {revisionError}
-                        </div>
-                      )}
-                      {!revisionError && revisionNotice && (
-                        <p className="sky-outbox-compose-feedback" role="status">
-                          {revisionNotice}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </section>
+                    )}
+                  </section>
+                )}
                 {item.stale && (
                   <Checkbox
                     checked={reviewedChanges}
@@ -709,6 +787,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                       loading={approving === item.id}
                       disabled={
                         busy ||
+                        sharedEditing ||
                         !edit.text.trim() ||
                         conflicted ||
                         (item.stale && !reviewedChanges) ||
@@ -723,7 +802,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                           : `Approve draft in ${item.conversation.medium === 'Email' ? 'Gmail' : 'Slack'}`}
                     </Button>
                   )}
-                  {item.status === 'needs_review' && (
+                  {item.status === 'needs_review' && !item.writingDraft && (
                     <Button disabled={busy || conflicted || edit.text === edit.saved} onClick={() => void save()}>
                       Save edit
                     </Button>
@@ -733,21 +812,23 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                       Open {item.conversation.medium === 'Email' ? 'Gmail' : 'Slack'} ↗
                     </Button>
                   )}
-                  <Button
-                    onClick={() =>
-                      void navigator.clipboard
-                        .writeText(edit.text)
-                        .catch(() => setError('Could not copy the reply. Select the text to copy it.'))
-                    }
-                  >
-                    Copy reply
-                  </Button>
+                  {!item.writingDraft && (
+                    <Button
+                      onClick={() =>
+                        void navigator.clipboard
+                          .writeText(edit.text)
+                          .catch(() => setError('Could not copy the reply. Select the text to copy it.'))
+                      }
+                    >
+                      Copy reply
+                    </Button>
+                  )}
                   <Button disabled={busy || item.status === 'placing'} onClick={() => void dismiss()}>
                     {item.status === 'needs_review' ? 'Dismiss' : 'Archive'}
                   </Button>
                   {!item.delivery && !placing && Boolean(edit.text.trim()) && (
                     <Button
-                      disabled={busy || conflicted || edit.text !== edit.saved}
+                      disabled={busy || sharedEditing || conflicted || edit.text !== edit.saved}
                       onClick={() => setSentReport(sentReport === null ? '' : null)}
                     >
                       Record that I sent it
@@ -829,7 +910,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     ))}
                   </section>
                 )}
-                {item.originalDraft && item.originalDraft !== edit.text && (
+                {!item.writingDraft && item.originalDraft && item.originalDraft !== edit.text && (
                   <details className="sky-outbox-original">
                     <summary>Sky’s original draft</summary>
                     <p className="sky-outbox-text">{item.originalDraft}</p>
@@ -1084,7 +1165,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
             )}
           </div>
         </div>
-        {item && details && (
+        {item && details && !discussionOpen && (
           <aside className="sky-outbox-details">
             <div className="sky-outbox-details-head">
               <ActionIcon aria-label="Hide details" onClick={() => setDetails(false)}>
@@ -1110,6 +1191,17 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
               </section>
             ))}
           </aside>
+        )}
+        {discussion && item && (
+          <ReplyThreadPanel
+            key={discussion.id}
+            thread={discussion}
+            visible={discussionOpen}
+            onClose={() => {
+              setDiscussionOpen(false)
+              void refresh()
+            }}
+          />
         )}
       </div>
     </div>
