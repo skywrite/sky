@@ -338,25 +338,27 @@ export interface DraggedFile {
  * then `dragover`, with `Files` among the transfer's types — and, with `drop`, let go
  * there. The events go to the element itself, so React's handlers up the tree see them.
  */
-export async function dispatchFileDrag(page: Page, selector: string, file: DraggedFile, drop = false) {
+export async function dispatchFileDrag(page: Page, selector: string, file: DraggedFile | DraggedFile[], drop = false) {
   await page.evaluate(
-    ({ selector, file, drop }) => {
+    ({ selector, files, drop }) => {
       const target = document.querySelector(selector)
       if (!target) throw new Error(`No element at ${selector}`)
       const transfer = new DataTransfer()
-      const bag: FilePropertyBag = { type: file.type }
-      if (file.lastModified !== undefined) bag.lastModified = file.lastModified
-      transfer.items.add(new File([new TextEncoder().encode(file.text)], file.name, bag))
+      for (const file of files) {
+        const bag: FilePropertyBag = { type: file.type }
+        if (file.lastModified !== undefined) bag.lastModified = file.lastModified
+        transfer.items.add(new File([new TextEncoder().encode(file.text)], file.name, bag))
+      }
       for (const type of drop ? ['dragenter', 'dragover', 'drop'] : ['dragenter', 'dragover']) {
         target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }))
       }
     },
-    { selector, file, drop },
+    { selector, files: Array.isArray(file) ? file : [file], drop },
   )
 }
 
 /** A file dropped on an element: the drag, then the `drop` carrying the File. */
-export function dispatchFileDrop(page: Page, selector: string, file: DraggedFile) {
+export function dispatchFileDrop(page: Page, selector: string, file: DraggedFile | DraggedFile[]) {
   return dispatchFileDrag(page, selector, file, true)
 }
 

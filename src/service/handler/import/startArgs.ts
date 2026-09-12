@@ -38,7 +38,9 @@ export interface StartArgs {
 }
 
 /** The door and its arguments for the fields the dialog settled. */
-export function startArgs(job: StartContext, fields: StartFields, filePath: string): StartArgs {
+export function startArgs(job: StartContext, fields: StartFields, input: string | string[]): StartArgs {
+  const filePaths = typeof input === 'string' ? [input] : input
+  const filePath = filePaths[0]
   const when = PlainDateTime.fromString(fields.when)
   const category = `${fields.category} Complete`
   const { fresh } = fields
@@ -78,7 +80,7 @@ export function startArgs(job: StartContext, fields: StartFields, filePath: stri
       return {
         command: 'message:new',
         args: {
-          ...(job.source === 'image' ? { fromImage: filePath } : { fromAudio: filePath }),
+          ...(job.source === 'image' ? { fromImage: filePaths.join(',') } : { fromAudio: filePath }),
           category,
           when,
           fresh,

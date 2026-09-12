@@ -49,6 +49,7 @@ export type ImportState = 'new' | 'running' | 'needs-you' | 'done' | 'failed' | 
 export interface ImportJob {
   id: string
   file: { name: string; size: number; lastModified: number | null }
+  files?: ImportJob['file'][]
   readback: {
     source: 'transcript' | 'srt' | 'text' | 'audio' | 'image'
     kinds: ImportKind[]
@@ -224,13 +225,15 @@ export function useImports(): ImportJob[] {
 
 /** The upload, with its bytes as progress — the one bar whose math is real. */
 export function uploadImport(
-  file: File,
+  files: File[],
   onProgress: (fraction: number) => void,
 ): Promise<{ job: ImportJob; options: ImportOptions }> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
-    form.append('file', file, file.name)
-    if (file.lastModified) form.append('lastModified', String(file.lastModified))
+    for (const file of files) {
+      form.append('file', file, file.name)
+      form.append('lastModified', String(file.lastModified))
+    }
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/import')
     xhr.upload.onprogress = (e) => {
@@ -448,7 +451,7 @@ export function DropOverlay() {
 export type MeetingImport = { title: string; when: string; day?: never } | { day: string; title?: never; when?: never }
 
 interface QueuedImport {
-  file: File
+  files: File[]
   meeting: MeetingImport | null
 }
 
@@ -461,8 +464,8 @@ interface Pending extends QueuedImport {
 }
 
 /**
- * Files arrive one at a time: each is uploaded, confirmed in the dialog,
- * started (or dropped), then the next comes up.
+ * Each drop's screenshots stay together as one conversation. Other files
+ * are uploaded and confirmed one at a time, then the next import comes up.
  */
 export function useImportQueue(onStarted: (job: ImportJob) => void) {
   const [queue, setQueue] = useState<QueuedImport[]>([])
@@ -470,29 +473,43 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
   const [again, setAgain] = useState<ImportJob | null>(null)
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
-  const take = (files: File[], meeting: MeetingImport | null = null) =>
-    setQueue((q) => [
-      ...q,
-      ...files.map((file) => ({
-        file,
+  const take = (files: File[], meeting: MeetingImport | null = null) => {
+    const screenshots = files.filter((file) => IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)))
+    const imports: QueuedImport[] = []
+    for (const file of files) {
+      if (screenshots.includes(file)) {
+        if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null })
+        continue
+      }
+      imports.push({
+        files: [file],
         meeting:
           ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
           file.type.startsWith('audio/')
             ? meeting
             : null,
-      })),
-    ])
+      })
+    }
+    setQueue((q) => [...q, ...imports])
+  }
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [{ file, meeting }, ...rest] = queue
+    const [{ files, meeting }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
-    const refusal = refusedBeforeUpload(file)
-    setPending({ key, file, meeting, fraction: 0, job: null, options: null, error: refusal })
+    let refusal: string | null = null
+    for (const file of files) {
+      const reason = refusedBeforeUpload(file)
+      if (reason) {
+        refusal = files.length > 1 ? `${file.name}: ${reason}` : reason
+        break
+      }
+    }
+    setPending({ key, files, meeting, fraction: 0, job: null, options: null, error: refusal })
     if (refusal) return
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
-    uploadImport(file, (fraction) => patch((p) => ({ ...p, fraction })))
+    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })))
       .then(({ job, options }) => patch((p) => ({ ...p, fraction: 1, job, options })))
       .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
@@ -567,7 +584,7 @@ function Pills<T extends string>({
 }
 
 /** Under When: where the proposal came from and what wins, or that the person's own wins. */
-function whenNote(source: ImportJob['readback']['source'], proposed: boolean, label: string): string {
+function whenNote(source: ImportJob['readback']['source'], proposed: boolean, label: string, count: number): string {
   switch (source) {
     case 'audio':
       return proposed
@@ -575,8 +592,8 @@ function whenNote(source: ImportJob['readback']['source'], proposed: boolean, la
         : 'yours · wins over what the memo says'
     case 'image':
       return proposed
-        ? `when the screenshot was taken · ${label} · a time it shows wins`
-        : 'yours · wins over what the screenshot shows'
+        ? `when the ${count > 1 ? 'first screenshot' : 'screenshot'} was taken · ${label} · a time ${count > 1 ? 'they show' : 'it shows'} wins`
+        : `yours · wins over what the ${count > 1 ? 'screenshots show' : 'screenshot shows'}`
     default:
       return proposed
         ? `from the file's time and length · ${label} · a time it states wins`
@@ -592,8 +609,15 @@ function whenLabel(when: string, todayYmd: string | null): string {
   return `${ymd} ${time}`
 }
 
-function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], journalType: string): string {
+function nextLine(
+  kind: ImportKind,
+  source: ImportJob['readback']['source'],
+  journalType: string,
+  count: number,
+): string {
   if (source === 'image') {
+    if (count > 1)
+      return `Sky reads all ${count} screenshots as one conversation, checks what it read with you, and files one message under the day.`
     return 'Sky reads the conversation off the screenshot, checks what it read with you, and files it as a message under the day.'
   }
   const heard =
@@ -703,6 +727,8 @@ function ConfirmBody({
 
   const uploading = pending && !pending.job && !pending.error
   const refusal = live?.readback.refusal ?? pending?.error ?? null
+  const files = live ? (live.files ?? [live.file]) : (pending?.files ?? [])
+  const count = files.length
   const source = live?.readback.source ?? 'audio'
   const sourceWord =
     source === 'audio'
@@ -710,13 +736,15 @@ function ConfirmBody({
       : source === 'text'
         ? 'a text file'
         : source === 'image'
-          ? 'a screenshot'
+          ? count > 1
+            ? `${count} screenshots`
+            : 'a screenshot'
           : 'a transcript'
   // The title says what this makes — "New meeting from a transcript" — and follows the choice below.
   const title = refusal
-    ? 'Sky cannot take this file'
+    ? `Sky cannot take ${count > 1 ? 'these files' : 'this file'}`
     : uploading
-      ? 'New from a file'
+      ? `New from ${count > 1 ? `${count} files` : 'a file'}`
       : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
@@ -740,8 +768,7 @@ function ConfirmBody({
     }
   }
 
-  const fileName = live?.file.name ?? pending?.file.name ?? ''
-  const size = live?.file.size ?? pending?.file.size ?? 0
+  const size = files.reduce((total, file) => total + file.size, 0)
   const calendar = meeting ? null : live?.calendar
 
   return (
@@ -749,8 +776,18 @@ function ConfirmBody({
       {phone && <div className="sky-sheet-handle" />}
       <div className="sky-confirm-title">{title}</div>
       <div className="sky-confirm-file">
-        {fileName} · {sizeLabel(size)}
+        {count > 1 ? `${count} files` : files[0]?.name} · {sizeLabel(size)}
       </div>
+      {count > 1 && (
+        <ul className="sky-confirm-files" aria-label="Screenshots">
+          {files.map((file, index) => (
+            <li key={index}>
+              <span>{file.name}</span>
+              <span>{sizeLabel(file.size)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {uploading && <div className="sky-confirm-read">Uploading · {Math.round((pending?.fraction ?? 0) * 100)}%</div>}
       {refusal && <div className="sky-confirm-read">{refusal}</div>}
       {live && !refusal && (
@@ -794,6 +831,7 @@ function ConfirmBody({
                     source,
                     !whenStated && fields.when === live.suggestedWhen,
                     whenLabel(live.suggestedWhen, todayYmd),
+                    count,
                   )}
             </span>
           </div>
@@ -826,7 +864,7 @@ function ConfirmBody({
             />
           )}
           <ImportLinks job={live} onBusy={setLinkBusy} />
-          <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType)}</div>
+          <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType, count)}</div>
           {live.resume && (
             <div className="sky-confirm-resume">
               {fields.fresh

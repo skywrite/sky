@@ -13,11 +13,12 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
+import { instantNow } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
 import { linkValues } from '../links/mod.ts'
@@ -36,7 +37,7 @@ import {
   type StartFields,
   summarize,
 } from './jobs.ts'
-import { KINDS, type ReadBack } from './readback.ts'
+import { KINDS, type ReadBack, sourceOf } from './readback.ts'
 
 export type {
   CalendarMatch,
@@ -81,7 +82,7 @@ export interface ImportRoutesOptions {
    * fields, as one stream of what it reports and asks, ending in how it went.
    * The signal is the person's cancel.
    */
-  run: (job: ImportJob, filePath: string, signal: AbortSignal) => AsyncGenerator<RunEvent, RunOutcome, void>
+  run: (job: ImportJob, filePaths: string[], signal: AbortSignal) => AsyncGenerator<RunEvent, RunOutcome, void>
   /** The journal types the dialog offers */
   journalTypes: string[]
 }
@@ -207,32 +208,69 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
   // A file arrives: staged, read back, and — for a recording — listened to.
   app.post('/', async (c) => {
     await loaded
-    const body = await c.req.parseBody().catch(() => null)
-    const upload = body?.file
-    if (!(upload instanceof File)) return c.json({ message: 'a file is required' }, 400)
-    if (upload.size === 0) return c.json({ message: 'the file is empty' }, 400)
+    const body = await c.req.raw.formData().catch(() => null)
+    const uploads = body?.getAll('file') ?? []
+    if (uploads.length === 0 || !uploads.every((upload): upload is File => upload instanceof File)) {
+      return c.json({ message: 'a file is required' }, 400)
+    }
+    const empty = uploads.find((upload) => upload.size === 0)
+    if (empty) return c.json({ message: uploads.length > 1 ? `${empty.name} is empty` : 'the file is empty' }, 400)
+    if (uploads.length > 1 && uploads.some((upload) => sourceOf(upload.name) !== 'image')) {
+      return c.json({ message: 'Only screenshots can be imported together.' }, 400)
+    }
 
     const id = randomUUID()
-    const name = safeAttachmentName(upload.name)
     const dir = store.jobDir(id)
     await mkdir(dir, { recursive: true })
-    const filePath = path.join(dir, name)
-    await writeFile(filePath, new Uint8Array(await upload.arrayBuffer()))
-
-    const lastModifiedRaw = typeof body?.lastModified === 'string' ? Number(body.lastModified) : Number.NaN
-    const file: StagedFile = {
-      name,
-      size: upload.size,
-      lastModified: Number.isFinite(lastModifiedRaw) && lastModifiedRaw > 0 ? lastModifiedRaw : null,
+    const files: StagedFile[] = []
+    const readbacks: ReadBack[] = []
+    const modified = body?.getAll('lastModified') ?? []
+    const names = new Set(['job.json'])
+    try {
+      for (const [index, upload] of uploads.entries()) {
+        // The image command accepts comma-separated paths. Keep staged names
+        // unambiguous, and never overwrite a same-named screenshot in the group.
+        const base = safeAttachmentName(upload.name).replaceAll(',', '-')
+        const ext = path.extname(base)
+        let name = base
+        let suffix = 2
+        while (names.has(name.toLowerCase())) name = `${base.slice(0, base.length - ext.length)}-${suffix++}${ext}`
+        names.add(name.toLowerCase())
+        const filePath = path.join(dir, name)
+        await writeFile(filePath, new Uint8Array(await upload.arrayBuffer()), { flag: 'wx' })
+        const raw = typeof modified[index] === 'string' ? Number(modified[index]) : Number.NaN
+        const lastModified = Number.isFinite(raw) && raw > 0 ? raw : null
+        // message:new orders screenshots by their capture times, not upload times.
+        if (lastModified !== null) await utimes(filePath, lastModified / 1000, lastModified / 1000)
+        files.push({ name, size: upload.size, lastModified })
+        readbacks.push(await options.read({ path: filePath, name, size: upload.size }))
+      }
+    } catch (error) {
+      await rm(dir, { recursive: true, force: true })
+      throw error
     }
-    const readback = await options.read({ path: filePath, name, size: upload.size })
+    const file = files[0]
+    const filePath = path.join(dir, file.name)
+    const refused = readbacks.findIndex((readback) => readback.refusal !== null)
+    const readback: ReadBack =
+      files.length === 1
+        ? readbacks[0]
+        : {
+            ...readbacks[0],
+            summary: `${files.length} screenshots → 1 message`,
+            kinds: refused < 0 ? ['message'] : [],
+            refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
+          }
     const suggestedWhen = options.suggestWhen(file, readback)
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
-      readback.refusal || !options.record ? null : await options.record({ path: filePath, key: null }).catch(() => null)
+      readback.refusal || files.length > 1 || !options.record
+        ? null
+        : await options.record({ path: filePath, key: null }).catch(() => null)
     const job: ImportJob = {
       id,
       file,
+      files,
       readback,
       listen: null,
       calendar: null,
@@ -245,10 +283,10 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       stage: null,
       tick: null,
       line: readback.refusal,
-      title: titleOf(file, readback, suggestedWhen),
+      title: files.length > 1 ? `${files.length} screenshots` : titleOf(file, readback, suggestedWhen),
       result: null,
       error: readback.refusal,
-      created: new Date().toISOString(),
+      created: instantNow(),
     }
     const record = await store.add(job)
 
@@ -294,7 +332,12 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     const { job } = record
     // A run that stopped left more to pick up than the upload showed; the
     // dialog opening again is when that is looked at.
-    if (options.record && (job.state === 'failed' || job.state === 'cancelled') && !job.readback.refusal) {
+    if (
+      options.record &&
+      (job.files?.length ?? 1) === 1 &&
+      (job.state === 'failed' || job.state === 'cancelled') &&
+      !job.readback.refusal
+    ) {
       const kept = await options.record({ path: store.filePath(job), key: job.runKey }).catch(() => null)
       if (kept) {
         job.runKey = kept.key
@@ -391,7 +434,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
 
     // The run is one stream; each event lands on the job and goes out to the page.
     void (async (): Promise<RunOutcome> => {
-      const run = options.run(job, store.filePath(job), abort.signal)
+      const run = options.run(job, store.filePaths(job), abort.signal)
       let step = await run.next()
       while (!step.done) {
         if (record.job.state !== 'cancelled') relay(store, record, step.value)

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-08
+updated: 2026-09-12
 ---
 
 # Meeting from a file — the import
@@ -54,6 +54,12 @@ One door for every file kind. The kind picks the command:
 | audio | the kind chosen in the dialog: `meeting:new --from-voice-memo`, or `journal:new`, `notes:new`, `message:new`, `event:new` with `--from-audio` |
 | image | `message:new --from-image` — a screenshot of a conversation |
 
+Screenshots dropped or selected together form one import and one message.
+The dialog lists every file, and the job keeps the complete group when reopened.
+Other file kinds remain separate imports. Each screenshot retains its capture
+time so `message:new` can read the conversation in capture order; size limits
+apply to each image, and a refused image blocks the whole group.
+
 The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
 checked against the calendar within the meeting check's fifteen minutes;
@@ -94,7 +100,7 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`) → the job, read back |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back |
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |

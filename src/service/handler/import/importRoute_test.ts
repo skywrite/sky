@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { PromptEvent, RunEvent } from '#commands/lib/core/runCommand.ts'
 import type { PromptRequest } from '#commands/lib/prompt/Prompter.ts'
@@ -6,7 +6,8 @@ import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
-import { readAudio, readSrt, readTranscript, readUnknown } from './readback.ts'
+import { readAudio, readImage, readSrt, readTranscript, readUnknown, sourceOf } from './readback.ts'
+import { startArgs } from './startArgs.ts'
 
 // The routes over a scripted world: the read-back is real (it is pure), the
 // listen, the calendar and the run are scripted.
@@ -40,6 +41,7 @@ const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pri
 interface World {
   options: ImportRoutesOptions
   runs: ImportJob[]
+  paths: string[][]
   /** The next run asks these questions, in order, and returns this; the record says what an earlier run left */
   script: {
     ask: Array<'text' | 'form' | 'place'>
@@ -52,6 +54,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
   const notebook = await makeTempDir()
   const dir = path.join(notebook, '.user-data', 'imports')
   const runs: ImportJob[] = []
+  const paths: string[][] = []
   const script: World['script'] = { ask: [], outcome: 'filed', resume: null }
   const options: ImportRoutesOptions = {
     dir,
@@ -60,6 +63,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
       if (name.endsWith('.vtt')) return readTranscript(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.srt')) return readSrt(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.m4a')) return readAudio(size, 252)
+      if (sourceOf(name) === 'image') return readImage(size, { width: 1200, height: 2400 })
       return readUnknown(name)
     },
     suggestWhen: () => '2026-01-27 09:31',
@@ -78,10 +82,11 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
     }),
     run: async function* (
       job: ImportJob,
-      filePath: string,
+      filePaths: string[],
       signal: AbortSignal,
     ): AsyncGenerator<RunEvent, RunOutcome, void> {
       runs.push(job)
+      paths.push(filePaths)
       let n = 0
       // A question the way the runner asks it: an event carrying its reply, answered null on cancel.
       const question = (request: PromptRequest): { event: PromptEvent; answered: Promise<unknown> } => {
@@ -109,7 +114,13 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
         command: 'audio:transcript:create',
         depth: 2,
       }
-      yield { type: 'line', text: `Transcribing: ${path.basename(filePath)}`, level: 'log', command: null, depth: 2 }
+      yield {
+        type: 'line',
+        text: `Transcribing: ${path.basename(filePaths[0])}`,
+        level: 'log',
+        command: null,
+        depth: 2,
+      }
       yield { type: 'text', text: 'Okay, quick recap ', command: null, depth: 2 }
       yield { type: 'tick', done: 1, total: 2, unit: 'parts', command: null, depth: 2 }
       for (const ask of script.ask) {
@@ -158,7 +169,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
         : { ok: false, message: "Couldn't write the summary — it timed out after 20 minutes." }
     },
   }
-  return { options, runs, script, dir, notebook }
+  return { options, runs, paths, script, dir, notebook }
 }
 
 function upload(name: string, body: string | Uint8Array, lastModified?: number): FormData {
@@ -167,6 +178,128 @@ function upload(name: string, body: string | Uint8Array, lastModified?: number):
   if (lastModified) form.append('lastModified', String(lastModified))
   return form
 }
+
+test('POST /import keeps four screenshots together through upload, reopen and start', async () => {
+  const w = await world()
+  w.options.calendar = undefined
+  w.script.outcome = 'failed'
+  const app = () => createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const files = ['Atlas-1.png', 'Atlas-2.jpg', 'Atlas-3.webp', 'Atlas-4.PNG']
+  const times = files.map((_, i) => 1_700_000_000_000 + i * 60_000)
+  const form = new FormData()
+  for (const [index, name] of files.entries()) {
+    form.append('file', new File([`screenshot ${index + 1}`], name))
+    form.append('lastModified', String(times[index]))
+  }
+  const response = await app().request('/import', { method: 'POST', body: form })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const reopened = app()
+  const loaded = (await (await reopened.request(`/import/${job.id}`)).json()).job as ImportJob
+  const paths = files.map((name) => path.join(w.dir, job.id, name))
+  assert({
+    given: 'four screenshots uploaded in one request and the service reopened',
+    should: 'keep one job, all four files and their capture times, and offer one message',
+    actual: {
+      status: response.status,
+      jobs: (await (await reopened.request('/import')).json()).imports.length,
+      files: loaded.files?.map((file) => file.name),
+      summary: loaded.readback.summary,
+      contents: await Promise.all(paths.map((file) => readFile(file, 'utf8'))),
+      times: await Promise.all(paths.map(async (file) => (await stat(file)).mtimeMs)),
+    },
+    expected: {
+      status: 201,
+      jobs: 1,
+      files,
+      summary: '4 screenshots → 1 message',
+      contents: ['screenshot 1', 'screenshot 2', 'screenshot 3', 'screenshot 4'],
+      times,
+    },
+  })
+  const fields = { kind: 'message', when: loaded.suggestedWhen, category: 'Personal' }
+  await postJson(reopened, `/import/${job.id}/start`, fields)
+  await events(
+    await reopened.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  await postJson(reopened, `/import/${job.id}/start`, fields)
+  await events(
+    await reopened.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  assert({
+    given: 'Start and then a retry of the screenshot group',
+    should: 'pass every image together to one message command on each attempt',
+    actual: w.runs.map((run, index) => {
+      const start = startArgs({ ...run, source: run.readback.source }, run.fields!, w.paths[index])
+      return { command: start.command, images: start.args.fromImage, category: start.args.category }
+    }),
+    expected: [1, 2].map(() => ({ command: 'message:new', images: paths.join(','), category: 'Personal Complete' })),
+  })
+})
+
+test('POST /import preserves same-named screenshots without ambiguous command paths', async () => {
+  const w = await world()
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  for (const [index, name] of ['chat.png', 'chat.png', 'CHAT.png', 'chat,4.png'].entries()) {
+    form.append('file', new File([`part ${index + 1}`], name))
+  }
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  assert({
+    given: 'duplicate screenshot names, including a case-only collision and a comma',
+    should: 'stage distinct files that the comma-separated image command can read',
+    actual: await Promise.all(
+      (job.files ?? []).map(async (file) => ({
+        name: file.name,
+        content: await readFile(path.join(w.dir, job.id, file.name), 'utf8'),
+      })),
+    ),
+    expected: ['chat.png', 'chat-2.png', 'CHAT-3.png', 'chat-4.png'].map((name, index) => ({
+      name,
+      content: `part ${index + 1}`,
+    })),
+  })
+})
+
+test('POST /import refuses an entire screenshot group when a later image exceeds the limit', async () => {
+  const w = await world()
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  form.append('file', new File(['small screenshot'], 'chat-1.png'))
+  form.append('file', new File([new Uint8Array(8 * 1024 * 1024)], 'chat-2.png'))
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  const start = await postJson(app, `/import/${job.id}/start`, { kind: 'message', when: job.suggestedWhen })
+  assert({
+    given: 'a valid screenshot followed by an oversized screenshot',
+    should: 'identify the refused file and prevent a partial import',
+    actual: [job.files?.length, job.state, job.readback.refusal, start.status, w.runs.length],
+    expected: [
+      2,
+      'failed',
+      'chat-2.png: The screenshot is 8 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
+      400,
+      0,
+    ],
+  })
+})
+
+test('POST /import rejects mixed and empty groups before staging', async () => {
+  const w = await world()
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  for (const second of [new File(['memo'], 'memo.m4a'), new File([], 'empty.png')]) {
+    const form = new FormData()
+    form.append('file', new File(['screenshot'], 'chat.png'))
+    form.append('file', second)
+    const response = await app.request('/import', { method: 'POST', body: form })
+    assert({
+      given: 'a screenshot grouped with a recording or an empty image',
+      should: 'reject the group without staging a partial import',
+      actual: [response.status, (await (await app.request('/import')).json()).imports.length],
+      expected: [400, 0],
+    })
+  }
+})
 
 /** Read the SSE stream until an event satisfies `until`, or the stream ends. */
 async function events(response: Response, until: (e: ImportEvent) => boolean): Promise<ImportEvent[]> {

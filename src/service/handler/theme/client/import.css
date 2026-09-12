@@ -55,6 +55,35 @@
   overflow-wrap: anywhere;
 }
 
+.sky-confirm-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 16px;
+  color: var(--sky-text-2);
+}
+
+.sky-confirm-files li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.sky-confirm-files li span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-confirm-files li span:last-child {
+  flex: none;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+}
+
 .sky-confirm-read {
   font-size: 18px;
 }

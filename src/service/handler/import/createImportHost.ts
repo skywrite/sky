@@ -185,7 +185,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
 
   const run = async function* (
     job: ImportJob,
-    filePath: string,
+    filePaths: string[],
     signal: AbortSignal,
   ): AsyncGenerator<RunEvent, RunOutcome, void> {
     const fields = job.fields
@@ -199,7 +199,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     const { command, args, rawArgs } = startArgs(
       { source: job.readback.source, runKey: job.runKey, suggestedWhen: job.suggestedWhen },
       fields,
-      filePath,
+      filePaths,
     )
     const result = yield* runCommand(command, { context: CommandContext.server(config, env), args, rawArgs, signal })
     if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish` }

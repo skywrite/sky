@@ -72,6 +72,8 @@ export interface Tick {
 export interface ImportJob {
   id: string
   file: StagedFile
+  /** All screenshots in one conversation; older jobs have only `file`. */
+  files?: StagedFile[]
   readback: ReadBack
   listen: Listen | null
   calendar: CalendarMatch | null
@@ -233,6 +235,10 @@ export class JobStore {
   /** Where the upload itself lives. */
   filePath(job: ImportJob): string {
     return path.join(this.jobDir(job.id), job.file.name)
+  }
+
+  filePaths(job: ImportJob): string[] {
+    return (job.files ?? [job.file]).map((file) => path.join(this.jobDir(job.id), file.name))
   }
 
   async add(job: ImportJob): Promise<JobRecord> {
