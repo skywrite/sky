@@ -5,7 +5,6 @@ import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slac
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { SLACK_WORKSPACE } from '#config'
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems, openInSlack } from './lib/capture.ts'
@@ -31,11 +30,19 @@ const params = {
     optional: true,
   }),
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
-  channel: Flag.string('Only this conversation: #name, DM person, or group-DM slug (exact match)', {
+  channel: Flag.string(
+    'Filter conversations by #name, DM person, or group-DM slug; supports * wildcards (quote patterns)',
+    {
+      optional: true,
+    },
+  ),
+  sortTime: Flag.bool('One chronological list instead of grouping by conversation', { default: false }),
+  capture: Flag.string('Capture specific items by 1-based indexes like "1,3" (use --capture-all for every match)', {
     optional: true,
   }),
-  sortTime: Flag.bool('One chronological list instead of grouping by conversation', { default: false }),
-  capture: Flag.string('Capture items into the notebook: "all" or 1-based indexes like "1,3"', { optional: true }),
+  captureAll: Flag.bool('Capture every fetched matching item for the day (still subject to --limit)', {
+    default: false,
+  }),
   captureBatch: Flag.number('Capture the first N matched items (repeat for the next N)', { short: 'n' }),
   open: Flag.stringOrBool(
     'Open items in Slack: bare --open opens what a capture run lands; --open=3 alone opens the first 3 matched read-only',
@@ -92,18 +99,22 @@ export default class SlackLaterDayTask extends Command {
       'alphabetical, each under its own header; --sort-time flattens back to',
       'one chronological list. Numbering follows the printed order either way,',
       'so --capture indexes always mean what you see. --channel narrows the',
-      'day to one conversation, by exact name: #name or name for channels, the',
-      'person for DMs, the raw slug for group DMs — the capture and open flags',
-      'then act on that scoped list. Clickable links and --open use the',
+      'day by conversation name: #name or name for channels, the person for DMs,',
+      'or the raw slug for group DMs. Matching ignores case and is exact unless',
+      'you use * for any sequence of characters. Quote patterns, e.g.',
+      "--channel '#atlas-*', so the shell passes them through. The capture and",
+      'open flags act on that scoped list. Clickable links and --open use the',
       'app.slack.com browser client, skipping the "open the app" page; piped',
       'output keeps workspace permalinks. Listing is read-only.',
       '',
-      'With --capture, each picked item runs through slack:follow:message: live',
+      'With --capture-all or --capture, each picked item runs through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
       'the follow expiry window archive without a follow. Summary, auto-tags,',
       'and auto-rel apply either way, the item is then marked complete in',
       'Slack — the Later list stays the ledger of what remains — and captured',
       'files open in the editor when done.',
+      '--capture-all captures every available item matching the day and channel',
+      'filters in this fetch; --limit controls the fetch size (default 600).',
       '',
       '--capture-batch N takes only the first N matched items and reports what',
       'is left. Completed items drop off the list, so the same command run again',
@@ -117,8 +128,9 @@ export default class SlackLaterDayTask extends Command {
     ],
     usage: [
       'sky slack:later:day',
-      'sky slack:later:day --capture all',
-      'sky slack:later:day --channel atlas --capture all',
+      'sky slack:later:day --capture-all',
+      'sky slack:later:day --channel atlas --capture-all',
+      "sky slack:later:day --channel '#atlas-*' --capture-all",
       'sky slack:later:day --sort-time',
       'sky slack:later:day 2026-06-03 --capture-batch 10',
       'sky slack:later:day 2026-06-03 --capture 1,3 --open',
@@ -144,7 +156,10 @@ export default class SlackLaterDayTask extends Command {
       return CommandResult.fail(`Invalid --channel: ${args.channel} (use a conversation name like #atlas)`)
     }
 
-    // Both name what to capture — pick one rather than guess a precedence
+    if (args.captureAll && (args.capture !== undefined || args.captureBatch !== undefined)) {
+      return CommandResult.fail('Use only one of --capture-all, --capture, or --capture-batch')
+    }
+    // These name what to capture — pick one rather than guess a precedence.
     if (args.capture !== undefined && args.captureBatch !== undefined) {
       return CommandResult.fail('Use --capture or --capture-batch, not both')
     }
@@ -155,7 +170,9 @@ export default class SlackLaterDayTask extends Command {
     }
     // --open wears two hats: bare with a capture run (open what lands), or
     // --open=N alone (open the first N read-only — they keep their Later badge)
-    const capturing = args.capture !== undefined || args.captureBatch !== undefined
+    // Preserve the previous day-command spelling as a compatibility alias.
+    const captureAll = args.captureAll || args.capture?.trim().toLowerCase() === 'all'
+    const capturing = captureAll || args.capture !== undefined || args.captureBatch !== undefined
     const openBare = args.open === 'landed'
     let openCount: number | undefined
     if (args.open !== undefined && !openBare) {
@@ -171,12 +188,12 @@ export default class SlackLaterDayTask extends Command {
       return CommandResult.fail('Bare --open needs a capture run — use --open=N to open the first N without capturing')
     }
 
-    if (!SLACK_WORKSPACE) {
+    if (!context.config.SLACK_WORKSPACE) {
       return CommandResult.fail(
         'No slack.workspace configured — permalinks need it. Set it via sky init or config.jsonc.',
       )
     }
-    const workspace = SLACK_WORKSPACE.replace(/\/$/, '')
+    const workspace = context.config.SLACK_WORKSPACE.replace(/\/$/, '')
 
     const fetched = await fetchInProgressLater(args.limit)
     if ('error' in fetched) return CommandResult.fail(fetched.error)
@@ -277,13 +294,13 @@ export default class SlackLaterDayTask extends Command {
       })
     }
 
-    if (matched.length === 0 || (!args.capture && args.captureBatch === undefined)) {
+    if (matched.length === 0 || !capturing) {
       if (matched.length > 0) {
         const scope = channelQuery === undefined ? '' : ` --channel ${quoteArg(channelQuery)}`
         output.log('')
         output.log(
           colors.dim(
-            `Re-run with: sky slack:later:day ${dayStr}${scope} --capture-batch 10   (or --capture all, --capture 1,3)`,
+            `Re-run with: sky slack:later:day ${dayStr}${scope} --capture-batch 10   (or --capture-all, --capture 1,3)`,
           ),
         )
       }
@@ -302,17 +319,19 @@ export default class SlackLaterDayTask extends Command {
     }
 
     let picked: DayItem[]
-    if (args.capture) {
+    if (args.capture !== undefined && !captureAll) {
       const selection = parseSelection(args.capture, matched.length)
-      if (!selection) {
-        return CommandResult.fail(`Invalid --capture: ${args.capture} (use "all" or indexes 1-${matched.length})`)
+      if (!selection || selection === 'all') {
+        return CommandResult.fail(
+          `Invalid --capture: ${args.capture} (use indexes 1-${matched.length} or --capture-all)`,
+        )
       }
-      picked = selection === 'all' ? matched : selection.map((i) => matched[i])
+      picked = selection.map((i) => matched[i])
     } else {
-      // Dead-id items would only fail the fetch — batches skip them (explicit
+      // Dead-id items would only fail the fetch — bulk captures skip them (explicit
       // --capture indexes stay verbatim: the listing marks those rows stale)
       const capturable = matched.filter((d) => laterCapturable(d.item))
-      picked = capturable.slice(0, args.captureBatch)
+      picked = captureAll ? capturable : capturable.slice(0, args.captureBatch)
       if (capturable.length < matched.length) {
         output.log('')
         output.log(

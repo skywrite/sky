@@ -92,6 +92,60 @@ test('laterChannelMatches scopes by exact conversation name', () => {
   })
 })
 
+test('laterChannelMatches supports star patterns across conversation names', () => {
+  const cases: Array<[string, string, boolean]> = [
+    [' #Atlas-* ', 'atlas-api', true],
+    ['#atlas-*', '#ATLAS-design', true],
+    ['atlas-*', 'atlas-', true],
+    ['atlas-*', 'old-atlas-api', false],
+    ['atlas-*', 'atlas', false],
+    ['*-updates', 'atlas-updates', true],
+    ['*-updates', 'atlas-updates-old', false],
+    ['atlas-*-updates', 'atlas-api-updates', true],
+    ['atlas-**-updates', 'atlas-api-updates', true],
+    ['*atlas*updates*', 'team-atlas-api-updates-archive', true],
+    ['*atlas*updates*', 'updates-atlas', false],
+    ['*', 'general', true],
+    ['Jane *', 'Jane Doe', true],
+    ['mpdm-jane--*', 'mpdm-jane--john-1', true],
+  ]
+  for (const [query, name, expected] of cases) {
+    assert({
+      given: `the pattern ${query} and conversation ${name}`,
+      should: 'match the whole name with stars allowing zero or more characters',
+      actual: laterChannelMatches(item({ channel_name: name }), query),
+      expected,
+    })
+  }
+  assert({
+    given: 'a wildcard matching every named conversation',
+    should: 'still exclude unreachable items with no channel name',
+    actual: laterChannelMatches(item({}), '*'),
+    expected: false,
+  })
+})
+
+test('laterChannelMatches treats punctuation as literal text in wildcard queries', () => {
+  const cases: Array<[string, string, boolean]> = [
+    ['jane.doe*', 'jane.doe (guest)', true],
+    ['jane.doe*', 'janeXdoe', false],
+    ['jane[team]*', 'jane[team] smith', true],
+    ['jane[team]*', 'janet smith', false],
+    ['jane?*', 'jane doe', false],
+    ['jane+*', 'jane+doe', true],
+    ['(jane|john)*', 'john', false],
+    ['jane\\doe*', 'jane\\doe (guest)', true],
+  ]
+  for (const [query, name, expected] of cases) {
+    assert({
+      given: `the pattern ${query} and conversation ${name}`,
+      should: 'interpret only the star as a wildcard',
+      actual: laterChannelMatches(item({ channel_name: name }), query),
+      expected,
+    })
+  }
+})
+
 test('laterMatchableName renders the form --channel matches', () => {
   assert({
     given: 'a named channel',

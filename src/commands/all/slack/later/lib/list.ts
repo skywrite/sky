@@ -60,10 +60,18 @@ export function normalizeChannelQuery(name: string): string {
   return name.trim().replace(/^#/, '').toLowerCase()
 }
 
-/** Whether a --channel query names this item's conversation — exact match after normalizing. */
+/** Match a normalized conversation name; only * is special, matching zero or more characters. */
 export function laterChannelMatches(item: AgentSlackLaterItem, query: string): boolean {
   if (!item.channel_name) return false
-  return normalizeChannelQuery(item.channel_name) === normalizeChannelQuery(query)
+  const name = normalizeChannelQuery(item.channel_name)
+  const normalizedQuery = normalizeChannelQuery(query)
+  if (!normalizedQuery.includes('*')) return name === normalizedQuery
+  // Treat punctuation in DM names literally so it cannot broaden a capture.
+  const pattern = normalizedQuery
+    .split(/\*+/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*')
+  return new RegExp(`^${pattern}$`, 'su').test(name)
 }
 
 /**
