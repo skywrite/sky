@@ -1,4 +1,4 @@
-import { readFile, unlink } from 'node:fs/promises'
+import { mkdir, readFile, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -185,35 +185,39 @@ export default class AudioTranscriptCreateTask extends Command {
     }
 
     output.log(colors.gray(`\nTranscribing: ${inputFile}`))
+    const kept = await run.get('raw')
 
     // 3. Convert .caf to .m4a (unsupported by transcription APIs)
     let transcribeFile = inputFile
     let tempConvertedFile: string | null = null
-    if (path.extname(inputFile).toLowerCase() === '.caf') {
+    if (!kept && path.extname(inputFile).toLowerCase() === '.caf') {
       const ffmpegCheck = await runCommand('which', ['ffmpeg'])
       if (!ffmpegCheck.success) {
         return CommandResult.fail('ffmpeg is required to convert .caf files. Install with: brew install ffmpeg')
       }
 
-      tempConvertedFile = path.join(path.dirname(inputFile), `${path.basename(inputFile, '.caf')}.m4a`)
+      // Conversion belongs to this run; never leave an audio copy beside the
+      // source or substitute it for the original file returned to the caller.
+      await mkdir(run.dir, { recursive: true })
+      tempConvertedFile = path.join(run.dir, 'audio.m4a')
       output.log(colors.gray(`Converting .caf → .m4a...`))
       const result = await runCommand('ffmpeg', ['-i', inputFile, '-y', '-c:a', 'aac', '-q:a', '2', tempConvertedFile])
       if (!result.success) {
+        await unlink(tempConvertedFile).catch(() => {})
         return CommandResult.fail(`ffmpeg conversion failed: ${result.stderr}`)
       }
       transcribeFile = tempConvertedFile
-      inputFile = tempConvertedFile
     }
 
     // 4. Transcribe using selected provider — unless an earlier run of this
     // file already did, in which case its words are the transcript.
     const providerName = provider === 'mistral' ? 'Mistral Voxtral' : 'OpenAI'
-    const kept = await run.get('raw')
     output.stage('transcribe', 'Transcribing', kept ? 'reused' : providerName)
 
     let transcriptText: string
     let durationSeconds: number | undefined
     let language: string | undefined
+    let streamed = false
 
     if (kept) {
       transcriptText = kept.data.text
@@ -225,6 +229,7 @@ export default class AudioTranscriptCreateTask extends Command {
       try {
         audioData = await readFile(transcribeFile)
       } catch (err) {
+        if (tempConvertedFile) await unlink(tempConvertedFile).catch(() => {})
         return CommandResult.error(err as Error, `Failed to read audio file: ${transcribeFile}`)
       }
 
@@ -245,15 +250,15 @@ export default class AudioTranscriptCreateTask extends Command {
             if (glossary) keywords = glossaryKeywords(glossary)
             if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
           }
-          // Streamed only when the transcript is going to a file: on stdout the
-          // text is the deliverable and a piped reader must get it exactly once.
-          const streaming = Boolean(outputPath || save)
+          // Imports stream progress without saving a transcript. Standalone
+          // stdout stays a single complete document for piped readers.
+          streamed = context.compositionDepth > 0 || Boolean(outputPath || save)
           const result = await transcribeWithOpenAI(audioData, path.basename(transcribeFile), {
             keywords,
-            onDelta: streaming ? (text) => output.write(text) : undefined,
+            onDelta: streamed ? (text) => output.write(text) : undefined,
             signal: context.signal,
           })
-          if (streaming) output.write('\n')
+          if (streamed) output.write('\n')
           transcriptText = result.text
           language = result.language
           // A streamed transcription reports no length; the file knows its own.
@@ -264,6 +269,8 @@ export default class AudioTranscriptCreateTask extends Command {
         const error = err as Error
         output.error(`Transcription error: ${error.message}`)
         return CommandResult.error(error, 'Failed to transcribe audio')
+      } finally {
+        if (tempConvertedFile) await unlink(tempConvertedFile).catch(() => {})
       }
 
       if (!transcriptText.trim()) {
@@ -313,9 +320,11 @@ ${transcriptText}
     if (finalOutputPath) {
       await writeTextFile(finalOutputPath, content)
       output.log(colors.green(`\nSaved to ${finalOutputPath}`))
-    } else {
+    } else if (context.compositionDepth === 0) {
       // Default: stdout
       output.log('\n' + content)
+    } else if (!streamed) {
+      output.write(transcriptText + '\n')
     }
 
     // 8. Delete source file if requested

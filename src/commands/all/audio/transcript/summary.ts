@@ -125,7 +125,7 @@ type Result = {
   body: string // Full markdown output
   cleanedText: string // Input transcript (cleaned if from audio pipeline)
   audioFilePath: string | null // Source audio file path (when --from-audio used)
-  transcriptFilePath: string | null // Transcript file that was read, null when pasted in
+  transcriptFilePath: string | null // Source transcript file, null for audio or pasted text
   from: string | null // For audio-message template
   to: string | null // For audio-message template
 }
@@ -293,6 +293,8 @@ export default class AudioTranscriptSummaryTask extends Command {
               : { fromZoomVtt }),
         fresh,
         run: runKey,
+        save: false,
+        output: undefined,
       })
       if (!cleanResult.ok || !cleanResult.data) {
         // No prefix: callers (meeting:new, video:new) already label the pipeline failure.
@@ -561,11 +563,6 @@ export default class AudioTranscriptSummaryTask extends Command {
     const summarySection = isMessageTemplate
       ? extractSection(summary, 'Summary') || ''
       : extractSection(summary, 'Meeting Summary') || ''
-
-    // Dump summary to /tmp for debugging
-    const tmpPath = `/tmp/transcript-summary-${slugify(finalTitle)}.md`
-    await writeTextFile(tmpPath, summary)
-    output.log(colors.gray(`\nDumped summary to: ${tmpPath}`))
 
     // The message template's from/to feed no profile distiller; the meeting
     // template's who/rel do, so say up front which profiles they reach.

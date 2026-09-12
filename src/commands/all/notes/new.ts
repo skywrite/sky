@@ -1,4 +1,3 @@
-import { copyFile, mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
@@ -18,7 +17,6 @@ import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
-import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { notesFromImage } from './lib/fromImage.ts'
@@ -55,7 +53,7 @@ export default class NotesNewTask extends Command {
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output, config } = context
+    const { output } = context
     let { summary, when, category, fromAudio, fromImage, aiContext } = args
     let body = ''
     let rel: string[] | undefined
@@ -91,32 +89,13 @@ export default class NotesNewTask extends Command {
       if (merged.length > 0) rel = merged
       if (data.time) when = new PlainDateTime(data.time)
 
-      body = `## Summary\n\n${data.body}\n\n## Transcript\n\n${data.cleanedText}\n`
+      body = `## Summary\n\n${data.body}\n`
 
       output.log(`\nExtracted: summary="${summary}", when="${when}"`)
       if (rel && rel.length > 0) {
         output.log(`  Related: ${rel.join(', ')}`)
       }
       output.log('')
-
-      if (data.audioFilePath) {
-        const audioPath = data.audioFilePath
-        const noteDate = when.plainDate
-        const summarySlugPart = `_${slugify(summary as string, { preserveCase: true, suggestedLength: 40 })}`
-        const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(noteDate))
-        await mkdir(attachDir, { recursive: true })
-
-        const ext = path.extname(audioPath)
-        const newFileName = `${noteDate}_notes${summarySlugPart}${ext}`
-        const destPath = path.join(attachDir, newFileName)
-
-        await rename(audioPath, destPath).catch(async () => {
-          await copyFile(audioPath, destPath)
-        })
-
-        attachmentFiles.push(newFileName)
-        output.log(colors.gray(`Moved audio file to ${attachDir}\n`))
-      }
     }
 
     if (useImagePipeline) {

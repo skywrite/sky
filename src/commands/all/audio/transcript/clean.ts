@@ -104,7 +104,7 @@ type Result = {
   who: string[]
   rel: string[]
   audioFilePath: string | null
-  /** Transcript file that was read, null when the transcript was pasted in */
+  /** Source transcript file, null for audio or pasted text */
   transcriptFilePath: string | null
   /** Length from cue timestamps (VTT/SRT, exact) or --from-text turn stamps (last turn's start, rounded up); null when the input carried neither */
   durationMinutes: number | null
@@ -275,29 +275,23 @@ export default class AudioTranscriptCleanTask extends Command {
     if (useAudioPipeline) {
       output.log('Starting audio transcription...\n')
 
-      const createArgs: Record<string, unknown> = { save: true, delete: false, fresh, run: runKey }
-      if (audioFilePath) {
-        createArgs.file = audioFilePath
-      }
-      const createResult = await tasks.run('audio:transcript:create', createArgs)
+      const createResult = await tasks.run('audio:transcript:create', {
+        file: audioFilePath,
+        save: false,
+        output: undefined,
+        delete: false,
+        fresh,
+        run: runKey,
+      })
       if (!createResult.ok || !createResult.data) {
         return CommandResult.fail(`Transcription failed: ${createResult.message}`)
       }
-      const transcriptPath = createResult.data.outputPath
+      // Pass only the spoken words onward. A saved transcript's frontmatter
+      // would turn source filenames and recording lengths into note content.
+      transcript = createResult.data.transcript
       audioSourcePath = createResult.data.inputFile
       // The transcriber keyed the run by the recording, and cleared it if asked to.
       run = await TranscriptRun.open(createResult.data.run, runOptions, path.basename(createResult.data.inputFile))
-      if (!transcriptPath) {
-        return CommandResult.fail('Transcription did not save to file')
-      }
-      transcriptSourcePath = transcriptPath
-      output.log(`Saved transcript: ${transcriptPath}\n`)
-
-      try {
-        transcript = await readTextFile(transcriptPath)
-      } catch (err) {
-        return CommandResult.error(err as Error, `Failed to read transcript: ${transcriptPath}`)
-      }
     } else if (useTranscriptFile) {
       const wantSrt = fromSrt !== undefined
       const wantText = fromText !== undefined
@@ -711,10 +705,9 @@ export default class AudioTranscriptCleanTask extends Command {
       const filename = `transcript_${timestamp}.md`
       await mkdir(DIR_OUTPUT, { recursive: true })
       outputPath = path.join(DIR_OUTPUT, filename)
-    } else if (useAudioPipeline || useTranscriptFile) {
-      // Pipeline runs always land in /tmp: standalone for the user to open,
-      // composed (meeting:new) as insurance — a failure downstream must not
-      // lose the interactive review baked into the cleaned text.
+    } else if ((useAudioPipeline || useTranscriptFile) && isStandalone) {
+      // Standalone exports can be opened; composed imports already have the
+      // run record for recovery and must not leave an extra transcript behind.
       const slug = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -746,8 +739,6 @@ ${cleanedTranscript}
       await writeTextFile(outputPath, content)
       if (isStandalone) {
         output.log(colors.green(`\nSaved to ${outputPath}`))
-      } else {
-        output.log(colors.gray(`\nDumped cleaned transcript to: ${outputPath}`))
       }
 
       // Open in VSCode when running standalone with a pipeline

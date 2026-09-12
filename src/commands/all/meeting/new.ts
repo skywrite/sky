@@ -91,7 +91,7 @@ export default class MeetingNewTask extends Command {
     let personTranscript: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
-    /** Files the notebook takes ownership of: the transcript, or the recording and its transcript */
+    /** Supplied transcript files to keep; voice memos produce only meeting notes. */
     let importFiles: string[] = []
     let actionItems: TranscriptActionItem[] = []
     let anchors: string[] | undefined
@@ -225,13 +225,10 @@ export default class MeetingNewTask extends Command {
         medium = data.medium
       }
 
-      // --from-zoom-vtt and --from-text hand us a file worth keeping. On the
-      // --from-voice-memo path the recording is the file that matters, and the
-      // transcript written beside it comes along.
+      // Keep supplied meeting transcripts. Dictation is only an input to the
+      // notes, so neither the recording nor a generated transcript is attached.
       if (fromZoomVtt !== undefined || fromText !== undefined) {
         importFiles = data.transcriptFilePath ? [data.transcriptFilePath] : []
-      } else if (fromVoiceMemo !== undefined) {
-        importFiles = [data.audioFilePath, data.transcriptFilePath].filter((f): f is string => Boolean(f))
       }
 
       output.log(

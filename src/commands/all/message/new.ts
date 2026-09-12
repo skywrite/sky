@@ -146,8 +146,7 @@ export default class MessageNewTask extends Command {
       if (data.medium && !medium) medium = data.medium
       if (data.time) when = new PlainDateTime(data.time)
 
-      // Format body with summary and transcript
-      body = `${data.body}\n\n## Transcript\n\n${data.cleanedText}`
+      body = data.body
 
       // Ask for the medium when nothing named it and someone is there to answer.
       if (!medium && prompt.interactive) {
@@ -163,30 +162,6 @@ export default class MessageNewTask extends Command {
         })
         if (selected === null) return CommandResult.fail('Cancelled')
         medium = selected
-      }
-
-      if (data.audioFilePath && (await keepWithDay(context, 'Move audio file to attachments?'))) {
-        const audioPath = data.audioFilePath
-        const messageDate = when.plainDate
-        const whoStr = from && to ? `${from}-to-${to}` : from || to || ''
-        const whoSlugPart = whoStr ? `_${slugify(whoStr, { preserveCase: true })}` : ''
-        const summarySlugPart = summary
-          ? `_${slugify(summary as string, { preserveCase: true, suggestedLength: 40 })}`
-          : ''
-        const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(messageDate))
-        await mkdir(attachDir, { recursive: true })
-
-        const ext = path.extname(audioPath)
-        const newFileName = `${messageDate}_${slugify(medium as string, {
-          preserveCase: true,
-        })}${whoSlugPart}${summarySlugPart}${ext}`
-
-        const destPath = path.join(attachDir, newFileName)
-        await rename(audioPath, destPath).catch(async () => {
-          await copyFile(audioPath, destPath)
-        })
-        attachmentFiles.push(newFileName)
-        output.log(colors.gray(`Moved audio file to ${attachDir}\n`))
       }
     }
 
