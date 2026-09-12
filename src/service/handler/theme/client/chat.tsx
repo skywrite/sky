@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
@@ -26,7 +27,7 @@ import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
 import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
-import { useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
+import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
 import { ContextPanel } from './context.tsx'
 import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
@@ -1538,9 +1539,25 @@ export function ThreadColumn({
   const { state, answer, branch } = chat
   const busy = state.phase !== 'idle'
   const writing = useWritingDrafts(state.id, `${state.turns.length}:${state.phase}`)
-  const draftAt = (turn: number) => (replyMode ? Math.max(turn * 2 - 1, state.inherited - 1) : turn * 2 - 1)
-  const askAboutDraft = async (draft: import('#lib/writingVoice/draftTypes.ts').WritingDraftView) => {
-    const point = state.turns[draftAt(draft.turn)]?.branchPoint
+  const draftPositions = useMemo(() => {
+    const positions = new Map<string, number>(writing.drafts.map((draft) => [draft.id, draft.turn * 2 - 1]))
+    if (!replyMode) return positions
+    const firstVisible = state.inherited - 1
+    const inheritedDrafts = writing.drafts.filter((draft) => draft.turn * 2 - 1 < firstVisible)
+    if (!inheritedDrafts.length) return positions
+    // Earlier drafts stay in context; only a visible quotation brings their frame into this thread.
+    for (let i = firstVisible; i < state.turns.length; i++) {
+      const turn = state.turns[i]
+      if (turn?.role !== 'assistant') continue
+      for (const part of splitWritingDrafts(turn.content, inheritedDrafts) ?? []) {
+        if ('draftId' in part && positions.get(part.draftId)! < firstVisible) positions.set(part.draftId, i)
+      }
+    }
+    return positions
+  }, [writing.drafts, replyMode, state.inherited, state.turns])
+  const draftAt = (draft: WritingDraftView) => draftPositions.get(draft.id) ?? draft.turn * 2 - 1
+  const askAboutDraft = async (draft: WritingDraftView) => {
+    const point = state.turns[draftAt(draft)]?.branchPoint
     if (!replyMode && point && onReplyThread) {
       onReplyThread(point, draft.id)
       return
@@ -1616,7 +1633,7 @@ export function ThreadColumn({
               writingDrafts={{
                 chatId: state.id,
                 drafts: writing.drafts,
-                placed: writing.drafts.filter((draft) => draftAt(draft.turn) === i),
+                placed: writing.drafts.filter((draft) => draftAt(draft) === i),
                 disabled: busy,
                 onChange: writing.update,
                 onAsk: (draft) => void askAboutDraft(draft),
@@ -1689,7 +1706,7 @@ export function ThreadColumn({
         ),
       )}
       {writing.drafts
-        .filter((draft) => draftAt(draft.turn) >= state.turns.length)
+        .filter((draft) => draftAt(draft) >= state.turns.length)
         .map((draft) => (
           <Fragment key={draft.id}>
             <ChatWritingDraft
