@@ -88,6 +88,11 @@
   color: var(--mantine-color-red-7);
 }
 
+.sky-set-success {
+  margin: 8px 0 0;
+  color: var(--sky-green);
+}
+
 .sky-set-foot {
   padding-top: 10px;
 }

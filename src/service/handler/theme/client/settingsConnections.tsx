@@ -38,7 +38,14 @@ export interface ConnectionsData {
 
 type SlackStatus =
   | { installed: false }
-  | { installed: true; ok: true; workspace: string | null; team: string | null; user: string | null }
+  | {
+      installed: true
+      ok: true
+      workspace: string | null
+      team: string | null
+      user: string | null
+      displayName?: string | null
+    }
   | { installed: true; ok: false; error: string }
 
 type ConnectState = { status: 'waiting' } | { status: 'done'; email: string } | { status: 'failed'; message: string }
@@ -98,35 +105,53 @@ function useSlack() {
   const [status, setStatus] = useState<SlackStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [warn, setWarn] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
 
-  const ask = useCallback((how: 'status' | 'reconnect') => {
+  const ask = useCallback((how: 'status' | 'check' | 'reconnect') => {
     setBusy(true)
     setWarn(null)
-    const answer = how === 'status' ? fetch(`${API}/slack`).catch(() => null) : postJson(`${API}/slack/reconnect`, {})
+    setHint(null)
+    const answer =
+      how === 'reconnect' ? postJson(`${API}/slack/reconnect`, {}) : fetch(`${API}/slack`).catch(() => null)
     void answer
       .then(async (r) => {
-        if (r?.ok) setStatus((await r.json()) as SlackStatus)
-        else setWarn(await refusalOf(r))
+        if (!r?.ok) {
+          setWarn(await refusalOf(r))
+          return
+        }
+        const next = (await r.json()) as SlackStatus
+        setStatus(next)
+        if (how !== 'status' && next.installed && next.ok) {
+          const name = next.displayName?.trim()
+          setHint(
+            name
+              ? `Connection successful. Signed in as ${name}.`
+              : 'Connection successful. Your Slack profile name could not be retrieved.',
+          )
+        }
       })
+      .catch(() => setWarn("Couldn't check the Slack connection. Please try again."))
       .finally(() => setBusy(false))
   }, [])
 
   useEffect(() => ask('status'), [ask])
 
-  return { status, busy, warn, check: () => ask('status'), reconnect: () => ask('reconnect') }
+  return { status, busy, warn, hint, check: () => ask('check'), reconnect: () => ask('reconnect') }
 }
 
 function SlackRow() {
-  const { status, busy, warn, check, reconnect } = useSlack()
+  const { status, busy, warn, hint, check, reconnect } = useSlack()
   const sub = !status
-    ? 'Checking…'
+    ? warn
+      ? 'Try checking the connection again.'
+      : 'Checking…'
     : !status.installed
       ? 'Sky talks to Slack through agent-slack, which this Mac does not have.'
       : status.ok
         ? [status.team, status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '')].filter(Boolean).join(' · ') ||
           'Connected'
         : 'Sign in to Slack in Brave, then reconnect.'
-  const trouble = warn ?? (status?.installed && !status.ok ? status.error : null)
+  const trouble = warn ?? (status?.installed && !status.ok ? `Connection failed. ${status.error}` : null)
 
   return (
     <Row
@@ -134,20 +159,34 @@ function SlackRow() {
       sub={
         <>
           {sub}
-          {trouble && <p className="sky-set-warn">{trouble}</p>}
+          <div role="status" aria-atomic="true">
+            {hint && <p className="sky-set-success">{hint}</p>}
+          </div>
+          {trouble && (
+            <p className="sky-set-warn" role="alert">
+              {trouble}
+            </p>
+          )}
         </>
       }
     >
-      {status?.installed && status.ok && <span className="sky-set-status">Connected</span>}
-      {status?.installed && !status.ok && <span className="sky-set-off">Not connected</span>}
-      {status?.installed &&
-        (status.ok ? (
-          <Button size="compact-sm" disabled={busy} onClick={check}>
-            {busy ? 'Checking…' : 'Check'}
-          </Button>
+      {warn ? (
+        <span className="sky-set-off">Check failed</span>
+      ) : status?.installed ? (
+        status.ok ? (
+          <span className="sky-set-status">Connected</span>
         ) : (
+          <span className="sky-set-off">Not connected</span>
+        )
+      ) : null}
+      {status?.installed !== false &&
+        (status?.installed && !status.ok ? (
           <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
             {busy ? 'Reconnecting…' : 'Reconnect'}
+          </Button>
+        ) : (
+          <Button size="compact-sm" disabled={busy} onClick={check}>
+            {busy ? 'Checking…' : 'Check'}
           </Button>
         ))}
     </Row>

@@ -1,4 +1,8 @@
-import { type AgentSlackAuthStatus, parseAuthTest } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
+import {
+  type AgentSlackAuthStatus,
+  type AgentSlackUser,
+  parseAuthTest,
+} from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
 import { SLACK_WORKSPACE } from '#config'
 import { runAgentSlack } from './agentSlack.ts'
 
@@ -15,6 +19,23 @@ export async function slackAuthStatus(): Promise<AgentSlackAuthStatus> {
   const args = ['auth', 'test', ...(SLACK_WORKSPACE ? ['--workspace', SLACK_WORKSPACE] : [])]
   const result = await runAgentSlack(args)
   return parseAuthTest(result.stdout, result.stderr)
+}
+
+/** The signed-in person's profile name; auth.test's user field may be an old account handle. */
+export async function slackProfileName(
+  userId: string,
+  workspace: string,
+  run: (args: string[]) => Promise<{ success: boolean; stdout: string }> = runAgentSlack,
+): Promise<string | undefined> {
+  try {
+    const result = await run(['user', 'get', userId, '--workspace', workspace])
+    if (!result.success) return undefined
+    const user = JSON.parse(result.stdout) as AgentSlackUser & { id?: string }
+    if (user.id !== userId) return undefined
+    return user.display_name?.trim() || user.real_name?.trim() || undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** Fresh browser-session tokens from a logged-in Slack tab in Brave. */

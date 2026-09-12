@@ -66,7 +66,14 @@ export interface ConnectionsData {
 
 export type SlackStatus =
   | { installed: false }
-  | { installed: true; ok: true; workspace: string | null; team: string | null; user: string | null }
+  | {
+      installed: true
+      ok: true
+      workspace: string | null
+      team: string | null
+      user: string | null
+      displayName?: string | null
+    }
   | { installed: true; ok: false; error: string }
 
 /** How a Google sign-in started from the page is going. */

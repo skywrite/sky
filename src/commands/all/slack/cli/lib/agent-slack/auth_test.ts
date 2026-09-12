@@ -17,9 +17,9 @@ const okJson = JSON.stringify(
 test('parseAuthTest: valid credentials', () => {
   assert({
     given: 'auth test success JSON with extra fields',
-    should: 'return ok with url, team, and user',
+    should: 'retain the authenticated user ID alongside the workspace and handle',
     actual: parseAuthTest(okJson, ''),
-    expected: { ok: true, url: 'https://atlas.slack.com/', team: 'Atlas Corp', user: 'jane' },
+    expected: { ok: true, url: 'https://atlas.slack.com/', team: 'Atlas Corp', user: 'jane', userId: 'U01234567' },
   })
 })
 

@@ -7,13 +7,20 @@
  */
 
 export type AgentSlackAuthStatus =
-  | { ok: true; url?: string; team?: string; user?: string }
+  | { ok: true; url?: string; team?: string; user?: string; userId?: string }
   | { ok: false; error: string }
 
 export function parseAuthTest(stdout: string, stderr: string): AgentSlackAuthStatus {
   try {
-    const parsed = JSON.parse(stdout) as { ok?: boolean; url?: string; team?: string; user?: string; error?: string }
-    if (parsed.ok) return { ok: true, url: parsed.url, team: parsed.team, user: parsed.user }
+    const parsed = JSON.parse(stdout) as {
+      ok?: boolean
+      url?: string
+      team?: string
+      user?: string
+      user_id?: string
+      error?: string
+    }
+    if (parsed.ok) return { ok: true, url: parsed.url, team: parsed.team, user: parsed.user, userId: parsed.user_id }
     return { ok: false, error: parsed.error || stdout.trim() || 'unknown_error' }
   } catch {
     return { ok: false, error: stdout.trim() || stderr.trim() || 'unknown_error' }

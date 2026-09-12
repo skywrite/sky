@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { reimportSlackFromBrave, slackAuthStatus } from '#commands/all/slack/lib/authStatus.ts'
+import { reimportSlackFromBrave, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
 import { SLACK_WORKSPACE } from '#config'
 import {
   buildAuthUrl,
@@ -79,12 +79,15 @@ async function slackStatus(): Promise<SlackStatus> {
   if (!(await isCommandAvailable('agent-slack'))) return { installed: false }
   const status = await slackAuthStatus()
   if (!status.ok) return { installed: true, ok: false, error: status.error }
+  const workspace = status.url ?? SLACK_WORKSPACE ?? null
+  const displayName = status.userId && workspace ? await slackProfileName(status.userId, workspace) : undefined
   return {
     installed: true,
     ok: true,
-    workspace: status.url ?? SLACK_WORKSPACE ?? null,
+    workspace,
     team: status.team ?? null,
     user: status.user ?? null,
+    displayName: displayName ?? null,
   }
 }
 
