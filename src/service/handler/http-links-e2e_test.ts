@@ -57,6 +57,7 @@ test(
           (response) => response.url().includes('/docs/_api/content/') && response.request().method() === 'PUT',
         )
         await page.keyboard.press('Enter')
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await saved
         await page.locator('[data-section="links"] a').filter({ hasText: 'Jane Doe' }).waitFor()
         assert({
@@ -135,7 +136,7 @@ test(
         }, SRT)
         await page.getByText('New video from a transcript', { exact: true }).waitFor()
         await page.getByRole('button', { name: '+ Add link', exact: true }).click()
-        await page.getByRole('button', { name: 'Link Atlas walkthrough', exact: true }).waitFor()
+        await page.getByRole('checkbox', { name: 'Select Atlas walkthrough', exact: true }).waitFor()
         await page.getByRole('button', { name: 'Preview Atlas walkthrough' }).click()
         await page.getByText('The original walkthrough explains the launch checklist.', { exact: true }).waitFor()
         const previewDir = env.get('SKY_LINKS_SCREENSHOTS')
@@ -147,7 +148,8 @@ test(
         await page.getByRole('option', { name: 'Videos', exact: true }).click()
         await page.getByRole('combobox', { name: 'Link date', exact: true }).click()
         await page.getByRole('option', { name: 'Yesterday', exact: true }).click()
-        await page.getByRole('button', { name: 'Link Atlas walkthrough', exact: true }).click()
+        await page.getByRole('checkbox', { name: 'Select Atlas walkthrough', exact: true }).check()
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await page.locator('.sky-import-links a').filter({ hasText: 'Atlas walkthrough' }).waitFor()
         await page.getByRole('button', { name: 'Start', exact: true }).click()
         await page.getByRole('button', { name: 'Looks right', exact: true }).waitFor()
@@ -158,6 +160,7 @@ test(
         await page.getByText('From turn 2 of Atlas planning', { exact: true }).waitFor()
         await page.getByLabel('Search notebook links').press('ArrowDown')
         await page.keyboard.press('Enter')
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await page.locator('.sky-import-links a').filter({ hasText: 'Budget questions' }).waitFor()
         await page.getByRole('button', { name: 'Looks right', exact: true }).click()
         await page.getByRole('link', { name: 'Open it', exact: true }).waitFor()
@@ -178,9 +181,10 @@ test(
         await page.setViewportSize({ width: 430, height: 900 })
         await page.getByRole('button', { name: '+ Add link', exact: true }).click()
         await page.getByLabel('Search notebook links').fill('follow-up email')
-        await page.getByRole('button', { name: 'Link Atlas follow-up email', exact: true }).waitFor()
+        await page.getByRole('checkbox', { name: 'Select Atlas follow-up email', exact: true }).waitFor()
         if (previewDir) await page.screenshot({ path: path.join(previewDir, 'mobile.png'), animations: 'disabled' })
-        await page.getByRole('button', { name: 'Link Atlas follow-up email', exact: true }).click()
+        await page.getByRole('checkbox', { name: 'Select Atlas follow-up email', exact: true }).check()
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await page.locator('[data-section="links"] a').filter({ hasText: 'Atlas follow-up email' }).waitFor()
         await page.getByRole('button', { name: 'Remove link to Budget questions' }).click()
         await page

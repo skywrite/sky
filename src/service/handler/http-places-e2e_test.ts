@@ -33,7 +33,7 @@ test(
             given: `two cafes at ${width}px`,
             should: 'show both choices with different geographic context',
             actual: [
-              await page.getByRole('button', { name: 'Link Cafe', exact: true }).count(),
+              await page.getByRole('checkbox', { name: 'Select Cafe', exact: true }).count(),
               (await page.locator('.sky-link-meta').allTextContents()).some((text) => text.includes('Harbor-City')),
               (await page.locator('.sky-link-meta').allTextContents()).some((text) => text.includes('Foam-City')),
             ],
@@ -43,11 +43,12 @@ test(
         }
         await page.getByRole('button', { name: '+ Add link', exact: true }).click()
         await page.getByLabel('Search notebook links').fill('French Republic')
-        await page.getByRole('button', { name: 'Link France', exact: true }).waitFor()
+        await page.getByRole('checkbox', { name: 'Select France', exact: true }).waitFor()
         const saved = page.waitForResponse(
           (r) => r.url().includes('/docs/_api/content/') && r.request().method() === 'PUT',
         )
-        await page.getByRole('button', { name: 'Link France', exact: true }).click()
+        await page.getByRole('checkbox', { name: 'Select France', exact: true }).check()
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await saved
         assert({
           given: 'a country selected by its alias',
@@ -91,7 +92,7 @@ test({ name: 'selecting an unsaved country creates and links it on desktop and p
         if (width === 430) await page.getByRole('button', { name: 'Show details', exact: true }).click()
         await page.getByRole('button', { name: '+ Add link', exact: true }).click()
         await page.getByLabel('Search notebook links').fill(name)
-        await page.getByRole('button', { name: `Link ${name}`, exact: true }).waitFor()
+        await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).waitFor()
         const filesBefore = await readdir(places, { recursive: true })
         assert({
           given: `${name} found in the picker at ${width}px`,
@@ -102,10 +103,17 @@ test({ name: 'selecting an unsaved country creates and links it on desktop and p
           ],
           expected: [false, 0],
         })
+        await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check()
+        assert({
+          given: `${name} checked without confirming the selection`,
+          should: 'wait until Add links before creating a country',
+          actual: (await readdir(places, { recursive: true })).includes(`locations/${code}.md`),
+          expected: false,
+        })
         const saved = page.waitForResponse(
           (response) => response.url().includes('/docs/_api/content/') && response.request().method() === 'PUT',
         )
-        await page.getByRole('button', { name: `Link ${name}`, exact: true }).click()
+        await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
         await saved
         await page.setViewportSize({ width: 1500, height: 1000 })
         await page.reload()

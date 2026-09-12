@@ -1,11 +1,12 @@
 import './links.css'
-import { Button, Drawer, Modal, Select, TextInput } from '@mantine/core'
+import { Button, Checkbox, Drawer, Modal, Select, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { LinkItem, LinkSearch } from '../../links/types.ts'
 import { LinkIcon } from './linkIcon.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
+import { lexInline, plainText } from './wysiwyg/lexer.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
 const KINDS = [
@@ -45,6 +46,10 @@ function href(file: string): string {
   return `/explorer/${file.split('/').map(encodeURIComponent).join('/')}`
 }
 
+function titleText(title: string): string {
+  return plainText(lexInline(title))
+}
+
 function dateLabel(date: string | undefined, today: string): string {
   if (!date) return 'Elsewhere in the notebook'
   if (date === today) return 'Today'
@@ -61,7 +66,7 @@ function Detail({ item }: { item: LinkItem }) {
       {item.hint && <span className="sky-link-meta">{item.hint}</span>}
       {item.parent && (
         <span className="sky-link-meta">
-          From turn {item.parent.turn} of {item.parent.title}
+          From turn {item.parent.turn} of {titleText(item.parent.title)}
         </span>
       )}
     </>
@@ -113,7 +118,7 @@ function Picker({
 }: {
   opened: boolean
   onClose: () => void
-  onPick: (item: LinkItem) => Promise<void>
+  onPick: (items: LinkItem[]) => Promise<void>
   selected: string[]
   selectedPaths: string[]
   file?: string
@@ -127,6 +132,7 @@ function Picker({
   const [result, setResult] = useState<LinkSearch | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<LinkItem[]>([])
   const [preview, setPreview] = useState<string | null>(null)
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -137,6 +143,7 @@ function Picker({
       setOffset(0)
       setPreview(null)
       setError(null)
+      setPending([])
     }
   }, [opened])
   useEffect(() => {
@@ -165,15 +172,20 @@ function Picker({
       window.clearTimeout(timer)
     }
   }, [opened, query, kind, day, offset, file])
-  const choose = async (item: LinkItem) => {
-    if (busy) return
+  const choose = async () => {
+    if (busy || !pending.length) return
     setBusy(true)
     setError(null)
     try {
-      const selected = item.needsCreation
-        ? (await request<{ item: LinkItem }>('/docs/_api/links/choose', { value: item.value })).item
-        : item
-      await onPick(selected)
+      const choices: LinkItem[] = []
+      for (const item of pending) {
+        choices.push(
+          item.needsCreation
+            ? (await request<{ item: LinkItem }>('/docs/_api/links/choose', { value: item.value })).item
+            : item,
+        )
+      }
+      await onPick(choices)
       onClose()
     } catch (failure) {
       setError((failure as Error).message)
@@ -181,14 +193,22 @@ function Picker({
       setBusy(false)
     }
   }
+  const close = () => {
+    if (!busy) onClose()
+  }
   const move = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-    const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>('.sky-link-pick:not(:disabled)') ?? [])]
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-    const next = at + (event.key === 'ArrowDown' ? 1 : -1)
-    if (buttons.length) {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.type === 'checkbox') {
       event.preventDefault()
-      buttons[Math.max(0, Math.min(next, buttons.length - 1))]?.focus()
+      event.target.click()
+      return
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    const inputs = [...(list.current?.querySelectorAll<HTMLInputElement>('.sky-link-pick input:not(:disabled)') ?? [])]
+    const at = inputs.indexOf(document.activeElement as HTMLInputElement)
+    const next = at + (event.key === 'ArrowDown' ? 1 : -1)
+    if (inputs.length) {
+      event.preventDefault()
+      inputs[Math.max(0, Math.min(next, inputs.length - 1))]?.focus()
     }
   }
   const groups = new Map<string, LinkItem[]>()
@@ -197,7 +217,7 @@ function Picker({
     groups.set(label, [...(groups.get(label) ?? []), item])
   }
   const body = (
-    <div className="sky-link-picker" aria-busy={busy}>
+    <div className="sky-link-picker" aria-busy={busy || (!result && !error)}>
       <TextInput
         data-autofocus
         aria-label="Search notebook links"
@@ -251,27 +271,40 @@ function Picker({
             <h3>{label}</h3>
             {items.map((item) => {
               const chosen = selected.includes(item.value) || selectedPaths.includes(item.path)
+              const checked = pending.some((choice) => choice.path === item.path)
+              const title = titleText(item.title)
               return (
                 <div className="sky-link-result" key={item.path}>
                   <div className="sky-link-result-head">
-                    <button
+                    <Checkbox
                       className="sky-link-pick"
-                      type="button"
+                      classNames={{ body: 'sky-link-choice', label: 'sky-link-label' }}
+                      wrapperProps={{ 'data-selected': checked || undefined, 'data-linked': chosen || undefined }}
+                      checked={chosen || checked}
                       disabled={chosen || busy}
-                      onClick={() => void choose(item)}
-                      aria-label={`Link ${item.title}`}
-                    >
-                      <span className="sky-link-title">
-                        {item.title}
-                        {chosen ? ' · Linked' : ''}
-                      </span>
-                      <Detail item={item} />
-                    </button>
+                      onChange={() =>
+                        setPending((choices) =>
+                          choices.some((choice) => choice.path === item.path)
+                            ? choices.filter((choice) => choice.path !== item.path)
+                            : [...choices, item],
+                        )
+                      }
+                      aria-label={`${chosen ? 'Linked' : 'Select'} ${title}`}
+                      label={
+                        <>
+                          <span className="sky-link-title">
+                            {title}
+                            {chosen ? ' · Linked' : ''}
+                          </span>
+                          <Detail item={item} />
+                        </>
+                      }
+                    />
                     {!item.needsCreation && item.path.endsWith('.md') && (
                       <button
                         type="button"
                         className="sky-link-preview-button"
-                        aria-label={`Preview ${item.title}`}
+                        aria-label={`Preview ${title}`}
                         aria-expanded={preview === item.path}
                         onClick={() => setPreview(preview === item.path ? null : item.path)}
                       >
@@ -286,29 +319,52 @@ function Picker({
           </section>
         ))}
       </div>
-      <div className="sky-dialog-actions">
-        {offset > 0 && (
-          <Button size="sm" onClick={() => setOffset(Math.max(0, offset - 40))}>
-            Previous
+      <div className="sky-link-footer">
+        <div className="sky-link-pagination">
+          {offset > 0 && (
+            <Button size="sm" onClick={() => setOffset(Math.max(0, offset - 40))}>
+              Previous
+            </Button>
+          )}
+          {result && offset + result.items.length < result.total && (
+            <Button size="sm" onClick={() => setOffset(offset + 40)}>
+              More records
+            </Button>
+          )}
+        </div>
+        <div className="sky-dialog-actions sky-link-actions">
+          <Button size="sm" onClick={close} disabled={busy}>
+            Cancel
           </Button>
-        )}
-        {result && offset + result.items.length < result.total && (
-          <Button size="sm" onClick={() => setOffset(offset + 40)}>
-            More records
+          <Button size="sm" variant="primary" onClick={() => void choose()} disabled={!pending.length} loading={busy}>
+            Add {pending.length} {pending.length === 1 ? 'link' : 'links'}
           </Button>
-        )}
-        <Button size="sm" onClick={onClose} disabled={busy}>
-          Cancel
-        </Button>
+        </div>
       </div>
     </div>
   )
   return phone ? (
-    <Drawer opened={opened} onClose={onClose} title="Add link" position="bottom" size="90dvh">
+    <Drawer
+      opened={opened}
+      onClose={close}
+      title="Add links"
+      position="bottom"
+      size="90dvh"
+      classNames={{ content: 'sky-link-dialog-content', body: 'sky-link-dialog-body' }}
+      closeButtonProps={{ disabled: busy }}
+    >
       {body}
     </Drawer>
   ) : (
-    <Modal opened={opened} onClose={onClose} title="Add link" centered size={720}>
+    <Modal
+      opened={opened}
+      onClose={close}
+      title="Add links"
+      centered
+      size={720}
+      classNames={{ content: 'sky-link-dialog-content', body: 'sky-link-dialog-body' }}
+      closeButtonProps={{ disabled: busy }}
+    >
       {body}
     </Modal>
   )
@@ -364,7 +420,7 @@ export function LinksInput({
                 <>
                   <LinkIcon kind={item.kind} />
                   <a href={href(item.path)} target="_blank" rel="noreferrer">
-                    {item.title}
+                    {titleText(item.title)}
                   </a>
                 </>
               ) : (
@@ -376,7 +432,7 @@ export function LinksInput({
                 type="button"
                 disabled={busy}
                 className="sky-prop-chip-remove"
-                aria-label={`Remove link to ${item?.title ?? value}`}
+                aria-label={`Remove link to ${item ? titleText(item.title) : value}`}
                 onClick={() =>
                   void change(values.filter((v) => v !== value)).catch((failure: Error) => setError(failure.message))
                 }
@@ -403,10 +459,12 @@ export function LinksInput({
         file={file}
         selected={values}
         selectedPaths={values.flatMap((value) => items[value]?.path ?? [])}
-        onPick={async (item) => {
-          setItems((known) => ({ ...known, [item.value]: item }))
-          if (!values.some((value) => value === item.value || items[value]?.path === item.path))
-            await change([...values, item.value])
+        onPick={async (choices) => {
+          setItems((known) => ({ ...known, ...Object.fromEntries(choices.map((item) => [item.value, item])) }))
+          const additions = choices.filter(
+            (item) => !values.some((value) => value === item.value || items[value]?.path === item.path),
+          )
+          if (additions.length) await change([...values, ...additions.map((item) => item.value)])
         }}
       />
     </div>
