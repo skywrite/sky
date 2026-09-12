@@ -51,7 +51,10 @@ Start with a short checklist and assign each action.
 }
 
 test(
-  { name: 'day shows videos and every chat branch in the main column and keeps the rail consistent', timeout: 30000 },
+  {
+    name: 'day shows videos and every chat branch in the main column with only live chats in the rail',
+    timeout: 30000,
+  },
   async (t) => {
     await runWysiwygE2e(
       t,
@@ -124,12 +127,14 @@ test(
           ],
         })
         assert({
-          given: 'the Details rail beside the day',
-          should: 'show the same hierarchy',
-          actual: await page
-            .locator('.sky-rail [data-depth]')
-            .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-depth'))),
-          expected: ['0', '1', '2'],
+          given: 'the Details rail beside a day with only saved chats',
+          should: 'show the live-chat empty state without saved rows or a count',
+          actual: {
+            rows: await page.locator('.sky-rail [data-section="chats"] .sky-dr-item').count(),
+            empty: await page.locator('.sky-rail [data-section="chats"] .sky-rail-empty').textContent(),
+            counts: await page.locator('.sky-rail [data-section="chats"] .sky-rail-count').count(),
+          },
+          expected: { rows: 0, empty: 'No live chats.', counts: 0 },
         })
         const videoLink = page.getByRole('link', { name: 'Atlas launch walkthrough', exact: true })
         assert({
@@ -141,15 +146,11 @@ test(
 
         const leafUrl = `/explorer/${LEAF.split('/').map(encodeURIComponent).join('/')}`
         const mainLeaf = page.locator('.sky-day-chat').filter({ hasText: 'Budget questions' })
-        const railLeaf = page.locator('.sky-rail .sky-dr-item').filter({ hasText: 'Budget questions' })
         assert({
           given: 'a saved branch whose filename contains spaces and brackets',
-          should: 'link its title to the encoded document URL in both day lists',
-          actual: [
-            await mainLeaf.getByRole('link', { name: 'Budget questions', exact: true }).getAttribute('href'),
-            await railLeaf.getByRole('link', { name: 'Budget questions', exact: true }).getAttribute('href'),
-          ],
-          expected: [leafUrl, leafUrl],
+          should: 'link its title to the encoded document URL in the main column',
+          actual: await mainLeaf.getByRole('link', { name: 'Budget questions', exact: true }).getAttribute('href'),
+          expected: leafUrl,
         })
         await mainLeaf.getByRole('link', { name: 'Budget questions', exact: true }).click()
         await page.waitForURL(`${origin}${leafUrl}`)
@@ -161,12 +162,12 @@ test(
           expected: [],
         })
         await page.goBack()
-        await railLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await mainLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
         await page.waitForURL(`${origin}/thread/continued-chat`)
         const openDocument = page.getByRole('link', { name: 'Open document', exact: true })
         await openDocument.waitFor()
         assert({
-          given: 'Continue chat from the day rail',
+          given: 'Continue chat from the day record',
           should: 'resume the saved file and offer a link back to that document',
           actual: { opened, href: await openDocument.getAttribute('href') },
           expected: { opened: [LEAF], href: leafUrl },
@@ -202,6 +203,18 @@ test(
             ['Budget questions', '2'],
           ],
         })
+        const railChats = page.locator('.sky-rail [data-section="chats"]')
+        const railParent = railChats.locator('.sky-dr-item')
+        assert({
+          given: 'one live continuation alongside two saved branches',
+          should: 'show and count only the live chat in the rail, keeping its document link',
+          actual: {
+            titles: await railChats.locator('.sky-dr-open').allTextContents(),
+            count: await railChats.locator('.sky-rail-count').textContent(),
+            href: await railParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
+          },
+          expected: { titles: ['Atlas continued'], count: '1', href: `/explorer/${ROOT}` },
+        })
         const mainParent = page.locator('.sky-day-chat').filter({ hasText: 'Atlas continued' }).first()
         assert({
           given: 'a saved chat with an active continuation',
@@ -209,10 +222,10 @@ test(
           actual: await mainParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
           expected: `/explorer/${ROOT}`,
         })
-        await mainParent.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await railParent.getByRole('button', { name: 'Continue chat', exact: true }).click()
         await page.waitForURL(`${origin}/thread/live-parent`)
         assert({
-          given: 'Continue chat on an already active conversation',
+          given: 'Continue chat in the rail on an already active conversation',
           should: 'reuse its thread without opening another',
           actual: opened,
           expected: [LEAF],
@@ -225,6 +238,15 @@ test(
         )
         threads = []
         await page.waitForSelector('.sky-day-chat-open:has-text("Atlas follow-up chat")')
+        assert({
+          given: 'the live chat closes and the day refreshes',
+          should: 'remove it from the rail while the saved record stays in the main column',
+          actual: {
+            liveRows: await railChats.locator('.sky-dr-item').count(),
+            savedRows: await page.locator('.sky-day-chat').count(),
+          },
+          expected: { liveRows: 0, savedRows: 4 },
+        })
 
         await videoLink.click()
         await page.waitForURL(`${origin}/explorer/${VIDEO}`)

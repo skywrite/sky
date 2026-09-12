@@ -220,9 +220,9 @@ scrolls; its foot is anchored.
   slot. The section heading and the blank space below its rows, before Chats, import an
   unscheduled meeting on the viewed day, with an editable suggested time;
   hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).
-- **Chats** — the main column's chat hierarchy in compact rows, with time,
-  turn count, and live state. A branch names its parent and the turn it
-  left from; the main column keeps those details readable at full width.
+- **Chats** — only live conversations from the main column's chat hierarchy,
+  with a count of live chats, time, and current state. A branch names its parent
+  and the turn it left from. Saved-only chats remain in the main column.
 - **Working** — import jobs in hand: running, waiting for the person, or
   stopped where a start could pick them up, with Review or Open. A filed
   import is on the day already and leaves the rail; a file sky refused was

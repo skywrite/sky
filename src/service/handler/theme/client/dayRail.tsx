@@ -227,11 +227,8 @@ function ScheduleSection({
 }
 
 /**
- * The day's chats: the ones filed under it and the live threads that
- * started on it, each branch under the chat it left. A saved title opens
- * its document, with a separate action to continue the conversation.
- * A live continuation retains that document link and replaces its saved
- * row, so the two never list twice.
+ * Only the day's live chats belong in the rail. Keep their branch context
+ * and any saved document links from the full hierarchy in the day record.
  */
 function ChatsSection({
   ymd,
@@ -246,11 +243,11 @@ function ChatsSection({
   onOpenThread: (id: string) => void
   onOpenSaved: (chat: string) => void
 }) {
-  const rows = dayChatRows(ymd, chats, threads)
+  const rows = dayChatRows(ymd, chats, threads).filter((row) => row.target.kind === 'live')
   if (rows.length === 0) {
     return (
       <Section title="Chats">
-        <p className="sky-rail-empty">No chats yet.</p>
+        <p className="sky-rail-empty">No live chats.</p>
       </Section>
     )
   }
