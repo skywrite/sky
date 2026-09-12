@@ -286,6 +286,7 @@ async function saveMessage(
   const result = await tasks.run('email:new', {
     from,
     to: to || undefined,
+    ...(msg.threadId ? { threadId: msg.threadId } : {}),
     ...(cc ? { cc } : {}),
     when,
     subject: msg.subject || '(no subject)',

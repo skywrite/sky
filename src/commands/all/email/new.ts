@@ -1,9 +1,9 @@
-import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import { atomicWrite } from '#lib/outbox/files.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -18,6 +18,7 @@ const params = {
   subject: Flag.string('Email subject'),
   summary: Flag.string('Summary of the email'),
   markdown: Flag.string('Markdown content', { hidden: true }),
+  threadId: Flag.string('Gmail thread ID (decimal, also used by IMAP)', { hidden: true }),
   follow: Flag.string('Follow file name', { hidden: true }),
   previous: Flag.string('Previous message ref', { hidden: true }),
   tags: Flag.string('Tags to propagate from previous message', { hidden: true }),
@@ -40,8 +41,23 @@ export default class EmailNewTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { from, to, cc, bcc, when, summary, subject, category, markdown, follow, previous, tags, rel, noEditor } =
-      args
+    const {
+      from,
+      to,
+      cc,
+      bcc,
+      when,
+      summary,
+      subject,
+      category,
+      markdown,
+      threadId,
+      follow,
+      previous,
+      tags,
+      rel,
+      noEditor,
+    } = args
 
     const whenDate = when.plainDate
 
@@ -61,30 +77,35 @@ export default class EmailNewTask extends Command {
 
     const ddfw = new DayDirFileWriter(whenDate)
 
-    // Build the key for matching existing items
-    const key = `${when.time} > ${who} Email`
+    const baseKey = `${when.time} > ${who} Email`
 
-    // Check for existing item and delete old file if found
+    // /Now captures share a minute. Only a matching thread (or an older
+    // capture's follow ID) proves this is a re-capture; an unknown identity
+    // must keep its own slot, even when the subject and participants agree.
     let dayDoc = await readDay(whenDate)
-    const existing = dayDoc.getCompleteItem(key, category)
-
-    // Preserve all user-curated YAML fields from existing file, then overwrite system-generated ones
-    let preservedYaml: Record<string, unknown> = {}
-    if (existing) {
+    let key = baseKey
+    let existing = dayDoc.getCompleteItem(key, category)
+    let existingDoc: EmailDocument | undefined
+    let suffix = 2
+    while (existing) {
       try {
-        const oldFilePath = path.join(ddfw.fullDir, existing.path)
-        const oldContents = await readTextFile(oldFilePath)
-        const oldDoc = EmailDocument.fromMarkdown(oldContents)
-        preservedYaml = { ...oldDoc.yaml }
-        await unlink(oldFilePath)
-        output.log(`  Replacing existing Email entry (deleted ${existing.path})`)
+        existingDoc = EmailDocument.fromMarkdown(await readTextFile(path.join(ddfw.fullDir, existing.path)))
       } catch {
-        // File may not exist, that's ok
+        // An unreadable capture cannot establish identity.
       }
+      const oldThreadId = existingDoc?.yaml['threadId']
+      const sameCapture =
+        threadId && typeof oldThreadId === 'string'
+          ? threadId === oldThreadId
+          : !!follow && follow === existingDoc?.yaml['follow']
+      if (sameCapture) break
+      existingDoc = undefined
+      key = `${baseKey} (${suffix++})`
+      existing = dayDoc.getCompleteItem(key, category)
     }
 
     const email = new EmailDocument({
-      ...preservedYaml,
+      ...existingDoc?.yaml,
       from,
       ...(to ? { to } : {}),
       ...(cc ? { cc } : {}),
@@ -92,6 +113,7 @@ export default class EmailNewTask extends Command {
       when,
       subject,
       summary,
+      ...(threadId ? { threadId } : {}),
       ...(follow ? { follow } : {}),
       ...(previous ? { previous } : {}),
       ...(tags ? { tags } : {}),
@@ -105,7 +127,13 @@ export default class EmailNewTask extends Command {
 
     let filePath: string
     try {
-      filePath = await ddfw.write(fileName, data.trimStart())
+      if (existing) {
+        // Keep follow references stable and leave the saved file intact if writing fails.
+        filePath = existing.path
+        await atomicWrite(path.join(ddfw.fullDir, filePath), data.trimStart())
+      } else {
+        filePath = await ddfw.write(fileName, data.trimStart())
+      }
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to write email file')
     }

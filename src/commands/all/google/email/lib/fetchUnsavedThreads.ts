@@ -418,6 +418,7 @@ async function writeMessage(
   const result = await tasks.run('email:new', {
     from,
     to: to || undefined,
+    threadId,
     ...(cc ? { cc } : {}),
     when,
     subject: msg.subject || '(no subject)',

@@ -1,9 +1,9 @@
 import * as path from 'node:path'
 import { DIR_TIME } from '#config'
 import { pathNoExt } from '#lib/path/mod.ts'
-import { exists, outputFile } from '#shared/fs/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { createDayFile } from './createDayFile.ts'
 
 export default class DayDirFileWriter {
   private _timeDir = DIR_TIME
@@ -37,15 +37,14 @@ export default class DayDirFileWriter {
   async write(fileName: string, contents: string): Promise<string> {
     let fileWithDir = path.join(this._fullDir, fileName)
     let count = 1
-    while (await exists(fileWithDir)) {
+    // Claim the destination atomically, including on case-insensitive filesystems.
+    while (!(await createDayFile(fileWithDir, contents))) {
       count += 1
       const fileBase = pathNoExt(fileName)
       const ext = path.extname(fileName)
       const newFile = `${fileBase}-${count}${ext}`
       fileWithDir = path.join(this._fullDir, newFile)
     }
-
-    await outputFile(fileWithDir, contents)
 
     return path.relative(this._fullDir, fileWithDir)
   }

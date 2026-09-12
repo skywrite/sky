@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists, makeTempDir, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
@@ -69,4 +70,24 @@ test('DayDirFileWriter', async () => {
   actual = fileWrittenSlack
 
   assert({ given, should, expected, actual })
+})
+
+test('DayDirFileWriter reserves different files for concurrent captures with the same name', async () => {
+  const tempDir = await makeTempDir()
+  try {
+    const writer = new DayDirFileWriter(new PlainDate(2026, 4, 10), tempDir)
+    const contents = ['First thread', 'Second thread', 'Third thread', 'Fourth thread']
+    const files = await Promise.all(contents.map((content) => writer.write('actions/messages/email_Atlas.md', content)))
+    assert({
+      given: 'four simultaneous captures requesting one filename',
+      should: 'reserve four files and preserve every capture',
+      actual: {
+        uniqueFiles: new Set(files).size,
+        contents: await Promise.all(files.map((file) => readTextFile(path.join(writer.fullDir, file)))),
+      },
+      expected: { uniqueFiles: 4, contents },
+    })
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
+  }
 })
