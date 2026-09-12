@@ -188,6 +188,14 @@ Use `#universal/dates/nbdt/mod.ts` exclusively:
 
 As of Bun 1.4 the standard `Temporal` API ships enabled in the runtime, so it is now safe to depend on. nbdt's types were shaped after Temporal's, and some nbdt components will migrate onto it over time. Keep importing from `#universal/dates/nbdt/mod.ts` — migration happens inside nbdt, not at call sites — and extended hours (`25:30`) stay nbdt-only: `Temporal.PlainTime` cannot represent them.
 
+### IDs for User Content
+
+- **Default to `YYYY-MM-DD_HHMMSS_Case-Preserved-Summary`** for new user-content IDs and filenames, including content Sky creates on the owner's behalf. Example: `2025-03-15_123456_Atlas-API-Update.md`. Do not default to random UUIDs or opaque hashes for these records.
+- Use a short, descriptive title or summary, slugified while preserving capitalization and acronyms. Use Haiku or Cerebras to generate the summary when a suitable title is not already available. Reuse existing naming helpers where possible. If naming fails, save with a descriptive fallback from the title or content; successful content creation must not depend on a naming model.
+- Allocate the ID once, using the creation time and the owning subsystem's consistent timezone convention. Preserve it across edits and title changes so references remain stable. Do not rename existing records solely to adopt this convention.
+- Check for collisions atomically when creating the record, including on case-insensitive filesystems. Add a numeric suffix such as `-2` when needed; never overwrite another record. Second precision alone does not guarantee uniqueness.
+- Use a different identifier when its purpose requires it: preserve provider-assigned IDs and existing external references; retain natural canonical keys such as a daily journal's date; use deterministic keys for deduplication or idempotent retries; use opaque identifiers when a public ID must conceal private content, and cryptographically random values for secrets or access tokens. These can coexist with a readable content name. Record a concrete reason near the code when departing from the default for a new content record.
+
 ### File System Operations
 
 ```typescript
