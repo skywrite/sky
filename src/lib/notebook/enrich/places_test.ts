@@ -176,6 +176,39 @@ test('place extraction requires quoted evidence for both the name and disambigua
   })
 })
 
+test('a qualified city subject reaches selection with its original quoted evidence', async () => {
+  await notebook(async (dir, store, services) => {
+    const ref = 'places/US/CA/Harbor-City'
+    store.set(
+      path.join(dir, 'locations/US/CA/Harbor-City.md'),
+      '---\nname: Harbor City\nkind: city\nlocation: { country: US, region: CA, city: Harbor City }\n---\n',
+    )
+    const quote = 'Harbor City, CA faces a housing shortage.'
+    const proposal = await proposeRel(
+      { body: quote },
+      { mediums: ['note'], placesOnly: true },
+      {
+        ...services,
+        extract: async () => ({
+          subjects: {
+            people: [],
+            orgs: [],
+            projects: [],
+            places: [{ name: 'Harbor City, CA', kind: 'city', context: [], quote }],
+          },
+        }),
+        select: async ({ candidates }) => ({ rel: candidates.map((candidate) => candidate.ref) }),
+      },
+    )
+    assert({
+      given: 'a city and state quoted together as the substantive subject',
+      should: 'propose the existing city reference with source evidence and no unresolved duplicate',
+      actual: [proposal.rel, proposal.placeEvidence, proposal.unresolvedPlaces],
+      expected: [[ref], [{ ref, quote }], []],
+    })
+  })
+})
+
 test('a country in past relationship history alone never creates a new place link', async () => {
   await notebook(async (dir, _store, services) => {
     const rel = await autoRelMessage(

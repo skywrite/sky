@@ -111,17 +111,31 @@ export function placeChoiceForRef(raw: string, choices: PlaceChoice[]): PlaceCho
 
 /** Names match exactly (including aliases); explicit geographic context can narrow a namesake. */
 export function matchPlace(mention: PlaceMention, choices: PlaceChoice[]): PlaceMatch {
-  const target = normalizePlaceName(mention.name)
+  const namedChoices = (name: string) => {
+    const target = normalizePlaceName(name)
+    return choices.filter((choice) =>
+      [choice.name, ...choice.aliases].some((alias) => normalizePlaceName(alias) === target),
+    )
+  }
   const explicit = placeChoiceForRef(mention.name, choices)
-  const named = explicit
-    ? [explicit]
-    : choices.filter((choice) => [choice.name, ...choice.aliases].some((name) => normalizePlaceName(name) === target))
+  let named = explicit ? [explicit] : namedChoices(mention.name)
+  let context = mention.context ?? []
+  const parts = mention.name.split(',').map((part) => part.trim())
+  // A full saved name wins. Otherwise use the longest named prefix, and
+  // require every written suffix to match its actual geographic context.
+  if (!named.length && parts.length > 1 && parts.every(Boolean)) {
+    for (let end = parts.length - 1; end > 0; end--) {
+      const prefix = namedChoices(parts.slice(0, end).join(', '))
+      if (!prefix.length) continue
+      named = prefix
+      context = [...context, ...parts.slice(end)]
+      break
+    }
+  }
   const matches = named.filter(
     (choice) =>
       (!mention.kind || choice.kind === mention.kind) &&
-      (mention.context ?? []).every((context) =>
-        choice.context.some((c) => normalizePlaceName(c) === normalizePlaceName(context)),
-      ),
+      context.every((part) => choice.context.some((c) => normalizePlaceName(c) === normalizePlaceName(part))),
   )
   return { mention, ref: matches.length === 1 ? matches[0]!.ref : undefined, candidates: matches }
 }

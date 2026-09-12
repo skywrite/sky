@@ -37,20 +37,38 @@ export type ExtractOutcome = {
 const schema = z.object({
   people: z.array(z.string()).describe('People the text is substantively about. Never the participants themselves.'),
   orgs: z.array(z.string()).describe('Companies or organizations substantively discussed.'),
-  projects: z.array(z.string()).describe('Projects or initiatives substantively discussed.'),
-  places: z.array(
-    z.object({
-      name: z
-        .string()
-        .describe('A country, region, city or venue substantively discussed; copy the name from the text'),
-      kind: z
-        .enum([...GEOGRAPHIC_KINDS, 'venue'])
-        .nullable()
-        .describe('Only when the text establishes the geographic kind; otherwise null'),
-      context: z.array(z.string()).describe('Containing places explicitly named alongside this place, or []'),
-      quote: z.string().describe('An exact excerpt containing this name and any supplied geographic context'),
-    }),
-  ),
+  projects: z
+    .array(z.string())
+    .describe(
+      'Explicitly named projects or initiatives substantively discussed. Do not invent project names from work descriptions or a venue’s name.',
+    ),
+  places: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .describe(
+            'The name of a literal geographic area or physical venue discussed as a place; copy it from the text',
+          ),
+        kind: z
+          .enum([...GEOGRAPHIC_KINDS, 'venue'])
+          .nullable()
+          .describe(
+            'The geographic kind when established; null only for a real place whose geographic level is unclear',
+          ),
+        context: z
+          .array(z.string())
+          .describe('Containing places explicitly named alongside this place, each separately, or []'),
+        quote: z
+          .string()
+          .describe(
+            'An exact excerpt showing this name used as a place and containing any supplied geographic context',
+          ),
+      }),
+    )
+    .describe(
+      'Only geographic places or physical venues that are independent subjects of the text. A venue’s containing city belongs in context, not another item here, unless that city is separately discussed. Exclude companies, institutions, products, networks, people, dates, times, timezones, events, and vague geographic words. Return [] when none qualify.',
+    ),
 })
 
 export function buildExtractInstructions(req: ExtractRequest): string {
@@ -61,10 +79,14 @@ export function buildExtractInstructions(req: ExtractRequest): string {
     '',
     'Rules:',
     `- List only the one to three subjects the ${kind} is fundamentally about — not every name that appears. A passing name-drop or greeting is never a subject.`,
-    `- When the ${kind} is about a project or initiative, name the project — not the companies participating in it.`,
+    `- When the ${kind} is about an explicitly named project or initiative, use that name rather than its participating companies. Do not invent a project name from a work description. Work on a physical venue without an explicit project name should identify the venue itself.`,
     '- Only concrete named entities qualify: a person, a company, a named project, or a geographic place. General topics and product categories are not subjects.',
     '- Places qualify when their politics, travel, conditions, or the place itself are a substantive topic. An incidental address, event setting, or a country inside a company name is not a place subject.',
+    "- Classify a name by what it denotes in this passage. A business, institution, product, technology network, or person is not a place, even if it shares a geographic name. Discussing an institution's policy does not make its name a physical venue.",
+    '- Dates, deadlines, clock times, timezones, historical events, and vague terms such as worldwide are never place names. Quoting a word proves that it occurs, not that it is a place. When unsure that an entity is geographic, omit it from places.',
     '- For places, quote the text and copy any explicitly stated containing country, region or city into context. Never infer a missing country or choose among namesakes from familiarity. A country is not the company or person bearing its name.',
+    '- Containing places belong in context, not as additional subjects, unless the text separately discusses the containing place itself. A venue renovation is about the venue; its city is only context.',
+    "- For a name written as city, state or city, country, put the city in name and each written qualifier in context. Keep commas that are part of a venue's actual name. Use the full original phrase in the quote.",
     `- The ${kind}'s own participants are never subjects — the document records them separately. Other people can be, when the ${kind} substantively concerns them.`,
     `- Copy names as they are written. Do not guess canonical spellings or expand abbreviations.`,
     '- Return empty arrays when nothing qualifies.',

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # Places
@@ -60,11 +60,16 @@ its destination, and supplies a normal resolvable link. Unsaved countries
 have no file preview until selected.
 
 The shared `lib/notebook/enrich` pipeline extracts substantive place subjects
-alongside people, organizations and projects. Each place quotes its source;
-its name and any disambiguating geographic context must appear in that
+alongside people, organizations and projects. Extraction distinguishes literal
+geography and physical venues from institutions, products, dates, times and
+events; sharing a place's name does not make an entity geographic. Each place
+quotes its source; its name and any disambiguating geographic context must appear in that
 quote. Resolution uses exact normalized names, aliases or references. A
 country, region or city explicitly named in the text can distinguish
-namesakes. Fuzzy similarity and interaction scores never choose a place.
+namesakes. A comma-qualified name uses its written suffixes as context only
+when no full name or alias matches; the longest exact named prefix wins, and
+every qualifier must agree. Commas inside venue names remain part of the name.
+Fuzzy similarity and interaction scores never choose a place.
 
 The existing selection pass decides which resolved subjects deserve `rel`.
 Only selected countries are materialized, before their references are
