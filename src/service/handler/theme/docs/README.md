@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-08
+updated: 2026-09-12
 ---
 
 # The web app's shell and client
@@ -136,9 +136,12 @@ for the consolidation's rationale and verification.
 ## Today and date navigation
 
 Today is a primary sidebar destination above Chat, Outbox, and Workstreams. It
-always opens the notebook's current day at `/`. Recent days, This week,
-and Next week appear beneath it only on day, week, and day-files pages.
-Today appears once; the recent-days list begins with Yesterday. The current
+always opens the notebook's current day at `/`. Tomorrow, recent days, This week,
+and Next week appear beneath it only on day, week, streaks, and day-files pages.
+Tomorrow shares the indented date group with Yesterday and the other dates.
+Subdued blue text and a divider separate it from **Past days**, with no extra
+heading or primary navigation icon. Its date is the day after the notebook's
+current day. Today appears once. The current
 day or week keeps its selected state, including direct date URLs and a
 day's files. Chat and other sections keep the date list hidden. The mobile
 drawer follows the same rule and closes after navigation.

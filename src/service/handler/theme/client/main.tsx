@@ -3,6 +3,7 @@ import './shell.css'
 import { Button, MantineProvider } from '@mantine/core'
 import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { AuditionMain } from './audition.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations.tsx'
 import { ChatMain, threadTitle, useChat } from './chat.tsx'
@@ -149,6 +150,8 @@ function Canvas() {
   const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? dayYmd
   const todayActive = isStreaks || (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
+  const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null
+  const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
   const openImport = (id: string) => navigate(`/import/${id}`)
@@ -272,7 +275,23 @@ function Canvas() {
               </button>
               {showDateNav && (
                 <div className="sky-side-dates">
-                  <div className="sky-side-label">Days</div>
+                  {tomorrowYmd && (
+                    <div className="sky-side-tomorrow">
+                      <button
+                        type="button"
+                        className="sky-thread"
+                        data-active={tomorrowActive}
+                        aria-current={tomorrowActive ? 'page' : undefined}
+                        onClick={() => navigate(`/${tomorrowYmd}`)}
+                      >
+                        <span>Tomorrow</span>
+                        <time className="sky-meta" dateTime={tomorrowYmd} title={tomorrowYmd}>
+                          {tomorrowYmd.slice(5)}
+                        </time>
+                      </button>
+                    </div>
+                  )}
+                  <div className="sky-side-label">Past days</div>
                   {(day?.days ?? []).slice(1).map((d) => (
                     <button
                       key={d.ymd}

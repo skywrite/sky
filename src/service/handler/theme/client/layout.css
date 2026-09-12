@@ -98,13 +98,24 @@ body {
   padding: 13px 10px 5px;
 }
 
+.sky-side-tomorrow {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-side-tomorrow .sky-thread:not([data-active='true']) {
+  color: color-mix(in srgb, var(--sky-accent) 45%, var(--sky-text-2));
+}
+
 .sky-side-dates {
   margin: 2px 0 12px 22px;
   padding-left: 12px;
   border-left: 1px solid var(--sky-border-soft);
 }
 
-.sky-side-dates > .sky-side-label:first-child {
+.sky-side-dates > .sky-side-label:first-child,
+.sky-side-tomorrow + .sky-side-label {
   padding-top: 4px;
 }
 
