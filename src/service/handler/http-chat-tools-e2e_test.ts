@@ -66,9 +66,15 @@ test(
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/thread/tool-inspector`)
-      const details = page.getByRole('button', { name: 'Me Voice details', exact: true }).first()
+      const details = page.getByRole('button', { name: 'Ghostwriter details', exact: true }).first()
       await details.click()
       await page.getByText('The model is preparing the tool inputs.', { exact: true }).waitFor()
+      assert({
+        given: 'a preparing call with the internal me_voice ID',
+        should: 'show Ghostwriter in the visible label',
+        actual: (await details.textContent())?.includes('Ghostwriter'),
+        expected: true,
+      })
       recordToolExecution(runs, 1, {
         type: 'tool-execution-start',
         phase: 'running',
@@ -78,11 +84,21 @@ test(
         input,
       })
       await page.getByText('A familiar colleague. Keep <script> as plain text.', { exact: false }).waitFor()
-      const shown = await page.locator('.sky-tool-details pre').first().textContent()
+      const shown = await page
+        .locator('.sky-tool-details .sky-tool-fields')
+        .first()
+        .evaluate((fields) =>
+          Object.fromEntries(
+            [...fields.querySelectorAll('dt')].map((field) => [
+              field.textContent,
+              field.nextElementSibling?.textContent,
+            ]),
+          ),
+        )
       const selected = await page.evaluate(() => {
-        const pre = document.querySelector('.sky-tool-details pre')!
+        const fields = document.querySelector('.sky-tool-details .sky-tool-fields')!
         const range = document.createRange()
-        range.selectNodeContents(pre)
+        range.selectNodeContents(fields)
         const selection = window.getSelection()!
         selection.removeAllRanges()
         selection.addRange(range)
@@ -92,7 +108,7 @@ test(
       assert({
         given: 'an expanded input while the tool and page keep updating',
         should: 'show every parameter as plain text and preserve selection through polling',
-        actual: [JSON.parse(shown!), await page.evaluate(() => window.getSelection()?.toString())],
+        actual: [shown, await page.evaluate(() => window.getSelection()?.toString())],
         expected: [input, selected],
       })
       recordToolExecution(runs, 1, {
@@ -132,7 +148,7 @@ test(
         finished: stamp + 12000,
       })
       await page.reload()
-      const second = page.getByRole('button', { name: 'Me Voice details', exact: true }).nth(1)
+      const second = page.getByRole('button', { name: 'Ghostwriter details', exact: true }).nth(1)
       await second.click()
       await page.getByRole('alert').filter({ hasText: 'The test model timed out.' }).waitFor()
       await details.click()
@@ -143,7 +159,7 @@ test(
         given: 'two calls of the same tool on a phone-sized screen',
         should: 'keep separate results and fit the screen without browser errors',
         actual: [
-          await page.getByRole('button', { name: 'Me Voice details', exact: true }).count(),
+          await page.getByRole('button', { name: 'Ghostwriter details', exact: true }).count(),
           await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
           errors,
         ],

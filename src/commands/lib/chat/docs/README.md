@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Chat prompt and tools
@@ -12,6 +12,10 @@ profile) and the notebook, file, and web tools. The engine, session, store,
 and context pipeline are documented in
 [the Chat model](../../../../_shared-ts/models/Chat/docs/README.md); the web
 host in [the chat handler](../../../../service/handler/chat/docs/README.md).
+
+Research inherits standing instructions and the current reading budget; its
+bounded tool results and model requests are described in
+[research context limits](../../../all/ai/research/docs/README.md).
 
 ## What the prompt rules on
 

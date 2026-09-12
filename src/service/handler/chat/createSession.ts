@@ -336,6 +336,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             // A browser has no shell directory, so a relative path resolves from home.
             ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
             ...(await createNotebookTools(toolTasks, {
+              researchContext: hooks.researchContext,
               legalReviewContext: legalReviewContext(hooks, config.DIR_ATTACHMENTS, `chat:${id}`),
               prepareResult: prepareChatImageResult({
                 today,

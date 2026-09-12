@@ -17,6 +17,7 @@ import { Command, CommandService } from '#commands/mod.ts'
 import { legalReviewChat, type LegalReviewChatContext } from '#lib/legalReview/chat.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import type { ToolApprovalConfig } from '#shared/models/Chat/ChatEngine/mod.ts'
+import { researchContext, type ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import truncate from '#shared/strings/truncate.ts'
 
 // -----------------------------------------------------------------------------
@@ -78,6 +79,7 @@ export interface ExternalFileRef {
 }
 
 export interface CreateNotebookToolsOptions {
+  researchContext?: ResearchContext
   legalReviewContext?: LegalReviewChatContext
   onOpenQuestions?: OnOpenQuestions
   /** The host can retain local artifacts and add browser URLs before the result enters model history. */
@@ -254,7 +256,11 @@ export async function runToolCommand(
     }
   }
   if (reviewTurn) reviewAttempts.set(reviewTurn, {})
-  const run = () => tasks.run(entry.commandName, withoutBlankStrings(input))
+  const runCommand = () => tasks.run(entry.commandName, withoutBlankStrings(input))
+  const run = () =>
+    entry.commandName === 'ai:research' && options.researchContext
+      ? researchContext.run(options.researchContext, runCommand)
+      : runCommand()
   let result
   try {
     result =

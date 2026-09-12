@@ -1,3 +1,5 @@
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
+
 /**
  * What a tool said, read line by line for the page.
  *
@@ -32,17 +34,6 @@ export type ToolEntry = CallEntry | SaidEntry
 /** `google_agent` → `google agent`. */
 export function humanize(toolName: string): string {
   return toolName.replaceAll('_', ' ')
-}
-
-/** Short names a heading keeps in capitals: `ai_research` → `AI Research`, not `Ai Research`. */
-const ACRONYMS = new Set(['ai', 'api', 'id', 'pdf', 'srt', 'url'])
-
-/** The tool's name as a heading: `google_agent` → `Google Agent`. */
-export function titleOf(toolName: string): string {
-  return humanize(toolName)
-    .split(' ')
-    .map((word) => (ACRONYMS.has(word) ? word.toUpperCase() : word.replace(/^\p{L}/u, (c) => c.toUpperCase())))
-    .join(' ')
 }
 
 /** A line that begins with the arrow names a call; what it asked follows on the line or under it. */
@@ -130,8 +121,8 @@ export function compactLine(text: string): string {
     entry.kind === 'said'
       ? entry.text
       : entry.detail === null
-        ? humanize(entry.tool)
-        : `${humanize(entry.tool)} · ${entry.detail}`
+        ? toolDisplayName(entry.tool)
+        : `${toolDisplayName(entry.tool)} · ${entry.detail}`
   const flat = words.replace(/\s+/g, ' ').trim()
   return flat.length > COMPACT_CHARS ? `${flat.slice(0, COMPACT_CHARS - 1)}…` : flat
 }

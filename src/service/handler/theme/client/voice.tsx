@@ -1,8 +1,8 @@
 /** Voice inside Chat: Sky hosts; Sonny returns from deeper research. */
 import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { whenSpeakersWarm } from './speakers.ts'
-import { humanize } from './toolLines.ts'
 import { VoiceAudioLevels } from './voiceAudio.ts'
 import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 import './voice.css'
@@ -167,7 +167,7 @@ function statusOf(state: VoiceState): string {
           ? 'Checking the notebook…'
           : state.tool === 'lookup_web'
             ? 'Checking the web…'
-            : `Running ${humanize(state.tool ?? 'a tool')}…`
+            : `Running ${toolDisplayName(state.tool ?? 'a tool')}…`
       }
       return state.activity === 'speaking'
         ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is responding`

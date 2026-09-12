@@ -16,6 +16,7 @@ import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
@@ -40,7 +41,7 @@ import {
   type ReplyThreadSummary,
 } from './replyThreads.tsx'
 import { slackToMarkdown } from './slackMarkdown.ts'
-import { compactLine, humanize, titleOf } from './toolLines.ts'
+import { compactLine } from './toolLines.ts'
 import { FieldsView, RunLines } from './toolLinesView.tsx'
 import { awaitReturn, frames } from './turnStream.ts'
 import { VoiceButton, VoiceStatus, VoiceTranscript } from './voice.tsx'
@@ -1235,12 +1236,12 @@ function RunView({ run }: { run: Run }) {
           data-act="true"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={`${titleOf(run.tool)} details`}
+          aria-label={`${toolDisplayName(run.tool)} details`}
         >
           <span className="sky-tool-caret" aria-hidden="true">
             {open ? '▾' : '▸'}
           </span>
-          <span className="sky-tool-fold-name">{titleOf(run.tool)}</span>
+          <span className="sky-tool-fold-name">{toolDisplayName(run.tool)}</span>
           {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
           <span className="sky-tool-fold-summary">{run.summary ?? last}</span>
         </button>
@@ -1252,12 +1253,12 @@ function RunView({ run }: { run: Run }) {
           data-open={open}
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={`${titleOf(run.tool)} details`}
+          aria-label={`${toolDisplayName(run.tool)} details`}
         >
           {running && (
-            <span className="sky-tool-pulse" role="progressbar" aria-label={`${humanize(run.tool)} progress`} />
+            <span className="sky-tool-pulse" role="progressbar" aria-label={`${toolDisplayName(run.tool)} progress`} />
           )}
-          {humanize(run.tool)}
+          {toolDisplayName(run.tool)}
           {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
           <span className="sky-tool-meta">
             {running ? progressLabel : run.status === 'success' ? 'Completed' : 'Failed'}
@@ -1328,7 +1329,7 @@ const FOLD_RUNS_FROM = 3
 /** `web search · 15`, or `Tools · 17` when more than one kind ran. */
 function runsLabel(runs: Run[]): string {
   const kinds = new Set(runs.map((run) => run.tool))
-  const name = kinds.size === 1 ? humanize(runs[0].tool) : 'Tools'
+  const name = kinds.size === 1 ? toolDisplayName(runs[0].tool) : 'Tools'
   return `${name} · ${runs.length}`
 }
 
@@ -1450,7 +1451,7 @@ function ApprovalCard({
     <div className="sky-ask" data-answered={answered === undefined ? undefined : answered}>
       <div className="sky-ask-head">
         <span className="sky-chip" data-act="true">
-          {humanize(approval.toolName)}
+          {toolDisplayName(approval.toolName)}
         </span>
         <span>{answered === undefined ? 'needs your go' : answered ? 'allowed' : 'declined'}</span>
         <span className="sky-ask-view">

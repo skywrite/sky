@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { fileHref } from './explorer.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { type CallEntry, GRAPHQL, graphqlTokens, humanize, parseToolLine, type ToolEntry } from './toolLines.ts'
@@ -34,7 +35,7 @@ function LineEntry({ entry }: { entry: ToolEntry }) {
   }
   return (
     <div className="sky-tool-entry sky-tool-call">
-      <div className="sky-tool-call-name">{humanize(entry.tool)}</div>
+      <div className="sky-tool-call-name">{toolDisplayName(entry.tool)}</div>
       {entry.detail !== null && <CallDetail entry={entry} />}
     </div>
   )

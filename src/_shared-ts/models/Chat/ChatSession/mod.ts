@@ -22,6 +22,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
 import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
+import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -96,6 +97,8 @@ export type ChatSessionEvent =
 // -----------------------------------------------------------------------------
 
 export interface ToolHooks {
+  /** Standing instructions and the current reading budget, without the retrieved document context. */
+  researchContext?: ResearchContext
   /** The context actually supplied to this turn, with conversation roles preserved. */
   context: { instructions: string; conversation: readonly ConversationMessage[] }
   attachments: () => Attachment[]
@@ -646,6 +649,7 @@ export default class ChatSession {
     const replyImages: ChatImage[] = []
     try {
       const { tools, toolApproval, instructions } = await this.opts.tools({
+        researchContext: { contextTokens: this.context.budget, instructions: this.systemPrompt },
         context: {
           instructions: [this.systemPrompt, this.contextPrompt].join('\n\n'),
           conversation: this.turns.map((turn) => ({ ...turn })),

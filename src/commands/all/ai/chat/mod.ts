@@ -38,6 +38,7 @@ import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, fetchNow } from '#shared/nbfs
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
 import { SessionBlessings, harvestFileRefs } from './lib/approvals.ts'
 import { clearTerminalTitle, setTerminalTitle } from './lib/terminalTitle.ts'
@@ -438,7 +439,7 @@ export default class AiChatTask extends Command {
             const input = event.input as { path: string }
             output.log(colors.dim(`Reading file: ${input.path}`))
           } else {
-            output.log(colors.dim(`Running: ${event.toolName}...`))
+            output.log(colors.dim(`Running: ${toolDisplayName(event.toolName)}...`))
           }
           return
         case 'context-gathering':
@@ -536,6 +537,7 @@ export default class AiChatTask extends Command {
           onAttachments,
         })
         const notebookTools = await createNotebookTools(tasks, {
+          researchContext: hooks.researchContext,
           legalReviewContext: legalReviewContext(hooks, DIR_ATTACHMENTS, `chat:terminal:${startTime.toString()}`),
           // Native question breakout: settle a tool's openQuestions in-place —
           // Enter accepts the proposed answer, typing overrides, ESC accepts
@@ -604,7 +606,7 @@ export default class AiChatTask extends Command {
             isBlessed: (toolName, key) => blessings.has(toolName, key),
             onAutoApproved: (toolName, key) => {
               closeStreamedLine()
-              output.log(colors.dim(`◦ ${toolName} auto-approved — blessed file ${key}`))
+              output.log(colors.dim(`◦ ${toolDisplayName(toolName)} auto-approved — blessed file ${key}`))
             },
           }),
         }
@@ -625,7 +627,7 @@ export default class AiChatTask extends Command {
           await formatter(input as Record<string, unknown>, output, context)
         } else {
           output.log('')
-          output.log(colors.bold(`Approve ${toolName}?`))
+          output.log(colors.bold(`Approve ${toolDisplayName(toolName)}?`))
           for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
             if (typeof value === 'string' && value.includes('\n')) {
               output.log(colors.dim(`${key}:`))

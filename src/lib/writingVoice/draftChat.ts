@@ -1,10 +1,11 @@
 import type { ToolHooks } from '#shared/models/Chat/ChatSession/mod.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import type { WritingDraftStore } from './drafts.ts'
 import { currentDraftVersion, type WritingDraftToolHost } from './draftTypes.ts'
 import { WritingVoiceError } from './types.ts'
 
 export const WRITING_DRAFT_CHAT_INSTRUCTIONS = `## Editable message drafts
-The web chat displays me_voice drafts in editable frames with version history. Present the returned draft intact in the normal review blockquote, with your commentary outside it; the frame replaces that quote on the page. Revisions update that same draft.
+The web chat displays ${toolDisplayName('me_voice')} drafts in editable frames with version history. Present the returned draft intact in the normal review blockquote, with your commentary outside it; the frame replaces that quote on the page. Revisions update that same draft.
 For an existing draft, pass its draftId and latest draftRevision to me_voice action draft. Use the current text below, including the owner's direct edits, rather than an older copy in the conversation. For a separate message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread; keep revisions on that draft unless the user requests another message.
 An AI revision is a proposal. Only after the owner explicitly accepts it, use action accept with its draftId and draftRevision. A direct edit supplied in chat uses action learn with the draftId, draftRevision, exact original and revised text. Edits and approvals made in the frame are already captured for learning: do not record them again. The owner's actual direction is retained with revisions; never invent a reason or treat an AI suggestion as their decision.
 These are drafts for review; accepting a version does not authorize sending it.`

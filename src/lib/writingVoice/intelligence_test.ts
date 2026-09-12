@@ -186,8 +186,14 @@ test('The voice model receives writing rules as instructions and only returns th
   )
   assert({
     given: 'the real structured model adapter with a scripted model',
-    should: 'apply the voice task, supply the current rules, and expose no action tools',
-    actual: [draft, system.content.includes('writing voice'), input.rules, call.tools?.length ?? 0],
-    expected: ['The draft is ready.', true, 'Use a direct opening.', 0],
+    should: 'identify itself as Ghostwriter, apply the voice task and current rules, and expose no action tools',
+    actual: [
+      draft,
+      system.content.includes('You are Ghostwriter,'),
+      system.content.includes('writing voice'),
+      input.rules,
+      call.tools?.length ?? 0,
+    ],
+    expected: ['The draft is ready.', true, true, 'Use a direct opening.', 0],
   })
 })

@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { withTiming, withTimingEnvironment } from '#shared/timing/mod.ts'
@@ -290,6 +291,33 @@ test('ChatSession.send - later turns evolve rather than gather', async () => {
       producerCalls: { initial: 1, evolve: 1 },
       secondTurn: ['model-start', 'text-delta', 'turn-complete'],
     },
+  })
+})
+
+test('ChatSession passes current research constraints without retrieved documents or conversation', async () => {
+  const seen: ResearchContext[] = []
+  const instructions = 'Distinguish observations from inferences.'
+  const { session } = await makeSession({
+    contextTokens: 25_000,
+    systemPrompt: async () => instructions,
+    tools: async (hooks) => {
+      if (!hooks.researchContext) throw new Error('Missing research constraints')
+      seen.push(hooks.researchContext)
+      return { tools: {}, toolApproval: {} }
+    },
+  })
+  await session.start()
+  await session.send('Find the Atlas demo decision.')
+  session.setContextTokens(0)
+  await session.send('Now close the notebook.')
+  assert({
+    given: 'an open chat followed by a turn with reading disabled',
+    should: 'pass the current budget and standing rules, keeping retrieved documents and conversation out',
+    actual: seen,
+    expected: [
+      { contextTokens: 25_000, instructions },
+      { contextTokens: 0, instructions },
+    ],
   })
 })
 

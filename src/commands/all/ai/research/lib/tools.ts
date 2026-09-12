@@ -7,9 +7,9 @@
  * The sub-model is its own repair loop: an invalid query comes back as
  * the validator's errors in the tool result, and the model fixes and
  * retries within its step budget — there is no nested repair model call.
- * Every embedded result is budgeted through ContextAssembler before it
- * reaches the sub-model (the query layer deliberately never caps a
- * date-bounded match set; the embedder owns the budget).
+ * ContextAssembler ranks query results; bounded document pages enforce
+ * their serialized size before they reach the sub-model. The query layer
+ * deliberately never caps a date-bounded match set; the embedder owns the budget.
  */
 
 import * as path from 'node:path'
@@ -29,11 +29,10 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { documentPage, fitDocumentPages, type DocumentPage } from './documents.ts'
 
 /** Budget for one query result's embedded markdown. */
 const QUERY_RESULT_MAX_TOKENS = 30_000
-/** Character clamp for a single read or person document. */
-const DOC_MAX_CHARS = 24_000
 /** Documents read per query before budgeting — the assembler prunes further. */
 const QUERY_READ_CAP = 120
 /** Person files returned per lookup. */
@@ -49,6 +48,9 @@ export interface ResearchToolsOptions {
   baseDir: string
   today: PlainDate
   trace: ResearchTrace
+  contextTokens: number
+  /** Injected store for an isolated notebook; production builds it lazily. */
+  loadStore?: () => Promise<MarkdownStore>
 }
 
 /** Lowercased, separator-free form both sides of a person match reduce to. */
@@ -90,12 +92,14 @@ export async function prepareQuery(graphql: string): Promise<{ query: string; er
 }
 
 export function createResearchTools(opts: ResearchToolsOptions) {
-  const { tasks, baseDir, today, trace } = opts
+  const { tasks, baseDir, today, trace, contextTokens } = opts
+  const maxChars = Math.floor(Math.min(QUERY_RESULT_MAX_TOKENS, contextTokens) * 4)
+  const closed = { success: false, error: 'The parent chat has disabled notebook reading.' }
 
   // One store per run, built lazily on the first query that returns
   // documents — lookups and reads never pay for it.
   let storePromise: Promise<MarkdownStore> | null = null
-  const getStore = () => (storePromise ??= MarkdownStore.buildFromAll())
+  const getStore = () => (storePromise ??= (opts.loadStore ?? (() => MarkdownStore.buildFromAll()))())
 
   const record = (absPath: string): string => {
     const rel = path.relative(baseDir, absPath)
@@ -120,6 +124,7 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         required: ['graphql'],
       }),
       execute: async ({ graphql }: { graphql: string }) => {
+        if (contextTokens <= 0) return closed
         const { query, errors } = await prepareQuery(graphql)
         if (errors) return { valid: false, errors }
 
@@ -144,9 +149,12 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         }
 
         const docs: Array<{ doc: Document; path: string }> = []
+        const originals = new Map<string, string>()
         for (const p of paths.slice(0, QUERY_READ_CAP)) {
           try {
-            docs.push({ doc: Document.fromMarkdown(await readTextFile(p)), path: p })
+            const markdown = await readTextFile(p)
+            originals.set(p, markdown)
+            docs.push({ doc: Document.fromMarkdown(markdown), path: p })
           } catch {
             // Skip unreadable files
           }
@@ -154,34 +162,69 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         const collection = DomainCollection.fromDocuments(docs, await getStore(), { depth: 1 })
         const assembler = ContextAssembler.from(collection, {
           scorer: createRecencyTypeScorer(today),
-          maxTokens: QUERY_RESULT_MAX_TOKENS,
+          maxTokens: Math.min(QUERY_RESULT_MAX_TOKENS, contextTokens),
         })
-        for (const kept of assembler.kept) record(kept.item.path)
-        return {
+        const metadata = {
           matched: paths.length,
-          rendered: assembler.kept.length,
+          rendered: 0,
           truncated: truncations.length > 0 ? truncations : undefined,
-          markdown: assembler.toMarkdown({ relativeTo: baseDir, delimited: true }),
         }
+        // ContextAssembler's budget is deliberately soft: one oversized doc is
+        // still admitted. Cap the actual payload here, with recoverable pages.
+        const pages: DocumentPage[] = []
+        for (const { item } of assembler.kept) {
+          try {
+            // Linked documents also need original file offsets, not a store's reserialization.
+            const markdown = originals.get(item.path) ?? (await readTextFile(item.path))
+            pages.push(documentPage(path.relative(baseDir, item.path), markdown))
+          } catch {
+            // A linked document may have been removed since the store was built.
+          }
+        }
+        const documents = fitDocumentPages(pages, maxChars - JSON.stringify(metadata).length - 32)
+        for (const doc of documents) trace.sources.add(doc.path)
+        return { ...metadata, rendered: documents.length, documents }
       },
     },
 
     notebook_read: {
       description:
-        'Read one notebook document in full by its path (as returned by notebook_query or person_lookup). Use after a query surfaced a promising document whose rendered excerpt is not enough.',
-      inputSchema: jsonSchema<{ path: string }>({
+        'Read a page of a notebook document by its path. Continue at nextOffset to read more, or use find to jump to literal text in a long document. Offsets count characters from the start of the original file.',
+      inputSchema: jsonSchema<{ path: string; offset?: number; find?: string }>({
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Notebook-relative document path, e.g. "projects/atlas.md"' },
+          offset: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Start here, or search for find from here; defaults to 0',
+          },
+          find: { type: 'string', description: 'Optional literal text to locate, ignoring case' },
         },
         required: ['path'],
       }),
-      execute: async ({ path: requested }: { path: string }) => {
+      execute: async ({ path: requested, offset = 0, find }: { path: string; offset?: number; find?: string }) => {
+        if (contextTokens <= 0) return closed
         const abs = insideNotebook(requested)
         if (!abs) return { success: false, error: 'Path is outside the notebook.' }
         try {
-          const markdown = truncate(await readTextFile(abs), DOC_MAX_CHARS, '\n\n[Document truncated]')
-          return { path: record(abs), markdown }
+          const markdown = await readTextFile(abs)
+          if (find) {
+            const search = new RegExp(RegExp.escape(find), 'giu')
+            search.lastIndex = offset
+            const at = search.exec(markdown)?.index
+            if (at === undefined)
+              return {
+                path: path.relative(baseDir, abs),
+                found: false,
+                note: 'Text not found at or after this offset.',
+              }
+            offset = Math.max(offset, at - 1000)
+          }
+          const [page] = fitDocumentPages([documentPage(path.relative(baseDir, abs), markdown, offset)], maxChars - 2)
+          if (!page) return { success: false, error: 'The reading budget is too small for this document excerpt.' }
+          record(abs)
+          return page
         } catch {
           return { success: false, error: `No document at ${requested}.` }
         }
@@ -199,6 +242,7 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         required: ['name'],
       }),
       execute: async ({ name }: { name: string }) => {
+        if (contextTokens <= 0) return closed
         const roots: string[] = []
         for (const root of [DIR_PEOPLE, DIR_PEOPLE_OLD]) {
           if (await exists(root)) roots.push(root)
@@ -212,17 +256,16 @@ export function createResearchTools(opts: ResearchToolsOptions) {
             note: `No person file matched "${name}". Try notebook_query with involves/from/to filters or bodyContains.`,
           }
         }
-        const matches: Array<{ path: string; markdown: string }> = []
+        const pages: DocumentPage[] = []
         for (const file of matched) {
           try {
-            matches.push({
-              path: record(file),
-              markdown: truncate(await readTextFile(file), DOC_MAX_CHARS, '\n\n[Document truncated]'),
-            })
+            pages.push(documentPage(path.relative(baseDir, file), await readTextFile(file)))
           } catch {
             // Skip unreadable files
           }
         }
+        const matches = fitDocumentPages(pages, maxChars - 16)
+        for (const match of matches) trace.sources.add(match.path)
         return { matches }
       },
     },

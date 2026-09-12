@@ -50,7 +50,7 @@ export const PROFILES = {
     model: 'claude-opus-5',
     options: { effort: 'medium', thinking: { type: 'adaptive' } },
   }),
-  'default-sonnet-5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
+  'default-sonnet-5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5', contextWindow: 1_000_000 }),
   'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
   'default-gpt-6-astra-xhigh': defineProfile({
     provider: 'openai',

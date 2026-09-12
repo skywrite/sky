@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { writingVoiceModel } from './model.ts'
 import {
   CompactionSchema,
@@ -38,7 +39,7 @@ export function createVoiceIntelligence(model: () => ResolvedModel = writingVoic
     const result = await generateObject({
       ...model(),
       schema,
-      instructions: renderPromptFile(await readPromptFile(file), file, {}).output,
+      instructions: `You are ${toolDisplayName('me_voice')}, the notebook owner's drafting agent.\n\n${renderPromptFile(await readPromptFile(file), file, {}).output}`,
       prompt: JSON.stringify(input),
       abortSignal: AbortSignal.timeout(120_000),
     })

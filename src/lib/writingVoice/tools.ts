@@ -1,15 +1,19 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import type { WritingVoice } from './agent.ts'
 import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
 import { ExampleId, ExampleInputSchema, type VoiceExampleRecord } from './types.ts'
 
 export const WRITING_VOICE_TOOL = 'me_voice'
+const AGENT_NAME = toolDisplayName(WRITING_VOICE_TOOL)
 export const WRITING_VOICE_CHAT_INSTRUCTIONS = `
-## Writing in the owner's voice
+## ${AGENT_NAME}: writing in the owner's voice
 
-For EVERY draft or revision written on the owner's behalf, call me_voice with action draft and the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. This focused writing agent reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft. Use this for email, Slack, letters, posts, scripts, and other prose in the owner's name.
+${AGENT_NAME} is the drafting agent. Refer to this agent as ${AGENT_NAME} when speaking to the owner. Its callable tool ID is me_voice.
+
+For EVERY draft or revision written on the owner's behalf, call me_voice with action draft and the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft. Use this for email, Slack, letters, posts, scripts, and other prose in the owner's name.
 
 When the owner supplies an edited version of a draft, or explicitly accepts a revised version after giving editing direction, call me_voice with action learn. Pass the actual original and accepted revision verbatim, plus the owner's direction. Never treat an unaccepted AI rewrite, a quoted third-party message, or casual chat prose as the owner's writing example. The tool saves the pair and asks one question with two suggested answers; the web interface provides clickable choices and Write my own. Do not ask another learning question in your prose. In a terminal, the tool asks directly. If the owner answers in chat, pass their actual choice or exact text to action answer; never choose an answer for them. Writing questions do not block unrelated work.
 
@@ -56,8 +60,7 @@ export function createWritingVoiceTools(
 ): Record<string, unknown> {
   return {
     [WRITING_VOICE_TOOL]: tool({
-      description:
-        "Draft and revise prose in the owner's writing voice. Always use for writing on their behalf. Learn from their accepted edits by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox.",
+      description: `${AGENT_NAME} drafts and revises prose in the owner's writing voice. Always use for writing on their behalf. Learn from their accepted edits by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
       inputSchema: ToolInput,
       execute: async (raw) =>
         runWithUsageSource('me:voice', async () => {
@@ -97,7 +100,7 @@ export function createWritingVoiceTools(
           } catch (error) {
             return {
               success: false,
-              error: error instanceof Error ? error.message : 'Writing voice could not complete this step.',
+              error: error instanceof Error ? error.message : `${AGENT_NAME} could not complete this step.`,
             }
           }
         }),

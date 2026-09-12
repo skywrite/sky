@@ -1,8 +1,8 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { GraphQLQueries } from './chatActivity.tsx'
 import { fileHref } from './explorer.tsx'
-import { humanize } from './toolLines.ts'
 
 /**
  * What sky read — the thread's context as a story, and the hand on it.
@@ -159,7 +159,7 @@ function ToolRow({ call }: { call: ToolCall }) {
       <span className="sky-tl-mark"></span>
       <span className="sky-tl-doc">
         <span className="sky-chip sky-chip-sm" data-act="true">
-          {humanize(call.tool)}
+          {toolDisplayName(call.tool)}
         </span>
         {call.input && <span className="sky-tl-dir">{call.input}</span>}
       </span>

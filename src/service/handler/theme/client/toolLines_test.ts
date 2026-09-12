@@ -1,5 +1,6 @@
 import { assert, test } from '#test'
-import { compactLine, dedent, graphqlTokens, parseToolLine, titleOf } from './toolLines.ts'
+import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
+import { compactLine, dedent, graphqlTokens, parseToolLine } from './toolLines.ts'
 
 const PRETTY = [
   '→ notebook_query',
@@ -100,7 +101,7 @@ test({ name: 'tool lines - one line for a chip' }, () => {
     given: 'a call with a pretty-printed query',
     should: 'read as the tool and the query on one line',
     actual: compactLine(PRETTY),
-    expected: 'notebook query · { documents(where: {bodyContains: "Atlas"}) { path } }',
+    expected: 'Notebook Query · { documents(where: {bodyContains: "Atlas"}) { path } }',
   })
   const long = compactLine(`Read ${'x'.repeat(200)}`)
   assert({
@@ -147,11 +148,11 @@ test({ name: 'tool lines - query tokens color names, arguments, strings, and num
   })
 })
 
-test({ name: 'tool lines - a heading keeps its acronyms' }, () => {
+test({ name: 'tool lines - shared names identify agents and keep acronyms' }, () => {
   assert({
-    given: 'tool names with and without an acronym',
-    should: 'capitalize each word, an acronym whole',
-    actual: [titleOf('ai_research'), titleOf('google_agent'), titleOf('web_search')],
-    expected: ['AI Research', 'Google Agent', 'Web Search'],
+    given: 'the writer, named agents, and tools without presentation metadata',
+    should: 'use the agent name or a capitalized fallback, preserving acronyms',
+    actual: ['me_voice', 'ai_research', 'google_agent', 'web_search', 'custom_agent'].map(toolDisplayName),
+    expected: ['Ghostwriter', 'AI Research', 'Google Agent', 'Web Search', 'Custom Agent'],
   })
 })

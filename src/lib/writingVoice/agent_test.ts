@@ -2,7 +2,7 @@ import type { Tool } from 'ai'
 import { assert, test } from '#test'
 import { AUTO_COMPACT_EXAMPLES } from './agent.ts'
 import { failure, intelligence, SAMPLE, voiceFixture } from './testHelpers.ts'
-import { createWritingVoiceTools } from './tools.ts'
+import { createWritingVoiceTools, WRITING_VOICE_CHAT_INSTRUCTIONS } from './tools.ts'
 
 test('The writing agent asks one grounded question and learns only from the chosen answer', async () => {
   const seen: string[] = []
@@ -154,6 +154,15 @@ test('The shared chat tool captures and asks without choosing an answer for the 
       },
     })
     const tool = tools.me_voice as Tool
+    assert({
+      given: 'the existing me_voice tool ID',
+      should: 'introduce Ghostwriter consistently to the chat model',
+      actual: [
+        typeof tool.description === 'string' && tool.description.startsWith('Ghostwriter drafts'),
+        WRITING_VOICE_CHAT_INSTRUCTIONS.includes('Ghostwriter is the drafting agent.'),
+      ],
+      expected: [true, true],
+    })
     const result = (await tool.execute!(
       { ...SAMPLE, action: 'learn' },
       { toolCallId: 'sample-call', messages: [], context: undefined },

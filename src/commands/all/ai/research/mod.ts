@@ -1,3 +1,4 @@
+import { wrapLanguageModel } from 'ai'
 import colors from 'picocolors'
 /**
  * ai:research — a fresh-context research subagent over the notebook.
@@ -5,8 +6,8 @@ import colors from 'picocolors'
  * Takes a self-contained question, explores the notebook with a closed set
  * of read-only tools (GraphQL queries, document reads, person lookup), and
  * returns a bounded findings report plus the source paths it actually
- * surfaced. It inherits nothing from the caller: ai:chat passes a brief,
- * the CLI passes a question — both get the same run.
+ * surfaced. Chat callers pass standing instructions and their reading
+ * budget through a trusted envelope; conversation and retrieval stay out.
  *
  * The loop is ChatEngine — one mission turn with a raised step budget —
  * not ChatSession: research has no conversation, no notebook context
@@ -17,13 +18,16 @@ import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel } from '#shared/ai/models.ts'
+import { PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
+import { researchContext } from '#shared/models/Chat/researchContext.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine, type TimingSummary } from '#shared/timing/summary.ts'
+import { REPLY_TOKENS } from '#universal/ai/readingBudget.ts'
+import { researchBudget, researchBudgetMiddleware } from './lib/budget.ts'
 import { describeCall } from './lib/narrate.ts'
 import { createResearchTools, type ResearchTrace } from './lib/tools.ts'
 
@@ -32,7 +36,9 @@ import { createResearchTools, type ResearchTrace } from './lib/tools.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
-  question: Arg.string('The research question, self-contained — the agent sees nothing else'),
+  question: Arg.string(
+    'The research question, including task-specific constraints — the conversation is not inherited',
+  ),
   purpose: Flag.string('What the caller is doing and why the answer matters — shapes what the report emphasizes', {
     short: 'p',
     optional: true,
@@ -94,6 +100,10 @@ export default class AiResearchTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { config, output } = context
     const { question, purpose } = args
+    const parent = researchContext.getStore()
+    const profile = PROFILES[ROLES.balanced]
+    const budget = researchBudget(parent?.contextTokens, profile.contextWindow)
+    if (budget.readingTokens === 0) return CommandResult.fail('Notebook research is disabled by the reading budget.')
 
     const [template, schema] = await Promise.all([readPromptFile(PROMPT_FILE), readTextFile(SCHEMA_FILE)])
     const { output: systemPrompt } = renderPromptFile(template, 'research.prompt.md', {
@@ -111,10 +121,19 @@ export default class AiResearchTask extends Command {
       baseDir: config.DIR_BASE as string,
       today: context.notebookNow.plainDateTime.plainDate,
       trace,
+      contextTokens: budget.readingTokens,
     })
 
+    const model = resolveProfile(profile, { maxOutputTokens: REPLY_TOKENS })
+    if (typeof model.model === 'string') return CommandResult.fail('Research requires a resolved model profile.')
     const engine = new ChatEngine({
-      model: aiModel('balanced'),
+      model: {
+        ...model,
+        model: wrapLanguageModel({
+          model: model.model,
+          middleware: researchBudgetMiddleware(budget.inputTokens, budget.readingTokens),
+        }),
+      },
       maxSteps: MAX_STEPS,
       // The tool set is closed and approval-free; nothing ever asks.
       approvalHandler: () => Promise.resolve({ approved: false, reason: 'Research runs without approvals.' }),
@@ -133,7 +152,11 @@ export default class AiResearchTask extends Command {
     engine.appendUserMessage(mission)
 
     try {
-      const result = await engine.runTurn({ instructions: [systemPrompt], tools, toolApproval: {} })
+      const result = await engine.runTurn({
+        instructions: [parent?.instructions ?? '', systemPrompt],
+        tools,
+        toolApproval: {},
+      })
       const digest = truncate(result.text.trim(), DIGEST_MAX_CHARS, '\n\n[Report truncated]')
       const sources = [...trace.sources].sort()
 
