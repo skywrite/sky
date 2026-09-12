@@ -26,6 +26,7 @@ test('calendar interpretation uses the civil clock and live scored contacts befo
             timezone: 'America/New_York',
             duration: 30,
             people: ['JD'],
+            conference: 'zoom',
             description: '',
             assumptions: ['Assuming today, 2030-05-03.', 'Assuming 30 minutes.'],
             questions: [],
@@ -80,6 +81,68 @@ test('calendar interpretation uses the civil clock and live scored contacts befo
         [],
         [{ name: 'Jordan Davis', email: 'jordan@example.com' }],
       ],
+    })
+  } finally {
+    selectedModel.mockRestore()
+  }
+})
+
+test('calendar interpretation retains a solo hold without looking up a recipient or requiring Zoom', async () => {
+  const model = new MockLanguageModelV4({
+    doGenerate: {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            title: 'Focus time',
+            date: '2030-05-03',
+            requestedWeekday: null,
+            time: '13:00',
+            timezone: 'America/New_York',
+            duration: 120,
+            people: [],
+            conference: 'none',
+            description: '',
+            assumptions: [],
+            questions: [],
+            unsupported: [],
+          }),
+        },
+      ],
+      finishReason: { unified: 'stop', raw: 'stop' },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
+      warnings: [],
+    },
+  })
+  const selectedModel = spyOn(models, 'aiModelByProfile').mockReturnValue({ model })
+  const searched: string[] = []
+  try {
+    const draft = await parseMeeting(
+      'Block off tomorrow from 1pm to 3pm for focus time, no guests or video link',
+      'America/New_York',
+      async (query) => {
+        searched.push(query)
+        return []
+      },
+      undefined,
+      PlainDateTime.fromString('2030-05-02 10:00'),
+    )
+    assert({
+      given: 'a solo calendar block returned by interpretation',
+      should: 'keep the full interval and conference choice without contact lookup or guest questions',
+      actual: [
+        draft.fields.time,
+        draft.fields.duration,
+        draft.fields.conference,
+        draft.invitees,
+        draft.questions,
+        draft.unsupported,
+        searched,
+      ],
+      expected: ['13:00', 120, 'none', [], [], [], []],
     })
   } finally {
     selectedModel.mockRestore()

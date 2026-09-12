@@ -149,6 +149,26 @@ const choices: Answer[] = [
   { kind: 'select', value: 'jane.work@example.com' },
 ]
 
+test('terminal scheduling saves a solo block without an approval prompt', async () => {
+  await fixture([], async ({ host, sent, questions, invoke }) => {
+    host.setup = async () => ({ date: FIELDS.date, timezone: FIELDS.timezone, accounts: [FIELDS.account] })
+    host.parse = async () => ({
+      fields: { ...FIELDS, conference: 'none' },
+      invitees: [],
+      assumptions: [],
+      questions: [],
+      unsupported: [],
+    })
+    const result = await invoke()
+    assert({
+      given: 'a complete solo calendar request in a terminal',
+      should: 'save once without asking for permission',
+      actual: [result.ok, questions.length, sent.length, sent[0]?.guests],
+      expected: [true, 0, 1, []],
+    })
+  })
+})
+
 test('terminal scheduling prompts for organizer, contact and address, then sends only the confirmed selection', async () => {
   await fixture([...choices, { kind: 'confirm', value: true }], async ({ sent, parsed, questions, invoke }) => {
     const result = await invoke()

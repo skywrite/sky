@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { assert, test } from '#test'
 import { availabilityOf } from './availability.ts'
 import { CalendarScheduler } from './CalendarScheduler.ts'
+import { calendarConference } from './conference.ts'
 import type { CalendarFields, CalendarSchedulerHost } from './types.ts'
 
 const FIELDS: CalendarFields = {
@@ -163,18 +164,17 @@ test('calendar preparation respects account overrides and the default timezone s
     })
   }))
 
-test('missing times, past times, unsupported recurrence and organizer-only guests cannot produce a sendable draft', async () =>
+test('missing times, past times and unsupported recurrence cannot produce a sendable draft', async () =>
   fixture(async (host, sent) => {
     const parse = host.parse
     const statuses: string[] = []
     const ids: (string | undefined)[] = []
-    for (const change of ['missing-time', 'past-time', 'recurrence', 'organizer-only']) {
+    for (const change of ['missing-time', 'past-time', 'recurrence']) {
       host.parse = async (...args) => {
         const draft = await parse(...args)
         if (change === 'missing-time') draft.fields.time = ''
         if (change === 'past-time') draft.fields.date = '2030-04-01'
         if (change === 'recurrence') draft.unsupported = ['Repeating meetings are unsupported.']
-        if (change === 'organizer-only') draft.invitees[0]!.selected = { name: 'Organizer', email: FIELDS.account }
         return draft
       }
       const prepared = await schedulerFor(host).prepare({ request: 'A meeting request' })
@@ -185,8 +185,67 @@ test('missing times, past times, unsupported recurrence and organizer-only guest
       given: 'requests that cannot yet become invitations',
       should: 'return questions or unsupported requirements without granting send IDs',
       actual: [statuses, ids.every((id) => id === undefined), sent.length],
-      expected: [['needs_input', 'needs_input', 'unsupported', 'needs_input'], true, 0],
+      expected: [['needs_input', 'needs_input', 'unsupported'], true, 0],
     })
+  }))
+
+test('solo blocks prepare and create without asking for guests or adding conferencing', async () =>
+  fixture(async (host, sent) => {
+    const parse = host.parse
+    for (const organizerOnly of [false, true]) {
+      host.parse = async (...args) => ({
+        ...(await parse(...args)),
+        fields: { ...FIELDS, title: 'Focus time', duration: 120, guests: [] },
+        invitees: organizerOnly
+          ? [{ query: 'myself', candidates: [], selected: { name: 'Organizer', email: FIELDS.account } }]
+          : [],
+      })
+      const scheduler = schedulerFor(host)
+      const prepared = await scheduler.prepare({ request: 'Block off 3–5pm tomorrow for focus time' })
+      const approval = await scheduler.approval(prepared.draftId!, 'schedule')
+      assert({
+        given: organizerOnly ? 'only the organizer in the parsed guest list' : 'a request with no invitees',
+        should: 'prepare the full time block and describe creation without invitations or Zoom',
+        actual: [
+          prepared.status,
+          prepared.questions,
+          prepared.fields.guests,
+          prepared.fields.duration,
+          calendarConference(prepared.fields),
+          approval.summary.includes('Create this event on your calendar.'),
+          approval.summary.includes('Video conferencing: None'),
+          approval.summary.includes('send invitations'),
+        ],
+        expected: ['ready', [], [], 120, 'none', true, true, false],
+      })
+      await scheduler.send(prepared.draftId!)
+      const result = await finished(scheduler, prepared.draftId!)
+      await schedulerFor(host).send(prepared.draftId!)
+      assert({
+        given: 'a saved solo draft and a retry after restarting the scheduler',
+        should: 'create once and preserve its exact guest-free fields',
+        actual: [result.state, sent.length, sent.at(-1)],
+        expected: ['created', organizerOnly ? 2 : 1, prepared.fields],
+      })
+    }
+  }))
+
+test('conferencing is an independent choice from guests and survives exact review and sending', async () =>
+  fixture(async (host, sent) => {
+    const scheduler = schedulerFor(host)
+    for (const fields of [
+      { ...FIELDS, conference: 'none' as const },
+      { ...FIELDS, guests: [], conference: 'zoom' as const },
+    ]) {
+      const prepared = await scheduler.review({ fields })
+      await scheduler.send(prepared.draftId!)
+      assert({
+        given: fields.guests.length ? 'guests with no conferencing' : 'a solo event explicitly requesting Zoom',
+        should: 'create the reviewed event without forcing the conference choice from the guest count',
+        actual: [(await finished(scheduler, prepared.draftId!)).state, sent.at(-1)],
+        expected: ['created', fields],
+      })
+    }
   }))
 
 test('sending a calendar draft rechecks conflicts, and a new preparation can review the changed calendar', async () =>

@@ -1,6 +1,14 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { calendarInstant, instantNow } from '#universal/dates/nbdt/mod.ts'
-import type { CalendarJob, CalendarPreparation, CalendarRequest, CalendarReview } from './types.ts'
+import { calendarBatch } from './batch.ts'
+import type {
+  CalendarApproval,
+  CalendarJob,
+  CalendarJobBatch,
+  CalendarPreparation,
+  CalendarRequest,
+  CalendarReview,
+} from './types.ts'
 import type { CalendarUpdateRequest, CalendarUpdatePreparation, CalendarUpdateReview } from './updateTypes.ts'
 
 /** Command transport; durable work stays with the service when the caller disconnects. */
@@ -43,11 +51,19 @@ export class CalendarSchedulerClient {
     return this.request('/send', { draftId }, signal)
   }
 
+  sendBatch(draftIds: string[], signal?: AbortSignal): Promise<CalendarJobBatch> {
+    return this.request('/send-batch', { draftIds }, signal)
+  }
+
+  async waitBatch(batch: CalendarJobBatch, signal?: AbortSignal): Promise<CalendarJobBatch> {
+    return calendarBatch(await Promise.all(batch.jobs.map((job) => this.wait(job, signal))))
+  }
+
   get(id: string, signal?: AbortSignal): Promise<CalendarJob> {
     return this.request(`/jobs/${encodeURIComponent(id)}`, undefined, signal)
   }
 
-  approval(id: string, operation: 'schedule' | 'update', signal?: AbortSignal): Promise<{ summary: string }> {
+  approval(id: string, operation: 'schedule' | 'update', signal?: AbortSignal): Promise<CalendarApproval> {
     return this.request(`/drafts/${encodeURIComponent(id)}/approval?operation=${operation}`, undefined, signal)
   }
 

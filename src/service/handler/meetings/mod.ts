@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { calendarDraftIdsSchema } from '#lib/calendarScheduler/batch.ts'
 import { CalendarScheduler } from '#lib/calendarScheduler/CalendarScheduler.ts'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import { hold } from '../../activity.ts'
@@ -51,6 +52,13 @@ export function createMeetingRoutes(host: CalendarSchedulerHost): Hono {
       .strict()
       .parse(await c.req.json())
     return c.json(await scheduler.send(draftId), 202)
+  })
+  app.post('/send-batch', async (c) => {
+    const { draftIds } = z
+      .object({ draftIds: calendarDraftIdsSchema })
+      .strict()
+      .parse(await c.req.json())
+    return c.json(await scheduler.sendBatch(draftIds), 202)
   })
   app.get('/jobs/:id', async (c) => {
     const job = await scheduler.get(c.req.param('id'))

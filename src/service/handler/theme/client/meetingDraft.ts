@@ -1,6 +1,6 @@
 import type { CalendarDraft, CalendarFields, CalendarInvitee } from '#lib/calendarScheduler/types.ts'
 
-const editableFields = ['title', 'date', 'time', 'timezone', 'duration', 'description'] as const
+const editableFields = ['title', 'date', 'time', 'timezone', 'duration', 'description', 'conference'] as const
 const normalized = (value: string) => value.trim().toLowerCase()
 
 function sameInvitee(a: CalendarInvitee, b: CalendarInvitee): boolean {
@@ -24,7 +24,10 @@ export function mergeMeetingDraft(
   if (!current) return next
   let fields = { ...next.fields, account: current.fields.account || next.fields.account }
   for (const key of editableFields) {
-    if (editedDuringRequest.has(key) || (previous && next.fields[key] === previous.fields[key]))
+    if (
+      (editedDuringRequest.has(key) || (previous && next.fields[key] === previous.fields[key])) &&
+      current.fields[key] !== next.fields[key]
+    )
       fields = { ...fields, [key]: current.fields[key] }
   }
   const invitees = next.invitees.flatMap((invitee) => {

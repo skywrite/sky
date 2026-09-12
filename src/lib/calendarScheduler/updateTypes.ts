@@ -6,7 +6,7 @@ export interface CalendarEventRef {
   eventId: string
 }
 
-export interface CalendarEventFields extends CalendarFields {
+export interface CalendarEventFields extends Omit<CalendarFields, 'conference'> {
   location: string
 }
 

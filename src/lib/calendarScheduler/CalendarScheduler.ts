@@ -1,10 +1,17 @@
 import { z } from 'zod'
 import { calendarInstant, calendarNow, instantNow } from '#universal/dates/nbdt/mod.ts'
+import { calendarBatch, calendarDraftIdsSchema } from './batch.ts'
 import { describePreparation, describeUpdatePreparation } from './describe.ts'
 import { CalendarDrafts } from './drafts.ts'
 import { CalendarJobs } from './jobs.ts'
 import { inviteeQuestion } from './people.ts'
-import type { CalendarPreparation, CalendarRequest, CalendarSchedulerHost } from './types.ts'
+import type {
+  CalendarApproval,
+  CalendarJobBatch,
+  CalendarPreparation,
+  CalendarRequest,
+  CalendarSchedulerHost,
+} from './types.ts'
 import { CalendarUpdates } from './updates.ts'
 import type { CalendarUpdateRequest } from './updateTypes.ts'
 import { eventFieldsSchema, validateEventUpdate } from './updateValidation.ts'
@@ -80,7 +87,7 @@ export class CalendarScheduler {
   }
 
   /** Approval describes persisted fields, never a model-supplied summary or just an ID. */
-  async approval(id: string, operation: 'schedule' | 'update'): Promise<{ summary: string }> {
+  async approval(id: string, operation: 'schedule' | 'update'): Promise<CalendarApproval> {
     const draft = await this.drafts.get(id)
     if (Boolean(draft.update) !== (operation === 'update'))
       throw new Error(`Use calendar:${draft.update ? 'update' : 'schedule'} for this draft.`)
@@ -110,9 +117,16 @@ export class CalendarScheduler {
           })
         : describePreparation({ ...common, fields: draft.fields, invitees: [], accounts: [draft.fields.account] })
     }
-    return {
-      summary: `${draft.update ? 'Save these event changes and notify guests.' : 'Create this event with Zoom and send invitations.'}\n${summary}`,
-    }
+    const affectsGuests = [draft.fields, ...(draft.update ? [draft.update.fields] : [])].some((fields) =>
+      fields.guests.some((guest) => guest.email.toLowerCase() !== fields.account.toLowerCase()),
+    )
+    const action = draft.update ? 'Save these event changes' : 'Create this event'
+    const delivery = affectsGuests
+      ? draft.update
+        ? ' and notify guests.'
+        : ' and send invitations.'
+      : ' on your calendar.'
+    return { summary: `${action}${delivery}\n${summary}`, needsApproval: affectsGuests && !(await this.jobs.get(id)) }
   }
 
   async prepare(input: CalendarRequest, signal?: AbortSignal): Promise<CalendarPreparation> {
@@ -151,8 +165,6 @@ export class CalendarScheduler {
     for (const invitee of parsed.invitees) {
       if (!invitee.selected) questions.push(inviteeQuestion(invitee))
     }
-    if (!parsed.invitees.length) askAboutRequest('Who should be invited? Include a name or email address.')
-
     const checked = meetingFieldsSchema.safeParse(fields)
     if (!checked.success) {
       const labels: Record<string, string> = {
@@ -162,7 +174,8 @@ export class CalendarScheduler {
         timezone: 'Specify a valid timezone.',
         duration: 'Use a duration of 5–720 whole minutes.',
         description: 'Keep the agenda under 8,000 characters.',
-        guests: 'Include 1–50 guests with valid email addresses.',
+        guests: 'Use at most 50 guests with valid email addresses, or leave the guest list empty.',
+        conference: 'Choose Zoom or no video conferencing.',
         account: 'Choose a connected Google account.',
       }
       for (const issue of checked.error.issues) {
@@ -246,6 +259,39 @@ export class CalendarScheduler {
     const draft = await this.drafts.get(id)
     if (draft.update) return this.update(id)
     return this.create({ id, ...draft })
+  }
+
+  /** Check every draft before starting any writes; each event retains its own durable receipt. */
+  async sendBatch(input: unknown): Promise<CalendarJobBatch> {
+    const ids = calendarDraftIdsSchema.parse(input)
+    const drafts = await Promise.all(ids.map((id) => this.drafts.get(id)))
+    const previous = await Promise.all(ids.map((id) => this.jobs.get(id)))
+    const setup = await this.host.setup()
+    const fields = drafts.map((draft, index) => {
+      if (draft.update) throw new Error('Use calendar:update for event update drafts.')
+      const fields = validateMeeting(draft.fields)
+      if (!previous[index]) {
+        this.requireFuture(fields)
+        if (!setup.accounts.includes(fields.account)) throw new Error('Choose a connected Google account.')
+      }
+      return fields
+    })
+    const jobs: CalendarJobBatch['jobs'] = []
+    for (const [index, id] of ids.entries()) {
+      try {
+        jobs.push(await this.jobs.start(id, fields[index]!, drafts[index]!.reviewKey))
+      } catch (error) {
+        jobs.push({
+          id,
+          state: 'uncertain',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Could not confirm this calendar request. Check its status before retrying.',
+        })
+      }
+    }
+    return calendarBatch(jobs)
   }
 
   prepareUpdate(input: CalendarUpdateRequest, signal?: AbortSignal) {

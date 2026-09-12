@@ -1,7 +1,7 @@
 import { availabilityOf, type CalendarSourceEvents } from '#lib/calendarScheduler/availability.ts'
 import { parseMeeting } from '#lib/calendarScheduler/parse.ts'
 import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
-import { createCalendarZoomMeeting } from '#lib/google/createCalendarMeeting.ts'
+import { createCalendarMeeting } from '#lib/google/createCalendarMeeting.ts'
 import {
   GoogleClient,
   hasCalendarScope,
@@ -102,7 +102,7 @@ export function createGoogleCalendarHost(options: {
       const primary = await client.getJson<{ id: string; summary: string }>(
         'https://www.googleapis.com/calendar/v3/calendars/primary',
       )
-      return createCalendarZoomMeeting(
+      return createCalendarMeeting(
         client,
         { ...fields, ...meetingInterval(fields), calendarId: primary.id, calendarName: primary.summary },
         hooks,

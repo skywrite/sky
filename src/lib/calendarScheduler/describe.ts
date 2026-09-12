@@ -1,13 +1,16 @@
-import type { CalendarJob, CalendarPreparation } from './types.ts'
+import { calendarConference } from './conference.ts'
+import type { CalendarJob, CalendarJobBatch, CalendarPreparation } from './types.ts'
 import type { CalendarUpdatePreparation } from './updateTypes.ts'
 
 export function describePreparation(prepared: CalendarPreparation): string {
   const { fields, availability } = prepared
   const lines = [
-    fields.title || 'Calendar invitation',
+    fields.title || 'Calendar event',
     `${fields.date || '(date needed)'} ${fields.time || '(time needed)'} · ${fields.timezone} · ${fields.duration} min`,
     `Organizer: ${fields.account || '(choose an account)'}`,
     ...fields.guests.map((guest) => `Invite: ${guest.name ? `${guest.name} <${guest.email}>` : guest.email}`),
+    ...(!fields.guests.length && !prepared.invitees.length ? ['Guests: none (only you)'] : []),
+    `Video conferencing: ${calendarConference(fields) === 'zoom' ? 'Zoom (new link)' : 'None'}`,
     ...(fields.description ? [`Agenda: ${fields.description}`] : []),
     ...prepared.assumptions.map((assumption) => `Assumption: ${assumption}`),
   ]
@@ -28,7 +31,10 @@ export function describePreparation(prepared: CalendarPreparation): string {
   }
   lines.push(...prepared.questions.map((question) => `Question: ${question}`))
   lines.push(...prepared.unsupported.map((item) => `Unsupported: ${item}`))
-  if (prepared.draftId) lines.push(`Prepared. To create and send: sky calendar:schedule --send ${prepared.draftId}`)
+  if (prepared.draftId)
+    lines.push(
+      `Prepared. To create${fields.guests.length ? ' and send invitations' : ''}: sky calendar:schedule --send ${prepared.draftId}`,
+    )
   return lines.join('\n')
 }
 
@@ -46,6 +52,10 @@ export function describeCalendarJob(job: CalendarJob): string {
   if (job.state === 'creating' || job.state === 'updating')
     return `Still ${job.state}. Retrieve the same request with: sky calendar:${job.operation === 'update' ? 'update' : 'schedule'} --send ${job.id}`
   return `${job.state === 'uncertain' ? 'Save unconfirmed' : job.operation === 'update' ? 'Update failed' : 'Creation failed'}: ${job.message ?? 'Check Google Calendar.'}`
+}
+
+export function describeCalendarBatch(batch: CalendarJobBatch): string {
+  return batch.jobs.map((job, index) => `Event ${index + 1} · ${job.id}\n${describeCalendarJob(job)}`).join('\n\n')
 }
 
 export function describeUpdatePreparation(prepared: CalendarUpdatePreparation): string {

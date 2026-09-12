@@ -35,12 +35,12 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 @AIChatTool({ needsApproval: true })
 export default class CalendarUpdate extends Command {
-  static needsApprovalFor = calendarNeedsApproval
+  static needsApprovalFor = calendarNeedsApproval('update')
   static formatApproval = calendarApproval('update')
   static override description: CommandDescription = {
     name: 'calendar:update',
     description:
-      'Edit or reschedule an existing Google Calendar event: time, duration, title, agenda, location or guests. Call request first to search events and scored contacts before asking for IDs or emails. Preparation saves nothing; omitted fields stay unchanged. Ask only unresolved questions using returned choices. Reuse exact event, calendar and account IDs once known. When ready, send: draftId requests approval to save and notify guests. Use status for receipts. Never create a replacement event.',
+      'Edit or reschedule an existing Google Calendar event: time, duration, title, agenda, location or guests. Call request first to search events and scored contacts before asking for IDs or emails. Preparation saves nothing; omitted fields stay unchanged. Ask only unresolved questions using returned choices. Reuse exact event, calendar and account IDs once known. When ready, call send: draftId. Solo blocks save without another confirmation; changes affecting guests, including removing them, require approval to notify them. Use status for receipts. Never create a replacement event.',
     descriptionLong: [
       'Find the existing event, review only the requested changes, then save and notify guests.',
       'In a terminal, ambiguous events and guests open pickers before the final confirmation.',
@@ -115,7 +115,10 @@ export default class CalendarUpdate extends Command {
       }
       context.output.log(args.json ? JSON.stringify(prepared, null, 2) : describeUpdatePreparation(prepared))
       if (interactive && prepared.status === 'ready' && prepared.draftId) {
-        if (await context.prompt.confirm({ message: 'Save these event changes and notify guests?', initial: false }))
+        if (
+          (!prepared.fields?.guests.length && !prepared.event?.fields.guests.length) ||
+          (await context.prompt.confirm({ message: 'Save these event changes and notify guests?', initial: false }))
+        )
           return await save(prepared.draftId)
         context.output.log('The event was not changed. The prepared update is available to save later.')
       }

@@ -12,6 +12,7 @@ import colors from 'picocolors'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { getAIChatToolOptions, isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { ApprovalSessionKeyFn, FormatApprovalFn, NeedsApprovalForFn } from '#commands/lib/AIChatTool.ts'
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import { commandDescriptionToSchema, commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { Command, CommandService } from '#commands/mod.ts'
 import { legalReviewChat, type LegalReviewChatContext } from '#lib/legalReview/chat.ts'
@@ -371,6 +372,8 @@ export async function createAutoApprovedTools(
 }
 
 export interface ToolApprovalConfigOptions {
+  /** Host context for policies that inspect saved drafts instead of trusting tool arguments. */
+  context?: CommandContext
   /**
    * Session blessing check for a call's stable key (see approvalSessionKey).
    * A blessed call returns 'approved' and executes inline — no prompt, no
@@ -421,13 +424,13 @@ export function toolApprovalPolicy(
   tool: ToolApprovalStatics,
   options: ToolApprovalConfigOptions = {},
 ): ToolApprovalConfig[string] {
-  const { isBlessed, onAutoApproved } = options
+  const { isBlessed, onAutoApproved, context } = options
   const { toolName, sessionKey, needsApprovalFor } = tool
   const blessable = Boolean(isBlessed && sessionKey)
   if (!blessable && !needsApprovalFor) return 'user-approval'
-  return (raw) => {
+  return async (raw) => {
     const input = withoutBlankStrings(raw)
-    if (needsApprovalFor && !needsApprovalFor(input)) return 'approved'
+    if (needsApprovalFor && !(await needsApprovalFor(input, context))) return 'approved'
     const key = sessionKey?.(input)
     if (key !== undefined && isBlessed?.(toolName, key)) {
       onAutoApproved?.(toolName, key)

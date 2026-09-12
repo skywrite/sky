@@ -12,10 +12,8 @@ export const meetingTimingSchema = z.object({
 export const meetingFieldsSchema = meetingTimingSchema.extend({
   title: z.string().trim().min(1).max(300),
   account: z.email(),
-  guests: z
-    .array(z.object({ name: z.string().trim().max(200), email: z.email() }))
-    .min(1)
-    .max(50),
+  guests: z.array(z.object({ name: z.string().trim().max(200), email: z.email() })).max(50),
+  conference: z.enum(['none', 'zoom']).optional(),
   description: z.string().max(8000),
 })
 
@@ -45,6 +43,5 @@ export function validateMeeting(value: unknown): CalendarFields {
     ).values(),
   ]
   fields.guests = fields.guests.filter((guest) => guest.email !== fields.account)
-  if (!fields.guests.length) throw new Error('Add at least one guest other than the organizer.')
   return fields
 }

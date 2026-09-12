@@ -11,6 +11,7 @@ import {
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import * as config from '#config'
+import type { CalendarScheduler } from '#lib/calendarScheduler/CalendarScheduler.ts'
 import { CalendarDrafts } from '#lib/calendarScheduler/drafts.ts'
 import { UPDATE_EVENT, withUpdateFixture } from '#lib/calendarScheduler/test/updateFixture.ts'
 import type { CalendarFields } from '#lib/calendarScheduler/types.ts'
@@ -88,7 +89,7 @@ async function withTools(
     const tasks = new CommandService(context)
     try {
       const chat = (await createNotebookTools(tasks)) as Record<string, ExecutableTool>
-      const policies = createToolApprovalConfig()
+      const policies = createToolApprovalConfig({ context })
       const voices = createVoiceCommandTools(await discoverAIChatTools(), tasks)
       app.route(
         '/voice',
@@ -134,6 +135,182 @@ async function withTools(
     }
   })
 }
+
+async function prepareDays(scheduler: CalendarScheduler, guests: boolean[]): Promise<string[]> {
+  const days = await Promise.all(
+    guests.map((invite, index) =>
+      scheduler.review({
+        fields: {
+          ...UPDATE_EVENT.fields,
+          title: `Atlas planning ${index + 1}`,
+          date: `2030-06-0${index + 3}`,
+          guests: invite ? UPDATE_EVENT.fields.guests : [],
+          conference: 'none',
+        },
+      }),
+    ),
+  )
+  return days.map((day) => day.draftId!)
+}
+
+test('chat and voice save multi-day solo blocks without approval and reuse their receipts', async () =>
+  withTools(async ({ chat, call, policy, created, fixture: { scheduler } }) => {
+    for (const surface of ['chat', 'voice']) {
+      const ids = await prepareDays(scheduler, [false, false, false])
+      const input = { send: [...ids, ids[0]].join(',') }
+      assert({
+        given: 'three requested solo blocks and a repeated draft ID',
+        should: 'auto-approve from the saved empty guest lists',
+        actual: await policy('calendar_schedule', input),
+        expected: 'approved',
+      })
+      const run = (input: Payload) =>
+        surface === 'chat' ? chat.calendar_schedule!.execute(input) : call('calendar_schedule', input)
+      const saved = await run(input)
+      const retried = await run(input)
+      const receipt = await run({ status: ids.join(',') })
+      assert({
+        given: `a multi-day ${surface} save followed by a retry and status read`,
+        should: 'create every block once with no approval and retain each result',
+        actual: [
+          saved.needsConfirmation,
+          saved.state,
+          (saved.jobs as Array<{ id: string; state: string }>).map((job) => [job.id, job.state]),
+          retried.jobs,
+          receipt.jobs,
+          created.length,
+        ],
+        expected: [
+          undefined,
+          'created',
+          ids.map((id) => [id, 'created']),
+          saved.jobs,
+          saved.jobs,
+          surface === 'chat' ? 3 : 6,
+        ],
+      })
+    }
+  }))
+
+test('one confirmation covers all events in an invitation or mixed calendar batch', async () =>
+  withTools(async ({ call, policy, card, created, fixture: { scheduler } }) => {
+    for (const guests of [
+      [true, true, true],
+      [false, true, false],
+    ]) {
+      const before = created.length
+      const ids = await prepareDays(scheduler, guests)
+      const input = { send: ids.join(',') }
+      const summary = await card('calendar_schedule', input)
+      const parked = await call('calendar_schedule', input)
+      assert({
+        given: 'multiple events including invitations in one request',
+        should: 'show every date in one approval and write nothing before confirmation',
+        actual: [
+          await policy('calendar_schedule', input),
+          parked.needsConfirmation,
+          created.length,
+          ['2030-06-03', '2030-06-04', '2030-06-05'].every((date) => summary.includes(date)),
+          String(parked.summary).includes('Create these 3 calendar events together.'),
+        ],
+        expected: ['user-approval', true, before, true, true],
+      })
+      const saved = await call('confirm_action', { approvalId: parked.approvalId })
+      const retried = await call('calendar_schedule', input)
+      assert({
+        given: 'one spoken yes and a retry of the completed batch',
+        should: 'save the whole batch once and retrieve results without another approval',
+        actual: [
+          saved.state,
+          (saved.jobs as unknown[]).length,
+          retried.needsConfirmation,
+          retried.jobs,
+          created.length,
+          await policy('calendar_schedule', input),
+        ],
+        expected: ['created', 3, undefined, saved.jobs, before + 3, 'approved'],
+      })
+    }
+  }))
+
+test('cancelled or invalid calendar batches cannot create a subset or bypass guest approval', async () =>
+  withTools(async ({ chat, call, policy, created, fixture: { scheduler } }) => {
+    const ids = await prepareDays(scheduler, [false, true, false])
+    const parked = await call('calendar_schedule', { send: ids.join(',') })
+    await call('cancel_action', { approvalId: parked.approvalId })
+    const missing = `${ids[0]},${crypto.randomUUID()}`
+    const failed = await chat.calendar_schedule!.execute({ send: missing })
+    const refused = await call('calendar_schedule', { send: missing })
+    let rejectedClaim = false
+    try {
+      await policy('calendar_schedule', { send: ids[1], guests: [], needsApproval: false })
+    } catch {
+      rejectedClaim = true
+    }
+    assert({
+      given: 'a cancelled batch, a missing draft, or caller-supplied approval claims',
+      should: 'reject the operation before any event is created',
+      actual: [failed.success, refused.needsConfirmation, rejectedClaim, created.length],
+      expected: [false, undefined, true, 0],
+    })
+  }))
+
+test('batch receipts preserve successful and uncertain events without replaying either save', async () =>
+  withTools(async ({ chat, policy, created, fixture: { scheduler, host } }) => {
+    const ids = await prepareDays(scheduler, [false, false, false])
+    const create = host.create
+    host.create = async (...args) => {
+      const result = await create(...args)
+      if (args[0].title === 'Atlas planning 2') throw new Error('Lost the second save response.')
+      return result
+    }
+    const input = { send: ids.join(',') }
+    const saved = await chat.calendar_schedule!.execute(input)
+    const retried = await chat.calendar_schedule!.execute(input)
+    assert({
+      given: 'one unconfirmed save among three requested blocks',
+      should: 'return every receipt, keep the batch uncertain, and never repeat the writes',
+      actual: [
+        saved.state,
+        (saved.jobs as Array<{ state: string }>).map((job) => job.state),
+        retried.jobs,
+        created.length,
+        await policy('calendar_schedule', input),
+      ],
+      expected: ['uncertain', ['created', 'uncertain', 'created'], saved.jobs, 3, 'approved'],
+    })
+  }))
+
+test('solo updates skip confirmation but removing the last guest still requires it', async () =>
+  withTools(async ({ call, policy, fixture: { scheduler, state, saved } }) => {
+    const removed = await scheduler.reviewUpdate({
+      event: state.event.ref,
+      version: state.event.version,
+      fields: { ...state.event.fields, guests: [] },
+    })
+    const parked = await call('calendar_update', { send: removed.draftId })
+    assert({
+      given: 'an update removing every guest',
+      should: 'still require approval for guest notifications',
+      actual: [await policy('calendar_update', { send: removed.draftId }), parked.needsConfirmation, saved.length],
+      expected: ['user-approval', true, 0],
+    })
+    await call('cancel_action', { approvalId: parked.approvalId })
+    state.event.fields.guests = []
+    const solo = await scheduler.reviewUpdate({
+      event: state.event.ref,
+      version: state.event.version,
+      fields: { ...state.event.fields, time: '16:00' },
+    })
+    const decision = await policy('calendar_update', { send: solo.draftId })
+    const result = await call('calendar_update', { send: solo.draftId })
+    assert({
+      given: 'a requested time change to an existing solo block',
+      should: 'save directly without another confirmation',
+      actual: [decision, result.needsConfirmation, result.state, saved.length],
+      expected: ['approved', undefined, 'updated', 1],
+    })
+  }))
 
 test('chat discovers calendar tools, asks for missing choices, and approves the saved invitation details', async () =>
   withTools(async ({ chat, policy, card, created }) => {

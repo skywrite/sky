@@ -12,7 +12,6 @@
 
 import { Hono } from 'hono'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
-import type { NeedsApprovalForFn } from '#commands/lib/AIChatTool.ts'
 import { withoutBlankStrings } from '#commands/lib/chat/notebookTools.ts'
 import { logger } from '#shared/log.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -31,7 +30,7 @@ export interface VoiceTool {
    */
   needsApproval?: boolean
   /** A gated command can exempt preparation and status reads, as it does in chat. */
-  needsApprovalFor?: NeedsApprovalForFn
+  needsApprovalFor?: (input: Record<string, unknown>, signal?: AbortSignal) => boolean | Promise<boolean>
   /** Resolve the action's details before parking; failure never falls back to an ID-only approval. */
   approvalSummary?: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<string>
 }
@@ -344,7 +343,16 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     // A gated tool parks; only the user's spoken yes, relayed as
     // confirm_action, runs it. The gate lives here so no prompt drift can
     // bypass it.
-    if (tool.needsApproval && (tool.needsApprovalFor?.(input) ?? true)) {
+    let needsApproval = tool.needsApproval ?? false
+    try {
+      if (needsApproval && tool.needsApprovalFor) needsApproval = await tool.needsApprovalFor(input, signal)
+      signal.throwIfAborted()
+    } catch (error) {
+      return c.json({
+        output: `Could not check this action's approval requirements: ${truncate(error instanceof Error ? error.message : String(error), MAX_TOOL_OUTPUT_ERROR_CHARS)}`,
+      })
+    }
+    if (needsApproval) {
       const approvals = approvalsOf(id)
       const approvalId = crypto.randomUUID().slice(0, 8)
       let summary: string

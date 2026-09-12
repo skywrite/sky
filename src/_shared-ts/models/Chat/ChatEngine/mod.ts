@@ -184,7 +184,9 @@ export type ModelInvoker = (args: {
  * generation — no prompt, no approval round — so hosts use it to skip
  * asking for inputs the user already blessed this session.
  */
-export type ToolApprovalPolicy = 'user-approval' | ((input: Record<string, unknown>) => 'approved' | 'user-approval')
+export type ToolApprovalPolicy =
+  | 'user-approval'
+  | ((input: Record<string, unknown>) => 'approved' | 'user-approval' | Promise<'approved' | 'user-approval'>)
 
 export type ToolApprovalConfig = Record<string, ToolApprovalPolicy>
 

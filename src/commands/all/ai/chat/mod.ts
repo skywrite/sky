@@ -603,6 +603,7 @@ export default class AiChatTask extends Command {
             }),
           },
           toolApproval: createToolApprovalConfig({
+            context: tasks.context,
             isBlessed: (toolName, key) => blessings.has(toolName, key),
             onAutoApproved: (toolName, key) => {
               closeStreamedLine()

@@ -1,4 +1,5 @@
 import type { Page } from 'playwright'
+import { calendarConference } from '#lib/calendarScheduler/conference.ts'
 import type { CreatedCalendarEvent } from '#lib/calendarScheduler/types.ts'
 import { withGoogleBrowser } from '#lib/google/browserSession.ts'
 import { listEvents, type CalendarEvent } from '#lib/google/calendar.ts'
@@ -19,6 +20,7 @@ export interface CalendarMeeting {
   endDate: string
   endTime: string
   guests: Array<{ name: string; email: string }>
+  conference?: 'none' | 'zoom'
 }
 
 export function zoomMeetingUrl(href: string): string | null {
@@ -53,13 +55,17 @@ export function savedMeetingMatches(event: CalendarEvent, meeting: CalendarMeeti
   const expected = meeting.guests.map((guest) => guest.email.toLowerCase()).sort()
   return (
     event.status === 'confirmed' &&
+    event.transparency !== 'transparent' &&
+    !event.attendeesOmitted &&
+    !event.resourceEmails?.length &&
     !event.allDay &&
     event.title === meeting.title &&
     calendarInstant(event.start) === calendarInstant(meeting.start) &&
     calendarInstant(event.end) === calendarInstant(meeting.end) &&
     JSON.stringify(actual) === JSON.stringify(expected) &&
-    !!event.conferenceUrl &&
-    zoomId(event.conferenceUrl) === zoomId(zoomUrl)
+    (zoomUrl
+      ? !!zoomId(zoomUrl) && !!event.conferenceUrl && zoomId(event.conferenceUrl) === zoomId(zoomUrl)
+      : !event.conferenceUrl)
   )
 }
 
@@ -102,7 +108,7 @@ export function formTime(value: string): string {
 }
 
 /** Prepare and verify an unsaved editor. Kept separate so browser checks never need to send invitations. */
-export async function prepareCalendarZoomMeeting(page: Page, meeting: CalendarMeeting): Promise<string> {
+export async function prepareCalendarMeeting(page: Page, meeting: CalendarMeeting): Promise<string> {
   page.setDefaultTimeout(20_000)
   await page.goto(templateUrl(meeting), { waitUntil: 'domcontentloaded', timeout: 45_000 })
   try {
@@ -126,15 +132,18 @@ export async function prepareCalendarZoomMeeting(page: Page, meeting: CalendarMe
   if (!(await page.getByRole('combobox', { name: 'Recurrence', exact: true }).innerText()).includes('Does not repeat'))
     throw new Error('Calendar selected a repeating meeting. Nothing was saved.')
 
-  // Choose the provider before adding people; automatic conferencing may otherwise race the guest list.
-  await page.getByRole('button', { name: 'Add video conferencing', exact: true }).click()
-  try {
-    await page.getByRole('menuitem', { name: 'Zoom Meeting', exact: true }).click()
-    await page.getByRole('link', { name: 'Join Zoom Meeting', exact: true }).waitFor({ timeout: 30_000 })
-  } catch {
-    throw new Error(
-      'Zoom is not available in this Google Calendar account. Connect the Zoom for Google Workspace add-on, then retry.',
-    )
+  const conference = calendarConference(meeting)
+  if (conference === 'zoom') {
+    // Choose the provider before adding people; automatic conferencing may otherwise race the guest list.
+    await page.getByRole('button', { name: 'Add video conferencing', exact: true }).click()
+    try {
+      await page.getByRole('menuitem', { name: 'Zoom Meeting', exact: true }).click()
+      await page.getByRole('link', { name: 'Join Zoom Meeting', exact: true }).waitFor({ timeout: 30_000 })
+    } catch {
+      throw new Error(
+        'Zoom is not available in this Google Calendar account. Connect the Zoom for Google Workspace add-on, then retry.',
+      )
+    }
   }
   const description = page.getByRole('textbox', { name: 'Description', exact: true })
   await description.fill(meeting.description)
@@ -164,6 +173,14 @@ export async function prepareCalendarZoomMeeting(page: Page, meeting: CalendarMe
   const expected = meeting.guests.map((guest) => guest.email.toLowerCase()).sort()
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw new Error('Calendar did not keep the exact guest list. Nothing was saved.')
+  if (conference === 'none') {
+    // Adding guests can trigger Google's automatic conferencing even when none was requested.
+    const remove = page.getByRole('button', { name: /remove.*(conferenc|Google Meet|Zoom)/i })
+    if (await remove.isVisible()) {
+      await remove.click()
+      await remove.waitFor({ state: 'hidden' })
+    }
+  }
   const readDate = async (name: string) => formDate(await page.getByRole('textbox', { name, exact: true }).inputValue())
   const readTime = async (name: string) =>
     formTime(await page.getByRole('combobox', { name, exact: true }).inputValue())
@@ -176,6 +193,7 @@ export async function prepareCalendarZoomMeeting(page: Page, meeting: CalendarMe
   ) {
     throw new Error('Calendar did not keep the reviewed title, date, and time. Nothing was saved.')
   }
+  if (conference === 'none') return ''
   const zoomUrl = zoomMeetingUrl(
     (await page.getByRole('link', { name: 'Join Zoom Meeting', exact: true }).getAttribute('href')) ?? '',
   )
@@ -190,7 +208,7 @@ export async function finishCalendarInvitation(
   zoomUrl: string,
   read: () => Promise<CalendarEvent[]>,
 ): Promise<CreatedCalendarEvent> {
-  let sent = false
+  let sent = meeting.guests.length === 0
   let invitedOutside = false
   for (let attempt = 0; attempt < 40; attempt++) {
     const send = page.getByRole('button', { name: 'Send', exact: true })
@@ -210,16 +228,20 @@ export async function finishCalendarInvitation(
         return {
           title: saved.title,
           calendarUrl: saved.htmlLink,
-          zoomUrl: saved.conferenceUrl!,
+          zoomUrl: zoomUrl ? saved.conferenceUrl! : '',
           event: { account: meeting.account, calendarId: meeting.calendarId, eventId: saved.id },
         }
     }
     await page.waitForTimeout(500)
   }
-  throw new Error('Calendar did not confirm both the invitation send and the saved meeting.')
+  throw new Error(
+    meeting.guests.length
+      ? 'Calendar did not confirm both the invitation send and the saved meeting.'
+      : 'Calendar did not confirm the saved event.',
+  )
 }
 
-export async function createCalendarZoomMeeting(
+export async function createCalendarMeeting(
   client: GoogleClient,
   meeting: CalendarMeeting,
   hooks: { beforeSave: () => Promise<void>; saving: () => Promise<void> },
@@ -232,19 +254,23 @@ export async function createCalendarZoomMeeting(
       timeMax: `${day.addDays(2).ymd}T00:00:00Z`,
       timeZone: meeting.timezone,
     })
-  // Refuse a link already in use around this meeting or in the organizer's recent calendar.
-  const previous = await listEvents(client, {
-    calendarId: meeting.calendarId,
-    timeMin: `${calendarNow(meeting.timezone).plainDate.addDays(-30).ymd}T00:00:00Z`,
-    timeMax: `${day.addDays(2).ymd}T00:00:00Z`,
-    timeZone: meeting.timezone,
-  })
+  // Zoom needs a recent-link reuse check; all events need a baseline so readback cannot match an older event.
+  const previous =
+    calendarConference(meeting) === 'zoom'
+      ? await listEvents(client, {
+          calendarId: meeting.calendarId,
+          timeMin: `${calendarNow(meeting.timezone).plainDate.addDays(-30).ymd}T00:00:00Z`,
+          timeMax: `${day.addDays(2).ymd}T00:00:00Z`,
+          timeZone: meeting.timezone,
+        })
+      : await read()
+  const previousIds = new Set(previous.map((event) => event.id))
   const used = new Set(previous.flatMap((event) => (event.conferenceUrl ? [zoomId(event.conferenceUrl)] : [])))
   return withGoogleBrowser({ headless: true }, async (context) => {
     const page = await context.newPage()
     try {
-      const zoomUrl = await prepareCalendarZoomMeeting(page, meeting)
-      if (used.has(zoomId(zoomUrl)))
+      const zoomUrl = await prepareCalendarMeeting(page, meeting)
+      if (zoomUrl && used.has(zoomId(zoomUrl)))
         throw new Error(
           'Zoom did not provide a fresh meeting link. Set the Calendar add-on to generate a new meeting ID, then retry.',
         )
@@ -253,7 +279,9 @@ export async function createCalendarZoomMeeting(
         throw new Error('This meeting time has passed. Choose a future time.')
       await hooks.saving()
       await page.getByRole('button', { name: 'Save', exact: true }).click()
-      return await finishCalendarInvitation(page, meeting, zoomUrl, read)
+      return await finishCalendarInvitation(page, meeting, zoomUrl, async () =>
+        (await read()).filter((event) => !previousIds.has(event.id)),
+      )
     } finally {
       await page.close().catch(() => undefined)
     }

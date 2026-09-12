@@ -38,7 +38,13 @@ test('live meeting drafts preserve reviewed emails, manual guests and removals w
   const chosen = { ...sam, personId: 'sam', selected: { name: 'Sam Rivera', email: 'sam.work@example.com' } }
   const current = {
     ...initial,
-    fields: { ...initial.fields, account: 'organizer@example.com', duration: 45, title: 'Atlas planning' },
+    fields: {
+      ...initial.fields,
+      account: 'organizer@example.com',
+      duration: 45,
+      title: 'Atlas planning',
+      conference: 'none' as const,
+    },
     invitees: [chosen, extra],
   }
   const next = {

@@ -33,6 +33,8 @@ export interface CalendarFields {
   duration: number
   account: string
   guests: CalendarGuest[]
+  /** Defaults to no conference for solo events, or Zoom when guests are invited. */
+  conference?: 'none' | 'zoom'
   description: string
 }
 
@@ -89,6 +91,17 @@ export interface CalendarJob {
   operation?: 'update'
   message?: string
   result?: CreatedCalendarEvent
+}
+
+export interface CalendarJobBatch {
+  state: 'creating' | 'created' | 'failed' | 'uncertain'
+  jobs: CalendarJob[]
+}
+
+export interface CalendarApproval {
+  summary: string
+  /** Derived from saved guests, including guests removed by an update. */
+  needsApproval: boolean
 }
 
 export interface CalendarSchedulerHost {

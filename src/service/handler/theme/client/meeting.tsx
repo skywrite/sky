@@ -1,6 +1,7 @@
 import { Alert, Button, Loader, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useEffect, useRef, useState } from 'react'
+import { calendarConference } from '#lib/calendarScheduler/conference.ts'
 import type {
   CalendarAvailability,
   CalendarDraft,
@@ -381,11 +382,11 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       ),
     ).values(),
   ].filter((guest) => guest.email.toLowerCase() !== fields?.account.toLowerCase())
+  const conference = calendarConference({ ...fields, guests })
   const stale = query.trim() !== parsedQuery
   const canCreate =
     !!fields?.title.trim() &&
     !!fields.account &&
-    guests.length > 0 &&
     !unresolved &&
     !draft?.unsupported.length &&
     !!available &&
@@ -474,15 +475,19 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
           {active ? (
             <>
               <Loader size="lg" />
-              <h2>Creating your meeting</h2>
-              <p>Getting a fresh Zoom link and sending the invitations…</p>
+              <h2>Creating your event</h2>
+              <p>
+                {sentFields && calendarConference(sentFields) === 'zoom'
+                  ? 'Getting a fresh Zoom link and saving to your calendar…'
+                  : 'Saving to your calendar…'}
+              </p>
             </>
           ) : job?.state === 'created' ? (
             <>
               <span className="sky-meeting-success" aria-hidden="true">
                 ✓
               </span>
-              <h2>Meeting scheduled</h2>
+              <h2>{sentFields?.guests.length ? 'Meeting scheduled' : 'Time blocked'}</h2>
               <p>{job.result?.title}</p>
               {sentFields && (
                 <p className="sky-meeting-note">
@@ -490,24 +495,28 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                   <br />
                   {sentFields.timezone}
                   <br />
-                  Invitations sent to {sentFields.guests.map((guest) => guest.name).join(', ')}.
+                  {sentFields.guests.length
+                    ? `Invitations sent to ${sentFields.guests.map((guest) => guest.name || guest.email).join(', ')}.`
+                    : 'Only on your calendar.'}
                 </p>
               )}
               <div className="sky-meeting-outcome-actions">
                 <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="primary">
                   Open in Calendar
                 </Button>
-                <Button
-                  onClick={() => {
-                    if (job.result)
-                      void navigator.clipboard
-                        .writeText(job.result.zoomUrl)
-                        .then(() => setCopied(true))
-                        .catch(() => setError('Could not copy the link. Open the meeting in Calendar.'))
-                  }}
-                >
-                  {copied ? 'Copied' : 'Copy Zoom link'}
-                </Button>
+                {job.result?.zoomUrl && (
+                  <Button
+                    onClick={() => {
+                      if (job.result)
+                        void navigator.clipboard
+                          .writeText(job.result.zoomUrl)
+                          .then(() => setCopied(true))
+                          .catch(() => setError('Could not copy the link. Open the meeting in Calendar.'))
+                    }}
+                  >
+                    {copied ? 'Copied' : 'Copy Zoom link'}
+                  </Button>
+                )}
               </div>
               <Button
                 onClick={() => {
@@ -570,11 +579,11 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
           <div className="sky-meeting-body">
             <div className="sky-meeting-prompt">
               <label className="sky-meeting-prompt-label" htmlFor="sky-meeting-query">
-                Who are we meeting?
+                What are we scheduling?
               </label>
               <Textarea
                 id="sky-meeting-query"
-                placeholder="Meet with Jane on Friday at 3 PM for 30 minutes. Invite Sam too."
+                placeholder="Meet Jane on Friday at 3 PM, or block off 1–3 PM for focus time."
                 autosize
                 minRows={2}
                 maxRows={5}
@@ -597,7 +606,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                   ) : draft ? (
                     'Keep typing, or adjust the details below.'
                   ) : (
-                    'People and time appear as you type. You review before sending.'
+                    'Details appear as you type. You review before creating the event.'
                   )}
                 </span>
               </div>
@@ -620,7 +629,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                 {draft.unsupported.length > 0 && <Alert color="yellow">{draft.unsupported.join(' ')}</Alert>}
                 <div className="sky-meeting-review" aria-busy={stale || parsing}>
                   <section className="sky-meeting-details" aria-label="Meeting details">
-                    <div className="sky-meeting-section-label sky-meeting-details-heading">Your invitation</div>
+                    <div className="sky-meeting-section-label sky-meeting-details-heading">Your event</div>
                     <TextInput
                       className="sky-meeting-title-field"
                       label="Title"
@@ -669,13 +678,18 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                     {draft.questions.length > 0 && (
                       <p className="sky-meeting-questions">{draft.questions.join(' ')} Adjust the details above.</p>
                     )}
-                    <div className="sky-meeting-zoom">
-                      <span className="sky-meeting-section-label">Where</span>
-                      <span>
-                        <strong>Zoom</strong>
-                        <small>A fresh link will be added when you create the meeting.</small>
-                      </span>
-                    </div>
+                    <Select
+                      label="Video conferencing"
+                      data={[
+                        { value: 'none', label: 'None' },
+                        { value: 'zoom', label: 'Zoom' },
+                      ]}
+                      value={conference}
+                      onChange={(value) => {
+                        if (value === 'none' || value === 'zoom') change('conference', value)
+                      }}
+                      comboboxProps={{ withinPortal: false }}
+                    />
                     <Select
                       label="From"
                       aria-label="Send from"
@@ -714,7 +728,9 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                   <strong>
                     {unresolved
                       ? `${unresolved} invitee${unresolved === 1 ? '' : 's'} to resolve`
-                      : `${guests.length} invitation${guests.length === 1 ? '' : 's'}`}
+                      : guests.length
+                        ? `${guests.length} invitation${guests.length === 1 ? '' : 's'}`
+                        : 'Only on your calendar'}
                   </strong>
                   {conflicts || available?.warnings.length ? (
                     <button
@@ -731,18 +747,18 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                       Review your day
                     </button>
                   ) : (
-                    <span>A fresh Zoom link for everyone</span>
+                    <span>{conference === 'zoom' ? 'A fresh Zoom link' : 'No video link'}</span>
                   )}
                 </>
               ) : (
-                <span>One meeting. Everyone invited. A fresh Zoom link.</span>
+                <span>Block off time or invite others. Video conferencing is optional.</span>
               )}
             </div>
             <div className="sky-meeting-footer-actions">
               <Button onClick={onClose}>Cancel</Button>
               {draft && (
                 <Button variant={conflicts ? 'warning' : 'primary'} disabled={!canCreate} onClick={() => void create()}>
-                  Create & send invites
+                  {guests.length || unresolved ? 'Create & send invites' : 'Create event'}
                 </Button>
               )}
             </div>

@@ -1,11 +1,11 @@
 ---
 created: 2026-09-07
-updated: 2026-09-08
+updated: 2026-09-12
 ---
 
 # CalendarScheduler
 
-Calendar invitations belong here. Notebook meeting documents and transcript
+Calendar events, solo time blocks and invitations belong here. Notebook meeting documents and transcript
 imports remain under `meeting:new`; scheduling does not create those documents.
 The shared API is `CalendarScheduler` in `CalendarScheduler.ts`. The web composer
 and `calendar:schedule` command use the same validation, contact interpretation,
@@ -15,7 +15,7 @@ availability and creation jobs. Chat and voice expose both calendar commands.
 ## Entry points and ownership
 
 - `CalendarScheduler` provides `setup`, `people`, `parse`, `preview`, `prepare`,
-  `review`, `create`, `send`, `prepareUpdate`, `reviewUpdate`, `update`, `approval`, and `get`.
+  `review`, `create`, `send`, `sendBatch`, `prepareUpdate`, `reviewUpdate`, `update`, `approval`, and `get`.
   Hosts inject contacts and provider operations. `updates.ts` owns the update workflow.
 - `google.ts` supplies Google account discovery, calendar reads and creation.
   Credentials and contact lookup are injected; this module does not import the
@@ -41,14 +41,14 @@ sky calendar:schedule --send <draft-id>
 | `request` or `--request` | A self-contained natural-language request: guests, timing, duration, title, agenda |
 | `--account`, `-a` | Organizer email or a unique part of it; a single connected account is selected automatically |
 | `--timezone` | Default IANA zone for unqualified times; otherwise the system zone; a zone in the request takes precedence |
-| `--send` | ID returned by preparation; mutually exclusive with a request and its overrides |
-| `--status` | Read a sent draft/job ID without saving again; exclusive with request and send |
+| `--send` | ID returned by preparation, or comma-separated creation draft IDs for a batch; mutually exclusive with a request and its overrides |
+| `--status` | Read sent draft/job IDs without saving again; creation batches accept the same comma-separated IDs |
 | `--json` | Print the structured result without interactive prompts |
 
 In a top-level terminal call, missing request details open a text prompt. Ambiguous
 organizers, contacts and email addresses open selectors through `context.prompt`.
 A contact without an address opens a validated email input. The command then
-shows the resolved invitation and asks whether to create it and send invitations.
+shows the resolved event, saves solo blocks directly and confirms before sending invitations.
 Cancelling any picker or declining confirmation sends nothing. A ready draft can
 still be sent later with `--send`; that explicit operation needs no second prompt.
 
@@ -61,7 +61,10 @@ account choices, assumptions, questions, unsupported requirements and availabili
 a `draftId`. `requestQuestions` identifies free-text clarifications separately from
 the contact and account choices. Equal-quality name matches or multiple addresses remain questions. Only explicit
 contact addresses or emails in the request can become guests. Missing/invalid
-fields, past times and organizer-only guest lists cannot produce sendable drafts.
+fields and past times cannot produce sendable drafts. An empty or organizer-only
+guest list creates a solo event. Conferencing defaults to none for solo events
+and Zoom for meetings with guests; an explicit `conference: none|zoom` overrides
+that default. Unresolved requested guests still prevent creation.
 Relative dates use the civil clock, independently of the notebook's open day.
 
 A conflict or incomplete calendar check remains visible in the preparation.
@@ -100,16 +103,23 @@ The terminal, composer and conversation preserve that identity during email
 selection. Voice offers the returned choices instead of asking for a surname or
 having the user dictate addresses that were already found.
 
-Preparation and `status` reads run without approval. Only `send: draftId` is gated:
-the web/terminal chat asks through its approval UI, and voice parks the call until
-`confirm_action` follows a spoken yes. Voice requests the pending approval before
+Preparation, `status` reads and saving solo blocks run without approval. Saving
+events that affect guests is gated: the web/terminal chat asks through its approval
+UI, and voice parks the call until `confirm_action` follows a spoken yes. Updates
+check both the original and final guest lists, so removing the last guest still
+requires approval to notify them. Existing job IDs only retrieve their receipts.
+Voice requests the pending approval before
 asking for that yes, so preparation and parking do not each trigger a confirmation
 question. Cancellation discards the parked call; changed requirements get a new
 preparation and approval. Calendar tools never
 receive standing session approval. Hosts that cannot ask do not offer these tools.
 
-Approval formatters may be asynchronous and receive the host command context.
-The calendar formatter loads `GET /drafts/:id/approval?operation=schedule|update`
+Approval policies and formatters may be asynchronous and receive the host command
+context. The calendar policy loads `GET /drafts/:id/approval?operation=schedule|update`
+and uses `needsApproval`, derived from the immutable saved fields. Neither a tool
+argument nor the model's summary can claim an event has no guests. Every host must
+await this check before executing or parking the call; failed reads never grant
+approval. The formatter uses the same endpoint
 from the running service. It presents the saved fields, guests, account, timezone,
 assumptions and availability; updates include before/after details. The summary is
 stored with the immutable draft, before a draft ID or CLI instructions are added
@@ -117,6 +127,15 @@ to the preparation display. Older drafts reconstruct this view only if fresh
 availability matches the original review key. A missing draft, wrong operation or
 failed read cannot produce an approval or execute a write. Save still rechecks
 availability and the provider event version.
+
+For multiple dates, prepare each event before saving, then call `calendar_schedule`
+once with comma-separated draft IDs in `send` (up to 50). The policy reads every
+draft; all solo blocks run directly, and any invitations share one approval card
+or spoken confirmation showing every event. `/send-batch` validates all drafts
+and their accounts/times before starting creation. Each event keeps its own
+immutable draft and durable job receipt. Batch results contain `jobs`, including
+individual failures or uncertain saves; use the same IDs in `status` or retry
+`send` to retrieve existing jobs without replaying writes.
 
 Only `created` or `updated` receipts mean completion. A pending, disconnected or
 uncertain save is checked with `status: id`; never prepare a replacement event to
@@ -202,17 +221,22 @@ scheduler instance so both observe the same running job owner.
 `lib/google/createCalendarMeeting.ts` drives the existing
 Google Calendar Zoom add-on through Sky's dedicated Google browser profile.
 It does not require another Zoom app or new Google Calendar write scopes.
-The Google account must be signed in to that profile (`sky google:browser`)
-and have the Zoom for Google Workspace add-on connected. Mobile uses the
+The Google account must be signed in to that profile (`sky google:browser`).
+Only events requesting Zoom need the Zoom for Google Workspace add-on connected.
+Solo blocks and events requesting no conferencing skip Zoom and its reuse check.
+Mobile uses the
 same server-side browser; the computer running Sky must be available.
 
 The adapter chooses the primary calendar by ID, checks the signed-in
-account, selects Zoom before adding guests, and verifies the guest emails,
+account, selects Zoom when requested before adding guests, and verifies the guest emails,
 title, date and times before Save. Selecting Zoom before guests avoids a
 race with Google's automatic conferencing. The template's `ctz` supplies
 the explicit event zone. After Save, it handles Google's invitation and
 external-guest prompts and reads the event back through the Calendar API,
-matching timing, guests and conference ID before reporting success.
+matching timing, guests, busy status and the requested conference (or its absence)
+before reporting success. Solo events do not wait for an invitation prompt.
+Readback excludes event IDs present before creation, so a pre-existing identical
+block cannot be mistaken for a successful save.
 
 Zoom inherits the add-on's account settings. The meeting-ID preference must
 be set to generate IDs automatically. The adapter also rejects a conference

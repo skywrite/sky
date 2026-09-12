@@ -30,6 +30,7 @@ export function createVoiceCommandTools(entries: DiscoveredTool[], tasks: Comman
       .filter((entry) => VOICE_COMMANDS.has(entry.commandName))
       .map((entry) => {
         const formatter = entry.commandClass.formatApproval as FormatApprovalFn | undefined
+        const needsApprovalFor = entry.commandClass.needsApprovalFor as NeedsApprovalForFn | undefined
         return [
           entry.toolName,
           {
@@ -42,7 +43,9 @@ export function createVoiceCommandTools(entries: DiscoveredTool[], tasks: Comman
             run: async (input, signal) =>
               JSON.stringify(await runToolCommand(new CommandService(tasks.context.fork({ signal })), entry, input)),
             needsApproval: entry.needsApproval,
-            needsApprovalFor: entry.commandClass.needsApprovalFor as NeedsApprovalForFn | undefined,
+            needsApprovalFor: needsApprovalFor
+              ? (input, signal) => needsApprovalFor(input, tasks.context.fork({ signal }))
+              : undefined,
             approvalSummary: formatter
               ? async (input, signal) =>
                   (await approvalCard(entry.toolName, input, formatter, tasks.context.fork({ signal }))).join('\n')

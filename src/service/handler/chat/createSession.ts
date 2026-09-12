@@ -354,7 +354,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               },
             })),
           },
-          toolApproval: createToolApprovalConfig({ isBlessed: (toolName, key) => blessed.has(toolName, key) }),
+          toolApproval: createToolApprovalConfig({
+            context: tasks.context,
+            isBlessed: (toolName, key) => blessed.has(toolName, key),
+          }),
         }
       },
       // The card is the tool's own description of the call; the answer is the

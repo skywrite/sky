@@ -76,6 +76,49 @@ test('Zoom links unwrap Google redirects but reject non-Zoom and host-control UR
   })
 })
 
+test('plain calendar readback requires the exact busy block without guests or conferencing', () => {
+  const block = { ...MEETING, guests: [] }
+  const event = { ...EVENT, attendees: [], conferenceUrl: undefined }
+  assert({
+    given: 'a solo block or a saved event with a guest, conference, free status, or wrong duration',
+    should: 'only confirm the requested guest-free busy interval',
+    actual: [
+      savedMeetingMatches(event, block, ''),
+      savedMeetingMatches({ ...event, attendees: EVENT.attendees }, block, ''),
+      savedMeetingMatches({ ...event, conferenceUrl: URL }, block, ''),
+      savedMeetingMatches({ ...event, transparency: 'transparent' }, block, ''),
+      savedMeetingMatches({ ...event, end: '2030-05-03T20:00:00Z' }, block, ''),
+      savedMeetingMatches({ ...EVENT, conferenceUrl: undefined }, { ...MEETING, conference: 'none' }, ''),
+    ],
+    expected: [true, false, false, false, false, true],
+  })
+})
+
+test('a solo Calendar save waits for readback without requiring an invitation prompt', async () => {
+  let tick = 0
+  const clicks: string[] = []
+  const page = {
+    getByRole: (_role: string, { name }: { name: string }) => ({
+      isVisible: async () => name === 'Title' && tick < 1,
+      click: async () => {
+        clicks.push(name)
+      },
+    }),
+    waitForTimeout: async () => {
+      tick++
+    },
+  } as unknown as Page
+  const result = await finishCalendarInvitation(page, { ...MEETING, guests: [] }, '', async () =>
+    tick >= 3 ? [{ ...EVENT, attendees: [], conferenceUrl: undefined, htmlLink: 'https://example.com/calendar' }] : [],
+  )
+  assert({
+    given: 'a solo event with delayed API readback and no Send button',
+    should: 'confirm the saved block with a calendar link and no Zoom link or invitation clicks',
+    actual: [tick, clicks, result.calendarUrl, result.zoomUrl, result.event?.eventId],
+    expected: [3, [], 'https://example.com/calendar', '', EVENT.id],
+  })
+})
+
 test('a disappearing Calendar editor waits for delayed send and external-guest confirmations', async () => {
   let tick = 0
   let sent = 0

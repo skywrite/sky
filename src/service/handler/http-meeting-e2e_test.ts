@@ -5,6 +5,113 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
+test({ name: 'meeting composer creates solo blocks with optional conferencing', timeout: 60000 }, async (t) => {
+  await runWysiwygE2e(
+    t,
+    { initialMarkdown: '# Test notebook\n', tempPrefix: 'sky-calendar-block-ui-', day: true },
+    async ({ page, origin }) => {
+      const sent: CalendarFields[] = []
+      const fields: CalendarFields = {
+        title: 'Focus time',
+        date: '2030-05-03',
+        time: '13:00',
+        timezone: 'America/New_York',
+        duration: 120,
+        account: '',
+        guests: [],
+        conference: 'none',
+        description: '',
+      }
+      await page.route('**/meetings/_api/**', async (route) => {
+        const pathname = new URL(route.request().url()).pathname
+        if (pathname.endsWith('/setup'))
+          return route.fulfill({
+            json: {
+              date: fields.date,
+              timezone: fields.timezone,
+              accounts: ['organizer@example.com'],
+            },
+          })
+        if (pathname.endsWith('/parse'))
+          return route.fulfill({
+            json: {
+              fields,
+              invitees: [],
+              assumptions: [],
+              questions: [],
+              unsupported: [],
+            },
+          })
+        if (pathname.endsWith('/preview'))
+          return route.fulfill({
+            json: {
+              date: fields.date,
+              timezone: fields.timezone,
+              warnings: [],
+              calendars: ['Work'],
+              alternatives: [],
+              events: [],
+              reviewKey: 'a'.repeat(64),
+            },
+          })
+        if (pathname.endsWith('/create')) {
+          sent.push(route.request().postDataJSON().fields as CalendarFields)
+          return route.fulfill({
+            json: {
+              id: 'test-block',
+              state: 'created',
+              result: {
+                title: fields.title,
+                calendarUrl: 'https://example.com/calendar',
+                zoomUrl: '',
+              },
+            },
+          })
+        }
+        return route.fulfill({ status: 404, json: { message: 'Unknown test route' } })
+      })
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 1100 })
+        await page.goto(`${origin}/clock`)
+        await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
+        await page.getByLabel('What are we scheduling?').fill('Block off 1pm to 3pm tomorrow for focus time')
+        const create = page.getByRole('button', { name: 'Create event', exact: true })
+        await create.and(page.locator(':not([disabled])')).waitFor()
+        const conference = page.getByRole('combobox', { name: 'Video conferencing', exact: true })
+        assert({
+          given: `a solo block on a ${width}px screen`,
+          should: 'enable creation without guests and default to no video link',
+          actual: [await conference.inputValue(), await page.getByLabel('Minutes', { exact: true }).inputValue()],
+          expected: ['None', '120'],
+        })
+        await conference.click()
+        await page.getByRole('option', { name: 'Zoom', exact: true }).click()
+        await conference.click()
+        await page.getByRole('option', { name: 'None', exact: true }).click()
+        await create.click()
+        await page.getByRole('heading', { name: 'Time blocked', exact: true }).waitFor()
+        assert({
+          given: 'a saved solo event',
+          should: 'preserve its full duration and omit invitation and Zoom actions',
+          actual: [
+            sent.at(-1),
+            await page.getByRole('button', { name: 'Copy Zoom link', exact: true }).count(),
+            await page.getByText('Only on your calendar.').count(),
+          ],
+          expected: [{ ...fields, account: 'organizer@example.com' }, 0, 1],
+        })
+        await page.getByRole('button', { name: 'Done', exact: true }).click()
+      }
+      assert({
+        given: 'one create on desktop and one on mobile',
+        should: 'create one block per submission',
+        actual: sent.length,
+        expected: 2,
+      })
+    },
+  )
+})
+
 test(
   { name: 'meeting composer — review people and conflicts before sending, on desktop and mobile', timeout: 60000 },
   async (t) => {
@@ -116,7 +223,7 @@ test(
         await page.setViewportSize({ width: 1440, height: 1100 })
         await page.goto(`${origin}/clock`)
         await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
-        await page.getByLabel('Who are we meeting?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas')
+        await page.getByLabel('What are we scheduling?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas')
         await page.getByText('1 scheduling conflict', { exact: true }).waitFor()
         const create = page.getByRole('button', { name: 'Create & send invites', exact: true })
         assert({
@@ -232,14 +339,16 @@ test(
         await taylorEmail.press('Enter')
         await page.getByLabel('Add invitees', { exact: true }).fill('new@example.com')
         await page.getByRole('button', { name: 'Add', exact: true }).click()
-        await page.getByLabel('Who are we meeting?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas, updated')
+        await page
+          .getByLabel('What are we scheduling?')
+          .fill('Meet Jane and Sam on Friday at 3 PM about Atlas, updated')
         assert({
           given: 'changed wording after a draft is reviewed',
           should: 'prevent sending stale details',
           actual: [await create.isDisabled(), sent.length],
           expected: [true, 0],
         })
-        await page.getByLabel('Who are we meeting?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas')
+        await page.getByLabel('What are we scheduling?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas')
         await create.click()
         await page.getByRole('heading', { name: 'Meeting scheduled', exact: true }).waitFor()
         assert({
@@ -357,7 +466,7 @@ test(
         })
         await page.goto(`${origin}/clock`)
         await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
-        const wording = page.getByLabel('Who are we meeting?')
+        const wording = page.getByLabel('What are we scheduling?')
         const time = page.getByLabel('Time', { exact: true })
         const minutes = page.getByLabel('Minutes', { exact: true })
         const create = page.getByRole('button', { name: 'Create & send invites', exact: true })

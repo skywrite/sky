@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-12
 ---
 
 # Scheduling a meeting
@@ -59,11 +59,13 @@ Its shared header, spacing, action roles and footer follow the
    times are offered when the proposed time overlaps. The check refreshes
    when time changes, on focus and every minute. Guests' availability is
    not checked. Failed calendars are explicitly incomplete, never all clear.
-4. **Create & send invites** creates the reviewed invitation on the selected
+4. **Create event** saves a solo block; **Create & send invites** creates the reviewed invitation on the selected
    account's primary calendar. An existing conflict is allowed after it is
    shown; a changed conflict set stops creation and requires a fresh review.
    On phones, the footer links directly to conflicts or incomplete checks.
-5. Success shows the Calendar link and a Copy Zoom link action. No call is
+   Guests are optional. Video conferencing can be None or Zoom, following the
+   [shared scheduler defaults](../../../../lib/calendarScheduler/docs/README.md#the-command).
+5. Success shows the Calendar link and a Copy Zoom link action when present. No call is
    joined. A failure preserves the draft. An uncertain save directs the
    person to Calendar before returning to the draft.
 
@@ -92,7 +94,8 @@ Both see the same jobs, including invitations started before the extraction.
 | `POST /update` | Prepared update draft ID → update job; no new event is created |
 | `POST /create` | Validated composer fields + review key + unique request ID → job |
 | `POST /send` | Prepared draft ID → job for those exact saved fields |
-| `GET /drafts/:id/approval?operation=schedule\|update` | Stored review for chat/voice confirmation, requiring the matching operation |
+| `POST /send-batch` | Prepared creation draft IDs → individual jobs after validating the whole batch |
+| `GET /drafts/:id/approval?operation=schedule\|update` | Stored review and guest-based approval requirement, requiring the matching operation |
 | `GET /jobs/:id` | Creating/created or updating/updated, failed, or uncertain |
 
 The client remembers its pending ID in session storage and resumes checking it
