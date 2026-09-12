@@ -10,6 +10,8 @@ const png = new Uint8Array(
 )
 const request: ImageSelectionRequest = { prompt: 'A watercolor lighthouse at dawn.', refs: [], count: 1 }
 const ordinary: ImageDecision = {
+  method: 'image',
+  layout: 'square',
   intent: 'create',
   complexity: 'simple',
   model: 'flare',

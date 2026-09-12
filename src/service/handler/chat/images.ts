@@ -25,7 +25,9 @@ export function prepareChatImageResult(options: {
   return async (command: string, result: Record<string, unknown>): Promise<Record<string, unknown>> => {
     if (command !== 'ai:image' || result.success !== true || !Array.isArray(result.images)) return result
     const images: Array<ChatImage & { path: string }> = []
+    const drawings: Array<{ name: string; url: string; path: string }> = []
     const failures: string[] = []
+    const drawingFailures: string[] = []
     for (const source of result.images) {
       if (typeof source !== 'string') continue
       try {
@@ -51,14 +53,42 @@ export function prepareChatImageResult(options: {
         failures.push(`${path.basename(source)}: ${(error as Error).message}`)
       }
     }
+    for (const source of Array.isArray(result.svgs) ? result.svgs : []) {
+      if (typeof source !== 'string') continue
+      try {
+        if (path.extname(source).toLowerCase() !== '.svg') throw new Error('Unsupported drawing format')
+        const copy = await copyToDayAttachments({
+          sourcePath: source,
+          attachmentsRoot: options.attachmentsRoot,
+          day: options.today,
+          fileName: safeAttachmentName(path.basename(source)),
+        })
+        if (!copy) throw new Error('Generated drawing file is missing')
+        drawings.push({
+          name: copy.attachment.file,
+          url: `/chat/files/${options.today.ymd}/${encodeURIComponent(copy.attachment.file)}`,
+          path: copy.path,
+        })
+        options.onAttachments([copy.attachment])
+        // SVG remains a download. Only the raster preview enters onImages.
+      } catch (error) {
+        drawingFailures.push(`${path.basename(source)}: ${(error as Error).message}`)
+      }
+    }
     return {
       ...result,
       imageArtifacts: images,
+      drawingArtifacts: drawings,
       ...(failures.length
         ? { previewError: `Images were generated, but some previews could not be saved: ${failures.join('; ')}` }
         : {}),
+      ...(drawingFailures.length
+        ? {
+            drawingArtifactError: `Images were generated, but some editable SVG downloads could not be saved: ${drawingFailures.join('; ')}`,
+          }
+        : {}),
       display:
-        'The web chat displays imageArtifacts automatically. For follow-up edits, pass the chosen artifact path as refs. Do not embed local filesystem paths as browser images.',
+        'The web chat displays imageArtifacts automatically. For follow-up edits, pass the chosen image artifact path as refs. When drawingArtifacts is nonempty, include its URLs as ordinary Markdown links labeled Download editable SVG; the PNG remains the inline preview. Do not embed SVG or local filesystem paths as browser images.',
     }
   }
 }

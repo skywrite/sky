@@ -2,7 +2,8 @@ import sharp from 'sharp'
 import { assert, test } from '#test'
 import { prepareImageEdit } from './edit.ts'
 import type { ImageEditRequest, PreparedImageEdit } from './edit.ts'
-import { testMaskPlan } from './imageEditTestHelpers.ts'
+import { testMaskPlan, testRegion } from './imageEditTestHelpers.ts'
+import { compositeImageEdit } from './mask.ts'
 import type { ImageMaskPlan } from './maskPlan.ts'
 import { validateSize } from './options.ts'
 import { graphicEditSize, photoEditSize } from './resolution.ts'
@@ -57,10 +58,47 @@ test('Photo edit sizing targets about 8 MP in the reference proportions within e
   })
 })
 
-test('Automatic photo edits resolve a large canvas before the mask planner sees the reference', async () => {
+test('Default photo edits keep the large output size and original reference without invoking mask planning', async () => {
+  const input = await request()
+  const original = Buffer.from(input.refs[0]!.data)
+  const results: PreparedImageEdit[] = []
+  let called = false
+  for (const method of [undefined, 'image'] as const) {
+    for (const size of [undefined, 'auto', '768x1024']) {
+      results.push(
+        await prepareImageEdit({ ...input, method, size }, async () => {
+          called = true
+          return localized
+        }),
+      )
+    }
+  }
+  const metadata = await sharp(input.refs[0]!.data).metadata()
+  assert({
+    given: 'ordinary photo edits with implicit or explicit image method and automatic or explicit dimensions',
+    should:
+      'retain the approximately 8 MP default and explicit sizes while leaving the original reference untouched and skipping masks',
+    actual: [results, called, original.equals(Buffer.from(input.refs[0]!.data)), [metadata.width, metadata.height]],
+    expected: [
+      [
+        { size: '2448x3264' },
+        { size: '2448x3264' },
+        { size: '768x1024' },
+        { size: '2448x3264' },
+        { size: '2448x3264' },
+        { size: '768x1024' },
+      ],
+      false,
+      true,
+      [240, 320],
+    ],
+  })
+})
+
+test('Explicit automatic photo masks resolve a large canvas before the mask planner sees the reference', async () => {
   const input = await request()
   let plannerSize: number[] = []
-  const result = await prepareImageEdit({ ...input, size: 'auto' }, async ({ reference }) => {
+  const result = await prepareImageEdit({ ...input, size: 'auto', mask: 'auto' }, async ({ reference }) => {
     const metadata = await sharp(reference.data).metadata()
     plannerSize = [metadata.width, metadata.height]
     return localized
@@ -81,7 +119,7 @@ test('Graphic preservation keeps a supported native grid and sends complexity to
   }
   let effort: string | undefined
   const result = await prepareImageEdit(
-    { ...input, intent: 'preserve_image', complexity: 'complex' },
+    { ...input, intent: 'preserve_image', complexity: 'complex', mask: 'auto' },
     async (request) => {
       effort = request.complexity
       return { ...localized, edges: 'hard' }
@@ -114,7 +152,7 @@ test('Graphic preservation keeps a supported native grid and sends complexity to
 
 test('Explicit size and mask choices work independently of automatic resolution', async () => {
   const input = await request()
-  const first = await prepareImageEdit({ ...input, size: '768x1024' }, async () => localized)
+  const first = await prepareImageEdit({ ...input, size: '768x1024', mask: 'auto' }, async () => localized)
   let called = false
   const second = await prepareImageEdit({ ...input, size: '768x1024', mask: first.edit!.mask.data }, async () => {
     called = true
@@ -128,6 +166,124 @@ test('Explicit size and mask choices work independently of automatic resolution'
     should: 'honor each choice without silently turning off the large photo default',
     actual: [first.size, second.size, !!second.edit, called, disabled.size, !!disabled.edit],
     expected: ['768x1024', '768x1024', true, false, '2448x3264', false],
+  })
+})
+
+test('Drawing edits retain a small native icon grid and exact protected source pixels', async () => {
+  const pixels = Buffer.alloc(64 * 64 * 4)
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i] = (i * 17) % 256
+    pixels[i + 1] = 110
+    pixels[i + 2] = 190
+    pixels[i + 3] = i % 28 === 0 ? 0 : i % 20 === 0 ? 100 : 255
+  }
+  const data = await sharp(pixels, { raw: { width: 64, height: 64, channels: 4 } })
+    .png()
+    .toBuffer()
+  const input: ImageEditRequest = {
+    prompt: 'Repaint the center icon, preserving its inset and the surrounding design.',
+    intent: 'preserve_image',
+    method: 'drawing',
+    size: 'auto',
+    refs: [{ name: 'icon.png', mediaType: 'image/png', data }],
+  }
+  let plannerSize: number[] = []
+  const result = await prepareImageEdit(input, async ({ reference }) => {
+    const metadata = await sharp(reference.data).metadata()
+    plannerSize = [metadata.width, metadata.height]
+    return { ...testMaskPlan([testRegion(200, 200, 800, 800)], [testRegion(450, 450, 550, 550)]), edges: 'hard' }
+  })
+  const generated = await sharp({ create: { width: 64, height: 64, channels: 4, background: '#e06020' } })
+    .png()
+    .toBuffer()
+  const output = await sharp(await compositeImageEdit(generated, result.edit!))
+    .ensureAlpha()
+    .raw()
+    .toBuffer()
+  const source = await sharp(data).ensureAlpha().raw().toBuffer()
+  const base = await sharp(result.edit!.canvas.data).ensureAlpha().raw().toBuffer()
+  const mask = await sharp(result.edit!.mask.data).extractChannel('alpha').raw().toBuffer()
+  let changedProtected = 0
+  for (let i = 0; i < mask.length; i++)
+    if (mask[i] === 255 && !source.subarray(i * 4, i * 4 + 4).equals(output.subarray(i * 4, i * 4 + 4)))
+      changedProtected++
+  const editable = (20 * 64 + 20) * 4
+  assert({
+    given: 'a native 64px drawing edit with transparent detail and a protected inset',
+    should: 'plan and composite on the unchanged source grid while preserving every protected RGBA value',
+    actual: [
+      result.size,
+      plannerSize,
+      base.equals(source),
+      changedProtected,
+      [...output.subarray(editable, editable + 4)],
+    ],
+    expected: ['64x64', [64, 64], true, 0, [224, 96, 32, 255]],
+  })
+})
+
+test('Drawing and mixed edits retain automatic preservation when the mask is omitted', async () => {
+  const input = { ...(await request()), intent: 'preserve_image' as const, size: '768x1024' }
+  const calls: string[] = []
+  const results: PreparedImageEdit[] = []
+  for (const method of ['drawing', 'mixed'] as const) {
+    results.push(
+      await prepareImageEdit({ ...input, method }, async () => {
+        calls.push(method)
+        return { ...localized, edges: 'hard' }
+      }),
+    )
+  }
+  assert({
+    given: 'localized drawing and mixed edits without an explicit mask choice',
+    should: 'keep their automatic preservation workflow and explicit output dimensions',
+    actual: [calls, results.map((result) => [result.size, !!result.edit?.plan, !!result.edit?.generationMask])],
+    expected: [
+      ['drawing', 'mixed'],
+      [
+        ['768x1024', true, true],
+        ['768x1024', true, true],
+      ],
+    ],
+  })
+})
+
+test('Drawing edits honor explicit nongrid dimensions and supplied masks while image and mixed sizing remain unchanged', async () => {
+  const input = { ...(await request()), intent: 'preserve_image' as const, method: 'drawing' as const }
+  const first = await prepareImageEdit({ ...input, size: '63x65' }, async () => ({ ...localized, edges: 'hard' }))
+  let planned = false
+  const explicit = await prepareImageEdit({ ...input, size: '63x65', mask: first.edit!.mask.data }, async () => {
+    planned = true
+    return localized
+  })
+  const image = await prepareImageEdit({ ...input, method: 'image', mask: 'none' })
+  const mixed = await prepareImageEdit({ ...input, method: 'mixed', mask: 'none' })
+  const failures: string[] = []
+  for (const invalid of [
+    { ...input, size: '8193x1', mask: 'none' as const },
+    { ...input, refs: [], size: '8192x8192' },
+    { ...input, size: '64x64', mask: first.edit!.mask.data },
+  ]) {
+    try {
+      await prepareImageEdit(invalid, async () => localized)
+    } catch (error) {
+      failures.push((error as Error).message)
+    }
+  }
+  assert({
+    given: 'a nongrid drawing canvas, an explicit mask, raster/mixed methods and invalid drawing constraints',
+    should:
+      'honor drawing sizes without planning supplied masks, retain raster sizing, and reject unsafe dimensions or mask misalignment',
+    actual: [
+      first.size,
+      explicit.size,
+      planned,
+      Buffer.from(explicit.edit!.mask.data).equals(Buffer.from(first.edit!.mask.data)),
+      image.size,
+      mixed.size,
+      failures.map((message) => /1 to 8192|16,777,216 pixels|mask must match/.test(message)),
+    ],
+    expected: ['63x65', '63x65', false, true, graphicEditSize(240, 320), graphicEditSize(240, 320), [true, true, true]],
   })
 })
 
@@ -155,7 +311,7 @@ test('Creation and creative transformations do not receive photographic masks or
 })
 
 test('Whole-image requests are explicit in the result; uncertain masks and planner failures stop the edit', async () => {
-  const input = { ...(await request()), size: '768x1024' }
+  const input = { ...(await request()), size: '768x1024', mask: 'auto' as const }
   const whole = await prepareImageEdit(input, async () => ({
     ...testMaskPlan(),
     scope: 'whole_image',
@@ -194,10 +350,13 @@ test('Cancellation after mask planning stops preparation', async () => {
   const controller = new AbortController()
   let stopped = false
   try {
-    await prepareImageEdit({ ...(await request()), size: '768x1024', signal: controller.signal }, async () => {
-      controller.abort(new Error('Cancelled test planning'))
-      return localized
-    })
+    await prepareImageEdit(
+      { ...(await request()), size: '768x1024', mask: 'auto', signal: controller.signal },
+      async () => {
+        controller.abort(new Error('Cancelled test planning'))
+        return localized
+      },
+    )
   } catch (error) {
     stopped = (error as Error).message === 'Cancelled test planning'
   }

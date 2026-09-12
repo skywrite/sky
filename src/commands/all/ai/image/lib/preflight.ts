@@ -11,6 +11,12 @@ const PROMPT_FILE = new URL('../prompts/preflight.prompt.md', import.meta.url).p
 const PREFLIGHT_TIMEOUT_MS = 45_000
 
 const decisionSchema = z.object({
+  method: z
+    .enum(['image', 'drawing', 'mixed'])
+    .describe('Image synthesis, precise vector drawing, or generated artwork with precise graphic overlays.'),
+  layout: z
+    .enum(['square', 'landscape', 'portrait'])
+    .describe('Preferred canvas proportions when no explicit size or preserved source determines them.'),
   intent: z
     .enum(['create', 'transform', 'preserve_photo', 'preserve_image', 'other_edit'])
     .describe(
@@ -25,6 +31,7 @@ const decisionSchema = z.object({
 })
 
 export type ImageDecision = z.infer<typeof decisionSchema>
+export type ImageMethod = ImageDecision['method']
 
 export interface ImageSelectionRequest {
   prompt: string
@@ -36,10 +43,13 @@ export interface ImageSelectionRequest {
   size?: string
   background?: string
   count: number
+  method?: ImageMethod
   signal?: AbortSignal
 }
 
 export interface ImageSelection {
+  method: ImageMethod
+  layout: ImageDecision['layout']
   intent: ImageDecision['intent']
   complexity: ImageDecision['complexity']
   model: (typeof IMAGE_MODELS)[ImageModelName]
@@ -72,6 +82,7 @@ export async function preflightImage(
               referenceCount: request.refs.length,
               explicitModel: request.model,
               explicitQuality: request.quality,
+              explicitMethod: request.method,
               size: request.size,
               background: request.background,
               count: request.count,
@@ -99,8 +110,10 @@ export async function selectImageSettings(
   preflight: (request: ImageSelectionRequest) => Promise<ImageDecision> = preflightImage,
 ): Promise<ImageSelection> {
   request.signal?.throwIfAborted()
-  if (request.model && request.quality && !request.refs.length) {
+  if (request.model && request.quality && !request.refs.length && (!request.method || request.method === 'image')) {
     return {
+      method: 'image',
+      layout: 'square',
       intent: 'create',
       complexity: 'simple',
       model: IMAGE_MODELS[request.model],
@@ -125,6 +138,8 @@ export async function selectImageSettings(
     ? "Preserving the original photograph's fidelity calls for Sunburst/max."
     : decision.reason
   return {
+    method: request.method ?? (request.model ? 'image' : decision.method),
+    layout: decision.layout,
     intent: request.refs.length ? decision.intent : 'create',
     complexity: decision.complexity,
     model: IMAGE_MODELS[model],

@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { validateDrawingSize } from './drawingSize.ts'
 import { imageCanvas, limitEditMask, maskFromPlan, prepareExplicitMask } from './mask.ts'
 import type { MaskedImageEdit } from './mask.ts'
 import { planImageMask } from './maskPlan.ts'
@@ -12,6 +13,7 @@ export interface ImageEditRequest {
   refs: readonly ImageReference[]
   intent: ImageDecision['intent']
   complexity?: ImageDecision['complexity']
+  method?: 'image' | 'drawing' | 'mixed'
   size?: string
   mask?: 'auto' | 'none' | Uint8Array
   signal?: AbortSignal
@@ -23,12 +25,16 @@ export interface PreparedImageEdit {
   preservation?: string
 }
 
-/** Geometry is independent of explicit model/quality choices. Classification decides when it applies. */
+/** Output resolution is independent of masking; raster edits use the original reference unless a mask is requested. */
 export async function prepareImageEdit(
   request: ImageEditRequest,
   planner: typeof planImageMask = planImageMask,
 ): Promise<PreparedImageEdit> {
   request.signal?.throwIfAborted()
+  if (request.method === 'drawing' && request.size) {
+    const problem = validateDrawingSize(request.size)
+    if (problem) throw new Error(problem)
+  }
   const reference = request.refs[0]
   const explicitMask = request.mask instanceof Uint8Array ? request.mask : undefined
   if (!reference) {
@@ -41,10 +47,19 @@ export async function prepareImageEdit(
   const size =
     request.size && request.size !== 'auto'
       ? request.size
-      : request.intent === 'preserve_photo'
-        ? photoEditSize(width, height)
-        : graphicEditSize(width, height)
-  if (request.mask === 'none') return { size, preservation: 'Whole-image editing explicitly requested.' }
+      : request.method === 'drawing'
+        ? `${width}x${height}`
+        : request.intent === 'preserve_photo'
+          ? photoEditSize(width, height)
+          : graphicEditSize(width, height)
+  if (request.method === 'drawing') {
+    const problem = validateDrawingSize(size)
+    if (problem) throw new Error(problem)
+  }
+  const maskMode = request.mask ?? (request.method === 'drawing' || request.method === 'mixed' ? 'auto' : 'none')
+  if (maskMode === 'none') {
+    return request.mask === 'none' ? { size, preservation: 'Whole-image editing explicitly requested.' } : { size }
+  }
   const canvas = await imageCanvas(reference, size, request.signal)
   if (explicitMask) {
     const mask = await prepareExplicitMask(explicitMask, reference, canvas, request.signal)

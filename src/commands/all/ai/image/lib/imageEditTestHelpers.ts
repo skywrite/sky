@@ -28,6 +28,9 @@ export function testMaskPlan(
 }
 
 export const passedReview: ImageEditAssessment = {
+  score: 95,
+  comparison: 'first',
+  correction: '',
   verdict: 'pass',
   reason: 'The requested tile changed and the surrounding design is preserved.',
   checks: [

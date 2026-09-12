@@ -14,6 +14,8 @@ import { exists } from '#shared/fs/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { writeImageArtifact } from './lib/artifact.ts'
+import type { AttemptSummary } from './lib/attempts.ts'
+import { validateDrawingSize } from './lib/drawingSize.ts'
 import { prepareImageEdit } from './lib/edit.ts'
 import type { PreparedImageEdit } from './lib/edit.ts'
 import { writeImageEvidence } from './lib/evidence.ts'
@@ -32,20 +34,14 @@ import {
 } from './lib/options.ts'
 import type { ImageBackground, ImageQuality } from './lib/options.ts'
 import { selectImageSettings } from './lib/preflight.ts'
+import type { ImageMethod } from './lib/preflight.ts'
 import { prepareReferenceImage, referencePreview } from './lib/references.ts'
 import type { ImageReference } from './lib/references.ts'
-import { renderImages } from './lib/render.ts'
-
-/**
- * A high-quality batch renders serially on OpenAI's side, so the worst case
- * (4 images, max quality, large canvas) runs many minutes. Past this the
- * call is presumed dead — better a clear timeout than a hung chat turn.
- */
-const GENERATION_TIMEOUT_MS = 600_000
+import { runImageWorkflow } from './lib/workflow.ts'
 
 const params = {
   prompt: ArgOrFlag.string(
-    'What to create — subject, composition, style, colors, mood, and any text to render verbatim',
+    'What to create or change. For photo edits, keep the user request concise and faithful; include only requested constraints.',
     { short: 'p', required: true },
   ),
   refs: Flag.string(
@@ -55,17 +51,20 @@ const params = {
   brief: Flag.string(
     'Selection context: original request, intended use, speed/budget priorities, what must stay faithful to references, and relevant prior edits or failures',
   ),
+  method: Flag.string(
+    'Production method: auto, image, drawing (precise SVG shapes and text), or mixed (generated artwork with precise overlays). Leave auto unless explicitly chosen.',
+    { default: 'auto' },
+  ),
   model: Flag.string('Image model: auto (Astra selects), flare, or sunburst; set only for an explicit user choice', {
     short: 'm',
     default: 'auto',
   }),
   size: Flag.string(
-    'auto (or omit) uses about 8 MP for photo preservation, retains supported source dimensions for graphic preservation, and lets the model choose for creation; explicit WIDTHxHEIGHT overrides this (edges multiples of 16, at most 3840, aspect at most 3:1, 655360–8294400 pixels)',
+    'auto (or omit) uses about 8 MP for photo preservation and source dimensions for graphics. Explicit WIDTHxHEIGHT overrides this. Image/mixed: edges multiples of 16, at most 3840, aspect at most 3:1, 655360–8294400 pixels. Drawing: edges 1–8192, at most 16777216 pixels, including small icons.',
     { short: 's' },
   ),
   mask: Flag.string(
-    'auto (default) plans working space and preserves untouched areas in photos, illustrations, logos, diagrams and other graphics. Or supply a local PNG alpha mask matching the upright first reference or output canvas: transparent edits, opaque protects. Supplied masks remain fixed. Use none only for an explicit whole-image edit.',
-    { default: 'auto' },
+    'Omit for full-image generation/editing; drawing/mixed methods automatically preserve local edits. Only when the user requests masking, use auto to plan a mask or a local PNG alpha mask: transparent edits, opaque protects. Use none to disable masking in any method.',
   ),
   quality: Flag.string(
     'Rendering quality: auto (Astra selects), low, medium, high, xhigh, or max; set only for an explicit user choice',
@@ -75,6 +74,16 @@ const params = {
     },
   ),
   count: Flag.number(`How many variations to generate (1-${MAX_COUNT})`, { short: 'n', default: 1 }),
+  attempts: Flag.number(
+    'Opt into visual review and up to 1–5 corrective attempts per image. Omit for one direct image result. Masked edits and drawing/mixed methods default to 3 attempts for simple requests or 5 for complex ones.',
+  ),
+  budgetMinutes: Flag.number(
+    'Total time budget for the request (1–60 minutes). Keeps available results if time runs out.',
+    { default: 15 },
+  ),
+  focus: Flag.bool('Use a focused crop only within the optional masked editing workflow.', {
+    default: true,
+  }),
   background: Flag.string('Background: transparent (stickers, logos), opaque, or auto', { short: 'b' }),
   name: Flag.string('Filename slug for the saved image(s); derived from the prompt when omitted'),
   out: Flag.string('Directory to save into (default: Desktop)', { short: 'o' }),
@@ -87,13 +96,17 @@ type Result = {
   images: string[]
   artifact?: string
   model: string
-  quality: ImageQuality
+  quality?: ImageQuality
+  method: ImageMethod
   selectionReason: string
   size?: string
   preservation?: string
   mask?: string
   evidence?: string[]
   reviews?: ImageReviewSummary[]
+  svgs?: string[]
+  attempts?: AttemptSummary[]
+  warning?: string
 }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
@@ -109,30 +122,36 @@ export default class AiImageTask extends Command {
   static override description: CommandDescription = {
     name: 'ai:image',
     description:
-      'Generate or edit images with GPT Image 2.5. Astra selects Flare or Sunburst and quality from the prompt, brief, and references. Give a full visual description, pass local references for edits (base image first), and include user priorities and prior edit context in brief. Leave model/quality/size/mask auto unless explicitly chosen. Localized edits to photos, illustrations, logos, diagrams and other graphics plan the replacement shape, preserve untouched pixels at output resolution and receive a visual review. Photo preservation uses Sunburst/max and about 8 MP. Graphics retain supported source dimensions and select quality by requirements. Creative restyling follows normal selection. Report any review caveats with the result; do not claim a failed or unavailable review passed. Mask failures need clearer targets or a supplied mask; do not disable preservation to retry.',
+      'Create or edit photos, illustrations and graphics. Astra chooses GPT Image 2.5, precise SVG drawing, or mixed artwork with exact graphic overlays. Pass local references for edits (base first). For photo edits, use the user’s concise requested change without adding unrequested restrictions on anatomy, outlines or geometry. The default image workflow sends the full reference and returns the full generated image directly. Photo preservation uses Sunburst/max and about 8 MP. Leave method/model/quality/size automatic; omit mask and attempts unless the user explicitly requests masking or automatic review/corrections. Drawing/mixed retain their review workflow and also save editable SVG. Include requested priorities in brief. Report any review caveats, incomplete requests and attempt errors accurately.',
     descriptionLong: [
-      'Renders the prompt with GPT Image 2.5, saves the result to the Desktop',
+      'Creates a PNG using image generation, precise SVG drawing, or both. Saves to the Desktop',
       '(or --out), opens it in Preview, and records prompt + settings in the',
       `notebook under ${actionKindRel('image')}/.`,
-      'With --refs the reference images are edited/combined instead of',
-      'generating from scratch — the way to iterate on an earlier result',
-      '(pass its saved path) or restyle an existing picture.',
+      'Use --refs to edit an earlier result (pass its saved path), combine images,',
+      'or provide visual references for a new design. The request determines whether',
+      'to edit the first reference in place or create a fresh composition.',
       'Astra at low reasoning effort selects model and quality before rendering:',
       'normally Flare/high, Flare/medium for drafts, Sunburst for precision,',
       'and Sunburst/max for photo edits that preserve the original fidelity.',
       'Those photo edits default to about 8 MP, bounded by the API canvas limits.',
-      'Localized photo and graphic edits plan the new silhouette and separate',
-      'working space from the final blend. Untouched pixels are copied from the',
-      'original at output resolution. Graphics keep native dimensions when supported.',
-      'Visual review checks the requested change, preservation and integration.',
-      'One boundary correction may reuse the generated image within the allowed',
-      'working space; a supplied mask is never expanded. Review caveats are reported.',
-      'Raw output, both masks, the source canvas and review are kept beside the result.',
+      'Ordinary image edits send the full reference with the concise requested change',
+      'and return the complete provider output. Masking, focused crops, compositing',
+      'and visual review/corrections are optional for the image method.',
+      'Use --mask auto or a PNG alpha mask to opt into protected-area compositing.',
+      'A supplied mask is never expanded. Drawing/mixed and masked edits receive',
+      'up to 3 reviewed attempts for simple requests or 5 for complex ones.',
+      'Graphics keep native dimensions when supported.',
+      'Precise shapes and text use a bounded SVG renderer. Mixed designs generate',
+      'artwork first and add exact graphic layers; text-only corrections reuse artwork.',
+      'All candidates, raw output, masks, source, SVG and review evidence are retained.',
       'Global edits (such as changing all lighting) use the whole image.',
       'Creative restyling (such as photo to illustration) uses normal selection.',
       'Pass --brief for priorities or relevant prior edits. Explicit --model and',
       '--quality choices win; reference edits still classify intent for preservation.',
-      'Use --size to override resolution; --mask accepts a PNG alpha mask or none.',
+      'Use --size to override resolution; --mask none disables optional masking.',
+      'Use --attempts to opt into or bound reviewed corrections, and --budgetMinutes',
+      'to set the time budget. --method overrides routing.',
+      'Run sky ai:image:evaluate --list to see repeatable synthetic visual evaluations.',
     ],
     usage: [
       'sky ai:image "A watercolor poster of a lighthouse at dawn, the word ATLAS across the top"',
@@ -142,6 +161,7 @@ export default class AiImageTask extends Command {
       'sky ai:image "Remove the background; preserve the product exactly" -r ~/Pictures/watch.png',
       'sky ai:image "Replace the center icon; keep the lettering and layout unchanged" -r ~/Pictures/atlas-logo.png',
       'sky ai:image "A rough pencil sketch of a lighthouse" -m flare -q low',
+      'sky ai:image "A blue five-point star icon" --method drawing -s 64x64',
     ],
     params,
   }
@@ -153,16 +173,29 @@ export default class AiImageTask extends Command {
       return CommandResult.fail('Provide a prompt, e.g. sky ai:image "A watercolor poster of a lighthouse at dawn"')
     }
     if (!env.get('OPENAI_API_KEY')) {
-      return CommandResult.fail('OPENAI_API_KEY is not set — ai:image calls the OpenAI Image API with it.')
+      return CommandResult.fail(
+        'OPENAI_API_KEY is not set — ai:image uses OpenAI for planning, review and image generation.',
+      )
     }
 
     const requestedModel = args.model ?? 'auto'
     const requestedQuality = args.quality ?? 'auto'
     const count = args.count ?? 1
+    const requestedMethod = args.method ?? 'auto'
+    const budgetMinutes = args.budgetMinutes ?? 15
     for (const problem of [
       validateModel(requestedModel),
       validateQuality(requestedQuality),
-      args.size ? validateSize(args.size) : null,
+      args.size ? validateDrawingSize(args.size) : null,
+      ['auto', 'image', 'drawing', 'mixed'].includes(requestedMethod)
+        ? null
+        : 'method must be auto, image, drawing, or mixed.',
+      args.attempts === undefined || (Number.isInteger(args.attempts) && args.attempts >= 1 && args.attempts <= 5)
+        ? null
+        : 'attempts must be an integer between 1 and 5.',
+      Number.isFinite(budgetMinutes) && budgetMinutes >= 1 && budgetMinutes <= 60
+        ? null
+        : 'budgetMinutes must be between 1 and 60.',
       args.background ? validateBackground(args.background) : null,
       Number.isInteger(count) && count >= 1 && count <= MAX_COUNT
         ? null
@@ -176,11 +209,18 @@ export default class AiImageTask extends Command {
       return CommandResult.fail(`--refs takes at most ${MAX_REF_IMAGES} images, got ${refPaths.length}`)
     }
     const log = (line: string) => output.log(colors.dim(`◦ ${line}`))
-    const requestedMask = args.mask?.trim() || 'auto'
-    if (requestedMask !== 'auto' && requestedMask !== 'none' && !refPaths.length) {
+    const requestedMask = args.mask?.trim() || undefined
+    if (requestedMask && requestedMask !== 'auto' && requestedMask !== 'none' && !refPaths.length) {
       return CommandResult.fail('A mask requires --refs with the base image first.')
     }
-    const needsPreflight = requestedModel === 'auto' || requestedQuality === 'auto' || refPaths.length > 0
+    const needsPreflight =
+      requestedModel === 'auto' ||
+      requestedQuality === 'auto' ||
+      refPaths.length > 0 ||
+      ['drawing', 'mixed'].includes(requestedMethod)
+    const started = performance.now()
+    const timeout = AbortSignal.timeout(Math.ceil(budgetMinutes * 60_000))
+    const planningSignal = context.signal ? AbortSignal.any([context.signal, timeout]) : timeout
     const refImages: ImageReference[] = []
     const previews: Uint8Array[] = []
     if (refPaths.length) log('Preparing reference images…')
@@ -212,7 +252,7 @@ export default class AiImageTask extends Command {
     }
 
     if (needsPreflight) {
-      log('Checking image intent, model and quality with Astra (low reasoning effort)…')
+      log('Choosing how to create the image with Astra…')
     }
     let selection
     try {
@@ -222,10 +262,11 @@ export default class AiImageTask extends Command {
         refs: previews,
         model: imageModelName(requestedModel),
         quality: requestedQuality === 'auto' ? undefined : (requestedQuality as ImageQuality),
+        method: requestedMethod === 'auto' ? undefined : (requestedMethod as ImageMethod),
         size: args.size,
         background: args.background,
         count,
-        signal: context.signal,
+        signal: planningSignal,
       })
     } catch (err) {
       if (context.signal?.aborted) return CommandResult.error('Image creation cancelled.')
@@ -233,15 +274,27 @@ export default class AiImageTask extends Command {
       await logAIError({ source: 'ai:image', stage: 'preflight', message })
       return CommandResult.error(`Image selection failed: ${message}. Retry when the selection service is available.`)
     }
-    const { model, quality, reason: selectionReason } = selection
-    log(`Selected ${model}/${quality}: ${selectionReason}`)
+    const { model, quality, method, reason: selectionReason } = selection
+    if (method !== 'drawing' && args.size) {
+      const problem = validateSize(args.size)
+      if (problem) return CommandResult.fail(problem)
+    }
+    const production =
+      method === 'drawing'
+        ? 'SVG drawing with Astra'
+        : `${model}/${quality}${method === 'mixed' ? ' with precise SVG overlays' : ''}`
+    log(`Selected ${production}: ${selectionReason}`)
     let prepared: PreparedImageEdit
     try {
       const mask =
-        requestedMask === 'auto' || requestedMask === 'none'
+        requestedMask === undefined || requestedMask === 'auto' || requestedMask === 'none'
           ? requestedMask
           : new Uint8Array(await readFile(expandHome(requestedMask)))
-      if (['preserve_photo', 'preserve_image'].includes(selection.intent) && mask !== 'none') {
+      if (
+        ['preserve_photo', 'preserve_image'].includes(selection.intent) &&
+        mask !== 'none' &&
+        (mask || method !== 'image')
+      ) {
         log('Planning the replacement and identifying the areas to preserve…')
       }
       prepared = await prepareImageEdit({
@@ -250,9 +303,10 @@ export default class AiImageTask extends Command {
         refs: refImages,
         intent: selection.intent,
         complexity: selection.complexity,
+        method,
         size: args.size,
         mask,
-        signal: context.signal,
+        signal: planningSignal,
       })
     } catch (err) {
       if (context.signal?.aborted) return CommandResult.error('Image creation cancelled.')
@@ -263,29 +317,24 @@ export default class AiImageTask extends Command {
     const { size, preservation } = prepared
     if (preservation) log(preservation)
     log(
-      `Generating ${count} image${count > 1 ? 's' : ''} with ${model} (quality ${quality}${
-        size ? `, ${size}` : ''
-      }${refImages.length > 0 ? `, editing ${refImages.length} reference image${refImages.length > 1 ? 's' : ''}` : ''})${
-        ['high', 'xhigh', 'max'].includes(quality) ? ' — this can take a few minutes' : ''
-      }`,
+      `Creating ${count} image${count > 1 ? 's' : ''} with ${production}${size ? `, ${size}` : ''} — this can take a few minutes`,
     )
 
     let generated
-    const timeout = AbortSignal.timeout(GENERATION_TIMEOUT_MS)
     try {
-      const signal = context.signal ? AbortSignal.any([context.signal, timeout]) : timeout
-      signal.throwIfAborted()
-      generated = await renderImages({
-        model,
+      generated = await runImageWorkflow({
+        selection,
         prompt,
         brief: args.brief?.trim(),
         refs: refImages,
         count,
         size,
         edit: prepared.edit,
-        quality,
         background: args.background as ImageBackground | undefined,
-        signal,
+        maxAttempts: args.attempts,
+        budgetMs: budgetMinutes * 60_000 - (performance.now() - started),
+        focus: args.focus,
+        signal: context.signal,
         onProgress: log,
       })
     } catch (err) {
@@ -299,7 +348,7 @@ export default class AiImageTask extends Command {
       })
       return CommandResult.error(
         timedOut
-          ? `Image generation timed out after ${GENERATION_TIMEOUT_MS / 60_000} minutes — try a lower quality or fewer images.`
+          ? `Image creation timed out after ${budgetMinutes} minutes before a result was available.`
           : `Image generation failed: ${message}`,
       )
     }
@@ -316,6 +365,7 @@ export default class AiImageTask extends Command {
     const saved: string[] = []
     const evidence: string[] = []
     const reviews: ImageReviewSummary[] = []
+    const svgs: string[] = []
     let maskPath: string | undefined
     for (const image of generated) {
       let fileName = `${now.date}_image_${slug}.png`
@@ -332,19 +382,21 @@ export default class AiImageTask extends Command {
         reviews.push(image.review)
         log(`Review ${image.review.status === 'passed' ? 'passed' : 'needs attention'}: ${image.review.reason}`)
       }
-      if (prepared.edit) {
+      {
         try {
           const retained = await writeImageEvidence(filePath, image, prepared.edit, {
             prompt,
             brief: args.brief?.trim(),
-            model,
-            quality,
+            model: method === 'drawing' ? 'svg-astra' : model,
+            quality: method === 'drawing' ? 'vector' : quality,
             size,
+            method,
           })
           evidence.push(retained.directory)
           maskPath ??= retained.mask
+          if (retained.svg) svgs.push(retained.svg)
         } catch (err) {
-          log(`Image saved, but edit evidence could not be saved: ${(err as Error).message}`)
+          log(`Image saved, but evidence could not be saved: ${(err as Error).message}`)
         }
       }
     }
@@ -354,14 +406,19 @@ export default class AiImageTask extends Command {
     }
 
     const report = [
-      `Generated ${saved.length} image${saved.length === 1 ? '' : 's'} with ${model} (quality ${quality}${
-        size ? `, ${size}` : ''
-      }${refPaths.length > 0 ? `, from ${refPaths.length} reference image${refPaths.length === 1 ? '' : 's'}` : ''}).`,
+      `Created ${saved.length} image${saved.length === 1 ? '' : 's'} with ${production}${size ? `, ${size}` : ''}.`,
       `Selection: ${selectionReason}`,
       ...(preservation ? [`Preservation: ${preservation}`] : []),
       ...(maskPath ? [`Edit mask: ${maskPath}`] : []),
       ...reviews.map((review, i) => `Image ${i + 1} review (${review.status}): ${review.reason}`),
+      ...generated.map((image, i) =>
+        image.attempts.stopped === 'completed'
+          ? `Image ${i + 1}: full generated image returned directly.`
+          : `Image ${i + 1}: retained attempt ${image.attempts.selected} of ${image.attempts.used}; ${image.attempts.stopped.replaceAll('_', ' ')}${image.attempts.error ? ` — ${image.attempts.error}` : ''}.`,
+      ),
+      ...generated.flatMap((image) => (image.batchWarning ? [image.batchWarning] : [])),
       ...saved.map((filePath) => `- ${filePath}`),
+      ...svgs.map((filePath) => `Editable SVG: ${filePath}`),
     ].join('\n')
 
     let artifact: string | undefined
@@ -372,8 +429,8 @@ export default class AiImageTask extends Command {
           title,
           prompt,
           brief: args.brief?.trim(),
-          model,
-          quality,
+          model: method === 'drawing' ? 'svg-astra' : model,
+          quality: method === 'drawing' ? 'vector' : quality,
           selectionReason,
           size,
           preservation,
@@ -381,7 +438,7 @@ export default class AiImageTask extends Command {
           evidence,
           reviews: reviews.map((review) => `${review.status}: ${review.reason}`),
           refs: refPaths.map((refPath) => path.basename(refPath)),
-          files: saved,
+          files: [...saved, ...svgs],
           report,
         },
       )
@@ -396,14 +453,18 @@ export default class AiImageTask extends Command {
       report,
       images: saved,
       artifact,
-      model,
-      quality,
+      model: method === 'drawing' ? 'svg-astra' : model,
+      quality: method === 'drawing' ? undefined : quality,
+      method,
       selectionReason,
       size,
       preservation,
       mask: maskPath,
       evidence,
       reviews,
+      svgs,
+      attempts: generated.map((image) => image.attempts),
+      warning: generated.find((image) => image.batchWarning)?.batchWarning,
     })
   }
 }

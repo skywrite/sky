@@ -7,11 +7,27 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { parsePromptFile } from '#shared/prompts/parse.ts'
 import type { MaskedImageEdit } from './mask.ts'
 import { imageRegionSchema } from './maskPlan.ts'
+import { imageVisualFacts } from './visualFacts.ts'
 
 const PROMPT_FILE = new URL('../prompts/review.prompt.md', import.meta.url).pathname
 const REVIEW_TIMEOUT_MS = 120_000
 
 export const imageReviewSchema = z.object({
+  score: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe('Overall satisfaction of the original request, with missing required features weighted heavily.'),
+  comparison: z
+    .enum(['first', 'better', 'same', 'worse'])
+    .describe('Compare the final candidate with the previous best if supplied; otherwise first.'),
+  correction: z
+    .string()
+    .max(1600)
+    .describe(
+      'Concrete instructions to correct remaining defects on a fresh attempt using the original source. Empty when passed or no reliable correction is known.',
+    ),
   verdict: z.enum(['pass', 'revise_mask', 'needs_revision', 'uncertain']),
   reason: z.string().min(1).max(600),
   checks: z
@@ -36,9 +52,11 @@ export interface ImageReviewRequest {
   brief?: string
   edit: MaskedImageEdit
   generated: Uint8Array
+  rawArtwork?: Uint8Array
   composite: Uint8Array
   allowMaskRevision: boolean
   signal?: AbortSignal
+  previous?: { data: Uint8Array; assessment?: ImageEditAssessment }
 }
 
 /** Show the permitted footprint in cyan; alpha-only masks are otherwise hard to interpret visually. */
@@ -68,7 +86,14 @@ export async function reviewImageEdit(
   const timeout = AbortSignal.timeout(REVIEW_TIMEOUT_MS)
   const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout
   signal.throwIfAborted()
-  const inputs = [request.edit.canvas.data, request.generated, request.composite, await workingArea(request.edit)]
+  const inputs = [
+    request.edit.canvas.data,
+    request.generated,
+    request.composite,
+    await workingArea(request.edit),
+    ...(request.rawArtwork ? [request.rawArtwork] : []),
+    ...(request.previous ? [request.previous.data] : []),
+  ]
   const previews = await Promise.all(
     inputs.map((data) =>
       sharp(data)
@@ -79,6 +104,7 @@ export async function reviewImageEdit(
     ),
   )
   signal.throwIfAborted()
+  const finalImageFacts = await imageVisualFacts(request.composite)
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
   const { object } = await generateObject({
     ...(options.model ??
@@ -97,11 +123,19 @@ export async function reviewImageEdit(
               plan: request.edit.plan,
               description: request.edit.description,
               allowMaskRevision: request.allowMaskRevision,
+              finalImageFacts,
+              previousAssessment: request.previous?.assessment,
               imageOrder: [
                 'original',
-                'raw generation',
+                request.rawArtwork
+                  ? 'prepared artwork with drawing overlays before final preservation'
+                  : 'raw generation',
                 'final composite to review',
                 'original with permitted working area in cyan',
+                ...(request.rawArtwork
+                  ? ['actual raw artwork generation, before any compositing or vector overlays']
+                  : []),
+                ...(request.previous ? ['previous best composite'] : []),
               ],
             }),
           },

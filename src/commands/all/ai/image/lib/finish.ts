@@ -23,9 +23,12 @@ export async function finishImageEdit(
     prompt: string
     brief?: string
     generated: Uint8Array
+    /** Uncomposited raster before mixed artwork preservation and vector overlays. */
+    rawArtwork?: Uint8Array
     edit: MaskedImageEdit
     signal?: AbortSignal
     onProgress?: (message: string) => void
+    previous?: { data: Uint8Array; assessment?: ImageEditAssessment }
   },
   reviewer: typeof reviewImageEdit = reviewImageEdit,
 ): Promise<FinishedImageEdit> {

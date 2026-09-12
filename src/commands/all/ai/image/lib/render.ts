@@ -2,6 +2,7 @@ import OpenAI, { toFile } from 'openai'
 import sharp from 'sharp'
 import { finishImageEdit } from './finish.ts'
 import type { ImageReviewSummary } from './finish.ts'
+import { focusImageEdit } from './focus.ts'
 import { validateEditMask } from './mask.ts'
 import type { MaskedImageEdit } from './mask.ts'
 import { MAX_REF_IMAGES } from './options.ts'
@@ -9,7 +10,7 @@ import type { IMAGE_MODELS, ImageBackground, ImageModelName, ImageQuality } from
 import type { ImageReference } from './references.ts'
 import { reviewImageEdit } from './review.ts'
 
-interface ImageRenderRequest {
+export interface ImageRenderRequest {
   prompt: string
   brief?: string
   model: (typeof IMAGE_MODELS)[ImageModelName]
@@ -21,16 +22,28 @@ interface ImageRenderRequest {
   edit?: MaskedImageEdit
   signal?: AbortSignal
   onProgress?: (message: string) => void
+  finish?: boolean
+  focus?: boolean
+  feedback?: string
 }
 
 export interface RenderedImage {
   data: Uint8Array
-  /** Kept for comparing provider output with compositing; never presented as the final image. */
+  /** Provider output before optional compositing; also the final image for ordinary generation and edits. */
   generated: Uint8Array
   generationPrompt: string
   background?: ImageBackground
   mask?: ImageReference
   review?: ImageReviewSummary
+  providerGenerated?: Uint8Array
+  focus?: {
+    size: string
+    description: string
+    geometry: {
+      source: { left: number; top: number; width: number; height: number }
+      padding: { left: number; top: number; right: number; bottom: number }
+    }
+  }
 }
 
 /** Both endpoints return PNG bytes; reference uploads must carry a filename and MIME type. */
@@ -68,12 +81,24 @@ export async function renderImages(
       prompt += ` Image ${refs.length} is the full-resolution original for detail reference only; image 1 remains the editing canvas.`
     }
   }
+  const focused =
+    request.edit && request.focus && refs.length < MAX_REF_IMAGES
+      ? await focusImageEdit(request.edit, { signal: request.signal })
+      : undefined
+  if (focused && request.edit) {
+    refs[0] = focused.canvas
+    refs.push(request.edit.canvas)
+    prompt += `\nImage 1 is a focused editing crop. ${focused.description} Image ${refs.length} is the complete original canvas for context only. Any full-scene coordinates or dimensions in the request or brief refer to that context image. Return the crop at exactly ${focused.size}, with its position, framing and surrounding context unchanged.`
+    request.onProgress?.('Editing a focused area with the full image available for context…')
+  }
+  if (request.feedback)
+    prompt += `\nCorrections from the previous attempt (keep the original request and protected areas):\n${request.feedback}`
   request.signal?.throwIfAborted()
   const params = {
     model: request.model,
     prompt,
     n: request.count,
-    size: request.size ?? 'auto',
+    size: focused?.size ?? request.size ?? 'auto',
     quality: request.quality,
     background,
     output_format: 'png' as const,
@@ -88,9 +113,13 @@ export async function renderImages(
           image: await Promise.all(refs.map((ref) => toFile(ref.data, ref.name, { type: ref.mediaType }))),
           ...(request.edit
             ? {
-                mask: await toFile((request.edit.generationMask ?? request.edit.mask).data, 'generation-mask.png', {
-                  type: 'image/png',
-                }),
+                mask: await toFile(
+                  (focused?.mask ?? request.edit.generationMask ?? request.edit.mask).data,
+                  'generation-mask.png',
+                  {
+                    type: 'image/png',
+                  },
+                ),
               }
             : {}),
         },
@@ -101,21 +130,34 @@ export async function renderImages(
   for (const image of response.data ?? []) {
     request.signal?.throwIfAborted()
     if (!image.b64_json) throw new Error('OpenAI returned an image without PNG data.')
-    const bytes = new Uint8Array(Buffer.from(image.b64_json, 'base64'))
-    const finished = request.edit
-      ? await finishImageEdit(
-          {
-            prompt: request.prompt,
-            brief: request.brief,
-            generated: bytes,
-            edit: request.edit,
-            signal: request.signal,
-            onProgress: request.onProgress,
-          },
-          reviewer,
-        )
-      : { data: bytes }
-    images.push({ ...finished, generated: bytes, generationPrompt: prompt, background })
+    const providerGenerated = new Uint8Array(Buffer.from(image.b64_json, 'base64'))
+    const bytes = focused ? await focused.restore(providerGenerated, request.signal) : providerGenerated
+    const finished =
+      request.edit && request.finish !== false
+        ? await finishImageEdit(
+            {
+              prompt: request.prompt,
+              brief: request.brief,
+              generated: bytes,
+              edit: request.edit,
+              signal: request.signal,
+              onProgress: request.onProgress,
+            },
+            reviewer,
+          )
+        : { data: bytes }
+    images.push({
+      ...finished,
+      generated: bytes,
+      generationPrompt: prompt,
+      background,
+      ...(focused
+        ? {
+            providerGenerated,
+            focus: { size: focused.size, description: focused.description, geometry: focused.geometry },
+          }
+        : {}),
+    })
   }
   return images
 }
