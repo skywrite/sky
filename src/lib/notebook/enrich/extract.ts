@@ -128,7 +128,7 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
         people: clean(object.people),
         orgs: clean(object.orgs),
         projects: clean(object.projects),
-        places: groundedPlaces(object.places, req),
+        places: groundedPlaces(object.places, req, [...object.people, ...object.orgs, ...object.projects]),
       },
     }
   } catch (err) {
@@ -140,8 +140,14 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
 }
 
 /** A known country is not evidence of a mention: every name and context must occur in an actual quote. */
-export function groundedPlaces(places: ExtractedSubjects['places'], req: ExtractRequest): ExtractedSubjects['places'] {
+export function groundedPlaces(
+  places: ExtractedSubjects['places'],
+  req: ExtractRequest,
+  nonPlaceNames: string[] = [],
+): ExtractedSubjects['places'] {
   const source = `${req.summary ?? ''}\n${truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS)}`
+  const namedEntities = nonPlaceNames.map(normalizePlaceName).sort((a, b) => b.length - a.length)
+  const normalizedSource = ` ${normalizePlaceName(source)} `
   const seen = new Set<string>()
   return places
     .filter((place) => {
@@ -149,6 +155,15 @@ export function groundedPlaces(places: ExtractedSubjects['places'], req: Extract
       const quote = ` ${normalizePlaceName(place.quote)} `
       const names = [place.name, ...(place.context ?? [])].map(normalizePlaceName)
       if (names.some((name) => !name || !quote.includes(` ${name} `))) return false
+      // A country embedded in an extracted institution's name needs an
+      // independent geographic occurrence; regulatory context cannot supply it.
+      let independent = normalizedSource
+      for (const entity of namedEntities) {
+        if (entity === names[0] || !` ${entity} `.includes(` ${names[0]} `)) continue
+        const phrase = ` ${entity} `
+        while (independent.includes(phrase)) independent = independent.replaceAll(phrase, ' ')
+      }
+      if (!independent.includes(` ${names[0]} `)) return false
       const key = JSON.stringify([names, place.kind])
       if (seen.has(key)) return false
       seen.add(key)

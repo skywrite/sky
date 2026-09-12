@@ -13,6 +13,7 @@ import type { EntityIndex } from '#lib/notebook/enrich/resolve.ts'
 import { fetchEntityScores } from '#lib/notebook/enrich/scores.ts'
 import { rankCandidates, selectRel } from '#lib/notebook/enrich/select.ts'
 import type { Exemplar, RelCandidate } from '#lib/notebook/enrich/select.ts'
+import { matchPlace } from '#lib/places/catalog.ts'
 import type { Role } from '#shared/ai/models.ts'
 import { outputFile } from '#shared/fs/mod.ts'
 import { mulberry32, stratifiedSample } from '../tags/lib/sample.ts'
@@ -187,6 +188,12 @@ export default class SlackRelEvalTask extends Command {
       c.predictions['extract+prior'] = unionByNorm(resolved.refs, c.majority)
       openOnlyForfeits += countOpenOnlyForfeits(resolved.refs, c.record.rel, index)
       c.candidates = buildCandidates(resolved.refs, c.relHistory, scores)
+      for (const candidate of c.candidates) {
+        if (!candidate.ref.startsWith('places/')) continue
+        candidate.placeEvidence = outcome.subjects.places
+          .filter((mention) => matchPlace(mention, index.places?.choices ?? []).ref === candidate.ref)
+          .map(({ name, quote }) => ({ name, quote }))
+      }
       c.predictions.ranked = rankCandidates(c.candidates)
     }
 

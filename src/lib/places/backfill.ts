@@ -74,7 +74,16 @@ export function samplePlaceRecords(
   sample: 'recent' | 'spread',
 ): MessageRecord[] {
   if (!Number.isInteger(limit) || limit < 0) throw new Error('Provide a nonnegative integer --limit.')
-  const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date) || a.path.localeCompare(b.path))
+  const seen = new Set<string>()
+  // One file can belong to more than one domain collection. Deduplicate before
+  // assigning media quotas so duplicate rows cannot consume the sample budget.
+  const sorted = [...records]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.path.localeCompare(b.path) || a.medium.localeCompare(b.medium))
+    .filter((record) => {
+      if (seen.has(record.path)) return false
+      seen.add(record.path)
+      return true
+    })
   if (sample === 'recent') return sorted.reverse().slice(0, limit)
   const groups = new Map<string, MessageRecord[]>()
   for (const record of sorted) {

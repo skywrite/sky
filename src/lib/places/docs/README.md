@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # Places
@@ -72,6 +72,20 @@ every qualifier must agree. Commas inside venue names remain part of the name.
 Fuzzy similarity and interaction scores never choose a place.
 
 The existing selection pass decides which resolved subjects deserve `rel`.
+When a place name appears only inside an extracted person, organization or
+project name, it is discarded before selection. A separate occurrence in the
+visible source is required; regulatory context alone cannot supply one.
+Place-only requests keep competing people, organizations and projects visible
+until selection; only the returned additions are restricted to places, and
+other entities do not consume the place request's link budget. A place
+must receive a unique subject judgment with a reason, backed by its original
+grounded extraction quote. The selector reuses that evidence instead of
+transcribing it again. A meaningful place topic can be a short section of a
+longer entry; the entire entry need not be about that place. Incidental and non-geographic uses, missing or
+conflicting judgments, and evidence outside the selector's visible source are
+rejected. These judgments are internal model output, not YAML fields. Semantic
+classification still needs evaluation; a grounded quote alone is not proof
+that the place deserves a relationship.
 Only selected countries are materialized, before their references are
 returned to a writer. Countries in old relationship history alone are not
 evidence of a new discussion. A failed creation omits that link while the
@@ -88,8 +102,11 @@ preserving its prior links and adding only new place identities.
 medium range, then analyzes the newest twenty records for missing place
 relationships (`--limit`, `--since`, and `--medium` control the scope).
 `--sample spread` balances record types and spans each type's date range;
-the default `recent` sample stays newest-first. Only sampled document bodies
-are fetched. The preview strips YAML and HTML comments before extraction and
+the default `recent` sample stays newest-first. Both modes deduplicate file
+paths before assigning quotas or applying the limit, so a file indexed under
+multiple record types consumes one sample slot. Date, path and medium sorting
+make the representative stable when input order changes. Only sampled document
+bodies are fetched. The preview strips YAML and HTML comments before extraction and
 uses history from strictly earlier days. Relationships and summaries come
 from the fetched source, so stale index metadata cannot supply an already
 removed link or summary as evidence.

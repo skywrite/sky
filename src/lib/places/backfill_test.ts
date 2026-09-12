@@ -48,3 +48,42 @@ test('spread backfill covers dates and media even when messages dominate the cor
     expected: [sample.map((r) => r.path), ['2026-06-01', '2026-02-01']],
   })
 })
+
+test('backfill budgets count unique files before choosing dates and media', () => {
+  const shared = record('journal', '2026-01-04')
+  const rows = [
+    record('email', '2026-01-01'),
+    record('note', '2026-01-02'),
+    record('journal', '2026-01-03'),
+    shared,
+    { ...shared, medium: 'note' },
+    { ...shared },
+  ]
+  for (const mode of ['spread', 'recent'] as const) {
+    const sampled = samplePlaceRecords(rows, 3, mode)
+    const all = samplePlaceRecords(rows, 100, mode)
+    assert({
+      given: `duplicate rows within and across media in ${mode} mode`,
+      should: 'fill the requested budget with distinct files and return every file once for a larger budget',
+      actual: [
+        sampled.length,
+        new Set(sampled.map((r) => r.path)).size,
+        all.length,
+        new Set(all.map((r) => r.path)).size,
+      ],
+      expected: [3, 3, 4, 4],
+    })
+    assert({
+      given: `the same duplicate rows in reverse order in ${mode} mode`,
+      should: 'choose the same paths and representative media',
+      actual: samplePlaceRecords([...rows].reverse(), 3, mode),
+      expected: sampled,
+    })
+  }
+  assert({
+    given: 'the newest file duplicated across domains',
+    should: 'continue to the next distinct file in recent mode',
+    actual: samplePlaceRecords(rows, 2, 'recent').map((r) => r.date),
+    expected: ['2026-01-04', '2026-01-03'],
+  })
+})

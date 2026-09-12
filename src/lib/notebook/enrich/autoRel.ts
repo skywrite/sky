@@ -134,14 +134,18 @@ export async function proposeRel(
     const request = { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from }
     const { subjects, error } = await services.extract(request, 'fast')
     if (error) return { rel: [], unresolvedPlaces: [], error }
-    const places = groundedPlaces(subjects.places, request)
+    const places = groundedPlaces(subjects.places, request, [
+      ...subjects.people,
+      ...subjects.orgs,
+      ...subjects.projects,
+    ])
     const resolved = resolveSubjects({ ...subjects, places }, index, scores, {
       projectStatuses: ['open'],
     })
     const parties = partyExclusionSet([input.from, input.to], { index, scores })
-    const subjectRefs = excludeParties(resolved.refs, parties).filter(
-      (ref) => !opts.placesOnly || ref.startsWith('places/'),
-    )
+    // Keep competing subjects visible to the selector. Places-only limits what
+    // we write, not what the entry can actually be about.
+    const subjectRefs = excludeParties(resolved.refs, parties)
 
     const usesOf = new Map(relHistory.map((h) => [normalizeEntityName(h.tag), h.count]))
     const candidates: RelCandidate[] = subjectRefs.map((ref) => {
@@ -153,6 +157,13 @@ export async function proposeRel(
         inPrior: usesOf.has(norm),
         uses: usesOf.get(norm) ?? 0,
         ...(scores?.has(norm) ? { score: scores.get(norm) } : {}),
+        ...(ref.startsWith('places/')
+          ? {
+              placeEvidence: places
+                .filter((mention) => matchPlace(mention, index.places?.choices ?? []).ref === ref)
+                .map(({ name, quote }) => ({ name, quote })),
+            }
+          : {}),
       }
     })
     const inText = new Set(subjectRefs.map(normalizeEntityName))
@@ -176,7 +187,8 @@ export async function proposeRel(
       })
       added++
     }
-    if (candidates.length === 0) return { rel: [], unresolvedPlaces: resolved.unresolvedPlaces }
+    if (candidates.length === 0 || (opts.placesOnly && !candidates.some((c) => c.ref.startsWith('places/'))))
+      return { rel: [], unresolvedPlaces: resolved.unresolvedPlaces }
 
     const selection = await services.select(
       {
@@ -185,12 +197,15 @@ export async function proposeRel(
         kind: opts.kind,
         to: input.to,
         from: input.from,
+        placesOnly: opts.placesOnly,
         candidates,
         exemplars,
       },
       'balanced',
     )
-    const rel = validateSelection(selection.rel, candidates)
+    const rel = validateSelection(selection.rel, candidates).filter(
+      (ref) => !opts.placesOnly || ref.startsWith('places/'),
+    )
     return {
       rel,
       unresolvedPlaces: resolved.unresolvedPlaces,

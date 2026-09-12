@@ -176,6 +176,30 @@ test('place extraction requires quoted evidence for both the name and disambigua
   })
 })
 
+test('place names embedded in named entities require an independent occurrence', () => {
+  const quote = 'Acme Bank of France accepted the filing. Acme Bank of France set the deadline.'
+  const mention = { name: 'France', quote }
+  const entities = ['Acme Bank of France', 'Bank of France']
+  assert({
+    given: 'a country occurring only inside institution names, or also independently in the source',
+    should: 'reject the name component while preserving an independently mentioned country',
+    actual: [
+      groundedPlaces([mention], { body: quote }, entities),
+      groundedPlaces([mention], { body: quote.toUpperCase(), summary: quote }, entities),
+      groundedPlaces([mention], { body: `${quote} We plan to offer accounts in France.` }, entities),
+      groundedPlaces([mention], { body: quote, summary: 'Licensing plans in France' }, entities),
+    ],
+    expected: [[], [], [mention], [mention]],
+  })
+  const venue = { name: 'Cafe', kind: 'venue' as const, quote: 'Cafe has excellent service.' }
+  assert({
+    given: 'a venue also extracted as a business with the same full name',
+    should: 'leave its geographic relevance for the selector to assess',
+    actual: groundedPlaces([venue], { body: venue.quote }, ['Cafe']),
+    expected: [venue],
+  })
+})
+
 test('a qualified city subject reaches selection with its original quoted evidence', async () => {
   await notebook(async (dir, store, services) => {
     const ref = 'places/US/CA/Harbor-City'
@@ -205,6 +229,85 @@ test('a qualified city subject reaches selection with its original quoted eviden
       should: 'propose the existing city reference with source evidence and no unresolved duplicate',
       actual: [proposal.rel, proposal.placeEvidence, proposal.unresolvedPlaces],
       expected: [[ref], [{ ref, quote }], []],
+    })
+  })
+})
+
+test('places-only linking shows competing subjects to selection and filters only the written result', async () => {
+  await notebook(async (dir, _store, services) => {
+    const index = await services.buildIndex()
+    const company = { ref: 'Acme Corp', norm: normalizeEntityName('Acme Corp'), kind: 'org' as const }
+    const withCompany = {
+      ...services,
+      buildIndex: async () => ({
+        ...index,
+        candidates: [...index.candidates, company],
+        canResolve: (ref: string) => ref === company.ref || index.canResolve(ref),
+      }),
+      extract: async () => ({ subjects: { ...subjects, orgs: [company.ref] } }),
+    }
+    let candidates: Array<{ ref: string; quotes: string[] }> = []
+    const proposal = await proposeRel(
+      { body },
+      { mediums: ['note'], placesOnly: true },
+      {
+        ...withCompany,
+        select: async (req) => {
+          assert({
+            given: 'a places-only request with other subjects',
+            should: 'request only place additions while retaining the subject context',
+            actual: req.placesOnly,
+            expected: true,
+          })
+          candidates = req.candidates.map((c) => ({ ref: c.ref, quotes: c.placeEvidence?.map((e) => e.quote) ?? [] }))
+          return { rel: [company.ref] }
+        },
+      },
+    )
+    assert({
+      given: 'a places-only request whose selected main subject is a company',
+      should: 'show all subjects and grounded mentions without turning an incidental place into a link',
+      actual: [candidates, proposal.rel, await readdir(dir)],
+      expected: [
+        [
+          { ref: company.ref, quotes: [] },
+          { ref: 'places/FR', quotes: ['Compare France with Canada.'] },
+          { ref: 'places/CA', quotes: ['Compare France with Canada.'] },
+        ],
+        [],
+        [],
+      ],
+    })
+    const mixed = await proposeRel(
+      { body },
+      { mediums: ['note'], placesOnly: true },
+      {
+        ...withCompany,
+        select: async () => ({ rel: [company.ref, 'places/FR'] }),
+      },
+    )
+    assert({
+      given: 'a place selected alongside a company',
+      should: 'return only the requested place addition',
+      actual: mixed.rel,
+      expected: ['places/FR'],
+    })
+    const noPlaces = await proposeRel(
+      { body },
+      { mediums: ['note'], placesOnly: true },
+      {
+        ...withCompany,
+        extract: async () => ({ subjects: { people: [], orgs: [company.ref], projects: [], places: [] } }),
+        select: async () => {
+          throw new Error('Selection is unnecessary without a place candidate.')
+        },
+      },
+    )
+    assert({
+      given: 'a company subject with no place candidate',
+      should: 'skip selection without an error',
+      actual: [noPlaces.rel, noPlaces.error],
+      expected: [[], undefined],
     })
   })
 })
