@@ -1,10 +1,12 @@
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { captureMessageText } from './captureMessages.ts'
 import { SLACK_ENRICH } from './enrich.ts'
+import type { SlackCaptureFile } from './voiceFiles.ts'
 
 export { cleanSummary } from '#lib/notebook/enrich/summarize.ts'
 
-type MessageLike = { text: string; userName?: string; userId?: string }
+type MessageLike = { text: string; userName?: string; userId?: string; files?: SlackCaptureFile[] }
 
 const MAX_TRANSCRIPT_CHARS = 8000
 const MAX_SUMMARY_CHARS = 80
@@ -35,7 +37,7 @@ export async function summarizeSlackMessage(
 export function buildTranscript(message: MessageLike, replies: MessageLike[] = []): string {
   const lines: string[] = []
   for (const m of [message, ...replies]) {
-    const text = m.text?.trim()
+    const text = captureMessageText(m).trim()
     if (!text) continue
     lines.push(`${m.userName || m.userId || '-'}: ${text}`)
   }
@@ -45,7 +47,8 @@ export function buildTranscript(message: MessageLike, replies: MessageLike[] = [
 /** First line of the first non-empty message, truncated — used when the model reply is unusable. */
 export function fallbackSummary(message: MessageLike, replies: MessageLike[] = []): string | undefined {
   for (const m of [message, ...replies]) {
-    const text = m.text?.trim()
+    const text =
+      m.text?.trim() || m.files?.find((file) => file.voiceMemo && file.voiceTranscript)?.voiceTranscript?.trim()
     if (!text) continue
     return truncate(text.split('\n')[0].trim(), MAX_SUMMARY_CHARS)
   }

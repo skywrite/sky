@@ -50,9 +50,21 @@ export function attachmentDestination(relativePath: string, userDataDir: string)
  * Where a file named beside a document may be, in lookup order: the mirror of
  * the document's directory, then — for a day document — the day's attachments.
  */
-export function attachmentCandidates(fileRelativePath: string, userDataDir: string): string[] {
+export function attachmentCandidates(
+  fileRelativePath: string,
+  userDataDir: string,
+  documentRelativePath?: string,
+): string[] {
   const destination = attachmentDestination(fileRelativePath, userDataDir)
   const candidates = [path.join(userDataDir, fileRelativePath)]
+  if (destination.day && documentRelativePath) {
+    const document = attachmentDestination(documentRelativePath, userDataDir)
+    const relative = path.relative(path.dirname(documentRelativePath), fileRelativePath)
+    if (document.day === destination.day && relative && !relative.startsWith('../') && !path.isAbsolute(relative)) {
+      candidates.push(path.join(destination.dir, relative))
+      return candidates
+    }
+  }
   if (destination.day) candidates.push(path.join(destination.dir, path.basename(fileRelativePath)))
   return candidates
 }

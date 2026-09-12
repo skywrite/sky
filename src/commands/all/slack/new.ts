@@ -1,4 +1,3 @@
-import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
@@ -17,10 +16,14 @@ import dayFile from '#shared/nbfs/dayFile.ts'
 import { fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
-import { copySlackFilesToAttachments, type SlackFileRef } from './lib/copyToAttachments.ts'
+import { captureMessages, type SlackCaptureMessage } from './lib/captureMessages.ts'
+import type { SlackFileRef } from './lib/copyToAttachments.ts'
 import { SLACK_ENRICH } from './lib/enrich.ts'
 import resolveRecipient from './lib/resolveRecipient.ts'
+import { saveSlackCaptureUpdate } from './lib/saveCapture.ts'
 import { summarizeSlackMessage } from './lib/summarize.ts'
+import { clearSavedVoiceTranscripts, prepareSlackVoiceTranscripts } from './lib/transcribeVoiceMemo.ts'
+import { updateSlackCapture } from './lib/updateCapture.ts'
 
 const params = {
   to: ArgOrFlag.string('Channel or person', { short: 't' }),
@@ -38,6 +41,7 @@ const params = {
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-thread tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:message)', { hidden: true }),
+  slackMessages: Flag.string('Slack messages with source IDs and files as JSON', { hidden: true }),
   link: Flag.string('Slack permalink identifying the captured message', { hidden: true }),
 }
 
@@ -72,33 +76,25 @@ export default class SlackNewTask extends Command {
       ;(args as Record<string, unknown>).to = undefined
     }
 
-    // --from-link: fetch Slack message and derive from/to/summary/markdown/when
-    let resolvedFiles: SlackFileRef[] | undefined
+    // --from-link: fetch Slack message and derive from/to/markdown/when
+    let messages: SlackCaptureMessage[] = args.slackMessages ? JSON.parse(args.slackMessages) : []
     if (fromLink) {
       const resolved = await this.resolveFromLink(fromLink, args, rawArgs, tasks, output)
       if (!resolved.ok) return resolved.result!
-      ;({ from, to, summary, markdown, when } = resolved)
-      resolvedFiles = resolved.slackFiles
+      ;({ from, to, markdown, when } = resolved)
+      messages = resolved.messages
       resolvedLink = resolved.link ?? resolvedLink
     }
 
     // Collect slack files from either resolveFromLink or the slackFiles param
-    const filesToCopy: SlackFileRef[] = resolvedFiles ?? (slackFiles ? (JSON.parse(slackFiles) as SlackFileRef[]) : [])
+    const filesToCopy: SlackFileRef[] = slackFiles ? JSON.parse(slackFiles) : []
 
     const whenDate = when.plainDate
-
-    // Copy file attachments to notebook attachments directory
-    const attachments = filesToCopy.length > 0 ? await copySlackFilesToAttachments(filesToCopy, whenDate, output) : []
 
     let who = firstName(to || from || '')
     if (to && from) {
       who = `${firstName(from)} to ${firstName(to)}`
     }
-
-    const whoSlug = slugify(who, { preserveCase: true, suggestedLength: 40 })
-    const summarySlug = slugify(<string>summary, { preserveCase: true, suggestedLength: 30 })
-    const partialSlug = summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug
-    const fileName = messageFileName(when, 'slack', partialSlug)
 
     const ddfw = new DayDirFileWriter(whenDate)
 
@@ -130,54 +126,72 @@ export default class SlackNewTask extends Command {
       existing = dayDoc.getCompleteItem(key, category)
     }
 
-    // Preserve all user-curated YAML fields from existing file, then overwrite system-generated ones
-    let preservedYaml: Record<string, unknown> = {}
-    if (existing) {
-      preservedYaml = { ...existingDoc?.yaml }
-      try {
-        await unlink(path.join(ddfw.fullDir, existing.path))
-        output.log(`  Replacing existing Slack entry (deleted ${existing.path})`)
-      } catch {
-        // File may not exist, that's ok
-      }
+    const transcriptRuns = new Set<string>()
+    summary ??= existingDoc?.summary
+    if (fromLink && !summary) {
+      messages = await prepareSlackVoiceTranscripts(messages, { output, signal: context.signal, runs: transcriptRuns })
+      summary = (await summarizeSlackMessage(messages[0], messages.slice(1))) ?? 'Slack message'
     }
+    if (fromLink) output.log(`  Summary:   ${summary}`)
 
-    // Auto-enrich only fields with no value in play — caller-supplied values
-    // (follow inheritance, --tags/--rel) and preserved hand edits always win.
-    const enrichInput = { to: to ?? from, from, summary, body: markdown ?? '' }
+    const whoSlug = slugify(who, { preserveCase: true, suggestedLength: 40 })
+    const summarySlug = slugify(<string>summary, { preserveCase: true, suggestedLength: 30 })
+    const partialSlug = summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug
+    const fileName = messageFileName(when, 'slack', partialSlug)
+
+    // Preserve all user-curated YAML fields from existing file, then overwrite system-generated ones.
+    const preservedYaml: Record<string, unknown> = { ...existingDoc?.yaml }
+    let message = await updateSlackCapture({
+      doc: new MessageDocument(
+        {
+          ...preservedYaml,
+          from,
+          to,
+          when: when.toString(),
+          medium: 'Slack',
+          summary,
+          ...(tags ? { tags } : {}),
+          ...(rel ? { rel } : {}),
+          ...(follow ? { follow } : {}),
+          ...(previous ? { previous } : {}),
+          ...(resolvedLink ? { link: resolvedLink } : {}),
+        },
+        existingDoc?.markdown ?? markdown ?? '',
+      ),
+      messages,
+      day: whenDate,
+      files: filesToCopy,
+      captureSlug: path.basename(existing?.path ?? fileName, '.md'),
+      output,
+      signal: context.signal,
+      transcriptRuns,
+    })
+
+    // Classify the completed conversation, including inline speech. Explicit
+    // and preserved metadata still take precedence over automatic enrichment.
+    const enrichInput = { to: to ?? from, from, summary, body: message.markdown }
     const wantAutoTag = !tags && !preservedYaml['tags'] && !noAutoTag
     const wantAutoRel = !rel && !preservedYaml['rel'] && !noAutoRel
     const [autoTags, autoRel] = await Promise.all([
       wantAutoTag ? autoTagMessage(enrichInput, SLACK_ENRICH) : Promise.resolve(undefined),
       wantAutoRel ? autoRelMessage(enrichInput, SLACK_ENRICH) : Promise.resolve(undefined),
     ])
-    const resolvedTags = tags ?? autoTags
     if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
     if (autoRel) output.log(`  Auto-rel: ${autoRel.join('; ')}`)
-
-    const message = new MessageDocument({
-      ...preservedYaml,
-      from,
-      to,
-      when,
-      medium: 'Slack',
-      summary,
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(resolvedTags ? { tags: resolvedTags } : {}),
-      ...(rel ? { rel } : autoRel ? { rel: autoRel } : {}),
-      ...(follow ? { follow } : {}),
-      ...(previous ? { previous } : {}),
-      ...(resolvedLink ? { link: resolvedLink } : {}),
-    })
-    let data = message.toMarkdown()
-
-    if (markdown) {
-      data += markdown
-    }
+    message = new MessageDocument(
+      { ...message.yaml, ...(autoTags ? { tags: autoTags } : {}), ...(autoRel ? { rel: autoRel } : {}) },
+      message.markdown,
+    )
+    const data = message.toMarkdown()
 
     let filePath
     try {
-      filePath = await ddfw.write(fileName, data)
+      if (existing) {
+        filePath = existing.path
+        await saveSlackCaptureUpdate(path.join(ddfw.fullDir, filePath), existingDoc, message)
+      } else {
+        filePath = await ddfw.write(fileName, data)
+      }
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to write slack file')
     }
@@ -191,6 +205,7 @@ export default class SlackNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write day item')
     }
 
+    await clearSavedVoiceTranscripts(transcriptRuns, output)
     if (!noEditor) {
       openEditor([{ file: path.join(ddfw.fullDir, filePath), line: data.split('\n').length }])
       await delay(500)
@@ -225,46 +240,20 @@ export default class SlackNewTask extends Command {
         ? await convertToNotebookTimezone(data.message.timeLabel)
         : args.when
 
-    // Summarize the message (thread replies included — the root is often just a header)
-    const messageText = data.message.text.trim()
-    let summary = args.summary
-    if (!summary) summary = await summarizeSlackMessage(data.message, data.thread?.replies)
-    if (!summary) summary = 'Slack message'
-
     // Derive from/to
     const from = args.from || data.message.userName
     const to = args.to || resolveRecipient(data, from)
 
-    // Build markdown body
-    const bodyParts: string[] = [`# ${summary}`, '']
-    const msgWho = data.message.userName || '-'
-    const msgTime = data.message.timeLabel || ''
-    bodyParts.push(`## ${msgTime} - **${msgWho}**`, '')
-    bodyParts.push(messageText || '(empty)', '', '')
-    if (data.thread && data.thread.replies.length > 0) {
-      for (const reply of data.thread.replies) {
-        const who = reply.userName || reply.userId || '-'
-        bodyParts.push(`## ${reply.timeLabel || reply.ts} - **${who}**`, '')
-        bodyParts.push(reply.text || '(empty)', '', '')
-      }
-    }
-
-    const markdown = args.markdown ? args.markdown + '\n' + bodyParts.join('\n') : bodyParts.join('\n')
-
-    // Collect all file references from root + thread (copying happens in run())
-    const slackFiles: SlackFileRef[] = [
-      ...(data.message.files ?? []),
-      ...(data.thread?.replies.flatMap((r) => r.files ?? []) ?? []),
-    ]
+    const messages = captureMessages(data)
+    const markdown = args.markdown
 
     output.log(`  From link: ${from} → ${to}`)
-    output.log(`  Summary:   ${summary}`)
 
     // The resolved permalink is the message's canonical identity — the same
     // message re-captured from any link form (workspace vs enterprise domain,
     // constructed archives URL) resolves to one spelling, so the replacement
     // gate compares like with like.
-    return { ok: true as const, from, to, summary, markdown, when, slackFiles, link: data.message.permalink ?? link }
+    return { ok: true as const, from, to, markdown, when, messages, link: data.message.permalink ?? link }
   }
 }
 

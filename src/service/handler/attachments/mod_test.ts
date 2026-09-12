@@ -39,6 +39,17 @@ test({ name: 'attachments - any other document keeps its files in the mirror of 
   })
 })
 
+test('attachments - nested files resolve relative to their document in the day attachments', () => {
+  const doc = path.posix.join('time', dayDir(DAY), 'actions/messages/atlas.md')
+  const file = path.posix.join(path.posix.dirname(doc), 'atlas-follow/report.pdf')
+  assert({
+    given: 'a nested file link from a document below the day directory',
+    should: 'retain the follow folder and avoid returning a same-named file in the day root',
+    actual: attachmentCandidates(file, '/media', doc),
+    expected: [`/media/${file}`, '/media/attachments/2026/03/05/atlas-follow/report.pdf'],
+  })
+})
+
 test({ name: 'attachments - a file name is reduced to a safe last segment' }, () => {
   assert({
     given: 'names with directories, a hidden-file dot, control characters, or nothing at all',

@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
+import MessageDocument from '#shared/models/Message/document/mod.ts'
+import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
 import { assert, test } from '#test'
 import { consolidateFusedDocs } from './consolidateFusedDocs.ts'
 
@@ -168,4 +170,62 @@ test('consolidateFusedDocs() leaves single-doc days alone apart from identity', 
   })
 
   await rm(base, { recursive: true })
+})
+
+test('consolidateFusedDocs() preserves mixed-format attachments and notes through repeated saves', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'consolidate-formats-'))
+  const dayDir = path.join(base, 'time/2026/W07/02-15')
+  const askRel = 'actions/messages/07-10_slack_Jane-to-John_Widget-check-in-request.md'
+  const replyRel = 'actions/messages/07-19_slack_John-to-Jane_Widget-check-in-acceptance.md'
+  try {
+    await mkdir(path.join(dayDir, 'actions/messages'), { recursive: true })
+    await writeFile(path.join(dayDir, askRel), ASK_DOC + '\n## My notes\n\nKeep this annotation.\n')
+    const reply = MessageDocument.fromMarkdown(
+      REPLY_DOC.replace('## 2026-02-15', '## Conversation\n\n<a id="message-reply"></a>\n\n### 2026-02-15') +
+        '\n[drawing.pdf][drawing]\n\n## Attachments\n\n<a id="attachment-drawing"></a>\n\n### drawing.pdf\n\n[Original](drawing.pdf)\n\n[drawing]: #attachment-drawing\n',
+    )
+    await writeFile(path.join(dayDir, replyRel), reply.setAttachments([{ file: 'drawing.pdf' }]).toMarkdown())
+    await writeFile(path.join(dayDir, 'day.md'), DAY_MD)
+    const follow = Follow.create({
+      source: 'Slack',
+      ref: { channel: 'D0ATLAS001', link: 'https://atlas.slack.com/archives/D0ATLAS001/p1750000000000100' },
+      summary: 'Widget check-in request',
+      messages: [
+        { date: '2026-02-15', path: `2026-02-15/${askRel}` },
+        { date: '2026-02-15', path: `2026-02-15/${replyRel}` },
+      ],
+    })
+    const updated = await consolidateFusedDocs(follow, 'fused-follow', { output, baseDir: base })
+    const first = await readTextFile(path.join(dayDir, askRel))
+    const saved = MessageDocument.fromMarkdown(first)
+    const conversation = parseSlackConversation(saved.markdown)
+    await consolidateFusedDocs(updated, 'fused-follow', { output, baseDir: base })
+    assert({
+      given: 'old and new captures with a referenced PDF and a manual note',
+      should: 'save a complete conversation whose repeated consolidation changes nothing',
+      actual: [
+        updated.messages.length,
+        conversation.messages.map((m) => [m.author, m.attachmentIds]),
+        saved.attachments,
+        conversation.attachments.map((a) => a.name),
+        first.includes('Keep this annotation.'),
+        first === (await readTextFile(path.join(dayDir, askRel))),
+        await exists(path.join(dayDir, replyRel)),
+      ],
+      expected: [
+        1,
+        [
+          ['Jane Doe', []],
+          ['John Roe', ['attachment-drawing']],
+        ],
+        [{ file: 'drawing.pdf' }],
+        ['drawing.pdf'],
+        true,
+        true,
+        false,
+      ],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
 })

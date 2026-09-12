@@ -2,10 +2,15 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import ms from 'ms'
 import openEditor from 'open-editor'
+import { captureMessages, captureText, type SlackCaptureMessage } from '#commands/all/slack/lib/captureMessages.ts'
 import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
+import {
+  clearSavedVoiceTranscripts,
+  prepareSlackVoiceTranscripts,
+} from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
@@ -163,9 +168,14 @@ export default class SlackFollowMessageTask extends Command {
         ? await convertToNotebookTimezone(data.message.timeLabel)
         : args.when
 
-    // 2. Summarize in 5-7 words (thread replies included — the root is often just a header)
-    const messageText = data.message.text.trim()
-    const summary = (await summarizeSlackMessage(data.message, data.thread?.replies)) ?? 'Follow'
+    // Speech must inform the summary before it becomes the follow and attachment folder name.
+    const transcriptRuns = new Set<string>()
+    const messages = await prepareSlackVoiceTranscripts(captureMessages(data), {
+      output,
+      signal: context.signal,
+      runs: transcriptRuns,
+    })
+    const summary = (await summarizeSlackMessage(messages[0], messages.slice(1))) ?? 'Follow'
 
     // 3. Derive from/to/channel
     const from = data.message.userName
@@ -187,28 +197,12 @@ export default class SlackFollowMessageTask extends Command {
 
     let initialMessages: { date: string; path: string }[] = []
 
-    // Collect all file references from the export result
-    type FileRef = { mimetype?: string; mode?: string; path: string }
-    const rootFiles: FileRef[] = data.message.files ?? []
-    const replyFiles: FileRef[][] = data.thread?.replies.map((r) => r.files ?? []) ?? []
-
     // lastActivity is the thread's real last message time, not now — a follow
     // created on a quiet thread must not look freshly active, or backoff and
     // expiry anchor on a fiction.
-    const lastReplyLabel = data.thread?.replies.at(-1)?.timeLabel
+    const lastReplyLabel = messages.at(-1)?.timeLabel
     const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
     const now = fetchNowSync().plainDateTime
-
-    const wholeThreadBody = (): string => {
-      const bodyParts: string[] = [`# ${summary}`, '']
-      bodyParts.push(`## ${data.message.timeLabel || ''} - **${data.message.userName || '-'}**`, '')
-      bodyParts.push(messageText || '(empty)', '', '')
-      for (const reply of data.thread?.replies ?? []) {
-        bodyParts.push(`## ${reply.timeLabel || reply.ts} - **${reply.userName || reply.userId || '-'}**`, '')
-        bodyParts.push(reply.text || '(empty)', '', '')
-      }
-      return bodyParts.join('\n')
-    }
 
     // A follow that would be born expired is declined: a thread already quiet
     // past the inactivity window is an archive, not something to watch.
@@ -232,15 +226,14 @@ export default class SlackFollowMessageTask extends Command {
       output.log(
         `  Thread inactive since ${lastActivity.date} (over ${Follow.DEFAULT_MAX_INACTIVE}) — archiving without a follow (--force to follow anyway).`,
       )
-      const allFiles = [...rootFiles, ...replyFiles.flat()]
       const slackResult = await tasks.run('slack:new', {
         from,
         to,
         summary,
         when,
-        markdown: wholeThreadBody(),
+        slackMessages: JSON.stringify(messages),
+        follow: fileNameNoExt,
         link: data.message.permalink ?? link,
-        ...(allFiles.length > 0 ? { slackFiles: JSON.stringify(allFiles) } : {}),
         ...(args.noEditor ? { noEditor: true } : {}),
       })
       const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
@@ -254,32 +247,16 @@ export default class SlackFollowMessageTask extends Command {
       const archived = candidate.addMessage(when.plainDate.toString(), toTimeRef(timePath)).updateStatus('closed')
       const archivedPath = path.join(DIR_STATE_FOLLOW_SLACK_ARCHIVE, fileName)
       await outputFile(archivedPath, archived.toYaml())
+      await clearSavedVoiceTranscripts(transcriptRuns, output)
       return CommandResult.success({ file: archivedPath, followed: false, slackFiles: [timePath] })
     }
 
     if (shouldSmartSplit) {
       // Collect all messages (root + replies) with their notebook-timezone times
-      type DayMsg = { timeLabel: string; userName: string; text: string; when: PlainDateTime; files: FileRef[] }
-
-      const rootMsg: DayMsg = {
-        timeLabel: data.message.timeLabel || '',
-        userName: data.message.userName || '-',
-        text: messageText || '(empty)',
-        when,
-        files: rootFiles,
-      }
-
-      const allMessages: DayMsg[] = [rootMsg]
-      for (let ri = 0; ri < data.thread!.replies.length; ri++) {
-        const reply = data.thread!.replies[ri]
-        const replyWhen = reply.timeLabel ? await convertToNotebookTimezone(reply.timeLabel) : when
-        allMessages.push({
-          timeLabel: reply.timeLabel || reply.ts || '',
-          userName: reply.userName || reply.userId || '-',
-          text: reply.text || '(empty)',
-          when: replyWhen,
-          files: replyFiles[ri] ?? [],
-        })
+      type DayMsg = SlackCaptureMessage & { when: PlainDateTime }
+      const allMessages: DayMsg[] = []
+      for (const message of messages) {
+        allMessages.push({ ...message, when: await convertToNotebookTimezone(message.timeLabel) })
       }
 
       // Group by notebook date
@@ -297,12 +274,7 @@ export default class SlackFollowMessageTask extends Command {
       // day gets the same tags. Per-day auto-tag stays off either way — day
       // bodies are fragments (day 1 is often just the root header) and would
       // classify inconsistently.
-      const fullBodyParts: string[] = [`# ${summary}`, '']
-      for (const msg of allMessages) {
-        fullBodyParts.push(`## ${msg.timeLabel} - **${msg.userName}**`, '')
-        fullBodyParts.push(msg.text, '', '')
-      }
-      const enrichInput = { to, from, summary, body: fullBodyParts.join('\n') }
+      const enrichInput = { to, from, summary, body: captureText(messages) }
       const [threadTags, threadRel] = await Promise.all([
         autoTagMessage(enrichInput, SLACK_ENRICH),
         autoRelMessage(enrichInput, SLACK_ENRICH),
@@ -315,13 +287,6 @@ export default class SlackFollowMessageTask extends Command {
         const dayMessages = byDay.get(dayStr)!
         const dayWhen = dayMessages[0].when
 
-        // Build markdown body for this day's messages
-        const bodyParts: string[] = [`# ${summary}`, '']
-        for (const msg of dayMessages) {
-          bodyParts.push(`## ${msg.timeLabel} - **${msg.userName}**`, '')
-          bodyParts.push(msg.text, '', '')
-        }
-
         // Compute previous ref from prior day's entry
         let previous: string | undefined
         if (i > 0 && initialMessages.length > 0) {
@@ -329,23 +294,22 @@ export default class SlackFollowMessageTask extends Command {
           previous = computePreviousRef(lastEntry.path, dayWhen.plainDate)
         }
 
-        const dayFiles = dayMessages.flatMap((m) => m.files)
         const slackResult = await tasks.run('slack:new', {
           from,
           to,
           summary,
           when: dayWhen,
-          markdown: bodyParts.join('\n'),
+          slackMessages: JSON.stringify(dayMessages),
           follow: fileNameNoExt,
           link: data.message.permalink ?? link,
           ...(threadTags ? { tags: threadTags } : { noAutoTag: true }),
           noAutoRel: true,
           ...(previous ? { previous } : {}),
-          ...(dayFiles.length > 0 ? { slackFiles: JSON.stringify(dayFiles) } : {}),
           noEditor: true,
         })
 
         const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
+        if (!relPath) return CommandResult.fail(`Failed to capture ${dayStr}: ${slackResult.message ?? 'no file path'}`)
         if (relPath) {
           const ddfw = new DayDirFileWriter(dayWhen.plainDate)
           const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
@@ -376,20 +340,20 @@ export default class SlackFollowMessageTask extends Command {
       }
     } else {
       // Standard path: single file with all messages on one day
-      const allFiles = [...rootFiles, ...replyFiles.flat()]
       const slackResult = await tasks.run('slack:new', {
         from,
         to,
         summary,
         when,
-        markdown: wholeThreadBody(),
+        slackMessages: JSON.stringify(messages),
         follow: fileNameNoExt,
         link: data.message.permalink ?? link,
-        ...(allFiles.length > 0 ? { slackFiles: JSON.stringify(allFiles) } : {}),
         ...(args.noEditor ? { noEditor: true } : {}),
       })
 
       const slackFilePath = slackResult.ok ? slackResult.data?.filePath : undefined
+      if (!slackFilePath)
+        return CommandResult.fail(`Failed to capture thread: ${slackResult.message ?? 'no file path'}`)
       if (slackFilePath) {
         const ddfw = new DayDirFileWriter(when.plainDate)
         initialMessages = [{ date: when.plainDate.toString(), path: `time/${ddfw.dayDir}/${slackFilePath}` }]
@@ -419,6 +383,7 @@ export default class SlackFollowMessageTask extends Command {
     const filePath = path.join(DIR_STATE_FOLLOW_SLACK_ACTIVE, fileName)
 
     await outputFile(filePath, follow.toYaml())
+    await clearSavedVoiceTranscripts(transcriptRuns, output)
 
     // 6. Log success
     output.log('')

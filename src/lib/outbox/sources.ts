@@ -6,6 +6,7 @@ import type * as Config from '#config'
 import { threadIdFromDecimal } from '#lib/google/gmail.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
+import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
 import { resolveTimeRef, toTimeRef } from '#shared/nbfs/timeRef.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hash, missing, notebookFile, readOptional } from './files.ts'
@@ -36,6 +37,7 @@ const IndexedSource = z.object({
   identities: z.array(z.string()),
   medium: z.string(),
   error: z.boolean().optional(),
+  parserVersion: z.number().optional(),
 })
 
 export const InventorySchema = z.object({
@@ -53,11 +55,15 @@ export type Inventory = z.infer<typeof InventorySchema>
 const MAX_MESSAGE_BYTES = 160_000
 const MAX_CONTEXT_CHARS = 100_000
 const MAX_CONTEXT_FILES = 30
+const MESSAGE_PARSER_VERSION = 1
 
 function messageTimes(doc: MessageDocument): string[] {
-  const headings = [...doc.markdown.matchAll(/^## (\d{4}-\d{2}-\d{2} \d{1,2}:\d{2})[^\n]*\*\*/gm)]
-  if (headings.length)
-    return [...new Set(headings.map((match) => PlainDateTime.fromString(match[1]).normalize().toString()))]
+  const timestamps =
+    doc.medium === 'Slack'
+      ? parseSlackConversation(doc.markdown).messages.map((message) => message.timestamp)
+      : [...doc.markdown.matchAll(/^## (\d{4}-\d{2}-\d{2} \d{1,2}:\d{2})[^\n]*\*\*/gm)].map((match) => match[1])
+  if (timestamps.length)
+    return [...new Set(timestamps.map((timestamp) => PlainDateTime.fromString(timestamp).normalize().toString()))]
   if (doc.yaml.when) return [doc.when.datetime.normalize().toString()]
   return []
 }
@@ -113,10 +119,16 @@ export class SavedMessages {
         const stamp = `${info.size}:${info.mtimeMs}:${info.ctimeMs}`
         files[ref] = stamp
         let indexed = previous?.policy === SCAN_POLICY ? previous.entries?.[ref] : undefined
-        if (!indexed || indexed.stamp !== stamp || indexed.error) {
+        if (!indexed || indexed.stamp !== stamp || indexed.error || indexed.parserVersion !== MESSAGE_PARSER_VERSION) {
           try {
             const doc = await this.read(ref)
-            indexed = { stamp, times: messageTimes(doc), identities: identities(doc), medium: doc.medium }
+            indexed = {
+              stamp,
+              times: messageTimes(doc),
+              identities: identities(doc),
+              medium: doc.medium,
+              parserVersion: MESSAGE_PARSER_VERSION,
+            }
           } catch {
             indexed = { stamp, times: [], identities: [], medium: '', error: true }
           }

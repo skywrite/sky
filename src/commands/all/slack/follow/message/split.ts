@@ -1,6 +1,8 @@
 import * as path from 'node:path'
+import { captureMessages } from '#commands/all/slack/lib/captureMessages.ts'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
+import { prepareSlackVoiceTranscripts } from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
 import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
@@ -103,7 +105,9 @@ export default class SlackFollowMessageSplitTask extends Command {
       return CommandResult.fail(`Split recorded, but exporting the extracted thread failed: ${exportResult.message}`)
     }
     const data = exportResult.data
-    const summary = (await summarizeSlackMessage(data.message, data.thread?.replies)) ?? 'Split conversation'
+    // No conversation is saved here; retain recognition checkpoints for a later capture.
+    const messages = await prepareSlackVoiceTranscripts(captureMessages(data), { output, signal: context.signal })
+    const summary = (await summarizeSlackMessage(messages[0], messages.slice(1))) ?? 'Split conversation'
     const when = data.message.timeLabel
       ? await convertToNotebookTimezone(data.message.timeLabel)
       : fetchNowSync().plainDateTime

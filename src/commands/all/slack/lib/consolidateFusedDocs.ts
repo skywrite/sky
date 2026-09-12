@@ -5,13 +5,15 @@ import { DIR_BASE } from '#config'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type Follow from '#shared/models/Follow/mod.ts'
 import type { FollowMessage } from '#shared/models/Follow/mod.ts'
+import { mergeAttachments } from '#shared/models/Markdown/Document/attachment.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
+import { mergeSlackConversations } from '#shared/models/Message/slack/merge.ts'
+import { parseSlackConversation, type SlackConversation } from '#shared/models/Message/slack/parse.ts'
 import { resolveTimeRef, toTimeRef } from '#shared/nbfs/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { updateSlackCapture } from './updateCapture.ts'
 
-const HEADER_RX = /^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2})[^*\n]*\*\*(.*?)\*\*/m
-
-type Block = { ts: string; author: string; text: string }
-type ParsedDoc = { rel: string; abs: string; doc: MessageDocument; blocks: Block[]; preamble: string }
+type ParsedDoc = { rel: string; abs: string; doc: MessageDocument; conversation: SlackConversation }
 
 /**
  * Make a fused follow's docs read as ONE conversation. Docs sharing a day are
@@ -33,20 +35,7 @@ export async function consolidateFusedDocs(
     const abs = path.join(base, rel)
     if (!(await exists(abs))) return undefined
     const doc = MessageDocument.fromMarkdown(await readTextFile(abs))
-    const blocks: Block[] = []
-    let preamble = ''
-    const parts = doc.markdown.split(/^(?=## )/m)
-    for (const part of parts) {
-      const m = part.match(HEADER_RX)
-      if (m) {
-        blocks.push({ ts: m[1], author: m[2], text: part.replace(/\n+$/, '') })
-      } else if (!part.startsWith('## ')) {
-        // Anything before the first message except the title line — hand
-        // notes live here and must survive the rebuild
-        preamble = part.replace(/^# .*\n?/, '').trim()
-      }
-    }
-    return { rel, abs, doc, blocks, preamble }
+    return { rel, abs, doc, conversation: parseSlackConversation(doc.markdown) }
   }
 
   // Group the record's docs by date, oldest first within a date
@@ -71,22 +60,12 @@ export async function consolidateFusedDocs(
     }
 
     // Earliest doc on the day (by its first message) is the survivor
-    parsed.sort((a, b) => ((a.blocks[0]?.ts ?? '') < (b.blocks[0]?.ts ?? '') ? -1 : 1))
-    const [target, ...absorbed] = parsed
-
-    // Interleave every block chronologically, deduped by (ts, author)
-    const seen = new Set<string>()
-    const blocks: Block[] = []
-    for (const p of parsed) {
-      for (const b of p.blocks) {
-        const key = `${b.ts}|${b.author}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          blocks.push(b)
-        }
-      }
+    const firstTime = (entry: ParsedDoc): string => {
+      const message = entry.conversation.messages[0]
+      return message ? PlainDateTime.fromString(message.timestamp).normalize().toString() : ''
     }
-    blocks.sort((a, b) => (a.ts < b.ts ? -1 : 1))
+    parsed.sort((a, b) => firstTime(a).localeCompare(firstTime(b)))
+    const [target, ...absorbed] = parsed
 
     // Union the enrichment the fragments carried
     const tags = uniq(
@@ -98,15 +77,14 @@ export async function consolidateFusedDocs(
       ),
     )
     const rel = uniq(parsed.flatMap((p) => relList(p.doc.yaml['rel'])))
-    const attachments = uniq(parsed.flatMap((p) => p.doc.attachments))
-
-    const preambles = uniq(parsed.map((p) => p.preamble).filter(Boolean))
-    const body = [
-      `# ${summary}`,
-      '',
-      ...preambles.flatMap((p) => [p, '']),
-      ...blocks.flatMap((b) => [b.text, '']),
-    ].join('\n')
+    const attachments = mergeAttachments(
+      [],
+      parsed.flatMap((p) => p.doc.attachments),
+    )
+    const body = mergeSlackConversations(
+      parsed.map((p) => p.conversation),
+      summary,
+    )
     const updated = new MessageDocument(
       {
         ...target.doc.yaml,
@@ -118,7 +96,8 @@ export async function consolidateFusedDocs(
       },
       body,
     )
-    await writeTextFile(target.abs, updated.toMarkdown())
+    const sectioned = await updateSlackCapture({ doc: updated, messages: [], day: new PlainDate(date), output })
+    await writeTextFile(target.abs, sectioned.toMarkdown())
 
     // Absorbed fragments: day.md line out, file gone
     for (const p of absorbed) {

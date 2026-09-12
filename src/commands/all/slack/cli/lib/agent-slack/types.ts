@@ -7,10 +7,12 @@
  */
 
 export type AgentSlackFile = {
+  id?: string
   name?: string
   mimetype?: string
   mode?: string
-  path: string
+  path?: string
+  error?: string
 }
 
 export type AgentSlackMessage = {

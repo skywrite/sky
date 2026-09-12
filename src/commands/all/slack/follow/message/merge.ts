@@ -2,11 +2,16 @@ import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
+import { captureMessages, captureText, type SlackCaptureMessage } from '#commands/all/slack/lib/captureMessages.ts'
 import { consolidateFusedDocs } from '#commands/all/slack/lib/consolidateFusedDocs.ts'
 import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
+import {
+  clearSavedVoiceTranscripts,
+  prepareSlackVoiceTranscripts,
+} from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
 import type { CommandTypesRegistry } from '#commands/lib/core/CommandTypesRegistry.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -136,7 +141,7 @@ export default class SlackFollowMessageMergeTask extends Command {
     const slackFiles: string[] = []
     const follows: { follow: Follow; path: string }[] = []
     if (fresh.size > 0) {
-      const captured = await captureTogether([...fresh.values()], args.noEditor ?? false, tasks, output)
+      const captured = await captureTogether([...fresh.values()], args.noEditor ?? false, tasks, output, context.signal)
       if (!captured.ok) return CommandResult.fail(captured.error)
       follows.push({ follow: captured.follow, path: captured.path })
       slackFiles.push(...captured.slackFiles)
@@ -208,41 +213,24 @@ export default class SlackFollowMessageMergeTask extends Command {
   }
 }
 
-type FileRef = { mimetype?: string; mode?: string; path: string }
-type Msg = { timeLabel: string; userName: string; text: string; files: FileRef[] }
-
 /** Capture N uncaptured threads as a single conversation: one summary, one doc chain, one follow. */
 async function captureTogether(
   fresh: { anchor: Record<string, string>; data: ExportData }[],
   noEditor: boolean,
   tasks: CommandService,
   output: OutputHandler,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; follow: Follow; path: string; slackFiles: string[] } | { ok: false; error: string }> {
-  const collect = (data: ExportData): Msg[] => [
-    {
-      timeLabel: data.message.timeLabel || '',
-      userName: data.message.userName || '-',
-      text: data.message.text?.trim() || '(empty)',
-      files: data.message.files ?? [],
-    },
-    ...(data.thread?.replies ?? []).map((r) => ({
-      timeLabel: r.timeLabel || r.ts || '',
-      userName: r.userName || r.userId || '-',
-      text: r.text || '(empty)',
-      files: r.files ?? [],
-    })),
-  ]
-
   fresh.sort((a, b) => (anchorTs(a.anchor) < anchorTs(b.anchor) ? -1 : 1))
   const earliest = fresh[0].data
-  const messages = fresh.flatMap((f) => collect(f.data)).sort((a, b) => (a.timeLabel < b.timeLabel ? -1 : 1))
+  const transcriptRuns = new Set<string>()
+  const messages = await prepareSlackVoiceTranscripts(
+    fresh.flatMap((f) => captureMessages(f.data)).sort((a, b) => a.ts.localeCompare(b.ts)),
+    { output, signal, runs: transcriptRuns },
+  )
 
   // Summarize over the whole merged conversation, not just the first thread
-  const summary =
-    (await summarizeSlackMessage(
-      { text: messages[0].text, userName: messages[0].userName },
-      messages.slice(1).map((m) => ({ text: m.text, userName: m.userName })),
-    )) ?? 'Merged conversation'
+  const summary = (await summarizeSlackMessage(messages[0], messages.slice(1))) ?? 'Merged conversation'
   const from = earliest.message.userName
   const channel = earliest.channelName || earliest.channelId
   const to = resolveRecipient(earliest, from)
@@ -255,13 +243,8 @@ async function captureTogether(
   const fileName = `${when.plainDate.toString()}_slack_${channelSlug}_${summarySlug}.yaml`
   const fileNameNoExt = fileName.replace(/\.yaml$/, '')
 
-  const renderBody = (msgs: Msg[]): string =>
-    [`# ${summary}`, '', ...msgs.flatMap((m) => [`## ${m.timeLabel} - **${m.userName}**`, '', m.text, '', ''])].join(
-      '\n',
-    )
-
   // One classification over the whole conversation; every day doc gets it
-  const enrichInput = { to, from, summary, body: renderBody(messages) }
+  const enrichInput = { to, from, summary, body: captureText(messages) }
   const [tags, rel] = await Promise.all([
     autoTagMessage(enrichInput, SLACK_ENRICH),
     autoRelMessage(enrichInput, SLACK_ENRICH),
@@ -270,7 +253,7 @@ async function captureTogether(
   if (rel) output.log(`  Auto-rel: ${rel.join('; ')}`)
 
   // Group by notebook day; one doc per day, chained like a smart split
-  const byDay = new Map<string, { msgs: Msg[]; when: PlainDateTime }>()
+  const byDay = new Map<string, { msgs: SlackCaptureMessage[]; when: PlainDateTime }>()
   for (const msg of messages) {
     const msgWhen = msg.timeLabel ? await convertToNotebookTimezone(msg.timeLabel) : when
     const day = msgWhen.plainDate.toString()
@@ -283,19 +266,17 @@ async function captureTogether(
   for (const [day, dayGroup] of [...byDay.entries()].sort()) {
     const previous =
       realPaths.length > 0 ? computePreviousRef(realPaths[realPaths.length - 1], dayGroup.when.plainDate) : undefined
-    const dayFiles = dayGroup.msgs.flatMap((m) => m.files)
     const slackResult = await tasks.run('slack:new', {
       from,
       to,
       summary,
       when: dayGroup.when,
-      markdown: renderBody(dayGroup.msgs),
+      slackMessages: JSON.stringify(dayGroup.msgs),
       follow: fileNameNoExt,
       link: earliest.message.permalink ?? fresh[0].anchor.link,
       ...(tags ? { tags } : { noAutoTag: true }),
       noAutoRel: true,
       ...(previous ? { previous } : {}),
-      ...(dayFiles.length > 0 ? { slackFiles: JSON.stringify(dayFiles) } : {}),
       noEditor: true,
     })
     const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
@@ -336,6 +317,7 @@ async function captureTogether(
   })
   const followPath = path.join(DIR_STATE_FOLLOW_SLACK_ACTIVE, fileName)
   await outputFile(followPath, follow.toYaml())
+  await clearSavedVoiceTranscripts(transcriptRuns, output)
 
   if (realPaths.length > 0 && !noEditor) {
     openEditor(realPaths.map((p) => ({ file: path.join(DIR_BASE, p) })))

@@ -169,3 +169,30 @@ Assignment table pasted from the doc.
 `)
   assert({ given, should, actual: isParticipant(d, OWNER), expected: false })
 })
+
+test('isParticipant() recognizes new Slack messages only within Conversation', () => {
+  const make = (section: string, medium = 'Slack') =>
+    doc(
+      `---\nfrom: John Smith\nmedium: ${medium}\n---\n\n# Topic\n\n## ${section}\n\n### 2025-03-15 09:00 - **Jane Doe**\n\nHello.\n`,
+    )
+  assert({
+    given: 'the owner in a Slack H3 message, an attachment heading, or an email H3',
+    should: 'use the new conversation structure only for Slack messages',
+    actual: [make('Conversation'), make('Attachments'), make('Conversation', 'Email')].map((d) =>
+      isParticipant(d, OWNER),
+    ),
+    expected: [true, false, false],
+  })
+})
+
+test('isParticipant() ignores Slack author headings inside quoted and fenced examples', () => {
+  const d = doc(
+    '---\nfrom: John Smith\nmedium: Slack\n---\n\n## 2025-03-15 09:00 - **John Smith**\n\n> ## 2025-03-15 09:01 - **Jane Doe**\n\n```markdown\n## 2025-03-15 09:02 - **Jane Doe**\n```\n',
+  )
+  assert({
+    given: 'an owner mentioned only in Markdown examples',
+    should: 'keep the capture classified as archival',
+    actual: isParticipant(d, OWNER),
+    expected: false,
+  })
+})

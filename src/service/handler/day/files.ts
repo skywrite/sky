@@ -209,7 +209,7 @@ export function createDayFilesRoutes(options: DayFilesOptions): Hono {
     const day = new PlainDate(ymd)
     const [listing, marks] = await Promise.all([listFolder(dir), listedByName(options, day)])
     const files: DayFile[] = listing.files.map((file) => {
-      const listedBy = marks.get(file.name)
+      const listedBy = marks.get(path.posix.join(folder, file.name))
       return listedBy ? { ...file, listedBy } : file
     })
     const answer: DayListing = { path: folder, label: formatDateLabel(day), folders: listing.folders, files }

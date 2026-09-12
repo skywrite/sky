@@ -1,7 +1,7 @@
 import type Document from '#shared/models/Markdown/Document/mod.ts'
+import { parseSlackConversation } from './slack/parse.ts'
 
-// Dialogue headers as written by message captures: `## 2026-08-08 12:21 - **Jane Doe**`.
-// Exactly h2 — quoted/nested h3+ lines are content, not senders.
+// Other message media retain their existing H2 dialogue convention.
 const AUTHOR_HEADER = /^##(?!#).*?-\s*\*\*(.+?)\*\*\s*$/gm
 
 // A `DM with <name>` from/to entry is the owner's own DM thread, labeled from
@@ -28,8 +28,12 @@ export default function isParticipant(doc: Document, names: string[]): boolean {
     }
   }
 
-  for (const match of doc.markdown.matchAll(AUTHOR_HEADER)) {
-    if (targets.has(normalize(match[1]))) return true
+  const authors =
+    doc.yaml.medium === 'Slack'
+      ? parseSlackConversation(doc.markdown).messages.map((message) => message.author)
+      : [...doc.markdown.matchAll(AUTHOR_HEADER)].map((match) => match[1])
+  for (const author of authors) {
+    if (targets.has(normalize(author))) return true
   }
 
   return false

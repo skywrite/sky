@@ -385,7 +385,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     const media = path.resolve(userDataDir)
     const candidates = [
       filePath,
-      ...attachmentCandidates(relativePath, media).filter((candidate) => isPathWithinRoot(candidate, media)),
+      ...attachmentCandidates(relativePath, media, c.req.query('document')).filter((candidate) =>
+        isPathWithinRoot(candidate, media),
+      ),
     ]
     for (const candidate of candidates) {
       try {

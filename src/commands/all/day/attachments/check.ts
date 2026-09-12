@@ -3,7 +3,7 @@ import colors from 'picocolors'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_ATTACHMENTS, DIR_TIME } from '#config'
-import { readDir, readTextFile, walk } from '#shared/fs/mod.ts'
+import { readTextFile, walk } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
@@ -37,8 +37,8 @@ export default class DayAttachmentsCheckTask extends Command {
     // Collect attachment files on disk
     const filesOnDisk = new Set<string>()
     try {
-      for await (const entry of readDir(attachmentsPath)) {
-        if (entry.isFile) filesOnDisk.add(entry.name)
+      for await (const entry of walk(attachmentsPath)) {
+        if (entry.isFile) filesOnDisk.add(path.relative(attachmentsPath, entry.path))
       }
     } catch {
       // Directory doesn't exist — no attachments, nothing orphaned

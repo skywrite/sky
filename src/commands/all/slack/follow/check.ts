@@ -1,14 +1,19 @@
 import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
+import { captureMessages } from '#commands/all/slack/lib/captureMessages.ts'
 import { checkChannelWatches, type ChannelWatchCheckResult } from '#commands/all/slack/lib/checkChannelWatches.ts'
-import { copySlackFilesToAttachments } from '#commands/all/slack/lib/copyToAttachments.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
+import { saveSlackCaptureUpdate } from '#commands/all/slack/lib/saveCapture.ts'
+import { syncSlackFollow } from '#commands/all/slack/lib/syncFollow.ts'
+import { clearSavedVoiceTranscripts } from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
+import { updateSlackCapture } from '#commands/all/slack/lib/updateCapture.ts'
 import type { CommandTypesRegistry } from '#commands/lib/core/CommandTypesRegistry.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
-import { exists, outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { atomicWrite } from '#lib/outbox/files.ts'
+import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
@@ -32,7 +37,7 @@ type Result = {
   checked: number
   /** Follows whose anchors were exported this run (those with a link). */
   polled: number
-  /** Polled follows where every anchor export failed. */
+  /** Polled follows with at least one failed anchor export. */
   exportFailures: number
   /** What the first failed export said, or null when none failed. */
   exportFailure: string | null
@@ -177,162 +182,81 @@ export default class SlackFollowCheckTask extends Command {
           }
           exports.push(exportResult.data)
         }
-        if (exports.length === 0) {
+        if (exports.length !== anchors.length) {
           exportFailures++
           exportFailure ??= lastFailure
-          skipped.push(`${fileName}: every anchor export failed — ${lastFailure}`)
+          skipped.push(`${fileName}: incomplete export — ${lastFailure}`)
           continue
         }
         const data = exports[0]
 
-        // 2. Detect new replies since lastChecked across all anchors
-        // Normalize extended hours (e.g. 2026-02-24 31:04 → 2026-02-25 07:04)
-        // so the string comparison matches Slack's wall-clock timeLabel format
-        const lastCheckedNorm = follow.lastChecked?.normalize()
-        const lastCheckedStr = lastCheckedNorm ? `${lastCheckedNorm.date} ${lastCheckedNorm.time}` : ''
-
-        const seenTs = new Set<string>()
-        const newReplies = exports
-          .flatMap((d) => d.thread?.replies ?? [])
-          .filter((r) => (r.timeLabel ? r.timeLabel > lastCheckedStr : false))
-          .filter((r) => {
-            if (r.ts && seenTs.has(r.ts)) return false
-            if (r.ts) seenTs.add(r.ts)
-            return true
-          })
-          .sort((a, b) => ((a.timeLabel ?? a.ts ?? '') < (b.timeLabel ?? b.ts ?? '') ? -1 : 1))
-
-        // 3. If new replies, create message via slack:new (handles merge, day entry, YAML preservation)
-        if (newReplies.length > 0) {
-          const latestReply = newReplies[newReplies.length - 1]
-          const from = latestReply.userName || latestReply.userId || '-'
-          const to = resolveRecipient(data, from)
-
-          // The capture is dated by the newest reply's real time, never the
-          // check time — a reply discovered after midnight (backoff, quiet
-          // hours) must land in the day it was sent, not the day the check
-          // happened to run.
-          const lastActivityAt = latestReply.timeLabel ? await convertToNotebookTimezone(latestReply.timeLabel) : nowDt
-          const activityDayStr = lastActivityAt.plainDate.toString()
-
-          // Collect file attachments from new replies
-          const newReplyFiles = newReplies.flatMap((r) => r.files ?? [])
-
-          // Build markdown body: ## datetime - **name** for each new reply
-          const replyParts: string[] = []
-          for (const reply of newReplies) {
-            const who = reply.userName || reply.userId || '-'
-            replyParts.push(`## ${reply.timeLabel || reply.ts} - **${who}**`, '')
-            replyParts.push(reply.text || '(empty)', '', '')
-          }
-
-          // Compute previous as a relative ref (DD/subpath, MM-DD/subpath, or
-          // YYYY-MM-DD/subpath). Follow entries are time refs (older follows:
-          // paths in any layout); resolveTimeRef reads them all.
-          const lastMsg = follow.messages.length > 0 ? follow.messages[follow.messages.length - 1] : undefined
-          const previous = lastMsg
-            ? computePreviousRef(resolveTimeRef(lastMsg.path), lastActivityAt.plainDate)
-            : undefined
-
-          // Inherit tags and rel from previous message file
-          let inheritedTags: string | undefined
-          let inheritedRel: unknown // rel can be string or array in YAML
-          if (lastMsg) {
-            try {
-              const prevDoc = MessageDocument.fromMarkdown(
-                await readTextFile(path.join(DIR_BASE, resolveTimeRef(lastMsg.path))),
-              )
-              inheritedTags = prevDoc.yaml['tags'] as string | undefined
-              inheritedRel = prevDoc.yaml['rel']
-            } catch {
-              /* previous file may not exist */
-            }
-          }
-
-          // Check if we already have a message file for that day (same-day update)
-          const dayMessage = follow.messages.find((m) => m.date === activityDayStr)
-
-          if (dayMessage) {
-            // Same-day update: append new replies to existing file, don't touch day entry
-            const fullPath = path.join(DIR_BASE, resolveTimeRef(dayMessage.path))
-            const oldDoc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
-            // Copy any new file attachments and merge with existing
-            const newAttachments =
-              newReplyFiles.length > 0
-                ? await copySlackFilesToAttachments(newReplyFiles, lastActivityAt.plainDate, output)
-                : []
-            const existingAttachments = oldDoc.attachments
-            const mergedAttachments = [...existingAttachments, ...newAttachments]
-            const updatedDoc = new MessageDocument(
-              {
-                ...oldDoc.yaml,
-                ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
-              },
-              oldDoc.markdown,
-            )
-            await writeTextFile(fullPath, updatedDoc.toMarkdown() + replyParts.join('\n'))
-          } else {
-            // New day: create file + day entry via slack:new, inherit tags/rel from previous
-            const markdown = `# ${follow.summary}\n\n` + replyParts.join('\n')
-            const slackResult = await tasks.run('slack:new', {
-              from,
-              to,
-              summary: follow.summary,
-              when: lastActivityAt,
-              markdown,
-              follow: fileName,
-              previous,
-              noEditor: true,
-              ...(inheritedTags ? { tags: inheritedTags } : {}),
-              ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
-              ...(newReplyFiles.length > 0 ? { slackFiles: JSON.stringify(newReplyFiles) } : {}),
+        const synced = await syncSlackFollow(follow, exports.flatMap(captureMessages), {
+          read: async (ref) =>
+            MessageDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, resolveTimeRef(ref)))),
+          notebookTime: convertToNotebookTimezone,
+          saveFollow: async (pending) => atomicWrite(followPath, pending.toYaml()),
+          update: async (ref, doc, messages, day) => {
+            const transcriptRuns = new Set<string>()
+            const updated = await updateSlackCapture({
+              doc,
+              messages,
+              day,
+              output,
+              signal: context.signal,
+              transcriptRuns,
             })
-
-            // Append message path to follow
-            const ddfw = new DayDirFileWriter(lastActivityAt.plainDate)
-            const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
-            if (relPath) {
-              const fullTimePath = `time/${ddfw.dayDir}/${relPath}`
-              // Stored as a time ref: the follow outlives the layout.
-              follow = follow.addMessage(activityDayStr, toTimeRef(fullTimePath))
-
-              // Patch array rel into the created file (slack:new only accepts string params)
-              if (Array.isArray(inheritedRel)) {
-                const fullPath = path.join(DIR_BASE, fullTimePath)
-                const content = await readTextFile(fullPath)
-                const doc = MessageDocument.fromMarkdown(content)
-                await writeTextFile(
-                  fullPath,
-                  new MessageDocument({ ...doc.yaml, rel: inheritedRel }, doc.markdown).toMarkdown(),
-                )
-              }
+            if (updated.toMarkdown() !== doc.toMarkdown())
+              await saveSlackCaptureUpdate(path.join(DIR_BASE, resolveTimeRef(ref)), doc, updated)
+            await clearSavedVoiceTranscripts(transcriptRuns, output)
+          },
+          create: async ({ messages, when, previous, inherit }) => {
+            const from = messages[0].userName || messages[0].userId || '-'
+            const inheritedTags = inherit?.yaml['tags']
+            const inheritedRel = inherit?.yaml['rel']
+            const result = await tasks.run('slack:new', {
+              from,
+              to: resolveRecipient(data, from),
+              summary: follow.summary,
+              when,
+              slackMessages: JSON.stringify(messages),
+              follow: fileName,
+              link: data.message.permalink ?? data.link,
+              previous: previous ? computePreviousRef(resolveTimeRef(previous), when.plainDate) : undefined,
+              noEditor: true,
+              ...(typeof inheritedTags === 'string' ? { tags: inheritedTags } : {}),
+              ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
+              ...(Array.isArray(inheritedRel) ? { noAutoRel: true } : {}),
+            })
+            if (!result.ok || !result.data?.filePath)
+              throw new Error(`Failed to save Slack replies: ${result.message ?? 'no file path'}`)
+            const ddfw = new DayDirFileWriter(when.plainDate)
+            const timePath = `time/${ddfw.dayDir}/${result.data.filePath}`
+            if (Array.isArray(inheritedRel)) {
+              const fullPath = path.join(DIR_BASE, timePath)
+              const doc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
+              await atomicWrite(
+                fullPath,
+                new MessageDocument({ ...doc.yaml, rel: inheritedRel }, doc.markdown).toMarkdown(),
+              )
             }
-          }
-
-          output.log(`[check] ${fileName}: ${newReplies.length} new replies`)
-          withActivity.push({ fileName, newReplies: newReplies.length })
-
-          // 4a. Update lastChecked + lastActivity, reset checkInterval —
-          // lastActivity is the newest reply's real time (the same anchor the
-          // capture is dated by), not the check time: a stale reply discovered
-          // late must not look like fresh activity
-          const checkedAt = (await fetchNow()).plainDateTime
-          const newInterval = Follow.backoffInterval(checkedAt, lastActivityAt)
-          const updated = follow
-            .updateLastActivity(lastActivityAt)
-            .updateLastChecked(checkedAt)
-            .updateCheckInterval(newInterval)
-          await writeTextFile(followPath, updated.toYaml())
+            return toTimeRef(timePath)
+          },
+        })
+        follow = synced.follow
+        if (synced.newReplies > 0) {
+          output.log(`[check] ${fileName}: ${synced.newReplies} new replies`)
+          withActivity.push({ fileName, newReplies: synced.newReplies })
         } else {
           output.log(`[check] ${fileName}: no new activity`)
-
-          // 4b. Update lastChecked + backoff checkInterval
-          const checkedAt = (await fetchNow()).plainDateTime
-          const anchor = follow.lastActivity ?? follow.followSince
-          const newInterval = Follow.backoffInterval(checkedAt, anchor)
-          const updated = follow.updateLastChecked(checkedAt).updateCheckInterval(newInterval)
-          await writeTextFile(followPath, updated.toYaml())
         }
+        // Checkpoint the start of the poll, not its completion: replies can
+        // arrive while files are being downloaded or written.
+        const checkedAt = (await fetchNow()).plainDateTime
+        const activity = synced.lastActivity ?? follow.followSince
+        const updated = (synced.lastActivity ? follow.updateLastActivity(synced.lastActivity) : follow)
+          .updateLastChecked(nowDt)
+          .updateCheckInterval(Follow.backoffInterval(checkedAt, activity))
+        await atomicWrite(followPath, updated.toYaml())
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
         output.log(`[check] ${entry.fileName}: ERROR — ${errMsg}`)

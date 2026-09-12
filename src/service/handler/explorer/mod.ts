@@ -186,7 +186,8 @@ export function resolveImageSources(html: string, relativePath: string): string 
         if (part === '..') parts.pop()
         else if (part !== '.' && part !== '') parts.push(decodeSegment(part))
       }
-      return `${before}/docs/_api/file/${parts.map(encodeURIComponent).join('/')}${after}`
+      const context = src.includes('/') ? `?document=${encodeURIComponent(relativePath)}` : ''
+      return `${before}/docs/_api/file/${parts.map(encodeURIComponent).join('/')}${context}${after}`
     },
   )
 }

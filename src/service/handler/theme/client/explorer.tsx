@@ -382,7 +382,8 @@ function resolveImageSrc(file: string, src: string): string {
     if (part === '..') parts.pop()
     else if (part !== '.' && part !== '') parts.push(decodeSegment(part))
   }
-  return `/docs/_api/file/${parts.map(encodeURIComponent).join('/')}`
+  const context = src.includes('/') ? `?document=${encodeURIComponent(file)}` : ''
+  return `/docs/_api/file/${parts.map(encodeURIComponent).join('/')}${context}`
 }
 
 /** A path segment as written in markdown — percent-encoded or not — as the name on disk. */

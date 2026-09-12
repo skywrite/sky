@@ -446,6 +446,19 @@ test({ name: 'day files - a file a note lists carries the note' }, async () => {
       ],
     ],
   })
+  await mkdir(path.join(w.dayDir, 'atlas-follow'), { recursive: true })
+  await fileOn(path.join(w.dayDir, 'atlas-follow'), 'report.pdf', 'another report')
+  await writeFile(
+    path.join(w.notesDir, 'slack_Atlas.md'),
+    '---\nmedium: Slack\nattachments:\n  - file: atlas-follow/report.pdf\n---\n\n# Atlas conversation\n',
+  )
+  const nested = await listing(w, 'atlas-follow')
+  assert({
+    given: 'another report in a follow folder, attached to a different note',
+    should: 'identify its note using the full path from the day attachments',
+    actual: nested.files.map((f) => [f.name, f.listedBy?.title]),
+    expected: [['report.pdf', 'Atlas conversation']],
+  })
 })
 
 test({ name: 'day files - a note is called by its title, its heading, or its name as words' }, () => {

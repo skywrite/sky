@@ -25,7 +25,8 @@ export function hrefOf(path: string): string {
 /** The file route for a file named beside the document. */
 function fileHrefOf(file: string, name: string): string {
   const dir = file.split('/').slice(0, -1)
-  return `/docs/_api/file/${[...dir, name].map(encodeURIComponent).join('/')}`
+  const context = name.includes('/') ? `?document=${encodeURIComponent(file)}` : ''
+  return `/docs/_api/file/${[...dir, ...name.split('/')].map(encodeURIComponent).join('/')}${context}`
 }
 
 /** What a `when` value reads as: the weekday and the length, or that it does not parse. */

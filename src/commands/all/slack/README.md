@@ -1,11 +1,13 @@
 ---
 created: 2026-01-18
-updated: 2026-08-27
+updated: 2026-09-12
 ---
 
 # Slack Tasks
 
 Run `nb cli:commands | grep slack` to see all available Slack commands.
+
+Saved message boundaries and layout compatibility are owned by the [Slack conversation parser](../../../_shared-ts/models/Message/slack/docs/README.md).
 
 ## API Limitations: Bulk Unread Counts
 
