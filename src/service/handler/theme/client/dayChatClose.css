@@ -1,0 +1,49 @@
+.sky-chat-close-toast {
+  width: max-content;
+  max-width: min(620px, calc(100% - 28px));
+}
+
+.sky-chat-close-toast[data-covered='true'] {
+  visibility: hidden;
+}
+
+.sky-chat-close-toast > button {
+  flex: none;
+}
+
+.sky-chat-close-toast .sky-undo-fill {
+  animation-duration: 20s;
+}
+
+.sky-chat-close-toast[data-paused='true'] .sky-undo-fill {
+  animation-play-state: paused;
+}
+
+.sky-chat-close-toast[data-failed='true'] .sky-undo-text,
+.sky-chat-close-details [data-tone='failed'] {
+  color: var(--sky-action-danger);
+}
+
+.sky-chat-close-title {
+  margin: 0 0 20px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sky-chat-close-details {
+  margin: 0 0 24px;
+  padding-left: 22px;
+  font-size: var(--sky-content-font-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.sky-chat-close-details li + li {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .sky-chat-close-toast {
+    width: auto;
+  }
+}

@@ -3,7 +3,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
-import { type Note, NoteLine } from './chat.tsx'
+import { type ChatCloseNotice, DayChatClose } from './dayChatClose.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
@@ -1018,7 +1018,8 @@ export function DayView({
   day,
   threads,
   imports = [],
-  notes,
+  chatNotice,
+  onDismissChatNotice = () => {},
   onOpen,
   onOpenSaved = () => {},
   onOpenImport = () => {},
@@ -1036,7 +1037,8 @@ export function DayView({
   threads: ThreadSummary[]
   /** Files dropped on the day, running or done — rows beside the threads */
   imports?: ImportJob[]
-  notes: Note[]
+  chatNotice?: ChatCloseNotice
+  onDismissChatNotice?: (id: string) => void
   onOpen: (id: string) => void
   /** A saved chat, by its notebook-relative path, opened to continue */
   onOpenSaved?: (chat: string) => void
@@ -1167,12 +1169,6 @@ export function DayView({
 
           <div className="sky-scroll">
             <div className="sky-col">
-              {notes.map((note, i) => (
-                <Fragment key={i}>
-                  <NoteLine note={note} />
-                </Fragment>
-              ))}
-
               {record && (
                 <>
                   <PlanCard
@@ -1341,6 +1337,16 @@ export function DayView({
 
       {kept.length > 0 && !checkOff.undo && !planning.toast && !organize.undo && !organize.error && (
         <KeptToast kept={kept} todayYmd={view?.today.ymd ?? null} onUndo={onUndoKept} onDone={onDismissKept} />
+      )}
+
+      {chatNotice && (
+        <Fragment key={chatNotice.id}>
+          <DayChatClose
+            notice={chatNotice}
+            blocked={Boolean(checkOff.undo || planning.toast || organize.undo || organize.error || kept.length)}
+            onDismiss={onDismissChatNotice}
+          />
+        </Fragment>
       )}
 
       {dragging && <DropOverlay />}

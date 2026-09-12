@@ -5,9 +5,10 @@ import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'rea
 import { createRoot } from 'react-dom/client'
 import { AuditionMain } from './audition.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations.tsx'
-import { ChatMain, type Note, threadTitle, useChat } from './chat.tsx'
+import { ChatMain, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
+import type { ChatCloseNotice } from './dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
@@ -109,7 +110,8 @@ function Canvas() {
   const clock = useClockNow()
   // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
   const { view: thisWeek, reload: reloadWeek } = useWeek('')
-  const [notes, setNotes] = useState<Note[]>([])
+  const [chatNotices, setChatNotices] = useState<ChatCloseNotice[]>([])
+  const dismissChatNotice = useCallback((id: string) => setChatNotices((prev) => prev.filter((n) => n.id !== id)), [])
   const importRows = imports.filter((j) => j.state !== 'cancelled')
 
   const chat = useChat(threadId ?? '')
@@ -174,11 +176,15 @@ function Canvas() {
   }
   const branchesOf = (id: string) => others.filter((t) => t.parent?.id === id)
   // Back to the day at once. The save — enrichment included — finishes behind
-  // the Running block, and its note lands in the day when it does.
+  // the Running block, then a temporary notification offers the details.
   const endThread = () => {
+    const id = chat.state.id
+    const title = chatTitle
     const saving = chat.end(chat.state.settings?.saves !== false)
     navigate('/')
-    void saving.then((notes) => setNotes((prev) => [...prev, ...notes]))
+    void saving.then((result) => {
+      if (result) setChatNotices((prev) => [...prev.filter((n) => n.id !== id), { id, title, ...result }])
+    })
   }
   // A link into the explorer — a row on the day, a link inside a document — turns the page in place.
   const onLinkClick = (event: MouseEvent) => {
@@ -428,7 +434,8 @@ function Canvas() {
             day={day}
             threads={others}
             imports={isToday ? importRows : []}
-            notes={notes}
+            chatNotice={chatNotices[0]}
+            onDismissChatNotice={dismissChatNotice}
             onOpen={openThread}
             onOpenSaved={(chat) => void openSaved(chat)}
             onOpenImport={openImport}

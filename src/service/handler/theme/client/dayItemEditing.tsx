@@ -31,6 +31,7 @@ interface Editing {
   busy: boolean
   error: string | null
   readOnly: boolean
+  feedbackActive: boolean
   mobile: boolean
   today: string
   begin: (item: DayItem, mode: Draft['mode'], selection?: string) => void
@@ -239,6 +240,7 @@ export function DayItemEditing({
     busy,
     error,
     readOnly,
+    feedbackActive: Boolean(draft || (undo && !readOnly)),
     mobile,
     today: day?.today.ymd ?? ymd,
     dismissUndo: () => setUndo(null),

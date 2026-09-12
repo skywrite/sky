@@ -146,6 +146,11 @@ export interface Note {
   tone: 'quiet' | 'done' | 'failed'
 }
 
+export interface ChatCloseResult {
+  summary: string
+  notes: Note[]
+}
+
 type Phase = 'idle' | 'busy' | 'saving'
 
 /** Where a thread came from: the parent's file, the turn it left after, the live parent when there is one. */
@@ -1024,12 +1029,12 @@ export function useChat(id: string) {
   )
 
   // Ending a thread files it through the same gate as ai:chat (or drops
-  // it). What comes back is the record of that — the lines a day shows.
+  // it). The temporary notification keeps the full result behind View.
   // Every write the save makes to the machine-owned stores is among them;
   // silence means nothing was written.
   const end = useCallback(
-    async (save: boolean): Promise<Note[]> => {
-      if (!state.id || state.phase !== 'idle' || state.turns.length === 0) return []
+    async (save: boolean): Promise<ChatCloseResult | null> => {
+      if (!state.id || state.phase !== 'idle' || state.turns.length === 0) return null
       const id = state.id
       dispatch({ id, type: 'saving' })
       try {
@@ -1040,7 +1045,10 @@ export function useChat(id: string) {
         })
         if (!response.ok) {
           const body = (await response.json().catch(() => ({}))) as { message?: string }
-          return [{ text: `Couldn't save — ${body.message ?? response.status}. Try again.`, tone: 'failed' }]
+          return {
+            summary: "Couldn't close chat",
+            notes: [{ text: `Couldn't close — ${body.message ?? response.status}. Try again.`, tone: 'failed' }],
+          }
         }
         const { saved } = (await response.json()) as {
           saved: {
@@ -1079,9 +1087,21 @@ export function useChat(id: string) {
           if (p.outcome !== 'skipped')
             notes.push({ text: `👤 ${p.op ?? 'updated'}: ${p.summary ?? p.name ?? ''}`, tone: 'quiet' })
         }
-        return notes
+        return {
+          summary: saved?.aborted
+            ? 'Chat not saved'
+            : saved
+              ? 'Chat saved'
+              : save
+                ? 'Nothing to save'
+                : 'Chat discarded',
+          notes,
+        }
       } catch {
-        return [{ text: "Couldn't reach sky — is the service running?", tone: 'failed' }]
+        return {
+          summary: "Couldn't close chat",
+          notes: [{ text: "Couldn't reach sky — is the service running?", tone: 'failed' }],
+        }
       } finally {
         dispatch({ id, type: 'ended' })
       }
