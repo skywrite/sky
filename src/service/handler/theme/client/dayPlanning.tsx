@@ -452,6 +452,7 @@ export function useDayPlanning(
     setError(null)
   }
   return {
+    editing: active !== null || busy,
     undo,
     dismissUndo: () => setUndo(null),
     composer: (kind: DayPlanKind) =>

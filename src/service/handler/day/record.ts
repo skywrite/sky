@@ -13,9 +13,13 @@ import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
-import { ACTIONS_DIR, dayFile, isActionPath, readDay } from '#shared/nbfs/mod.ts'
+import { ACTIONS_DIR, dayFile, isActionPath } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { editableRow } from './editingText.ts'
 import { dayEnd } from './ended.ts'
+import { planOrder } from './order.ts'
+import { blockRevision } from './organizingText.ts'
+import type { CommitmentOrder } from './organizingTypes.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
 export interface DayItem {
@@ -31,6 +35,7 @@ export interface DayItem {
   list: string
   /** The item exactly as stored, strike marks included — the write-back address */
   raw: string
+  revision?: string
 }
 
 /** A document filed under the day, as a row. */
@@ -64,6 +69,8 @@ export interface DayRecord {
   ended: boolean
   /** Recorded end in the day's timezone; null when open or the time cannot be read. */
   endedAt: string | null
+  manualOrder?: string[]
+  commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -222,7 +229,10 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
 
   // The plan and its outcome: the day file's own lists, by heading.
   try {
-    const dayDoc = await readDay(input.day, input.timeDir)
+    const file = path.join(input.timeDir, dayFile(input.day))
+    const content = await readTextFile(file)
+    const dayDoc = DayDocument.fromMarkdown(content)
+    Object.assign(record, planOrder(content))
     Object.assign(record, dayEnd(dayDoc))
     for (const meeting of dayDoc.meetings) {
       record.meetings.push({
@@ -244,7 +254,15 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       const items = list.items
         .map((raw) => raw.trim())
         .filter(Boolean)
-        .map((raw) => parseItem(raw, category, heading))
+        .map((raw) => {
+          const item = parseItem(raw, category, heading)
+          try {
+            item.revision = blockRevision(editableRow(content, heading, raw).block, content, file)
+          } catch {
+            /* Duplicate or non-plan rows stay visible without a bulk mutation address. */
+          }
+          return item
+        })
       if (/^most important$/i.test(heading)) record.mostImportant.push(...items)
       else if (/commitments$/i.test(heading)) record.commitments.push(...items)
       else if (/(todos|incomplete)$/i.test(heading)) record.todos.push(...items)

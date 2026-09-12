@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-09-09
+updated: 2026-09-12
 ---
 
 # The week page
@@ -72,9 +72,11 @@ list it leaves empty leaves with it. Nothing else empties the queue —
 week:plan reads it and drafts from it. Planning itself stays in the terminal
 for now (`sky week:plan 37`); the page says so in one line.
 
-`Create the week` runs week:new for a week whose directory does not exist:
-the Sunday or Monday step, as a button. The current week needs none, since
-day:start creates the week when the day file is missing.
+`Create the week` runs week:new for missing day files; a partial week offers
+**Create remaining days**. Existing days remain intact. Day start also fills the
+week when its target day is missing. Future item moves can create a partial week;
+their creation and preservation contract is described in the
+[day design](../../day/docs/README.md#the-days-items).
 
 ## Weekly check-ins
 

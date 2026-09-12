@@ -1,5 +1,7 @@
 import { Lexer } from 'marked'
+import { parseDocument } from 'yaml'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import type { CommitmentOrder } from './organizingTypes.ts'
 import { comparePlanItems } from './planningTypes.ts'
 
 interface OrderedItem {
@@ -12,6 +14,7 @@ interface OrderedItem {
 
 /** Reorder whole task blocks, keeping their notes, links, and the rest of the file verbatim. */
 export function orderPlanList(content: string, title: string): string {
+  if (isManualPlanList(content, title)) return content
   if (!/(?:^most important$|(?:^|\s)(?:todos|commitments|incomplete)$)/i.test(title.trim())) return content
   const timed = /commitments$/i.test(title.trim())
   // Marked normalizes line endings. Map its offsets back to the original bytes.
@@ -65,4 +68,34 @@ export function orderPlanList(content: string, title: string): string {
   let result = content
   for (const change of changes.reverse()) result = result.slice(0, change.from) + change.text + result.slice(change.to)
   return result
+}
+
+export function planOrder(content: string): { manualOrder: string[]; commitmentsOrder: CommitmentOrder } {
+  const yaml = DayDocument.fromMarkdown(content).yaml
+  return {
+    manualOrder: Array.isArray(yaml['manual-order'])
+      ? yaml['manual-order'].filter((value): value is string => typeof value === 'string')
+      : [],
+    commitmentsOrder: yaml['commitments-order'] === 'manual' ? 'manual' : 'time',
+  }
+}
+
+export function isManualPlanList(content: string, list: string): boolean {
+  const order = planOrder(content)
+  return /commitments$/i.test(list) ? order.commitmentsOrder === 'manual' : order.manualOrder.includes(list)
+}
+
+/** Keep frontmatter comments, the rest of the document and its line endings intact. */
+export function setPlanOrder(content: string, key: 'manual-order' | 'commitments-order', value: unknown): string {
+  const eol = content.includes('\r\n') ? '\r\n' : '\n'
+  const match = /^(---\r?\n)([\s\S]*?)(^---[^\S\r\n]*(?:\r?\n|$))/m.exec(content)
+  if (match && match.index !== 0) throw new Error('The day frontmatter must be at the start of the file.')
+  const yaml = parseDocument(match?.[2] ?? '')
+  if (yaml.errors.length) throw new Error('Fix the day frontmatter before changing its order.')
+  if (value === undefined) yaml.delete(key)
+  else yaml.set(key, value)
+  const header = yaml.toString().replace(/\r?\n/g, eol)
+  return match
+    ? match[1] + header + content.slice(match[1].length + match[2].length)
+    : `---${eol}${header}---${eol}${eol}${content}`
 }

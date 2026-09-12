@@ -132,6 +132,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       markdownBaseDir: options.markdownBaseDir,
       stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
       writePlanning: options.writePlanning,
+      today: options.today ?? (() => fetchNowSync().plainDateTime.plainDate),
       view: (ymd) => buildDayView(options, ymd),
     }),
   )

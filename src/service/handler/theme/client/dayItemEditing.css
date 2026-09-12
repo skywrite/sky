@@ -117,6 +117,11 @@
   position: fixed;
   z-index: 210;
   bottom: 24px;
+  width: max-content;
+  max-width: min(780px, calc(100% - 48px));
+}
+.sky-item-edit-undo > button {
+  flex: none;
 }
 .sky-item-mobile-actions {
   position: fixed;
@@ -138,6 +143,26 @@
   margin-right: auto;
 }
 @media (max-width: 900px) {
+  .sky-item-edit-undo {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    width: auto;
+    max-width: none;
+    bottom: 16px;
+    gap: 4px 8px;
+  }
+  .sky-item-edit-undo .sky-undo-text {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+  .sky-item-edit-undo > button {
+    min-height: 44px;
+    justify-self: start;
+  }
+  .sky-item-edit-undo > button:last-child {
+    grid-column: 3;
+    justify-self: end;
+  }
   .sky-item-details {
     width: 44px;
     height: 44px;

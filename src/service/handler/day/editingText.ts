@@ -12,20 +12,20 @@ export class ItemEditError extends Error {
   }
 }
 
-interface Row {
+export interface PlanBlock {
   from: number
   to: number
   raw: string
   block: string
 }
-interface Section {
+export interface PlanSection {
   title: string
   end: number
-  rows: Row[]
+  rows: PlanBlock[]
 }
 
 /** Parse actual top-level tasks, ignoring nested notes and examples in fenced code. */
-function sections(content: string): Section[] {
+export function planSections(content: string): PlanSection[] {
   const offsets: number[] = []
   for (let i = 0; i < content.length; i++) {
     offsets.push(i)
@@ -33,8 +33,8 @@ function sections(content: string): Section[] {
   }
   offsets.push(content.length)
   const normalized = content.replace(/\r\n/g, '\n')
-  const result: Section[] = []
-  let section: Section | null = null
+  const result: PlanSection[] = []
+  let section: PlanSection | null = null
   let cursor = 0
   for (const token of Lexer.lex(normalized)) {
     const start = normalized.indexOf(token.raw, cursor)
@@ -66,16 +66,16 @@ function sections(content: string): Section[] {
   return result
 }
 
-function sectionOf(content: string, title: string): Section | undefined {
-  const found = sections(content).filter((section) => section.title === title)
+export function planSection(content: string, title: string): PlanSection | undefined {
+  const found = planSections(content).filter((section) => section.title === title)
   if (found.length > 1) throw new ItemEditError('This list heading appears more than once. Edit it in the day file.')
   return found[0]
 }
 
-export function editableRow(content: string, list: string, raw: string): Row & { index: number } {
+export function editableRow(content: string, list: string, raw: string): PlanBlock & { index: number } {
   if (!/^(?:most important|reminders|(?:.*\s)?(?:todos|commitments|incomplete))$/i.test(list))
     throw new ItemEditError('This list is not editable here.', 400)
-  const rows = sectionOf(content, list)?.rows ?? []
+  const rows = planSection(content, list)?.rows ?? []
   const matches = rows.filter((row) => row.raw === raw.split(/\r?\n/)[0])
   if (matches.length !== 1)
     throw new ItemEditError(
@@ -100,7 +100,7 @@ export function replaceEditedBlock(
     .replace(/^\s*[-*+]\s*/, '')
     .trim()
   const duplicates =
-    sectionOf(content, destination.list)?.rows.filter(
+    planSection(content, destination.list)?.rows.filter(
       (candidate) => candidate.raw === raw && candidate.from !== row.from,
     ) ?? []
   if (duplicates.length) throw new ItemEditError('An identical item already exists in that list.')
@@ -108,13 +108,13 @@ export function replaceEditedBlock(
     return orderPlanList(content.slice(0, row.from) + destination.block + content.slice(row.to), address.list)
   }
   const eol = content.includes('\r\n') ? '\r\n' : '\n'
-  const source = sectionOf(content, address.list)!
+  const source = planSection(content, address.list)!
   const nextLine = content.slice(row.to).startsWith(eol) ? eol.length : 0
   let result =
     source.rows.length === 1
       ? content.slice(0, row.from) + (row.block.match(/^\s*[-*+]/)?.[0] ?? '-') + content.slice(row.to)
       : content.slice(0, row.from) + content.slice(row.to + nextLine)
-  const target = sectionOf(result, destination.list)
+  const target = planSection(result, destination.list)
   // Different bullet markers split a Markdown list. Match the destination's
   // marker and shift attached notes by the same indentation change.
   let block = destination.block

@@ -2,8 +2,11 @@ import { Hono } from 'hono'
 import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { editPlanItem, ItemEditError, replaceEditedBlock } from './editingText.ts'
+import { editableRow } from './editingText.ts'
 import { itemEditFields, type DayEditFields } from './editingTypes.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
+import type { DayOrganizer } from './organizing.ts'
+import { blockRevision, checkedBlock } from './organizingText.ts'
 import { normalizeDayTime } from './planningTypes.ts'
 
 interface EditOperation {
@@ -41,7 +44,7 @@ function fieldsOf(body: Record<string, unknown>, list: string, raw: string): Day
   return { text: fields.text.trim().replace(/\s+/g, ' '), kind: fields.kind, category: fields.category.trim(), time }
 }
 
-export function createEditingRoutes(options: ItemRoutesOptions): Hono {
+export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOrganizer): Hono {
   const app = new Hono()
   const operations = new Map<string, EditOperation>()
   const cleanup = () => {
@@ -69,6 +72,25 @@ export function createEditingRoutes(options: ItemRoutesOptions): Hono {
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const fields = fieldsOf(body, body.list, body.raw)
+    if (body.date !== undefined && typeof body.date !== 'string')
+      throw new ItemEditError('Choose a destination date.', 400)
+    if (typeof body.date === 'string' && body.date !== day.ymd) {
+      return organizer.move(c, {
+        items: [
+          {
+            list: body.list,
+            raw: body.raw,
+            revision:
+              typeof body.revision === 'string'
+                ? body.revision
+                : blockRevision(editableRow(day.content, body.list, body.raw).block, day.content, day.file),
+          },
+        ],
+        date: body.date,
+        requestId: body.requestId,
+        edit: fields,
+      })
+    }
     const request = JSON.stringify({ list: body.list, raw: body.raw, fields })
     cleanup()
     const previous = operations.get(body.requestId)
@@ -83,6 +105,8 @@ export function createEditingRoutes(options: ItemRoutesOptions): Hono {
       })
     }
     const result = editPlanItem(day.content, body.list, body.raw, fields)
+    if (typeof body.revision === 'string')
+      checkedBlock(day.content, day.file, { list: body.list, raw: body.raw, revision: body.revision })
     if (DayDocument.isItemDone(result.after.raw) !== DayDocument.isItemDone(body.raw.split(/\r?\n/)[0]))
       throw new ItemEditError('Use the checkbox to change completion. Keep completion marks out of the text.', 400)
     await write(day.file, day.content, result.content)

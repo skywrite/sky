@@ -1,0 +1,482 @@
+.sky-organize-trigger {
+  border: 1px solid var(--sky-border-soft);
+}
+.sky-organize-trigger[aria-pressed='true'] {
+  color: var(--sky-action-primary);
+  background: color-mix(in srgb, var(--sky-action-primary) 7%, var(--sky-bg));
+  border-color: color-mix(in srgb, var(--sky-action-primary) 28%, var(--sky-bg));
+}
+.sky-organize-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1000px;
+  width: 100%;
+  padding: 0 48px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-organize-hint button {
+  flex: none;
+  padding-inline: 0;
+  font-size: 14px;
+}
+.sky-commitment-order {
+  width: 142px;
+  flex: none;
+  margin-left: 12px;
+}
+.sky-commitment-order input {
+  font-size: 13px;
+}
+.sky-commitment-order select {
+  font-size: 13px;
+  min-height: 36px;
+  background: var(--sky-side);
+  border-color: transparent;
+}
+.sky-prow[data-organize-key] {
+  --sky-item-grip-offset: 36px;
+  margin-left: calc(-1 * var(--sky-item-grip-offset));
+}
+.sky-prow[data-organizing='true'] {
+  overflow: visible;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 9px;
+  margin: 3px -10px 3px calc(-10px - var(--sky-item-grip-offset));
+  cursor: pointer;
+}
+.sky-prow[data-selected='true'] {
+  background: color-mix(in srgb, var(--sky-action-primary) 7%, var(--sky-bg));
+  border-color: color-mix(in srgb, var(--sky-action-primary) 24%, var(--sky-bg));
+}
+.sky-prow[data-organizing='true'] .sky-irow-front {
+  overflow: visible;
+}
+.sky-prow[data-organizing='true'] .sky-ptext {
+  cursor: pointer;
+}
+.sky-prow[data-organizing='true'] .sky-item-body {
+  flex: 1;
+}
+.sky-prow[data-organizing='true'] .sky-item-title {
+  flex: 1;
+}
+.sky-prow .sky-select-item .sky-check-box {
+  border-radius: 50%;
+}
+.sky-select-item:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+.sky-select-item:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.sky-item-grip-slot {
+  flex: none;
+  align-self: flex-start;
+  width: 24px;
+  margin-top: calc((1lh - 32px) / 2);
+}
+.sky-item-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  width: 24px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--sky-dim);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.sky-prow:not([data-organizing='true']) .sky-item-grip {
+  opacity: 0;
+}
+.sky-prow:hover .sky-item-grip,
+.sky-item-grip:focus-visible {
+  opacity: 1 !important;
+}
+.sky-item-grip:hover {
+  background: var(--sky-s2);
+  color: var(--sky-text);
+}
+.sky-item-grip:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: -2px;
+}
+.sky-prow[data-sorting='true'] {
+  opacity: 0.45;
+}
+.sky-prow[data-drop] {
+  overflow: visible;
+}
+.sky-prow[data-drop]::after {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--sky-action-primary);
+  content: '';
+  z-index: 2;
+}
+.sky-prow[data-drop='before']::after {
+  top: -3px;
+}
+.sky-prow[data-drop='after']::after {
+  bottom: -3px;
+}
+.sky-organize-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  margin: 12px 32px 22px;
+  max-width: 936px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 18px;
+  background: var(--sky-bg);
+  box-shadow: 0 8px 28px rgba(28, 35, 43, 0.07);
+}
+.sky-organize-count {
+  font-size: 15px;
+  font-weight: 550;
+  margin-right: auto;
+}
+.sky-organize-bar button {
+  font-size: 15px;
+  min-height: 44px;
+}
+.sky-organize-done {
+  order: 5;
+}
+.sky-organize-date {
+  border: 1px solid var(--sky-border-soft);
+}
+.sky-organize-bar .sky-mobile-label {
+  display: none;
+}
+.sky-organize-toast {
+  position: absolute;
+  bottom: 24px;
+  max-width: min(780px, calc(100% - 48px));
+  z-index: 20;
+}
+.sky-organize-toast[data-organizing='true'] {
+  bottom: 112px;
+}
+.sky-organize-toast .sky-undo-text {
+  white-space: normal;
+  min-width: 180px;
+}
+.sky-organize-toast button {
+  flex: none;
+}
+.sky-date-dialog,
+.sky-date-dialog-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.sky-date-dialog {
+  max-height: var(--sky-dialog-max-height);
+}
+.sky-date-dialog-body {
+  overflow: hidden;
+}
+.sky-date-body {
+  padding: 0 var(--sky-dialog-padding);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sky-date-intro {
+  color: var(--sky-dim);
+  font-size: 15px;
+  margin: 0 0 20px;
+}
+.sky-date-shortcuts {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.sky-date-shortcuts button {
+  font-size: 15px;
+  min-height: 44px;
+  border: 1px solid var(--sky-border-soft);
+}
+.sky-date-shortcuts button[data-selected='true'] {
+  color: var(--sky-action-primary);
+  border-color: var(--sky-action-primary);
+}
+.sky-date-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+.sky-date-month strong {
+  font-size: 17px;
+  font-weight: 600;
+}
+.sky-date-month > div {
+  display: flex;
+  gap: 4px;
+}
+.sky-date-month button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 24px;
+}
+.sky-date-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+.sky-date-weekday {
+  padding: 8px 0;
+  text-align: center;
+  color: var(--sky-dim);
+  font-size: 12px;
+}
+.sky-date-calendar button {
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--sky-text);
+}
+.sky-date-calendar button:hover:not(:disabled) {
+  background: var(--sky-side);
+}
+.sky-date-calendar button[data-today='true'] {
+  border-color: var(--sky-border-soft);
+  font-weight: 600;
+}
+.sky-date-calendar button[data-selected='true'] {
+  background: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
+}
+.sky-date-calendar button[data-selected='true']:hover {
+  background: var(--sky-action-primary-hover);
+}
+.sky-date-calendar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.sky-date-calendar button:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 1px;
+}
+.sky-date-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  margin-top: 18px;
+  border-radius: 12px;
+  background: var(--sky-side);
+  font-size: 15px;
+}
+.sky-date-summary svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--sky-action-primary);
+}
+.sky-date-summary small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 13px;
+  margin-top: 3px;
+}
+.sky-date-footer {
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+}
+.sky-item-date-label {
+  display: block;
+  font-size: var(--input-label-size, 16px);
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+.sky-item-date-value {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 13px;
+  border: 1px solid var(--mantine-color-gray-4);
+  border-radius: var(--mantine-radius-default);
+  background: var(--sky-bg);
+  color: var(--sky-text);
+  font: inherit;
+  cursor: pointer;
+}
+.sky-item-date-value svg {
+  flex: none;
+  color: var(--sky-dim);
+}
+.sky-item-date-value > span:last-child {
+  margin-left: auto;
+  color: var(--sky-dim);
+}
+.sky-item-date-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.sky-item-date-actions button {
+  min-height: 44px;
+}
+@media (max-width: 1180px) and (min-width: 901px) {
+  .sky-organize-bar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 900px) {
+  .sky-organize-hint {
+    padding: 0 14px;
+    gap: 12px;
+    font-size: 13px;
+    align-items: flex-start;
+  }
+  .sky-organize-hint > span {
+    max-width: 235px;
+    padding-top: 6px;
+  }
+  .sky-organize-hint button {
+    font-size: 13px;
+    min-height: 36px;
+  }
+  .sky-prow[data-organize-key] {
+    --sky-item-grip-offset: 0px;
+  }
+  .sky-prow:not([data-organizing='true']) .sky-item-grip-slot {
+    display: none;
+  }
+  .sky-prow[data-organizing='true'] {
+    margin-inline: -7px;
+    padding-inline: 6px;
+  }
+  .sky-item-grip-slot {
+    width: 44px;
+    margin-top: calc((1lh - 44px) / 2);
+  }
+  .sky-item-grip {
+    width: 44px;
+    height: 44px;
+  }
+  .sky-prow .sky-select-item {
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: -11px;
+    margin-right: -11px;
+    margin-top: calc((1lh - 44px) / 2);
+  }
+  .sky-organize-bar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px 8px;
+    padding: 12px 14px max(16px, env(safe-area-inset-bottom));
+    margin: 0;
+    border: 0;
+    border-top: 1px solid var(--sky-border-soft);
+    border-radius: 0;
+    max-width: none;
+    box-shadow: 0 -5px 20px rgba(28, 35, 43, 0.04);
+  }
+  .sky-organize-count {
+    font-size: 15px;
+  }
+  .sky-organize-bar button {
+    font-size: 15px;
+    padding-inline: 14px;
+    min-height: 46px;
+  }
+  .sky-organize-done {
+    grid-area: 1 / 2;
+    justify-self: end;
+    padding-inline: 6px !important;
+    min-height: 36px !important;
+  }
+  .sky-organize-tomorrow {
+    grid-area: 2 / 1;
+  }
+  .sky-organize-date {
+    grid-area: 2 / 2;
+  }
+  .sky-organize-bar .sky-desktop-label {
+    display: none;
+  }
+  .sky-organize-bar .sky-mobile-label {
+    display: inline;
+  }
+  .sky-organize-toast {
+    bottom: 16px;
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .sky-organize-toast[data-organizing='true'] {
+    bottom: 145px;
+  }
+  .sky-organize-toast .sky-undo-text {
+    flex-basis: 100%;
+  }
+  .sky-organize-toast button {
+    min-height: 44px;
+  }
+  .sky-organize-toast button:last-child {
+    margin-left: auto;
+  }
+  .sky-date-footer {
+    flex-direction: column-reverse;
+  }
+  .sky-date-footer > button:first-child {
+    display: none;
+  }
+  .sky-date-calendar button {
+    min-height: 39px;
+  }
+  .sky-commitment-order {
+    width: 125px;
+  }
+  .sky-commitment-order select {
+    font-size: 12px;
+    min-height: 44px;
+  }
+  .sky-day .sky-block-head:has(.sky-commitment-order) .sky-count {
+    display: none;
+  }
+}
+@media (max-width: 350px) {
+  .sky-organize-bar button {
+    font-size: 14px;
+    padding-inline: 10px;
+  }
+  .sky-date-body {
+    padding-inline: 16px;
+  }
+  .sky-date-calendar button {
+    min-height: 36px;
+  }
+}

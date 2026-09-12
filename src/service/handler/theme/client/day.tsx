@@ -1,11 +1,23 @@
 import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
 import { type Note, NoteLine } from './chat.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
+import {
+  DayCommitmentOrder,
+  DayItemGrip,
+  DayOrganizeButton,
+  DayOrganizingBar,
+  DayOrganizingContext,
+  DayOrganizingFeedback,
+  DayOrganizingHint,
+  useDayOrganizing,
+  useItemOrganizing,
+} from './dayOrganizing.tsx'
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
 import { DayTracking } from './dayTracking.tsx'
@@ -65,6 +77,7 @@ export interface DayItem {
   list: string
   /** The item exactly as stored — the write-back address */
   raw: string
+  revision?: string
 }
 
 export interface DayDocRow {
@@ -77,6 +90,8 @@ export interface DayDocRow {
 export interface DayRecord {
   ended: boolean
   endedAt: string | null
+  manualOrder?: string[]
+  commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -511,10 +526,12 @@ function PlanRow({
 }) {
   const struck = phase === 'struck' || (phase !== 'reopened' && item.done)
   const editor = useItemEditing()
+  const organize = useItemOrganizing()
+  const organizing = organize.active
   const active = editor.draft?.item.list === item.list && editor.draft.item.raw === item.raw
   const inline = active && editor.draft?.mode === 'inline'
-  const locked = Boolean(editor.draft) || editor.busy
-  const editable = !readOnly && !phase
+  const locked = Boolean(editor.draft) || editor.busy || organize.busy || organizing
+  const editable = !readOnly && !phase && !organizing && !organize.busy
   const late = tone === 'late' && !struck
   const personal = chip && item.category === 'Personal'
   const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
@@ -529,7 +546,19 @@ function PlanRow({
       data-phase={phase}
       data-soft={soft || undefined}
       data-editing={inline || undefined}
+      data-organize-key={dayItemKey(item)}
+      data-organize-list={item.list}
+      data-organizing={organizing || undefined}
+      data-selected={(organizing && organize.selected.has(dayItemKey(item))) || undefined}
+      data-sorting={organize.dragging === dayItemKey(item) || undefined}
+      data-drop={organize.drop?.key === dayItemKey(item) ? (organize.drop.after ? 'after' : 'before') : undefined}
       ref={swipe.ref}
+      onClick={(event) => {
+        if (organizing && !(event.target as HTMLElement).closest('button')) {
+          event.preventDefault()
+          organize.toggle(item)
+        }
+      }}
     >
       {!readOnly && swipe.offset < 0 && (
         <div className="sky-irow-back" style={{ width: -swipe.offset }}>
@@ -557,7 +586,30 @@ function PlanRow({
         }}
         {...(readOnly || locked ? {} : swipe.handlers)}
       >
-        {readOnly ? (
+        <span className="sky-item-grip-slot">
+          {!readOnly && !inline && (
+            <DayItemGrip
+              item={item}
+              disabled={Boolean(phase) || Boolean(editor.draft) || editor.busy || organize.busy}
+            />
+          )}
+        </span>
+        {organizing ? (
+          <button
+            type="button"
+            className="sky-check sky-select-item"
+            role="checkbox"
+            aria-checked={organize.selected.has(dayItemKey(item))}
+            aria-label={`Select ${item.text}`}
+            disabled={organize.busy || !organize.canMove(item)}
+            title={!item.revision ? 'Open the day file to organize this item' : undefined}
+            onClick={() => organize.toggle(item)}
+          >
+            <span className="sky-check-box" data-on={organize.selected.has(dayItemKey(item))}>
+              {organize.selected.has(dayItemKey(item)) && <Tick />}
+            </span>
+          </button>
+        ) : readOnly ? (
           <StaticCheck done={struck} />
         ) : (
           <button
@@ -619,10 +671,10 @@ function PlanRow({
                     editor.begin(item, 'inline')
                 }}
               >
-                {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+                {item.link && !organizing ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
               </span>
             )}
-            {!readOnly && !inline && (
+            {!readOnly && !inline && !organizing && (
               <span className="sky-item-actions">
                 <button
                   type="button"
@@ -678,18 +730,39 @@ function PlanCard({
   className?: string
   children?: ReactNode
 }) {
+  const organize = useItemOrganizing()
   if (items.length === 0 && !children) return null
   const timed = items.some((item) => item.time)
-  const sorted = [...items].sort((a, b) =>
-    comparePlanItems({ ...a, done: itemDone(a, checkOff.phases) }, { ...b, done: itemDone(b, checkOff.phases) }, timed),
-  )
+  const manual =
+    head === 'Commitments'
+      ? organize.commitmentsOrder === 'manual'
+      : items.some((item) => organize.manualOrder.includes(item.list))
+  const sorted = manual
+    ? items
+    : [...items].sort((a, b) =>
+        comparePlanItems(
+          { ...a, done: itemDone(a, checkOff.phases) },
+          { ...b, done: itemDone(b, checkOff.phases) },
+          timed,
+        ),
+      )
   const nowMin = today && !checkOff.readOnly ? currentMinutes() : null
   const open = (item: DayItem) => !itemDone(item, checkOff.phases) && !checkOff.phases[itemKey(item)]
-  const next = nowMin === null ? null : sorted.find((i) => open(i) && (minutesOf(i.time) ?? -1) >= nowMin)
+  const next =
+    nowMin === null
+      ? null
+      : [...items]
+          .sort((a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME))
+          .find((i) => open(i) && (minutesOf(i.time) ?? -1) >= nowMin)
   const doneCount = sorted.filter((item) => itemDone(item, checkOff.phases)).length
   const mini = `${doneCount} of ${sorted.length} done` + (next?.time ? ` · next at ${clock(next.time)}` : '')
   return (
-    <Block head={head} mini={items.length ? mini : undefined} className={className}>
+    <Block
+      head={head}
+      mini={items.length ? mini : undefined}
+      className={className}
+      action={head === 'Commitments' && items.length ? <DayCommitmentOrder /> : undefined}
+    >
       {sorted.map((item) => {
         const key = itemKey(item)
         const minutes = minutesOf(item.time)
@@ -735,6 +808,7 @@ function TodoCard({
   children?: ReactNode
   action?: ReactNode
 }) {
+  const organize = useItemOrganizing()
   if (items.length === 0 && !children) return null
   const order: Array<string | null> = []
   const groups = new Map<string | null, DayItem[]>()
@@ -750,11 +824,13 @@ function TodoCard({
     <Block head="To-dos" mini={items.length ? `${doneCount} of ${items.length} done` : undefined} action={action}>
       {order.map((label) => {
         const rows = [...(groups.get(label) ?? [])].sort((a, b) =>
-          comparePlanItems(
-            { ...a, done: itemDone(a, checkOff.phases) },
-            { ...b, done: itemDone(b, checkOff.phases) },
-            false,
-          ),
+          organize.manualOrder.includes(a.list) && a.list === b.list
+            ? 0
+            : comparePlanItems(
+                { ...a, done: itemDone(a, checkOff.phases) },
+                { ...b, done: itemDone(b, checkOff.phases) },
+                false,
+              ),
         )
         if (rows.length === 0) return null
         return (
@@ -985,6 +1061,16 @@ export function DayView({
   const ended = view?.record.ended ?? false
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView, ended)
   const planning = useDayPlanning(view, setView, checkOff.dismissUndo, checkOff.undo)
+  const organize = useDayOrganizing(
+    view,
+    setView,
+    () => {
+      checkOff.dismissUndo()
+      planning.dismissUndo()
+    },
+    checkOff.undo ?? planning.undo,
+    navigate,
+  )
   // The rail beside the day: a third column on a wide window, an overlay from
   // the header on a narrow one — the same rule as a document's Details.
   const rail = useRail(view?.day.ymd ?? null)
@@ -1074,8 +1160,10 @@ export function DayView({
                 </>
               )}
               {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
+              <DayOrganizeButton disabled={planning.editing || Object.keys(checkOff.phases).length > 0} />
             </nav>
           </header>
+          <DayOrganizingHint />
 
           <div className="sky-scroll">
             <div className="sky-col">
@@ -1096,13 +1184,18 @@ export function DayView({
                     at={at}
                   />
                   <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
-                    {planning.composer('commitments')}
+                    {!organize.active && planning.composer('commitments')}
                   </PlanCard>
-                  <TodoCard items={record.todos} checkOff={checkOff} at={at} action={planning.nextButton}>
-                    {planning.composer('todos')}
+                  <TodoCard
+                    items={record.todos}
+                    checkOff={checkOff}
+                    at={at}
+                    action={!organize.active && planning.nextButton}
+                  >
+                    {!organize.active && planning.composer('todos')}
                   </TodoCard>
                   <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
-                    {planning.composer('reminders')}
+                    {!organize.active && planning.composer('reminders')}
                   </ReminderCard>
 
                   <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
@@ -1206,6 +1299,7 @@ export function DayView({
               )}
             </div>
           </div>
+          <DayOrganizingBar />
         </div>
         {rail.open && view && (
           <DayRail
@@ -1225,8 +1319,10 @@ export function DayView({
 
       {planning.picker}
       {planning.toast}
+      {organize.picker}
+      <DayOrganizingFeedback />
 
-      {checkOff.undo && !planning.toast && (
+      {checkOff.undo && !planning.toast && !organize.undo && !organize.error && (
         <div className="sky-undo" key={checkOff.undo.key}>
           <span className="sky-undo-tick" data-how={checkOff.undo.how}>
             {checkOff.undo.how === 'deleted' ? <Cross /> : <Tick />}
@@ -1243,7 +1339,7 @@ export function DayView({
         </div>
       )}
 
-      {kept.length > 0 && !checkOff.undo && !planning.toast && (
+      {kept.length > 0 && !checkOff.undo && !planning.toast && !organize.undo && !organize.error && (
         <KeptToast kept={kept} todayYmd={view?.today.ymd ?? null} onUndo={onUndoKept} onDone={onDismissKept} />
       )}
 
@@ -1255,13 +1351,15 @@ export function DayView({
       day={view}
       applyView={setView}
       onDelete={checkOff.remove}
-      otherUndo={checkOff.undo ?? planning.undo}
+      otherUndo={checkOff.undo ?? planning.undo ?? organize.undo}
+      navigate={navigate}
       dismissOtherUndo={() => {
         checkOff.dismissUndo()
         planning.dismissUndo()
+        organize.dismissUndo()
       }}
     >
-      {content}
+      <DayOrganizingContext.Provider value={organize}>{content}</DayOrganizingContext.Provider>
     </DayItemEditing>
   )
 }

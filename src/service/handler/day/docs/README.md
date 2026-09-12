@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -27,7 +27,7 @@ notebook's extended hours. Adding requires an existing, open day file.
 
 Task text edits in place by double-click on desktop or a tap on touch screens;
 links retain their normal navigation. Details opens the same draft in a dialog
-or a mobile bottom sheet for text, type, category and time. Moving from inline
+or a mobile bottom sheet for text, type, category, time and date. Moving from inline
 editing into Details does not save. Save commits; Cancel discards. Refreshes
 preserve drafts, including when a changed or ended day prevents saving.
 
@@ -39,6 +39,41 @@ while `raw` retains attached notes. Destination bullet markers must match to
 avoid accidentally splitting one Markdown list into two. Edit retries use an
 operation ID; Undo preserves unrelated later changes and refuses to overwrite
 changed task blocks.
+
+**Organize** combines manual ordering and selection across the plan lists. A row
+selects for moving; its grip reorders within the same Markdown list and category.
+Desktop grips also appear on hover or keyboard focus outside Organize. Touch
+grips appear only in Organize so normal scrolling, text editing and swipe deletion
+retain their gestures. Grip arrow keys offer the same ordering without dragging.
+Selection circles replace completion controls while organizing.
+
+Order is the order of complete Markdown blocks, never a separate collection of
+task IDs. The day frontmatter's `manual-order` list names headings whose explicit
+order completion and editing must preserve. Commitments use a day-wide
+`commitments-order: manual` preference, with time order as the default. Switching
+back to Time sorts the file; dragging never changes a time. This preference must
+be honored by additions as well as rendering, or a later write would silently
+erase a user's order.
+
+`organizing.ts` moves whole blocks between days. It validates all selections and
+the destination before writing, creates a missing destination from the normal
+future-day template without starting it, writes that destination first, and then
+removes the source blocks. It resolves references and rebases relative links,
+including links in notes. A revision covers both the block and its resolved
+references, so a stale selection cannot move newly changed notes or links.
+Duplicate destinations and ended days reject the entire batch.
+
+Moves, reorders and editor saves with a changed date share operation IDs and Undo.
+An unchanged pair of files restores exactly; an untouched destination created by
+the move can be removed. With later edits, Undo reverses only the affected blocks
+and refuses changed blocks, references or ordering preferences. Destination-first
+writes and rollback of only the operation's own bytes avoid losing source items
+when a multi-file write fails. These operations use the shared planning lock.
+
+A move can create a partial week. `week:new` and the week's **Create remaining
+days** action therefore fill missing canonical day files without overwriting
+existing plans or creating `day-2.md`. Day start reconciles streaks on an existing
+future day. Do not run day-start routines merely to schedule an item.
 
 **From next lists** moves unfinished, untimed items from `next-professional.md`
 and `next-personal.md` into To-dos or Reminders. Category follows the source.
@@ -60,7 +95,8 @@ attachments can still be opened and added.
 
 - **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
   item `HH:MM > ~~task~~`, the time kept readable). Checked tasks remain in
-  their original list, grouped at the top, and can be unchecked there.
+  their original list and can be unchecked there. Unless manually ordered,
+  they are grouped at the top.
   To-dos keep their relative order within the checked and unchecked groups,
   matching the VS Code extension's Cmd+Shift+C behavior. Commitments sort
   by time within each group. The view and file use the same ordering;
@@ -82,7 +118,11 @@ attachments can still be opened and added.
 
 | Route | Does |
 | --- | --- |
-| `POST /day/:ymd/item/edit` | `{list, raw, text, kind?, category?, time?, requestId}` → edit or move a task block, answers `{view, undo, item}` |
+| `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, revision}], date, requestId}` → move a selection to a date, answers `{view, undo, date}` |
+| `POST /day/:ymd/item/organize/reorder` | `{list, items, requestId}` → save a complete, revision-checked list permutation |
+| `POST /day/:ymd/item/organize/order` | `{order: "time" \| "manual", requestId}` → save the commitment ordering preference |
+| `POST /day/:ymd/item/organize/undo` | `{id}` → reverse a move, reorder or ordering preference |
+| `POST /day/:ymd/item/edit` | `{list, raw, text, revision?, kind?, category?, time?, date?, requestId}` → edit or move a task block, answers `{view, undo, undoRoute?, item, date?}` |
 | `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
 | `POST /day/:ymd/item/add` | `{kind, text, category?, time?, requestId}` → add an item, answers `{view, undo, message}` |
 | `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |

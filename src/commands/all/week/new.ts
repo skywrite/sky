@@ -1,13 +1,10 @@
-import * as path from 'node:path'
 import { Command, CommandResult, when as whenParam } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
-import exists from '#shared/fs/exists.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
-import { weekDir } from '#shared/nbfs/mod.ts'
 import { Week } from '#universal/dates/nbdt/mod.ts'
+import { createWeekDays } from './lib/createWeekDays.ts'
 
 const params = {
   when: whenParam(),
@@ -35,27 +32,11 @@ export default class WeekNewTask extends Command {
     const week = Week.of(day)
     output.log(`Creating ${week.toString()} (${week.start.ymd} - ${week.end.ymd})`)
 
-    // A boundary week spans two year buckets (the year is the boundary).
-    // Refuse if any bucket already exists, so a half-created week can't
-    // silently dedupe day files into day-2.md.
-    const buckets = [...new Set(week.days.map((d) => path.join(DIR_TIME, weekDir(d))))]
-    for (const bucket of buckets) {
-      if (await exists(bucket)) {
-        output.log(`\n  ${bucket} already exists. Explicitly pass the date.`)
-        return CommandResult.error('Week directory already exists')
-      }
-    }
-
     const activeStreaks = (await loadStreaks('active')).map((loaded) => loaded.streak)
-
-    // Each day files through dayDir, so a boundary week's spillover days
-    // route into their own year's bucket instead of the Monday's — the
-    // write pattern that used to mint mis-yeared artifact paths.
-    for (const plainDay of week.days) {
-      const dd = new DayDirFileWriter(plainDay)
-      const dayObj = stampStreaksList(DayDocument.createFutureDay(plainDay), activeStreaks, plainDay)
-      await dd.write('day.md', dayObj.toMarkdown())
-    }
+    const result = await createWeekDays(week, DIR_TIME, (day) =>
+      stampStreaksList(DayDocument.createFutureDay(day), activeStreaks, day).toMarkdown(),
+    )
+    output.log(`${result.created.length} days created; ${result.existing.length} existing days kept.`)
 
     output.log('\nSuccess!\n')
 

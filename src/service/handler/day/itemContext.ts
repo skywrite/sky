@@ -15,6 +15,7 @@ export interface ItemRoutesOptions {
   view: (ymd: string) => Promise<DayView>
   markdownBaseDir: string
   stateDir?: string
+  today: () => PlainDate
   /** Test seam for a failed multi-file write. */
   writePlanning?: (file: string, content: string) => Promise<void>
 }

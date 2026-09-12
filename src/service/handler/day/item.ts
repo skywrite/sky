@@ -16,6 +16,7 @@ import DayDocument from '#shared/models/Day/mod.ts'
 import { createEditingRoutes } from './editing.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList } from './order.ts'
+import { createDayOrganizer } from './organizing.ts'
 import { createPlanningRoutes } from './planning.ts'
 
 type ItemAddress = Record<string, unknown> & { list: string; raw: string }
@@ -27,7 +28,12 @@ function isItemAddress(body: Record<string, unknown> | null): body is ItemAddres
 export function createItemRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
   const guard: MiddlewareHandler = async (c, next) => {
-    if (c.req.method !== 'POST' || !/\/item(?:\/(?:delete|restore|add|pull|undo|edit(?:\/undo)?))?$/.test(c.req.path))
+    if (
+      c.req.method !== 'POST' ||
+      !/\/item(?:\/(?:delete|restore|add|pull|undo|edit(?:\/undo)?|organize\/(?:move|reorder|order|undo)))?$/.test(
+        c.req.path,
+      )
+    )
       return next()
     const origin = c.req.header('Origin')
     if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('Sec-Fetch-Site') === 'cross-site')
@@ -83,6 +89,8 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   })
 
   app.route('/', createPlanningRoutes(options))
-  app.route('/', createEditingRoutes(options))
+  const organizer = createDayOrganizer(options)
+  app.route('/', organizer.routes)
+  app.route('/', createEditingRoutes(options, organizer))
   return app
 }

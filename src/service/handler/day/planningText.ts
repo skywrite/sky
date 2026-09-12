@@ -4,7 +4,7 @@ import { cleanItemText, normalizeForMatch } from '#commands/all/day/items/lib/it
 import { hash } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
-import { orderPlanList } from './order.ts'
+import { isManualPlanList, orderPlanList } from './order.ts'
 import type { DayPlanInput, NextDayItem, NextFile } from './planningTypes.ts'
 
 export interface NextEntry extends Omit<NextDayItem, 'path'> {
@@ -105,7 +105,7 @@ export function addPlanItem(content: string, input: DayPlanInput): { content: st
     input.kind === 'reminders'
       ? document.addReminderItem(raw)
       : input.kind === 'commitments'
-        ? document.addCommitmentItem(raw, { category: input.category, sort: true })
+        ? document.addCommitmentItem(raw, { category: input.category, sort: !isManualPlanList(content, list) })
         : document.addTodoItem(raw, { category: input.category })
   return { content: orderPlanList(result.toMarkdown(), list), list, raw }
 }

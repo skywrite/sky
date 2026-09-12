@@ -12,14 +12,17 @@ import {
   useState,
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { itemEditFields, type DayEditFields, type DayEditKind } from '../../day/editingTypes.ts'
 import { normalizeDayTime } from '../../day/planningTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
+import { DayCalendarIcon, DayDatePicker, dayDateLabel } from './dayDatePicker.tsx'
 
 const keyOf = (item: DayItem) => JSON.stringify([item.list, item.raw])
+const editFields = (item: DayItem, date: string) => ({ ...itemEditFields(item), date })
 interface Draft {
   item: DayItem
-  fields: DayEditFields
+  fields: DayEditFields & { date: string }
   mode: 'inline' | 'details'
   selection?: string
 }
@@ -29,11 +32,13 @@ interface Editing {
   error: string | null
   readOnly: boolean
   mobile: boolean
+  today: string
   begin: (item: DayItem, mode: Draft['mode'], selection?: string) => void
-  change: (fields: Partial<DayEditFields>) => void
+  change: (fields: Partial<Draft['fields']>) => void
   details: () => void
   cancel: () => void
   save: () => void
+  dismissUndo: () => void
 }
 const EditingContext = createContext<Editing | null>(null)
 export const useItemEditing = () => useContext(EditingContext)!
@@ -73,6 +78,7 @@ export function DayItemEditing({
   dismissOtherUndo,
   otherUndo,
   onDelete,
+  navigate,
   children,
 }: {
   day: DayData | null
@@ -80,13 +86,14 @@ export function DayItemEditing({
   dismissOtherUndo: () => void
   otherUndo: unknown
   onDelete: (item: DayItem) => void
+  navigate: (path: string) => void
   children: ReactNode
 }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
   const [error, setError] = useState<string | null>(null)
-  const [undo, setUndo] = useState<{ id: string; message: string } | null>(null)
+  const [undo, setUndo] = useState<{ id: string; message: string; route: string; date?: string } | null>(null)
   const requestId = useRef<{ payload: string; id: string } | null>(null)
   const mobile = useMediaQuery('(max-width: 900px)') ?? false
   const viewport = useEditViewport(Boolean(draft) && mobile)
@@ -106,10 +113,10 @@ export function DayItemEditing({
     if (otherUndo) setUndo(null)
   }, [otherUndo])
   useEffect(() => {
-    if (!undo || busy) return
+    if (!undo || busy || error) return
     const timer = setTimeout(() => setUndo(null), 8000)
     return () => clearTimeout(timer)
-  }, [undo, busy])
+  }, [undo, busy, error])
   // A refresh can remove or replace the row. Keep its unsaved draft accessible in Details.
   useEffect(() => {
     if (!draft || !day) return
@@ -170,13 +177,14 @@ export function DayItemEditing({
       setError('Enter a time for this commitment.')
       return
     }
-    if (JSON.stringify(fields) === JSON.stringify(itemEditFields(draft.item))) {
+    if (JSON.stringify(fields) === JSON.stringify(editFields(draft.item, ymd))) {
       cancel()
       return
     }
     const input = {
       list: draft.item.list,
       raw: draft.item.raw,
+      revision: draft.item.revision,
       ...(draft.mode === 'inline' ? { text: fields.text } : fields),
     }
     const payload = JSON.stringify(input)
@@ -190,11 +198,13 @@ export function DayItemEditing({
         undo: string
         message: string
         item: { list: string; raw: string }
+        undoRoute?: string
+        date?: string
       }>('edit', { ...input, requestId: requestId.current.id })
       setDraft(null)
       applyView(result.view)
       dismissOtherUndo()
-      setUndo({ id: result.undo, message: result.message })
+      setUndo({ id: result.undo, message: result.message, route: result.undoRoute ?? 'edit/undo', date: result.date })
       restoreFocus(result.item)
     } catch (failure) {
       if (currentDay.current === ymd)
@@ -212,7 +222,7 @@ export function DayItemEditing({
     setBusy(true)
     setError(null)
     try {
-      applyView(await request<DayData>('edit/undo', { id: undo.id }))
+      applyView(await request<DayData>(undo.route, { id: undo.id }))
       setUndo(null)
     } catch (failure) {
       if (currentDay.current === ymd)
@@ -230,6 +240,8 @@ export function DayItemEditing({
     error,
     readOnly,
     mobile,
+    today: day?.today.ymd ?? ymd,
+    dismissUndo: () => setUndo(null),
     begin: (item, mode, selection) => {
       if (pending.current || readOnly || (draft && keyOf(draft.item) !== keyOf(item))) return
       dismissOtherUndo()
@@ -237,7 +249,7 @@ export function DayItemEditing({
       setError(null)
       const open = () =>
         setDraft((previous) =>
-          previous ? { ...previous, mode } : { item, fields: itemEditFields(item), mode, selection },
+          previous ? { ...previous, mode } : { item, fields: editFields(item, ymd), mode, selection },
         )
       // Mount and focus during the tap so mobile browsers can open the keyboard.
       if (mobile && mode === 'inline') flushSync(open)
@@ -268,6 +280,7 @@ export function DayItemEditing({
           editor={editor}
           categories={categories}
           viewport={viewport}
+          date={ymd}
           onDelete={() => {
             if (!busy && !readOnly) {
               setDraft(null)
@@ -303,6 +316,11 @@ export function DayItemEditing({
           <Button variant="secondary" loading={busy} onClick={() => void revert()}>
             Undo
           </Button>
+          {undo.date && (
+            <Button variant="secondary" disabled={busy} onClick={() => navigate(`/${undo.date}`)}>
+              Open date
+            </Button>
+          )}
           <Button
             variant="secondary"
             disabled={busy}
@@ -412,16 +430,20 @@ function ItemDetails({
   editor,
   categories,
   viewport,
+  date,
   onDelete,
 }: {
   editor: Editing
   categories: string[]
   viewport: CSSProperties
+  date: string
   onDelete: () => void
 }) {
   const draft = editor.draft!
   const fields = draft.fields
-  const dirty = JSON.stringify(fields) !== JSON.stringify(itemEditFields(draft.item))
+  const [choosingDate, setChoosingDate] = useState(false)
+  const dirty = JSON.stringify(fields) !== JSON.stringify(editFields(draft.item, date))
+  const tomorrow = new PlainDate(editor.today).addDays(1).ymd
   const shared = {
     opened: true,
     onClose: editor.cancel,
@@ -430,6 +452,7 @@ function ItemDetails({
     closeOnClickOutside: !dirty && !editor.busy,
     closeOnEscape: !editor.busy,
     withCloseButton: !editor.busy,
+    closeButtonProps: { 'aria-label': 'Close item details' },
     returnFocus: false,
     classNames: { content: 'sky-item-dialog', body: 'sky-item-dialog-body' },
   }
@@ -490,6 +513,34 @@ function ItemDetails({
             }}
           />
         )}
+        <div className="sky-item-date">
+          <span className="sky-item-date-label" id="sky-item-date-label">
+            Date
+          </span>
+          <button
+            type="button"
+            className="sky-item-date-value"
+            aria-labelledby="sky-item-date-label sky-item-date-value"
+            disabled={editor.busy || editor.readOnly}
+            onClick={() => setChoosingDate(true)}
+          >
+            <DayCalendarIcon />
+            <span id="sky-item-date-value">{dayDateLabel(fields.date)}</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <div className="sky-item-date-actions">
+            <Button
+              variant="secondary"
+              disabled={editor.busy || editor.readOnly || fields.date === tomorrow}
+              onClick={() => editor.change({ date: tomorrow })}
+            >
+              Tomorrow
+            </Button>
+            <Button variant="secondary" disabled={editor.busy || editor.readOnly} onClick={() => setChoosingDate(true)}>
+              Choose date…
+            </Button>
+          </div>
+        </div>
         {['commitments', 'important'].includes(fields.kind) ? (
           <div className="sky-item-time">
             <TextInput
@@ -546,7 +597,7 @@ function ItemDetails({
       </div>
     </form>
   )
-  return editor.mobile ? (
+  const dialog = editor.mobile ? (
     <Drawer {...shared} position="bottom" size="auto" style={viewport} className="sky-item-sheet">
       {body}
     </Drawer>
@@ -554,5 +605,23 @@ function ItemDetails({
     <Modal {...shared} centered size={620}>
       {body}
     </Modal>
+  )
+  return (
+    <>
+      {dialog}
+      {choosingDate && (
+        <DayDatePicker
+          today={editor.today}
+          initial={fields.date}
+          title="Choose a date"
+          confirmLabel="Use this date"
+          onClose={() => setChoosingDate(false)}
+          onChoose={(date) => {
+            editor.change({ date })
+            setChoosingDate(false)
+          }}
+        />
+      )}
+    </>
   )
 }

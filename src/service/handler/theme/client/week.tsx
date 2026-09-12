@@ -649,9 +649,9 @@ export function WeekMain({
         )}
         <span className="sky-title">{title}</span>
         <nav className="sky-tabs">
-          {view && !view.exists && !view.current && (
+          {view && view.days.some((day) => !day.exists) && (
             <Button size="sm" loading={busy === 'create'} onClick={() => void send('create', '/create')}>
-              Create the week
+              {view.exists ? 'Create remaining days' : 'Create the week'}
             </Button>
           )}
           {view?.plan && (
