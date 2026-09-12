@@ -11,6 +11,38 @@ test('renderStatic renders markdown as semantic HTML', () => {
   })
 })
 
+test('renderStatic keeps email approval entities from being escaped twice', () => {
+  assert({
+    given: 'an email approval with encoded recipient brackets and an ampersand in the subject',
+    should: 'leave character references for the browser to display as text',
+    actual: renderStatic(
+      '  Account: (default)\n  To:      Jane Doe &lt;jane@example.com&gt;\n  Subject: Atlas &amp; Widget-V2\n\n---\n\nReady for review.',
+    ),
+    expected:
+      '<p>  Account: (default)\n  To:      Jane Doe &lt;jane@example.com&gt;\n  Subject: Atlas &amp; Widget-V2</p>\n<hr>\n<p>Ready for review.</p>',
+  })
+})
+
+test('renderStatic handles entities as text without decoding code or introducing markup', () => {
+  for (const [source, expected] of [
+    ['A & B < 3 > 1', '<p>A &amp; B &lt; 3 &gt; 1</p>'],
+    ['&#60;Jane&#x3E; &mdash; &#X1F44B;', '<p>&#60;Jane&#x3E; &mdash; &#X1F44B;</p>'],
+    ['**Jane &amp; Doe**', '<p><strong>Jane &amp; Doe</strong></p>'],
+    ['&amp;lt; &lt &amp &#12345678;', '<p>&amp;lt; &amp;lt &amp;amp &amp;#12345678;</p>'],
+    ['&lt;script&gt;alert(1)&lt;/script&gt;', '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>'],
+    ['&#42;literal&#42;', '<p>&#42;literal&#42;</p>'],
+    ['`&lt;` and \\&lt;', '<p><code>&amp;lt;</code> and &amp;lt;</p>'],
+    ['```text\n&lt;Jane&gt;\n```', '<pre><code class="language-text">&amp;lt;Jane&amp;gt;</code></pre>'],
+  ]) {
+    assert({
+      given: source,
+      should: 'render prose entities once while keeping literal syntax and HTML inert',
+      actual: renderStatic(source!),
+      expected,
+    })
+  }
+})
+
 test('renderStatic shows raw HTML as text', () => {
   assert({
     given: 'a reply quoting an HTML block and an inline tag',

@@ -4,7 +4,7 @@
  * decorator emits clean semantic HTML with no syntax at all.
  */
 
-import { escapeAttr, escapeHtml } from './html.ts'
+import { escapeAttr, escapeHtml, escapeMarkdownText } from './html.ts'
 import type { InlineNode } from './lexer.ts'
 
 export type DecorateMode = 'editing' | 'export'
@@ -99,7 +99,7 @@ function editing(node: InlineNode, context: DecorateContext): string {
 function exported(node: InlineNode, context: DecorateContext): string {
   switch (node.type) {
     case 'text':
-      return escapeHtml(node.text)
+      return escapeMarkdownText(node.text)
     case 'escape':
       return escapeHtml(node.text.slice(1))
     case 'code':

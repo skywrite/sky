@@ -241,6 +241,6 @@ test('RT-13 the export decorator emits clean semantic HTML with no syntax', () =
     should: 'render tags only',
     actual: html,
     expected:
-      '<strong>a</strong> <em>b</em> <code>c</code> <del>d</del> <mark>e</mark> <a href="g" title="h">f</a> <img src="j" alt="i"> <a href="https://k.l">https://k.l</a> * <u>m</u> n<br>\no\np &amp;amp; <b>q</b>',
+      '<strong>a</strong> <em>b</em> <code>c</code> <del>d</del> <mark>e</mark> <a href="g" title="h">f</a> <img src="j" alt="i"> <a href="https://k.l">https://k.l</a> * <u>m</u> n<br>\no\np &amp; <b>q</b>',
   })
 })

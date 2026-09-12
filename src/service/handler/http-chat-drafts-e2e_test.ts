@@ -59,6 +59,21 @@ test(
         let message = MESSAGE
         let submitted = ''
         let busy = true
+        const approval = {
+          id: 'email-draft',
+          toolName: 'google_email_draft_new',
+          lines: [
+            '  Account: (default)',
+            '  To:      Jane Doe &lt;jane@example.com&gt;',
+            '  Subject: Atlas &amp; Widget-V2',
+            '',
+            '---',
+            '',
+            'Please review the proposal.',
+            '',
+            'Keep &lt;script&gt;alert(1)&lt;/script&gt; as text.',
+          ],
+        }
         const turns = () => [
           { role: 'user', content: message },
           { role: 'assistant', content },
@@ -73,7 +88,7 @@ test(
           }),
         )
         await page.route('**/chat/draft', (route) =>
-          route.fulfill({ json: { turns: turns(), documents: 0, kept: 0, busy } }),
+          route.fulfill({ json: { turns: turns(), documents: 0, kept: 0, busy, pending: [approval] } }),
         )
         await page.route('**/chat/draft/settings', (route) =>
           route.fulfill({
@@ -119,7 +134,33 @@ test(
         await page.goto(`${origin}/thread/draft`)
         const body = page.locator('.sky-body.sky-rendered').first()
         const user = page.locator('.sky-bubble-text.sky-rendered').first()
+        const card = page.locator('.sky-ask')
+        const preview = card.locator('.sky-ask-body.sky-rendered')
         await body.locator('strong').filter({ hasText: 'Atlas update' }).waitFor()
+        assert({
+          given: 'a Gmail approval with encoded recipient brackets and literal HTML',
+          should: 'show the readable address and subject while keeping HTML inert',
+          actual: {
+            paragraphs: await preview.locator('p').allTextContents(),
+            scripts: await preview.locator('script').count(),
+          },
+          expected: {
+            paragraphs: [
+              '  Account: (default)\n  To:      Jane Doe <jane@example.com>\n  Subject: Atlas & Widget-V2',
+              'Please review the proposal.',
+              'Keep <script>alert(1)</script> as text.',
+            ],
+            scripts: 0,
+          },
+        })
+        await card.getByRole('button', { name: 'Raw', exact: true }).click()
+        assert({
+          given: 'the Raw view of the same approval',
+          should: 'retain the original payload including its encoded characters',
+          actual: await card.locator('pre.sky-ask-body').textContent(),
+          expected: approval.lines.join('\n'),
+        })
+        await card.getByRole('button', { name: 'Rich', exact: true }).click()
         assert({
           given: 'a user message with Markdown, literal code, and HTML text',
           should: 'format the message inside its bubble without treating its code as an assistant draft',
@@ -172,6 +213,7 @@ test(
         for (const [surface, start, end] of [
           [body, 2, 3],
           [user, 0, 1],
+          [preview, 0, 1],
         ] as const) {
           const selected = await surface.evaluate(
             (element, [start, end]) => {
@@ -225,9 +267,11 @@ test(
 
         content = DRAFT.replace('Atlas update', 'Atlas updated draft')
         message = MESSAGE.replace('I can own the review.', 'I can own the final review.')
+        approval.lines[2] = '  Subject: Atlas &amp; Widget-V2 revised'
         busy = false
         await body.locator('strong').filter({ hasText: 'Atlas updated draft' }).waitFor()
         await user.locator('p').filter({ hasText: 'I can own the final review.' }).waitFor()
+        await preview.getByText('Subject: Atlas & Widget-V2 revised', { exact: false }).waitFor()
         await page.getByRole('textbox', { name: 'Message sky…', exact: true }).fill('Please **revise** the draft.')
         await page.getByRole('button', { name: 'Send', exact: true }).click()
         await page.getByText('Atlas revised update', { exact: true }).waitFor()
