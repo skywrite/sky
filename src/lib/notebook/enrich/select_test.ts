@@ -1,6 +1,12 @@
 import { assert, test } from '#test'
 import type { PlaceJudgment, RelCandidate, SelectRequest } from './select.ts'
-import { buildSelectInstructions, rankCandidates, validatePlaceSelection, validateSelection } from './select.ts'
+import {
+  buildPlaceJudgmentsSchema,
+  buildSelectInstructions,
+  rankCandidates,
+  validatePlaceSelection,
+  validateSelection,
+} from './select.ts'
 
 const CANDIDATES: RelCandidate[] = [
   { ref: 'projects/Atlas-Rollout', inText: true, inPrior: true, uses: 12 },
@@ -93,7 +99,8 @@ test('place selection requires a unique subject judgment grounded in the named p
       validatePlaceSelection(picked, [subject], req),
       validatePlaceSelection(picked, [subject], { ...req, placesOnly: true }),
       validatePlaceSelection([], [subject], { ...req, placesOnly: true }),
-      validatePlaceSelection(picked, [subject], { ...req, body: 'x'.repeat(7000) + quote }),
+      validatePlaceSelection(picked, [subject], { ...req, body: 'x '.repeat(3500) + quote }),
+      validatePlaceSelection(picked, [subject], { ...req, body: 'x '.repeat(4500) + quote }),
       validatePlaceSelection(picked, [subject], {
         ...req,
         candidates: [{ ...place, placeEvidence: [] }, CANDIDATES[1]!],
@@ -105,7 +112,7 @@ test('place selection requires a unique subject judgment grounded in the named p
         }),
       ),
     ],
-    expected: [picked, [place.ref], [place.ref], ['Acme Corp'], ['Acme Corp'], ['Acme Corp'], ['Acme Corp']],
+    expected: [picked, [place.ref], [place.ref], picked, ['Acme Corp'], ['Acme Corp'], ['Acme Corp'], ['Acme Corp']],
   })
 })
 
@@ -139,5 +146,60 @@ test('place selection reuses original multiline evidence without another model q
       }),
     ],
     expected: [[candidate.ref], [], []],
+  })
+})
+
+test('travel destinations qualify with grounded evidence and share the existing place limit', () => {
+  const body = 'France trip: met the team, then visited Canada. We discussed local housing in Spain.'
+  const candidates = ['France', 'Canada', 'Spain'].map((name) => ({
+    ref: `places/mock/${name}`,
+    inText: true,
+    inPrior: false,
+    uses: 0,
+    placeEvidence: [{ name, quote: body }],
+  }))
+  const judgments: PlaceJudgment[] = candidates.map((candidate, i) => ({
+    ref: candidate.ref,
+    role: i < 2 ? 'destination' : 'subject',
+    reason: i < 2 ? 'The entry recounts a business trip to this destination.' : 'Local housing is discussed.',
+  }))
+  const req: SelectRequest = { body, candidates, exemplars: [], placesOnly: true }
+  assert({
+    given: 'two travel destinations and a place topic',
+    should: 'accept destinations under the existing two-place cap',
+    actual: validatePlaceSelection([], judgments, req),
+    expected: candidates.slice(0, 2).map((c) => c.ref),
+  })
+  assert({
+    given: 'a destination judgment with conflicting, missing or ungrounded support',
+    should: 'enforce the same checks as for place topics',
+    actual: [
+      validatePlaceSelection([], [judgments[0]!, { ...judgments[0]!, role: 'incidental' }], req),
+      validatePlaceSelection([], [{ ...judgments[0]!, reason: ' ' }], req),
+      validatePlaceSelection([], [judgments[0]!], { ...req, body: 'Unrelated entry.' }),
+      validatePlaceSelection([candidates[0]!.ref], [judgments[0]!], { ...req, placesOnly: false }),
+    ],
+    expected: [[], [], [], [candidates[0]!.ref]],
+  })
+})
+
+test('place judgment output requires an assessment for every place candidate', () => {
+  const schema = buildPlaceJudgmentsSchema([
+    { ...CANDIDATES[0]!, ref: 'places/FR' },
+    { ...CANDIDATES[0]!, ref: 'places/CA' },
+    CANDIDATES[1]!,
+  ])
+  const destination = { role: 'destination', reason: 'The entry recounts a visit.' }
+  const incidental = { role: 'incidental', reason: 'Only a passing reference.' }
+  assert({
+    given: 'complete, empty, partial and substituted candidate assessments',
+    should: 'require both place judgments while ordinary entity candidates remain context',
+    actual: [
+      { 'places/FR': destination, 'places/CA': incidental },
+      {},
+      { 'places/FR': destination },
+      { 'places/FR': destination, 'places/ES': incidental },
+    ].map((places) => schema.safeParse({ places }).success),
+    expected: [true, false, false, false],
   })
 })

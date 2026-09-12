@@ -64,7 +64,11 @@ alongside people, organizations and projects. Extraction distinguishes literal
 geography and physical venues from institutions, products, dates, times and
 events; sharing a place's name does not make an entity geographic. Each place
 quotes its source; its name and any disambiguating geographic context must appear in that
-quote. Resolution uses exact normalized names, aliases or references. A
+quote. Emphasis, whitespace and typographic quotes can differ, but words cannot be changed
+or omitted. Extraction and selection read the same bounded source window.
+Place candidates are discovered across substantive sections independently
+of the entry's main people, organizations and projects; selection applies the
+final link limit. Resolution uses exact normalized names, aliases or references. A
 country, region or city explicitly named in the text can distinguish
 namesakes. A comma-qualified name uses its written suffixes as context only
 when no full name or alias matches; the longest exact named prefix wins, and
@@ -78,8 +82,10 @@ visible source is required; regulatory context alone cannot supply one.
 Place-only requests keep competing people, organizations and projects visible
 until selection; only the returned additions are restricted to places, and
 other entities do not consume the place request's link budget. A place
-must receive a unique subject judgment with a reason, backed by its original
-grounded extraction quote. The selector reuses that evidence instead of
+must receive a unique subject or destination judgment with a reason, backed by
+its original grounded extraction quote. A destination can identify a business-trip
+account or firsthand visit impressions without being a separate geography topic.
+The selector reuses that evidence instead of
 transcribing it again. A meaningful place topic can be a short section of a
 longer entry; the entire entry need not be about that place. Incidental and non-geographic uses, missing or
 conflicting judgments, and evidence outside the selector's visible source are

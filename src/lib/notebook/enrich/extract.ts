@@ -1,4 +1,5 @@
 import { generateObject } from 'ai'
+import { Lexer } from 'marked'
 import { z } from 'zod'
 import { normalizePlaceName, type PlaceMention } from '#lib/places/catalog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
@@ -6,7 +7,8 @@ import { GEOGRAPHIC_KINDS } from '#shared/models/Place/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { partyNames } from './parties.ts'
 
-const MAX_TRANSCRIPT_CHARS = 8000
+// Selection must see the same context that supplied extraction evidence.
+export const MAX_TRANSCRIPT_CHARS = 8000
 const MAX_PER_KIND = 6
 const AI_TIMEOUT_MS = 60_000
 
@@ -67,7 +69,7 @@ const schema = z.object({
       }),
     )
     .describe(
-      'Only geographic places or physical venues that are independent subjects of the text. A venue’s containing city belongs in context, not another item here, unless that city is separately discussed. Exclude companies, institutions, products, networks, people, dates, times, timezones, events, and vague geographic words. Return [] when none qualify.',
+      'Candidate geographic places or physical venues discussed in any section, including trip destinations and comparisons of local markets, even when the entry is mainly about a company or project. A later pass chooses the final links. A venue’s containing city belongs in context unless separately discussed. Exclude institutions, products, people, dates, times, events and vague geographic words. Return [] when none qualify.',
     ),
 })
 
@@ -78,10 +80,13 @@ export function buildExtractInstructions(req: ExtractRequest): string {
     `You list the subjects an archived ${kind} is about, for notebook cross-references.`,
     '',
     'Rules:',
-    `- List only the one to three subjects the ${kind} is fundamentally about — not every name that appears. A passing name-drop or greeting is never a subject.`,
+    `- For people, organizations and projects, list only the one to three subjects the ${kind} is fundamentally about. A passing name-drop or greeting is never a subject.`,
+    `- Discover place candidates separately: collect up to ${MAX_PER_KIND} places discussed in any substantive section. Do not use the entry’s main topic or the final relationship limit to discard place candidates; a later selection pass decides which links to keep.`,
     `- When the ${kind} is about an explicitly named project or initiative, use that name rather than its participating companies. Do not invent a project name from a work description. Work on a physical venue without an explicit project name should identify the venue itself.`,
     '- Only concrete named entities qualify: a person, a company, a named project, or a geographic place. General topics and product categories are not subjects.',
     '- Places qualify when their politics, travel, conditions, or the place itself are a substantive topic. An incidental address, event setting, or a country inside a company name is not a place subject.',
+    '- A comparison of named countries’ market economics, adoption or launch viability supplies place candidates even inside a broader business discussion. Distinguish those concrete comparisons from bare market names, campaign labels or budget line items.',
+    '- Include the explicit destination of a trip account or itinerary, including business trips and firsthand observations about a visit. The account can discuss meetings and people without describing tourist attractions. A single meeting location or a wish to enjoy a trip is only incidental.',
     "- Classify a name by what it denotes in this passage. A business, institution, product, technology network, or person is not a place, even if it shares a geographic name. Discussing an institution's policy does not make its name a physical venue.",
     '- Dates, deadlines, clock times, timezones, historical events, and vague terms such as worldwide are never place names. Quoting a word proves that it occurs, not that it is a place. When unsure that an entity is geographic, omit it from places.',
     '- For places, quote the text and copy any explicitly stated containing country, region or city into context. Never infer a missing country or choose among namesakes from familiarity. A country is not the company or person bearing its name.',
@@ -139,21 +144,43 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
   }
 }
 
-/** A known country is not evidence of a mention: every name and context must occur in an actual quote. */
+function evidenceText(markdown: string): string {
+  return Lexer.lexInline(markdown)
+    .map((token) => (token.type === 'strong' || token.type === 'em' ? evidenceText(token.text) : token.raw))
+    .join('')
+    .replace(/[‘’]/gu, "'")
+    .replace(/[“”]/gu, '"')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+function normalizeEvidenceName(text: string): string {
+  // Preserve the possessive s as a separate token, so a country's name can
+  // match its possessive without treating longer names as that country.
+  return normalizePlaceName(text.replace(/(['’])s\b/giu, '$1 s'))
+}
+
+/** Source words must match; emphasis and whitespace need not be transcribed exactly. */
 export function groundedPlaces(
   places: ExtractedSubjects['places'],
   req: ExtractRequest,
   nonPlaceNames: string[] = [],
 ): ExtractedSubjects['places'] {
   const source = `${req.summary ?? ''}\n${truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS)}`
-  const namedEntities = nonPlaceNames.map(normalizePlaceName).sort((a, b) => b.length - a.length)
-  const normalizedSource = ` ${normalizePlaceName(source)} `
+  const namedEntities = nonPlaceNames.map(normalizeEvidenceName).sort((a, b) => b.length - a.length)
+  const normalizedSource = ` ${normalizeEvidenceName(source)} `
+  let unformattedSource: string | undefined
   const seen = new Set<string>()
   return places
     .filter((place) => {
-      if (!place.quote.trim() || !source.includes(place.quote)) return false
-      const quote = ` ${normalizePlaceName(place.quote)} `
-      const names = [place.name, ...(place.context ?? [])].map(normalizePlaceName)
+      if (!place.quote.trim()) return false
+      if (!source.includes(place.quote)) {
+        unformattedSource ??= evidenceText(source)
+        const quoteText = evidenceText(place.quote)
+        if (!quoteText || !unformattedSource.includes(quoteText)) return false
+      }
+      const quote = ` ${normalizeEvidenceName(place.quote)} `
+      const names = [place.name, ...(place.context ?? [])].map(normalizeEvidenceName)
       if (names.some((name) => !name || !quote.includes(` ${name} `))) return false
       // A country embedded in an extracted institution's name needs an
       // independent geographic occurrence; regulatory context cannot supply it.

@@ -200,6 +200,56 @@ test('place names embedded in named entities require an independent occurrence',
   })
 })
 
+test('place evidence tolerates emphasis and paragraph formatting without dropping source words', () => {
+  const body = '**France market:** fees do not cover costs.\n\n*Canada* has stronger adoption.'
+  const mention = { name: 'France', quote: 'France market: fees do not cover costs. Canada has stronger adoption.' }
+  assert({
+    given: 'the same source words without emphasis, or altered, omitted and invented words',
+    should: 'accept formatting differences while rejecting changes to the quoted content',
+    actual: [
+      groundedPlaces([mention], { body }),
+      groundedPlaces([{ ...mention, quote: mention.quote.replace('do not cover', 'cover') }], { body }),
+      groundedPlaces([{ ...mention, quote: 'France market: Canada has stronger adoption.' }], { body }),
+      groundedPlaces([{ ...mention, quote: 'France market: profits exceed costs.' }], { body }),
+      groundedPlaces([mention], { body: '**France market:** unrelated content.\n\n*Canada* has stronger adoption.' }),
+    ],
+    expected: [[mention], [], [], [], []],
+  })
+  assert({
+    given: 'a country quoted without formatting inside an institution’s name',
+    should: 'retain the independent geographic occurrence requirement',
+    actual: groundedPlaces(
+      [{ name: 'France', quote: 'Acme Bank of France accepted the filing.' }],
+      { body: '**Acme Bank of France** accepted the filing.' },
+      ['Acme Bank of France'],
+    ),
+    expected: [],
+  })
+})
+
+test('place evidence recognizes possessives without matching longer names or institution components', () => {
+  const quotes = ["France's housing costs are rising.", 'France’s housing costs are rising.']
+  assert({
+    given: 'straight and curly possessives in a country discussion',
+    should: 'retain the explicitly named country',
+    actual: quotes.flatMap((quote) =>
+      quotes.map((body) => groundedPlaces([{ name: 'France', quote }], { body }).length),
+    ),
+    expected: [1, 1, 1, 1],
+  })
+  const quote = 'Acme Bank of France’s filing is pending.'
+  const longer = 'Franceville has housing issues.'
+  assert({
+    given: 'a possessive institution name or a longer place name',
+    should: 'produce no independent country evidence',
+    actual: [
+      groundedPlaces([{ name: 'France', quote }], { body: quote }, ['Acme Bank of France']),
+      groundedPlaces([{ name: 'France', quote: longer }], { body: longer }),
+    ],
+    expected: [[], []],
+  })
+})
+
 test('a qualified city subject reaches selection with its original quoted evidence', async () => {
   await notebook(async (dir, store, services) => {
     const ref = 'places/US/CA/Harbor-City'
