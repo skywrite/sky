@@ -409,7 +409,7 @@
   opacity: 0.58;
 }
 
-/* The reply's foot is one row: its details toggle at the left, "New chat from here…" at the right, level with it. */
+/* Reply details and the work action share a row; branching lives in its menu. */
 .sky-reply-foot {
   display: flex;
   align-items: flex-start;
@@ -423,7 +423,7 @@
   margin-top: 0;
 }
 
-/* "New chat from here…" stands as tall as the details row so the two read on one line; quiet until the pointer is over the turn. */
+/* Actions stand as tall as the reply details row. */
 .sky-reply-acts {
   display: flex;
   align-items: center;

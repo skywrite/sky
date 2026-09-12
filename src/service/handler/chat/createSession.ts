@@ -457,6 +457,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    selectionStarts: { dir: path.join(config.DIR_STATE_AI_CHATS, 'selection-starts') },
     writingDrafts,
     legalReviews: createLegalReviewer(config).store,
     attachmentsRoot: config.DIR_ATTACHMENTS,

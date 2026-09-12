@@ -92,7 +92,7 @@ test(
         await composer.fill('What comes next?')
         await page.getByRole('button', { name: 'Send', exact: true }).click()
         await page.getByText('Assign an owner.', { exact: true }).waitFor()
-        const buttons = page.getByRole('button', { name: 'New chat from here…', exact: true })
+        const buttons = page.getByRole('button', { name: 'Response options', exact: true })
         assert({
           given: 'two completed replies with an interrupted reply still displayed between them',
           should: 'offer branching only on completed replies while preserving the interrupted text',
@@ -104,6 +104,7 @@ test(
           expected: { turns: 6, branches: 2, interrupted: true },
         })
         await buttons.last().click()
+        await page.getByRole('menuitem', { name: 'Branch from here…', exact: true }).click()
         await page.getByText(`— Couldn't start a new chat from here — ${CONFLICT} —`, { exact: true }).waitFor()
         assert({
           given: 'the server refuses a stale branch reference',
@@ -113,6 +114,7 @@ test(
         })
         refuse = false
         await buttons.last().click()
+        await page.getByRole('menuitem', { name: 'Branch from here…', exact: true }).click()
         await page.waitForURL(`${origin}/thread/branch-child`)
         await page.getByText('Assign an owner.', { exact: true }).waitFor()
         assert({

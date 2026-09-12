@@ -42,6 +42,7 @@ import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { registerLegalReviewRoutes } from './legalReview.ts'
 import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
+import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
 import { timelineOf } from './timeline.ts'
 import { inspectablePayload, recordToolExecution, restoreToolRuns, toolRunsFromMessages } from './toolRuns.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
@@ -220,6 +221,7 @@ export interface ChatSettingsHost {
 }
 
 export interface ChatRoutesOptions {
+  selectionStarts?: SelectionStartOptions
   writingDrafts?: WritingDraftStore
   legalReviews?: LegalReviewStore
   createSession: ChatSessionFactory
@@ -579,6 +581,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // Tuning chosen before a thread's first message — applied when it is built.
   const pending = new Map<string, ThreadPrefs>()
   const app = new Hono()
+  registerSelectionStarts(app, options.selectionStarts)
   if (options.attachmentsRoot) app.route('/files', createChatFileRoutes(options.attachmentsRoot))
   app.use('/:id/messages', bodyLimit({ maxSize: MAX_CHAT_FILE_BYTES + 1024 * 1024 }))
   // Two threads can move within one millisecond; a counter keeps "newest

@@ -54,9 +54,9 @@ test({ name: 'reply threads display the draft belonging to the selected response
       await page.setViewportSize({ width: 1600, height: 1050 })
       await page.goto(`${origin}/thread/review`)
       const main = page.locator('.sky-split-main')
-      const buttons = main.getByRole('button', { name: 'Reply in thread', exact: true })
+      const buttons = main.locator('.sky-reply-acts').getByRole('button', { name: 'Work on this…', exact: true })
       const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
-      const composer = panel.getByPlaceholder('Reply in thread…')
+      const composer = panel.getByPlaceholder('Discuss or request changes…')
       const visibleDrafts = panel.locator('.sky-writing-draft-body')
       for (const [index, expected] of [first, second, first, second].entries()) {
         const source = [0, 1, 2, 1][index]!

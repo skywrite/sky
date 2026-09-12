@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Textarea } from '@mantine/core'
+import { ActionIcon, Button, Menu, Textarea } from '@mantine/core'
 import {
   Fragment,
   type ClipboardEvent,
@@ -25,6 +25,7 @@ import { useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
+import { ChatSelectionMenu } from './chatSelection.tsx'
 import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
 import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
@@ -1531,11 +1532,12 @@ export interface BranchMark {
  * The thread's turns, the gather line while it runs, the saving line. No
  * header, no composer. A branch shows the turns it inherited dimmed, then
  * the line that says where it came from; a thread that branches left
- * carries a line where each left. A reply offers "New chat from here" when
+ * carries a line where each left. A reply offers "Branch from here" when
  * the page can turn to the new thread.
  */
 export function ThreadColumn({
   chat,
+  title,
   branches = [],
   onBranched,
   onOpenSaved,
@@ -1545,6 +1547,7 @@ export function ThreadColumn({
   replyMode = false,
 }: {
   chat: Chat
+  title?: string
   /** The branches that left this thread, live or saved */
   branches?: BranchMark[]
   /** Turns this page to a new thread — the fallback when a new tab is blocked; absent, replies offer no branching */
@@ -1557,6 +1560,24 @@ export function ThreadColumn({
   replyMode?: boolean
 }) {
   const { state, answer, branch } = chat
+  const transcript = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!state.loaded) return
+    const reveal = () => {
+      let id: string
+      try {
+        id = decodeURIComponent(window.location.hash.slice(1))
+      } catch {
+        return
+      }
+      if (!id) return
+      const target = document.getElementById(id)
+      if (target && transcript.current?.contains(target)) target.scrollIntoView({ block: 'center' })
+    }
+    reveal()
+    window.addEventListener('hashchange', reveal)
+    return () => window.removeEventListener('hashchange', reveal)
+  }, [state.id, state.loaded])
   const busy = state.phase !== 'idle'
   const writing = useWritingDrafts(state.id, `${state.turns.length}:${state.phase}`)
   const draftPositions = useMemo(() => {
@@ -1643,7 +1664,7 @@ export function ThreadColumn({
         </Fragment>
       ))
   return (
-    <>
+    <div ref={transcript} className="sky-chat-transcript">
       {writing.drafts
         .filter((draft) => draft.turn === 0)
         .map((draft) => (
@@ -1662,6 +1683,7 @@ export function ThreadColumn({
             {turn.role === 'user' && settled(i)}
             <TurnView
               turn={turn}
+              messageId={`chat-${state.id}-${turn.branchPoint ? `reply-${turn.branchPoint.turn}` : `message-${i + 1}`}`}
               writingDrafts={{
                 chatId: state.id,
                 drafts: writing.drafts,
@@ -1755,6 +1777,12 @@ export function ThreadColumn({
           {writing.error}
         </p>
       )}
+      <ChatSelectionMenu
+        root={transcript}
+        chatId={state.id}
+        title={title ?? state.title ?? 'Source chat'}
+        saved={state.saved}
+      />
       {state.answered
         .filter((card) => card.at >= state.turns.length)
         .map((card) => (
@@ -1795,7 +1823,7 @@ export function ThreadColumn({
           polling={busy}
         />
       )}
-    </>
+    </div>
   )
 }
 
@@ -2171,6 +2199,7 @@ export function ChatMain({
               <div className="sky-col">
                 <ThreadColumn
                   chat={chat}
+                  title={title}
                   branches={branches}
                   onBranched={replyMode ? undefined : onBranched}
                   onOpenSaved={onOpenSaved}
@@ -2266,6 +2295,7 @@ export function ChatMain({
 
 export function TurnView({
   turn,
+  messageId,
   streaming,
   cards,
   runs,
@@ -2279,6 +2309,7 @@ export function TurnView({
   writingDrafts,
 }: {
   turn: Turn
+  messageId?: string
   streaming: boolean
   /** The calls answered on the way to this reply — after the reading, before the words */
   cards?: ReactNode
@@ -2286,7 +2317,7 @@ export function TurnView({
   runs?: Run[]
   /** The turn is the parent's, inherited by this branch — drawn dimmed */
   shared?: boolean
-  /** "New chat from here": a branch that keeps the thread through this reply */
+  /** "Branch from here": a branch that keeps the thread through this reply */
   onBranch?: () => void
   /** The branch from this reply is being made */
   branching?: boolean
@@ -2306,7 +2337,13 @@ export function TurnView({
   if (userMessage) {
     const { text, files, html } = userMessage
     return (
-      <div className="sky-turn sky-turn-user" data-shared={shared || undefined}>
+      <div
+        className="sky-turn sky-turn-user"
+        id={messageId}
+        data-chat-message={messageId}
+        data-speaker="You"
+        data-shared={shared || undefined}
+      >
         <div className="sky-bubble">
           {text &&
             (html ? (
@@ -2332,7 +2369,14 @@ export function TurnView({
     <>
       {turn.note && <div className="sky-condensed">— {turn.note} —</div>}
       {cards}
-      <div className="sky-turn" data-shared={shared || undefined}>
+      <div
+        className="sky-turn"
+        id={messageId}
+        data-chat-message={messageId}
+        data-speaker="Sky"
+        data-streaming={streaming || undefined}
+        data-shared={shared || undefined}
+      >
         <span className="sky-who">
           <span>sky{turn.time ? ` · ${turn.time}` : ''}</span>
         </span>
@@ -2377,15 +2421,20 @@ export function TurnView({
                   />
                 )}
                 {branch && (
-                  <button
-                    type="button"
-                    className="sky-act"
-                    onClick={branch}
-                    disabled={branching}
-                    data-busy={branching || undefined}
-                  >
-                    {branching ? 'Starting…' : 'New chat from here…'}
-                  </button>
+                  <Menu position="bottom-end" withinPortal shadow="md">
+                    <Menu.Target>
+                      <ActionIcon variant="subtle" aria-label="Response options" disabled={branching}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <circle cx="5" cy="12" r="1.7" />
+                          <circle cx="12" cy="12" r="1.7" />
+                          <circle cx="19" cy="12" r="1.7" />
+                        </svg>
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item onClick={branch}>Branch from here…</Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 )}
               </div>
             )}

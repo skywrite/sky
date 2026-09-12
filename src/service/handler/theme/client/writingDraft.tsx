@@ -220,7 +220,7 @@ export function WritingDraftEditor<T extends WritingDraft>({
             </Button>
             {onAsk && (
               <Button size="sm" disabled={busy || disabled} onClick={() => void ask()}>
-                Ask Sky to revise
+                Work on this…
               </Button>
             )}
             <Button

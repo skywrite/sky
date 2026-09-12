@@ -156,7 +156,7 @@ export function ReplyThreadPanel({
         <Composer
           chat={chat}
           draft={draft}
-          placeholder={thread.draftId ? 'Ask Sky to revise this draft…' : 'Reply in thread…'}
+          placeholder={thread.draftId ? 'What would you like to change?' : 'Discuss or request changes…'}
           hints={
             <span className="sky-hint">
               {thread.draftId ? 'Revisions update the draft in chat' : 'Replies stay in this thread'}
@@ -204,7 +204,7 @@ export function ReplyThreadLink({
       data-has-replies={replies > 0 || undefined}
       title={stats}
     >
-      {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply in thread'}
+      {replies > 0 ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Work on this…'}
       {status && <span className="sky-reply-thread-status">{status}</span>}
     </Button>
   )

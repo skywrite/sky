@@ -162,10 +162,10 @@ test(
 
       const composer = page.locator('.sky-split-main').getByPlaceholder('Message sky…')
       await composer.fill('Keep this unsent main-chat message.')
-      await card.getByRole('button', { name: 'Ask Sky to revise', exact: true }).click()
+      await card.getByRole('button', { name: 'Work on this…', exact: true }).click()
       const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
       await panel.getByRole('heading', { name: 'Draft discussion', exact: true }).waitFor()
-      const replyComposer = panel.getByPlaceholder('Ask Sky to revise this draft…')
+      const replyComposer = panel.getByPlaceholder('What would you like to change?')
       await replyComposer.fill('Make this warmer; I want the request to feel appreciative.')
       await replyComposer.press('Enter')
       await body

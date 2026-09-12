@@ -130,7 +130,8 @@ test(
           await page.evaluate(() => {
             window.open = () => null
           })
-          await page.getByRole('button', { name: 'New chat from here…', exact: true }).click()
+          await page.getByRole('button', { name: 'Response options', exact: true }).click()
+          await page.getByRole('menuitem', { name: 'Branch from here…', exact: true }).click()
           await page.waitForURL(`${origin}/thread/child`)
           await page.waitForFunction(() => document.title === 'sky:chat - New branch')
           await composer.fill(CHILD_QUESTION)

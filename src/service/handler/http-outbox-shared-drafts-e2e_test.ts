@@ -112,11 +112,11 @@ test(
         expected: [EDITED_DRAFT, 1, 0],
       })
 
-      await card.getByRole('button', { name: 'Ask Sky to revise', exact: true }).click()
+      await card.getByRole('button', { name: 'Work on this…', exact: true }).click()
       const panel = page.locator('.sky-reply-panel')
       await panel.getByRole('heading', { name: 'Draft discussion', exact: true }).waitFor()
       await panel
-        .getByPlaceholder('Ask Sky to revise this draft…')
+        .getByPlaceholder('What would you like to change?')
         .fill('Make it warmer while keeping the review date.')
       await panel.getByRole('button', { name: 'Send', exact: true }).click()
       await card
@@ -202,8 +202,8 @@ test(
         expected: [true, true, []],
       })
       if (screenshots) await page.screenshot({ path: path.join(screenshots, 'outbox-mobile.png'), fullPage: true })
-      await card.getByRole('button', { name: 'Ask Sky to revise', exact: true }).click()
-      await panel.getByPlaceholder('Ask Sky to revise this draft…').waitFor()
+      await card.getByRole('button', { name: 'Work on this…', exact: true }).click()
+      await panel.getByPlaceholder('What would you like to change?').waitFor()
       await panel.getByRole('button', { name: 'Close thread', exact: true }).click({ trial: true })
       const panelWithinLayout = await panel.evaluate((element) => {
         const box = element.getBoundingClientRect()

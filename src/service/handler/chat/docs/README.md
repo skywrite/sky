@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -111,13 +111,25 @@ handoff fails, with a retry action outside the composer; uncompleted live
 calls are held in the browser until they end. Text submission stays disabled
 until the handoff succeeds. See [the integration note](2026-09-07-voice-inside-chat.md).
 
-Saved voice replies omit "New chat from here…"; their retained speaker labels
+Saved voice replies omit "Branch from here…"; their retained speaker labels
 also identify transcripts reopened from older calls. Completed text replies
 continue to offer branching.
 
+### Chat from selected text
+
+Selecting a passage in one completed message offers **New chat about this…**.
+It starts an independent chat with an editable Markdown quote and source link
+in the composer. Send remains the user's action. The ordinary browser draft
+store saves the quote before navigation, including before the first message.
+The source link is attribution, not conversation lineage: this action must
+never call the branch route or inherit parent turns, tools, approvals, or output
+references. The naming endpoint only reserves a readable ID; exclusive,
+case-insensitive reservations in the chat state directory prevent collisions
+across simultaneous starts and service restarts.
+
 ### Reply threads
 
-**Reply in thread** on a completed text response opens a right-hand panel
+**Work on this…** on a completed text response opens a right-hand panel
 with the original response, its replies, and a separate composer. The main
 composer keeps its draft. Closing the panel leaves its agent running; the
 source response shows the reply count and working or approval status.
@@ -183,7 +195,7 @@ renders the same events the terminal renders. Around that, three things
 a person can see and touch:
 
 - **Drafts can be edited in chat.** The shared writer's drafts have a frame
-  with Edit, Copy, Undo, previous versions, and Ask Sky to revise. The latter
+  with Edit, Copy, Undo, previous versions, and **Work on this…**. The latter
   opens the response's existing reply thread, focused on the same draft ID.
   The current draft updates in place; the transcript keeps its original text.
   Storage, learning, and conflict behavior belong to
@@ -280,7 +292,7 @@ a person can see and touch:
   New snapshots keep provider history and host state in the existing
   `CONTEXT-LOG` JSON `session` field. Older YAML recovery fields still read.
   See [2026-09-10 — recovery cannot block HTTP](2026-09-10-chat-recovery-blocked-server.md).
-- **A new chat from here.** Every completed text reply offers it. The branch is a thread
+- **Branch from here.** The response's options menu offers it. The branch is a thread
   that keeps the turns through that reply and goes its own way after them;
   on its page the inherited turns read dimmed, then a line says where it
   came from and from which turn, and the thread it left carries a line

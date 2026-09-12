@@ -63,10 +63,10 @@ test(
         await finding.locator('summary').click()
         await finding.getByText('You chose to ask the team.', { exact: true }).waitFor()
         await summary.locator(':scope > summary').click()
-        await main.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+        await main.getByRole('button', { name: 'Work on this…', exact: true }).click()
         const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
         await panel
-          .getByRole('textbox', { name: 'Reply in thread…', exact: true })
+          .getByRole('textbox', { name: 'Discuss or request changes…', exact: true })
           .fill('Draft a response in my voice.')
         await panel.getByRole('button', { name: 'Send', exact: true }).click()
         await panel

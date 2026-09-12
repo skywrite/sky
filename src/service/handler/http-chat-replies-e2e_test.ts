@@ -53,18 +53,18 @@ test(
           await main.getByRole('button', { name: 'Send', exact: true }).click()
           await main.getByText('All five agreements have been reviewed together.', { exact: true }).waitFor()
           await mainComposer.fill('A main-chat draft that must survive opening and closing the thread.')
-          await main.getByRole('button', { name: 'Reply in thread', exact: true }).click()
+          await main.getByRole('button', { name: 'Work on this…', exact: true }).click()
           const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
-          const replyComposer = panel.getByRole('textbox', { name: 'Reply in thread…', exact: true })
+          const replyComposer = panel.getByRole('textbox', { name: 'Discuss or request changes…', exact: true })
           await replyComposer.waitFor()
           const boxes = await Promise.all([main.boundingBox(), panel.boundingBox()])
           assert({
-            given: 'Reply in thread on the combined review',
+            given: 'Work on this on the combined review',
             should: 'open beside the original conversation with its own focused composer and no nested-thread actions',
             actual: {
               sideBySide: boxes[0]!.x + boxes[0]!.width <= boxes[1]!.x + 1,
               focused: await replyComposer.evaluate((element) => element === document.activeElement),
-              nested: await panel.getByRole('button', { name: 'Reply in thread', exact: true }).count(),
+              nested: await panel.getByRole('button', { name: 'Work on this…', exact: true }).count(),
               source: await panel
                 .getByText('All five agreements have been reviewed together.', { exact: true })
                 .count(),
