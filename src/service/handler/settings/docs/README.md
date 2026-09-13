@@ -53,18 +53,16 @@ Pages:
   practice, revision questions, and example compaction. Storage and learning
   belong to [writing voice](../../../../lib/writingVoice/docs/README.md).
   The selection saves to `ai.writingVoiceProfile` and applies on the next call.
-- **AI → Models** — `/settings/ai/models`: the model roles (registry `ROLES`, read-only, each naming
-  its configuration), every model configuration — the built-in
-  `default-*` catalog and yours. Yours
-  are defined right here: name, provider, model, optional baseUrl and
-  options (JSON), written to `ai.profiles.<name>`, which the registry
-  already consumes (`getAllProfiles`; config wins on a name clash —
-  shown as "overrides the built-in"). Deleting prunes any `ai`/
-  `profiles` shells the removal empties, so the file stays as
-  `sky init` wrote it. Names: `PROFILE_NAME` (no spaces). Still to
-  come: assigning roles through this page. The registry resolves the current
-  configuration on every call; the page currently displays the built-in role
-  defaults.
+- **AI → Models** — `/settings/ai/models`: Thinking, Quick, Balanced, and
+  Vision select named presets (`ai.roles`). Each preset owns a model and
+  default effort; the inline effort control edits that preset, and shared
+  roles are identified beside it. Preset editors separate model and effort,
+  with provider ID, server, context window, and other JSON options under
+  Advanced. Edits write `ai.profiles.<name>`; built-ins can be overridden
+  and restored. Assigned custom presets cannot be deleted until their roles
+  are reassigned. The registry resolves the current config for every call,
+  without a service restart. Chat and CLI effort overrides do not mutate
+  presets. See the [registry contract](../../../../_shared-ts/ai/docs/README.md).
 - **AI → Prompts** — `/settings/ai/prompts`: a searchable list of real prompt files and
   their source references. Visual/Markdown editing, saved template links, sample
   variables, and a live rendered preview share one page. Saves create notebook

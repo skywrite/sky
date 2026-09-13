@@ -16,7 +16,7 @@ updated: 2026-09-13
 - **provider** — the AI-SDK provider the profile resolves through
   (`anthropic`, `openai`, `ollama`, `lm-studio`, `cerebras`).
 
-Profiles are named **presets**. A preset owns its model, default effort,
+The UI calls profiles **presets**. A preset owns its model, default effort,
 and provider options. Roles point to presets; they do not own another copy
 of those settings. Editing a shared preset affects every role using it.
 The registry reads assignments and presets fresh for each resolution,
@@ -67,7 +67,7 @@ most; a profile with no window declared is not capped.
   object from the id without checking it, so an invented id fails on the
   first call, not at startup.
 - Adding a profile makes it addressable (`--ai-reasoning default-x`,
-  `sky ai:profiles`, the settings pane). Repointing a role through configuration
+  `sky ai:profiles`, the settings pane). Repointing a role through Settings
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired

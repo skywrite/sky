@@ -20,6 +20,7 @@ import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
+import { isEffort, optionsWithEffort } from '#universal/ai/effort.ts'
 import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
 import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
 import { createPromptRoutes } from './prompts.ts'
@@ -90,7 +91,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
     id: 'ai',
     title: 'AI',
     keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription', 'ai.writingVoiceProfile'],
-    groups: ['ai.profiles'],
+    groups: ['ai.profiles', 'ai.roles'],
   },
   { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
@@ -210,11 +211,12 @@ export interface ModelRow {
 /** One model configuration as the AI pane lists it. */
 export interface ProfileRow {
   name: string
-  /** Ships with Sky, lives in code, read-only here */
+  /** Ships with Sky; editing creates a config override. */
   builtin: boolean
   provider: string
   model: string
   baseUrl?: string
+  contextWindow?: number
   /** The tuned knobs, as written */
   options?: Record<string, unknown>
   /** The roles pointing at this configuration, in plain words */
@@ -228,6 +230,7 @@ export interface ProfileInput {
   provider: string
   model: string
   baseUrl?: string
+  contextWindow?: number
   options?: Record<string, unknown>
 }
 
@@ -266,7 +269,9 @@ export interface SettingsHost {
   /** The model roles as the AI pane shows them — read-only rows */
   models: () => ModelRow[]
   /** The built-in configurations as shipped */
-  builtinProfiles: () => Array<Pick<ProfileRow, 'name' | 'provider' | 'model' | 'baseUrl' | 'options'>>
+  builtinProfiles: () => Array<
+    Pick<ProfileRow, 'name' | 'provider' | 'model' | 'baseUrl' | 'contextWindow' | 'options'>
+  >
   /** The providers a configuration may name */
   providers: () => string[]
   /** Writes ai.profiles.<name> into the file */
@@ -299,6 +304,10 @@ export const SETTABLE_KEYS = {
   'voice.voice': ['voice', 'voice'],
   'voice.researcherVoice': ['voice', 'researcherVoice'],
   'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
+  'ai.roles.reasoning': ['ai', 'roles', 'reasoning'],
+  'ai.roles.fast': ['ai', 'roles', 'fast'],
+  'ai.roles.balanced': ['ai', 'roles', 'balanced'],
+  'ai.roles.vision': ['ai', 'roles', 'vision'],
   editor: ['editor'],
 } as const
 
@@ -323,9 +332,13 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return editors.includes(value) ? null : `no such editor on this machine: ${value}`
     }
     case 'ai.writingVoiceProfile':
+    case 'ai.roles.reasoning':
+    case 'ai.roles.fast':
+    case 'ai.roles.balanced':
+    case 'ai.roles.vision':
       return writingVoiceSettings(host, host.load().config).choices.some((choice) => choice.value === value)
         ? null
-        : 'Choose an available model configuration for Writing style.'
+        : 'Choose an available preset.'
   }
 }
 
@@ -337,7 +350,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     theme: config.web.theme ?? 'system',
     textSize: config.web.textSize ?? 'default',
     voice: host.voices(),
-    models: host.models(),
+    models: modelRows(host, config),
     profiles: profileRows(host, config),
     writingVoice: writingVoiceSettings(host, config),
     providers: host.providers(),
@@ -411,6 +424,8 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
       provider?: unknown
       model?: unknown
       baseUrl?: unknown
+      contextWindow?: unknown
+      effort?: unknown
       options?: unknown
     } | null
     const name = typeof body?.name === 'string' ? body.name : ''
@@ -428,6 +443,15 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
       return c.json({ message: 'baseUrl must be a URL, or left out' }, 400)
     }
     if (
+      body.contextWindow !== undefined &&
+      !(typeof body.contextWindow === 'number' && Number.isSafeInteger(body.contextWindow) && body.contextWindow > 0)
+    ) {
+      return c.json({ message: 'contextWindow must be a positive whole token count.' }, 400)
+    }
+    if (body.effort !== undefined && body.effort !== null && !isEffort(body.effort)) {
+      return c.json({ message: 'Choose a supported effort level or the model default.' }, 400)
+    }
+    if (
       body.options !== undefined &&
       (typeof body.options !== 'object' || body.options === null || Array.isArray(body.options))
     ) {
@@ -437,7 +461,15 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
       provider: body.provider,
       model: body.model.trim(),
       ...(body.baseUrl ? { baseUrl: body.baseUrl.trim() } : {}),
+      ...(typeof body.contextWindow === 'number' ? { contextWindow: body.contextWindow } : {}),
       ...(body.options ? { options: body.options as Record<string, unknown> } : {}),
+    }
+    if (body.effort !== undefined) {
+      try {
+        profile.options = optionsWithEffort(profile, isEffort(body.effort) ? body.effort : null)
+      } catch (error) {
+        return c.json({ message: (error as Error).message }, 400)
+      }
     }
     try {
       await options.writeProfile(name, profile)
@@ -450,6 +482,15 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   // Remove one of yours. The built-ins live in code and stay.
   app.delete('/profile/:name', async (c) => {
     const name = c.req.param('name')
+    const using = modelRows(options, options.load().config).filter((role) => role.profile === name)
+    if (using.length && !options.builtinProfiles().some((profile) => profile.name === name)) {
+      return c.json(
+        {
+          message: `Choose another preset for ${using.map((role) => role.label).join(' and ')} before deleting this one.`,
+        },
+        409,
+      )
+    }
     if (
       (options.load().config.ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE) === name &&
       !options.builtinProfiles().some((profile) => profile.name === name)
@@ -512,7 +553,7 @@ function writingVoiceSettings(host: SettingsHost, config: SkyConfig): SettingsDa
 /** Yours first, then the built-ins; each row carries the roles pointing at it. */
 function profileRows(host: SettingsHost, config: SkyConfig): ProfileRow[] {
   const rolesBy = new Map<string, string[]>()
-  for (const row of host.models()) {
+  for (const row of modelRows(host, config)) {
     rolesBy.set(row.profile, [...(rolesBy.get(row.profile) ?? []), row.label])
   }
   const builtins = host.builtinProfiles()
@@ -524,6 +565,7 @@ function profileRows(host: SettingsHost, config: SkyConfig): ProfileRow[] {
       provider: profile.provider,
       model: profile.model,
       ...(profile.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+      ...(profile.contextWindow ? { contextWindow: profile.contextWindow } : {}),
       ...(profile.options ? { options: profile.options } : {}),
       roles: rolesBy.get(name) ?? [],
       ...(builtinNames.has(name) ? { overrides: true } : {}),
@@ -533,6 +575,25 @@ function profileRows(host: SettingsHost, config: SkyConfig): ProfileRow[] {
     (profile): ProfileRow => ({ ...profile, builtin: true, roles: rolesBy.get(profile.name) ?? [] }),
   )
   return [...yours, ...shipped]
+}
+
+/** Roles are preset assignments; their labels follow edits to that preset. */
+function modelRows(host: SettingsHost, config: SkyConfig): ModelRow[] {
+  const all = Object.fromEntries([
+    ...host.builtinProfiles().map((profile) => [profile.name, profile] as const),
+    ...Object.entries(config.ai.profiles ?? {}),
+  ]) as Record<string, ModelProfile>
+  return host.models().map((row) => {
+    const name = config.ai.roles?.[row.role as keyof NonNullable<SkyConfig['ai']['roles']>] ?? row.profile
+    const profile = all[name]
+    return {
+      ...row,
+      profile: name,
+      value: profile
+        ? `${prettyModel(profile.model)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`
+        : 'Preset unavailable',
+    }
+  })
 }
 
 // ── The AI pane's rows ──────────────────────────────────────────────────

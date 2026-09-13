@@ -10,11 +10,12 @@
  * and keys, presence only — in settingsConnections.tsx.
  */
 
-import { Button, SegmentedControl, Select, Textarea, TextInput, useMantineColorScheme } from '@mantine/core'
+import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
+import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
 import { whenSpeakersWarm } from './speakers.ts'
@@ -34,12 +35,13 @@ interface ModelRow {
   profile: string
 }
 
-interface ProfileRow {
+export interface ProfileRow {
   name: string
   builtin: boolean
   provider: string
   model: string
   baseUrl?: string
+  contextWindow?: number
   options?: Record<string, unknown>
   roles: string[]
   overrides?: boolean
@@ -132,7 +134,7 @@ function useSettings() {
   const [note, setNote] = useState<string | null>(null)
 
   const reload = useCallback(() => {
-    fetch('/settings/_api/settings')
+    return fetch('/settings/_api/settings')
       .then(async (r) => {
         if (r.ok) {
           setData((await r.json()) as SettingsData)
@@ -145,7 +147,9 @@ function useSettings() {
       .catch(() => setNote(UNREACHABLE))
   }, [])
 
-  useEffect(reload, [reload])
+  useEffect(() => {
+    void reload()
+  }, [reload])
 
   /** Applies the change to the page at once; the file follows, or the page falls back. */
   const change = useCallback(
@@ -497,230 +501,6 @@ function VoicePane({ data, change }: { data: SettingsData; change: ReturnType<ty
         )}
       </Block>
       <audio ref={audioRef} autoPlay />
-    </>
-  )
-}
-
-/** One knob per line reads better than a JSON blob: `effort xhigh · thinking {"type":"adaptive"}`. */
-function knobs(options: Record<string, unknown> | undefined): string {
-  if (!options) return ''
-  return Object.entries(options)
-    .map(([key, value]) => `${key} ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
-    .join(' · ')
-}
-
-function ProfileForm({
-  providers,
-  initial,
-  onDone,
-  onCancel,
-}: {
-  providers: string[]
-  initial?: ProfileRow
-  onDone: () => void
-  onCancel: () => void
-}) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [provider, setProvider] = useState(initial?.provider ?? providers[0] ?? 'anthropic')
-  const [model, setModel] = useState(initial?.model ?? '')
-  const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? '')
-  const [options, setOptions] = useState(initial?.options ? JSON.stringify(initial.options, null, 2) : '')
-  const [warn, setWarn] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const save = async () => {
-    let parsedOptions: Record<string, unknown> | undefined
-    if (options.trim()) {
-      try {
-        const parsed = JSON.parse(options) as unknown
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not an object')
-        parsedOptions = parsed as Record<string, unknown>
-      } catch {
-        setWarn('Options must be a JSON object, like {"temperature": 0.2}.')
-        return
-      }
-    }
-    setBusy(true)
-    const r = await fetch('/settings/_api/profile', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name.trim(),
-        provider,
-        model,
-        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
-        ...(parsedOptions ? { options: parsedOptions } : {}),
-      }),
-    }).catch(() => null)
-    setBusy(false)
-    if (!r) {
-      setWarn(UNREACHABLE)
-      return
-    }
-    if (!r.ok) {
-      const body = (await r.json().catch(() => ({}))) as { message?: string }
-      setWarn(body.message ?? `The service answered ${r.status}.`)
-      return
-    }
-    onDone()
-  }
-
-  return (
-    <div className="sky-set-form">
-      <div className="sky-set-form-grid">
-        <TextInput
-          size="sm"
-          label="Name"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          disabled={Boolean(initial)}
-          placeholder="scout, writing, local-fast…"
-        />
-        <Select size="sm" label="Provider" data={providers} value={provider} onChange={(v) => v && setProvider(v)} />
-        <TextInput
-          size="sm"
-          label="Model"
-          value={model}
-          onChange={(e) => setModel(e.currentTarget.value)}
-          placeholder="claude-sonnet-5, gpt-5.5, llama3…"
-        />
-        <TextInput
-          size="sm"
-          label="Server (optional)"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.currentTarget.value)}
-          placeholder="http://localhost:11434 — for a local server"
-        />
-      </div>
-      <Textarea
-        size="sm"
-        label="Options (optional, JSON)"
-        autosize
-        minRows={2}
-        value={options}
-        onChange={(e) => setOptions(e.currentTarget.value)}
-        placeholder='{"effort": "xhigh"} or {"temperature": 0.2}'
-        classNames={{ input: 'sky-set-mono-input' }}
-      />
-      {warn && <p className="sky-set-warn">{warn}</p>}
-      <div className="sky-set-form-foot">
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={busy || !name.trim() || !model.trim()}
-          onClick={() => void save()}
-        >
-          {initial ? 'Save changes' : 'Save configuration'}
-        </Button>
-        <Button size="sm" disabled={busy} onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
-  const [editing, setEditing] = useState<'new' | string | null>(null)
-  const [confirming, setConfirming] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const remove = async (name: string) => {
-    setConfirming(null)
-    const response = await fetch(`/settings/_api/profile/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(
-      () => null,
-    )
-    const refusal = await refusalOf(response)
-    setError(refusal)
-    if (!refusal) reload()
-  }
-  const done = () => {
-    setEditing(null)
-    reload()
-  }
-
-  return (
-    <>
-      {error && (
-        <p className="sky-set-warn" role="alert">
-          {error}
-        </p>
-      )}
-      <Block head="Models" note="What Sky thinks with. Pointing a role at a configuration comes next.">
-        {data.models.map((model, index) => (
-          <Fragment key={model.role}>
-            <Row label={model.label} last={index === data.models.length - 1}>
-              <span className="sky-set-value">{model.value}</span>
-              {mono(model.profile)}
-            </Row>
-          </Fragment>
-        ))}
-      </Block>
-      <Block
-        head="Model configurations"
-        note="A configuration names a provider, a model, and its knobs. Yours are saved to the file and read on every run; the built-ins ship with Sky."
-      >
-        {data.profiles.map((profile) => (
-          <Fragment key={`${profile.builtin ? 'builtin' : 'yours'}-${profile.name}`}>
-            {editing === profile.name && !profile.builtin ? (
-              <ProfileForm
-                providers={data.providers}
-                initial={profile}
-                onDone={done}
-                onCancel={() => setEditing(null)}
-              />
-            ) : (
-              <div className="sky-set-prof">
-                <div className="sky-set-prof-txt">
-                  <div className="sky-set-prof-name">
-                    <span className="sky-set-mono">{profile.name}</span>
-                    {profile.overrides && <span className="sky-tag">overrides the built-in</span>}
-                    {profile.roles.map((role) => (
-                      <span key={role} className="sky-set-role">
-                        {role}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="sky-set-sub">
-                    {profile.provider} · {profile.model}
-                    {profile.baseUrl ? ` · ${profile.baseUrl}` : ''}
-                    {profile.options ? ` · ${knobs(profile.options)}` : ''}
-                  </div>
-                </div>
-                <div className="sky-set-ctl">
-                  {profile.builtin ? (
-                    <span className="sky-tag">built-in</span>
-                  ) : (
-                    <>
-                      <Button size="compact-sm" onClick={() => setEditing(profile.name)}>
-                        Edit
-                      </Button>
-                      {confirming === profile.name ? (
-                        <Button size="compact-sm" variant="danger" onClick={() => void remove(profile.name)}>
-                          Really delete
-                        </Button>
-                      ) : (
-                        <Button size="compact-sm" onClick={() => setConfirming(profile.name)}>
-                          Delete
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </Fragment>
-        ))}
-        {editing === 'new' ? (
-          <ProfileForm providers={data.providers} onDone={done} onCancel={() => setEditing(null)} />
-        ) : (
-          <div className="sky-set-foot">
-            <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
-              ＋ New configuration
-            </Button>
-          </div>
-        )}
-      </Block>
     </>
   )
 }

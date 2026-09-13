@@ -98,13 +98,18 @@ test(
       await page.getByLabel('Your name', { exact: true }).fill('Jane Doe')
       await page.getByLabel('About you', { exact: true }).fill('I build tools for small teams.')
       await nav.getByRole('button', { name: 'Models', exact: true }).click()
-      await page.getByRole('heading', { name: 'Models', level: 1, exact: true }).waitFor()
+      await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
       assert({
         given: 'the Models page',
-        should: 'show the selected child',
-        actual: await nav.locator('[aria-current="page"]').innerText(),
-        expected: 'Models',
+        should: 'show the selected child and keep configuration details tucked away',
+        actual: [
+          await nav.locator('[aria-current="page"]').innerText(),
+          await page.getByText('sample-model', { exact: false }).count(),
+        ],
+        expected: ['Models', 0],
       })
+      await page.locator('.sky-preset-toggle').filter({ hasText: 'sample' }).click()
+      await page.getByRole('combobox', { name: 'Preset model', exact: true }).waitFor()
       await capture('models-light')
       await nav.getByRole('button', { name: 'Collapse Me', exact: true }).click()
       assert({
@@ -176,7 +181,7 @@ test(
         ['/settings/about', 'About Sky'],
       ]) {
         await page.goto(`${base}${route}`)
-        await page.getByRole('heading', { name: title, level: 1, exact: true }).waitFor()
+        await page.getByRole('heading', { name: title, exact: true }).waitFor()
       }
       settings.theme = 'dark'
       await page.goto(`${base}/settings/me/writing-style`)

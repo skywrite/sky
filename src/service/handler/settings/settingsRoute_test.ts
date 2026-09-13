@@ -15,6 +15,70 @@ import {
 
 // The routes are what is under test: the host is scripted, never the machine.
 
+test('roles select presets and effort edits preserve all other preset settings', async () => {
+  const config = structuredClone(CONFIG)
+  config.ai.profiles = {
+    'deep-work': {
+      provider: 'openai',
+      model: 'gpt-6-astra',
+      contextWindow: 200_000,
+      options: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+    },
+  }
+  const { host } = hostWith(config)
+  host.write = async (key, value) => {
+    if (key === 'ai.roles.reasoning') config.ai.roles = { ...config.ai.roles, reasoning: value }
+  }
+  host.writeProfile = async (name, profile) => {
+    config.ai.profiles![name] = profile
+  }
+  const app = await appWith(host)
+  const selected = await post(app, '/settings/_api/set', { key: 'ai.roles.reasoning', value: 'deep-work' })
+  const changed = await post(app, '/settings/_api/profile', {
+    name: 'deep-work',
+    ...config.ai.profiles['deep-work'],
+    effort: 'medium',
+  })
+  const data = (await (await app.request('/settings/_api/settings')).json()) as SettingsData
+  const blocked = await app.request('/settings/_api/profile/deep-work', { method: 'DELETE' })
+  const invalid = await post(app, '/settings/_api/set', { key: 'ai.roles.reasoning', value: 'missing' })
+  const unsupported = await post(app, '/settings/_api/profile', {
+    name: 'quick',
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5',
+    effort: 'max',
+  })
+  assert({
+    given: 'Thinking assigned to a custom preset, then its effort adjusted',
+    should: 'reflect the assignment immediately, keep provider options and window, and protect the assigned preset',
+    actual: [
+      selected.status,
+      changed.status,
+      data.models[0].profile,
+      data.models[0].value,
+      config.ai.profiles['deep-work'],
+      blocked.status,
+      invalid.status,
+      unsupported.status,
+    ],
+    expected: [
+      200,
+      200,
+      'deep-work',
+      'GPT 6 Astra · OpenAI',
+      {
+        provider: 'openai',
+        model: 'gpt-6-astra',
+        contextWindow: 200_000,
+        options: { reasoningEffort: 'medium', serviceTier: 'priority' },
+      },
+      409,
+      400,
+      400,
+    ],
+  })
+})
+
 const HOME = '/home/jane'
 
 const CONFIG: SkyConfig = {

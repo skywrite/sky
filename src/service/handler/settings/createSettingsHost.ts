@@ -68,6 +68,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
         provider: profile.provider,
         model: profile.model,
         ...(profile.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+        ...(profile.contextWindow ? { contextWindow: profile.contextWindow } : {}),
         ...(profile.options ? { options: profile.options as Record<string, unknown> } : {}),
       })),
     providers: () => [...KNOWN_PROVIDERS],

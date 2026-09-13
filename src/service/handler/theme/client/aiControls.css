@@ -1,0 +1,93 @@
+.sky-effort-control {
+  min-width: 0;
+}
+.sky-effort-strip {
+  display: grid;
+  grid-template-columns: repeat(var(--effort-count), minmax(0, 1fr));
+  position: relative;
+  isolation: isolate;
+  height: 44px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--sky-s2);
+  touch-action: pan-y;
+  user-select: none;
+}
+.sky-effort-glider {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  top: 4px;
+  left: 4px;
+  height: 36px;
+  width: calc((100% - 8px) / var(--effort-count));
+  background: var(--sky-bg);
+  border-radius: 7px;
+  box-shadow: var(--sky-card-shadow);
+  transform: translateX(calc(var(--effort-position) * 100%));
+  transition: transform 130ms ease;
+}
+.sky-effort-strip[data-selected='false'] .sky-effort-glider {
+  opacity: 0;
+}
+.sky-effort-strip[data-dragging] .sky-effort-glider {
+  transition: none;
+}
+.sky-effort-strip button {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 4px;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--sky-text-2);
+  cursor: pointer;
+}
+.sky-effort-strip button[aria-checked='true'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+.sky-effort-strip[aria-disabled='true'] {
+  opacity: 0.65;
+}
+.sky-effort-strip button:disabled {
+  cursor: default;
+}
+.sky-effort-strip button:focus-visible,
+.sky-effort-reset:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 2px;
+}
+.sky-effort-reset {
+  display: block;
+  margin: 6px 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+.sky-effort-reset:hover:not(:disabled) {
+  color: var(--sky-accent);
+}
+.sky-effort-reset:disabled {
+  cursor: default;
+}
+.sky-effort-fixed {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-effort-glider {
+    transition: none;
+  }
+}
