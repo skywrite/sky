@@ -182,6 +182,7 @@ export interface StartReport {
 }
 
 export interface TurnReport {
+  stopped?: boolean
   timing?: TimingDetail
   context: TurnContextReport
   /** The reply; absent when the turn failed */
@@ -575,7 +576,7 @@ export default class ChatSession {
    * A failed model turn is reported, never thrown — the conversation goes
    * on, and any tool that already ran stays in the record.
    */
-  async send(userMessage: string, files?: ChatMessageFiles): Promise<TurnReport> {
+  async send(userMessage: string, files?: ChatMessageFiles, abortSignal?: AbortSignal): Promise<TurnReport> {
     // A trace is one reply, never an interactive session's idle time between messages.
     const parent = currentTimingSpan()
     const span =
@@ -583,10 +584,10 @@ export default class ChatSession {
         ? parent
         : new TimingSpan({ kind: 'turn', name: 'ai:chat' }, undefined, true)
     try {
-      const report = await span.run(() => this.sendTimed(userMessage, files))
+      const report = await span.run(() => this.sendTimed(userMessage, files, abortSignal))
       // Result-ready is the boundary. Persist its measurements in the very first
       // snapshot, rather than trying to include the write of those measurements.
-      span.finish(report.error ? 'error' : 'success')
+      span.finish(report.stopped ? 'aborted' : report.error ? 'error' : 'success')
       const timing = timingDetail(span)
       this.context.recordTurnTiming(timing)
       await this.snapshot()
@@ -597,14 +598,18 @@ export default class ChatSession {
     }
   }
 
-  private async sendTimed(userMessage: string, files?: ChatMessageFiles): Promise<TurnReport> {
+  private async sendTimed(
+    userMessage: string,
+    files?: ChatMessageFiles,
+    abortSignal?: AbortSignal,
+  ): Promise<TurnReport> {
     // Stamped at submit time — the gather below can take a while, and the
     // stamp should say when the message was sent, not when the model ran.
     const turnWhen = await this.stamp()
 
     // A notebook opened after a closed start gathers its baseline now, and
     // the turn runs as the first gathering turn.
-    if (!this.seeded && this.context.budget > 0) {
+    if (!abortSignal?.aborted && !this.seeded && this.context.budget > 0) {
       await this.context.seedBaseline()
       this.seeded = true
       this.firstTurnPending = true
@@ -613,7 +618,10 @@ export default class ChatSession {
     // Spoken exchanges also occupy turn numbers, although they did not run this context pipeline.
     this.context.continueAfter(Math.floor(this.turns.length / 2))
     let context: TurnContextReport
-    if (this.firstTurnPending) {
+    if (abortSignal?.aborted) {
+      this.context.continueAfter(Math.floor(this.turns.length / 2) + 1)
+      context = { errors: [] }
+    } else if (this.firstTurnPending) {
       this.firstTurnPending = false
       // A closed notebook gathers nothing — no gathering to announce.
       if (this.context.budget > 0) this.emit({ type: 'context-gathering' })
@@ -648,40 +656,43 @@ export default class ChatSession {
     const report: TurnReport = { context, sourceUrls: [], approvalRoundsExhausted: false }
     const replyImages: ChatImage[] = []
     try {
-      const { tools, toolApproval, instructions } = await this.opts.tools({
-        researchContext: { contextTokens: this.context.budget, instructions: this.systemPrompt },
-        context: {
-          instructions: [this.systemPrompt, this.contextPrompt].join('\n\n'),
-          conversation: this.turns.map((turn) => ({ ...turn })),
-        },
-        attachments: () => [...(this.resumeSession?.attachments ?? []), ...this.attachments.values()],
-        writingDrafts: {
-          list: () => this.writingDraftLinks,
-          focus: () => this.writingDraftFocus,
-          link: (id) => this.linkWritingDraft(id),
-        },
-        legalReview: {
-          id: () => this.legalReview?.id,
-          link: async (id) => {
-            if (this.legalReview?.id === id) return
-            this.legalReview = { id, turn: Math.ceil(this.turns.length / 2) }
-            this.newMessages = true
-            await this.snapshot()
-          },
-        },
-        onExternalFiles: (files) => recordExternalFiles(this.externalFiles, files),
-        onAttachments: (files) => {
-          for (const file of files) this.attachments.set(file.file, file)
-        },
-        onImages: (images) => replyImages.push(...images),
-      })
+      const { tools, toolApproval, instructions } = abortSignal?.aborted
+        ? { tools: {}, toolApproval: {}, instructions: undefined }
+        : await this.opts.tools({
+            researchContext: { contextTokens: this.context.budget, instructions: this.systemPrompt },
+            context: {
+              instructions: [this.systemPrompt, this.contextPrompt].join('\n\n'),
+              conversation: this.turns.map((turn) => ({ ...turn })),
+            },
+            attachments: () => [...(this.resumeSession?.attachments ?? []), ...this.attachments.values()],
+            writingDrafts: {
+              list: () => this.writingDraftLinks,
+              focus: () => this.writingDraftFocus,
+              link: (id) => this.linkWritingDraft(id),
+            },
+            legalReview: {
+              id: () => this.legalReview?.id,
+              link: async (id) => {
+                if (this.legalReview?.id === id) return
+                this.legalReview = { id, turn: Math.ceil(this.turns.length / 2) }
+                this.newMessages = true
+                await this.snapshot()
+              },
+            },
+            onExternalFiles: (files) => recordExternalFiles(this.externalFiles, files),
+            onAttachments: (files) => {
+              for (const file of files) this.attachments.set(file.file, file)
+            },
+            onImages: (images) => replyImages.push(...images),
+          })
       if (!this.toolsAnnounced) {
         this.toolsAnnounced = true
         this.emit({ type: 'tools', names: Object.keys(tools) })
       }
-      this.emit({ type: 'model-start' })
+      if (!abortSignal?.aborted) this.emit({ type: 'model-start' })
 
       const result = await this.engine.runTurn({
+        abortSignal,
         instructions: [this.systemPrompt, this.contextPrompt, ...(instructions ? [instructions] : [])],
         tools,
         toolApproval,
@@ -702,6 +713,7 @@ export default class ChatSession {
       report.text = text
       report.sourceUrls = sourceUrls
       report.approvalRoundsExhausted = result.approvalRoundsExhausted
+      if (result.stopped) report.stopped = true
       if (result.cutShort) report.cutShort = result.cutShort
       report.usage = result.usage
     } catch (err) {

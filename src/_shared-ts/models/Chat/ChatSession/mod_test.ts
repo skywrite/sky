@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -115,6 +116,64 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
 }
 
 const types = (events: ChatSessionEvent[]) => events.map((e) => e.type)
+
+test('ChatSession Stop before context preserves turn numbering and the next context gathering', async () => {
+  const { session, model, producerCalls, errors, tmp } = await makeSession()
+  try {
+    const controller = new AbortController()
+    controller.abort()
+    const stopped = await session.send('Stop this question.', undefined, controller.signal)
+    const callsBeforeNext = model.calls.length
+    await session.start()
+    const next = await session.send('Start another question.')
+    assert({
+      given: 'a stopped first message before the notebook is gathered',
+      should: 'save a stopped exchange, gather for the next question, and keep separate turn logs',
+      actual: [
+        stopped.stopped,
+        callsBeforeNext,
+        next.text,
+        producerCalls.initial,
+        session.contextLog.map((entry) => entry.turn),
+        session.turns.length,
+        errors.length,
+      ],
+      expected: [true, 0, 'Focus on the demo.', 1, [1, 2], 4, 0],
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('ChatSession Stop during context never starts tools or generation', async () => {
+  const controller = new AbortController()
+  let toolsCalled = false
+  const { session, model, errors, tmp } = await makeSession({
+    producers: {
+      produceInitialQuery: async () => {
+        controller.abort()
+        return ok({ paths: [] })
+      },
+      evolveQueries: async () => ok({ queries: [], changed: false }),
+      executeQuery: async () => ok({ paths: [] }),
+    },
+    tools: async () => {
+      toolsCalled = true
+      return { tools: {}, toolApproval: {} }
+    },
+  })
+  await session.start()
+  const stopped = await session.send('Read the sample notebook.', undefined, controller.signal)
+  assert({
+    given: 'Stop while context is being prepared',
+    should: 'finish the stopped exchange without running tools, a model, or an error log',
+    actual: [stopped.stopped, toolsCalled, model.calls.length, errors.length, session.turns.at(-1)?.content],
+    expected: [true, false, 0, 0, '*Response stopped.*'],
+  })
+  await session.end({ save: false })
+  await rm(tmp, { recursive: true, force: true })
+})
 
 test('ChatSession persists precise prompt-to-result timing, individual calls, and unchanged resumed history', async () => {
   let now = 0

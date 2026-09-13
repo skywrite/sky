@@ -92,46 +92,54 @@ export class ToolProgress {
 export function observeTools<T extends Record<string, Executable>>(
   tools: T,
   emit: (event: ToolExecutionEvent) => void,
+  abortSignal?: AbortSignal,
+  executions?: Promise<unknown>[],
 ): T {
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, tool]) => {
       const execute = tool.execute as ((...args: unknown[]) => unknown) | undefined
       if (!execute) return [toolName, tool]
+      const run = async (input: unknown, ...rest: unknown[]) => {
+        abortSignal?.throwIfAborted()
+        const options = rest[0] as { toolCallId?: string } | undefined
+        const toolCallId = options?.toolCallId ?? crypto.randomUUID()
+        emit({
+          type: 'tool-execution-start',
+          phase: 'running',
+          toolName,
+          toolCallId,
+          input,
+          started: new ZonedDateTime().epochMilliseconds,
+        })
+        try {
+          const output = await execute(input, ...rest)
+          emit({
+            type: 'tool-execution-end',
+            toolName,
+            toolCallId,
+            output,
+            finished: new ZonedDateTime().epochMilliseconds,
+          })
+          return output
+        } catch (error) {
+          emit({
+            type: 'tool-execution-end',
+            toolName,
+            toolCallId,
+            error: error instanceof Error ? error.message : String(error),
+            finished: new ZonedDateTime().epochMilliseconds,
+          })
+          throw error
+        }
+      }
       return [
         toolName,
         {
           ...tool,
-          execute: async (input: unknown, ...rest: unknown[]) => {
-            const options = rest[0] as { toolCallId?: string } | undefined
-            const toolCallId = options?.toolCallId ?? crypto.randomUUID()
-            emit({
-              type: 'tool-execution-start',
-              phase: 'running',
-              toolName,
-              toolCallId,
-              input,
-              started: new ZonedDateTime().epochMilliseconds,
-            })
-            try {
-              const output = await execute(input, ...rest)
-              emit({
-                type: 'tool-execution-end',
-                toolName,
-                toolCallId,
-                output,
-                finished: new ZonedDateTime().epochMilliseconds,
-              })
-              return output
-            } catch (error) {
-              emit({
-                type: 'tool-execution-end',
-                toolName,
-                toolCallId,
-                error: error instanceof Error ? error.message : String(error),
-                finished: new ZonedDateTime().epochMilliseconds,
-              })
-              throw error
-            }
+          execute: (input: unknown, ...rest: unknown[]) => {
+            const result = run(input, ...rest)
+            executions?.push(result)
+            return result
           },
         },
       ]

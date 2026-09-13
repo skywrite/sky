@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Menu, Textarea } from '@mantine/core'
+import { ActionIcon, Button, Menu, Textarea, Tooltip } from '@mantine/core'
 import {
   Fragment,
   type ClipboardEvent,
@@ -659,7 +659,22 @@ function turnsOf(body: ThreadBody): Turn[] {
 export function useChat(id: string) {
   const [state, dispatch] = useReducer(reduce, id, initial)
   const [tuning, setTuning] = useState(0)
+  const [stoppingId, setStoppingId] = useState<string | null>(null)
+  const [stopError, setStopError] = useState<string | null>(null)
+  const posting = useRef<{ id: string; ready: Promise<unknown> } | null>(null)
+  const stoppingRef = useRef<string | null>(null)
   const tuningCount = useRef(0)
+  const currentId = useRef(id)
+  currentId.current = id
+  useEffect(() => {
+    setStopError(null)
+  }, [id])
+  useEffect(() => {
+    if (state.phase !== 'busy') {
+      setStoppingId(null)
+      stoppingRef.current = null
+    }
+  }, [state.phase, id])
   // True while this page reads a turn's stream — then the stream, not a poll, keeps the thread current.
   const attached = useRef(false)
 
@@ -680,6 +695,29 @@ export function useChat(id: string) {
       interrupted: interruptedOf(body),
     })
   }, [id])
+
+  const stop = useCallback(async () => {
+    if (!id || state.phase !== 'busy' || stoppingRef.current === id) return
+    stoppingRef.current = id
+    setStoppingId(id)
+    setStopError(null)
+    try {
+      // The first POST must be accepted before its turn can be stopped, including file uploads.
+      if (posting.current?.id === id) await posting.current.ready
+      const response = await fetch(`/chat/${id}/stop`, { method: 'POST' })
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string }
+        throw new Error(body.message ?? 'Could not stop the response. Try again.')
+      }
+      if (!attached.current && currentId.current === id) await reload()
+    } catch {
+      if (currentId.current === id) {
+        setStopError('Could not stop the response. Try again.')
+        setStoppingId(null)
+        stoppingRef.current = null
+      }
+    }
+  }, [id, state.phase, reload])
 
   // The thread is read back from the service whenever the id changes; one
   // the service doesn't hold (never messaged, or the service restarted)
@@ -839,6 +877,7 @@ export function useChat(id: string) {
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
       attached.current = true
+      setStopError(null)
       dispatch({ id, type: 'sent', content: message, files })
       const replyIndex = state.turns.length + 1
 
@@ -853,7 +892,9 @@ export function useChat(id: string) {
         })
       let response: Response
       try {
-        response = await post()
+        const ready = post()
+        posting.current = { id, ready }
+        response = await ready
       } catch {
         dispatch({ id, type: 'lost' })
         const back = await awaitReturn(post)
@@ -863,6 +904,8 @@ export function useChat(id: string) {
           return { ok: false, error: AWAY }
         }
         response = back.response
+      } finally {
+        if (posting.current?.id === id) posting.current = null
       }
       if (!response.ok) {
         attached.current = false
@@ -1121,6 +1164,9 @@ export function useChat(id: string) {
   return {
     state: state.id === id ? state : initial(id),
     tuning: tuning > 0,
+    stopping: stoppingId === id && state.phase === 'busy',
+    stopError,
+    stop,
     send,
     end,
     setModel,
@@ -1958,6 +2004,11 @@ export function Composer({
             {sendError}
           </p>
         )}
+        {chat.stopError && (
+          <p className="sky-chat-file-error" role="alert">
+            {chat.stopError}
+          </p>
+        )}
         <div className="sky-composer-shell">
           <FileClips files={attach?.files ?? []} onRemove={attach?.onRemove} disabled={busy || sendDisabled} pending />
           <div className="sky-composer-row">
@@ -2010,9 +2061,42 @@ export function Composer({
                 autoFocus={autoFocus}
               />
             </div>
-            <ActionIcon variant="primary" aria-label="Send" onClick={submit} disabled={!canSend}>
-              ↑
-            </ActionIcon>
+            <Tooltip
+              label={
+                state.phase === 'busy' ? (
+                  chat.stopping ? (
+                    'Stopping response…'
+                  ) : (
+                    'Stop response'
+                  )
+                ) : (
+                  <>
+                    Enter to send
+                    <br />
+                    Shift+Enter for a new line
+                  </>
+                )
+              }
+              withArrow
+              openDelay={350}
+              events={{ hover: true, focus: true, touch: false }}
+            >
+              <ActionIcon
+                variant="primary"
+                aria-label={state.phase === 'busy' ? 'Stop response' : 'Send'}
+                onClick={state.phase === 'busy' ? () => void chat.stop() : submit}
+                disabled={state.phase === 'busy' ? chat.stopping : !canSend}
+                aria-busy={chat.stopping || undefined}
+              >
+                {state.phase === 'busy' ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <rect x="2" y="2" width="12" height="12" rx="2" />
+                  </svg>
+                ) : (
+                  '↑'
+                )}
+              </ActionIcon>
+            </Tooltip>
             {trailingAction}
           </div>
         </div>

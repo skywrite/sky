@@ -363,13 +363,15 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       // The card is the tool's own description of the call; the answer is the
       // person's, from the page. A card scoped to a file offers "allow for
       // this file"; that answer blesses the file for the thread.
-      approvalHandler: async ({ toolName, input: raw }) => {
+      approvalHandler: async ({ toolName, input: raw, abortSignal }) => {
         // The card and the key read the call as the command will: blanks dropped.
         const input = withoutBlankStrings(raw as Record<string, unknown>)
         const sessionKey = getApprovalSessionKey(toolName)?.(input)
+        const lines = await approvalCard(toolName, input, getApprovalFormatter(toolName), context)
+        abortSignal?.throwIfAborted()
         const decision = await ask({
           toolName,
-          lines: await approvalCard(toolName, input, getApprovalFormatter(toolName), context),
+          lines,
           sessionKey,
         })
         if (decision.approved && decision.always && sessionKey) blessed.blessDurably(toolName, sessionKey)

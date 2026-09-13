@@ -35,6 +35,7 @@ import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
+import { stoppedReply, stoppedToolMessages, untilAborted } from './stop.ts'
 import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
 import { turnErrorMessage } from './turnErrorMessage.ts'
 
@@ -47,6 +48,7 @@ type Message = ModelMessage
 export interface ApprovalRequest {
   toolName: string
   input: unknown
+  abortSignal?: AbortSignal
 }
 
 export interface ApprovalDecision {
@@ -85,6 +87,8 @@ export type ChatEngineEvent =
 export type TurnCut = 'steps' | 'repetition'
 
 export interface TurnResult {
+  /** The person stopped this reply; its partial text and completed tools are retained. */
+  stopped?: boolean
   timing?: TimingSummary
   /** The reply exactly as it streamed: every text delta in order, step and round boundaries as paragraph breaks. */
   text: string
@@ -172,6 +176,7 @@ export type ModelInvoker = (args: {
   instructions: SystemModelMessage[]
   messages: Message[]
   sink: TextSink
+  abortSignal?: AbortSignal
 }) => Promise<ModelInvocation>
 
 // -----------------------------------------------------------------------------
@@ -191,6 +196,7 @@ export type ToolApprovalPolicy =
 export type ToolApprovalConfig = Record<string, ToolApprovalPolicy>
 
 export interface RunTurnOptions {
+  abortSignal?: AbortSignal
   /** Prompt-cache segments — each gets its own breakpoint (base system prompt, context prompt). */
   instructions: string[]
   /** Tool set for this turn — hosts may rebuild it every turn (the CLI does). */
@@ -344,7 +350,7 @@ export default class ChatEngine {
     const span = new TimingSpan({ kind: 'generation', name: 'chat:turn' })
     try {
       const result = await span.run(() => this.runTimedTurn(opts))
-      span.finish()
+      span.finish(result.stopped ? 'aborted' : 'success')
       return { ...result, timing: timingSummary(span) }
     } catch (error) {
       span.finish(thrownOutcome(error))
@@ -353,6 +359,11 @@ export default class ChatEngine {
   }
 
   private async runTimedTurn(opts: RunTurnOptions): Promise<TurnResult> {
+    const { abortSignal } = opts
+    const turnMessages: ModelMessage[] = []
+    const executions: Promise<unknown>[] = []
+    const completedExecutions = new Map<string, ModelMessage[]>()
+    const inputs = new Map<string, unknown>()
     // Every tool call this turn, for the saved log: executed ones are
     // collected from the result surfaces, denials at the approval protocol.
     const turnTools: ToolCallRecord[] = []
@@ -363,14 +374,41 @@ export default class ChatEngine {
       turnTools.push({ tool: toolCall.toolName, input: toolInputDigest(toolCall.input), outcome: 'denied' })
     }
 
-    const emit = (event: ChatEngineEvent) => this.onEvent?.(event)
+    const emit = (event: ChatEngineEvent) => {
+      if (event.type === 'tool-execution-start' && event.input !== undefined) inputs.set(event.toolCallId, event.input)
+      if (event.type === 'tool-execution-end' && event.output !== undefined) {
+        const input = inputs.get(event.toolCallId)
+        recordExecutedTool(event.toolName, { ...event, input })
+        completedExecutions.set(event.toolCallId, [
+          {
+            role: 'assistant',
+            content: [{ type: 'tool-call', toolCallId: event.toolCallId, toolName: event.toolName, input }],
+          },
+          {
+            role: 'tool',
+            content: [
+              {
+                type: 'tool-result',
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                output: {
+                  type: 'text',
+                  value: typeof event.output === 'string' ? event.output : JSON.stringify(event.output),
+                },
+              },
+            ],
+          },
+        ])
+      }
+      this.onEvent?.(event)
+    }
     const progress = new ToolProgress(emit)
 
     // Every tool runs behind this turn's repetition guard: the third
     // identical call — same input, same result twice — is refused unrun,
     // and three refusals end the loop.
     const guard = new RepetitionGuard()
-    const tools = observeTools(guardTools(opts.tools as ToolSet, guard), progress.report)
+    const tools = observeTools(guardTools(opts.tools as ToolSet, guard), progress.report, abortSignal, executions)
     let cutShort: TurnCut | undefined
 
     // The reply, accumulated from exactly what was emitted. A boundary
@@ -381,7 +419,7 @@ export default class ChatEngine {
     let breakPending = false
     const sink: TextSink = {
       write: (piece) => {
-        if (!piece) return
+        if (!piece || abortSignal?.aborted) return
         if (breakPending) {
           breakPending = false
           if (!reply.endsWith('\n') && !piece.startsWith('\n')) sink.write('\n\n')
@@ -397,9 +435,15 @@ export default class ChatEngine {
 
     const onStepEnd = ({
       toolCalls,
+      toolResults,
+      response,
     }: {
       toolCalls?: Array<{ toolName: string; toolCallId?: string; input: unknown }>
+      toolResults?: unknown[]
+      response: { messages: ModelMessage[] }
     }) => {
+      turnMessages.push(...response.messages)
+      collectToolActivity({ steps: [{ toolResults }] })
       for (const tc of toolCalls ?? []) {
         emit({ type: 'tool-call', toolName: tc.toolName, toolCallId: tc.toolCallId, input: tc.input })
       }
@@ -416,7 +460,7 @@ export default class ChatEngine {
     // result so the approval loop and downstream rendering are unchanged.
     const invoke: ModelInvoker =
       this.invokeModel ??
-      (async ({ instructions, messages, sink }) => {
+      (async ({ instructions, messages, sink, abortSignal }) => {
         // The SDK's default onError is console.error — for a message-
         // validation failure that dump embeds the entire message array.
         // Capture instead: once a step has completed, the result promises
@@ -448,6 +492,7 @@ export default class ChatEngine {
         const closingDone: StopCondition<ToolSet> = ({ steps }) => closingAt !== undefined && steps.length > closingAt
         const stream = streamText({
           ...this.model,
+          abortSignal,
           instructions,
           messages,
           // Discovered notebook tools arrive as untyped records; this SDK
@@ -498,13 +543,20 @@ export default class ChatEngine {
       })
     let usage = NO_USAGE
     const runRound = async () => {
+      abortSignal?.throwIfAborted()
       roundPieces = 0
       const result = await invoke({
         instructions: cachedInstructions(opts.instructions),
         messages: withCacheTail(this.messages),
         sink,
+        abortSignal,
       })
       if (result.usage) usage = addUsage(usage, tokenUsageOf(result.usage))
+      if (this.invokeModel) turnMessages.push(...result.responseMessages)
+      if (abortSignal?.aborted) {
+        collectToolActivity(result)
+        abortSignal.throwIfAborted()
+      }
       if (result.error !== undefined) {
         // The partial result still names what executed before the stream
         // died — scan it so the failed turn keeps its tool trail.
@@ -527,6 +579,7 @@ export default class ChatEngine {
     // response messages depending on the SDK path; the seen set guards
     // the overlap.
     const seenToolCallIds = new Set<string>()
+    const seenSourceCallIds = new Set<string>()
     const sourceUrls: string[] = []
     // deno-lint-ignore no-explicit-any
     const recordExecutedTool = (toolName: string, trc: any) => {
@@ -546,7 +599,12 @@ export default class ChatEngine {
     const collectToolActivity = (r: any) => {
       for (const step of r.steps ?? []) {
         for (const tr of step.toolResults ?? []) {
-          if (tr.toolName === 'web_search' && Array.isArray(tr.output)) {
+          if (
+            tr.toolName === 'web_search' &&
+            Array.isArray(tr.output) &&
+            (!tr.toolCallId || !seenSourceCallIds.has(tr.toolCallId))
+          ) {
+            if (tr.toolCallId) seenSourceCallIds.add(tr.toolCallId)
             for (const res of tr.output as Array<{ url?: string }>) {
               if (res.url) sourceUrls.push(res.url)
             }
@@ -630,9 +688,19 @@ export default class ChatEngine {
             continue
           }
 
+          collectToolActivity(result)
           const decision = await withTiming({ kind: 'wait', name: 'tool:approval' }, () =>
-            this.approvalHandler({ toolName: toolCall.toolName, input: toolCall.input }),
+            untilAborted(
+              () =>
+                this.approvalHandler({
+                  toolName: toolCall.toolName,
+                  input: toolCall.input,
+                  ...(abortSignal ? { abortSignal } : {}),
+                }),
+              abortSignal,
+            ),
           )
+          abortSignal?.throwIfAborted()
           if (!decision.approved) {
             progress.end(toolCall.toolCallId, toolCall.toolName, {
               error: decision.reason ?? 'Tool call was declined.',
@@ -681,6 +749,25 @@ export default class ChatEngine {
         ...(cutShort ? { cutShort } : {}),
       }
     } catch (err) {
+      if (abortSignal?.aborted) {
+        // A tool that cannot abort may already be writing. Keep the turn reserved until it settles.
+        await Promise.allSettled(executions)
+        progress.finishIncomplete('The response was stopped before this tool reported completion.')
+        this.messages.length = historyMark
+        const text = stoppedReply(reply)
+        const completed = stoppedToolMessages(turnMessages)
+        const recorded = new Set(
+          completed.flatMap((message) =>
+            typeof message.content === 'string'
+              ? []
+              : message.content.flatMap((part) => (part.type === 'tool-result' ? [part.toolCallId] : [])),
+          ),
+        )
+        for (const [id, messages] of completedExecutions) if (!recorded.has(id)) completed.push(...messages)
+        this.messages.push(...completed, { role: 'assistant', content: text })
+        emit({ type: 'turn-complete', toolRecords: turnTools })
+        return { text, sourceUrls, toolRecords: turnTools, usage, approvalRoundsExhausted: false, stopped: true }
+      }
       progress.finishIncomplete('The turn failed before this tool reported completion.')
       // Roll back to the turn's start and rethrow clamped — the raw SDK
       // error can embed the entire message array, and hosts print and log

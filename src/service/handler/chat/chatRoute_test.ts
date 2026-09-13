@@ -563,6 +563,7 @@ test({ name: 'chat route - the first message starts the session and streams the 
     should: 'carry the session start, then the turn events in order, closed by the turn report',
     actual: frames.map((f) => f.event),
     expected: [
+      'turn-started',
       'session-started',
       'context-gathering',
       'context-rebuilt',
@@ -1355,7 +1356,16 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
     expected: {
       status: 200,
       started: { documents: 0, closed: true },
-      events: ['session-started', 'tools', 'model-start', 'text-delta', 'text-delta', 'turn-complete', 'turn'],
+      events: [
+        'turn-started',
+        'session-started',
+        'tools',
+        'model-start',
+        'text-delta',
+        'text-delta',
+        'turn-complete',
+        'turn',
+      ],
       contextStatus: 404,
       contextNote: 'Not reading your notebook for this thread.',
       kept: 0,
@@ -1380,6 +1390,7 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
     expected: {
       status: 200,
       events: [
+        'turn-started',
         'context-gathering',
         'context-rebuilt',
         'model-start',
@@ -1470,6 +1481,7 @@ test({ name: "chat route - a tool's own lines reach the page as it works, and st
     },
     expected: {
       events: [
+        'turn-started',
         'session-started',
         'context-gathering',
         'context-rebuilt',
@@ -1602,6 +1614,96 @@ async function until<T>(read: () => Promise<T>, ok: (value: T) => boolean): Prom
   }
   throw new Error('gave up waiting')
 }
+
+test('chat Stop cancels a partial reply, snapshots it, and allows a follow-up', async () => {
+  let signal: AbortSignal | undefined
+  let calls = 0
+  const host = await testHost({
+    invokeModel: async ({ sink, abortSignal }) => {
+      if (++calls > 1) return { ...EMPTY, text: 'A new answer.' }
+      signal = abortSignal
+      sink.write('The first part.')
+      await new Promise<void>((resolve) => abortSignal!.addEventListener('abort', () => resolve(), { once: true }))
+      sink.write('This must not appear.')
+      return EMPTY
+    },
+  })
+  const app = appWith(host)
+  try {
+    const response = await send(app, '/chat/stop/messages', { message: 'Start a long reply.' })
+    const body = response.text()
+    await until(
+      async () => signal,
+      (value) => Boolean(value),
+    )
+    const stopped = await post(app, '/chat/stop/stop', {})
+    const frames = parseSSE(await body)
+    const thread = await getJson(app, '/chat/stop')
+    const snapshot = await readTextFile(path.join(host.tmp, 'stop.autosave.md'))
+    assert({
+      given: 'Stop during a streaming reply',
+      should: 'abort generation, keep the partial reply through recovery, and release the thread',
+      actual: [
+        stopped.status,
+        signal?.aborted,
+        frames.at(-1)?.data?.stopped,
+        thread.busy,
+        thread.turns.at(-1)?.content,
+        snapshot.includes('Response stopped.'),
+        frames.some((frame) => frame.data?.text === 'This must not appear.'),
+      ],
+      expected: [200, true, true, false, 'The first part.\n\n*Response stopped.*', true, false],
+    })
+    assert({
+      given: 'Stop again after the turn ended',
+      should: 'be harmless',
+      actual: (await post(app, '/chat/stop/stop', {})).status,
+      expected: 200,
+    })
+    await (await send(app, '/chat/stop/messages', { message: 'A different question.' })).text()
+    const next = await getJson(app, '/chat/stop')
+    assert({
+      given: 'a follow-up after Stop',
+      should: 'answer normally in the same conversation',
+      actual: [next.turns.length, next.turns.at(-1)?.content],
+      expected: [4, 'A new answer.'],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('chat Stop releases pending approval without executing the tool', async () => {
+  let calls = 0
+  const invoke = askingModel()
+  const host = await testHost({
+    invokeModel: (args) => {
+      calls++
+      return invoke(args)
+    },
+  })
+  const app = appWith(host)
+  try {
+    const response = await send(app, '/chat/stop-approval/messages', { message: 'Prepare a note.' })
+    const body = response.text()
+    const waiting = await until(
+      () => getJson(app, '/chat/stop-approval'),
+      (thread) => thread.pending.length > 0,
+    )
+    await post(app, '/chat/stop-approval/stop', {})
+    await body
+    const stopped = await getJson(app, '/chat/stop-approval')
+    const late = await post(app, `/chat/stop-approval/approvals/${waiting.pending[0].id}`, { approved: true })
+    assert({
+      given: 'Stop while a tool asks for approval',
+      should: 'clear the card, reject a late approval, and run no continuation',
+      actual: [stopped.busy, stopped.pending.length, calls, late.status, stopped.turns.at(-1)?.content],
+      expected: [false, 0, 1, 404, '*Response stopped.*'],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
 
 test({ name: 'chat route - a tool call that needs a go waits on the page and resumes with the answer' }, async () => {
   const app = appWith(await testHost({ invokeModel: askingModel() }))

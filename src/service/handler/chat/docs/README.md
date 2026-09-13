@@ -216,6 +216,14 @@ a person can see and touch:
 - **Text stays selected through background refreshes.** Completed replies
   and rich approval previews use the
   [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
+- **Stop replaces the send arrow while a reply runs.** `POST /chat/:id/stop`
+  aborts that thread's model request and releases pending approvals, including
+  from a reloaded page. The partial reply is kept with a stopped notice in
+  recovery and the transcript. Completed tool results remain in model history;
+  unfinished calls and approval requests do not. A tool already writing that
+  cannot abort must settle before another turn can begin. Context preparation
+  checks cancellation before generation. Closing the browser stream alone
+  does not stop a turn: navigation and connection recovery still follow it.
 - **Progress and the queries behind a reply.** A compact activity row sits
   below the message while context is gathered and the reply is prepared.
   Its wording follows the stage; quiet reading and thinking waits vary

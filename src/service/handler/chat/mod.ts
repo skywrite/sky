@@ -578,6 +578,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const opening = new Map<string, Promise<Thread>>()
   // Reserve a turn before awaiting restoration or construction, including its settings.
   const accepting = new Set<string>()
+  const activeTurns = new Map<string, AbortController>()
   // Tuning chosen before a thread's first message — applied when it is built.
   const pending = new Map<string, ThreadPrefs>()
   const app = new Hono()
@@ -605,6 +606,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           const thread = threads.get(id)
           if (!thread) {
             resolve({ approved: false, reason: 'The thread is gone. Do not request this tool again.' })
+            return
+          }
+          if (!thread.busy || activeTurns.get(id)?.signal.aborted) {
+            resolve({ approved: false, reason: 'The response was stopped.' })
             return
           }
           const approval: PendingApproval = { id: crypto.randomUUID(), ...card }
@@ -827,6 +832,25 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // entry, so the latest assembly answers before the log does.
   const keptOf = (thread: Thread): number | null => thread.context?.stats?.kept ?? thread.session.kept
 
+  app.post('/:id/stop', (c) => {
+    const id = c.req.param('id')
+    const active = activeTurns.get(id)
+    if (!active) {
+      if (!threads.has(id)) return c.json({ message: 'no such thread' }, 404)
+      return c.json({ stopping: false })
+    }
+    active.abort()
+    const thread = threads.get(id)
+    if (thread) {
+      for (const approval of thread.pending.values()) {
+        approval.resolve({ approved: false, reason: 'The response was stopped.' })
+      }
+      thread.pending.clear()
+      thread.updatedAt = ++tick
+    }
+    return c.json({ stopping: true })
+  })
+
   app.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
     const multipart = c.req.header('content-type')?.startsWith('multipart/form-data')
@@ -886,6 +910,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return c.json({ message: 'a turn is already running on this thread' }, 409)
     }
     accepting.add(id)
+    const active = new AbortController()
+    activeTurns.set(id, active)
     const release = hold('chat turn')
 
     // Start at acceptance of a valid prompt, before thread construction or initial context.
@@ -901,6 +927,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         return open(id)
       })
       if (!thread) {
+        activeTurns.delete(id)
         release()
         timing.finish('error')
         return c.json(
@@ -921,6 +948,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           message = read.message
           files = read.files
         } catch (error) {
+          activeTurns.delete(id)
           thread.busy = false
           release()
           timing.finish('error')
@@ -933,6 +961,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       thread.saves = prefs.saves
       options.onMessage?.(id, message)
     } catch (error) {
+      activeTurns.delete(id)
       if (thread) thread.busy = false
       release()
       timing.finish(thrownOutcome(error))
@@ -964,10 +993,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         // is a lost connection, however the socket looks from the browser.
         const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
         try {
+          frame('turn-started', {})
           if (files) frame('user-message', { content: message })
           name(id, thread, message)
           const turn = await timing.run(async () => {
-            if (!thread.started) {
+            if (!thread.started && !active.signal.aborted) {
               await thread.session.start()
               thread.started = true
               frame('session-started', {
@@ -976,7 +1006,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               })
             }
             // The first reply includes the initial context gathering in its timing.
-            return runWithUsageSource('ai:chat', () => thread.session.send(message, files))
+            return runWithUsageSource('ai:chat', () => thread.session.send(message, files, active.signal))
           })
           if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
           if (turn.timing && !turn.error) thread.timings.set(thread.session.turns.length - 1, timingLine(turn.timing))
@@ -984,8 +1014,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           // A run still open when the turn ends never reported its end — the turn did.
           for (const run of thread.runs) {
             if (run.status !== null) continue
-            run.status = turn.error ? 'error' : 'success'
-            run.finished = Date.now()
+            run.status = turn.error || turn.stopped ? 'error' : 'success'
+            run.finished = new ZonedDateTime().epochMilliseconds
           }
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
@@ -1005,6 +1035,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           clearInterval(beat)
           thread.sink = null
           thread.busy = false
+          activeTurns.delete(id)
           release()
         }
       },
