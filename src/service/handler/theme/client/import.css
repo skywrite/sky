@@ -620,6 +620,55 @@
   flex: 1;
   min-width: 0;
 }
+.sky-action-source {
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.sky-action-source > a {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--sky-accent);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.sky-action-source > a:hover {
+  text-decoration: underline;
+}
+.sky-action-source-detail,
+.sky-action-help {
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-action-help {
+  margin: 8px 0 14px;
+}
+.sky-action-place {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+}
+.sky-action-place .sky-check {
+  margin-top: 10px;
+}
+.sky-action-input {
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--sky-text);
+  background: transparent;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.sky-action-input:focus {
+  border-color: var(--sky-accent);
+}
+.sky-action-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
 .sky-placed-item {
   display: flex;
   align-items: center;
@@ -661,14 +710,12 @@
 
   /* a narrow row: the text on its own line, the pill and the chip under it, aligned with the text */
   .sky-action-place {
-    flex-wrap: wrap;
+    grid-template-columns: 24px minmax(0, 1fr);
     row-gap: 6px;
   }
-  .sky-action-place .sky-action-text {
-    flex: 1 1 100%;
-  }
-  .sky-action-place .sky-action-me {
-    margin-left: 34px;
+  .sky-action-controls {
+    grid-column: 2;
+    flex-wrap: wrap;
   }
 
   .sky-field {

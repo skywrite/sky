@@ -16,7 +16,7 @@ import { normalizeActionItems, parseActionItemsSection, type TranscriptActionIte
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
-import { serviceDocumentIO } from '#lib/service/documents.ts'
+import { serviceDocumentIO, toNotebookRelative } from '#lib/service/documents.ts'
 import slugify from '#lib/string/slugify.ts'
 import { userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -25,6 +25,7 @@ import { applyPersonFacts, formatPersonOpLine } from '#shared/models/Person/writ
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { PlainDate, PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
 import { placeLabel, type PlaceWhen } from '#universal/dates/whenLabel/mod.ts'
+import { actionItemWithSource, loadActionItemReview, saveActionItemReview } from './lib/actionItemReview.ts'
 import {
   countWaiting,
   executeActionItemRoute,
@@ -345,12 +346,12 @@ export default class MeetingNewTask extends Command {
     // on disk so a cancel or crash here can't lose them, and before openEditor
     // so the prompt isn't buried by the editor stealing focus. Professional
     // meetings only — the category default.
-    if (actionItems.length > 0 && willRouteActions && context.prompt.interactive && !context.signal?.aborted) {
+    if ((actionItems.length > 0 || run) && willRouteActions && context.prompt.interactive && !context.signal?.aborted) {
       output.stage('actions', 'Action items', `${actionItems.length} to accept`)
       try {
-        await this.acceptActionItems(actionItems, context, tasks)
+        await this.acceptActionItems(path.join(ddfw.fullDir, file), actionItems, context, tasks)
       } catch (err) {
-        output.error(`Action-item routing failed: ${(err as Error).message}`)
+        return CommandResult.error(err as Error, `Could not save the action-item review: ${(err as Error).message}`)
       }
     }
 
@@ -411,7 +412,7 @@ export default class MeetingNewTask extends Command {
 
   // A run that filed the meeting and stopped after — in the action items, in
   // the profile curation, in a restart — picks up with what was left: the
-  // action items still to accept. The meeting itself is not touched.
+  // action items still to review. The filed notes supply their latest text.
   private async finishFiled(
     run: TranscriptRun,
     filed: Checkpoint<'filed'>,
@@ -423,13 +424,13 @@ export default class MeetingNewTask extends Command {
     const actionItems = normalizeActionItems(filed.data.actionItems)
     output.log(`Already filed at ${clockLabel(filed.at, runOptionsFor(context).now())}: ${path.basename(file)}`)
 
-    if (actionItems.length > 0 && routeActions && context.prompt.interactive && !context.signal?.aborted) {
+    if (routeActions && context.prompt.interactive && !context.signal?.aborted) {
       output.plan([{ id: 'actions', label: 'Action items' }])
       output.stage('actions', 'Action items', `${actionItems.length} to accept`)
       try {
-        await this.acceptActionItems(actionItems, context, tasks)
+        await this.acceptActionItems(file, actionItems, context, tasks)
       } catch (err) {
-        output.error(`Action-item routing failed: ${(err as Error).message}`)
+        return CommandResult.error(err as Error, `Could not save the action-item review: ${(err as Error).message}`)
       }
     }
 
@@ -453,11 +454,15 @@ export default class MeetingNewTask extends Command {
   // accepted one goes. Routes are decided from the answer, so the ledger can
   // say it.
   private async acceptActionItems(
-    items: TranscriptActionItem[],
+    file: string,
+    extracted: TranscriptActionItem[],
     context: CommandArgs<Params>['context'],
     tasks: CommandArgs<Params>['tasks'],
   ): Promise<void> {
     const { config, output } = context
+    const io = serviceDocumentIO()
+    const review = await loadActionItemReview(toNotebookRelative(file, String(config.DIR_BASE)), extracted, io)
+    const { items, source } = review
     const today = new PlainDate(context.notebookNow.date)
     const fallback: PlaceWhen = { date: today.addDays(1).ymd, time: null }
     const proposed = items.map((item) => proposedWhen(item, today.ymd, fallback))
@@ -465,6 +470,8 @@ export default class MeetingNewTask extends Command {
 
     const answer = await context.prompt.place({
       message: 'Accept action items (space toggles, enter confirms)',
+      source,
+      editable: true,
       items: indexes.map((i) => ({
         value: String(i),
         label: items[i].text,
@@ -484,11 +491,8 @@ export default class MeetingNewTask extends Command {
       return
     }
 
-    // Meeting order, not toggle order
-    const accepted = answer
-      .map((a) => ({ index: Number(a.value), when: a.when }))
-      .filter((a) => Number.isInteger(a.index) && a.index >= 0 && a.index < items.length)
-      .sort((a, b) => a.index - b.index)
+    const saved = await saveActionItemReview(review, answer, io)
+    const { accepted } = saved
     if (accepted.length === 0) {
       output.log('  No action items accepted.')
       return
@@ -496,18 +500,17 @@ export default class MeetingNewTask extends Command {
 
     let routed = 0
     for (const [n, a] of accepted.entries()) {
-      const item = items[a.index]
-      const route = await planActionItemRoute({ text: item.text, when: a.when }, today.ymd)
+      const route = await planActionItemRoute({ text: actionItemWithSource(a.text, source), when: a.when }, today.ymd)
       try {
         await executeActionItemRoute(route, tasks)
         routed++
-        output.log(`  ✓ ${item.text} → ${route.destination}`)
+        output.log(`  ✓ ${a.text} → ${route.destination}`)
       } catch (err) {
-        output.error(`  ✗ ${item.text} — ${(err as Error).message}`)
+        output.error(`  ✗ ${a.text} — ${(err as Error).message}`)
       }
       output.tick(n + 1, accepted.length, 'action items')
     }
-    const declined = items.length - accepted.length
+    const declined = saved.items.length - accepted.length
     output.log(`  Routed ${routed} of ${accepted.length} accepted action items (${declined} declined).`)
   }
 }

@@ -72,6 +72,10 @@ export interface PlaceItem {
 export interface PlacePrompt {
   message: string
   items: PlaceItem[]
+  /** The filed record these items belong to; file is notebook-relative. */
+  source?: { title: string; when: string; who: string; file: string }
+  /** Supports descriptions, new rows, and explicit acceptance on every answer row. */
+  editable?: boolean
   /** Values ticked before the person touches anything */
   initial: string[]
   /** The notebook's today, YYYY-MM-DD, so a host can say Today and Tomorrow and name the week's days */
@@ -84,7 +88,13 @@ export interface PlacePrompt {
   waiting: number
 }
 
-export type PlaceAnswer = { value: string; when: PlaceWhen }[]
+/** Older/terminal hosts send only accepted values. Editors include all rows so unchecked edits also save. */
+export type PlaceAnswer = {
+  value: string
+  when: PlaceWhen
+  label?: string
+  accepted?: boolean
+}[]
 
 /**
  * One item of a review: a problem in some text, the sentences around it,

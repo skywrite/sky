@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { normalizeActionItems, parseActionItemsSection } from './actionItems.ts'
+import { editActionItemsSection, normalizeActionItems, parseActionItemsSection } from './actionItems.ts'
 
 const BODY = `# Renewal Terms for the Atlas Account
 
@@ -31,6 +31,32 @@ Discussed renewal terms and the rollout timeline.
 
 - Jane Doe asked who owns the rollout comms.
 `
+
+test('action-item editing preserves legacy ownership and ignores headings in code examples', () => {
+  const example = '```md\n## Action Items (me)\n- Keep this example verbatim\n```\n'
+  const notes = `${example}\n# Action Items\n\n- [ ] Draft the checklist (me)\n- Alex Chen: check the timeline\n\n## Decisions\n\nKeep the release small.\n`
+  const updated = editActionItemsSection(notes, new Map([[0, 'Draft the Atlas checklist']]), [
+    { text: 'Review the launch date', mine: true, date: null, time: null },
+  ])
+  assert({
+    given: 'a legacy action section beneath a fenced example',
+    should: 'edit the real bullet and append in the same section without losing its ownership or touching the example',
+    actual: updated,
+    expected: notes
+      .replace('Draft the checklist (me)', 'Draft the Atlas checklist (me)')
+      .replace('- Alex Chen: check the timeline', '- Alex Chen: check the timeline\n- Review the launch date (me)'),
+  })
+  assert({
+    given: 'the edited legacy notes',
+    should: 'keep only the real items with their ownership',
+    actual: parseActionItemsSection(updated).map((item) => [item.text, item.mine]),
+    expected: [
+      ['Draft the Atlas checklist', true],
+      ['Alex Chen: check the timeline', false],
+      ['Review the launch date', true],
+    ],
+  })
+})
 
 test('parseActionItemsSection() - split sections', () => {
   const items = parseActionItemsSection(BODY)

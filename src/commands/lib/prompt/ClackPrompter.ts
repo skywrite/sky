@@ -68,6 +68,7 @@ export class ClackPrompter implements Prompter {
   // it arrived with. The hint says where that is.
   async place(prompt: PlacePrompt): Promise<PlaceAnswer | null> {
     if (!this.interactive) return null
+    if (prompt.items.length === 0) return []
     const answer = await p.multiselect({
       message: prompt.message,
       options: prompt.items.map((item) => ({ value: item.value, label: item.label, hint: item.hint })),

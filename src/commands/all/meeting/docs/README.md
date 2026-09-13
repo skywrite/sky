@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-07
+updated: 2026-09-13
 ---
 
 # meeting:new — the action items
@@ -10,8 +10,8 @@ This command creates notebook meeting documents.
 
 `meeting:new` files a meeting from a transcript, a voice memo, or a text
 file (the pipeline itself is `commands/all/audio/transcript/docs/README.md`).
-Once the meeting is on disk it offers the summary's action items for
-acceptance. This page is about that step: what is offered, where an accepted
+Once the meeting is on disk it offers its action items for review,
+including an empty list where the person can add the first item. This page is about that step: what is offered, where an accepted
 item goes, and how the terminal and the web page ask.
 
 Profile curation uses the corrected transcript; its evidence and write rules
@@ -62,12 +62,25 @@ already wait on Next.
   Enter confirms; the hint beside each item says where it goes
   (`me · → Tomorrow`). A ticked item takes the when it arrived with.
 - **The web page** (`service/handler/theme/client/import.tsx`) shows a
-  chip on every row — Today, Tomorrow, the rest of this week by name,
+  link to the source meeting with its title, date/time and attendees,
+  an editable description and a chip on every row — Today, Tomorrow, the rest of this week by name,
   another day, a time, Next — and one chip in the lead sentence that moves
   every row not set on its own. A time given by hand makes the item a
   Commitment; clearing it makes it a Todo again. After Accept the page
   shows where each item went, grouped by day, with a link to open the day.
 - **Headless** runs skip the step; nothing is written without a person.
+
+Prompts advertise `editable: true` before the web answer carries every row,
+with `accepted: false` for unchecked items. A review already waiting on an
+older server still sends only accepted values; the terminal's older
+value/when pairs also still mean accepted. Text edits
+and additions save to the meeting notes before any tasks route, even when
+none are accepted. `lib/actionItemReview.ts` reads the filed notes on fresh
+runs and resumes, preserves unrelated prose and frontmatter, and uses the
+document API's version check to avoid overwriting concurrent edits. A failed
+note save leaves the import unfinished and creates no tasks. Accepted tasks
+include a notebook-root link bearing the meeting's title and date, so their
+source survives moves between days, the schedule, and Next.
 
 ## Words in one place
 

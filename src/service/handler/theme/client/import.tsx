@@ -1,5 +1,5 @@
 import './import.css'
-import { Button, Drawer, Modal, Popover } from '@mantine/core'
+import { ActionIcon, Button, Drawer, Modal, Popover, Textarea } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -131,27 +132,6 @@ interface FormItem {
 }
 
 type FormAnswer = { action: 'accept'; value: string } | { action: 'custom'; value: string } | { action: 'skip' }
-
-interface PlaceItem {
-  value: string
-  label: string
-  hint?: string
-  mine: boolean
-  when: PlaceWhen
-}
-
-/** Accept some items and say when each one happens — see commands/lib/prompt/Prompter.ts */
-interface PlacePrompt {
-  message: string
-  items: PlaceItem[]
-  initial: string[]
-  today: string
-  createdThrough: string | null
-  fallback: PlaceWhen
-  waiting: number
-}
-
-type PlaceAnswer = { value: string; when: PlaceWhen }[]
 
 type PromptOnWire = { id: string } & (
   | { kind: 'text'; prompt: { message: string; placeholder?: string; hint?: string[]; initial?: string } }
@@ -1532,6 +1512,19 @@ function sameWhen(a: PlaceWhen, b: PlaceWhen): boolean {
   return a.date === b.date && a.time === b.time
 }
 
+function ActionSource({ source }: { source: PlacePrompt['source'] }) {
+  if (!source) return null
+  return (
+    <div className="sky-action-source">
+      <div className="sky-dim">From the meeting</div>
+      <a href={fileHref(source.file)} target="_blank" rel="noreferrer">
+        {source.title} <span aria-hidden="true">↗</span>
+      </a>
+      <div className="sky-action-source-detail">{[source.when, source.who].filter(Boolean).join(' · ')}</div>
+    </div>
+  )
+}
+
 /**
  * Every action item the summary found, the person's own ticked, each with a
  * chip saying when it happens. The chip in the lead sentence moves every
@@ -1546,6 +1539,9 @@ function PlaceItems({
   onAnswer: (answer: PlaceAnswer) => void
 }) {
   const p = prompt.prompt
+  const editable = p.editable === true
+  const [items, setItems] = useState<PlaceItem[]>(p.items)
+  const nextItem = useRef(0)
   const [picked, setPicked] = useState<Set<string>>(() => new Set(p.initial))
   const [fallback, setFallback] = useState<PlaceWhen>(p.fallback)
   const [chosen, setChosen] = useState<Map<string, PlaceWhen>>(() => {
@@ -1562,8 +1558,43 @@ function PlaceItems({
       return next
     })
   const choose = (value: string, when: PlaceWhen) => setChosen((prev) => new Map(prev).set(value, when))
+  const add = () => {
+    // Temporary form identity only; the saved content is a bullet in the meeting notes.
+    const value = `new-${++nextItem.current}`
+    setItems((prev) => [...prev, { value, label: '', mine: true, when: fallback }])
+    setPicked((prev) => new Set(prev).add(value))
+  }
+  const remove = (value: string) => {
+    setItems((prev) => prev.filter((item) => item.value !== value))
+    setPicked((prev) => {
+      const next = new Set(prev)
+      next.delete(value)
+      return next
+    })
+  }
+  const validItems = items.filter((item) => item.label.trim())
+  const invalid = items.some((item) => !item.label.trim() && !item.value.startsWith('new-'))
+  const edited = items.some(
+    (item) => item.label.trim() && item.label !== p.items.find((i) => i.value === item.value)?.label,
+  )
+  const submit = (accept: boolean) => {
+    // An import already waiting on an older server still expects only ticked
+    // values. Never send its unchecked rows as if they were accepted tasks.
+    if (!editable) {
+      onAnswer(accept ? ticked.map((item) => ({ value: item.value, when: whenOf(item) })) : [])
+      return
+    }
+    onAnswer(
+      validItems.map((item) => ({
+        value: item.value,
+        label: item.label.trim(),
+        when: whenOf(item),
+        accepted: accept && picked.has(item.value),
+      })),
+    )
+  }
 
-  const ticked = p.items.filter((item) => picked.has(item.value))
+  const ticked = validItems.filter((item) => picked.has(item.value))
   const tally = new Map<string, { label: string; count: number }>()
   for (const item of ticked) {
     const when = whenOf(item)
@@ -1575,7 +1606,11 @@ function PlaceItems({
   const shared = { today: p.today, createdThrough: p.createdThrough, waiting: p.waiting }
 
   return (
-    <Block head="Action items" mini={`${p.items.length} from the summary`}>
+    <Block
+      head="Action items"
+      mini={`${p.items.length} from the summary${items.length > p.items.length ? ` · ${items.length - p.items.length} added` : ''}`}
+    >
+      <ActionSource source={p.source} />
       <div
         className="sky-lead"
         style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px' }}
@@ -1584,43 +1619,81 @@ function PlaceItems({
         <WhenChip when={fallback} lead onChange={setFallback} {...shared} />
         <span>unless a row says otherwise.</span>
       </div>
-      {p.items.map((item) => {
+      {editable && (
+        <div className="sky-action-help">
+          Edit any description or add an item. Changes save to the meeting notes, including items you leave unticked.
+        </div>
+      )}
+      {items.length === 0 && (
+        <p className="sky-lead">No action items were found. Add anything you want to follow up on.</p>
+      )}
+      {items.map((item, index) => {
         const on = picked.has(item.value)
         return (
           <div key={item.value} className="sky-action sky-action-place">
             <button
               type="button"
               className="sky-check"
-              aria-label={on ? 'Accepted' : 'Accept'}
+              role="checkbox"
+              aria-checked={on}
+              aria-label={`Accept action item ${index + 1}`}
               onClick={() => toggle(item.value)}
             >
               <span className="sky-check-box" data-on={on}>
                 {on && Tick}
               </span>
             </button>
-            <span className="sky-action-text" style={{ color: on ? undefined : 'var(--sky-text-2)' }}>
-              {item.label}
-            </span>
-            {item.mine && <span className="sky-action-me">me</span>}
-            <WhenChip
-              when={whenOf(item)}
-              quiet={!chosen.has(item.value)}
-              off={!on}
-              itemText={item.label}
-              onChange={(when) => choose(item.value, when)}
-              {...shared}
-            />
+            {editable ? (
+              <Textarea
+                classNames={{ root: 'sky-action-text', input: 'sky-action-input' }}
+                aria-label={`Action item ${index + 1}`}
+                placeholder="What needs to happen?"
+                autosize
+                minRows={1}
+                value={item.label}
+                autoFocus={item.value.startsWith('new-')}
+                onChange={(e) => {
+                  const label = e.currentTarget.value
+                  setItems((prev) => prev.map((row) => (row.value === item.value ? { ...row, label } : row)))
+                }}
+                error={!item.label.trim() && !item.value.startsWith('new-') ? 'Add a description.' : undefined}
+              />
+            ) : (
+              <span className="sky-action-text">{item.label}</span>
+            )}
+            <div className="sky-action-controls">
+              {item.mine && <span className="sky-action-me">me</span>}
+              <WhenChip
+                when={whenOf(item)}
+                quiet={!chosen.has(item.value)}
+                off={!on}
+                itemText={item.label}
+                onChange={(when) => choose(item.value, when)}
+                {...shared}
+              />
+              {item.value.startsWith('new-') && (
+                <ActionIcon aria-label={`Remove new action item ${index + 1}`} onClick={() => remove(item.value)}>
+                  ×
+                </ActionIcon>
+              )}
+            </div>
           </div>
         )
       })}
-      <div className="sky-form-foot">
-        <Button
-          variant="primary"
-          onClick={() => onAnswer(ticked.map((item) => ({ value: item.value, when: whenOf(item) })))}
-        >
-          Accept {ticked.length}
+      {editable && (
+        <Button variant="primary-quiet" onClick={add}>
+          + Add action item
         </Button>
-        <Button onClick={() => onAnswer([])}>None</Button>
+      )}
+      <div className="sky-form-foot">
+        <Button variant="primary" disabled={invalid} onClick={() => submit(true)}>
+          {ticked.length > 0 ? `Accept ${ticked.length}` : edited ? 'Save changes' : 'Done'}
+        </Button>
+        {ticked.length > 0 && (
+          <Button disabled={invalid} onClick={() => submit(false)}>
+            {edited ? 'Save without adding tasks' : 'None'}
+          </Button>
+        )}
         {tallied.length > 0 && (
           <span className="sky-dim">{tallied.map((t) => `${t.label} ${t.count}`).join(' · ')}</span>
         )}
@@ -1886,16 +1959,20 @@ function Placed({ placed, lines }: { placed: NonNullable<Derived['placed']>; lin
   }
   const groups = new Map<string, Group>()
   for (const a of placed.answer) {
+    if (a.accepted === false) continue
     const item = items.get(a.value)
-    if (!item) continue
+    const label = a.label ?? item?.label
+    if (!label) continue
     const key = a.when.date ?? 'next'
     const group = groups.get(key) ?? { key, when: { date: a.when.date, time: null }, rows: [] }
-    group.rows.push({ text: item.label, time: a.when.time, problem: failed.get(item.label) ?? null })
+    group.rows.push({ text: label, time: a.when.time, problem: failed.get(label) ?? null })
     groups.set(key, group)
   }
   const ordered = [...groups.values()].sort((a, b) => (a.when.date ?? '9').localeCompare(b.when.date ?? '9'))
   const nextCount = groups.get('next')?.rows.length ?? 0
-  const declined = p.items.length - placed.answer.length
+  const acceptedCount = placed.answer.filter((a) => a.accepted !== false).length
+  const total = new Set([...p.items.map((item) => item.value), ...placed.answer.map((a) => a.value)]).size
+  const declined = total - acceptedCount
 
   const describe = (g: Group): { label: string; sub: string; href: string; open: string } => {
     if (g.when.date === null) {
@@ -1928,7 +2005,9 @@ function Placed({ placed, lines }: { placed: NonNullable<Derived['placed']>; lin
   }
 
   return (
-    <Block head="Action items" mini={`${placed.answer.length} placed · ${declined} stay in the write-up`}>
+    <Block head="Action items" mini={`${acceptedCount} accepted · ${declined} stay in the notes`}>
+      <ActionSource source={p.source} />
+      {acceptedCount === 0 && <p className="sky-lead">No tasks added.</p>}
       <div className="sky-placed">
         {ordered.map((g) => {
           const d = describe(g)
@@ -2191,7 +2270,11 @@ export function ImportMain({
           {pending?.kind === 'multiselect' && (
             <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
           )}
-          {pending?.kind === 'place' && <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />}
+          {pending?.kind === 'place' && (
+            <Fragment key={pending.id}>
+              <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
+            </Fragment>
+          )}
           {(pending?.kind === 'select' || pending?.kind === 'confirm') && (
             <Choice prompt={pending} onAnswer={(a) => void answer(pending, a)} />
           )}

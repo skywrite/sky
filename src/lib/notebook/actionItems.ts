@@ -81,26 +81,89 @@ function bulletToItem(bullet: string, sectionMine: boolean): TranscriptActionIte
  * legacy single "## Action Items" section. A "(me)" marker is detected and
  * then stripped from the text either way.
  */
-export function parseActionItemsSection(body: string): TranscriptActionItem[] {
-  const bullets: { text: string; sectionMine: boolean }[] = []
+function actionItemBullets(body: string) {
+  const bullets: { text: string; sectionMine: boolean; start: number; end: number }[] = []
+  const lines = body.split('\n')
+  const sections: { mine: boolean; legacy: boolean; start: number; end: number }[] = []
   let sectionMine: boolean | null = null
+  let section: (typeof sections)[number] | null = null
+  let fence: string | null = null
 
-  for (const line of body.split('\n')) {
+  for (const [index, line] of lines.entries()) {
+    const code = line.match(/^\s*(`{3,}|~{3,})/)
+    if (code) {
+      if (fence === null) fence = code[1]
+      else if (code[1][0] === fence[0] && code[1].length >= fence.length) fence = null
+      continue
+    }
+    if (fence !== null) continue
     const header = line.match(/^#{1,6}\s+(.+?)\s*$/)
     if (header) {
+      if (section) section.end = index
+      section = null
       sectionMine = SECTION_OWNERSHIP[header[1].toLowerCase()] ?? null
+      if (sectionMine !== null) {
+        section = {
+          mine: sectionMine,
+          legacy: header[1].toLowerCase() === 'action items',
+          start: index,
+          end: lines.length,
+        }
+        sections.push(section)
+      }
       continue
     }
     if (sectionMine === null) continue
 
     const bullet = line.match(/^[-*]\s+(.*\S)\s*$/)
     if (bullet) {
-      bullets.push({ text: bullet[1], sectionMine })
-    } else if (bullets.length > 0 && /^\s+\S/.test(line)) {
+      bullets.push({ text: bullet[1], sectionMine, start: index, end: index + 1 })
+    } else if (bullets.at(-1)?.end === index && /^\s+\S/.test(line)) {
       // Indented continuation of the previous bullet
       bullets[bullets.length - 1].text += ` ${line.trim()}`
+      bullets[bullets.length - 1].end = index + 1
     }
   }
 
-  return bullets.map((b) => bulletToItem(b.text, b.sectionMine)).filter((item) => item.text.length > 0)
+  return { bullets: bullets.filter((b) => bulletToItem(b.text, b.sectionMine).text.length > 0), sections }
+}
+
+export function parseActionItemsSection(body: string): TranscriptActionItem[] {
+  return actionItemBullets(body).bullets.map((b) => bulletToItem(b.text, b.sectionMine))
+}
+
+/** Replace only edited bullets; keep the other notes, headings, and frontmatter verbatim. */
+export function editActionItemsSection(
+  body: string,
+  edits: ReadonlyMap<number, string>,
+  additions: TranscriptActionItem[],
+): string {
+  const lines = body.split('\n')
+  const { bullets } = actionItemBullets(body)
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const text = edits.get(i)
+    if (text === undefined) continue
+    const b = bullets[i]
+    const prefix = lines[b.start].match(/^[-*]\s+(?:\[[ xX]\]\s*)?/)?.[0] ?? '- '
+    const marker = !b.sectionMine && bulletToItem(b.text, b.sectionMine).mine ? ' (me)' : ''
+    lines.splice(b.start, b.end - b.start, `${prefix}${text}${marker}`)
+  }
+  for (const mine of [true, false]) {
+    const added = additions.filter((item) => item.mine === mine)
+    if (added.length === 0) continue
+    const heading = `## Action Items (${mine ? 'me' : 'others'})`
+    const { sections } = actionItemBullets(lines.join('\n'))
+    const section =
+      sections.find((entry) => !entry.legacy && entry.mine === mine) ?? sections.find((entry) => entry.legacy)
+    const newLines = added.map((item) => `- ${item.text}${section?.legacy && mine ? ' (me)' : ''}`)
+    if (!section) {
+      while (lines.at(-1) === '') lines.pop()
+      lines.push('', heading, '', ...newLines, '')
+    } else {
+      let end = section.end
+      while (end > section.start + 1 && lines[end - 1].trim() === '') end--
+      lines.splice(end, 0, ...newLines)
+    }
+  }
+  return lines.join('\n')
 }
