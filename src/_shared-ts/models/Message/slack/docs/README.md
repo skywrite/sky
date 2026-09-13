@@ -1,6 +1,6 @@
 ---
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Saved Slack conversations
@@ -26,6 +26,8 @@ Attachment fragment links are read lazily, including Markdown reference links.
 
 Block lexing deliberately avoids a full inline parse during notebook scans.
 Reference definitions remain tokens so their bytes count toward source ranges.
+Indented code is also retained as its own block: marked's paragraph/code merge
+can insert a newline into `raw`, which would invalidate offsets into the original.
 The source-coverage checks must continue to fail visibly if a lexer change
 would make those ranges unsafe for edits.
 

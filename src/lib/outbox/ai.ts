@@ -2,6 +2,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
+import { prepareConversationHistory } from './history.ts'
 import { outboxModel, OUTBOX_MODEL_TIMEOUT_MS } from './model.ts'
 import type { Propose } from './scan.ts'
 
@@ -25,11 +26,13 @@ async function instructions(file: string): Promise<string> {
 /** Judgment owns what to say. The voice pass has no tools and cannot take an action. */
 export function createProposer(ownerContext: string): Propose {
   return async ({ conversation, preferences, examples }) => {
+    const context = { ownerContext, preferences, examples }
+    const history = await prepareConversationHistory(conversation, context)
     const judgment = await generateObject({
       ...outboxModel(),
       schema: Judgment,
       instructions: await instructions(JUDGMENT_PROMPT),
-      prompt: JSON.stringify({ ownerContext, preferences, conversation, examples }),
+      prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     const { action, title, situation, explanation: reasoning, questions, meaning } = judgment.object

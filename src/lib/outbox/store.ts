@@ -10,6 +10,8 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { outboxDraftInput } from './draftContext.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from './files.ts'
 import { dayRange, ScanRangeSchema, type SavedScanRange, type ScanRange } from './range.ts'
+import { requestNeedsReply } from './requestTypes.ts'
+import { draftLink } from './storage.ts'
 import { ItemSchema, OutboxError, type OutboxItem, type OutboxRecord } from './types.ts'
 
 export const DEFAULT_PREFERENCES = `Be brief, direct, empathetic, and humble. Use natural language, without AI filler.
@@ -17,7 +19,13 @@ Do not invent facts, commitments, availability, or certainty.
 Do not propose a meeting unless I explicitly ask you to. Prefer resolving things in writing.
 `
 
-export type DraftWrite = { author?: 'sky' | 'you'; direction?: string; accept?: boolean; mutation?: DraftMutation }
+export type DraftWrite = {
+  author?: 'sky' | 'you'
+  direction?: string
+  accept?: boolean
+  mutation?: DraftMutation
+  requestAction?: 'dismissed' | 'sent'
+}
 
 export class OutboxStore {
   constructor(
@@ -25,6 +33,7 @@ export class OutboxStore {
     readonly stateDir: string,
     readonly writingVoice?: WritingVoiceStore,
     readonly writingDrafts?: WritingDraftStore,
+    readonly initialize: () => Promise<void> = async () => {},
   ) {}
 
   private file(id: string): string {
@@ -33,6 +42,7 @@ export class OutboxStore {
   }
 
   async get(id: string): Promise<OutboxRecord | null> {
+    await this.initialize()
     const text = await readOptional(this.file(id))
     if (text === undefined) return null
     const doc = Document.fromMarkdown(text)
@@ -55,6 +65,7 @@ export class OutboxStore {
   }
 
   async list(): Promise<OutboxRecord[]> {
+    await this.initialize()
     let files: string[]
     try {
       files = await readdir(path.join(this.dir, 'items'))
@@ -96,6 +107,35 @@ export class OutboxStore {
     if ((before?.revision ?? null) !== revision)
       throw new OutboxError('This decision changed. Reload it before saving; your text is still here.', 409)
     const next = ItemSchema.parse(item)
+    if (change.requestAction && next.requests) {
+      const reviewed = new Set(next.requestIds ?? [])
+      next.requests = next.requests.map((request) => {
+        if (!reviewed.has(request.id) || !requestNeedsReply(request)) return request
+        if (change.requestAction === 'dismissed')
+          return {
+            ...request,
+            status: 'dismissed',
+            explanation: 'You archived this request.',
+            dismissal: { at: next.updated, sourceVersion: next.conversation.version, kind: 'owner' },
+          }
+        if (!next.delivery) throw new OutboxError('Record where and when this reply was sent.')
+        return {
+          ...request,
+          status: 'uncertain',
+          resolution: null,
+          explanation: 'You reported sending a reply; its coverage of this request will be checked.',
+          reports: [
+            ...request.reports,
+            {
+              at: next.delivery.at,
+              sourceVersion: next.conversation.version,
+              evidence: next.delivery.evidence,
+              reply: next.draft,
+            },
+          ],
+        }
+      })
+    }
     if (before?.status === 'dismissed' && next.status !== 'dismissed') next.draftId = undefined
     if (!next.draft.trim()) next.draftId = undefined
     // Naming happens before either writer lock, and the item revision is checked again afterward.
@@ -110,7 +150,9 @@ export class OutboxStore {
         throw new OutboxError('This decision changed. Reload it before saving; your text is still here.', 409)
       const write = async () => {
         const { draft, ...yaml } = ItemSchema.parse(next)
-        const body = next.draftId ? `[Draft](../../me/voice/drafts/${next.draftId}.md)\n` : `${draft.trim()}\n`
+        const body = next.draftId
+          ? `${draftLink(path.join(this.dir, 'items'), this.writingDrafts!.voice.store.notebookDir, next.draftId)}\n`
+          : `${draft.trim()}\n`
         await atomicWrite(this.file(item.id), new Document(yaml, body).toMarkdown())
       }
       if (next.draftId && this.writingDrafts) {
@@ -159,6 +201,7 @@ export class OutboxStore {
   }
 
   async preferences(): Promise<{ text: string; revision: string }> {
+    await this.initialize()
     if (this.writingVoice) return this.writingVoice.rules()
     const text = await readOptional(path.join(this.dir, 'preferences.md'))
     const doc = text === undefined ? null : Document.fromMarkdown(text)
@@ -167,6 +210,7 @@ export class OutboxStore {
   }
 
   async scanRange(today: string): Promise<SavedScanRange> {
+    await this.initialize()
     const text = await readOptional(path.join(this.dir, 'search.md'))
     if (text === undefined) return { value: dayRange(today), revision: hash('') }
     const doc = Document.fromMarkdown(text)
@@ -175,6 +219,7 @@ export class OutboxStore {
   }
 
   async saveScanRange(value: ScanRange, revision: string, today: string): Promise<void> {
+    await this.initialize()
     const range = ScanRangeSchema.parse(value)
     await withLock(path.join(this.stateDir, 'write.lock'), async () => {
       if ((await this.scanRange(today)).revision !== revision)
@@ -190,6 +235,7 @@ export class OutboxStore {
   }
 
   async savePreferences(text: string, revision: string): Promise<void> {
+    await this.initialize()
     if (this.writingVoice) {
       await this.writingVoice.saveRules(text, revision)
       return

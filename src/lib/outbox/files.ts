@@ -5,7 +5,7 @@ import process from 'node:process'
 import { withProcessLock } from '#lib/jobs/files.ts'
 import { OutboxError } from './types.ts'
 
-export const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
+export const hash = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
 export const missing = (error: unknown): boolean => (error as NodeJS.ErrnoException)?.code === 'ENOENT'
 
 export async function readOptional(file: string): Promise<string | undefined> {

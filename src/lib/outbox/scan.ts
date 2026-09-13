@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import process from 'node:process'
+import { AnalysisCache } from './analysisCache.ts'
 import { atomicWrite, hash, readOptional, withLock } from './files.ts'
 import { readScanProgress } from './progress.ts'
 import { dayRange, rangeKey, ScanRangeSchema, type ScanRange } from './range.ts'
+import { requestInRange, type RequestAnalyzer } from './requestAnalysis.ts'
+import { requestNeedsReply, type RequestRecord } from './requestTypes.ts'
 import { InventorySchema, type SavedMessages } from './sources.ts'
 import type { OutboxStore } from './store.ts'
 import {
@@ -26,6 +29,8 @@ export type Propose = (input: {
   range?: ScanRange
   triggerSources?: string[]
   priorResponse?: Pick<OutboxRecord, 'status' | 'draft' | 'delivery' | 'responseHistory' | 'reviews'>
+  requests?: RequestRecord[]
+  requestCache?: AnalysisCache
 }) => Promise<DraftProposal>
 
 export async function scanOutbox(options: {
@@ -39,9 +44,12 @@ export async function scanOutbox(options: {
   model?: string
   modelProfile?: string
   range?: ScanRange
+  analyze?: RequestAnalyzer
 }): Promise<ScanReport> {
   const { store, sources, today, now, propose, limit = Infinity, concurrency = 4, model, modelProfile } = options
   const range = options.range ? ScanRangeSchema.parse(options.range) : dayRange(today)
+  await store.initialize()
+  const requestAnalysisVersion = await options.analyze?.version()
   return withLock(
     path.join(store.stateDir, 'scan.lock'),
     async () => {
@@ -110,7 +118,7 @@ export async function scanOutbox(options: {
         report.total = queued.length
 
         // Retire untouched items admitted today by the legacy date filter. Previously
-        // reviewed decisions keep their carry-over behavior.
+        // reviewed decisions and workstream communications keep their carry-over behavior.
         if (prior && !prior.policy) {
           for (const item of await store.list()) {
             if (
@@ -119,6 +127,8 @@ export async function scanOutbox(options: {
               !item.edited &&
               !item.native &&
               !item.reviews.length &&
+              !item.workstreams?.length &&
+              item.origin !== 'workstream' &&
               item.conversation.sources.length &&
               item.conversation.sources.every((source) => source.ref.slice(0, 10) < today)
             ) {
@@ -193,7 +203,8 @@ export async function scanOutbox(options: {
               !known.limitations?.length &&
               known.itemRevision === current?.revision &&
               (model === undefined || known.model === model) &&
-              (modelProfile === undefined || known.modelProfile === modelProfile)
+              (modelProfile === undefined || known.modelProfile === modelProfile) &&
+              (!options.analyze || known.requestAnalysisVersion === requestAnalysisVersion)
             ) {
               check = { ...known, refs }
               report.unchanged!++
@@ -210,10 +221,12 @@ export async function scanOutbox(options: {
                 (current.edited ||
                   current.native ||
                   current.reviews.length ||
+                  current.workstreams?.length ||
                   (current.status === 'dismissed' && current.conversation.version === conversation.version))
               if (
                 current &&
                 protectedItem &&
+                !options.analyze &&
                 current.conversation.version === conversation.version &&
                 (known?.rangeKey === rangeKey(range) ||
                   (current.reviewRange && rangeKey(current.reviewRange) === rangeKey(range)))
@@ -234,6 +247,25 @@ export async function scanOutbox(options: {
                 }
                 if (check.disposition === 'answered') report.answered!++
               } else {
+                const analysis = await options.analyze?.analyze({ conversation, prior: current, now })
+                const carried = new Set(current && current.status !== 'dismissed' ? (current.requestIds ?? []) : [])
+                const requests = analysis?.requests.filter(
+                  (request) => requestInRange(request, range) || (request.present && carried.has(request.id)),
+                )
+                const requestIds = requests?.filter(requestNeedsReply).map(({ id }) => id)
+                const requestCache = analysis ? new AnalysisCache(store.stateDir, key) : undefined
+                if (analysis) {
+                  if ((await sources.current(conversation)).version !== conversation.version)
+                    throw new OutboxError(
+                      'Messages changed during request analysis. Check again to review the latest version.',
+                      409,
+                    )
+                  // A completed reading survives a later drafting failure. Human decisions remain authoritative in the item.
+                  await atomicWrite(
+                    path.join(requestCache!.dir, 'completed.json'),
+                    JSON.stringify({ ...analysis, itemRevision: current?.revision ?? null }),
+                  )
+                }
                 let proposal = await propose({
                   conversation: limitations.length
                     ? { ...conversation, limitations: [...new Set([...conversation.limitations, ...limitations])] }
@@ -253,14 +285,46 @@ export async function scanOutbox(options: {
                         reviews: current.reviews.slice(-4),
                       }
                     : undefined,
+                  requests,
+                  requestCache,
                 })
+                if (requestIds?.length) {
+                  const planned = proposal.requestPlans?.map(({ id }) => id) ?? []
+                  if (
+                    proposal.action === 'ignore' ||
+                    planned.length !== requestIds.length ||
+                    new Set(planned).size !== planned.length ||
+                    requestIds.some((id) => !planned.includes(id))
+                  )
+                    throw new Error(
+                      'The proposed reply did not account for every selected request. Check again to finish it.',
+                    )
+                  if (
+                    proposal.action === 'draft' &&
+                    proposal.requestPlans!.some(({ response }) => response.action !== 'draft' || !response.draft.trim())
+                  )
+                    throw new Error(
+                      'A request still needs an owner decision before the complete reply can be prepared.',
+                    )
+                }
+                const accounting = analysis
+                  ? {
+                      requests: analysis.requests.map((request) => ({
+                        ...request,
+                        response: proposal.requestPlans?.find(({ id }) => id === request.id)?.response,
+                      })),
+                      requestIds,
+                      requestAnalysis: analysis.stamp,
+                    }
+                  : {}
                 const fresh = await sources.current(conversation)
                 if (fresh.version !== conversation.version)
                   throw new OutboxError(
                     'Messages changed during this check. Check again to review the latest version.',
                     409,
                   )
-                if (limitations.length && proposal.action === 'ignore')
+                // Missing capture history belongs in scan coverage; it cannot establish an obligation for the owner.
+                if (limitations.length && proposal.action === 'ignore' && !analysis)
                   proposal = {
                     ...proposal,
                     action: 'decision',
@@ -302,25 +366,39 @@ export async function scanOutbox(options: {
                   reason: proposal.reasoning,
                   disposition: answered ? 'answered' : proposal.action === 'ignore' ? 'ignored' : 'review',
                   ...(limitations.length ? { limitations } : {}),
+                  ...(analysis ? { requestAnalysisVersion: analysis.stamp.version } : {}),
                 }
                 if (current && protectedItem && current.status !== 'dismissed' && !answered) {
+                  const stale =
+                    !analysis ||
+                    current.stale ||
+                    current.conversation.version !== conversation.version ||
+                    Boolean(requestIds?.some((id) => !current.requestIds?.includes(id)))
                   await store.put(
-                    { ...current, conversation, stale: true, reviewRange: range, updated: now },
+                    {
+                      ...current,
+                      ...accounting,
+                      conversation,
+                      stale,
+                      reviewRange: range,
+                      updated: now,
+                    },
                     current.revision,
                   )
-                  report.stale++
+                  if (stale) report.stale++
                   check = {
                     ...check,
                     itemId: id,
                     title: current.title,
                     disposition: 'preserved',
-                    reason: `${proposal.reasoning} Your existing draft is preserved; review the new context.`,
+                    reason: `${proposal.reasoning} Your existing draft is preserved.${stale ? ' Review the new context.' : ''}`,
                   }
                 } else if (proposal.action === 'ignore') {
                   if (current) {
                     await store.put(
                       {
                         ...current,
+                        ...accounting,
                         conversation,
                         status: 'dismissed',
                         responseHistory,
@@ -329,6 +407,31 @@ export async function scanOutbox(options: {
                       },
                       current.revision,
                     )
+                  } else if (analysis) {
+                    await store.put(
+                      {
+                        id,
+                        created: now,
+                        updated: now,
+                        status: 'dismissed',
+                        conversation,
+                        title: proposal.title,
+                        situation: proposal.situation,
+                        reasoning: proposal.reasoning,
+                        questions: [],
+                        draft: '',
+                        originalDraft: '',
+                        edited: false,
+                        stale: false,
+                        reviews: [],
+                        responseHistory,
+                        reviewRange: range,
+                        native: null,
+                        placementError: null,
+                        ...accounting,
+                      },
+                      null,
+                    )
                   }
                   if (answered) report.answered!++
                   else report.ignored++
@@ -336,12 +439,14 @@ export async function scanOutbox(options: {
                   await store.put(
                     {
                       id,
+                      ...accounting,
                       created: current?.created ?? now,
                       updated: now,
                       status: 'needs_review',
                       conversation,
                       title: proposal.title,
                       situation: proposal.situation,
+                      summary: proposal.summary,
                       reasoning: proposal.reasoning,
                       questions: proposal.questions,
                       recommendation: proposal.recommendation,
@@ -355,7 +460,12 @@ export async function scanOutbox(options: {
                       reviewRange: range,
                       native: null,
                       placementError: null,
+                      workstreams: current?.workstreams,
+                      intentIds: current?.intentIds,
                       origin: current?.origin,
+                      requestSources: current?.workstreams?.length
+                        ? conversation.sources.map(({ ref, hash }) => ({ ref, hash }))
+                        : undefined,
                     },
                     current?.revision ?? null,
                   )

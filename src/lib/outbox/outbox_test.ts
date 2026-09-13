@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { MockLanguageModelV4 } from 'ai/test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
@@ -10,6 +11,7 @@ import { OutboxReview } from './review.ts'
 import { scanOutbox, type Propose } from './scan.ts'
 import { SavedMessages } from './sources.ts'
 import { OutboxStore } from './store.ts'
+import { createTriage } from './triage.ts'
 import type { DraftProposal } from './types.ts'
 
 const TODAY = '2025-03-15'
@@ -63,6 +65,79 @@ async function errorOf(run: () => Promise<unknown>): Promise<string> {
     return (error as Error).message
   }
 }
+
+test('Long-history scans retry failed passes, reject changing evidence and cache only the completed result', async () => {
+  const f = await fixture()
+  const body =
+    '## 2025-03-15 08:00 - **Jane Doe**\n' +
+    'Background context. '.repeat(12_000) +
+    '\n\n## 2025-03-15 11:00 - **Jane Doe**\nDid the update arrive?'
+  const updated = body + '\nPlease confirm the revised update.'
+  let mode: 'failure' | 'change' | 'complete' = 'failure'
+  let calls = 0
+  let judgments = 0
+  const model = new MockLanguageModelV4({
+    doGenerate: async ({ prompt }) => {
+      calls++
+      const user = prompt.find((message) => message.role === 'user')!
+      const input = JSON.parse(
+        user.content
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join(''),
+      )
+      if (input.part === 2 && mode === 'failure') throw new Error('History reading was interrupted.')
+      if (input.part === 1 && mode === 'change') await f.write(TODAY_REF, updated)
+      if (!input.part) judgments++
+      const { reasoning, ...reply } = proposal
+      const result = input.part
+        ? { notes: 'Jane supplied background context; the latest request must still be read.', evidence: [] }
+        : { ...reply, explanation: reasoning, recommendation: '', replyOptions: [] }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 1, text: 1, reasoning: 0 },
+        },
+        warnings: [],
+      }
+    },
+  })
+  const propose = createTriage('I am Alex Example.', () => ({ model, maxRetries: 0 }))
+  try {
+    await f.write(TODAY_REF, body)
+    await f.follow([TODAY_REF])
+    const failed = await f.run(propose)
+    const afterFailure = [(await f.store.list()).length, judgments]
+    mode = 'change'
+    const changed = await f.run(propose)
+    const afterChange = (await f.store.list()).length
+    mode = 'complete'
+    const complete = await f.run(propose)
+    const saved = (await f.store.list())[0]
+    const completedCalls = calls
+    const repeated = await f.run(propose)
+    assert({
+      given: 'a failed history pass, then a source edit during reading, then a stable retry',
+      should: 'publish only the complete fresh result, retain its full evidence and reuse it on the next scan',
+      actual: [
+        [failed.failed, failed.pending],
+        afterFailure,
+        [changed.failed, changed.pending],
+        afterChange,
+        [complete.prepared, complete.failed, complete.pending],
+        saved.draft,
+        saved.conversation.sources[0].body === updated,
+        repeated.unchanged,
+        calls === completedCalls,
+      ],
+      expected: [[1, 1], [0, 0], [1, 1], 0, [1, 0, 0], proposal.draft, true, 1, true],
+    })
+  } finally {
+    await f.clean()
+  }
+})
 
 test('Outbox selects actual message times across dates, including a capture filed on a different day', async () => {
   const f = await fixture()

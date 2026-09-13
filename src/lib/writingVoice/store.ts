@@ -37,6 +37,7 @@ export class WritingVoiceStore {
     readonly notebookDir: string,
     readonly stateDir: string,
     readonly clock: () => string = now,
+    readonly outboxDir?: string,
   ) {
     this.dir = path.join(notebookDir, 'me', 'voice')
   }
@@ -68,7 +69,10 @@ export class WritingVoiceStore {
     // Existing Outbox preferences seed the shared guide until its first save.
     const legacy =
       raw === undefined ? await readOptional(path.join(this.notebookDir, 'outbox', 'preferences.md')) : undefined
-    const text = raw ?? legacy
+    // Read the legacy path first so a concurrent move cannot create a gap between the two reads.
+    const relocated =
+      raw === undefined && this.outboxDir ? await readOptional(path.join(this.outboxDir, 'preferences.md')) : undefined
+    const text = raw ?? relocated ?? legacy
     const doc = text === undefined ? new Document({}, DEFAULT_VOICE_RULES) : Document.fromMarkdown(text)
     if (doc.yamlError) throw new WritingVoiceError('Writing rules have invalid frontmatter.')
     return { doc, revision: hash(text ?? DEFAULT_VOICE_RULES) }

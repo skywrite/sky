@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
 import type { WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import { ScanRangeSchema, type ScanRange } from './range.ts'
+import { RequestAnalysisStampSchema, RequestId, RequestRecordSchema, type RequestResponse } from './requestTypes.ts'
 
 export const MAX_OUTBOX_DRAFT_CHARS = 40_000
 
@@ -53,14 +54,30 @@ export const ReplyOptionSchema = z.object({
   instruction: z.string().min(1).max(1200),
 })
 
+/** A snapshot of the specific work informing this draft, checked again at approval. */
+export const WorkstreamLinkSchema = z.object({
+  workstreamId: z.string(),
+  activityId: z.string().optional(),
+  decisionIds: z.array(z.string()).default([]),
+  title: z.string(),
+  context: z.string(),
+  contextVersion: z.string(),
+  sourceIds: z.array(z.string()).optional(),
+  fullContext: z.boolean().optional(),
+})
+
 export const ItemSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{32}$/),
   created: z.string(),
   updated: z.string(),
   status: z.enum(['needs_review', 'placing', 'ready', 'placement_unknown', 'dismissed']),
+  requests: z.array(RequestRecordSchema).optional(),
+  requestIds: z.array(RequestId).optional(),
+  requestAnalysis: RequestAnalysisStampSchema.optional(),
   conversation: ConversationSchema,
   title: z.string(),
   situation: z.string(),
+  summary: z.string().optional(),
   reasoning: z.string(),
   questions: z.array(z.string()),
   recommendation: z.string().optional(),
@@ -78,7 +95,10 @@ export const ItemSchema = z.object({
   native: z.object({ id: z.string(), url: z.string() }).nullable(),
   placementError: z.string().nullable(),
   placementOwner: z.number().int().positive().optional(),
-  origin: z.enum(['conversation', 'followup']).optional(),
+  workstreams: z.array(WorkstreamLinkSchema).optional(),
+  /** Stable producer identity; retries of this intent reuse its existing review item. */
+  intentIds: z.array(z.string()).optional(),
+  origin: z.enum(['conversation', 'workstream', 'followup']).optional(),
   recipient: z.string().optional(),
   /** Prepared from the exact approved reply; materialized only after confirmed handoff or a sent report. */
   followups: z.array(FollowupSchema).max(4).optional(),
@@ -97,6 +117,8 @@ export const ItemSchema = z.object({
       sourceVersion: z.string(),
     })
     .optional(),
+  requestSources: z.array(z.object({ ref: z.string(), hash: z.string() })).optional(),
+  contextError: z.string().optional(),
   delivery: z.object({ at: z.string(), evidence: z.string(), kind: z.literal('owner_report') }).optional(),
   reviewRange: ScanRangeSchema.optional(),
   responseHistory: z
@@ -113,11 +135,12 @@ export const ItemSchema = z.object({
 })
 
 export type Conversation = z.infer<typeof ConversationSchema>
+export type WorkstreamLink = z.infer<typeof WorkstreamLinkSchema>
 export type OutboxItem = z.infer<typeof ItemSchema>
 export type OutboxRecord = OutboxItem & {
   revision: string
   writingDraft?: WritingDraft
-  /** Worker status is local process state, never persisted in the notebook item. */
+  /** Worker status is local process state, never persisted in the decision record. */
   composition?: {
     id: string
     status: 'running' | 'complete' | 'failed'
@@ -138,12 +161,14 @@ export type DraftProposal = {
   action: 'ignore' | 'draft' | 'decision'
   title: string
   situation: string
+  summary?: string
   reasoning: string
   questions: string[]
   draft: string
   recommendation?: string
   replyOptions?: z.infer<typeof ReplyOptionSchema>[]
   responseEvidence?: { ref: string; quote: string } | null
+  requestPlans?: { id: string; response: RequestResponse }[]
 }
 
 export type ComposeReply = (input: {
@@ -185,6 +210,7 @@ export type ScanCheck = {
   rangeKey?: string
   limitations?: string[]
   itemRevision?: string
+  requestAnalysisVersion?: string
 }
 
 export type ScanProgress = ScanReport & {

@@ -3,6 +3,8 @@ import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
 import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
 import { readOptional } from '#lib/outbox/files.ts'
 import { OUTBOX_MODEL_PROFILE, outboxModelId } from '#lib/outbox/model.ts'
+import { loadOwnerInitiatives } from '#lib/outbox/ownerInitiatives.ts'
+import { createRequestAnalyzer } from '#lib/outbox/requestAnalysis.ts'
 import { createOutboxRuntime } from '#lib/outbox/runtime.ts'
 import { scanOutbox } from '#lib/outbox/scan.ts'
 import { createTriage } from '#lib/outbox/triage.ts'
@@ -28,6 +30,8 @@ export default class OutboxScan extends Command {
     const voice = createWritingVoice(context.config)
     const now = context.systemNow.toUTC().normalize().plainDateTime.toString()
     const { value: range } = await store.scanRange(context.systemNow.date)
+    const ownerContext = ((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)
+    const initiatives = await loadOwnerInitiatives(context.config)
     try {
       const result = await scanOutbox({
         store,
@@ -35,11 +39,13 @@ export default class OutboxScan extends Command {
         today: context.systemNow.date,
         range,
         now,
-        propose: createTriage(
-          ((await readOptional(context.config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000),
-          undefined,
-          (input) => voice.draft(input),
-        ),
+        analyze: createRequestAnalyzer({
+          stateDir: store.stateDir,
+          ownerContext,
+          initiatives,
+          today: context.systemNow.date,
+        }),
+        propose: createTriage(ownerContext, undefined, (input) => voice.draft(input)),
         model: outboxModelId(),
         modelProfile: OUTBOX_MODEL_PROFILE,
       })

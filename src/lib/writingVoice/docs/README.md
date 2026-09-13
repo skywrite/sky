@@ -32,8 +32,9 @@ me/voice/
 ```
 
 The rules body is the editable guide. The first draft or example initializes it
-from existing `outbox/preferences.md`, or the default guide. Production Outbox
-preference reads and writes use this same file. Reads do not cache its contents;
+from existing Outbox preferences, or the default guide. Preference seeding and
+linked draft checks support the [Outbox storage migration](../../outbox/docs/README.md#files-and-concurrency).
+Production Outbox preference reads and writes use this same file. Reads do not cache its contents;
 a change applies to the next draft in an existing session.
 
 ### Shared drafts in chat and Outbox

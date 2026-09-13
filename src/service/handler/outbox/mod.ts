@@ -14,6 +14,7 @@ import { hold } from '../../activity.ts'
 
 export type OutboxReport = {
   items: OutboxRecord[]
+  awaitingCheck?: OutboxRecord[]
   preferences: { text: string; revision: string }
   automation: { name: string; status: 'active' | 'paused' } | null
   lastScan: (ScanReport & { at: string }) | null

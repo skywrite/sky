@@ -4,6 +4,7 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type { CommandResult } from '#commands/mod.ts'
 import type * as Config from '#config'
+import { attentionQueue } from '#lib/outbox/attentionQueue.ts'
 import { createCheckProcess } from '#lib/outbox/checkProcess.ts'
 import { createComposeProcess } from '#lib/outbox/composeProcess.ts'
 import { readOptional } from '#lib/outbox/files.ts'
@@ -172,7 +173,9 @@ export function createOutboxHost(
       }
       const latest = await store.list()
       return {
-        items: await Promise.all(latest.filter((item) => item.status !== 'dismissed').map(composition.decorate)),
+        ...attentionQueue(
+          await Promise.all(latest.filter((item) => item.status !== 'dismissed').map(composition.decorate)),
+        ),
         followupsRunning: latest.some(
           (item) => canQueueFollowups(item) && ['pending', 'preparing'].includes(item.followupStatus ?? ''),
         ),

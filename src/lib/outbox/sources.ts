@@ -13,7 +13,7 @@ import { hash, missing, notebookFile, readOptional } from './files.ts'
 import { dayRange, inRange, rangeKey, ScanRangeSchema, type ScanRange } from './range.ts'
 import type { Conversation } from './types.ts'
 
-export const SCAN_POLICY = 'range-responses-v4'
+export const SCAN_POLICY = 'range-responses-v5'
 
 export type SavedMessagesConfig = Pick<
   typeof Config,
@@ -52,9 +52,6 @@ export const InventorySchema = z.object({
 })
 export type Inventory = z.infer<typeof InventorySchema>
 
-const MAX_MESSAGE_BYTES = 160_000
-const MAX_CONTEXT_CHARS = 100_000
-const MAX_CONTEXT_FILES = 30
 const MESSAGE_PARSER_VERSION = 1
 
 function messageTimes(doc: MessageDocument): string[] {
@@ -168,9 +165,9 @@ export class SavedMessages {
     const relative = resolveTimeRef(ref)
     if (!/^time\/.*\/actions\/messages\/[^/]+\.md$/.test(relative)) throw new Error('Not a saved message reference.')
     const file = await notebookFile(this.root, relative)
-    if ((await stat(file)).size > MAX_MESSAGE_BYTES)
-      throw new Error('Saved message is too large to review automatically.')
-    const doc = MessageDocument.fromMarkdown((await readOptional(file)) ?? '')
+    const text = await readOptional(file)
+    if (text === undefined) throw new Error('A saved message could not be read.')
+    const doc = MessageDocument.fromMarkdown(text)
     if (doc.yamlError) throw new Error('A saved message has invalid frontmatter.')
     return doc
   }
@@ -239,20 +236,17 @@ export class SavedMessages {
       .sort()
       .reverse()
     if (seed.previous) queue.push(this.previous(ref, seed.previous))
-    let chars = seed.markdown.length
+    // Keep the complete evidence for freshness and reply verification. Model
+    // input is bounded separately in history.ts, without dropping saved files.
+    const visited = new Set([ref])
     while (queue.length) {
       const next = queue.shift()!
-      if (docs.has(next)) continue
-      if (docs.size >= MAX_CONTEXT_FILES || chars >= MAX_CONTEXT_CHARS) {
-        limitations.push('Earlier history exceeds the reading limit. Read the original conversation before approving.')
-        incomplete = true
-        break
-      }
+      if (visited.has(next)) continue
+      visited.add(next)
       try {
         const doc = await this.read(next)
         if (doc.medium !== medium) throw new Error('Conversation history points to another app.')
         docs.set(next, doc)
-        chars += doc.markdown.length
         if (doc.previous) queue.push(this.previous(next, doc.previous))
       } catch {
         limitations.push('An earlier saved message could not be read. Check the original conversation.')

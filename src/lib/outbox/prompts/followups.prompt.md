@@ -1,7 +1,9 @@
 ---
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-12
 ---
+
+For a long conversation, `history.notes` and verified `history.evidence` carry earlier portions, while `conversation.sources` contains the final portion. Use them together as conversation context. These notes never add commitments to the owner's approved reply.
 
 Find the additional messages required to follow through on the owner's final approved reply. Prepare those messages for the owner's Outbox review.
 

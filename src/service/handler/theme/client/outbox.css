@@ -95,6 +95,11 @@
   color: var(--sky-text-2);
   font-size: var(--sky-content-font-size);
   line-height: 1.6;
+  max-width: 70ch;
+  margin-block: 22px 28px;
+}
+.sky-outbox-situation p {
+  margin: 0 0 14px;
 }
 .sky-outbox-tabs {
   display: flex;
@@ -129,7 +134,7 @@
   border: 0;
   background: none;
   text-align: left;
-  padding: 28px 8px 12px;
+  padding: 34px 8px 18px;
   font: inherit;
   color: var(--sky-text);
   cursor: pointer;
@@ -148,7 +153,7 @@
   flex-wrap: wrap;
   gap: 12px;
   margin-left: 70px;
-  padding: 0 8px 24px 0;
+  padding: 4px 8px 30px 0;
 }
 .sky-outbox-row-footer .mantine-Button-root {
   flex-shrink: 0;
@@ -168,7 +173,7 @@
 .sky-outbox-row-content {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 16px;
   min-width: 0;
   flex: 1;
 }
@@ -176,19 +181,42 @@
   font-size: 23px;
   font-weight: 600;
   line-height: 1.35;
+  max-width: 38ch;
 }
-.sky-outbox-preview {
+.sky-outbox-card-summary {
+  color: var(--sky-text-2);
+  font-size: 18px;
+  line-height: 1.7;
+  max-width: 65ch;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  margin-block: 2px 4px;
+}
+.sky-outbox-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 65ch;
   border-left: 3px solid var(--outbox-line);
-  background: var(--outbox-soft);
+  background: color-mix(in srgb, var(--outbox-soft) 45%, var(--sky-bg));
   border-radius: 0 8px 8px 0;
-  padding: 12px 16px;
+  padding: 16px 20px;
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.65;
+}
+.sky-outbox-preview-label {
   color: var(--outbox-accent);
-  font-size: 18px;
-  white-space: pre-wrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sky-outbox-preview-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .sky-outbox-preview[data-ready='true'] {
   background: var(--outbox-ready-soft);
@@ -283,10 +311,11 @@
 .sky-outbox-recommendation p {
   margin: 8px 0;
 }
-.sky-outbox-row-suggestion {
-  color: var(--outbox-accent);
+.sky-outbox-pending-note {
+  color: var(--sky-text-2);
   font-size: 18px;
-  line-height: 1.5;
+  line-height: 1.65;
+  margin-block: 24px;
 }
 .sky-outbox-compose {
   margin-top: 22px;
@@ -341,6 +370,12 @@
 .sky-outbox-questions ul {
   padding-left: 22px;
 }
+.sky-outbox-questions li + li {
+  margin-top: 14px;
+}
+.sky-outbox-recommendation-text {
+  max-width: 70ch;
+}
 .sky-outbox-original {
   margin-top: 24px;
   color: var(--sky-text-2);
@@ -369,6 +404,36 @@
 }
 .sky-outbox-details .sky-outbox-text {
   line-height: 1.65;
+}
+.sky-outbox-message + .sky-outbox-message {
+  margin-top: 28px;
+}
+.sky-outbox-message-body {
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.sky-outbox-message-body p {
+  margin-block: 10px;
+}
+.sky-outbox-message-body pre {
+  white-space: pre-wrap;
+}
+.sky-outbox-capture summary {
+  cursor: pointer;
+  color: var(--sky-dim);
+  margin-top: 16px;
+}
+.sky-outbox-requests summary {
+  padding: 16px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.sky-outbox-requests blockquote {
+  margin: 12px 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--sky-border-soft);
+  color: var(--sky-text-2);
 }
 [data-mantine-color-scheme='dark'] .sky-outbox {
   --outbox-accent: var(--mantine-color-indigo-2);

@@ -159,6 +159,22 @@ test('Slack source ranges preserve CRLF, Unicode, reference definitions, and nei
   })
 })
 
+test('Indented text beside a Markdown underline preserves source ranges without a synthetic newline', () => {
+  const first = '## 2025-03-15 09:00 - **Jane Doe**\n\nSummary\n    Nested detail\n-\n\n'
+  const second = '## 2025-03-15 09:01 - **Alex Example**\n\nReceived.'
+  const source = first + second
+  const messages = parseSlackConversation(source).messages
+  assert({
+    given: 'an indented paragraph followed by an underline, which the lexer coalesces into normalized raw text',
+    should: 'retain exact original message spans and read the following message',
+    actual: messages.map((message) => [message.markdown, source.slice(message.start, message.end)]),
+    expected: [
+      [first, first],
+      [second, second],
+    ],
+  })
+})
+
 test('Slack readers tolerate mixed layouts and preserve unrecognized prose', () => {
   const source =
     '# Topic\n\nMy notes.\n\n## 2025-03-15 09:00 - **Jane Doe**\n\nEarlier.\n\n' +

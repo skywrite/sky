@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { withLock } from './files.ts'
 import { canQueueFollowups, prepareFollowups, reconcileFollowups } from './followups.ts'
+import { replyDestination } from './replyDestination.ts'
 import type { SavedMessages } from './sources.ts'
 import type { OutboxStore } from './store.ts'
 import {
@@ -55,7 +56,9 @@ export class OutboxReview {
     const item = await this.store.get(id)
     if (!item) throw new OutboxError('This decision is no longer available.', 404)
     if (item.status === 'placing') throw new OutboxError('Wait for draft placement to finish.', 409)
-    return this.store.put({ ...item, status: 'dismissed', updated: this.now() }, revision)
+    return this.store.put({ ...item, status: 'dismissed', updated: this.now() }, revision, {
+      requestAction: 'dismissed',
+    })
   }
 
   async reportSent(id: string, revision: string, evidence: string): Promise<OutboxRecord> {
@@ -89,7 +92,7 @@ export class OutboxReview {
         updated: this.now(),
       },
       revision,
-      { author: 'you', accept: true },
+      { author: 'you', accept: true, requestAction: 'sent' },
     )
     return this.planFollowups ? this.completeFollowups(sent.id) : sent
   }
@@ -270,9 +273,9 @@ export class OutboxReview {
     }
     if (item.stale && !reviewedChanges)
       throw new OutboxError('Review the changed context before approving this draft.', 409)
-    if (!latest.target)
+    if (!replyDestination(item, latest))
       throw new OutboxError(
-        'This saved conversation has no verified native draft destination. Copy the reply into the app.',
+        'This reply has no verified native draft destination. Copy it into the intended conversation.',
       )
 
     await this.beforePlace(item)

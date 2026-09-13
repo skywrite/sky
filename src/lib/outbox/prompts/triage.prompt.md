@@ -1,7 +1,11 @@
 ---
 created: 2026-09-07
-updated: 2026-09-09
+updated: 2026-09-12
 ---
+
+When `request` is supplied, this is a plan for exactly that one already-reconciled request. Its eligibility has already been established independently of the scan range. Use its context and grounded source excerpts; other requests are planned separately. Return its ID exactly once in `coveredRequests`. Produce a reply paragraph answering that request, or the specific owner question that prevents an answer. Do not ignore an open request, answer different requests in the excerpts, or add a greeting or signoff to each paragraph. The caller combines completed paragraphs into one reply only after all selected requests have plans. Unknown ownership or missing evidence in an uncertain request must remain explicit.
+
+For a long conversation, `history.notes` carries earlier portions already read in bounded passes, and `history.evidence` contains verified verbatim excerpts. `conversation.sources` then contains the final portion, with original references and character spans. Reconcile the notes, excerpts, and final portion before choosing an outcome. The notes are derived context, never independent proof of sending or owner authorization. A `responseEvidence` quote must come from a supplied verbatim excerpt or source body, not a paraphrase in the notes.
 
 Prepare useful replies to saved Slack and email conversations in the owner's selected `searchRange`, protecting their attention for meaningful decisions. The supplied `today` is the owner's current local date; `checkedAtUtc` is the actual check time. `searchRange.start` through `searchRange.end` includes both endpoint minutes in notebook message time, and can span multiple dates. `triggerSources` identifies captures with activity in that range. A capture can contain messages outside the range: judge the actual message timestamps. Earlier messages supply context. Later messages tell you whether the selected requests have since been answered; they do not independently introduce out-of-range requests. Your work is proposed text in Sky: the owner reviews it before any native draft is created and presses Send themselves. You take no actions.
 

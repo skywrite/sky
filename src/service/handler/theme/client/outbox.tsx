@@ -1,17 +1,77 @@
 import { ActionIcon, Button, Checkbox, Textarea, TextInput } from '@mantine/core'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { attentionQueue, awaitingAttention } from '#lib/outbox/attentionQueue.ts'
 import { describeOutboxScan, outboxScanSeverity } from '#lib/outbox/describeScan.ts'
 import { dayRange, rangeLabel, ScanRangeSchema, type SavedScanRange } from '#lib/outbox/range.ts'
+import { replyDestination } from '#lib/outbox/replyDestination.ts'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
+import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
 import type { OutboxReport, OutboxScanResult } from '../../outbox/mod.ts'
+import { outboxCardSummary, outboxHeading, outboxPreview } from './outboxPresentation.ts'
+import { RenderedHtml } from './renderedHtml.tsx'
 import { ReplyThreadPanel, type OpenReplyThread } from './replyThreads.tsx'
 import { WritingDraftEditor } from './writingDraft.tsx'
 import { WritingVoiceQuestions } from './writingVoice.tsx'
+import { renderStatic } from './wysiwyg/render.ts'
 import './outbox.css'
 
 type Edit = { text: string; revision: string; saved: string; direction?: string; compositionId?: string }
 // Going to another Sky page must not discard an unfinished edit.
 const edits = new Map<string, Edit>()
+
+function OutboxText({ text, className }: { text: string; className: string }) {
+  const html = useMemo(() => {
+    const doc = new DOMParser().parseFromString(renderStatic(text), 'text/html')
+    for (const link of doc.querySelectorAll('a[href]')) {
+      try {
+        if (
+          !['http:', 'https:', 'mailto:', 'tel:'].includes(
+            new URL(link.getAttribute('href')!, window.location.href).protocol,
+          )
+        )
+          link.removeAttribute('href')
+      } catch {
+        link.removeAttribute('href')
+      }
+    }
+    return doc.body.innerHTML
+  }, [text])
+  return <RenderedHtml className={`${className} sky-rendered`} html={html} />
+}
+
+function OutboxSource({
+  source,
+  medium,
+}: {
+  source: OutboxRecord['conversation']['sources'][number]
+  medium: OutboxRecord['conversation']['medium']
+}) {
+  const messages = useMemo(() => {
+    try {
+      return medium === 'Slack' ? parseSlackConversation(source.body).messages : []
+    } catch {
+      // A damaged capture must remain readable while its scan reports the parsing failure.
+      return []
+    }
+  }, [source.body, medium])
+  return messages.length ? (
+    <>
+      {messages.map((message) => (
+        <div className="sky-outbox-message" key={message.id ?? message.start}>
+          <strong>{message.author}</strong>
+          <div className="sky-outbox-meta">{message.timestamp}</div>
+          <OutboxText className="sky-outbox-message-body" text={message.body} />
+        </div>
+      ))}
+      <details className="sky-outbox-capture">
+        <summary>Full saved capture</summary>
+        <p className="sky-outbox-text">{source.body}</p>
+      </details>
+    </>
+  ) : (
+    <OutboxText className="sky-outbox-message-body" text={source.body} />
+  )
+}
 
 function savedEdit(record: OutboxRecord): Edit {
   return {
@@ -73,7 +133,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const search = searchEdit ?? report?.search
   const rangeValid = !search || ScanRangeSchema.safeParse(search.value).success
   const checkInFlight = useRef(false)
-  const [tab, setTab] = useState<'review' | 'ready'>('review')
+  const [tab, setTab] = useState<'review' | 'ready' | 'unchecked'>('review')
   const [selected, setSelected] = useState<string | null>(null)
   const [linkedItem, setLinkedItem] = useState<OutboxRecord | null>(null)
   const [edit, setEdit] = useState<Edit | null>(null)
@@ -196,6 +256,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
 
   const item =
     report?.items.find((candidate) => candidate.id === selected) ??
+    report?.awaitingCheck?.find((candidate) => candidate.id === selected) ??
     (linkedItem?.id === selected ? linkedItem : undefined)
   useEffect(() => {
     if (!item?.composition) return
@@ -239,7 +300,14 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
   const receiveItem = (record: OutboxRecord) => {
     setReport((current) =>
       current
-        ? { ...current, items: current.items.map((entry) => (entry.id === record.id ? record : entry)) }
+        ? {
+            ...current,
+            ...attentionQueue(
+              [...current.items, ...(current.awaitingCheck ?? [])].map((entry) =>
+                entry.id === record.id ? record : entry,
+              ),
+            ),
+          }
         : current,
     )
     if (selectedRef.current === record.id) {
@@ -262,7 +330,10 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
     })
   const reviewCount = report?.items.filter(needsReview).length ?? 0
   const readyCount = (report?.items.length ?? 0) - reviewCount
-  const items = report?.items.filter((candidate) => (tab === 'review') === needsReview(candidate)) ?? []
+  const items =
+    tab === 'unchecked'
+      ? (report?.awaitingCheck ?? [])
+      : (report?.items.filter((candidate) => (tab === 'review') === needsReview(candidate)) ?? [])
   const open = (record: OutboxRecord) => {
     listPosition.current = scroll.current?.scrollTop ?? 0
     setSelected(record.id)
@@ -568,8 +639,13 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                   {item.conversation.medium} ·{' '}
                   {item.recipient ? `To ${item.recipient}` : item.conversation.sources.at(-1)?.from}
                 </div>
-                <h1>{item.title}</h1>
-                <p className="sky-outbox-situation">{item.situation}</p>
+                {awaitingAttention(item) && (
+                  <p className="sky-outbox-notice">
+                    Awaiting the relevance check. This earlier result has not established that you owe a response.
+                  </p>
+                )}
+                <h1>{outboxHeading(item)}</h1>
+                <OutboxText className="sky-outbox-situation" text={item.situation} />
                 {item.followupOf && (
                   <div className="sky-outbox-followup-origin">
                     <span className="sky-outbox-meta">Follows your reply</span>
@@ -597,7 +673,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     </Button>
                   </div>
                 )}
-                {item.questions.length > 0 && (
+                {!awaitingAttention(item) && item.questions.length > 0 && (
                   <div className="sky-outbox-questions">
                     <h3>Your decision</h3>
                     <ul>
@@ -607,10 +683,10 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                     </ul>
                   </div>
                 )}
-                {item.recommendation && (
+                {!awaitingAttention(item) && item.recommendation && (
                   <div className="sky-outbox-recommendation">
                     <span className="sky-outbox-draft-label">Sky’s suggestion</span>
-                    <p>{item.recommendation}</p>
+                    <OutboxText className="sky-outbox-recommendation-text" text={item.recommendation} />
                   </div>
                 )}
                 {item.conversation.limitations.map((limitation) => (
@@ -791,7 +867,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                         !edit.text.trim() ||
                         conflicted ||
                         (item.stale && !reviewedChanges) ||
-                        !item.conversation.target
+                        !replyDestination(item)
                       }
                       onClick={() => void approve()}
                     >
@@ -873,7 +949,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 <p className="sky-outbox-meta">
                   {item.delivery
                     ? 'You recorded this message as sent.'
-                    : !item.conversation.target
+                    : !replyDestination(item)
                       ? 'Copy this draft into the intended app. After sending it yourself, record the result here.'
                       : item.status === 'ready'
                         ? 'Your draft is waiting in the app. You review and press Send there.'
@@ -1000,7 +1076,25 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                   >
                     Ready in apps <span>{readyCount}</span>
                   </button>
+                  {Boolean(report?.awaitingCheck?.length) && (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === 'unchecked'}
+                      onClick={() => {
+                        setTab('unchecked')
+                        listPosition.current = 0
+                      }}
+                    >
+                      Awaiting check <span>{report!.awaitingCheck!.length}</span>
+                    </button>
+                  )}
                 </div>
+                {tab === 'unchecked' && (
+                  <p className="sky-outbox-pending-note">
+                    Earlier results waiting for their relevance check. These are not confirmed requests for you.
+                  </p>
+                )}
                 {report === null ? (
                   <p>Loading Outbox…</p>
                 ) : !report.automation ? (
@@ -1025,16 +1119,20 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                 ) : items.length === 0 ? (
                   <div className="sky-outbox-empty">
                     <h2>
-                      {tab === 'review'
-                        ? checking
-                          ? 'Checking your conversations…'
-                          : 'No items awaiting review.'
-                        : 'Approved drafts will appear here.'}
+                      {tab === 'unchecked'
+                        ? 'No conversations waiting for a relevance check.'
+                        : tab === 'review'
+                          ? checking
+                            ? 'Checking your conversations…'
+                            : 'No items awaiting review.'
+                          : 'Approved drafts will appear here.'}
                     </h2>
                     <p>
-                      {tab === 'review'
-                        ? 'Choose a date and time range to find unanswered requests and decisions.'
-                        : 'Review a reply in Outbox to place it in its native app.'}
+                      {tab === 'unchecked'
+                        ? 'Confirmed replies and decisions appear in Needs review.'
+                        : tab === 'review'
+                          ? 'Choose a date and time range to find unanswered requests and decisions.'
+                          : 'Review a reply in Outbox to place it in its native app.'}
                     </p>
                   </div>
                 ) : (
@@ -1051,28 +1149,38 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                               {record.conversation.medium}
                               <span
                                 className="sky-outbox-stage"
-                                data-drafted={Boolean(edits.get(record.id)?.text || record.draft)}
+                                data-drafted={
+                                  tab !== 'unchecked' && Boolean(edits.get(record.id)?.text || record.draft)
+                                }
                               >
-                                {record.stale
-                                  ? 'Review new context'
-                                  : record.status === 'ready'
-                                    ? 'Ready in app'
-                                    : edits.get(record.id)?.text || record.draft
-                                      ? 'Draft ready'
-                                      : 'Your decision'}
+                                {tab === 'unchecked'
+                                  ? 'Awaiting check'
+                                  : record.stale
+                                    ? 'Review new context'
+                                    : record.status === 'ready'
+                                      ? 'Ready in app'
+                                      : edits.get(record.id)?.text || record.draft
+                                        ? 'Draft ready'
+                                        : 'Your decision'}
                               </span>
                             </span>
-                            <strong>{record.title}</strong>
-                            <span className="sky-outbox-situation">{record.situation}</span>
-                            {record.recommendation && !record.draft && (
-                              <span className="sky-outbox-row-suggestion">{record.recommendation}</span>
+                            <strong>{outboxHeading(record)}</strong>
+                            <span className="sky-outbox-card-summary">{outboxCardSummary(record)}</span>
+                            {tab !== 'unchecked' && (
+                              <span className="sky-outbox-preview" data-ready={!needsReview(record)}>
+                                <span className="sky-outbox-preview-label">
+                                  {edits.get(record.id)?.text || record.draft ? 'Prepared reply' : 'Your decision'}
+                                </span>
+                                <span className="sky-outbox-preview-text">
+                                  {outboxPreview(
+                                    edits.get(record.id)?.text ||
+                                      record.draft ||
+                                      record.questions[0] ||
+                                      'Open the conversation to review the next step.',
+                                  )}
+                                </span>
+                              </span>
                             )}
-                            <span className="sky-outbox-preview" data-ready={!needsReview(record)}>
-                              {edits.get(record.id)?.text ||
-                                record.draft ||
-                                record.questions[0] ||
-                                'Your decision is needed.'}
-                            </span>
                           </span>
                           <span className="sky-outbox-arrow" aria-hidden="true">
                             ›
@@ -1091,7 +1199,7 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
                                     : `${record.conversation.sources.length} saved ${record.conversation.sources.length === 1 ? 'message' : 'messages'}`}
                           </span>
                           <Button
-                            aria-label={`Dismiss ${record.title}`}
+                            aria-label={`Dismiss ${outboxHeading(record)}`}
                             loading={dismissing === record.id}
                             disabled={busy || record.status === 'placing' || record.composition?.status === 'running'}
                             onClick={() => void dismissRecord(record)}
@@ -1175,6 +1283,54 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
             </div>
             <h3>Why this needs you</h3>
             <p>{item.reasoning}</p>
+            {Boolean(item.requests?.length) && (
+              <details className="sky-outbox-requests">
+                <summary>Requests in this conversation · {item.requests!.length}</summary>
+                {item.requests!.map((request) => (
+                  <section key={request.id}>
+                    <strong>{request.summary}</strong>
+                    <div className="sky-outbox-meta">
+                      {!request.present
+                        ? 'No longer in saved messages'
+                        : request.status === 'resolved'
+                          ? 'Resolved'
+                          : request.status === 'dismissed'
+                            ? 'Archived'
+                            : request.attention?.action === 'waiting'
+                              ? 'Waiting on someone else'
+                              : request.attention?.action === 'none'
+                                ? 'No reply needed from you'
+                                : item.requestIds?.includes(request.id)
+                                  ? 'Included in this review'
+                                  : 'Outside this review'}
+                      {request.origin.at ? ` · ${request.origin.at}` : ''}
+                    </div>
+                    <blockquote className="sky-outbox-text">{request.origin.quote}</blockquote>
+                    <p>{request.attention?.explanation ?? request.explanation}</p>
+                    {request.resolution && (
+                      <>
+                        <div className="sky-outbox-meta">
+                          {request.resolution.kind === 'owner_report' ? 'Reply you reported sending' : 'Saved reply'}
+                        </div>
+                        <blockquote className="sky-outbox-text">{request.resolution.quote}</blockquote>
+                      </>
+                    )}
+                    {item.conversation.sources.some((source) => source.ref === request.origin.ref) && (
+                      <Button
+                        variant="subtle"
+                        onClick={() =>
+                          document
+                            .getElementById(`outbox-source-${request.origin.ref}`)
+                            ?.scrollIntoView({ block: 'start' })
+                        }
+                      >
+                        View source message
+                      </Button>
+                    )}
+                  </section>
+                ))}
+              </details>
+            )}
             <h3>Conversation</h3>
             {item.followupOf && (
               <section>
@@ -1183,11 +1339,11 @@ export function OutboxMain({ navigate }: { navigate: (path: string) => void }) {
               </section>
             )}
             {item.conversation.sources.map((source) => (
-              <section key={source.ref}>
+              <section key={source.ref} id={`outbox-source-${source.ref}`}>
                 <div className="sky-outbox-meta">
                   {source.ref.slice(0, 10)} · {source.from}
                 </div>
-                <p className="sky-outbox-text">{source.body}</p>
+                <OutboxSource source={source} medium={item.conversation.medium} />
               </section>
             ))}
           </aside>

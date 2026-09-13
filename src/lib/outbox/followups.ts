@@ -4,6 +4,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { hash } from './files.ts'
+import { prepareConversationHistory } from './history.ts'
 import { outboxModel, OUTBOX_MODEL_TIMEOUT_MS } from './model.ts'
 import type { OutboxStore } from './store.ts'
 import {
@@ -55,18 +56,19 @@ export function createFollowupPlanner(
   write?: import('#lib/writingVoice/types.ts').VoiceWriter,
 ): PrepareFollowups {
   return async ({ item, reply, preferences }) => {
+    const context = {
+      approvedReply: reply,
+      preferences,
+      originalRecipient: item.recipient,
+      situation: item.situation,
+      followupOf: item.followupOf,
+    }
+    const history = await prepareConversationHistory(item.conversation, context, model)
     const result = await generateObject({
       ...model(),
       schema: z.object({ followups: Proposals }),
       instructions: renderPromptFile(await readPromptFile(PROMPT), PROMPT, {}).output,
-      prompt: JSON.stringify({
-        approvedReply: reply,
-        preferences,
-        originalRecipient: item.recipient,
-        situation: item.situation,
-        conversation: item.conversation,
-        followupOf: item.followupOf,
-      }),
+      prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     return Promise.all(

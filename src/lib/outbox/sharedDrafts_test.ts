@@ -9,6 +9,7 @@ import { assert, test } from '#test'
 import { checkOutboxDraft, createOutboxDraftGuard } from './draftContext.ts'
 import { OutboxReview } from './review.ts'
 import { createSavedMessages, SavedMessages } from './sources.ts'
+import { outboxStateDir } from './storage.ts'
 import { OutboxStore } from './store.ts'
 
 const NOW = '2025-03-15 12:00:00 UTC'
@@ -23,14 +24,15 @@ const configFor = (root: string) => ({
 
 async function fixture(guard?: (root: string) => WritingDraftStore['beforeChange']) {
   const f = await voiceFixture()
+  const dir = outboxStateDir(configFor(f.root))
   const drafts = new WritingDraftStore(
     f.voice,
     () => NOW,
     async () => 'Atlas API Update',
     guard?.(f.root) ??
-      ((draft, author) => checkOutboxDraft(f.root, draft, author, new SavedMessages(f.root, { Slack: [], Email: [] }))),
+      ((draft, author) => checkOutboxDraft(dir, draft, author, new SavedMessages(f.root, { Slack: [], Email: [] }))),
   )
-  const store = new OutboxStore(path.join(f.root, 'outbox'), path.join(f.root, 'outbox-state'), f.store, drafts)
+  const store = new OutboxStore(dir, dir, f.store, drafts)
   const seed = { ...sampleOutboxItem(), origin: 'followup' as const }
   seed.conversation.target = { medium: 'Email', account: 'jane@example.com', thread: 'mock-thread' }
   return {
@@ -77,7 +79,8 @@ test('Outbox and chat edit one draft record and share version history and learni
         fromOutbox.status,
         fromOutbox.native,
         fromOutbox.delivery,
-        raw.includes(`[Draft](../../me/voice/drafts/${id}.md)`),
+        path.resolve(path.join(f.outbox.dir, 'items'), decodeURIComponent(/\[Draft\]\((.+)\)/.exec(raw)![1])) ===
+          path.join(f.store.dir, 'drafts', `${id}.md`),
         raw.includes('Please review the Atlas API.'),
       ],
       expected: [

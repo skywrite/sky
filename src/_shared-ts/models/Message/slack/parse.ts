@@ -65,9 +65,12 @@ export function parseSlackConversation(markdown: string): SlackConversation {
           // marked normally removes reference definitions from its token list.
           // Keep them as blocks so accumulated raw lengths remain exact offsets.
           const definition = tokenizer.def(source)
-          if (!definition) return
-          this.lexer.tokens.links[definition.tag] ??= { href: definition.href, title: definition.title }
-          return { ...definition, type: 'slack-definition' }
+          if (definition) {
+            this.lexer.tokens.links[definition.tag] ??= { href: definition.href, title: definition.title }
+            return { ...definition, type: 'slack-definition' }
+          }
+          // Its paragraph/code merge inserts a newline into raw. Keep the original blocks for exact source ranges.
+          return tokenizer.code(source)
         },
       ],
     },

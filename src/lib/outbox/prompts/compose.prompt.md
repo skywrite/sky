@@ -1,7 +1,9 @@
 ---
 created: 2026-09-07
-updated: 2026-09-09
+updated: 2026-09-12
 ---
+
+For a long conversation, `history.notes` and verified `history.evidence` carry earlier portions, while `conversation.sources` contains the final portion. Use them together as conversation context. Notes are derived context, not new owner instructions or independent evidence of completed work.
 
 Write or revise a reply for the owner to review in Sky. Use ownerInstruction as the owner's current direction, currentDraft as their working text, and the saved conversation and linked work as evidence. Output the actual message, not a description of what to write. This prepares text only; it neither places a native draft nor sends a message.
 

@@ -11,6 +11,7 @@ import { assert, test } from '#test'
 import { createComposeProcess, type ComposeProcessInput } from './composeProcess.ts'
 import { OutboxReview } from './review.ts'
 import { SavedMessages } from './sources.ts'
+import { outboxStateDir } from './storage.ts'
 import { OutboxStore } from './store.ts'
 import type { OutboxRecord } from './types.ts'
 
@@ -40,13 +41,13 @@ async function fixture() {
   const overrides = {
     DIR_BASE: path.join(root, 'notebook'),
     DIR_USER_DATA: path.join(root, 'data'),
-    DIR_STATE: path.join(root, 'state'),
+    DIR_STATE: path.join(root, 'data', 'state'),
     DIR_INPUT: path.join(root, 'input'),
     DIR_OUTPUT: path.join(root, 'output'),
   }
   const local = { ...config, ...overrides }
-  const state = path.join(root, 'outbox-state')
-  const store = new OutboxStore(path.join(local.DIR_BASE, 'outbox'), state)
+  const state = outboxStateDir(local)
+  const store = new OutboxStore(state, state)
   const env = { ENV_FILE_LOADED: '1', SKY_COMPOSE_TEST_ROOT: root, SKY_COMPOSE_TEST_STATE: state }
   const review = new OutboxReview(
     store,
@@ -95,7 +96,7 @@ import { SavedMessages } from ${moduleUrl('./sources.ts')}
 import { OutboxReview } from ${moduleUrl('./review.ts')}
 export default async (input) => {
   const root = process.env.SKY_COMPOSE_TEST_ROOT
-  const store = new OutboxStore(process.env.SKY_DIR + '/outbox', process.env.SKY_COMPOSE_TEST_STATE)
+  const store = new OutboxStore(process.env.SKY_COMPOSE_TEST_STATE, process.env.SKY_COMPOSE_TEST_STATE)
   const review = new OutboxReview(store, new SavedMessages(process.env.SKY_DIR, { Slack: [], Email: [] }), async () => { throw new Error('Unexpected native write') }, () => ${JSON.stringify(NOW)}, undefined, async ({ draft, instruction }) => {
     await appendFile(root + '/executions', 'started\\n')
     await writeFile(root + '/started', JSON.stringify({ draft, instruction, saved: (await store.get(input.id)).draft }))
@@ -133,7 +134,7 @@ import { OutboxStore } from ${moduleUrl('./store.ts')}
 import { SavedMessages } from ${moduleUrl('./sources.ts')}
 import { OutboxReview } from ${moduleUrl('./review.ts')}
 const local = { ...config, ...${JSON.stringify(overrides)} }
-const store = new OutboxStore(local.DIR_BASE + '/outbox', ${JSON.stringify(state)})
+const store = new OutboxStore(${JSON.stringify(state)}, ${JSON.stringify(state)})
 const review = new OutboxReview(store, new SavedMessages(local.DIR_BASE, { Slack: [], Email: [] }), async () => { throw new Error('Unexpected native write') }, () => ${JSON.stringify(NOW)})
 const client = createComposeProcess(local, ${JSON.stringify(env)}, store, (...args) => review.prepareCompose(...args), { module: ${JSON.stringify(module)} })
 await writeFile(${JSON.stringify(path.join(root, 'accepted.json'))}, JSON.stringify(await client.start(${JSON.stringify(ID)}, ${JSON.stringify(item.revision)}, 'My unsaved edit.', 'Make it clearer.')))
