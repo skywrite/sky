@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_OUTPUT } from '#config'
@@ -41,8 +42,9 @@ const PREVIOUS_HOPS = 2
 const DEFAULT_PROFILE = 'default-fable-5'
 
 const params = {
+  effort: aiEffortFlag(),
   day: dayNoFutureArg(),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),
@@ -251,7 +253,7 @@ export default class SummaryDayTask extends Command {
     let usage = ''
     try {
       const result = await generateText({
-        ...aiModelByProfile(model),
+        ...aiModelByProfile(model, { effort: args.effort }),
         instructions: promptTemplate,
         prompt: userPrompt,
       })

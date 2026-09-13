@@ -59,7 +59,7 @@ function extractFlags(params: ParamsRecord | undefined): FlagEntry[] {
   for (const [name, def] of Object.entries(params) as [string, ParamDef][]) {
     if (def.hidden) continue
     const entry: FlagEntry = {
-      name: toKebabCase(name),
+      name: def.long ?? toKebabCase(name),
       kind: def.kind,
       type: def.type,
       description: def.description.split('\n')[0],

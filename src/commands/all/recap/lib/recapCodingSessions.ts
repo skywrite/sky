@@ -26,6 +26,7 @@ export const codingRecapParams = {
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-recaps tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   model: Flag.string('Model profile for session digests', {
+    long: 'ai-model',
     short: 'm',
     default: () => DEFAULT_DIGEST_PROFILE,
   }),

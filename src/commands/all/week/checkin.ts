@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import colors from 'picocolors'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
@@ -28,10 +29,11 @@ const CONTEXT_BUDGET_TOKENS = 300_000
 const DEFAULT_PROFILE = 'default-fable-5'
 
 const params = {
+  effort: aiEffortFlag(),
   week: Arg.string('Week to check in on (e.g., 35, W35, 2026-W02) — defaults to the current week', {
     optional: true,
   }),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Print the entry instead of writing checkins.md', { default: false }),
   open: Flag.bool('Open checkins.md in editor after writing', { short: 'o', default: true }),
@@ -143,7 +145,7 @@ export default class WeekCheckinTask extends Command {
     let usage = ''
     try {
       const result = await generateText({
-        ...aiModelByProfile(model),
+        ...aiModelByProfile(model, { effort: args.effort }),
         instructions: promptTemplate,
         prompt: userPrompt,
       })

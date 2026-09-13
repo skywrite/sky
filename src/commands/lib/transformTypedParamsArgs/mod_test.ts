@@ -1,7 +1,54 @@
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { aiEffortFlag } from '../aiParams.ts'
 import { Arg, ArgOrFlag, Flag } from '../params.ts'
 import transformTypedParamsArgs from './mod.ts'
+
+test('AI flags keep their legacy and composition spellings while advertising prefixed names', async () => {
+  const params = {
+    reasoning: Flag.string('Preset', { long: 'ai-reasoning', short: 'r' }),
+    maxContext: Flag.number('Context', { long: 'ai-max-context' }),
+    noContext: Flag.bool('Closed', { long: 'ai-no-context' }),
+    effort: aiEffortFlag(),
+  }
+  const modern = await transformTypedParamsArgs(params, {
+    _: ['ai:chat'],
+    'ai-reasoning': 'deep-work',
+    'ai-max-context': '25000',
+    'ai-no-context': true,
+    'ai-effort': 'max',
+  })
+  const legacy = await transformTypedParamsArgs(params, {
+    _: ['ai:chat'],
+    reasoning: 'deep-work',
+    'max-context': '25000',
+    context: false,
+    effort: 'max',
+  })
+  assert({
+    given: 'prefixed flags and older invocations',
+    should: 'resolve identical typed values, including the old negated flag',
+    actual: [modern, legacy],
+    expected: [
+      { reasoning: 'deep-work', maxContext: 25000, noContext: true, effort: 'max' },
+      { reasoning: 'deep-work', maxContext: 25000, noContext: true, effort: 'max' },
+    ],
+  })
+  let conflicts = 0
+  for (const args of [{ 'ai-reasoning': 'deep-work', reasoning: 'everyday' }, { 'ai-effort': 'unknown' }]) {
+    try {
+      await transformTypedParamsArgs(params, { _: ['ai:chat'], ...args })
+    } catch {
+      conflicts++
+    }
+  }
+  assert({
+    given: 'conflicting aliases or an invalid effort',
+    should: 'refuse rather than silently change the request',
+    actual: conflicts,
+    expected: 2,
+  })
+})
 
 test('transformTypedParamsArgs handles basic string flag', async () => {
   const params = {

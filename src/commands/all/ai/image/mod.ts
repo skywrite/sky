@@ -56,6 +56,7 @@ const params = {
     { default: 'auto' },
   ),
   model: Flag.string('Image model: auto (Astra selects), flare, or sunburst; set only for an explicit user choice', {
+    long: 'ai-model',
     short: 'm',
     default: 'auto',
   }),

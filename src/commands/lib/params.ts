@@ -34,6 +34,8 @@ export type ParamJsonType = 'string' | 'number' | 'boolean'
 export type ParamOptions<T> = {
   /** Short flag alias (e.g., 's' becomes '-s') */
   short?: string
+  /** Canonical long CLI spelling; the TypeScript key remains a compatibility alias. */
+  long?: string
 
   /**
    * Whether the param is optional (can be undefined).
@@ -75,6 +77,7 @@ export interface ParamDef<T = unknown> {
   parse?: (raw: string) => T | Promise<T>
   schema?: ZodType<T>
   short?: string
+  long?: string
   position?: number
   hidden?: boolean
   complete?: string

@@ -114,12 +114,18 @@ export default async function transformTypedParamsArgs(
 
   for (const [name, param] of flagParams) {
     definedFlagNames.add(name)
+    const canonical = param.long ? kebabToCamel(param.long) : name
+    definedFlagNames.add(canonical)
     if (param.short) {
       definedFlagNames.add(param.short)
     }
 
     // Check both camelCase name and short name
-    let rawValue: unknown = flagValues[name]
+    let rawValue: unknown = flagValues[canonical]
+    if (canonical !== name && rawValue !== undefined && flagValues[name] !== undefined) {
+      throw new Error(`Use --${param.long} once; --${camelToKebab(name)} is an alias for the same flag.`)
+    }
+    if (rawValue === undefined) rawValue = flagValues[name]
     if (rawValue === undefined && param.short) {
       rawValue = flagValues[param.short]
     }
@@ -146,7 +152,7 @@ export default async function transformTypedParamsArgs(
     // TODO: support an 'array' param type (e.g. Flag.array('...')) that accepts
     // repeated flags like --tag="a" --tag="b" → ["a", "b"]
     if (Array.isArray(rawValue) && param.type !== 'bool') {
-      throw new Error(`Flag "--${camelToKebab(name)}" was specified multiple times`)
+      throw new Error(`Flag "--${param.long ?? camelToKebab(name)}" was specified multiple times`)
     }
 
     // For arg-or-flag, flag values override positional args

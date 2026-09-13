@@ -1,9 +1,10 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { loadDocument, type LoadedDocument, loadLabel } from '#lib/documents/loadDocument.ts'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { aiModelByProfile, roleProfile } from '#shared/ai/models.ts'
 import { stripWrappingCodeFence } from '#shared/ai/stripCodeFence.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
@@ -13,10 +14,11 @@ import { env } from '#shared/sys/mod.ts'
 const PROMPT_FILE = new URL('./prompts/doc.prompt.md', import.meta.url).pathname
 
 const params = {
+  effort: aiEffortFlag(),
   file: Arg.string('Path to the document to summarize', { required: true }),
   // Defaults to the registry's reasoning role so repoints reach this command
   // (and the VS Code extension's attachment summaries, which shell to it).
-  model: Flag.string('Model profile to use', { short: 'm', default: () => ROLES.reasoning }),
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('reasoning') }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Output summary to stdout', { default: false }),
   output: Flag.string('Write summary to this file path', { short: 'o' }),
@@ -92,7 +94,7 @@ export default class SummaryDocTask extends Command {
     output.log(`Calling Claude (${model})...`)
     let response: string
     try {
-      response = await this.summarize(model, systemPrompt, userPrompt, document)
+      response = await this.summarize(model, systemPrompt, userPrompt, document, args.effort)
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
@@ -118,10 +120,11 @@ export default class SummaryDocTask extends Command {
     systemPrompt: string,
     userPrompt: string,
     document: LoadedDocument,
+    effort?: import('#universal/ai/effort.ts').EffortOverride,
   ): Promise<string> {
     if (document.kind === 'text') {
       const result = await generateText({
-        ...aiModelByProfile(model, { temperature: 0 }),
+        ...aiModelByProfile(model, { temperature: 0, effort }),
         instructions: systemPrompt,
         prompt: `${userPrompt}\n---\n\n${document.text}`,
       })
@@ -129,7 +132,7 @@ export default class SummaryDocTask extends Command {
     }
 
     const result = await generateText({
-      ...aiModelByProfile(model, { temperature: 0 }),
+      ...aiModelByProfile(model, { temperature: 0, effort }),
       instructions: systemPrompt,
       messages: [
         {

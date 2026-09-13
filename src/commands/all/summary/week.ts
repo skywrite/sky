@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_OUTPUT } from '#config'
@@ -31,10 +32,11 @@ const CONTEXT_BUDGET_TOKENS = 300_000
 const DEFAULT_PROFILE = 'default-fable-5'
 
 const params = {
+  effort: aiEffortFlag(),
   week: Arg.string('Week to summarize (e.g., 33, W33, 2026-W02) — defaults to the last completed week', {
     optional: true,
   }),
-  model: Flag.string('Model profile to use', { short: 'm', default: () => DEFAULT_PROFILE }),
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   allowMissing: Flag.bool('Continue even if some days are missing summaries', { default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
@@ -251,7 +253,7 @@ export default class SummaryWeekTask extends Command {
     let usage = ''
     try {
       const result = await generateText({
-        ...aiModelByProfile(model),
+        ...aiModelByProfile(model, { effort: args.effort }),
         instructions: promptTemplate,
         prompt: userPrompt,
       })

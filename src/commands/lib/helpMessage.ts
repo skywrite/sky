@@ -117,7 +117,7 @@ function paramsHelpMessage(commandDesc: CommandDescription): string {
 
 function formatFlagName(name: string, param: ParamDef): string {
   const short = param.short ? `-${param.short}, ` : ''
-  const long = `--${camelToKebab(name)}`
+  const long = `--${param.long ?? camelToKebab(name)}`
   return `${short}${long}`
 }
 

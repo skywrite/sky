@@ -28,6 +28,9 @@ Omitting effort or passing `default` inherits the preset. The shared
 `universal/ai/effort.ts` validates supported levels and maps to Anthropic's
 `effort` or other providers' `reasoningEffort`, preserving unrelated options.
 Unknown models keep their existing options without advertising unverified levels.
+CLI tuning flags use `--ai-*` names; old long names and short flags remain aliases.
+For `ai:chat`, `--ai-effort` affects the answering model; `--ai-fast` only
+selects the preset used to label pasted text in the terminal input.
 
 `resolveProfile` demuxes a profile's options: generic call settings hoist
 to the top level, provider-specific ones (effort, thinking) namespace under
@@ -63,7 +66,7 @@ most; a profile with no window declared is not capped.
   (`sky ai:claude:models` lists Anthropic's). The provider builds the model
   object from the id without checking it, so an invented id fails on the
   first call, not at startup.
-- Adding a profile makes it addressable (`--reasoning default-x`,
+- Adding a profile makes it addressable (`--ai-reasoning default-x`,
   `sky ai:profiles`, the settings pane). Repointing a role through configuration
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a

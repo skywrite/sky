@@ -5,6 +5,7 @@ import * as p from '@clack/prompts'
 import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { createFileTools, READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
 import {
   createNotebookTools,
@@ -23,7 +24,7 @@ import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
-import { getProfile, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { usageLine } from '#shared/ai/usage.ts'
 import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
@@ -37,6 +38,7 @@ import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
+import { presetEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
@@ -49,44 +51,50 @@ import { promptWithInk } from './ui/promptWithInk.tsx'
 // -----------------------------------------------------------------------------
 
 const params = {
+  effort: aiEffortFlag(),
   message: Flag.string('Initial message to start the conversation', {
     short: 'm',
     optional: true,
   }),
   reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-5, default-local-reasoning)', {
+    long: 'ai-reasoning',
     short: 'r',
-    default: () => ROLES.reasoning,
+    default: () => roleProfile('reasoning'),
   }),
-  fast: Flag.string('Fast model profile for summaries and quick tasks (e.g. default-haiku-4.5, default-local-fast)', {
+  fast: Flag.string('Preset for short labels on pasted text in the terminal input', {
+    long: 'ai-fast',
     short: 'f',
-    default: () => ROLES.fast,
+    default: () => roleProfile('fast'),
   }),
   days: Flag.number('Number of days to look back for context', {
+    long: 'ai-context-days',
     short: 'd',
     default: () => 7,
   }),
   maxContext: Flag.number(
     'Token ceiling for the assembled document context — commas allowed (e.g. 150,000); 0 keeps the notebook closed',
     {
+      long: 'ai-max-context',
       default: () => 300_000,
       parse: (raw) => {
         const n = Number(String(raw).replace(/,/g, ''))
         if (!Number.isInteger(n) || n < 0) {
-          throw new Error(`--max-context needs a whole token count, zero or more, got "${raw}"`)
+          throw new Error(`--ai-max-context needs a whole token count, zero or more, got "${raw}"`)
         }
         return n
       },
     },
   ),
   noContext: Flag.bool(
-    'Keep the notebook closed: no documents read or queried, only the conversation and tools (same as --max-context 0)',
-    { default: false },
+    'Keep the notebook closed: no documents read or queried, only the conversation and tools (same as --ai-max-context 0)',
+    { long: 'ai-no-context', default: false },
   ),
   summaryBaseline: Flag.bool(
     'Lean baseline: days before yesterday seed from summary.md (else day.md alone); message bodies stay out of today+yesterday',
-    { default: true },
+    { long: 'ai-summary-baseline', default: true },
   ),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', {
+    long: 'ai-inspect-context',
     default: false,
   }),
   category: Flag.string('Category for the chat (e.g., reflection, planning)', {
@@ -101,8 +109,14 @@ const params = {
     default: false,
   }),
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
-  noAutoTag: Flag.bool('Skip automatic tagging from the archived-chat tag corpus', { default: false }),
-  noAutoRel: Flag.bool('Skip automatic entity and referenced-document relationships', { default: false }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-chat tag corpus', {
+    long: 'ai-no-auto-tag',
+    default: false,
+  }),
+  noAutoRel: Flag.bool('Skip automatic entity and referenced-document relationships', {
+    long: 'ai-no-auto-rel',
+    default: false,
+  }),
   resume: Flag.bool('Resume a saved chat from the current day: conversation and context restored, same file updated', {
     default: false,
   }),
@@ -220,7 +234,7 @@ export default class AiChatTask extends Command {
       'so a file left there is a session that died mid-conversation.',
       'Saved chats are searchable in later sessions via the chats GraphQL query.',
       'On save, missing tags: and rel: are chosen automatically from how past chats',
-      'were filed (--no-auto-tag / --no-auto-rel to skip); hand-written and resumed',
+      'were filed (--ai-no-auto-tag / --ai-no-auto-rel to skip); hand-written and resumed',
       'values always win. Explicitly discussed notebook records also join rel:',
       'as time refs, including on resume; a uniquely identifiable conversational',
       'reference is enough, without a filename or exact date.',
@@ -232,15 +246,17 @@ export default class AiChatTask extends Command {
       'always saves back; exiting with no new messages touches nothing.',
     ],
     usage: [
-      'sky ai:chat                              # Claude Opus 4.8 (default), Haiku for fast',
+      'sky ai:chat                              # Use your Thinking preset',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
+      'sky ai:chat --ai-reasoning default-opus-5 --ai-effort high',
+      'sky ai:chat --ai-max-context 100000      # Limit notebook context',
       'sky ai:chat -r default-local-reasoning   # Use local LM Studio model',
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',
       'sky ai:chat -r my-lm-studio              # Use custom config profile',
-      'sky ai:chat --days 14                    # Include 14 days of context',
-      'sky ai:chat --max-context 150,000        # Cap assembled context (commas ok)',
-      'sky ai:chat --no-context                 # Notebook closed: no documents read',
-      'sky ai:chat --no-summary-baseline        # Every raw file for all days (old flood)',
+      'sky ai:chat --ai-context-days 14         # Include 14 days of context',
+      'sky ai:chat --ai-max-context 150,000        # Cap assembled context (commas ok)',
+      'sky ai:chat --ai-no-context                 # Notebook closed: no documents read',
+      'sky ai:chat --ai-summary-baseline=false        # Every raw file for all days (old flood)',
       'sky ai:chat -E                           # Ephemeral: exit without saving',
       'sky ai:chat --resume                     # Pick a chat from today and continue it',
     ],
@@ -271,9 +287,9 @@ export default class AiChatTask extends Command {
     const dataDir = <string>config.DIR_DATA
     const baseDir = <string>config.DIR_BASE
 
-    // Resolve the chosen reasoning profile (--reasoning) for turns; a fast model for summaries.
+    // Resolve the chosen reasoning profile (--ai-reasoning) for turns; a separate preset for pasted-text labels.
     const reasoningProfile = getProfile(reasoningProfileName)
-    const reasoning = resolveProfile(reasoningProfile)
+    const reasoning = resolveProfile(reasoningProfile, { effort: args.effort })
     const fast = resolveProfile(getProfile(fastProfileName))
 
     // A closed notebook: the flag or a zero ceiling. Documents are neither
@@ -506,7 +522,12 @@ export default class AiChatTask extends Command {
       summaryBaseline,
       resume: resumeSession,
       model: reasoning,
-      profile: { provider: reasoningProfile.provider, model: reasoningProfile.model },
+      profile: {
+        provider: reasoningProfile.provider,
+        model: reasoningProfile.model,
+        preset: reasoningProfileName,
+        effort: args.effort && args.effort !== 'default' ? args.effort : (presetEffort(reasoningProfile) ?? undefined),
+      },
       producers: contextProducers(tasks),
       ambient: ctx,
       systemPrompt: async () => {

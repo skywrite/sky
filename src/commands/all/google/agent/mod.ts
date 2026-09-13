@@ -5,6 +5,7 @@ import { isStepCount, streamText } from 'ai'
 import open from 'open'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
+import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -29,6 +30,7 @@ import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
+import { validateEffort } from '#universal/ai/effort.ts'
 import { probeAccountsForFile } from '../lib/probeAccounts.ts'
 import { resolveGoogleClient } from '../lib/resolveClient.ts'
 import { missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
@@ -41,14 +43,14 @@ import type { MissionFile } from './lib/tools.ts'
 const MAX_STEPS = 48
 
 /**
- * The profile a mission runs on unless `--reasoning` says otherwise. A
+ * The profile a mission runs on unless `--ai-reasoning` says otherwise. A
  * mission executes a brief the chat model already wrote — content, tab
  * names, design direction — so it needs Opus's hands without Opus's
  * deliberation: the same model at medium effort. Measured 2026-09-06 on one
  * brief: Opus 5 at xhigh took 19m28s for 25 steps, 19m05s of it thinking
  * (~46 s a step), and built the doc right; Qwen 3.8 on Cerebras took 4m49s,
  * probed request formats against the live doc and emptied two tabs.
- * `--reasoning default-opus-5` is the full-depth run; `default-sonnet-5`
+ * `--ai-reasoning default-opus-5` is the full-depth run; `default-sonnet-5`
  * the no-thinking one.
  */
 const MISSION_PROFILE = 'default-opus-5-medium'
@@ -69,6 +71,7 @@ const MAX_MISSION_IMAGES = 24
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif)$/i
 
 const params = {
+  effort: aiEffortFlag(),
   mission: ArgOrFlag.string('What to create or change, with ALL content the document needs', {
     short: 'm',
     required: true,
@@ -81,6 +84,7 @@ const params = {
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
   reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5-medium, default-sonnet-5)', {
+    long: 'ai-reasoning',
     short: 'r',
     default: () => MISSION_PROFILE,
   }),
@@ -147,11 +151,12 @@ export default class GoogleAgentTask extends Command {
     const { output, secrets } = context
 
     // The mission's model is a profile, picked per run. The default is Opus
-    // at medium effort; `--reasoning default-opus-5` is the full-depth run.
+    // at medium effort; `--ai-reasoning default-opus-5` is the full-depth run.
     // An unknown name fails here, before any Google work.
     let missionProfile: ModelProfile
     try {
       missionProfile = getProfile(args.reasoning)
+      validateEffort(missionProfile, args.effort ?? 'default')
     } catch (err) {
       return CommandResult.fail((err as Error).message)
     }
@@ -319,7 +324,7 @@ export default class GoogleAgentTask extends Command {
         streamText({
           // A mission is expensive to lose — ride out 429/529 bursts with more
           // patience than the SDK's default 2 retries.
-          ...resolveProfile(missionProfile, { maxRetries: 4 }),
+          ...resolveProfile(missionProfile, { maxRetries: 4, effort: args.effort }),
           instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
           messages: [{ role: 'user', content: missionMessage }],
           tools,

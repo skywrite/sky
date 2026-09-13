@@ -246,7 +246,7 @@ a person can see and touch:
   request) ends the slider at the last stop that fits, 50k there; the
   stops past it stay drawn, grayed, and a budget above them drops to that
   stop — on the page, in the routes, and behind `sky ai:chat
-  --max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
+  --ai-max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
   A chat's effort is `default` (inherit its preset) or an explicit supported
   level; changing models resets the override. Recovery, saved reopen, branches,
   and reply threads preserve the chat's override. Turn logs record the actual

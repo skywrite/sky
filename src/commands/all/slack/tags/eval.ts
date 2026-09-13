@@ -35,7 +35,10 @@ type VariantKey = (typeof VARIANTS)[number]['key']
 const params = {
   sample: Flag.number('Tagged threads to evaluate', { default: 200, short: 's' }),
   seed: Flag.number('Random seed for reproducible sampling', { default: 1 }),
-  model: Flag.string('Model role for a single run: fast, balanced, or reasoning', { default: 'fast' }),
+  model: Flag.string('Model role for a single run: fast, balanced, or reasoning', {
+    long: 'ai-model',
+    default: 'fast',
+  }),
   variant: Flag.string('Single-run variant: base, no-history, family, or family-no-history', { default: 'base' }),
   matrix: Flag.bool('Run every variant with fast and balanced models on the same sample', { default: false }),
   since: Flag.string(
