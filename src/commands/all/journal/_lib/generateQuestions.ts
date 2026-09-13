@@ -1,12 +1,11 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import type { JournalContext } from '../lib/gatherContext.ts'
 
-const PROFILE = ROLES.reasoning
 const PROMPT_FILE = new URL('../prompts/generate-questions.prompt.md', import.meta.url).pathname
 const TYPE_PROMPT_FILE = new URL('../prompts/generate-type-questions.prompt.md', import.meta.url).pathname
 
@@ -41,7 +40,7 @@ export async function generateQuestions(context: JournalContext): Promise<Genera
   })
 
   const result = await generateObject({
-    ...aiModelByProfile(PROFILE),
+    ...aiModel('reasoning'),
     schema: QuestionSchema,
     prompt,
   })
@@ -74,7 +73,7 @@ export async function generateQuestionsForTypes(
   })
 
   const result = await generateObject({
-    ...aiModelByProfile(PROFILE),
+    ...aiModel('reasoning'),
     schema: QuestionSchema,
     prompt,
   })

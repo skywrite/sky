@@ -141,6 +141,7 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.voice?.researcherVoice) config.voice.researcherVoice = parsed.voice.researcherVoice
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
+    if (parsed.ai?.roles) config.ai.roles = parsed.ai.roles
     if (typeof parsed.ai?.writingVoiceProfile === 'string')
       config.ai.writingVoiceProfile = parsed.ai.writingVoiceProfile
     if (parsed.server?.port) config.server.port = parsed.server.port

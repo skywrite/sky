@@ -18,7 +18,7 @@ import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { researchContext } from '#shared/models/Chat/researchContext.ts'
@@ -101,7 +101,7 @@ export default class AiResearchTask extends Command {
     const { config, output } = context
     const { question, purpose } = args
     const parent = researchContext.getStore()
-    const profile = PROFILES[ROLES.balanced]
+    const profile = getProfile(roleProfile('balanced'))
     const budget = researchBudget(parent?.contextTokens, profile.contextWindow)
     if (budget.readingTokens === 0) return CommandResult.fail('Notebook research is disabled by the reading budget.')
 

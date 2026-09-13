@@ -13,7 +13,7 @@ import { excludeParties, partyExclusionSet } from '#lib/notebook/enrich/parties.
 import { fetchPeopleIndex } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
-import { aiModel, aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { type PersonIndexEntry, profilesPinnedBy } from '#shared/models/Person/subjects.ts'
@@ -146,7 +146,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // The summary IS the meeting notes, so it rides the reasoning role — the registry's
 // strongest default — rather than a literal, keeping one swap point at the next model
 // bump. Metadata extraction and correction-parsing are lighter and use baseline roles.
-const SUMMARY_MODEL = ROLES.reasoning
 
 // No-op until the CLI process family configures logging (see #shared/log.ts).
 const log = logger('transcript')
@@ -393,7 +392,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       let streamError: unknown
       try {
         const stream = streamText({
-          ...aiModelByProfile(SUMMARY_MODEL),
+          ...aiModel('reasoning'),
           abortSignal: context.signal,
           prompt: summaryPrompt,
           timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast

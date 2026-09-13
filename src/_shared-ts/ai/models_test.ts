@@ -1,5 +1,99 @@
+import type { SkyConfig } from '#shared/config/types.ts'
+
+test('custom reasoning presets suppress unsupported sampling without an explicit thinking option', () => {
+  const presets = [
+    defineProfile({ provider: 'openai', model: 'gpt-6-astra' }),
+    defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
+  ]
+  assert({
+    given: 'roles assigned to reasoning presets without a thinking option',
+    should: 'drop caller sampling settings while preserving output limits',
+    actual: presets.map((preset) => {
+      const resolved = resolveProfile(preset, { temperature: 0, topP: 1, maxOutputTokens: 1000 })
+      return [resolved.temperature, resolved.topP, resolved.maxOutputTokens]
+    }),
+    expected: [
+      [undefined, undefined, 1000],
+      [undefined, undefined, 1000],
+    ],
+  })
+})
 import { assert, test } from '#test'
-import { aiModel, aiModelByProfile, aiModelId, defineProfile, resolveProfile, type ResolvedModel } from './models.ts'
+import {
+  aiModel,
+  aiModelByProfile,
+  aiModelId,
+  defineProfile,
+  getProfile,
+  getRoles,
+  resolveProfile,
+  type ResolvedModel,
+} from './models.ts'
+
+test('preset effort is inherited, overridden for one call, and never mutated', () => {
+  const profile = defineProfile({
+    provider: 'openai',
+    model: 'gpt-6-astra',
+    options: { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+  })
+  const override = resolveProfile(profile, { effort: 'medium' })
+  const inherited = resolveProfile(profile, { effort: 'default' })
+  assert({
+    given: 'a call with medium effort followed by a default call',
+    should: 'keep the preset and unrelated provider options intact',
+    actual: [override.providerOptions?.openai, inherited.providerOptions?.openai, profile.options],
+    expected: [
+      { reasoningEffort: 'medium', serviceTier: 'priority' },
+      { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+      { reasoningEffort: 'xhigh', serviceTier: 'priority' },
+    ],
+  })
+  assert({
+    given: 'an Anthropic preset overridden to max',
+    should: 'route effort to the Anthropic provider and preserve thinking',
+    actual: resolveProfile(
+      defineProfile({
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        options: { effort: 'medium', thinking: { type: 'adaptive' } },
+      }),
+      { effort: 'max', temperature: 0 },
+    ).providerOptions,
+    expected: { anthropic: { effort: 'max', thinking: { type: 'adaptive' } } },
+  })
+  let rejected = false
+  try {
+    resolveProfile(defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }), { effort: 'high' })
+  } catch {
+    rejected = true
+  }
+  assert({
+    given: 'an unsupported effort override',
+    should: 'reject it before creating a provider request',
+    actual: rejected,
+    expected: true,
+  })
+})
+
+test('role assignments resolve the current preset, including overridden built-ins', () => {
+  const config: SkyConfig['ai'] = {
+    models: { strong: '', fast: '', transcription: '' },
+    roles: { reasoning: 'deep-work' },
+    profiles: {
+      'deep-work': { provider: 'openai', model: 'gpt-6-astra', options: { reasoningEffort: 'high' } },
+      'default-sonnet-5': { provider: 'anthropic', model: 'claude-sonnet-5', options: { effort: 'low' } },
+    },
+  }
+  const before = getProfile(getRoles(config).reasoning, config)
+  config.roles!.reasoning = 'default-sonnet-5'
+  const after = getProfile(getRoles(config).reasoning, config)
+  assert({
+    given: 'a role reassigned to a customized built-in preset',
+    should: 'use the latest assignment and preset options while keeping the model window',
+    actual: [before.model, after.model, after.options, after.contextWindow, getRoles(config).fast],
+    expected: ['gpt-6-astra', 'claude-sonnet-5', { effort: 'low' }, 1_000_000, 'default-haiku-4.5'],
+  })
+})
 
 function modelId(m: ResolvedModel['model']): string {
   return (m as { modelId: string }).modelId

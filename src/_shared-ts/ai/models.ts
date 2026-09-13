@@ -7,13 +7,15 @@ import {
 } from '@ai-sdk/openai'
 import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
-import { AI_PROFILES } from '#config'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
+import { readSkyConfigFile } from '#shared/config/loader.ts'
+import type { SkyConfig } from '#shared/config/types.ts'
 import { installTimingTelemetry } from '#shared/timing/sdk.ts'
+import { optionsWithEffort, validateEffort, type EffortOverride } from '#universal/ai/effort.ts'
 import { PROFILES } from './defaultProfiles.ts'
 
 /**
@@ -24,7 +26,7 @@ import { PROFILES } from './defaultProfiles.ts'
  *   role      -> profile   `reasoning: 'opus-5'`       the swap point
  *   profile   -> provider + model + options            the tuned, comparable unit
  *
- * A profile is exactly three fields. `provider` + `model` are the uniform identity;
+ * `provider` + `model` are the uniform identity;
  * `options` is the only model-specific part. It holds generic AI-SDK call settings
  * (temperature, maxOutputTokens, ...) AND the provider's own options (effort/thinking
  * for anthropic). The resolver demuxes them into a call: generic -> top level,
@@ -36,7 +38,7 @@ import { PROFILES } from './defaultProfiles.ts'
  *
  * Built on the no-timeout Anthropic provider so long calls don't hit Bun's 300s cap.
  *
- * Chunk 1: foundation only — nothing consumes this yet. Transcription is a different
+ * Transcription is a different
  * modality (TranscriptionModel, not LanguageModel) and gets its own resolver later,
  * so it is intentionally absent from the roles below.
  */
@@ -50,6 +52,11 @@ export interface CommonOptions {
   topP?: number
   topK?: number
   maxRetries?: number
+}
+
+export interface ModelOverrides extends CommonOptions {
+  /** default clears the per-call override and inherits the named preset's effort. */
+  effort?: EffortOverride
 }
 
 /** Provider-specific option bags. Only anthropic is strongly typed for now. */
@@ -168,6 +175,10 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 
 /** True when a profile turns on extended thinking. */
 function thinkingEnabled(profile: ModelProfile): boolean {
+  // These models reason by default even when a custom preset omits thinking.
+  if (profile.provider === 'openai' && /^gpt-6-astra(?:$|-)/.test(profile.model)) return true
+  if (profile.provider === 'anthropic' && /^claude-(?:opus-5|sonnet-5|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model))
+    return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking
   return thinking !== undefined && thinking.type !== 'disabled'
 }
@@ -178,7 +189,12 @@ function thinkingEnabled(profile: ModelProfile): boolean {
  * params are dropped when the profile enables thinking (those models reject them), so
  * call sites can ask for determinism without tracking which model a profile resolves to.
  */
-export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions): ResolvedModel {
+export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides): ResolvedModel {
+  if (overrides?.effort !== undefined) {
+    validateEffort(profile, overrides.effort)
+    if (overrides.effort !== 'default')
+      profile = { ...profile, options: optionsWithEffort(profile, overrides.effort) } as ModelProfile
+  }
   installTimingTelemetry()
   // Every call the model makes lands in the usage log, whoever made it.
   const base = languageModelFor(profile)
@@ -216,18 +232,20 @@ export function resolveProfile(profile: ModelProfile, overrides?: CommonOptions)
 }
 
 /** Resolve a semantic role (e.g. `aiModel('reasoning')`) to a configured model. */
-export function aiModel(role: Role, overrides?: CommonOptions): ResolvedModel {
-  return resolveProfile(PROFILES[ROLES[role]], overrides)
+export function aiModel(role: Role, overrides?: ModelOverrides): ResolvedModel {
+  const config = readSkyConfigFile()?.parsed.ai
+  return resolveProfile(getProfile(roleProfile(role, config), config), overrides)
 }
 
 /**
  * The model id a role currently resolves to, in canonical API form
  * (e.g. "claude-opus-5") — for call sites that record the model identity
  * in their output (summary headings, logs, provenance notes). Mirrors
- * aiModel's resolution: built-in ROLES -> PROFILES.
+ * aiModel's resolution: configured role -> effective preset.
  */
 export function aiModelId(role: Role): string {
-  return PROFILES[ROLES[role]].model
+  const config = readSkyConfigFile()?.parsed.ai
+  return getProfile(roleProfile(role, config), config).model
 }
 
 /**
@@ -244,31 +262,47 @@ export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'oll
 
 const PROVIDERS = new Set<string>(KNOWN_PROVIDERS)
 
-let configProfilesCache: Record<string, ModelProfile> | null = null
-
 /** User-defined profiles from ~/.sky/config.jsonc (ai.profiles), validated and converted. */
-function configProfiles(): Record<string, ModelProfile> {
-  if (configProfilesCache) return configProfilesCache
+function configProfiles(config: SkyConfig['ai'] | undefined): Record<string, ModelProfile> {
   const out: Record<string, ModelProfile> = {}
-  for (const [name, def] of Object.entries(AI_PROFILES)) {
+  for (const [name, def] of Object.entries(config?.profiles ?? {})) {
     if (!def || typeof def.model !== 'string' || !PROVIDERS.has(def.provider)) {
       console.warn(`Skipping invalid AI profile "${name}" in ~/.sky/config.jsonc (needs a known provider + a model)`)
       continue
     }
-    out[name] = { provider: def.provider, model: def.model, baseUrl: def.baseUrl, options: def.options } as ModelProfile
+    const builtin = (PROFILES as Record<string, ModelProfile>)[name]
+    const sameModel =
+      builtin?.provider === def.provider && builtin.model === def.model && builtin.baseUrl === def.baseUrl
+    out[name] = {
+      provider: def.provider,
+      model: def.model,
+      baseUrl: def.baseUrl,
+      contextWindow: def.contextWindow ?? (sameModel ? builtin.contextWindow : undefined),
+      options: def.options,
+    } as ModelProfile
   }
-  configProfilesCache = out
   return out
 }
 
+/** Read fresh so Settings and commands agree without restarting the service. */
+export function getRoles(config = readSkyConfigFile()?.parsed.ai): Record<Role, string> {
+  return Object.fromEntries(
+    Object.entries(ROLES).map(([role, fallback]) => [role, config?.roles?.[role as Role] ?? fallback]),
+  ) as Record<Role, string>
+}
+
+export function roleProfile(role: Role, config = readSkyConfigFile()?.parsed.ai): string {
+  return getRoles(config)[role]
+}
+
 /** All profiles: the built-in defaults plus user profiles from config (config wins on a name clash). */
-export function getAllProfiles(): Record<string, ModelProfile> {
-  return { ...PROFILES, ...configProfiles() }
+export function getAllProfiles(config = readSkyConfigFile()?.parsed.ai): Record<string, ModelProfile> {
+  return { ...PROFILES, ...configProfiles(config) }
 }
 
 /** Look up a model profile by name; throws if unknown. */
-export function getProfile(name: string): ModelProfile {
-  const all = getAllProfiles()
+export function getProfile(name: string, config = readSkyConfigFile()?.parsed.ai): ModelProfile {
+  const all = getAllProfiles(config)
   const profile = all[name]
   if (!profile) {
     throw new Error(`Unknown model profile: "${name}". Known profiles: ${Object.keys(all).sort().join(', ')}`)
@@ -277,6 +311,6 @@ export function getProfile(name: string): ModelProfile {
 }
 
 /** Resolve a model profile by name — for direct addressing (e.g. a --reasoning flag or an A/B compare UI). */
-export function aiModelByProfile(name: string, overrides?: CommonOptions): ResolvedModel {
+export function aiModelByProfile(name: string, overrides?: ModelOverrides): ResolvedModel {
   return resolveProfile(getProfile(name), overrides)
 }

@@ -2,6 +2,7 @@ export interface AiProfileConfig {
   provider: string
   model: string
   baseUrl?: string
+  contextWindow?: number
   options?: Record<string, unknown>
 }
 
@@ -45,6 +46,8 @@ export interface SkyConfig {
       transcription: string
     }
     profiles?: Record<string, AiProfileConfig>
+    /** Each role chooses a named preset from ai.profiles or the built-in catalog. */
+    roles?: Partial<Record<'reasoning' | 'fast' | 'balanced' | 'vision', string>>
     /** Model configuration used for writing voice drafting, learning, and compaction. */
     writingVoiceProfile?: string
   }

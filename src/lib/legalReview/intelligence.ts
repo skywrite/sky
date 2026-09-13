@@ -1,6 +1,6 @@
 import { streamObject, type UserContent } from 'ai'
 import type { LoadedDocument } from '#lib/documents/loadDocument.ts'
-import { aiModelByProfile, ROLES, type ResolvedModel } from '#shared/ai/models.ts'
+import { aiModel, type ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { AnalysisSchema, type Analysis, type LegalReview, type ReviewContext, type ReviewDocument } from './types.ts'
@@ -48,7 +48,7 @@ export async function analyzeAgreements(
     // Streaming uses the provider's idle guard; a working review can outlive the old four-minute cutoff.
     // No tools: analysis cannot upload, comment, or edit. A failure returns to the caller without SDK retries.
     const result = streamObject({
-      ...(options.model ?? aiModelByProfile(ROLES.reasoning)),
+      ...(options.model ?? aiModel('reasoning')),
       schema: AnalysisSchema,
       instructions,
       messages: [{ role: 'user', content }],

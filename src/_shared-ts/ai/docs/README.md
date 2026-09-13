@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-08
+updated: 2026-09-13
 ---
 
 # Model registry — roles, profiles, providers
@@ -8,12 +8,26 @@ updated: 2026-09-08
 `models.ts` is the one place a call site picks a model. Three tiers:
 
 - **role** — `aiModel('reasoning')`. Semantic and stable; the four roles
-  (`reasoning`, `fast`, `balanced`, `vision`) live in `ROLES`.
+  (`reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in `ROLES`;
+  `ai.roles` assigns them to presets in the user's configuration.
 - **profile** — `default-opus-5`. A named provider + model + options tuple.
   The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
 - **provider** — the AI-SDK provider the profile resolves through
   (`anthropic`, `openai`, `ollama`, `lm-studio`, `cerebras`).
+
+Profiles are named **presets**. A preset owns its model, default effort,
+and provider options. Roles point to presets; they do not own another copy
+of those settings. Editing a shared preset affects every role using it.
+The registry reads assignments and presets fresh for each resolution,
+so the service needs no restart. Existing profile names remain valid.
+
+`aiModel(role, { effort })`, `aiModelByProfile(name, { effort })`, and
+`resolveProfile(profile, { effort })` override effort for that call only.
+Omitting effort or passing `default` inherits the preset. The shared
+`universal/ai/effort.ts` validates supported levels and maps to Anthropic's
+`effort` or other providers' `reasoningEffort`, preserving unrelated options.
+Unknown models keep their existing options without advertising unverified levels.
 
 `resolveProfile` demuxes a profile's options: generic call settings hoist
 to the top level, provider-specific ones (effort, thinking) namespace under
@@ -50,8 +64,8 @@ most; a profile with no window declared is not capped.
   object from the id without checking it, so an invented id fails on the
   first call, not at startup.
 - Adding a profile makes it addressable (`--reasoning default-x`,
-  `sky ai:profiles`, the settings pane). Only repointing a role in `ROLES`
-  changes what runs by default.
+  `sky ai:profiles`, the settings pane). Repointing a role through configuration
+  (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
   built-ins are Opus 4.6/4.8, Sonnet 4.6, GPT-4o, and GPT-5.5.
@@ -59,7 +73,7 @@ most; a profile with no window declared is not capped.
   `default-gpt-6-astra-xhigh`, all using priority processing. The model
   id and reasoning efforts follow the
   [OpenAI model documentation](https://developers.openai.com/api/docs/models/gpt-6-astra).
-- Repointing `reasoning` also changes the VS Code command-palette titles.
+- Changing the shipped `ROLES.reasoning` also changes the VS Code command-palette titles.
   Run `node scripts/syncTitles.ts` in `extensions/vscode`; `dev:check`
   fails until they are in sync.
 

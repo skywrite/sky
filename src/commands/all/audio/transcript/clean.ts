@@ -11,7 +11,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DIR_OUTPUT } from '#config'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { extractJson } from '#shared/ai/extractJson.ts'
-import { aiModelByProfile, ROLES } from '#shared/ai/models.ts'
+import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -130,7 +130,6 @@ const ANALYSIS_PROMPT_FILE = new URL('./prompts/transcript-analysis.prompt.md', 
 // Analysis runs on the raw transcript and sets the quality ceiling for the
 // notes built on it, so it rides the reasoning role — the registry's strongest default.
 // Re-pin to a literal profile here if `reasoning` is ever moved down-tier for cost.
-const TRANSCRIPT_MODEL = ROLES.reasoning
 
 // No-op until the CLI process family configures logging (see #shared/log.ts).
 const log = logger('transcript')
@@ -501,7 +500,7 @@ export default class AudioTranscriptCleanTask extends Command {
         // because generateObject's tool mode has issues with Anthropic
         const jsonPrompt = analysisPrompt + '\n\nRespond with ONLY valid JSON, no markdown code fences.'
         const stream = streamText({
-          ...aiModelByProfile(TRANSCRIPT_MODEL),
+          ...aiModel('reasoning'),
           abortSignal: context.signal,
           prompt: jsonPrompt,
           timeout: 20 * 60 * 1000, // 20 min — backstop only; the idle guard fails wedges fast
