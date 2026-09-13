@@ -1,8 +1,9 @@
-import { Menu, Popover, SegmentedControl, Slider } from '@mantine/core'
+import { Menu, Popover, Slider } from '@mantine/core'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Effort, EffortOverride } from '#universal/ai/effort.ts'
 import { reachIndex, STOPS, stopIndex } from '#universal/ai/readingBudget.ts'
 import type { Chat } from './chat.tsx'
+import './chatControls.css'
 
 /**
  * The two things a thread is tuned with, under the composer: the model it
@@ -234,52 +235,28 @@ export function BudgetControl({ chat }: { chat: Chat }) {
   )
 }
 
-/**
- * Whether the chat is kept. Saves to today files the transcript under the
- * day's chats when the thread is closed, with what sky learned from it;
- * Not saved skips filing and learning from the chat. Both settings keep a
- * temporary recovery copy until the thread is explicitly closed.
- */
-export function SavesControl({ chat }: { chat: Chat }) {
-  const { state, setSaves } = chat
-  const [open, setOpen] = useState(false)
-  const settings = state.settings
+export function TemporaryControl({ chat }: { chat: Chat }) {
+  const settings = chat.state.settings
   if (!settings) return null
-  const busy = state.phase !== 'idle'
-  const saves = settings.saves
-
   return (
-    <Popover position="top-start" shadow="md" width={400} withinPortal opened={open} onChange={setOpen}>
-      <Popover.Target>
-        <button
-          type="button"
-          className="sky-ctl"
-          disabled={busy}
-          onClick={() => setOpen((o) => !o)}
-          aria-label="Whether this chat is kept"
-        >
-          {saves ? 'Saves to today' : 'Not saved'}
-          <Caret />
-        </button>
-      </Popover.Target>
-      <Popover.Dropdown>
-        <div className="sky-ctl-title">Whether this chat is kept</div>
-        <SegmentedControl
-          fullWidth
-          value={saves ? 'saves' : 'not'}
-          onChange={(value) => void setSaves(value === 'saves')}
-          data={[
-            { value: 'saves', label: 'Saves to today' },
-            { value: 'not', label: 'Not saved' },
-          ]}
-        />
-        <p className="sky-ctl-note">
-          {saves
-            ? 'Filed under today’s chats when you close it, with what sky learned from it.'
-            : 'No filed transcript, day entry, or memories. Recovers after a restart; Discard removes its temporary recovery copy.'}
-        </p>
-        <div className="sky-ctl-foot">Applies now.</div>
-      </Popover.Dropdown>
-    </Popover>
+    <button
+      type="button"
+      className="sky-chat-temporary"
+      role="switch"
+      aria-label="Temporary chat"
+      aria-checked={!settings.saves}
+      disabled={chat.state.phase !== 'idle' || chat.tuning}
+      onClick={() => void chat.setSaves(!settings.saves)}
+      title={
+        settings.saves
+          ? 'Save this chat when you close it.'
+          : 'No filed transcript or memories. Discard removes its temporary recovery copy.'
+      }
+    >
+      <span className="sky-chat-temporary-track" aria-hidden="true">
+        <span />
+      </span>
+      Temporary
+    </button>
   )
 }

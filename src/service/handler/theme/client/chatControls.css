@@ -1,0 +1,82 @@
+.sky-chat-temporary:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 3px;
+}
+.sky-chat-temporary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 5px 8px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--sky-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sky-chat-temporary-track {
+  display: block;
+  width: 30px;
+  height: 18px;
+  border-radius: 20px;
+  background: var(--sky-border-soft);
+  padding: 3px;
+}
+.sky-chat-temporary-track > span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sky-bg);
+  box-shadow: 0 1px 2px #0002;
+  transition: transform 120ms ease;
+}
+.sky-chat-temporary[aria-checked='true'] {
+  color: var(--mantine-color-violet-6);
+}
+.sky-chat-temporary[aria-checked='true'] .sky-chat-temporary-track {
+  background: var(--mantine-color-violet-5);
+}
+.sky-chat-temporary[aria-checked='true'] .sky-chat-temporary-track > span {
+  transform: translateX(12px);
+  background: white;
+}
+.sky-chat-temporary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.sky-chat-head .sky-chat-close {
+  min-inline-size: 8rem;
+  flex-shrink: 0;
+}
+.sky-main[data-temporary='true'] {
+  background: color-mix(in srgb, var(--mantine-color-violet-5) 3%, var(--sky-bg));
+}
+.sky-main[data-temporary='true'] .sky-composer-zone {
+  background: transparent;
+}
+.sky-main[data-temporary='true'] .sky-composer-shell,
+.sky-main[data-temporary='true'] .sky-bubble {
+  background: color-mix(in srgb, var(--mantine-color-violet-5) 5%, var(--sky-s2));
+}
+.sky-main[data-temporary='true'] .sky-composer-shell {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mantine-color-violet-5) 20%, var(--sky-border-soft));
+}
+@media (max-width: 500px) {
+  .sky-chat-head .sky-tabs:has(.sky-chat-temporary) {
+    gap: 4px;
+  }
+  .sky-chat-head .sky-chat-close {
+    min-inline-size: 7rem;
+  }
+  .sky-chat-head .sky-tabs:has(.sky-chat-temporary) .mantine-Button-root,
+  .sky-chat-temporary {
+    font-size: 13px;
+  }
+  .sky-chat-temporary {
+    gap: 6px;
+    padding-inline: 4px;
+  }
+}

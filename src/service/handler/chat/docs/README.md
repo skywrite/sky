@@ -452,8 +452,10 @@ a person can see and touch:
   prints its usage line after each reply. Every model call also lands in
   the usage log, under the command making it; `sky ai:usage` rolls the day up
   ([2026-09-05](../../../_shared-ts/ai/docs/2026-09-05-usage-meter.md)).
-- **Whether the thread is filed.** `Saves to today ▾` sits with the model and
-  the budget, with two stops: saves to today, or not saved. The preference
+- **Whether the thread is filed.** The header's one-click Temporary switch
+  sits beside Save & close / Discard. Temporary adds a subtle violet tint;
+  the close action reserves its width so toggling never shifts the switch.
+  The preference
   controls the final archive and save-time learning, and can change until
   close. Saving a new chat also logs its transcript link in the starting
   day's Complete list, under the configured default category. The page
@@ -462,7 +464,7 @@ a person can see and touch:
   another day entry. See [2026-09-07](2026-09-07-saving-includes-day-logging.md).
   Both choices keep temporary recovery snapshots during the active
   conversation. The settings routes carry `saves`; changing it updates the
-  snapshot immediately, and restoration keeps that choice. For Not saved,
+  snapshot immediately, and restoration keeps that choice. For Temporary,
   the end button reads Discard, the list marks it "not saved", and ending
   removes recovery without a transcript, day entry, memory, or person facts.
   Discard is the explicit end of an active conversation; a server restart

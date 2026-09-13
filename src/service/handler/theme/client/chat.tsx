@@ -31,7 +31,7 @@ import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
 import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
 import { ContextPanel } from './context.tsx'
-import { BudgetControl, ModelControl, SavesControl, type ThreadSettings } from './controls.tsx'
+import { BudgetControl, ModelControl, TemporaryControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
@@ -1925,7 +1925,6 @@ export function Composer({
   sendDisabled = false,
   hidden = false,
   autoFocus = true,
-  showSaves = true,
 }: {
   chat: Chat
   draft: ChatDraft
@@ -1941,7 +1940,6 @@ export function Composer({
   /** Keep the draft in its textarea while voice owns the conversation surface. */
   hidden?: boolean
   autoFocus?: boolean
-  showSaves?: boolean
 }) {
   const { state, send } = chat
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -2124,12 +2122,6 @@ export function Composer({
             <ModelControl chat={chat} />
             <span className="sky-hint">·</span>
             <BudgetControl chat={chat} />
-            {showSaves && (
-              <>
-                <span className="sky-hint">·</span>
-                <SavesControl chat={chat} />
-              </>
-            )}
           </>
         )}
         {/* The keys are worth a word before the first message; after it the tuning takes the room. */}
@@ -2243,7 +2235,7 @@ export function ChatMain({
   }
 
   return (
-    <div className="sky-main">
+    <div className="sky-main" data-temporary={state.settings?.saves === false}>
       <header className="sky-head sky-chat-head">
         <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
@@ -2270,11 +2262,13 @@ export function ChatMain({
                 Context · {state.documents}
               </Button>
             )}
+            {!voiceMode && <TemporaryControl chat={chat} />}
             {!voiceMode && (state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
               <Button
                 size="sm"
+                className="sky-chat-close"
                 onClick={() => void endConversation()}
-                disabled={busy || call.syncing || replies.some((reply) => reply.busy)}
+                disabled={busy || chat.tuning || call.syncing || replies.some((reply) => reply.busy)}
               >
                 {state.settings?.saves === false
                   ? state.phase === 'saving'

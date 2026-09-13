@@ -164,7 +164,6 @@ export function ReplyThreadPanel({
           }
           attach={files.attach}
           autoFocus={visible}
-          showSaves={false}
           status={
             files.error && (
               <p className="sky-chat-file-error" role="alert">
