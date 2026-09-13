@@ -15,6 +15,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
+import { SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
 import { WritingVoicePane } from './writingVoice.tsx'
@@ -76,34 +77,6 @@ export interface SettingsData {
   }
   about: { version: string | null; date: string | null }
   advanced: ConfigView
-}
-
-// ── Sections and routes ─────────────────────────────────────────────
-
-export const SETTINGS_SECTIONS = [
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'voice', label: 'Voice' },
-  { id: 'writing-voice', label: 'Writing Voice' },
-  { id: 'ai', label: 'AI' },
-  { id: 'prompts', label: 'Prompts' },
-  { id: 'connections', label: 'Connections' },
-  { id: 'notebook', label: 'Notebook' },
-  { id: 'advanced', label: 'Advanced' },
-  { id: 'about', label: 'About' },
-] as const
-
-export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
-
-/** The open section, or null when the path is not settings at all. */
-export function settingsSectionOf(pathname: string): SettingsSection | null {
-  if (!pathname.startsWith('/settings')) return null
-  if (pathname === '/settings/prompts' || pathname.startsWith('/settings/prompts/')) return 'prompts'
-  const id = pathname.match(/^\/settings\/([a-z-]+)$/)?.[1]
-  return SETTINGS_SECTIONS.some((section) => section.id === id) ? (id as SettingsSection) : 'appearance'
-}
-
-export function settingsHref(section: SettingsSection): string {
-  return section === 'appearance' ? '/settings' : `/settings/${section}`
 }
 
 // ── Talking to the service ──────────────────────────────────────────
@@ -890,7 +863,7 @@ export function SettingsMain({
   back: { label: string; onClick: () => void }
 }) {
   const { data, note, change, reload } = useSettings()
-  const label = SETTINGS_SECTIONS.find((candidate) => candidate.id === section)?.label ?? 'Settings'
+  const page = SETTINGS_PAGES[section]
   if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
 
   return (
@@ -899,11 +872,23 @@ export function SettingsMain({
         <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
         </Button>
-        <span className="sky-title">{label}</span>
+        <span className="sky-set-breadcrumb">
+          Settings
+          {page.group && (
+            <>
+              <span aria-hidden="true"> / </span>
+              {page.group}
+            </>
+          )}
+        </span>
       </header>
 
       <div className="sky-scroll">
         <div className="sky-col sky-set">
+          <div className="sky-set-heading">
+            <h1>{page.label}</h1>
+            <p>{page.description}</p>
+          </div>
           {note && <div className="sky-condensed">— {note} —</div>}
           {data &&
             (section === 'appearance' ? (
@@ -920,7 +905,7 @@ export function SettingsMain({
                   }))
                 }
               />
-            ) : section === 'ai' ? (
+            ) : section === 'models' ? (
               <AIPane data={data} reload={reload} />
             ) : section === 'connections' ? (
               <ConnectionsPane />

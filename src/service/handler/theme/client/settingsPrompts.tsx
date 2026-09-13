@@ -7,6 +7,7 @@ import type {
   PromptPreview,
   PromptUsage,
 } from '#shared/prompts/catalogTypes.ts'
+import { promptHref as href, promptIdOf as idOf } from './settingsRoutes.ts'
 import { type EditorFormat, type EditorHandle, mountEditor } from './wysiwyg/mod.ts'
 import './settingsPrompts.css'
 
@@ -17,14 +18,6 @@ interface Draft {
 }
 const drafts = new Map<string, Draft>()
 const changed = (draft: Draft) => draft.content !== draft.saved.content
-const href = (id?: string) => `/settings/prompts${id ? `/${id.split('/').map(encodeURIComponent).join('/')}` : ''}`
-function idOf(path: string): string | null {
-  try {
-    return path.startsWith('/settings/prompts/') ? decodeURIComponent(path.slice('/settings/prompts/'.length)) : null
-  } catch {
-    return null
-  }
-}
 async function request<T>(suffix: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${suffix}`, init)
   const data = (await response.json()) as T & { message?: string }
@@ -242,7 +235,9 @@ export function PromptsMain({
         >
           ‹ {id ? 'Prompts' : back.label}
         </Button>
-        <span className="sky-title">Prompts</span>
+        <span className="sky-set-breadcrumb">
+          Settings<span aria-hidden="true"> / </span>AI
+        </span>
       </header>
       <div className="sky-scroll">
         <div className="sky-prompt-page">

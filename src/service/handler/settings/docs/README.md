@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-09
+updated: 2026-09-13
 ---
 
 # Settings — the web's settings section
@@ -16,13 +16,20 @@ normal app's: sections in the sidebar (the way Explorer swaps in the
 file tree), plain words, no plumbing keys. The design boards live in
 the "Sky Settings" canvas artifact.
 
-Sections at `/settings` and `/settings/<section>`:
+Settings use one level of navigation: Appearance; Me (Writing style);
+AI (Models, Voice, Prompts); Connections; Notebook; Advanced; About Sky.
+Group labels open their first page; the adjacent disclosure toggles their children.
+`theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
+prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
+`/settings/writing-voice`, and `/settings/prompts/...` links keep working.
+
+Pages:
 
 - **Appearance** — theme (System / Light / Dark) and text size. Saved
   to `web.theme` / `web.textSize`; applied on the spot, and at app
   start by `useAppearanceBoot`. The sidebar's quick toggle writes the
   same key. Text size is a page zoom.
-- **Voice** — independent Sky and Sonny voice pickers, each with a Hear
+- **AI → Voice** — independent Sky and Sonny voice pickers, each with a Hear
   button (the audition's receive-only call, one row at a time). Picks
   save to `voice.voice` and `voice.researcherVoice`, resolved per session
   in `commands/lib/voice/sessionConfig.ts`, so changes apply to the next
@@ -30,11 +37,11 @@ Sections at `/settings` and `/settings/<section>`:
   [voice design](../../../../commands/lib/voice/docs/README.md).
   Microphone and speaker are the call bar's own browser-local choice
   (`sky-voice-devices`), shown here.
-- **Writing Voice** — `/settings/writing-voice`: model configuration picker, shared writing rules, draft
+- **Me → Writing style** — `/settings/me/writing-style`: model configuration picker, shared writing rules, draft
   practice, revision questions, and example compaction. Storage and learning
   belong to [writing voice](../../../../lib/writingVoice/docs/README.md).
   The selection saves to `ai.writingVoiceProfile` and applies on the next call.
-- **AI** — the model roles (registry `ROLES`, read-only, each naming
+- **AI → Models** — `/settings/ai/models`: the model roles (registry `ROLES`, read-only, each naming
   its configuration), every model configuration — the built-in
   `default-*` catalog and yours — and the ai/memory note count. Yours
   are defined right here: name, provider, model, optional baseUrl and
@@ -43,11 +50,10 @@ Sections at `/settings` and `/settings/<section>`:
   shown as "overrides the built-in"). Deleting prunes any `ai`/
   `profiles` shells the removal empties, so the file stays as
   `sky init` wrote it. Names: `PROFILE_NAME` (no spaces). Still to
-  come: pointing a role — or a single chat — at a configuration; the
-  registry's `AI_PROFILES` is read at process start, so the service's
-  own calls see a new profile after a restart, while every CLI run
-  sees it at once.
-- **Prompts** — `/settings/prompts`: a searchable list of real prompt files and
+  come: assigning roles through this page. The registry resolves the current
+  configuration on every call; the page currently displays the built-in role
+  defaults.
+- **AI → Prompts** — `/settings/ai/prompts`: a searchable list of real prompt files and
   their source references. Visual/Markdown editing, saved template links, sample
   variables, and a live rendered preview share one page. Saves create notebook
   customizations used by the runtime loader. New prompt and Restore built-in are

@@ -452,7 +452,7 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
       !options.builtinProfiles().some((profile) => profile.name === name)
     )
       return c.json(
-        { message: 'Choose another model in Settings > Writing Voice before removing this configuration.' },
+        { message: 'Choose another model in Settings > Me > Writing style before removing this configuration.' },
         409,
       )
     if (options.builtinProfiles().some((profile) => profile.name === name)) {

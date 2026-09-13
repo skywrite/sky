@@ -442,7 +442,7 @@ export function WritingVoicePane({
             nothingFoundMessage="No matching model configurations"
           />
           <p className="sky-set-note">
-            Manage model configurations and their settings in <a href="/settings/ai">AI &gt; Models</a>.
+            Manage model configurations and their settings in <a href="/settings/ai/models">AI &gt; Models</a>.
           </p>
         </Block>
       </details>

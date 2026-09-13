@@ -18,8 +18,10 @@ import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } fro
 import { OutboxMain } from './outbox.tsx'
 import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
-import { SETTINGS_SECTIONS, settingsHref, SettingsMain, settingsSectionOf, useAppearanceBoot } from './settings.tsx'
+import { SettingsMain, useAppearanceBoot } from './settings.tsx'
+import { SettingsNav } from './settingsNav.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
+import { settingsSectionOf } from './settingsRoutes.ts'
 import { SidebarIcon } from './sidebarIcon.tsx'
 import { SidebarUtilities } from './sidebarUtilities.tsx'
 import { StreaksMain } from './streaks.tsx'
@@ -238,17 +240,7 @@ function Canvas() {
                 <span>‹ Today</span>
               </button>
               <div className="sky-side-label">Settings</div>
-              {SETTINGS_SECTIONS.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className="sky-thread"
-                  data-active={s.id === settingsSection}
-                  onClick={() => navigate(settingsHref(s.id))}
-                >
-                  <span>{s.label}</span>
-                </button>
-              ))}
+              <SettingsNav section={settingsSection} navigate={navigate} />
             </>
           ) : isAutomations ? (
             <>
