@@ -11,6 +11,7 @@ import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import type { ChatCloseNotice } from './dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
+import { useItemHelpChat } from './dayItemHelp.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
@@ -154,6 +155,7 @@ function Canvas() {
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
+  const helpWithItem = useItemHelpChat(chat, path, openThread)
   const openImport = (id: string) => navigate(`/import/${id}`)
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])
@@ -456,6 +458,7 @@ function Canvas() {
             chatNotice={chatNotices[0]}
             onDismissChatNotice={dismissChatNotice}
             onOpen={openThread}
+            onHelp={helpWithItem}
             onOpenSaved={(chat) => void openSaved(chat)}
             onOpenImport={openImport}
             onImportMeeting={queue.take}

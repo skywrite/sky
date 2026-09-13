@@ -7,6 +7,7 @@ import { type ChatCloseNotice, DayChatClose } from './dayChatClose.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
+import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
 import {
   DayCommitmentOrder,
   DayItemGrip,
@@ -676,6 +677,11 @@ function PlanRow({
             )}
             {!readOnly && !inline && !organizing && (
               <span className="sky-item-actions">
+                <ItemHelpButton
+                  item={item}
+                  href={item.link ? itemHref(item, at) : null}
+                  disabled={Boolean(phase) || locked}
+                />
                 <button
                   type="button"
                   className="sky-item-details"
@@ -1021,6 +1027,7 @@ export function DayView({
   chatNotice,
   onDismissChatNotice = () => {},
   onOpen,
+  onHelp,
   onOpenSaved = () => {},
   onOpenImport = () => {},
   onImportMeeting,
@@ -1040,6 +1047,7 @@ export function DayView({
   chatNotice?: ChatCloseNotice
   onDismissChatNotice?: (id: string) => void
   onOpen: (id: string) => void
+  onHelp?: (message: string) => Promise<void>
   /** A saved chat, by its notebook-relative path, opened to continue */
   onOpenSaved?: (chat: string) => void
   onOpenImport?: (id: string) => void
@@ -1365,7 +1373,11 @@ export function DayView({
         organize.dismissUndo()
       }}
     >
-      <DayOrganizingContext.Provider value={organize}>{content}</DayOrganizingContext.Provider>
+      <Fragment key={view?.day.ymd}>
+        <DayItemHelp day={view?.day ?? null} onStart={onHelp}>
+          <DayOrganizingContext.Provider value={organize}>{content}</DayOrganizingContext.Provider>
+        </DayItemHelp>
+      </Fragment>
     </DayItemEditing>
   )
 }
