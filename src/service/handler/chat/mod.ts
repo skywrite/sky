@@ -194,6 +194,9 @@ export interface ModelChoice {
   /** Tokens the host serves in one request; absent when the model takes any budget */
   contextWindow?: number
   effort?: { default: Effort | null; levels: readonly Effort[] }
+  /** Same model and non-effort options: built-in effort variants share one picker entry. */
+  group?: string
+  builtin?: boolean
 }
 
 /** How a thread is tuned: the model it thinks with and the reading budget. */

@@ -56,7 +56,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { effortLevels, isEffortOverride, presetEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
+import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
 import { chatFileContext } from './files.ts'
 import { prepareChatImageResult } from './images.ts'
@@ -222,11 +222,21 @@ export function modelChoices(): ModelChoice[] {
   const all = getAllProfiles()
   const choices = Object.entries(all).map(([name, profile]) => ({
     name,
-    label: choiceLabel(name, all),
+    label: prettyModel(profile.model),
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
     effort: { default: presetEffort(profile), levels: effortLevels(profile) },
+    builtin: name in PROFILES,
+    group: JSON.stringify([
+      profile.provider,
+      profile.model,
+      profile.baseUrl,
+      profile.contextWindow,
+      Object.entries(profile.options ?? {})
+        .filter(([key]) => key !== 'effort' && key !== 'reasoningEffort')
+        .sort(([a], [b]) => a.localeCompare(b)),
+    ]),
   }))
   const builtin = (choice: ModelChoice) => Number(choice.name in PROFILES)
   return choices.toSorted((a, b) => builtin(a) - builtin(b))

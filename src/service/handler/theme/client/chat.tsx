@@ -31,7 +31,7 @@ import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
 import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
 import { ContextPanel } from './context.tsx'
-import { BudgetControl, ModelControl, TemporaryControl, type ThreadSettings } from './controls.tsx'
+import { ChatControls, TemporaryControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
@@ -671,14 +671,17 @@ function turnsOf(body: ThreadBody): Turn[] {
 export function useChat(id: string) {
   const [state, dispatch] = useReducer(reduce, id, initial)
   const [tuning, setTuning] = useState(0)
+  const [tuningError, setTuningError] = useState<string | null>(null)
   const [stoppingId, setStoppingId] = useState<string | null>(null)
   const [stopError, setStopError] = useState<string | null>(null)
   const posting = useRef<{ id: string; ready: Promise<unknown> } | null>(null)
   const stoppingRef = useRef<string | null>(null)
+  const tuningQueue = useRef<Promise<void>>(Promise.resolve())
   const tuningCount = useRef(0)
   const currentId = useRef(id)
   currentId.current = id
   useEffect(() => {
+    setTuningError(null)
     setStopError(null)
   }, [id])
   useEffect(() => {
@@ -841,18 +844,29 @@ export function useChat(id: string) {
       const id = state.id
       tuningCount.current++
       setTuning(tuningCount.current)
-      try {
-        const response = await fetch(`/chat/${id}/settings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(change),
-        }).catch(() => null)
-        if (!response?.ok) return
-        dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
-      } finally {
-        tuningCount.current--
-        setTuning(tuningCount.current)
+      const apply = async () => {
+        try {
+          if (currentId.current === id) setTuningError(null)
+          const response = await fetch(`/chat/${id}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(change),
+          }).catch(() => null)
+          if (!response?.ok) {
+            const body = (await response?.json().catch(() => ({}))) as { message?: string } | undefined
+            throw new Error(body?.message ?? 'Could not apply chat settings. Try again.')
+          }
+          dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
+        } catch (error) {
+          if (currentId.current === id) setTuningError((error as Error).message)
+        } finally {
+          tuningCount.current--
+          setTuning(tuningCount.current)
+        }
       }
+      const queued = tuningQueue.current.then(apply, apply)
+      tuningQueue.current = queued
+      await queued
     },
     [state.id],
   )
@@ -1180,6 +1194,7 @@ export function useChat(id: string) {
   return {
     state: state.id === id ? state : initial(id),
     tuning: tuning > 0,
+    tuningError,
     stopping: stoppingId === id && state.phase === 'busy',
     stopError,
     stop,
@@ -1929,7 +1944,7 @@ export function Composer({
   chat: Chat
   draft: ChatDraft
   placeholder: string
-  hints: ReactNode
+  hints?: ReactNode
   /** A + before the input that picks files — the door for people who don't drag */
   attach?: ComposerAttach
   /** Extra input methods stay after Send so its position remains predictable. */
@@ -1942,6 +1957,8 @@ export function Composer({
   autoFocus?: boolean
 }) {
   const { state, send } = chat
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  useEffect(() => setSettingsOpen(false), [state.id])
   const inputRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     const focus = (event: Event) => {
@@ -1999,6 +2016,7 @@ export function Composer({
 
   return (
     <div className="sky-composer-zone" hidden={hidden} style={hidden ? { display: 'none' } : undefined}>
+      <ChatControls key={state.id} chat={chat} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <div className="sky-composer">
         {status}
         {(draft.loading || draft.saving) && (
@@ -2066,6 +2084,8 @@ export function Composer({
                 value={draft.text}
                 onChange={(event) => draft.setText(event.currentTarget.value)}
                 onKeyDown={onKeyDown}
+                onFocus={() => setSettingsOpen(false)}
+                onPointerDown={() => setSettingsOpen(false)}
                 onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
                   const files: File[] = Array.from(event.clipboardData.files)
                   if (!attach || files.length === 0) return
@@ -2116,40 +2136,10 @@ export function Composer({
           </div>
         </div>
       </div>
-      <div className="sky-under">
-        {state.settings && (
-          <>
-            <ModelControl chat={chat} />
-            <span className="sky-hint">·</span>
-            <BudgetControl chat={chat} />
-          </>
-        )}
-        {/* The keys are worth a word before the first message; after it the tuning takes the room. */}
-        {state.turns.length === 0 && (
-          <>
-            {state.settings && <span className="sky-hint">·</span>}
-            {hints}
-          </>
-        )}
-        {/* The count says what sky read; a closed notebook's control already says nothing was. */}
-        {state.documents !== null && state.settings?.contextTokens !== 0 && (
-          <>
-            <span className="sky-hint">·</span>
-            <span>{state.documents} files in context</span>
-          </>
-        )}
-      </div>
+      {hints && state.turns.length === 0 && <div className="sky-under">{hints}</div>}
     </div>
   )
 }
-
-const KEY_HINTS = (
-  <>
-    <span className="sky-hint">Enter to send</span>
-    <span className="sky-hint">·</span>
-    <span className="sky-hint">Shift+Enter for a new line</span>
-  </>
-)
 
 /** A thread as its own page. */
 export function ChatMain({
@@ -2341,7 +2331,6 @@ export function ChatMain({
             draft={draft}
             hidden={voiceMode}
             placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
-            hints={KEY_HINTS}
             attach={attachments.attach}
             status={
               attachments.error && (

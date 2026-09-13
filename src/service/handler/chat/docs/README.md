@@ -237,21 +237,21 @@ a person can see and touch:
   queries are labeled as context carried forward, not new executions.
   Queries returning no files remain recorded. See
   [2026-09-06](2026-09-06-queries-beside-the-wait.md).
-- **The model a thread thinks with and how much it reads.** Both sit under
-  the composer, beside the files-in-context count: `Opus 5 ▾` opens the
-  configurations from Settings › AI grouped by provider, with the role
-  each one holds; `Reads up to 300k ▾` sets the reading budget on a
-  slider — Nothing, 25k, 50k, 100k, 300k, 500k, 750k. A model whose host
+- **Model, effort, and notebook context.** One centered summary above the
+  composer opens a connected panel upward. Model and effort share a row; the
+  context slider is directly adjustable above. Built-in presets differing
+  only in effort share one model choice, while custom named presets stay
+  distinct. A chat's effort is `default` (inherit its preset) or an explicit
+  supported level; changing models resets the override. Recovery, saved
+  reopen, branches, and reply threads preserve the chat's override. Turn
+  logs record the actual model, preset, and effective effort so editing a
+  preset cannot rewrite reply provenance.
+  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. A model whose host
   serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
   request) ends the slider at the last stop that fits, 50k there; the
   stops past it stay drawn, grayed, and a budget above them drops to that
   stop — on the page, in the routes, and behind `sky ai:chat
   --ai-max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
-  A chat's effort is `default` (inherit its preset) or an explicit supported
-  level; changing models resets the override. Recovery, saved reopen, branches,
-  and reply threads preserve the chat's override. Turn logs record the actual
-  model, preset, and effective effort so editing a preset cannot rewrite reply
-  provenance.
   Every message POST carries `{ message, profile, effort, contextTokens, saves }`
   captured from the composer, including connection retries. These choices
   are required (effort may be omitted by older clients): a client that omits
@@ -272,8 +272,8 @@ a person can see and touch:
   is gathered, no question is turned into queries, the model answers
   from the conversation and the tools it calls, and the context prompt
   says so outright rather than showing an empty activity block. The
-  gather line reads "not reading your notebook", the files count leaves
-  the strip, the Context panel says the notebook is closed, and each turn
+  gather line reads "not reading your notebook", the Context panel says
+  the notebook is closed, and each turn
   enters the story as "Notebook closed". A budget chosen later opens it:
   the next message gathers the baseline and runs as the first gathering
   turn, whose entry records the universe. The rule lives in the context
