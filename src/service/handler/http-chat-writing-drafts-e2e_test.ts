@@ -1,16 +1,208 @@
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium } from 'playwright'
 import { currentDraftVersion } from '#lib/writingVoice/draftTypes.ts'
+import { listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { serializeContextLog, splitContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './chat/draftsTestHelpers.ts'
+import { createChatRoutes } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
+
+test(
+  { name: 'a chat restored from large tool history shows an editable draft without recovery JSON', timeout: 90000 },
+  async (t) => {
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-large-draft-recovery-',
+        day: true,
+        chat: (root) => {
+          host = writingDraftTestHost(root)
+          return {
+            ...host,
+            snapshots: async () => {
+              const prior = createChatRoutes({ ...host, snapshots: async () => [] })
+              const response = await prior.request('/main/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  message: 'Draft an email to Jane.',
+                  profile: 'test-thread-model',
+                  contextTokens: 0,
+                  saves: true,
+                }),
+              })
+              const reply = await response.text()
+              if (!response.ok || reply.includes('event: error')) throw new Error(reply)
+              const snapshot = (await listChatAutosaves(path.join(root, 'state')))[0]!
+              const { body, entries, details } = splitContextLog(await readFile(snapshot.path, 'utf8'))
+              const result = details?.session?.modelMessages?.find((message) => message.role === 'tool')?.content[0]
+              if (
+                result?.type !== 'tool-result' ||
+                result.output.type !== 'json' ||
+                !result.output.value ||
+                typeof result.output.value !== 'object' ||
+                Array.isArray(result.output.value)
+              )
+                throw new Error('Expected the saved writer result')
+              result.output.value = { ...result.output.value, context: 'Mock tool history. '.repeat(150_000) }
+              await writeFile(snapshot.path, body + serializeContextLog(entries, details))
+              return host.snapshots!()
+            },
+          }
+        },
+      },
+      async ({ page, origin, errors }) => {
+        await page.goto(`${origin}/thread/main`)
+        const main = page.locator('.sky-split-main')
+        const draft = main.locator('.sky-writing-draft')
+        await draft.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        const restored = await (await page.request.get(`${origin}/chat/main`)).json()
+        assert({
+          given: 'a service recovering a conversation whose tool history spans several megabytes',
+          should: 'restore the draft link and keep recovery JSON out of the reply',
+          actual: [
+            restored.turns.length,
+            restored.turns.at(-1).content.includes('CONTEXT-LOG'),
+            await draft.locator('.sky-writing-draft-body').innerText(),
+            await main.locator('.sky-body pre').count(),
+          ],
+          expected: [2, false, ORIGINAL_DRAFT, 0],
+        })
+        await draft.getByRole('button', { name: 'Edit', exact: true }).click()
+        await draft.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+        await draft.getByRole('button', { name: 'Save edit', exact: true }).click()
+        await draft.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await page.reload()
+        await draft.getByRole('button', { name: 'Versions · 2', exact: true }).waitFor()
+        assert({
+          given: 'a direct edit to the recovered draft and a browser reload',
+          should: 'retain the edit without browser errors',
+          actual: [await draft.locator('.sky-writing-draft-body').innerText(), errors],
+          expected: [EDITED_DRAFT, []],
+        })
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'reformatted Ghostwriter drafts keep their editor in the latest reply through edits and reloads',
+    timeout: 90000,
+  },
+  async (t) => {
+    const subject = 'Atlas update\n============\n\n'
+    const present = (text: string) => text.replace(subject, '**Atlas update**\n\n')
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-reformatted-drafts-',
+        day: true,
+        chat: (root) =>
+          (host = writingDraftTestHost(root, {
+            draft: (input) => subject + (/warmer/i.test(input.instruction ?? '') ? WARM_DRAFT : ORIGINAL_DRAFT),
+            reply: (text) =>
+              `Here is the message.\n\n> ${present(text).replaceAll('\n', '\n> ')}\n\nCheck before sending.`,
+          })),
+      },
+      async ({ page, origin, errors }) => {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+        await page.setViewportSize({ width: 1440, height: 1100 })
+        const first = await page.request.post(`${origin}/chat/main/messages`, {
+          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+        })
+        if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
+        await page.goto(`${origin}/thread/main`)
+        const main = page.locator('.sky-split-main')
+        const replies = main.locator('.sky-turn[data-speaker="Sky"]')
+        await replies.first().getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        const composer = main.getByPlaceholder('Message sky…')
+        await composer.fill('Make this warmer.')
+        await composer.press('Enter')
+        const current = replies.nth(1).locator('.sky-writing-draft')
+        await current.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'Ghostwriter saves an underlined subject and the chat agent presents it in bold',
+          should: 'frame both appearances and place the sole editor on the latest reply without duplicate quotes',
+          actual: [
+            await main.locator('.sky-writing-draft').count(),
+            await main.locator('.sky-body blockquote').count(),
+            await replies.first().getByRole('button', { name: 'Edit', exact: true }).count(),
+            await current.getByRole('button', { name: 'Versions · 2', exact: true }).count(),
+          ],
+          expected: [2, 0, 0, 1],
+        })
+        await current.getByRole('button', { name: 'Edit', exact: true }).click()
+        assert({
+          given: 'Edit on a draft whose reply formatting changed',
+          should: 'edit the saved Ghostwriter record',
+          actual: await current.getByLabel('Edit draft text', { exact: true }).inputValue(),
+          expected: subject + WARM_DRAFT,
+        })
+        await current.getByLabel('Edit draft text', { exact: true }).fill(subject + EDITED_DRAFT)
+        await current.getByRole('button', { name: 'Save edit', exact: true }).click()
+        await current.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await page.reload()
+        await current.getByRole('button', { name: 'Versions · 3', exact: true }).waitFor()
+        await current.getByRole('button', { name: 'Copy', exact: true }).click()
+        const { drafts } = await (await page.request.get(`${origin}/chat/main/drafts`)).json()
+        assert({
+          given: 'a direct edit followed by a reload',
+          should: 'keep the same draft, full history, edited clipboard text, and one editor',
+          actual: [
+            drafts.length,
+            drafts[0].versions.map((version: { text: string }) => version.text),
+            await page.evaluate(() => navigator.clipboard.readText()),
+            await main.locator('.sky-writing-draft').getByRole('button', { name: 'Edit', exact: true }).count(),
+          ],
+          expected: [
+            1,
+            [subject + ORIGINAL_DRAFT, subject + WARM_DRAFT, subject + EDITED_DRAFT],
+            subject + EDITED_DRAFT,
+            1,
+          ],
+        })
+        const selected = await current.locator('.sky-writing-draft-body').evaluate((element) => {
+          const paragraphs = element.querySelectorAll('p')
+          const range = document.createRange()
+          range.setStart(paragraphs[0]!.firstChild!, 0)
+          range.setEnd(paragraphs[1]!.firstChild!, 25)
+          const selection = window.getSelection()!
+          selection.removeAllRanges()
+          selection.addRange(range)
+          return selection.toString()
+        })
+        await page.waitForResponse((reply) => reply.url().endsWith('/chat/main/drafts'))
+        assert({
+          given: 'text selected across paragraphs in a reformatted draft during background refresh',
+          should: 'preserve selection and render without browser errors',
+          actual: [await page.evaluate(() => window.getSelection()?.toString()), errors],
+          expected: [selected, []],
+        })
+        const screenshots = env.get('SKY_DRAFT_SCREENSHOTS')
+        if (screenshots) {
+          await mkdir(screenshots, { recursive: true })
+          await page.evaluate(() => window.getSelection()?.removeAllRanges())
+          await page.screenshot({ path: path.join(screenshots, 'reformatted-drafts.png'), fullPage: true })
+        }
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
 
 test(
   {

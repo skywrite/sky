@@ -15,12 +15,20 @@ export const WARM_DRAFT =
   'Hi Jane,\n\nThe Atlas draft is ready. I would appreciate your review by Friday.\n\nThanks for your help.'
 
 /** The HTTP routes, tools, writer and persistence are real; only model answers are scripted. */
-export function writingDraftTestHost(root: string, calls: { inputs?: VoiceDraftInput[]; briefs?: string[] } = {}) {
+export function writingDraftTestHost(
+  root: string,
+  calls: {
+    inputs?: VoiceDraftInput[]
+    briefs?: string[]
+    draft?: (input: VoiceDraftInput) => string
+    reply?: (text: string) => string
+  } = {},
+) {
   const voice = new WritingVoice(new WritingVoiceStore(root, path.join(root, 'voice-state')), {
     ...intelligence,
     draft: async (input) => {
       calls.inputs?.push(input)
-      return /warmer/i.test(input.instruction ?? '') ? WARM_DRAFT : input.meaning
+      return calls.draft?.(input) ?? (/warmer/i.test(input.instruction ?? '') ? WARM_DRAFT : input.meaning)
     },
     question: async (example) => ({
       before: example.original.slice(0, 499),
@@ -65,7 +73,9 @@ export function writingDraftTestHost(root: string, calls: { inputs?: VoiceDraftI
       }
       const result = await execute(input)
       if (!result.success) throw new Error(String(result.error))
-      const text = `Here is the message.\n\n> ${String(result.draft).replaceAll('\n', '\n> ')}\n\nPlease check the timing before sending.`
+      const text =
+        calls.reply?.(String(result.draft)) ??
+        `Here is the message.\n\n> ${String(result.draft).replaceAll('\n', '\n> ')}\n\nPlease check the timing before sending.`
       args.sink.write(text)
       const toolCallId = `mock-writing-${args.messages.length}`
       const responseMessages: ModelMessage[] = [

@@ -244,11 +244,6 @@ function trimBody(body: string): string {
   return body.replace(/\n+$/, '\n')
 }
 
-// (?:(?!-->)[\s\S])* — comment content that can never cross a `-->`. The
-// writer escapes interior `-->`, so the first terminator ends the block; the
-// trailing \n* tolerates a normalizer-collapsed final newline.
-const LOG_BLOCK = /^<!-- CONTEXT-LOG\n((?:(?!-->)[\s\S])*)\n-->\n*$/
-
 function findLogBlock(
   markdown: string,
 ): { start: number; entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
@@ -256,10 +251,16 @@ function findLogBlock(
   let idx: number
   while ((idx = markdown.indexOf(MARKER, from)) !== -1) {
     const atLineStart = idx === 0 || markdown[idx - 1] === '\n'
-    if (atLineStart) {
-      const match = markdown.slice(idx).match(LOG_BLOCK)
-      const entries = match ? parseLogJson(match[1]) : null
-      if (entries) return { start: idx, ...entries }
+    const headerEnd = idx + MARKER.length
+    if (atLineStart && markdown[headerEnd] === '\n') {
+      // Bun can silently fail a repeated-lookahead regex on large recovery
+      // blocks. Scan delimiters directly so tool history cannot become a reply.
+      // The writer escapes interior `-->`; only the first terminator may close it.
+      const end = markdown.indexOf('-->', headerEnd + 1)
+      if (end !== -1 && markdown[end - 1] === '\n' && /^\n*$/.test(markdown.slice(end + 3))) {
+        const entries = parseLogJson(markdown.slice(headerEnd + 1, end - 1))
+        if (entries) return { start: idx, ...entries }
+      }
     }
     from = idx + 1
   }

@@ -35,6 +35,76 @@ test('framed drafts replace only matching top-level writer quotes and preserve s
   })
 })
 
+test('draft frames recognize the same writing after Markdown presentation changes', () => {
+  const original = 'Atlas update\n============\n\nPlease review **the plan** by Friday.'
+  const revised = 'Atlas update\n============\n\nPlease review **the plan** by Monday.'
+  const record = { ...draft, versions: [{ text: original }, { text: revised }] } as WritingDraftView
+  for (const text of [original, revised]) {
+    const displayed = text
+      .replace('Atlas update\n============', '**Atlas update**')
+      .replace('**the plan**', '__the plan__')
+    const parts = splitWritingDrafts(
+      `Here is the draft.\n\n> ${displayed.replaceAll('\n', '\n> ')}\n\nCheck before sending.`,
+      [record],
+    )
+    assert({
+      given: 'a saved draft with an underlined subject displayed as bold Markdown in a reply',
+      should: 'link each appearance to the same editable record and retain its displayed wording',
+      actual: parts?.filter((part) => 'draftId' in part),
+      expected: [{ draftId: record.id, text: displayed }],
+    })
+  }
+  for (const text of [
+    revised.replace('Monday', 'Tuesday'),
+    `${revised}\n\nAnother message.`,
+    'Atlas update\n============',
+    'Atlas update\n============\n\nPlease review **the plan** by [Monday](https://example.com/different).',
+  ]) {
+    assert({
+      given: 'a quote with different wording, extra commentary, an excerpt, or a different link',
+      should: 'remain ordinary quoted text',
+      actual: splitWritingDrafts(`> ${text.replaceAll('\n', '\n> ')}`, [record]),
+      expected: null,
+    })
+  }
+})
+
+test('legacy Slack draft rendering also finds the saved draft without treating code as editable', () => {
+  const text = '**Atlas update**\n\nPlease review [the plan](https://example.com/plan).'
+  const slack = '*Atlas update*\n*============*\n\nPlease review <https://example.com/plan|the plan>.'
+  for (const saved of [text, slack]) {
+    const record = { ...draft, versions: [{ text: saved }] } as WritingDraftView
+    for (const reply of [
+      `\`\`\`slack\n${slack}\n\`\`\``,
+      `> \`\`\`text\n> ${slack.replaceAll('\n', '\n> ')}\n> \`\`\``,
+    ]) {
+      assert({
+        given: 'a legacy Slack fence already rendered as a readable review quote',
+        should: 'render the saved draft in that same position with either Slack or Markdown stored wording',
+        actual: splitWritingDrafts(reply, [record]),
+        expected: [{ draftId: record.id, text }],
+      })
+    }
+    assert({
+      given: 'the same draft in a Markdown source code fence',
+      should: 'keep the code sample read-only',
+      actual: splitWritingDrafts(`\`\`\`markdown\n${text}\n\`\`\``, [record]),
+      expected: null,
+    })
+  }
+})
+
+test('formatting matches cannot choose between distinct drafts with the same wording', () => {
+  const record = { ...draft, versions: [{ text: 'Atlas update\n============\n\nReady.' }] } as WritingDraftView
+  const other = { ...record, id: 'b'.repeat(32) }
+  assert({
+    given: 'two saved drafts that both match the formatted quote',
+    should: 'leave the quote alone instead of editing an arbitrary record',
+    actual: splitWritingDrafts('> **Atlas update**\n>\n> Ready.', [record, other]),
+    expected: null,
+  })
+})
+
 test('draft comparisons show what restoring a selected version would remove and add', () => {
   assert({
     given: 'the current draft says Monday and the selected version says Friday',

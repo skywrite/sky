@@ -10,6 +10,30 @@ import { type ContextTurnLog, serializeContextLog, splitContextLog } from './mod
 const FIXTURES_DIR = path.join(import.meta.dirname!, 'fixtures')
 const DOC_FIXTURES_DIR = path.join(import.meta.dirname!, '..', 'fixtures')
 
+test('large recovery logs retain their draft links and never become conversation text', () => {
+  const body = 'A mock transcript.\n'
+  const entries: ContextTurnLog[] = [{ turn: 1, queries: [] }]
+  const session = {
+    version: 1 as const,
+    writingDrafts: [{ id: 'a'.repeat(32), turn: 1 }],
+    host: { toolResult: 'Mock tool output. '.repeat(150_000) },
+  }
+  const markdown = body + serializeContextLog(entries, { session })
+  const parsed = splitContextLog(markdown)
+  assert({
+    given: 'a valid recovery block containing several megabytes of tool history',
+    should: 'separate all metadata from the transcript and recover the exact history and draft links',
+    actual: {
+      body: parsed.body === body,
+      entries: parsed.entries,
+      drafts: parsed.details?.session?.writingDrafts,
+      history: parsed.details?.session?.host?.toolResult === session.host.toolResult,
+      roundTrip: parsed.body + serializeContextLog(parsed.entries, parsed.details) === markdown,
+    },
+    expected: { body: true, entries, drafts: session.writingDrafts, history: true, roundTrip: true },
+  })
+})
+
 test('contextLog - timing is an optional v2 field and round-trips beside older entries', () => {
   withTimingEnvironment({ now: () => 0, instant: () => '2026-01-27T15:31:00.125Z', sink: () => {} }, () => {
     const span = new TimingSpan({ kind: 'turn', name: 'ai:chat' })

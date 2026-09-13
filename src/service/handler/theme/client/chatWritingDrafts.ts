@@ -1,29 +1,45 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
+import { legacySlackDraftMarkdown, parseChatMarkdown } from './chatMarkdown.ts'
 import type { Node } from './wysiwyg/model.ts'
-import { parseDocument } from './wysiwyg/parser.ts'
-import { contextFor, renderExport } from './wysiwyg/render.ts'
+import { contextFor, renderExport, renderStatic } from './wysiwyg/render.ts'
 import { serializeChildren } from './wysiwyg/serializer.ts'
 
 export type DraftReplyPart = { html: string } | { draftId: string; text: string }
 
+function draftMatchHtml(text: string): string {
+  // A writer's underlined subject is often presented as bold text in the review quote.
+  // Compare rendered markup, retaining the complete body, links, and literal code.
+  return renderStatic(legacySlackDraftMarkdown(text) ?? text).replace(
+    /^<h([1-6])>([\s\S]*?)<\/h\1>/,
+    '<p><strong>$2</strong></p>',
+  )
+}
+
 /** Match writer-owned text, never infer that an arbitrary quote is a draft. */
 export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): DraftReplyPart[] | null {
   if (!drafts.length) return null
-  const doc = parseDocument(source)
+  const doc = parseChatMarkdown(source)
   const parts: DraftReplyPart[] = []
   let blocks: Node[] = []
   let matched = false
   const normalize = (value: string) => value.replaceAll('\r\n', '\n').trim()
+  const candidates = drafts.map((draft) => ({
+    draft,
+    texts: draft.versions.map((version) => normalize(version.text)),
+  }))
   const flush = () => {
     if (blocks.length) parts.push({ html: renderExport(blocks, { ...contextFor(doc), rawAsText: true }) })
     blocks = []
   }
   for (const block of doc.blocks) {
     const text = block.type === 'blockquote' ? normalize(serializeChildren(block).join('\n')) : null
-    const draft = text
-      ? drafts.find((entry) => entry.versions.some((version) => normalize(version.text) === text))
-      : undefined
+    let matches = text ? candidates.filter((entry) => entry.texts.includes(text)) : []
+    if (text && !matches.length) {
+      const html = draftMatchHtml(text)
+      matches = candidates.filter((entry) => entry.texts.some((version) => draftMatchHtml(version) === html))
+    }
+    const draft = matches.length === 1 ? matches[0]!.draft : undefined
     if (draft) {
       flush()
       parts.push({ draftId: draft.id, text: text! })
