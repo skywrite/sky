@@ -66,10 +66,13 @@
   gap: 10px;
 }
 .sky-link-pick {
+  --mantine-cursor-type: pointer;
   flex: 1;
   min-width: 0;
 }
 .sky-link-choice {
+  position: relative;
+  isolation: isolate;
   align-items: center;
   padding: 14px 10px;
   border-radius: 8px;
@@ -77,6 +80,16 @@
 .sky-link-label {
   color: var(--sky-text);
   cursor: pointer;
+}
+/* Extend the native label's click target across the highlighted row. */
+.sky-link-label::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+.sky-link-label[data-disabled] {
+  cursor: not-allowed;
 }
 .sky-link-choice:hover,
 .sky-link-choice:focus-within,
