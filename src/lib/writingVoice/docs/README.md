@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-11
+updated: 2026-09-13
 ---
 
 # Writing voice
@@ -56,9 +56,11 @@ saved chat links.
 
 The shared `WritingDraftEditor` supplies editing, revision discussions, copying,
 version comparisons, restoration, and learning questions in both surfaces. The
-transcript retains the wording originally shown; the frame replaces only a
-matching writer-owned quote with the current version. Later revisions link back
-to that frame. Ordinary quotations remain read-only. Older recorded `me_voice`
+transcript retains the wording originally shown. Each main-chat response that
+quotes a writer-owned draft displays it in full: earlier appearances show their
+original wording with Copy, and the latest appearance owns the current editor.
+Reply-thread revisions update that current frame in place without adding a main
+response. Ordinary quotations remain read-only. Older recorded `me_voice`
 outputs acquire records when the owner first edits or discusses them.
 
 Chat continuation metadata carries draft IDs and the turn where each appeared.

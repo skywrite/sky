@@ -9,7 +9,148 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './chat/draftsTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
+
+test(
+  {
+    name: 'main chat revisions stay readable in each response while thread edits update the latest draft',
+    timeout: 90000,
+  },
+  async (t) => {
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-main-draft-revisions-',
+        day: true,
+        chat: (root) => (host = writingDraftTestHost(root)),
+      },
+      async ({ page, origin, errors }) => {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+        await page.setViewportSize({ width: 1440, height: 1100 })
+        const first = await page.request.post(`${origin}/chat/main/messages`, {
+          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+        })
+        if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
+        await page.goto(`${origin}/thread/main`)
+        const main = page.locator('.sky-split-main')
+        const replies = main.locator('.sky-turn[data-speaker="Sky"]')
+        const bodies = main.locator('.sky-writing-draft-body')
+        const original = replies.nth(0).locator('.sky-writing-draft')
+        const composer = main.getByPlaceholder('Message sky…')
+        await original.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+
+        await composer.fill('Make this warmer.')
+        await composer.press('Enter')
+        const second = replies.nth(1).locator('.sky-writing-draft')
+        await second.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'a draft revised from the main conversation composer',
+          should: 'keep the original readable and show the complete revision in the new response with its editor',
+          actual: [
+            await bodies.allInnerTexts(),
+            await original.getByText('Earlier version', { exact: true }).count(),
+            await original.getByRole('button', { name: 'Edit', exact: true }).count(),
+            await main.getByRole('link', { name: 'View current draft ↑', exact: true }).count(),
+          ],
+          expected: [[ORIGINAL_DRAFT, WARM_DRAFT], 1, 0, 0],
+        })
+        for (const [card, expected] of [
+          [original, ORIGINAL_DRAFT],
+          [second, WARM_DRAFT],
+        ] as const) {
+          await card.getByRole('button', { name: 'Copy', exact: true }).click()
+          assert({
+            given: 'Copy on an earlier or current draft',
+            should: 'copy the wording displayed in that response',
+            actual: await page.evaluate(() => navigator.clipboard.readText()),
+            expected,
+          })
+        }
+        await second.getByRole('button', { name: 'Edit', exact: true }).click()
+        await second.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+        await second.getByRole('button', { name: 'Save edit', exact: true }).click()
+        await second.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await composer.fill('Show the current wording again.')
+        await composer.press('Enter')
+        const latest = replies.nth(2).locator('.sky-writing-draft')
+        await latest.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        await page.reload()
+        await latest.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'another main response and a reload',
+          should: 'retain each response’s wording and keep just the newest appearance editable',
+          actual: [
+            await bodies.allInnerTexts(),
+            await main.locator('.sky-writing-draft').getByRole('button', { name: 'Edit', exact: true }).count(),
+          ],
+          expected: [[ORIGINAL_DRAFT, WARM_DRAFT, EDITED_DRAFT], 1],
+        })
+
+        const selected = await original.locator('.sky-writing-draft-body').evaluate((element) => {
+          const paragraphs = element.querySelectorAll('p')
+          const range = document.createRange()
+          range.setStart(paragraphs[0]!.firstChild!, 0)
+          range.setEnd(paragraphs[1]!.firstChild!, 25)
+          const selection = window.getSelection()!
+          selection.removeAllRanges()
+          selection.addRange(range)
+          return selection.toString()
+        })
+        await page.waitForResponse((reply) => reply.url().endsWith('/chat/main/drafts'))
+        assert({
+          given: 'earlier draft text selected across paragraphs and a background refresh',
+          should: 'preserve the selection',
+          actual: await page.evaluate(() => window.getSelection()?.toString()),
+          expected: selected,
+        })
+        await page.evaluate(() => window.getSelection()?.removeAllRanges())
+        const screenshots = env.get('SKY_DRAFT_SCREENSHOTS')
+        if (screenshots) {
+          await mkdir(screenshots, { recursive: true })
+          await page.screenshot({ path: path.join(screenshots, 'main-revisions.png'), fullPage: true })
+        }
+
+        await composer.fill('Keep this unsent main-chat message.')
+        const opened = page.waitForResponse(
+          (reply) => reply.url().endsWith('/chat/main/replies') && reply.request().method() === 'POST',
+        )
+        await latest.getByRole('button', { name: 'Work on this…', exact: true }).click()
+        const sourceTurn = (await opened).request().postDataJSON().turn
+        const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
+        const threadComposer = panel.getByPlaceholder('What would you like to change?')
+        await threadComposer.fill('Make this warmer.')
+        await threadComposer.press('Enter')
+        await latest
+          .getByText('The Atlas draft is ready. I would appreciate your review by Friday.', { exact: true })
+          .waitFor()
+        assert({
+          given: 'a revision requested through the latest draft’s discussion',
+          should: 'open at that response and update its card without adding a main reply or changing earlier drafts',
+          actual: [sourceTurn, await replies.count(), await bodies.allInnerTexts(), await composer.inputValue()],
+          expected: [3, 3, [ORIGINAL_DRAFT, WARM_DRAFT, WARM_DRAFT], 'Keep this unsent main-chat message.'],
+        })
+        await panel.getByRole('button', { name: 'Close thread', exact: true }).click()
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
+        assert({
+          given: 'all draft appearances on a phone viewport',
+          should: 'fit within the conversation and have one unique editor anchor without browser errors',
+          actual: [
+            await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            await main.locator('.sky-writing-draft[id]').count(),
+            await main.getByRole('link', { name: 'View current draft ↑', exact: true }).count(),
+            errors,
+          ],
+          expected: [true, 1, 0, []],
+        })
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
 
 test(
   {

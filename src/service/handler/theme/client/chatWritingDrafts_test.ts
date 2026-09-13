@@ -22,7 +22,7 @@ test('framed drafts replace only matching top-level writer quotes and preserve s
       'html' in parts[2]! && parts[2].html.includes('Check the timing before sending.'),
       'html' in parts[2]! && parts[2].html.includes('<blockquote>'),
     ],
-    expected: [3, { draftId: draft.id }, true, true, true],
+    expected: [3, { draftId: draft.id, text }, true, true, true],
   })
   assert({
     given: 'the same text inside code or in an unrelated message',

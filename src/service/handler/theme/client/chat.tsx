@@ -1666,7 +1666,17 @@ export function ThreadColumn({
   const writing = useWritingDrafts(state.id, `${state.turns.length}:${state.phase}`)
   const draftPositions = useMemo(() => {
     const positions = new Map<string, number>(writing.drafts.map((draft) => [draft.id, draft.turn * 2 - 1]))
-    if (!replyMode) return positions
+    if (!replyMode) {
+      // Main replies keep their wording; the latest appearance owns the live editor.
+      for (let i = 0; i < state.turns.length; i++) {
+        const turn = state.turns[i]
+        if (turn?.role !== 'assistant' || (busy && i === state.turns.length - 1)) continue
+        for (const part of splitWritingDrafts(turn.content, writing.drafts) ?? []) {
+          if ('draftId' in part) positions.set(part.draftId, i)
+        }
+      }
+      return positions
+    }
     const firstVisible = state.inherited - 1
     const inheritedDrafts = writing.drafts.filter((draft) => draft.turn * 2 - 1 < firstVisible)
     if (!inheritedDrafts.length) return positions
@@ -1679,7 +1689,7 @@ export function ThreadColumn({
       }
     }
     return positions
-  }, [writing.drafts, replyMode, state.inherited, state.turns])
+  }, [writing.drafts, replyMode, state.inherited, state.turns, busy])
   const draftAt = (draft: WritingDraftView) => draftPositions.get(draft.id) ?? draft.turn * 2 - 1
   const askAboutDraft = async (draft: WritingDraftView) => {
     const point = state.turns[draftAt(draft)]?.branchPoint
@@ -1764,6 +1774,7 @@ export function ThreadColumn({
             key={draft.id}
             chatId={state.id}
             draft={draft}
+            snapshot={draftAt(draft) >= 0 ? draft.versions[0]!.text : undefined}
             disabled={busy}
             onChange={writing.update}
             onAsk={(record) => void askAboutDraft(record)}
@@ -1780,6 +1791,8 @@ export function ThreadColumn({
                 chatId: state.id,
                 drafts: writing.drafts,
                 placed: writing.drafts.filter((draft) => draftAt(draft) === i),
+                turnIndex: i,
+                replyMode,
                 disabled: busy,
                 onChange: writing.update,
                 onAsk: (draft) => void askAboutDraft(draft),

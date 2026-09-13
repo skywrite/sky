@@ -197,9 +197,11 @@ a person can see and touch:
 - **Drafts can be edited in chat.** The shared writer's drafts have a frame
   with Edit, Copy, Undo, previous versions, and **Work on this…**. The latter
   opens the response's existing reply thread, focused on the same draft ID.
-  The current draft updates in place; the transcript keeps its original text.
+  Main conversation revisions display the full draft in their response. Earlier
+  responses retain their original wording; the latest appearance owns the editor.
+  Thread revisions update that current frame in place; the transcript keeps its original text.
   Storage, learning, and conflict behavior belong to
-  [writing voice](../../../../lib/writingVoice/docs/README.md#editable-drafts-in-chat).
+  [writing voice](../../../../lib/writingVoice/docs/README.md#shared-drafts-in-chat-and-outbox).
   The shared chat prompt puts each
   message draft in one Markdown blockquote during review and revision,
   including drafts destined for Slack. Introductions and editing notes stay

@@ -5,7 +5,7 @@ import { parseDocument } from './wysiwyg/parser.ts'
 import { contextFor, renderExport } from './wysiwyg/render.ts'
 import { serializeChildren } from './wysiwyg/serializer.ts'
 
-export type DraftReplyPart = { html: string } | { draftId: string }
+export type DraftReplyPart = { html: string } | { draftId: string; text: string }
 
 /** Match writer-owned text, never infer that an arbitrary quote is a draft. */
 export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): DraftReplyPart[] | null {
@@ -26,7 +26,7 @@ export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): 
       : undefined
     if (draft) {
       flush()
-      parts.push({ draftId: draft.id })
+      parts.push({ draftId: draft.id, text: text! })
       matched = true
     } else blocks.push(block)
   }
