@@ -34,6 +34,7 @@ async function send(app: App, id: string, message: string) {
   const response = await post(app, `/${id}/messages`, {
     message,
     profile: settings.model.current,
+    effort: settings.effort,
     contextTokens: settings.contextTokens,
     saves: settings.saves,
   })
@@ -60,6 +61,7 @@ test('reply threads inherit the review and tools, isolate refinements, and persi
       JSON.stringify({
         message: 'Review all five mock contracts.',
         profile: 'test-thread-model',
+        effort: 'medium',
         contextTokens: 0,
         saves: true,
       }),
@@ -82,6 +84,12 @@ test('reply threads inherit the review and tools, isolate refinements, and persi
     const created = await Promise.all([post(app, '/main/replies', point), post(app, '/main/replies', point)])
     const ids = await Promise.all(created.map(async (response) => ((await response.json()) as { id: string }).id))
     const child = ids[0]!
+    assert({
+      given: 'a reply thread created from a chat with an effort override',
+      should: 'inherit the override',
+      actual: (await json(app, `/${child}/settings`)).effort,
+      expected: 'medium',
+    })
     assert({
       given: 'two clicks on the same reviewed response',
       should: 'open the same reply thread',
@@ -152,6 +160,12 @@ test('reply threads inherit the review and tools, isolate refinements, and persi
       id: string
     }
     const reopened = await makeReply(restarted, opened.id)
+    assert({
+      given: 'a saved reply thread reopened after restart',
+      should: 'retain its effort override',
+      actual: (await json(restarted, `/${reopened}/settings`)).effort,
+      expected: 'medium',
+    })
     const restored = await json(restarted, `/${reopened}`)
     await send(restarted, reopened, 'Keep the original review context and make the response shorter.')
     assert({

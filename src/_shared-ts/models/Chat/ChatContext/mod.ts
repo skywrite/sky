@@ -29,6 +29,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { isAIChatPath, parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
+import type { Effort } from '#universal/ai/effort.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { ancestorsOf } from '../ChatStore/mod.ts'
 import {
@@ -715,10 +716,10 @@ export default class ChatContext {
   }
 
   /** The model that answered the turn, on its log entry — a thread may switch models between turns. */
-  recordTurnModel(model: string): void {
+  recordTurnModel(model: string, preset?: string, effort?: Effort): void {
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
-    if (entry) entry.model = model
-    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], model })
+    if (entry) Object.assign(entry, { model, preset, effort })
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], model, preset, effort })
   }
 
   /** Every turn keeps an entry, even when no context changed and no tool ran. */

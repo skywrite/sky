@@ -18,7 +18,7 @@ test('contextLog - timing is an optional v2 field and round-trips beside older e
     span.finish()
     const entries: ContextTurnLog[] = [
       { turn: 1, queries: [] },
-      { turn: 2, queries: [], timing: timingDetail(span) },
+      { turn: 2, queries: [], timing: timingDetail(span), model: 'test-model', preset: 'deep-work', effort: 'medium' },
     ]
     const markdown = 'A mock transcript.\n' + serializeContextLog(entries)
     const parsed = splitContextLog(markdown)

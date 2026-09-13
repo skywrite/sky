@@ -28,6 +28,7 @@ export function useChatVoice(chat: Chat) {
       after: after.current,
       turns: voice.latest().turns,
       profile: settings.model.current,
+      effort: settings.effort ?? 'default',
       contextTokens: settings.contextTokens,
       saves: settings.saves,
     })

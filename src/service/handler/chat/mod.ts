@@ -32,9 +32,11 @@ import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { chatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_FILES, splitChatFiles } from '#universal/ai/chatFiles.ts'
+import { isEffortOverride, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
+import { prettyModel } from '../settings/mod.ts'
 import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
 import { registerWritingDraftRoutes } from './drafts.ts'
@@ -51,6 +53,7 @@ import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 export interface ThreadPrefs {
   /** Model profile name */
   profile?: string
+  effort?: EffortOverride
   /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens?: number
   /** Whether ending files the thread. Active threads always keep a temporary recovery snapshot. */
@@ -190,11 +193,13 @@ export interface ModelChoice {
   roles: string[]
   /** Tokens the host serves in one request; absent when the model takes any budget */
   contextWindow?: number
+  effort?: { default: Effort | null; levels: readonly Effort[] }
 }
 
 /** How a thread is tuned: the model it thinks with and the reading budget. */
 export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
+  effort?: EffortOverride
   /** Token budget for the assembled document context; zero keeps the notebook closed */
   contextTokens: number
   /** How many documents the model sees as the context stands; null before any turn */
@@ -211,7 +216,14 @@ export interface ChatSettingsHost {
   defaultContextTokens: number
   choices(): ModelChoice[]
   /** A choice as a session takes it; throws on a name it doesn't know */
-  resolve(name: string): { model: ResolvedModel; profile: { provider: string; model: string }; contextWindow?: number }
+  resolve(
+    name: string,
+    effort?: EffortOverride,
+  ): {
+    model: ResolvedModel
+    profile: { provider: string; model: string; preset?: string; effort?: Effort }
+    contextWindow?: number
+  }
   /**
    * The profile a model id answers to, for a turn read back from a log —
    * the thread's current profile when it is that model, else the first
@@ -337,7 +349,7 @@ export interface Thread {
   /** Whether ending files the thread; both choices retain recovery while active. */
   saves: boolean
   /** Each reply's token counts and the profile that answered, by the reply's turn index */
-  usage: Map<number, TokenUsage & { model: string }>
+  usage: Map<number, TokenUsage & { model: string; modelLabel?: string; effort?: Effort }>
   timings: Map<number, string>
   /** The message the service was answering when it went down, until the person sends again */
   interrupted: InterruptedTurn | null
@@ -350,6 +362,7 @@ export interface Thread {
   context: RebuildReport | null
   /** Model profile name the thread thinks with */
   profile: string
+  effort?: EffortOverride
 }
 
 const LINE_CHARS = 140
@@ -698,6 +711,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             updatedAt: ++tick,
             context: null,
             profile: prefs.profile ?? options.settings?.defaultModel ?? '',
+            effort: prefs.effort ?? 'default',
           }
           // A thread read back from a snapshot or a saved chat carries each
           // turn's token counts and timing in its context log; the reply they
@@ -710,7 +724,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               if (entry.usage) {
                 const model =
                   (entry.model && options.settings?.profileFor?.(entry.model, thread.profile)) || thread.profile
-                thread.usage.set(at, { ...entry.usage, model })
+                thread.usage.set(at, {
+                  ...entry.usage,
+                  model: entry.preset ?? model,
+                  modelLabel: entry.model ? prettyModel(entry.model) : undefined,
+                  effort: entry.effort,
+                })
               }
               if (entry.timing) thread.timings.set(at, timingLine(entry.timing))
             }
@@ -720,6 +739,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           session.snapshotHostState = () => ({
             saves: thread.saves,
             profile: thread.profile,
+            effort: thread.effort,
             title: thread.title,
             parentId: thread.parent?.id ?? null,
             saved: savedOf(thread, baseDir),
@@ -819,6 +839,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         default: host.defaultModel,
         choices: host.choices(),
       },
+      effort: thread?.effort ?? prefs?.effort ?? 'default',
       contextTokens:
         thread?.session.contextTokens ??
         fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current)),
@@ -869,6 +890,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const body = rawBody as {
       message?: unknown
       profile?: unknown
+      effort?: unknown
       contextTokens?: unknown
       saves?: unknown
       continuing?: unknown
@@ -886,6 +908,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       return c.json({ message: 'Each message needs model, reading budget, and save settings. Reload the page.' }, 400)
     }
     if (typeof body.profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
+    if (body.effort !== undefined && !isEffortOverride(body.effort))
+      return c.json({ message: 'Choose a supported effort level or default.' }, 400)
     if (
       !(typeof body.contextTokens === 'number' && Number.isSafeInteger(body.contextTokens) && body.contextTokens >= 0)
     ) {
@@ -897,15 +921,23 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const host = options.settings
     if (!host) return c.json({ message: 'this host has no settings' }, 400)
     let chosen: ReturnType<ChatSettingsHost['resolve']>
+    const priorPrefs = threads.get(id)
+      ? { profile: threads.get(id)!.profile, effort: threads.get(id)!.effort }
+      : pending.get(id)
+    const effort = isEffortOverride(body.effort)
+      ? body.effort
+      : priorPrefs?.profile === body.profile
+        ? (priorPrefs.effort ?? 'default')
+        : 'default'
     try {
-      chosen = host.resolve(body.profile)
+      chosen = host.resolve(body.profile, effort)
     } catch (error) {
       return c.json({ message: (error as Error).message }, 400)
     }
     if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
       return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
     }
-    const prefs = { profile: body.profile, contextTokens: body.contextTokens, saves: body.saves }
+    const prefs = { profile: body.profile, effort, contextTokens: body.contextTokens, saves: body.saves }
     if (accepting.has(id) || threads.get(id)?.busy) {
       return c.json({ message: 'a turn is already running on this thread' }, 409)
     }
@@ -957,6 +989,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       }
       thread.session.setModel(chosen.model, chosen.profile)
       thread.profile = prefs.profile
+      thread.effort = prefs.effort
       if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
       thread.saves = prefs.saves
       options.onMessage?.(id, message)
@@ -1008,7 +1041,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             // The first reply includes the initial context gathering in its timing.
             return runWithUsageSource('ai:chat', () => thread.session.send(message, files, active.signal))
           })
-          if (turn.usage) thread.usage.set(thread.session.turns.length - 1, { ...turn.usage, model: thread.profile })
+          if (turn.usage)
+            thread.usage.set(thread.session.turns.length - 1, {
+              ...turn.usage,
+              model: thread.profile,
+              modelLabel: prettyModel(chosen.profile.model),
+              effort: chosen.profile.effort,
+            })
           if (turn.timing && !turn.error) thread.timings.set(thread.session.turns.length - 1, timingLine(turn.timing))
           clearInterval(beat)
           // A run still open when the turn ends never reported its end — the turn did.
@@ -1023,6 +1062,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           frame('turn', {
             ...(wireTurn(turn) as object),
             model: thread.profile,
+            modelLabel: prettyModel(chosen.profile.model),
+            effort: chosen.profile.effort,
             branchPoint: turn.error ? undefined : branchPoints(thread.session.turns).at(-1),
           })
           await chain
@@ -1052,6 +1093,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       after?: unknown
       turns?: unknown
       profile?: unknown
+      effort?: unknown
       contextTokens?: unknown
       saves?: unknown
     } | null
@@ -1072,8 +1114,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         400,
       )
     }
+    if (body.effort !== undefined && !isEffortOverride(body.effort))
+      return c.json({ message: 'Choose a supported effort level or default.' }, 400)
+    const effort = isEffortOverride(body.effort) ? body.effort : 'default'
     try {
-      const chosen = host.resolve(body.profile)
+      const chosen = host.resolve(body.profile, effort)
       if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
         return c.json({ message: 'The reading budget exceeds this model’s limit.' }, 400)
       }
@@ -1098,7 +1143,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       const conversation = voiceConversation(body.turns)
       if (conversation.length === 0) return c.json({ appended: 0 })
       if (!threads.has(id))
-        pending.set(id, { profile: body.profile, contextTokens: body.contextTokens, saves: body.saves })
+        pending.set(id, { profile: body.profile, effort, contextTokens: body.contextTokens, saves: body.saves })
       thread = await open(id)
       if (thread.busy) return c.json({ message: 'a turn is already running on this thread' }, 409)
       thread.busy = true
@@ -1240,6 +1285,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       parentId: null,
       approvals: found.resume.approvals,
       attachments: found.resume.attachments,
+      prefs: {
+        profile:
+          typeof found.resume.recovery?.host?.profile === 'string' ? found.resume.recovery.host.profile : undefined,
+        effort: isEffortOverride(found.resume.recovery?.host?.effort) ? found.resume.recovery.host.effort : 'default',
+        contextTokens: found.resume.recovery?.contextTokens,
+      },
     })
     return c.json({ id, opened: true }, 201)
   })
@@ -1308,7 +1359,18 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         }),
       )
     }
-    const branch = await open(branchId, { id: branchId, state, parent, parentId: id })
+    const branch = await open(branchId, {
+      id: branchId,
+      state,
+      parent,
+      parentId: id,
+      prefs: {
+        profile: source.profile,
+        effort: source.effort,
+        contextTokens: source.session.contextTokens,
+        saves: source.saves,
+      },
+    })
     await branch.session.snapshot()
     source.updatedAt = ++tick
     return c.json({ id: branchId, parent }, 201)
@@ -1332,6 +1394,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!host) return c.json({ message: 'this host has no settings' }, 404)
     const body = (await c.req.json().catch(() => null)) as {
       profile?: unknown
+      effort?: unknown
       contextTokens?: unknown
       saves?: unknown
     } | null
@@ -1340,8 +1403,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const profile = body?.profile
     const tokens = body?.contextTokens
     const saves = body?.saves
-    if (profile === undefined && tokens === undefined && saves === undefined) {
-      return c.json({ message: 'expected { profile?: name, contextTokens?: count, saves?: true | false }' }, 400)
+    const effort = body?.effort
+    if (profile === undefined && tokens === undefined && saves === undefined && effort === undefined) {
+      return c.json({ message: 'expected { profile?, effort?, contextTokens?, saves? }' }, 400)
     }
     if (profile !== undefined && typeof profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
     if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens >= 0)) {
@@ -1349,10 +1413,20 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
     if (saves !== undefined && typeof saves !== 'boolean')
       return c.json({ message: 'saves must be true or false' }, 400)
+    if (effort !== undefined && !isEffortOverride(effort))
+      return c.json({ message: 'Choose a supported effort level or default.' }, 400)
+    const thread = threads.get(id)
+    const held = pending.get(id)
+    const ridingWith = typeof profile === 'string' ? profile : (thread?.profile ?? held?.profile ?? host.defaultModel)
+    const nextEffort = isEffortOverride(effort)
+      ? effort
+      : typeof profile === 'string'
+        ? 'default'
+        : (thread?.effort ?? held?.effort ?? 'default')
     let chosen: ReturnType<ChatSettingsHost['resolve']> | undefined
-    if (typeof profile === 'string') {
+    if (typeof profile === 'string' || effort !== undefined) {
       try {
-        chosen = host.resolve(profile)
+        chosen = host.resolve(ridingWith, nextEffort)
       } catch (err) {
         return c.json({ message: (err as Error).message }, 400)
       }
@@ -1361,18 +1435,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     // The budget is fitted to the model it will ride with: the one chosen
     // now, else the thread's. A model with a smaller window lowers a budget
     // that no longer fits, whether or not this change names one.
-    const thread = threads.get(id)
-    const held = pending.get(id)
-    const ridingWith = typeof profile === 'string' ? profile : (thread?.profile ?? held?.profile ?? host.defaultModel)
     const window = chosen ? chosen.contextWindow : windowOf(host, ridingWith)
     const standing = thread?.session.contextTokens ?? held?.contextTokens ?? host.defaultContextTokens
     const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window)
     const budgetChanges = typeof tokens === 'number' || budget !== standing
     if (thread) {
       if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
-      if (chosen && typeof profile === 'string') {
+      if (chosen) {
         thread.session.setModel(chosen.model, chosen.profile)
-        thread.profile = profile
+        thread.profile = ridingWith
+        thread.effort = nextEffort
       }
       if (budgetChanges) thread.session.setContextTokens(budget)
       if (typeof saves === 'boolean') {
@@ -1382,7 +1454,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       thread.updatedAt = ++tick
     } else {
       const prefs = held ?? {}
-      if (typeof profile === 'string') prefs.profile = profile
+      if (chosen) {
+        prefs.profile = ridingWith
+        prefs.effort = nextEffort
+      }
       if (budgetChanges) prefs.contextTokens = budget
       if (typeof saves === 'boolean') prefs.saves = saves
       pending.set(id, prefs)

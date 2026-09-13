@@ -35,7 +35,15 @@ import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftCha
 import { createWritingDrafts } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModel, getAllProfiles, getProfile, PROFILES, resolveProfile, ROLES } from '#shared/ai/models.ts'
+import {
+  aiModel,
+  getAllProfiles,
+  getProfile,
+  getRoles,
+  PROFILES,
+  resolveProfile,
+  roleProfile,
+} from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
@@ -45,6 +53,7 @@ import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { effortLevels, isEffortOverride, presetEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { choiceLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
@@ -207,7 +216,7 @@ export function toolOutputSink(
 /** Every configuration, yours first, each with the roles it holds — what the picker lists. */
 export function modelChoices(): ModelChoice[] {
   const rolesBy = new Map<string, string[]>()
-  for (const [role, name] of Object.entries(ROLES)) {
+  for (const [role, name] of Object.entries(getRoles())) {
     rolesBy.set(name, [...(rolesBy.get(name) ?? []), ROLE_LABEL[role] ?? role])
   }
   const all = getAllProfiles()
@@ -217,6 +226,7 @@ export function modelChoices(): ModelChoice[] {
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
+    effort: { default: presetEffort(profile), levels: effortLevels(profile) },
   }))
   const builtin = (choice: ModelChoice) => Number(choice.name in PROFILES)
   return choices.toSorted((a, b) => builtin(a) - builtin(b))
@@ -225,7 +235,9 @@ export function modelChoices(): ModelChoice[] {
 /** The web chat's catalog and defaults: ai:chat's reasoning role and context ceiling. */
 export function createChatSettingsHost(): ChatSettingsHost {
   return {
-    defaultModel: ROLES.reasoning,
+    get defaultModel() {
+      return roleProfile('reasoning')
+    },
     defaultContextTokens: WEB_CHAT.contextTokens,
     choices: modelChoices,
     // A logged model id back to a profile name: the thread's own when it is that model, else the first that is.
@@ -234,11 +246,16 @@ export function createChatSettingsHost(): ChatSettingsHost {
       if (all[current]?.model === model) return current
       return Object.entries(all).find(([, profile]) => profile.model === model)?.[0]
     },
-    resolve: (name) => {
+    resolve: (name, effort = 'default') => {
       const profile = getProfile(name)
       return {
-        model: resolveProfile(profile),
-        profile: { provider: profile.provider, model: profile.model },
+        model: resolveProfile(profile, { effort }),
+        profile: {
+          provider: profile.provider,
+          model: profile.model,
+          preset: name,
+          effort: effort === 'default' ? (presetEffort(profile) ?? undefined) : effort,
+        },
         contextWindow: profile.contextWindow,
       }
     },
@@ -275,7 +292,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     // A restored thread keeps the start it had: its day, and the snapshot it writes.
     const startTime = restore?.startTime ?? context.notebookNow.plainDateTime
     const today = startTime.plainDate
-    const profile = getProfile(prefs.profile ?? ROLES.reasoning)
+    const profileName = prefs.profile ?? roleProfile('reasoning')
+    const profile = getProfile(profileName)
     const clock = {
       notebookDate: context.notebookNow.date,
       notebookTime: context.notebookNow.time,
@@ -297,8 +315,13 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       restore: restore?.resume ? undefined : restore?.state,
       attachments: restore?.attachments,
       parent: restore?.resume ? null : (restore?.parent ?? null),
-      model: resolveProfile(profile),
-      profile: { provider: profile.provider, model: profile.model },
+      model: resolveProfile(profile, { effort: prefs.effort }),
+      profile: {
+        provider: profile.provider,
+        model: profile.model,
+        preset: profileName,
+        effort: prefs.effort && prefs.effort !== 'default' ? prefs.effort : (presetEffort(profile) ?? undefined),
+      },
       producers: contextProducers(tasks),
       ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, WEB_CHAT.days, {
         secrets: context.secrets,
@@ -407,6 +430,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               ? host.profile
               : Object.entries(getAllProfiles()).find(([, candidate]) => candidate.model === priorModel)?.[0]
           const prefs: ThreadPrefs = {
+            effort: isEffortOverride(host?.effort) ? host.effort : 'default',
             saves: typeof host?.saves === 'boolean' ? host.saves : true,
             ...(profile ? { profile } : {}),
             ...(budget !== undefined ? { contextTokens: budget } : {}),

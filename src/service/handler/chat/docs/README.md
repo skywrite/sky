@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -247,9 +247,15 @@ a person can see and touch:
   stops past it stay drawn, grayed, and a budget above them drops to that
   stop — on the page, in the routes, and behind `sky ai:chat
   --max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
-  Every message POST carries `{ message, profile, contextTokens, saves }`
+  A chat's effort is `default` (inherit its preset) or an explicit supported
+  level; changing models resets the override. Recovery, saved reopen, branches,
+  and reply threads preserve the chat's override. Turn logs record the actual
+  model, preset, and effective effort so editing a preset cannot rewrite reply
+  provenance.
+  Every message POST carries `{ message, profile, effort, contextTokens, saves }`
   captured from the composer, including connection retries. These choices
-  are required: an older client that omits them must reload, and an unknown
+  are required (effort may be omitted by older clients): a client that omits
+  the original choices must reload, and an unknown
   profile or incompatible budget is refused before context or model work.
   The routes reserve the turn before restoration or construction, build a
   new thread with its request's choices, and apply them to an existing or
@@ -258,7 +264,7 @@ a person can see and touch:
   `GET /chat/:id/settings` answers the
   tuning — the thread's own, else what was chosen before its first
   message, else the host's defaults (the Thinking role, ai:chat's 300k).
-  `POST /chat/:id/settings` with `{ profile?, contextTokens? }` changes it:
+  `POST /chat/:id/settings` with `{ profile?, effort?, contextTokens?, saves? }` changes it:
   a live thread swaps the model for its next turn and reassembles its
   context under a new budget at once; a thread not yet built keeps the
   choice for when its first message builds it. The first stop is

@@ -5,6 +5,7 @@ import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { replyThreadsDir } from '#shared/models/Chat/document/lineage.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
 import { chatStatistics, type ChatStatistics } from '#shared/models/Chat/document/statistics.ts'
+import { isEffortOverride } from '#universal/ai/effort.ts'
 import type { BranchPoint } from './branchPoint.ts'
 import { branchPoints } from './branchPoint.ts'
 import type { ChatRoutesOptions, Thread, ThreadRestore, ThreadState } from './mod.ts'
@@ -150,6 +151,7 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
             attachments: found.resume.attachments,
             prefs: {
               profile,
+              effort: isEffortOverride(recovery?.host?.effort) ? recovery.host.effort : (source.effort ?? 'default'),
               contextTokens: recovery?.contextTokens ?? source.session.contextTokens,
               saves: source.saves,
             },
@@ -170,7 +172,12 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
           ...source.session.threadSeedAt(point.turn),
           parent: { chat: path.relative(host.baseDir, parentPath), ...point, kind: 'thread' },
           parentId: id,
-          prefs: { profile: source.profile, contextTokens: source.session.contextTokens, saves: source.saves },
+          prefs: {
+            profile: source.profile,
+            effort: source.effort,
+            contextTokens: source.session.contextTokens,
+            saves: source.saves,
+          },
         })
         host.changed(source)
         await Promise.all([source.session.snapshot(), thread.session.snapshot()])

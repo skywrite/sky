@@ -214,6 +214,7 @@ async function send(app: App, url: string, body: { message: string }): Promise<R
   return post(app, url, {
     ...body,
     profile: settings.model.current,
+    effort: settings.effort,
     contextTokens: settings.contextTokens,
     saves: settings.saves,
   })
@@ -223,6 +224,60 @@ interface Frame {
   event: string
   data: Record<string, unknown> | null
 }
+
+test('chat effort overrides apply to one thread, reset on model changes, and keep reply provenance', async () => {
+  const catalog: ChatSettingsHost = {
+    ...settingsHost,
+    resolve: (name, effort = 'default') => {
+      if (effort === 'max') throw new Error('Unsupported effort')
+      return {
+        ...settingsHost.resolve(name),
+        profile: { provider: 'test', model: name, preset: name, effort: effort === 'default' ? 'high' : effort },
+      }
+    },
+  }
+  const host = await testHost({
+    settings: catalog,
+    invokeModel: async () => ({
+      ...EMPTY,
+      text: 'A sample reply.',
+      usage: {
+        inputTokens: 4,
+        outputTokens: 2,
+        totalTokens: 6,
+        inputTokenDetails: { noCacheTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        outputTokenDetails: { textTokens: 2, reasoningTokens: 0 },
+      },
+    }),
+  })
+  try {
+    const app = appWith(host)
+    await post(app, '/chat/effort/settings', { effort: 'medium', contextTokens: 0 })
+    const frames = parseSSE(await (await send(app, '/chat/effort/messages', { message: 'Review the sample.' })).text())
+    const rejected = await post(app, '/chat/effort/settings', { effort: 'max' })
+    const unchanged = await getJson(app, '/chat/effort/settings')
+    const reset = (await (await post(app, '/chat/effort/settings', { profile: 'test-quick' })).json()) as {
+      effort: string
+    }
+    const restored = await getJson(app, '/chat/effort')
+    assert({
+      given: 'an effort override followed by an unsupported adjustment and a model change',
+      should: 'reject unsupported effort, reset to the new preset default, and preserve the earlier reply metadata',
+      actual: [
+        frames.find((frame) => frame.event === 'turn')?.data?.effort,
+        rejected.status,
+        unchanged.effort,
+        reset.effort,
+        restored.usage[0].modelLabel,
+        restored.usage[0].effort,
+        (await getJson(app, '/chat/other/settings')).effort,
+      ],
+      expected: ['medium', 400, 'medium', 'default', 'Test Thinking', 'medium', 'default'],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
 
 /** The frames of a finished SSE body, in order. */
 function parseSSE(text: string): Frame[] {
@@ -893,7 +948,17 @@ test({ name: 'chat route - a reply carries its token counts, on the stream and o
     actual: { frame: { usage: turn.usage, model: turn.model }, thread: thread.usage },
     expected: {
       frame: { usage: { input: 2, cacheRead: 3654, cacheWrite: 536, output: 46 }, model: 'test-thinking' },
-      thread: [{ at: 1, input: 2, cacheRead: 3654, cacheWrite: 536, output: 46, model: 'test-thinking' }],
+      thread: [
+        {
+          at: 1,
+          input: 2,
+          cacheRead: 3654,
+          cacheWrite: 536,
+          output: 46,
+          model: 'test-thinking',
+          modelLabel: 'Test Thinking',
+        },
+      ],
     },
   })
 })
@@ -1090,7 +1155,7 @@ test('chat route - every message applies its own settings before the model runs'
   const app = appWith(host)
   // A stale setting on the service cannot override the next message.
   await post(app, 'http://localhost/chat/request/settings', { profile: 'test-thinking', contextTokens: 300_000 })
-  const firstPrefs = { profile: 'test-quick', contextTokens: 5000, saves: true }
+  const firstPrefs = { profile: 'test-quick', effort: 'default', contextTokens: 5000, saves: true }
   const first = parseSSE(
     await (
       await post(app, 'http://localhost/chat/request/messages', {
@@ -1150,6 +1215,7 @@ test('chat route - missing or invalid message settings never invoke a model or c
     { profile: 'test-quick', contextTokens: 5000 },
     { ...valid, profile: 'unknown' },
     { ...valid, profile: null },
+    { ...valid, effort: 'unknown' },
     { ...valid, contextTokens: -1 },
     { ...valid, contextTokens: 0.5 },
     { ...valid, contextTokens: '5000' },
@@ -2402,7 +2468,7 @@ for (const saves of [false, true]) {
     )
     host.snapshots = production.snapshots
     const before = appWith(host)
-    const prefs = { profile: 'test-quick', contextTokens: 5000, saves }
+    const prefs = { profile: 'test-quick', effort: 'medium', contextTokens: 5000, saves }
     const url = 'http://localhost/chat/recovery'
     await (await post(before, `${url}/messages`, { message: 'Read the brief.', ...prefs })).text()
     const snapshot = host.snapshotPath!('recovery', START)
@@ -2418,13 +2484,13 @@ for (const saves of [false, true]) {
       should: 'restore the conversation, tool result, provider metadata, model, budget, and filing preference',
       actual: {
         turns: restored.turns.map((m: { content: string }) => m.content),
-        settings: [settings.model.current, settings.contextTokens, settings.saves],
+        settings: [settings.model.current, settings.contextTokens, settings.saves, settings.effort],
         history: seen[1].slice(0, -1),
         context: (await loadResumeSession(snapshot, { snapshot: true })).state.universePaths,
       },
       expected: {
         turns: ['Read the brief.', 'I read the brief.'],
-        settings: ['test-quick', 5000, saves],
+        settings: ['test-quick', 5000, saves, 'medium'],
         history: first.state.modelMessages,
         context: first.state.universePaths,
       },

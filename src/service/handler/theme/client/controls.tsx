@@ -1,5 +1,6 @@
 import { Menu, Popover, SegmentedControl, Slider } from '@mantine/core'
 import { Fragment, useEffect, useRef, useState } from 'react'
+import type { Effort, EffortOverride } from '#universal/ai/effort.ts'
 import { reachIndex, STOPS, stopIndex } from '#universal/ai/readingBudget.ts'
 import type { Chat } from './chat.tsx'
 
@@ -17,10 +18,12 @@ export interface ModelChoice {
   roles: string[]
   /** Tokens the host serves in one request; absent when the model takes any budget */
   contextWindow?: number
+  effort?: { default: Effort | null; levels: readonly Effort[] }
 }
 
 export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
+  effort?: EffortOverride
   contextTokens: number
   kept: number | null
   documents: number | null

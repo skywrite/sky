@@ -15,6 +15,7 @@ import {
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
+import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
@@ -88,6 +89,9 @@ export interface Turn {
   timing?: string
   /** The profile that answered, as the settings name it */
   model?: string
+  /** Captured from the model that answered; preset edits cannot relabel old replies. */
+  modelLabel?: string
+  effort?: Effort
   error?: string
   /** The server's branch reference; failed or interrupted page-only replies have none. */
   branchPoint?: BranchPoint
@@ -269,6 +273,8 @@ type Action =
       sources?: string[]
       usage?: TokenUsage
       model?: string
+      modelLabel?: string
+      effort?: Effort
       timing?: string
       branchPoint?: BranchPoint
     }
@@ -542,6 +548,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           usage: action.usage ?? r.usage,
           timing: action.timing ?? r.timing,
           model: action.model ?? r.model,
+          modelLabel: action.modelLabel ?? r.modelLabel,
+          effort: action.effort ?? r.effort,
           branchPoint: action.branchPoint,
         })),
       }
@@ -628,7 +636,7 @@ interface ThreadBody {
   runs?: Run[]
   queries?: TurnQueries[]
   /** Each reply's counts and the profile that answered, by turn index */
-  usage?: Array<TokenUsage & { at: number; model: string }>
+  usage?: Array<TokenUsage & { at: number; model: string; modelLabel?: string; effort?: Effort }>
   timings?: Array<{ at: number; text: string }>
   interrupted?: { message: string; when?: string | null } | null
 }
@@ -639,7 +647,9 @@ function interruptedOf(body: ThreadBody): Interrupted | null {
 }
 
 function turnsOf(body: ThreadBody): Turn[] {
-  const usageAt = new Map((body.usage ?? []).map(({ at, model, ...usage }) => [at, { usage, model }]))
+  const usageAt = new Map(
+    (body.usage ?? []).map(({ at, model, modelLabel, effort, ...usage }) => [at, { usage, model, modelLabel, effort }]),
+  )
   return body.turns.map((t, i) => {
     const { body: text, sources } = t.role === 'assistant' ? splitSources(t.content) : { body: t.content, sources: [] }
     return {
@@ -650,6 +660,8 @@ function turnsOf(body: ThreadBody): Turn[] {
       html: t.role === 'assistant' ? (renderMarkdown(text, true) ?? undefined) : undefined,
       usage: usageAt.get(i)?.usage,
       model: usageAt.get(i)?.model,
+      modelLabel: usageAt.get(i)?.modelLabel,
+      effort: usageAt.get(i)?.effort,
       timing: body.timings?.find((entry) => entry.at === i)?.text,
       branchPoint: body.branchPoints?.[i] ?? undefined,
     }
@@ -824,7 +836,7 @@ export function useChat(id: string) {
 
   // Tune the thread: what comes back is the tuning as the service holds it.
   const tune = useCallback(
-    async (change: { profile?: string; contextTokens?: number; saves?: boolean }) => {
+    async (change: { profile?: string; effort?: EffortOverride; contextTokens?: number; saves?: boolean }) => {
       if (!state.id) return
       const id = state.id
       tuningCount.current++
@@ -844,7 +856,8 @@ export function useChat(id: string) {
     },
     [state.id],
   )
-  const setModel = useCallback((profile: string) => tune({ profile }), [tune])
+  const setModel = useCallback((profile: string) => tune({ profile, effort: 'default' }), [tune])
+  const setEffort = useCallback((effort: EffortOverride) => tune({ effort }), [tune])
   const setContextTokens = useCallback((contextTokens: number) => tune({ contextTokens }), [tune])
   const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
@@ -865,6 +878,7 @@ export function useChat(id: string) {
       const body = JSON.stringify({
         message,
         profile: state.settings.model.current,
+        effort: state.settings.effort ?? 'default',
         contextTokens: state.settings.contextTokens,
         saves: state.settings.saves,
         continuing: state.turns.length > 0,
@@ -1023,6 +1037,8 @@ export function useChat(id: string) {
                   usage: d.usage as TokenUsage | undefined,
                   timing: d.timingText as string | undefined,
                   model: d.model as string | undefined,
+                  modelLabel: d.modelLabel as string | undefined,
+                  effort: d.effort as Effort | undefined,
                   branchPoint: d.branchPoint as BranchPoint | undefined,
                 })
                 const html = renderMarkdown(text, true)
@@ -1170,6 +1186,7 @@ export function useChat(id: string) {
     send,
     end,
     setModel,
+    setEffort,
     setContextTokens,
     setSaves,
     reload,
@@ -2507,7 +2524,11 @@ export function TurnView({
           <div className="sky-reply-foot">
             <ReplyDetails
               usage={turn.usage}
-              model={turn.model ? (labelOf ?? ((p) => p))(turn.model) : undefined}
+              model={
+                turn.model
+                  ? `${turn.modelLabel ?? (labelOf ?? ((p) => p))(turn.model)}${turn.effort ? ` · ${effortLabel(turn.effort)}` : ''}`
+                  : undefined
+              }
               timing={turn.timing}
             />
             {(branch || onReplyThread) && (

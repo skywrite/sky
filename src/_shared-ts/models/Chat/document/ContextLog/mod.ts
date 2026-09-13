@@ -41,6 +41,7 @@ import type { QueryTruncation } from '#shared/models/DomainCollection/query/reso
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
+import type { Effort } from '#universal/ai/effort.ts'
 import { readChatRecovery, type ChatRecovery } from '../../ChatStore/recovery.ts'
 import type { ChatStatistics } from '../statistics.ts'
 
@@ -148,6 +149,9 @@ export interface ContextTurnLog {
   timing?: TimingDetail
   /** The model that answered this turn (the provider's id, as the frontmatter's `model:` names the last one) — a thread may switch between turns */
   model?: string
+  /** The preset and effective effort used for this reply, independent of later edits. */
+  preset?: string
+  effort?: Effort
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -175,6 +179,8 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     if (entry.model) fields.push(`      "model": ${JSON.stringify(entry.model)}`)
+    if (entry.preset) fields.push(`      "preset": ${JSON.stringify(entry.preset)}`)
+    if (entry.effort) fields.push(`      "effort": ${JSON.stringify(entry.effort)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

@@ -29,6 +29,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { currentTimingSpan, thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
 import { type ChatImage, withChatImages } from '#universal/ai/chatImages.ts'
+import type { Effort } from '#universal/ai/effort.ts'
 import { withSources } from '#universal/ai/sources.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type ExternalFileRef, recordExternalFiles } from '../artifactRel.ts'
@@ -154,7 +155,7 @@ export interface ChatSessionOptions {
   /** Spread into every model invocation */
   model: ResolvedModel
   /** What the transcript records as provider and model */
-  profile: { provider: string; model: string }
+  profile: { provider: string; model: string; preset?: string; effort?: Effort }
   producers: ContextProducers
   ambient: AmbientContext
   /** Rendered once per session, concurrently with the baseline gather */
@@ -234,7 +235,7 @@ export default class ChatSession {
   private systemPrompt = ''
   private contextPrompt = ''
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
-  private profile: { provider: string; model: string }
+  private profile: { provider: string; model: string; preset?: string; effort?: Effort }
   /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
   private resumeSession: ResumeSession | null
   /** A title pinned before the save: a branch names its family on the parent so the folder is known. */
@@ -511,7 +512,7 @@ export default class ChatSession {
   }
 
   /** The provider and model answering from now on. */
-  get modelProfile(): { provider: string; model: string } {
+  get modelProfile(): { provider: string; model: string; preset?: string; effort?: Effort } {
     return this.profile
   }
 
@@ -519,7 +520,7 @@ export default class ChatSession {
    * Think with another model from the next turn on. The transcript records
    * one model — the one answering when it is saved.
    */
-  setModel(model: ResolvedModel, profile: { provider: string; model: string }): void {
+  setModel(model: ResolvedModel, profile: { provider: string; model: string; preset?: string; effort?: Effort }): void {
     this.engine.setModel(model)
     this.profile = profile
   }
@@ -701,7 +702,7 @@ export default class ChatSession {
       // the turn changed no context and so recorded nothing else.
       this.context.recordTurnTools(result.toolRecords)
       this.context.recordTurnUsage(result.usage)
-      this.context.recordTurnModel(this.profile.model)
+      this.context.recordTurnModel(this.profile.model, this.profile.preset, this.profile.effort)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const text = withChatImages(result.text, replyImages)
