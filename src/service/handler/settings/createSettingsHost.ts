@@ -12,6 +12,7 @@ import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
 import { createPromptCatalog } from '#shared/prompts/load.ts'
+import { createAboutMeHost } from './createAboutMeHost.ts'
 import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
   type ModelRow,
@@ -98,6 +99,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
       return Promise.resolve()
     },
     connections: createConnectionsHost(),
+    aboutMe: createAboutMeHost(notebookConfig),
     prompts: createPromptCatalog(),
     writingVoice: createWritingVoice(notebookConfig),
     reveal: async (target: RevealTarget) => {

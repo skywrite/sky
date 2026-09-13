@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { SETTINGS_PAGES, settingsHref, type SettingsGroup, type SettingsSection } from './settingsRoutes.ts'
 
 const GROUPS: Array<{ label: SettingsGroup; pages: SettingsSection[] }> = [
-  { label: 'Me', pages: ['writing-voice'] },
+  { label: 'Me', pages: ['about-me', 'writing-voice'] },
   { label: 'AI', pages: ['models', 'voice', 'prompts'] },
 ]
 

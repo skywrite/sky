@@ -5,6 +5,12 @@ export const SETTINGS_PAGES = {
     group: null,
     description: 'Make Sky feel comfortable, from the light in the room to the size of the text.',
   },
+  'about-me': {
+    label: 'About me',
+    href: '/settings/me',
+    group: 'Me',
+    description: 'Tell Sky about yourself. A little context helps it understand what matters to you.',
+  },
   'writing-voice': {
     label: 'Writing style',
     href: '/settings/me/writing-style',
@@ -70,6 +76,7 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   }
   if (clean === '/settings/ai') return 'models'
   if (clean === '/settings/appearance') return 'appearance'
+  if (clean === '/settings/about-me' || clean === '/settings/me/about') return 'about-me'
   if (clean === '/settings/voice') return 'voice'
   if (clean === '/settings/writing-voice') return 'writing-voice'
   if (clean === '/settings/prompts' || clean.startsWith('/settings/prompts/')) return 'prompts'

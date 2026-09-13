@@ -12,6 +12,7 @@
 
 import { Button, SegmentedControl, Select, Textarea, TextInput, useMantineColorScheme } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { AboutMePane } from './settingsAboutMe.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
@@ -720,18 +721,6 @@ function AIPane({ data, reload }: { data: SettingsData; reload: () => void }) {
           </div>
         )}
       </Block>
-      <Block head="Memory">
-        <Row
-          label="What Sky remembers about you"
-          sub="A few facts kept between conversations, as files under ai/memory."
-          last
-        >
-          {mono(`${data.memoryNotes} ${data.memoryNotes === 1 ? 'note' : 'notes'}`)}
-          <Button size="sm" component="a" href="/explorer/ai/memory">
-            View
-          </Button>
-        </Row>
-      </Block>
     </>
   )
 }
@@ -890,7 +879,10 @@ export function SettingsMain({
             <p>{page.description}</p>
           </div>
           {note && <div className="sky-condensed">— {note} —</div>}
-          {data &&
+          {section === 'about-me' ? (
+            <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
+          ) : (
+            data &&
             (section === 'appearance' ? (
               <AppearancePane data={data} change={change} />
             ) : section === 'voice' ? (
@@ -915,7 +907,8 @@ export function SettingsMain({
               <AdvancedPane data={data} />
             ) : (
               <AboutPane data={data} />
-            ))}
+            ))
+          )}
         </div>
       </div>
     </div>

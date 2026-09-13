@@ -19,6 +19,7 @@ import { OutboxMain } from './outbox.tsx'
 import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SettingsMain, useAppearanceBoot } from './settings.tsx'
+import { useAboutMeDraftGuard } from './settingsAboutMe.tsx'
 import { SettingsNav } from './settingsNav.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
 import { settingsSectionOf } from './settingsRoutes.ts'
@@ -72,6 +73,7 @@ function Canvas() {
   // The saved appearance — theme and text size — lands once, at start.
   useAppearanceBoot()
   usePromptDraftGuard()
+  useAboutMeDraftGuard()
   // On a phone the sidebar is a drawer; any navigation closes it.
   const navigate = (to: string) => {
     setMenu(false)

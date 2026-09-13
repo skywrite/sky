@@ -123,6 +123,16 @@ function parseProfile(doc: AboutMe): ParsedProfile {
     }
   }
 
+  // The settings editor stores the name in frontmatter and allows a freeform body.
+  // Legacy section profiles remain readable by the CLI and prompt templates.
+  if (typeof doc.yaml.name === 'string') {
+    const [first = '', ...rest] = doc.yaml.name.trim().split(/\s+/)
+    profile.firstName = first
+    profile.lastName = rest.join(' ')
+  }
+  if (typeof doc.yaml.name === 'string' && !sections.some((section) => section.heading === 'Bio'))
+    profile.bio = doc.markdown.trim()
+
   return profile
 }
 

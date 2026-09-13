@@ -16,7 +16,7 @@ normal app's: sections in the sidebar (the way Explorer swaps in the
 file tree), plain words, no plumbing keys. The design boards live in
 the "Sky Settings" canvas artifact.
 
-Settings use one level of navigation: Appearance; Me (Writing style);
+Settings use one level of navigation: Appearance; Me (About me, Writing style);
 AI (Models, Voice, Prompts); Connections; Notebook; Advanced; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
@@ -29,6 +29,18 @@ Pages:
   to `web.theme` / `web.textSize`; applied on the spot, and at app
   start by `useAppearanceBoot`. The sidebar's quick toggle writes the
   same key. Text size is a page zoom.
+- **Me → About me** — `/settings/me`: a name, freeform profile, and optional
+  website/profile links. Saves use the existing `journal/about-me.md`, preserving
+  frontmatter and legacy sections; `name` and `sites` live in frontmatter. No
+  separate profile store: voice, Outbox, prompt templates, and new text chat
+  sessions consume this same document. Freeform profiles remain readable through
+  `AboutMeDocument.bio`. Revision checks prevent stale editor saves. Drafts survive
+  app navigation and warn before leaving the tab.
+  Learn about me reads only the supplied public links and proposes an editable
+  profile with source links. Each redirect is resolved and pinned to public IPs;
+  reads are bounded. Web text is evidence, never instructions. Failed sources
+  remain visible, and accepting a suggestion changes the draft until Save.
+  The existing memory count and notebook link live here too.
 - **AI → Voice** — independent Sky and Sonny voice pickers, each with a Hear
   button (the audition's receive-only call, one row at a time). Picks
   save to `voice.voice` and `voice.researcherVoice`, resolved per session
@@ -43,7 +55,7 @@ Pages:
   The selection saves to `ai.writingVoiceProfile` and applies on the next call.
 - **AI → Models** — `/settings/ai/models`: the model roles (registry `ROLES`, read-only, each naming
   its configuration), every model configuration — the built-in
-  `default-*` catalog and yours — and the ai/memory note count. Yours
+  `default-*` catalog and yours. Yours
   are defined right here: name, provider, model, optional baseUrl and
   options (JSON), written to `ai.profiles.<name>`, which the registry
   already consumes (`getAllProfiles`; config wins on a name clash —

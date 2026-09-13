@@ -108,6 +108,90 @@
   margin-top: 0;
   margin-bottom: 16px;
 }
+.sky-set-profile-fields {
+  display: grid;
+  gap: 18px;
+}
+.sky-set-profile-fields .mantine-Textarea-input {
+  font-size: 18px;
+  line-height: 1.65;
+}
+.sky-set-profile-links {
+  display: grid;
+  gap: 12px;
+}
+.sky-set-profile-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sky-set-profile-link .mantine-TextInput-root {
+  flex: 1;
+  min-width: 0;
+}
+.sky-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 20px 0 10px;
+}
+.sky-set-savebar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: var(--sky-bg);
+  padding: 18px 0;
+  border-top: 1px solid var(--sky-border-soft);
+  z-index: 1;
+}
+.sky-set-savebar > span {
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-set-sources,
+.sky-set-followups {
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-set-sources {
+  padding-left: 20px;
+}
+.sky-set-sources a {
+  color: var(--sky-accent);
+  overflow-wrap: anywhere;
+}
+.sky-set-followups ul {
+  padding-left: 20px;
+}
+.sky-set-followups p {
+  margin-bottom: 6px;
+  font-weight: 550;
+}
+.sky-set-conflict {
+  padding: 18px 22px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-s2);
+  font-size: 16px;
+}
+.sky-set-conflict p {
+  margin: 0 0 8px;
+}
+.sky-set-memory {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 16px;
+}
+.sky-set-memory p {
+  margin: 4px 0 0;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
 .sky-set-disclosure {
   margin-top: 24px;
 }
@@ -124,6 +208,15 @@
 @media (max-width: 640px) {
   .sky-set-heading h1 {
     font-size: 30px;
+  }
+  .sky-set-profile-link {
+    gap: 4px;
+  }
+  .sky-set-savebar {
+    gap: 10px;
+  }
+  .sky-set-memory {
+    flex-wrap: wrap;
   }
   .sky-set-prof {
     flex-wrap: wrap;

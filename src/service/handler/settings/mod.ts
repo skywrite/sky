@@ -20,6 +20,7 @@ import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
+import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
 import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
 import { createPromptRoutes } from './prompts.ts'
 import { createWritingVoiceRoutes } from './writingVoice.ts'
@@ -286,6 +287,7 @@ export interface SettingsHost {
   connections?: ConnectionsHost
   prompts?: PromptCatalog
   writingVoice?: WritingVoice
+  aboutMe?: AboutMeHost
 }
 
 export type SettingsRoutesOptions = SettingsHost
@@ -358,6 +360,7 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
 
   // Accounts and keys — the keychain's page, routes of its own.
   if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))
+  if (options.aboutMe) app.route('/about-me', createAboutMeRoutes(options.aboutMe))
   if (options.prompts) app.route('/prompts', createPromptRoutes(options.prompts))
   if (options.writingVoice) app.route('/writing-voice', createWritingVoiceRoutes(options.writingVoice))
 
