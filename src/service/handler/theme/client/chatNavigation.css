@@ -1,0 +1,147 @@
+.sky-chat-viewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sky-chat-viewport[hidden] {
+  display: none;
+}
+
+.sky-chat-viewport:has(.sky-turn-nav) > .sky-scroll > .sky-col,
+.sky-chat-viewport:has(.sky-turn-nav) > .sky-reply-panel-scroll {
+  padding-inline-end: 56px;
+}
+
+.sky-reply-panel-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.sky-turn-nav,
+.sky-turn-nav-preview {
+  --sky-turn-nav-ink: var(--sky-text-2);
+  --sky-turn-nav-muted: var(--sky-dim);
+  --sky-turn-nav-bg: var(--sky-bg);
+}
+
+.sky-turn-nav[data-temporary='true'],
+.sky-turn-nav-preview[data-temporary='true'] {
+  --sky-turn-nav-ink: var(--mantine-color-violet-7);
+  --sky-turn-nav-muted: var(--mantine-color-violet-5);
+  --sky-turn-nav-bg: color-mix(in srgb, var(--mantine-color-violet-5) 3%, var(--sky-bg));
+}
+
+[data-mantine-color-scheme='dark'] .sky-turn-nav[data-temporary='true'],
+[data-mantine-color-scheme='dark'] .sky-turn-nav-preview[data-temporary='true'] {
+  --sky-turn-nav-ink: var(--mantine-color-violet-3);
+  --sky-turn-nav-muted: var(--mantine-color-violet-4);
+}
+
+.sky-turn-nav {
+  position: absolute;
+  z-index: 2;
+  inset-inline-end: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: min(480px, calc(100% - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-block: 4px;
+}
+
+.sky-turn-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--sky-turn-nav-muted);
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sky-turn-nav button > span {
+  width: 18px;
+  height: 3px;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0.55;
+  transition:
+    width 120ms ease,
+    opacity 120ms ease;
+}
+
+.sky-turn-nav button[aria-current='step'],
+.sky-turn-nav button:hover,
+.sky-turn-nav button:active,
+.sky-turn-nav button:focus-visible {
+  color: var(--sky-turn-nav-ink);
+}
+
+.sky-turn-nav button[aria-current='step'] > span,
+.sky-turn-nav button:hover > span,
+.sky-turn-nav button:active > span,
+.sky-turn-nav button:focus-visible > span {
+  width: 24px;
+  opacity: 1;
+}
+
+.sky-turn-nav button:hover,
+.sky-turn-nav button:active,
+.sky-turn-nav button:focus-visible {
+  background: color-mix(in srgb, var(--sky-turn-nav-ink) 8%, transparent);
+}
+
+.sky-turn-nav button:focus-visible {
+  outline: 2px solid var(--sky-turn-nav-ink);
+  outline-offset: -2px;
+}
+
+.sky-turn-nav-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(280px, calc(100vw - 72px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--sky-turn-nav-muted) 22%, var(--sky-turn-nav-bg));
+  border-radius: 12px;
+  background: var(--sky-turn-nav-bg);
+  color: var(--sky-text);
+  box-shadow: var(--sky-card-shadow);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sky-turn-nav-preview-count {
+  color: var(--sky-turn-nav-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (pointer: coarse) {
+  .sky-turn-nav {
+    inset-inline-end: 4px;
+  }
+
+  .sky-turn-nav button {
+    width: 44px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-turn-nav button > span {
+    transition: none;
+  }
+}

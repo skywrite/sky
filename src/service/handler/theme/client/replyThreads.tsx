@@ -6,6 +6,7 @@ import type { ReplyThreadSummary } from '../../chat/replyThreads.ts'
 import { Composer, ThreadColumn, useChat, useFollow } from './chat.tsx'
 import { useChatDraft } from './chatDraft.ts'
 import { Paperclip, useChatFiles } from './chatFiles.tsx'
+import { ChatTurnNavigation } from './chatNavigation.tsx'
 
 export type { ReplyThreadSummary }
 
@@ -86,7 +87,7 @@ export function ReplyThreadPanel({
   const draft = useChatDraft(state.id)
   const files = useChatFiles(state.id, busy, draft)
   const replies = state.turns.slice(state.inherited).filter((turn) => turn.role === 'assistant').length
-  useFollow(scroll, [state.turns, state.runs, state.gather], visible)
+  const pauseFollow = useFollow(scroll, [state.turns, state.runs, state.gather], visible)
   useEffect(() => {
     if (!visible || !state.loaded) return
     panel.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
@@ -137,21 +138,34 @@ export function ReplyThreadPanel({
             <span>Drop files into this thread</span>
           </div>
         )}
-        <div className="sky-reply-panel-scroll" ref={scroll}>
-          {!state.loaded ? (
-            <p className="sky-reply-empty" role="status">
-              Opening thread…
-            </p>
-          ) : (
-            <ThreadColumn chat={chat} replyMode />
-          )}
-          {state.loaded && state.turns.length === state.inherited && (
-            <p className="sky-reply-empty">
-              {thread.draftId
-                ? 'Describe what to change. Sky will update the same draft in chat.'
-                : 'Ask a follow-up or work on the next step. Sky has the conversation leading up to this response.'}
-            </p>
-          )}
+        <div className="sky-chat-viewport">
+          <div className="sky-reply-panel-scroll" ref={scroll}>
+            <div className="sky-reply-panel-turns">
+              {!state.loaded ? (
+                <p className="sky-reply-empty" role="status">
+                  Opening thread…
+                </p>
+              ) : (
+                <ThreadColumn chat={chat} replyMode />
+              )}
+              {state.loaded && state.turns.length === state.inherited && (
+                <p className="sky-reply-empty">
+                  {thread.draftId
+                    ? 'Describe what to change. Sky will update the same draft in chat.'
+                    : 'Ask a follow-up or work on the next step. Sky has the conversation leading up to this response.'}
+                </p>
+              )}
+            </div>
+          </div>
+          <ChatTurnNavigation
+            chatId={state.id}
+            turns={state.turns}
+            scroll={scroll}
+            onNavigate={pauseFollow}
+            firstVisible={state.inherited}
+            temporary={state.settings?.saves === false}
+            visible={visible}
+          />
         </div>
         <Composer
           chat={chat}

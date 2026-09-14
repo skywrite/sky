@@ -26,6 +26,7 @@ import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
+import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
 import { ChatSelectionMenu } from './chatSelection.tsx'
 import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
@@ -1230,12 +1231,22 @@ export type Chat = ReturnType<typeof useChat>
  */
 export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[], active = true) {
   const lastHeight = useRef(0)
+  const reading = useRef(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const resumeAtEnd = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight <= 2) reading.current = false
+    }
+    el.addEventListener('scroll', resumeAtEnd, { passive: true })
+    return () => el.removeEventListener('scroll', resumeAtEnd)
+  }, [ref])
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const follow = () => {
       const wasNearBottom = lastHeight.current - el.scrollTop - el.clientHeight < 160
-      if (active && wasNearBottom) el.scrollTop = el.scrollHeight
+      if (active && !reading.current && wasNearBottom) el.scrollTop = el.scrollHeight
       lastHeight.current = el.scrollHeight
     }
     follow()
@@ -1245,6 +1256,10 @@ export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[]
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
+  // An explicit turn jump holds the reading position even within the usual bottom threshold.
+  return useCallback(() => {
+    reading.current = true
+  }, [])
 }
 
 /**
@@ -1793,7 +1808,7 @@ export function ThreadColumn({
             {turn.role === 'user' && settled(i)}
             <TurnView
               turn={turn}
-              messageId={`chat-${state.id}-${turn.branchPoint ? `reply-${turn.branchPoint.turn}` : `message-${i + 1}`}`}
+              messageId={chatMessageId(state.id, turn, i)}
               writingDrafts={{
                 chatId: state.id,
                 drafts: writing.drafts,
@@ -2187,7 +2202,11 @@ export function ChatMain({
   const voiceMode = call.active
   const [endRequested, setEndRequested] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  useFollow(scrollRef, [state.turns, state.runs, state.gather, call.voice.state.turns, voiceMode], !voiceMode)
+  const pauseFollow = useFollow(
+    scrollRef,
+    [state.turns, state.runs, state.gather, call.voice.state.turns, voiceMode],
+    !voiceMode,
+  )
   const busy = state.phase !== 'idle'
   const draft = useChatDraft(state.id)
   const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved, draft)
@@ -2315,37 +2334,43 @@ export function ChatMain({
               <span>Drop files to read in this chat</span>
             </div>
           )}
-          <div
-            className="sky-scroll"
-            ref={scrollRef}
-            hidden={voiceMode}
-            style={voiceMode ? { display: 'none' } : undefined}
-          >
-            {empty ? (
-              <div className="sky-blank">
-                <p>Ask about your notebook. Answers come from your files.</p>
-              </div>
-            ) : (
-              <div className="sky-col">
-                <ThreadColumn
-                  chat={chat}
-                  title={title}
-                  branches={branches}
-                  onBranched={replyMode ? undefined : onBranched}
-                  onOpenSaved={onOpenSaved}
-                  replyMode={replyMode}
-                  onReplyThread={replyMode ? undefined : (point, draftId) => void openReply(point, draftId)}
-                  replyThreads={replies}
-                  activeReplyId={activeReply ?? undefined}
-                />
-                {replyError && (
-                  <p className="sky-chat-file-error" role="alert">
-                    {replyError}
-                  </p>
-                )}
-                {call.visible && <VoiceTranscript voice={call.voice} />}
-              </div>
-            )}
+          <div className="sky-chat-viewport" hidden={voiceMode}>
+            <div className="sky-scroll" ref={scrollRef}>
+              {empty ? (
+                <div className="sky-blank">
+                  <p>Ask about your notebook. Answers come from your files.</p>
+                </div>
+              ) : (
+                <div className="sky-col">
+                  <ThreadColumn
+                    chat={chat}
+                    title={title}
+                    branches={branches}
+                    onBranched={replyMode ? undefined : onBranched}
+                    onOpenSaved={onOpenSaved}
+                    replyMode={replyMode}
+                    onReplyThread={replyMode ? undefined : (point, draftId) => void openReply(point, draftId)}
+                    replyThreads={replies}
+                    activeReplyId={activeReply ?? undefined}
+                  />
+                  {replyError && (
+                    <p className="sky-chat-file-error" role="alert">
+                      {replyError}
+                    </p>
+                  )}
+                  {call.visible && <VoiceTranscript voice={call.voice} />}
+                </div>
+              )}
+            </div>
+            <ChatTurnNavigation
+              chatId={state.id}
+              turns={state.turns}
+              scroll={scrollRef}
+              onNavigate={pauseFollow}
+              firstVisible={replyMode ? state.inherited : 0}
+              temporary={state.settings?.saves === false}
+              visible={!voiceMode}
+            />
           </div>
 
           {voiceMode && <VoicePresence voice={call.voice} />}
