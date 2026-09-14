@@ -1512,7 +1512,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const id = c.req.param('id')
     const body = (await c.req.json().catch(() => null)) as { save?: unknown } | null
     const thread = threads.get(id)
-    if (!thread) return c.json({ message: 'no such thread' }, 404)
+    if (!thread) {
+      if (opening.has(id)) return c.json({ message: 'a turn is still running on this thread' }, 409)
+      // Never started: the id holds only the tuning chosen for it. Ending lets that go.
+      if (!pending.delete(id)) return c.json({ message: 'no such thread' }, 404)
+      return c.json({ saved: null, ended: [id] })
+    }
     if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
     if (openingReply(id)) return c.json({ message: 'A reply thread is opening. Try saving in a moment.' }, 409)
     // The thread's own setting decides; a caller may still say so outright.
@@ -1568,7 +1573,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       }
       const saved = (await thread.session.end({ ...options.endDefaults, save })) ?? checkpoint
       threads.delete(id)
-      return c.json({ saved })
+      return c.json({ saved, ended: [...children.map(([childId]) => childId), id] })
     } finally {
       release()
       for (const participant of participants) {

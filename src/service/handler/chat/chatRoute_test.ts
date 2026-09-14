@@ -896,6 +896,43 @@ test({ name: 'chat route - an unfiled thread keeps recovery until explicitly dis
   })
 })
 
+test({ name: 'chat route - ending a thread that never started drops what was chosen for it' }, async () => {
+  const host = await testHost()
+  const app = appWith(host)
+  try {
+    await post(app, 'http://localhost/chat/t10/settings', { saves: false, profile: 'test-quick' })
+    const chosen = await getJson(app, 'http://localhost/chat/t10/settings')
+    const ended = (await (await post(app, 'http://localhost/chat/t10/end', {})).json()) as {
+      saved: unknown
+      ended: string[]
+    }
+    const after = await getJson(app, 'http://localhost/chat/t10/settings')
+    const unknown = await post(app, 'http://localhost/chat/t11/end', { save: true })
+    assert({
+      given: 'a thread tuned before its first message, then ended before one',
+      should: 'answer that nothing was saved, return the id to the host defaults, and still refuse an unknown id',
+      actual: {
+        chosen: { saves: chosen.saves, profile: chosen.model.current },
+        saved: ended.saved,
+        ended: ended.ended,
+        after: { saves: after.saves, profile: after.model.current },
+        listed: (await getJson(app, 'http://localhost/chat')).threads.length,
+        unknown: { status: unknown.status, body: await unknown.json() },
+      },
+      expected: {
+        chosen: { saves: false, profile: 'test-quick' },
+        saved: null,
+        ended: ['t10'],
+        after: { saves: true, profile: 'test-thinking' },
+        listed: 0,
+        unknown: { status: 404, body: { message: 'no such thread' } },
+      },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
 test({ name: 'chat route - keeping can be turned off and on between turns' }, async () => {
   const host = await testHost()
   const app = appWith(host)

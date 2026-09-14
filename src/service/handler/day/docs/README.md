@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -24,6 +24,12 @@ task blocks within the list, preserving their notes, links and surrounding text.
 Inline forms add to-dos, reminders, and commitments, including when their
 sections are empty. A time makes a task a commitment; times accept the
 notebook's extended hours. Adding requires an existing, open day file.
+
+Each row's "Get Sky's help" opens a temporary chat with the item, its notes
+and links, and its source drafted in the composer (`dayItemHelp.tsx`).
+Nothing is sent. The person tunes the thread or edits the request first,
+then sends, or discards it. See the chat notes,
+[2026-09-13](../../chat/docs/2026-09-13-discard-what-was-never-sent.md).
 
 Task text edits in place by double-click on desktop or a tap on touch screens;
 links retain their normal navigation. Details opens the same draft in a dialog

@@ -68,13 +68,18 @@ class Draft {
 
   private restoreFiles(revision: string) {
     this.update({ loading: true, filesError: null })
+    // A draft cleared while its files were loading stays cleared.
     void readDraftFiles(this.id, revision).then(
-      (files) => this.update({ files, loading: false }),
-      () =>
-        this.update({
-          loading: false,
-          filesError: 'Saved attachments could not be restored. Retry, or reattach the files before sending.',
-        }),
+      (files) => {
+        if (this.state.filesRevision === revision) this.update({ files, loading: false })
+      },
+      () => {
+        if (this.state.filesRevision === revision)
+          this.update({
+            loading: false,
+            filesError: 'Saved attachments could not be restored. Retry, or reattach the files before sending.',
+          })
+      },
     )
   }
 
@@ -126,6 +131,13 @@ class Draft {
     this.setFiles((pending) => pending.filter((file) => !files.includes(file)))
   }
 
+  /** The thread is gone: nothing drafted for it stays in this browser. */
+  clear = () => {
+    this.update({ text: '', files: [], filesRevision: null, loading: false, textError: null, filesError: null })
+    this.saveMetadata()
+    this.saveFiles()
+  }
+
   retry = () => {
     this.saveMetadata()
     // A failed read is not an empty attachment draft: never overwrite it on retry.
@@ -148,6 +160,11 @@ export function stageChatDraft(id: string, text: string): string | null {
   const draft = draftFor(id)
   draft.setText(text)
   return draft.snapshot().textError
+}
+
+/** A thread the service has ended takes its draft, text and attachments, with it. */
+export function clearChatDraft(id: string): void {
+  draftFor(id).clear()
 }
 
 export function useChatDraft(id: string) {
@@ -174,6 +191,8 @@ export function useChatDraft(id: string) {
     saving: state.saving,
     error: state.textError ?? state.filesError,
     missingFiles: Boolean(state.filesRevision && !state.loading && state.files.length === 0),
+    /** Something is drafted for this thread: text, or attachments kept in this browser. */
+    present: Boolean(state.text || state.filesRevision),
     setText: draft.setText,
     setFiles: draft.setFiles,
     accepted: draft.accepted,

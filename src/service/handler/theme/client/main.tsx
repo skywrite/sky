@@ -159,7 +159,7 @@ function Canvas() {
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
 
   const openThread = (id: string) => navigate(`/thread/${id}`)
-  const helpWithItem = useItemHelpChat(chat, path, openThread)
+  const helpWithItem = useItemHelpChat(path, openThread)
   const openImport = (id: string) => navigate(`/import/${id}`)
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])

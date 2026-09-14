@@ -1,8 +1,7 @@
 import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Lexer, type Token } from 'marked'
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
-import type { Chat } from './chat.tsx'
-import { stageChatDraft, useChatDraft } from './chatDraft.ts'
+import { createContext, type ReactNode, useContext, useRef, useState } from 'react'
+import { stageChatDraft } from './chatDraft.ts'
 import type { DayItem, DayRef } from './day.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 
@@ -58,31 +57,10 @@ function helpMessage(item: DayItem, day: DayRef, href: string | null): string {
     .join('\n\n')
 }
 
-/** Start through the normal chat hook, so the first reply streams and errors keep the draft. */
-export function useItemHelpChat(chat: Chat, route: string, onOpen: (id: string) => void) {
-  const pending = useRef<{ id: string; message: string } | null>(null)
+/** Opens a temporary chat with the request in its composer; sending stays the person's action. */
+export function useItemHelpChat(route: string, onOpen: (id: string) => void) {
   const currentRoute = useRef(route)
   currentRoute.current = route
-  const draft = useChatDraft(chat.state.id)
-  const { state, send } = chat
-
-  useEffect(() => {
-    const start = pending.current
-    if (!start) return
-    if (route !== `/thread/${start.id}`) {
-      pending.current = null
-      return
-    }
-    if (state.id !== start.id || !state.loaded || !state.settings || chat.tuning) return
-    // An edited draft or an already-started conversation belongs to the person now.
-    if (state.turns.length || draft.text !== start.message || draft.files.length || state.settings.saves) {
-      pending.current = null
-      return
-    }
-    if (state.phase !== 'idle' || draft.loading) return
-    pending.current = null
-    void send(start.message, [], () => draft.accepted(start.message, []))
-  }, [route, state.id, state.loaded, state.settings, state.turns.length, state.phase, chat.tuning, draft, send])
 
   return async (message: string) => {
     // An ephemeral routing key keeps private task text out of browser URLs.
@@ -100,7 +78,6 @@ export function useItemHelpChat(chat: Chat, route: string, onOpen: (id: string) 
     if (currentRoute.current !== sourceRoute) return
     const error = stageChatDraft(id, message)
     if (error) throw new Error(error)
-    pending.current = { id, message }
     onOpen(id)
   }
 }

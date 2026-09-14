@@ -22,7 +22,7 @@ import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
-import { useChatDraft, type ChatDraft } from './chatDraft.ts'
+import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
@@ -1111,11 +1111,14 @@ export function useChat(id: string) {
   // Ending a thread files it through the same gate as ai:chat (or drops
   // it). The temporary notification keeps the full result behind View.
   // Every write the save makes to the machine-owned stores is among them;
-  // silence means nothing was written.
+  // silence means nothing was written. A thread with nothing sent is a draft
+  // and the tuning chosen for it: ending drops both, and every thread the
+  // service ended takes its draft in this browser with it.
   const end = useCallback(
     async (save: boolean): Promise<ChatCloseResult | null> => {
-      if (!state.id || state.phase !== 'idle' || state.turns.length === 0) return null
+      if (!state.id || state.phase !== 'idle') return null
       const id = state.id
+      const discarding = !save || state.turns.length === 0
       dispatch({ id, type: 'saving' })
       try {
         const response = await fetch(`/chat/${id}/end`, {
@@ -1123,14 +1126,16 @@ export function useChat(id: string) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ save }),
         })
-        if (!response.ok) {
+        // A draft the service never heard of has nothing there to end.
+        const nothingThere = response.status === 404 && state.turns.length === 0
+        if (!response.ok && !nothingThere) {
           const body = (await response.json().catch(() => ({}))) as { message?: string }
           return {
             summary: "Couldn't close chat",
             notes: [{ text: `Couldn't close — ${body.message ?? response.status}. Try again.`, tone: 'failed' }],
           }
         }
-        const { saved } = (await response.json()) as {
+        const { saved, ended } = (nothingThere ? { saved: null, ended: [id] } : await response.json()) as {
           saved: {
             summary: string
             exchanges: number
@@ -1142,9 +1147,11 @@ export function useChat(id: string) {
               | { logged: false; reason: 'resume' }
               | { logged: false; reason: 'error'; message: string }
           } | null
+          ended?: string[]
         }
+        for (const gone of ended ?? []) clearChatDraft(gone)
         const notes: Note[] = []
-        if (!saved) notes.push({ text: save ? 'Nothing to save' : 'Discarded — nothing kept', tone: 'quiet' })
+        if (!saved) notes.push({ text: discarding ? 'Discarded — nothing kept' : 'Nothing to save', tone: 'quiet' })
         else if (saved.aborted)
           notes.push({ text: `Not saved — ${saved.aborted.reason}. A recovery copy was written.`, tone: 'failed' })
         else
@@ -1172,9 +1179,9 @@ export function useChat(id: string) {
             ? 'Chat not saved'
             : saved
               ? 'Chat saved'
-              : save
-                ? 'Nothing to save'
-                : 'Chat discarded',
+              : discarding
+                ? 'Chat discarded'
+                : 'Nothing to save',
           notes,
         }
       } catch {
@@ -2185,6 +2192,9 @@ export function ChatMain({
   const draft = useChatDraft(state.id)
   const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved, draft)
   const empty = state.turns.length === 0 && !state.gather && !call.visible
+  // The end button needs something to end: a turn, or a draft in the composer.
+  // With nothing sent there is nothing to save, so it reads Discard.
+  const started = state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')
   const [panel, setPanel] = useState(false)
   const replyMode = state.parent?.kind === 'thread'
   const [replyVersion, setReplyVersion] = useState(0)
@@ -2266,14 +2276,21 @@ export function ChatMain({
               </Button>
             )}
             {!voiceMode && <TemporaryControl chat={chat} />}
-            {!voiceMode && (state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')) && (
+            {!voiceMode && (started || draft.present) && (
               <Button
                 size="sm"
                 className="sky-chat-close"
                 onClick={() => void endConversation()}
-                disabled={busy || chat.tuning || call.syncing || replies.some((reply) => reply.busy)}
+                disabled={
+                  busy ||
+                  !state.loaded ||
+                  !state.settings ||
+                  chat.tuning ||
+                  call.syncing ||
+                  replies.some((reply) => reply.busy)
+                }
               >
-                {state.settings?.saves === false
+                {!started || state.settings?.saves === false
                   ? state.phase === 'saving'
                     ? 'Closing…'
                     : 'Discard'

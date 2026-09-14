@@ -471,6 +471,12 @@ a person can see and touch:
   removes recovery without a transcript, day entry, memory, or person facts.
   Discard is the explicit end of an active conversation; a server restart
   is not. See [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
+  The end button shows once the thread holds anything: a turn, or a draft
+  in the composer. With nothing sent there is nothing to save, so it reads
+  Discard whatever the filing choice. Discard then forgets the draft and the
+  tuning chosen for the thread, in the browser and in the service. Every
+  thread the service ends takes its browser draft with it, reply threads
+  included. See [2026-09-13](2026-09-13-discard-what-was-never-sent.md).
 
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
@@ -522,6 +528,13 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-13 — route test: ending a thread tuned before its first message
+  drops the tuning and answers nothing saved; an unknown id still refuses.
+  Browser test on the day page: each kind of item opens as an unsent
+  temporary draft; one is discarded before sending (setting, draft, and
+  thread all gone); each is then sent from the composer and discarded
+  after the reply.
 
 - 2026-09-08 — a tool's lines read as cards: parse, compact, dedent, and
   token tests on the page's reader; `describeCall` tests on the research
