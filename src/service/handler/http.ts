@@ -594,6 +594,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.html(renderAppHtml('sky'))
   })
   app.get('/outbox', (c) => c.html(renderAppHtml('sky')))
+  app.get('/outbox/*', (c) =>
+    c.req.path.startsWith('/outbox/_api/') ? c.json({ message: 'Not found.' }, 404) : c.html(renderAppHtml('sky')),
+  )
   app.get('/streaks', (c) => c.html(renderAppHtml('sky · streaks')))
   app.get('/streaks/*', (c) =>
     c.req.path === '/streaks/_api' || c.req.path.startsWith('/streaks/_api/')

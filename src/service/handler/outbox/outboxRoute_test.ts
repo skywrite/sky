@@ -26,7 +26,13 @@ function harness(overrides: Partial<OutboxRoutesOptions> = {}) {
     placementError: null,
   }
   const host: OutboxRoutesOptions = {
-    report: async () => ({ items: [], preferences: { text: '', revision: 'v1' }, automation: null, lastScan: null }),
+    report: async () => ({
+      items: [],
+      done: [item],
+      preferences: { text: '', revision: 'v1' },
+      automation: null,
+      lastScan: null,
+    }),
     setup: async () => {
       actions.push('setup')
       return {}
@@ -193,13 +199,14 @@ test('Outbox routes require a same-origin explicit approval with nonempty revisi
 })
 
 test('Outbox reads never place drafts or enable automation', async () => {
-  const { app, actions } = harness()
+  const { app, actions, item } = harness()
   const response = await app.request('/status')
+  const report = await response.json()
   assert({
     given: 'opening the Outbox page',
-    should: 'only read status',
-    actual: [response.status, actions],
-    expected: [200, []],
+    should: 'only read status, including the finished items',
+    actual: [response.status, actions, report.done.map((entry: { id: string }) => entry.id)],
+    expected: [200, [], [item.id]],
   })
 })
 

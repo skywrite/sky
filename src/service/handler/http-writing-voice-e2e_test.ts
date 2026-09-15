@@ -73,6 +73,7 @@ test(
         outbox: {
           report: async () => ({
             items: await store.list(),
+            done: [],
             preferences: await store.preferences(),
             automation: { name: 'outbox', status: 'paused' },
             lastScan: null,

@@ -107,6 +107,7 @@ test(
         outbox: {
           report: async () => ({
             ...attentionQueue((await store.list()).filter((record) => record.status !== 'dismissed')),
+            done: [],
             preferences: await store.preferences(),
             automation: { name: 'outbox', status: 'paused' },
             lastScan: null,
@@ -202,10 +203,8 @@ test(
       })
       await requests.getByRole('button', { name: 'View source message', exact: true }).first().click()
       const sourceVisible = await page.evaluate((ref) => {
-        const source = document.getElementById(`outbox-source-${ref}`)!
-        const rail = source.closest('aside')!.getBoundingClientRect()
-        const box = source.getBoundingClientRect()
-        return box.top >= rail.top && box.top < rail.bottom
+        const box = document.getElementById(`outbox-source-${ref}`)!.getBoundingClientRect()
+        return box.top >= 0 && box.top < window.innerHeight
       }, sourceRef)
       assert({
         given: 'a request source link',
@@ -216,7 +215,7 @@ test(
       const sourceText = page.locator('.sky-outbox-message-body')
       assert({
         given: 'saved source messages with paragraphs, emphasis and a list',
-        should: 'make the original conversation readable in the source rail',
+        should: 'make the original conversation readable under the reply',
         actual: [
           await sourceText.locator('p').count(),
           await sourceText.locator('strong').textContent(),
@@ -386,16 +385,16 @@ test(
       for (const width of [1500, 430]) {
         await page.setViewportSize({ width, height: 1000 })
         await page.goto(`http://127.0.0.1:${address.port}/outbox`)
-        const row = page.locator('.sky-outbox-list-item').filter({ hasText: 'Atlas pilot scope' })
+        const row = page.locator('.sky-outbox-row').filter({ hasText: 'Atlas pilot scope' })
         await row.locator('.sky-outbox-card-summary').waitFor()
         assert({
           given: `a legacy count title, a dedicated summary and extensive analysis at ${width}px`,
           should: 'show the subject and short summary with a bounded preview, leaving the full analysis inside',
           actual: [
-            await row.locator('.sky-outbox-row-content > strong').textContent(),
+            await row.locator('.sky-outbox-row-title').textContent(),
             await row.locator('.sky-outbox-card-summary').textContent(),
             await row.getByText('3 requests need a reply', { exact: true }).count(),
-            await row.locator('.sky-outbox-row-suggestion').count(),
+            await row.getByText('Long drafting instructions belong inside the review.', { exact: false }).count(),
             (await row.boundingBox())!.height < 520,
             await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
           ],
@@ -433,13 +432,13 @@ test(
         expected: 0,
       })
       await awaitingTab.click()
-      const pendingRow = page.locator('.sky-outbox-list-item').filter({ hasText: unchecked.title })
+      const pendingRow = page.locator('.sky-outbox-row').filter({ hasText: unchecked.title })
       await pendingRow.waitFor()
       assert({
         given: 'the separate list of results awaiting a check',
         should: 'avoid presenting an unverified draft or question as an owner decision',
-        actual: await pendingRow.locator('.sky-outbox-preview').count(),
-        expected: 0,
+        actual: await pendingRow.locator('.sky-outbox-token').textContent(),
+        expected: 'Checking',
       })
       await page.goto(`http://127.0.0.1:${address.port}/outbox?item=${unchecked.id}`)
       await page.getByText('Awaiting the relevance check.', { exact: false }).waitFor()

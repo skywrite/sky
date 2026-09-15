@@ -16,7 +16,7 @@ import { OutboxStore } from './store.ts'
 import type { OutboxRecord } from './types.ts'
 
 const NOW = '2025-03-15 12:00'
-const ID = 'a'.repeat(32)
+const ID = '2025-03-15_1200_Clarify-the-draft'
 const moduleUrl = (file: string) => JSON.stringify(new URL(file, import.meta.url).href)
 
 async function until<T>(read: () => Promise<T | null>): Promise<T> {

@@ -16,6 +16,7 @@ import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { OutboxMain } from './outbox.tsx'
+import { outboxItemOf, outboxLegacyItemPath } from './outboxRoutes.ts'
 import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SettingsMain, useAppearanceBoot } from './settings.tsx'
@@ -48,6 +49,8 @@ function App() {
 function useRoute(): [{ path: string; search: string }, (to: string) => void] {
   const readRoute = () => {
     if (window.location.pathname === '/voice') history.replaceState(null, '', `/thread/${crypto.randomUUID()}`)
+    const legacyOutboxItem = outboxLegacyItemPath(window.location.pathname, window.location.search)
+    if (legacyOutboxItem) history.replaceState(null, '', legacyOutboxItem)
     return { path: window.location.pathname, search: window.location.search }
   }
   const [route, setRoute] = useState(readRoute)
@@ -97,7 +100,9 @@ function Canvas() {
   const automationName =
     path.startsWith('/automations/') && !isNewAutomation ? decodeURIComponent(path.slice('/automations/'.length)) : null
   const isAutomations = path === '/automations' || isNewAutomation || automationName !== null
-  const isOutbox = path === '/outbox'
+  // '' is the outbox list, an id one item's page, null any other page.
+  const outboxItem = outboxItemOf(path)
+  const isOutbox = outboxItem !== null
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
   const isSearch = path === '/search'
@@ -128,6 +133,8 @@ function Canvas() {
     (currentChat ? threadTitle(currentChat.turns, currentChat.inherited) : null) ??
     (currentChat?.parent ? 'New branch' : 'New chat')
   useEffect(() => {
+    // The outbox sets its own title: the list, or the open item's.
+    if (isOutbox) return
     document.title = threadId
       ? `sky:chat - ${chatTitle}`
       : isAudition
@@ -135,7 +142,7 @@ function Canvas() {
         : isStreaks
           ? 'sky · streaks'
           : 'sky'
-  }, [threadId, chatTitle, isAudition, isStreaks])
+  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -386,7 +393,7 @@ function Canvas() {
         ) : isClock ? (
           <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
         ) : isOutbox ? (
-          <OutboxMain navigate={navigate} />
+          <OutboxMain item={outboxItem ?? ''} navigate={navigate} />
         ) : isTracking ? (
           <TrackingMain path={path} navigate={navigate} />
         ) : isStreaks ? (

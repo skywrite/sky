@@ -166,15 +166,15 @@ async function planRequests(input: {
     throw new Error(
       'The complete reply exceeds 40,000 characters. All request assessments are saved; review this conversation in smaller reply groups.',
     )
+  // The brief merges the owner's questions across requests and offers shared reply options.
+  // Each request keeps its own questions inside requestPlans.
   const proposal: DraftProposal = {
     action: decisions.length ? 'decision' : 'draft',
     ...brief,
-    questions: decisions.flatMap(({ proposal }) => proposal.questions),
     recommendation: decisions
       .map(({ proposal }) => proposal.recommendation)
       .filter(Boolean)
       .join('\n\n'),
-    replyOptions: decisions.length === 1 ? decisions[0].proposal.replyOptions : [],
     draft,
     requestPlans: planned.map(({ request, proposal, destination }) => ({
       id: request.id,

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-13
+updated: 2026-09-14
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -33,7 +33,7 @@ The check establishes the intended reply, then the shared writer applies the cur
 
 ## Files and concurrency
 
-All Outbox-owned records live under `<userDataDir>/state/outbox/<notebook-key>/`, where the notebook key remains the first 16 hex characters of the SHA-256 of `DIR_BASE`. Decisions are `items/<conversation-hash>.md`; `search.md`, legacy `preferences.md`, scanner JSON, worker jobs, and locks share that root. This directory contains durable human state: dismissals, owner directions, review history, recorded sends, native draft references, and follow-up relationships. Include it in backups and notebook moves; it must not be cleared as a disposable cache. A damaged checkpoint is an error, not permission to reset the baseline and replay work.
+All Outbox-owned records live under `<userDataDir>/state/outbox/<notebook-key>/`, where the notebook key remains the first 16 hex characters of the SHA-256 of `DIR_BASE`. Decisions are `items/<id>.md`, in either id shape described under "Human review and native handoff"; `search.md`, legacy `preferences.md`, scanner JSON, worker jobs, and locks share that root. This directory contains durable human state: dismissals, owner directions, review history, recorded sends, native draft references, and follow-up relationships. Include it in backups and notebook moves; it must not be cleared as a disposable cache. A damaged checkpoint is an error, not permission to reset the baseline and replay work.
 
 Decision frontmatter retains the situation, reasoning, questions, source snapshots, original draft, approved pairs, and native draft reference. `draftId` and the Markdown body link to the canonical notebook `me/voice/drafts/<id>.md` record. Legacy inline drafts are adopted when opened or changed. The [shared draft contract](../../writingVoice/docs/README.md#shared-drafts-in-chat-and-outbox) owns naming, history, editing, learning, and concurrency with chat. Source messages, automation charters, and shared writing records keep their notebook owners.
 
@@ -58,6 +58,12 @@ Short writes use an atomic replacement and a content revision checked under a se
 ## Human review and native handoff
 
 `/outbox` lives in Sky's existing shell. Its list separates **Needs review** from **Ready in apps**, with a focused draft editor and source-message rail. Details exposes individual requests, review scope, resolution evidence, and links to their source messages. Explicit approval stores the original/final pair before calling a native draft command. Approval checks the saved source version again and requires acknowledgement of new messages. A provider preflight refuses to overwrite an existing unrelated draft or edits made in the native app.
+
+Item ids come in two shapes. Items created before 2026-09-14 keep their 32-character hash. A new scanner item is named `YYYY-MM-DD_HHMM_Slug` from the notebook-local time and the proposed title, for example `2026-09-12_1705_Approve-the-Atlas-pilot-budget`; a namesake in the same minute gets `-2`. The id is allocated once, when the record is first written, and every later write reuses it. Follow-ups keep deterministic hash ids so a repeated approval finds the child it already queued. Both shapes are valid in routes, the store, the workers, and the writing-draft source `outbox:<id>`; `isOutboxItemId` in `itemId.ts` is the single validator. The scanner finds an existing item by its conversation key.
+
+When several requests in one conversation need the owner's choice, the conversation brief merges them: one question per distinct decision, at most four, with two to four shared reply options. Each request keeps its own questions inside its plan.
+
+The status report carries `done` beside the open `items`: archived, sent, or answered items, newest first, at most one hundred. A conversation the scanner set aside on its own, with nothing drafted and nothing asked, stays out of `done`; it was never the person's to handle. Check results carry a severity. `warning` means a completed check could not check some conversations; the message keeps the counts and the retry sentence. `error` means the check itself failed or nothing could be checked.
 
 Items distinguish **Draft ready** from **Your decision**. Choosing a response option or entering a few words asks Sky to compose the reply locally. Once a draft exists, the shared chat editor supplies **Edit**, **Ask Sky to revise**, **Copy**, **Undo**, and version history. Ask Sky opens a discussion focused on the same record. Legacy inline editors retain **Revise with Sky**, **Shorter**, and **Warmer** until adoption. A missing fact remains an explicit question instead of a placeholder or invented answer. Generated text stays in review until the ordinary explicit native-draft approval.
 
@@ -125,6 +131,7 @@ The colocated tests cover strict date scope on every run, legacy checkpoint migr
 
 ## Notes
 
+- [2026-09-14 — Readable ids and merged decisions](2026-09-14-readable-ids-and-merged-decisions.md).
 - [2026-09-08 — Checks survive service restarts](2026-09-08-checks-survive-restarts.md).
 - [2026-09-08 — Fixed search ranges and response memory](2026-09-08-search-ranges-and-responses.md).
 - [2026-09-08 — Approval must not wait for follow-up drafting](2026-09-08-approval-before-followup-drafting.md).

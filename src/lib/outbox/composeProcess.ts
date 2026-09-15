@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type * as Config from '#config'
 import { withProcessLock } from '#lib/jobs/files.ts'
 import { createProcessJob, type JobRecord } from '#lib/jobs/mod.ts'
+import { isOutboxItemId } from './itemId.ts'
 import type { OutboxStore } from './store.ts'
 import { OutboxError, type OutboxRecord } from './types.ts'
 
@@ -25,7 +26,7 @@ export function createComposeProcess(
   options: { module?: string | URL } = {},
 ) {
   const directory = (id: string) => {
-    if (!/^[a-f0-9]{32}$/.test(id)) throw new OutboxError('Invalid Outbox item.', 404)
+    if (!isOutboxItemId(id)) throw new OutboxError('Invalid Outbox item.', 404)
     return path.join(store.stateDir, 'compose-jobs', id)
   }
   const job = (id: string) =>

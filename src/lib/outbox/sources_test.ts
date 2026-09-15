@@ -129,3 +129,29 @@ test('Outbox retains long linked histories and detects changes beyond the former
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('Outbox reads a capture whose participants are not plain text as blank participants', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-outbox-participants-'))
+  const sources = new SavedMessages(root, { Slack: [], Email: [] })
+  const ref = '2025-03-15/actions/messages/email_Atlas.md'
+  try {
+    const file = path.join(root, resolveTimeRef(ref))
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(
+      file,
+      new Document(
+        { medium: 'Email', from: ['Jane Doe', 'Maya Okafor'], when: '2025-03-15 09:00' },
+        '## 2025-03-15 09:00 - **Jane Doe**\n\nCould you review the update?\n',
+      ).toMarkdown(),
+    )
+    const conversation = (await sources.conversation(ref))!
+    assert({
+      given: 'a saved email whose from is a list and whose to is missing',
+      should: 'record empty participants instead of serialized YAML',
+      actual: conversation.sources.map(({ from, to }) => ({ from, to })),
+      expected: [{ from: '', to: '' }],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

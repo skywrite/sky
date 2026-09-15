@@ -114,6 +114,8 @@ export async function prepareFollowups(
     return {
       ...proposal,
       commitment,
+      // Deterministic on purpose: a repeated approval must find the child it already queued.
+      // This is the dedup exception in AGENTS.md § IDs for User Content; scanner items use readable ids.
       id: hash(`followup:${item.id}:${item.conversation.version}:${recipient}`).slice(0, 32),
     }
   })

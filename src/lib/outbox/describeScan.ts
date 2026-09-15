@@ -1,15 +1,22 @@
 import { rangeLabel } from './range.ts'
 import type { ScanReport } from './types.ts'
 
-export function outboxScanSeverity(report: ScanReport & { error?: string }): 'info' | 'error' {
-  if (report.error || report.failed) return 'error'
+/**
+ * `error`: the check itself failed, or every conversation it tried failed.
+ * `warning`: the check completed but some conversations could not be checked.
+ * `info`: everything else, including coverage limits the owner verifies by hand.
+ */
+export function outboxScanSeverity(report: ScanReport & { error?: string }): 'info' | 'warning' | 'error' {
+  if (report.error) return 'error'
   if (report.outcome !== 'failed') return 'info'
   const coverageOnly =
     report.incomplete &&
     report.total !== undefined &&
     report.completed === report.total &&
     report.pending <= report.incomplete
-  return coverageOnly ? 'info' : 'error'
+  if (coverageOnly) return 'info'
+  const whollyFailed = report.total !== undefined && report.total > 0 && report.failed >= report.total
+  return whollyFailed ? 'error' : 'warning'
 }
 
 /** A quiet check must explain its result as clearly as one that produces drafts. */

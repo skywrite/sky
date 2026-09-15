@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
 import type { WritingDraft } from '#lib/writingVoice/draftTypes.ts'
+import { OutboxItemId } from './itemId.ts'
 import { ScanRangeSchema, type ScanRange } from './range.ts'
 import { RequestAnalysisStampSchema, RequestId, RequestRecordSchema, type RequestResponse } from './requestTypes.ts'
 
@@ -46,7 +47,7 @@ export const FollowupProposalSchema = z.object({
 })
 
 export const FollowupSchema = FollowupProposalSchema.extend({
-  id: z.string().regex(/^[a-f0-9]{32}$/),
+  id: OutboxItemId,
 })
 
 export const ReplyOptionSchema = z.object({
@@ -67,7 +68,7 @@ export const WorkstreamLinkSchema = z.object({
 })
 
 export const ItemSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{32}$/),
+  id: OutboxItemId,
   created: z.string(),
   updated: z.string(),
   status: z.enum(['needs_review', 'placing', 'ready', 'placement_unknown', 'dismissed']),
@@ -109,7 +110,7 @@ export const ItemSchema = z.object({
   followupError: z.string().optional(),
   followupOf: z
     .object({
-      id: z.string().regex(/^[a-f0-9]{32}$/),
+      id: OutboxItemId,
       title: z.string(),
       reply: z.string(),
       commitment: z.string(),

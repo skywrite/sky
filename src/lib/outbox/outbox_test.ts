@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { MockLanguageModelV4 } from 'ai/test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
+import { hash } from './files.ts'
 import { readScanProgress } from './progress.ts'
 import { dayRange } from './range.ts'
 import { OutboxReview } from './review.ts'
@@ -1224,6 +1225,100 @@ test('Outbox reconsiders cached judgments when the model or effort profile chang
       should: 'reassess the earlier judgments while retaining the owner’s words',
       actual: [calls, unchanged.unchanged, replaced.prepared, retuned.prepared, (await f.store.list())[0].draft],
       expected: [3, 1, 1, 1, 'My reviewed words.'],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox names new items by local time and title, suffixes a namesake, and keeps the id afterwards', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Did the update arrive?', { follow: null })
+    await f.write(`${TODAY}/actions/messages/slack_Other.md`, 'Did the other update arrive?', {
+      follow: null,
+      link: 'https://atlas.slack.com/archives/C012ABCDEF/p1700000000000200',
+    })
+    const named = (localNow: string) =>
+      scanOutbox({
+        store: f.store,
+        sources: f.sources,
+        today: TODAY,
+        now: NOW,
+        localNow,
+        propose: async () => proposal,
+      })
+    const first = await named(NOW)
+    const before = (await f.store.list()).map((item) => item.id).sort()
+    await f.write(TODAY_REF, 'Did the update arrive?\n\nAnd the invoice?', { follow: null })
+    const second = await named(`${TODAY} 13:00`)
+    const after = await f.store.list()
+    assert({
+      given: 'two conversations with the same proposed title in the same minute, then new content in one of them',
+      should: 'allocate readable ids once, suffix the namesake, and reuse the id on later writes',
+      actual: [
+        first.prepared,
+        before,
+        (await readdir(path.join(f.store.dir, 'items'))).sort(),
+        second.prepared,
+        after.map((item) => item.id).sort(),
+        after.every((item) => item.created === NOW),
+      ],
+      expected: [
+        2,
+        ['2025-03-15_1200_Confirm-the-update', '2025-03-15_1200_Confirm-the-update-2'],
+        ['2025-03-15_1200_Confirm-the-update-2.md', '2025-03-15_1200_Confirm-the-update.md'],
+        1,
+        ['2025-03-15_1200_Confirm-the-update', '2025-03-15_1200_Confirm-the-update-2'],
+        true,
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Outbox keeps a hash-named item for its conversation instead of renaming it', async () => {
+  const f = await fixture()
+  try {
+    await f.write(TODAY_REF, 'Did the update arrive?', { follow: null })
+    const conversation = (await f.sources.conversation(TODAY_REF))!
+    const legacy = hash(conversation.key).slice(0, 32)
+    await f.store.put(
+      {
+        id: legacy,
+        created: '2025-03-14 12:00',
+        updated: '2025-03-14 12:00',
+        status: 'needs_review',
+        conversation: { ...conversation, version: 'old' },
+        title: 'Confirm the update',
+        situation: 'An earlier scan.',
+        reasoning: 'A direct question needs a reply.',
+        questions: [],
+        originalDraft: 'An earlier draft.',
+        draft: 'An earlier draft.',
+        edited: false,
+        stale: false,
+        reviews: [],
+        native: null,
+        placementError: null,
+      },
+      null,
+    )
+    const report = await scanOutbox({
+      store: f.store,
+      sources: f.sources,
+      today: TODAY,
+      now: NOW,
+      localNow: NOW,
+      propose: async () => proposal,
+    })
+    const items = await f.store.list()
+    assert({
+      given: 'an item saved under the legacy hash id before the conversation changed',
+      should: 'update that item in place without creating a readable-named twin',
+      actual: [report.prepared, items.map((item) => item.id), items[0].draft, items[0].created],
+      expected: [1, [legacy], proposal.draft, '2025-03-14 12:00'],
     })
   } finally {
     await f.clean()

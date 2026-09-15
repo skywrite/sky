@@ -14,6 +14,8 @@ import { hold } from '../../activity.ts'
 
 export type OutboxReport = {
   items: OutboxRecord[]
+  /** Archived, sent, or answered items, newest first, at most 100. */
+  done: OutboxRecord[]
   awaitingCheck?: OutboxRecord[]
   preferences: { text: string; revision: string }
   automation: { name: string; status: 'active' | 'paused' } | null
@@ -29,7 +31,7 @@ export type OutboxScanResult = {
   outcome: ScanReport['outcome']
   message?: string
   running?: boolean
-  severity?: 'info' | 'error'
+  severity?: 'info' | 'warning' | 'error'
 }
 
 export type OutboxCheck = {

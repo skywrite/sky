@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-12
+updated: 2026-09-14
 ---
 
 # The web app's shell and client
@@ -132,6 +132,38 @@ describe the layout need it serves.
 
 See [2026-09-07 — Shared actions and dialog styling](2026-09-07-shared-ui-toolkit.md)
 for the consolidation's rationale and verification.
+
+## Outbox
+
+`/outbox` is the list and `/outbox/<id>` is an item's page. The id is the
+item's file name, readable or legacy hash; `client/outboxRoutes.ts` reads
+and writes both. A row is a link to its page, so any item can be shared and
+returned to. The retired `/outbox?item=<id>` link still opens its item.
+Unknown `/outbox/_api/*` paths answer a JSON 404, never the app shell.
+
+The client is split by job in `client/outbox*`. `outbox.tsx` loads the
+report and routes. `outboxList.tsx` is the list. `outboxItem.tsx` is an
+item's page. `outboxConversation.tsx` is the saved conversation under the
+reply. `outboxRail.tsx` is the shared Details rail. `outboxCheck.tsx` is the
+check line. `outboxPresentation.ts` names the state token, who, and where.
+`outboxTime.ts` turns the notebook's `YYYY-MM-DD HH:MM` stamps into the
+asked and waiting labels by calendar arithmetic, never the clock.
+
+The list starts with a quiet check line: how far Sky has read, Check again,
+and Change range for the From and Through fields. Tabs are Needs review,
+Ready, and Done, plus Awaiting check while there is one. Rows sit longest
+waiting first. A row is a glyph, a facts line, one state token, a heading,
+and a two-line summary. Dismiss appears on hover or keyboard focus.
+
+An item's page opens with the facts line and token, then the heading, then
+one banner at a time: a conflict, a context error, new messages, or Sky
+revising. A draft being placed and a failed follow-up keep their own notice,
+since each carries something the person must do. The brief follows. A decision shows its
+questions, the ways to reply, Sky's suggestion, and a line for direction. A
+prepared reply shows the words with Shorter, Warmer, and revision. The
+actions come next, then the conversation in full: every saved message, with
+a link to the app and to the saved file. The rail holds why this needs you,
+the ask, every request, linked work, and voice questions.
 
 ## Today and date navigation
 

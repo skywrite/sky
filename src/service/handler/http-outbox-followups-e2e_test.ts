@@ -118,6 +118,7 @@ test(
           for (const item of await store.list()) await reconcileFollowups(store, item)
           return {
             items: (await store.list()).filter((item) => item.status !== 'dismissed'),
+            done: [],
             preferences: await store.preferences(),
             automation: { name: 'outbox', status: 'paused' },
             lastScan: null,
@@ -156,7 +157,7 @@ test(
       page.on('pageerror', (error) => errors.push(error.message))
       const base = `http://127.0.0.1:${address.port}/outbox`
       await page.goto(base)
-      await page.getByRole('button').filter({ hasText: parent.title }).click()
+      await page.getByRole('link', { name: parent.title, exact: true }).click()
       await page.getByLabel('Reply draft', { exact: true }).fill(REPLY)
       await page.getByRole('button', { name: 'Approve draft in Slack', exact: true }).click()
       await page
@@ -185,9 +186,9 @@ test(
         actual: [nativeWrites, (await store.get(parent.id))?.status],
         expected: [1, 'ready'],
       })
-      await page.reload()
-      await page.getByRole('tab', { name: /Ready in apps/ }).click()
-      await page.getByRole('button').filter({ hasText: parent.title }).click()
+      await page.goto(base)
+      await page.getByRole('tab', { name: /^Ready/ }).click()
+      await page.getByRole('link', { name: parent.title, exact: true }).click()
       await page.getByText('Draft saved in Slack. Preparing follow-up drafts…', { exact: true }).waitFor()
       releaseFollowups()
       await followupRun
@@ -196,7 +197,7 @@ test(
       await page
         .getByText('Draft saved in Slack. Added a draft for Casey Example to Outbox.', { exact: true })
         .waitFor()
-      await page.getByRole('button', { name: 'Message to Casey Example ↗', exact: true }).click()
+      await page.getByRole('link', { name: 'Message to Casey Example ↗', exact: true }).click()
       await page.getByRole('heading', { name: 'Ask Casey to share the weekly update', exact: true }).waitFor()
       assert({
         given: 'the owner approves edited wording and opens the generated follow-up',
@@ -213,15 +214,15 @@ test(
         .getByLabel('Reply draft', { exact: true })
         .fill('Casey, please put the weekly update in the shared channel.')
       await page.getByRole('button', { name: 'Save edit', exact: true }).click()
-      await page.getByRole('button', { name: `${parent.title} ↗`, exact: true }).click()
+      await page.getByRole('link', { name: `${parent.title} ↗`, exact: true }).click()
       await page.getByRole('button', { name: 'Record that I sent it', exact: true }).click()
       await page
         .getByRole('textbox', { name: 'Where and when did you send it?' })
         .fill('Sent the approved reply in Slack just now.')
       await page.getByRole('button', { name: 'Save sent report', exact: true }).click()
-      await page.getByRole('button').filter({ hasText: 'Ask Casey to share the weekly update' }).waitFor()
+      await page.getByRole('link', { name: 'Ask Casey to share the weekly update', exact: true }).waitFor()
       await page.reload()
-      await page.getByRole('button').filter({ hasText: 'Ask Casey to share the weekly update' }).click()
+      await page.getByRole('link', { name: 'Ask Casey to share the weekly update', exact: true }).click()
       assert({
         given: 'a sent report for the original reply and a browser reload',
         should: 'retain one follow-up, its saved edit, and a single native placement',
@@ -235,7 +236,7 @@ test(
       })
       const screenshot = env.get('SKY_BROWSER_SCREENSHOT')
       if (screenshot) await page.screenshot({ path: screenshot, fullPage: true })
-      await page.getByRole('button', { name: `${parent.title} ↗`, exact: true }).click()
+      await page.getByRole('link', { name: `${parent.title} ↗`, exact: true }).click()
       await page.getByText('You recorded this message as sent.', { exact: true }).waitFor()
       await page.goto(`${base}?item=${parent.id}`)
       await page.getByText('You recorded this message as sent.', { exact: true }).waitFor()

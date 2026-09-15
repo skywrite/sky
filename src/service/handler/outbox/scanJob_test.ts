@@ -155,3 +155,37 @@ test('A later scheduled check supersedes an old failed manual worker result', as
     expected: [false, 'later-scheduled-check', 'acted', true],
   })
 })
+
+test('A completed check with unchecked conversations warns, and a check that failed outright errors', async () => {
+  const partial: ScanProgress = {
+    ...fixtureProgress('complete'),
+    outcome: 'failed',
+    status: 'failed',
+    failed: 2,
+    pending: 2,
+  }
+  const wholly: ScanProgress = { ...partial, prepared: 0, ignored: 0, failed: 12, pending: 12 }
+  const crashed: ScanProgress = { ...fixtureProgress('failed'), error: 'The worker stopped.' }
+  const results: unknown[] = []
+  for (const progress of [partial, wholly, crashed]) {
+    const job = createScanJob({ start: async () => {}, status: async () => null }, async () => progress)
+    const status = await job.status()
+    results.push([
+      status.result?.severity,
+      status.result?.message?.includes(`${progress.failed} conversations could not be checked.`),
+      status.result?.message?.endsWith('Check again to retry those conversations.'),
+      status.result?.message,
+    ])
+  }
+  assert({
+    given: 'two of twelve conversations failed, then all twelve, then the worker itself stopped',
+    should:
+      'warn with the counts and the retry sentence, error when nothing was checked, and error on the worker failure',
+    actual: results,
+    expected: [
+      ['warning', true, true, results[0] && (results[0] as unknown[])[3]],
+      ['error', true, true, results[1] && (results[1] as unknown[])[3]],
+      ['error', false, false, 'The worker stopped.'],
+    ],
+  })
+})

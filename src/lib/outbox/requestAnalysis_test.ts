@@ -32,6 +32,10 @@ const message = (at: string, text: string, owner = false) =>
   `## ${at} - **${owner ? 'Alex Example' : 'Jane Doe'}**\n${text}`
 const ask = (id: string) => `[request:${id}] Could you confirm the ${id} scope?`
 const answer = (id: string) => `[answer:${id}] The ${id} scope is confirmed.`
+const SCOPE_OPTIONS = [
+  { label: 'Approve the full B scope', instruction: 'Approve the full B scope as proposed.' },
+  { label: 'Approve a reduced B scope', instruction: 'Approve only the reduced B scope and say why.' },
+]
 
 // The mock supplies known semantic judgments; assertions exercise persistence, scope, coverage and races.
 function judgment(input: any): unknown {
@@ -44,13 +48,18 @@ function judgment(input: any): unknown {
       evidence: [input.candidate.origin],
       initiative: null,
     }
-  if (input.plans)
+  if (input.plans) {
+    // The fake merges every decision into one question with shared options, as the brief prompt asks.
+    const decided = input.plans.some((plan: any) => plan.action === 'decision')
     return {
       title: 'Confirm the Atlas scope',
       summary: 'Jane needs your confirmation of the Atlas pilot scope.',
       situation: 'Jane needs your confirmation of the Atlas scope.\n\nThe reply covers the open scope questions.',
       explanation: 'Jane asked for your confirmation.',
+      questions: decided ? ['Which B scope do you approve?'] : [],
+      replyOptions: decided ? SCOPE_OPTIONS : [],
     }
+  }
   if (input.previousNotes !== undefined)
     return {
       complete: true,
@@ -752,15 +761,69 @@ test('A remaining decision prevents a partial draft while preserving every reque
     const item = await f.item()
     assert({
       given: 'A can be answered but B needs a consequential owner choice',
-      should: 'retain both plans and ask about B before composing a complete reply',
+      should: 'retain both plans and ask about B with reply options before composing a complete reply',
       actual: [
         report.failed,
         item.draft,
         item.questions,
+        item.replyOptions,
         item.requests!.map((request) => request.response?.action),
+        item.requests!.map((request) => request.response?.questions),
         writes,
       ],
-      expected: [0, '', ['Which B scope do you approve?'], ['draft', 'decision'], 0],
+      expected: [
+        0,
+        '',
+        ['Which B scope do you approve?'],
+        SCOPE_OPTIONS,
+        ['draft', 'decision'],
+        [[], ['Which B scope do you approve?']],
+        0,
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Several decisions in one conversation reach the owner as one merged question with shared reply options', async () => {
+  const f = await fixture()
+  try {
+    await f.write(REF, message(`${TODAY} 09:00`, `${ask('A')}\n${ask('B')}\n${ask('C')}`))
+    const asked: Record<string, string> = { B: 'Which B scope do you approve?', C: 'Do you approve the B scope?' }
+    f.model.control.respond = async (input) => {
+      const result: any = judgment(input)
+      const question = input.request && !input.plannedAnswer ? asked[input.request.summary] : undefined
+      return question ? { ...result, action: 'decision', draft: '', questions: [question] } : result
+    }
+    const report = await f.run()
+    const item = await f.item()
+    const brief = f.model.calls.find((input) => input.plans)
+    assert({
+      given: 'two requests whose open questions paraphrase the same choice',
+      should: 'carry the brief’s single question and shared options while each request keeps its own question',
+      actual: [
+        report.failed,
+        item.status,
+        item.draft,
+        item.questions,
+        item.replyOptions?.map((option) => option.label),
+        item.requests!.map((request) => request.response?.questions),
+        brief.plans.map((plan: any) => [plan.action, plan.questions]),
+      ],
+      expected: [
+        0,
+        'needs_review',
+        '',
+        ['Which B scope do you approve?'],
+        ['Approve the full B scope', 'Approve a reduced B scope'],
+        [[], [asked.B], [asked.C]],
+        [
+          ['draft', []],
+          ['decision', [asked.B]],
+          ['decision', [asked.C]],
+        ],
+      ],
     })
   } finally {
     await f.clean()

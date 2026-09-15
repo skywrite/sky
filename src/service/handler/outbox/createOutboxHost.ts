@@ -172,10 +172,20 @@ export function createOutboxHost(
         await reconcileFollowups(store, item)
       }
       const latest = await store.list()
+      // A conversation the scanner set aside on its own was never the person's to handle.
+      const reviewed = (item: OutboxRecord) =>
+        Boolean(item.draft || item.questions.length || item.reviews.length || item.edited)
+      const finished = latest
+        .filter(
+          (item) => item.delivery || item.responseHistory?.length || (item.status === 'dismissed' && reviewed(item)),
+        )
+        .sort((a, b) => b.updated.localeCompare(a.updated))
+        .slice(0, 100)
       return {
         ...attentionQueue(
           await Promise.all(latest.filter((item) => item.status !== 'dismissed').map(composition.decorate)),
         ),
+        done: await Promise.all(finished.map(composition.decorate)),
         followupsRunning: latest.some(
           (item) => canQueueFollowups(item) && ['pending', 'preparing'].includes(item.followupStatus ?? ''),
         ),

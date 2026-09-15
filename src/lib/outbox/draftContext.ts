@@ -3,6 +3,7 @@ import type { WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import { WritingVoiceError, type VoiceDraftInput } from '#lib/writingVoice/types.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { readOptional } from './files.ts'
+import { outboxDraftItemId } from './itemId.ts'
 import { createSavedMessages, type SavedMessages, type SavedMessagesConfig } from './sources.ts'
 import { createOutboxStorage } from './storage.ts'
 import { ItemSchema, type OutboxItem } from './types.ts'
@@ -11,7 +12,7 @@ export function createOutboxDraftGuard(config: SavedMessagesConfig & { DIR_STATE
   const storage = createOutboxStorage(config)
   const sources = createSavedMessages(config)
   return async (draft: WritingDraft, author: 'sky' | 'you') => {
-    if (!/^outbox:[a-f0-9]{32}$/.test(draft.source)) return
+    if (!outboxDraftItemId(draft.source)) return
     await storage.initialize()
     await checkOutboxDraft(storage.dir, draft, author, sources)
   }
@@ -38,7 +39,7 @@ export async function checkOutboxDraft(
   author: 'sky' | 'you',
   sources: SavedMessages,
 ): Promise<void> {
-  const id = /^outbox:([a-f0-9]{32})$/.exec(draft.source)?.[1]
+  const id = outboxDraftItemId(draft.source)
   if (!id) return
   const raw = await readOptional(path.join(outboxDir, 'items', `${id}.md`))
   if (!raw) throw new WritingVoiceError('The linked Outbox item is unavailable.', 409)

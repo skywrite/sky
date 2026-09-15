@@ -137,6 +137,7 @@ test(
       outbox: {
         report: async () => ({
           items: (await store.list()).filter((item) => item.status !== 'dismissed'),
+          done: [],
           preferences: await store.preferences(),
           automation: { name: 'outbox', status: 'paused' },
           lastScan: null,
@@ -166,8 +167,9 @@ test(
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/outbox`)
       await page.getByRole('button', { name: 'Check now', exact: true }).click()
-      await page.getByText('I meant the first-run instructions. The rest looks good to me.', { exact: true }).waitFor()
-      await page.getByRole('button').filter({ hasText: 'Choose the pilot scope' }).click()
+      await page.getByRole('link', { name: 'Clarify the feedback', exact: true }).waitFor()
+      const routineDraft = (await store.list()).find((item) => item.title === 'Clarify the feedback')?.draft
+      await page.getByRole('link', { name: 'Choose the pilot scope', exact: true }).click()
       await page.getByRole('button', { name: 'Choose the smaller pilot', exact: true }).click()
       await page.getByLabel('Reply draft', { exact: true }).waitFor()
       const firstDraft = await page.getByLabel('Reply draft', { exact: true }).inputValue()
@@ -183,8 +185,9 @@ test(
       assert({
         given: 'Check now, a selected response option, and an unsaved edit shortened with Sky',
         should: 'prepare useful text entirely in review before any native handoff',
-        actual: [firstDraft, directions[0].instruction, directions[1].draft, nativeWrites, errors],
+        actual: [routineDraft, firstDraft, directions[0].instruction, directions[1].draft, nativeWrites, errors],
         expected: [
+          'I meant the first-run instructions. The rest looks good to me.',
           'Let’s start with the smaller pilot and expand after we validate the flow.',
           'Choose the smaller pilot and explain that we can expand after validating it.',
           'My unsaved wording about the smaller pilot.',

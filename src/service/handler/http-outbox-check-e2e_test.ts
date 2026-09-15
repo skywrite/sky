@@ -77,6 +77,7 @@ test(
       outbox: {
         report: async () => ({
           items: [],
+          done: [],
           preferences: { text: '', revision: 'v1' },
           automation: { name: 'outbox', status: 'paused' },
           lastScan: null,
@@ -115,6 +116,7 @@ test(
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/outbox`)
+      await page.getByRole('button', { name: 'Change range', exact: true }).click()
       await page.getByLabel('From', { exact: true }).fill(selectedRange.start)
       await page.getByLabel('Through', { exact: true }).fill('2025-03-13T17:45')
       const invalidDisabled = await page.getByRole('button', { name: 'Check now', exact: true }).isDisabled()
@@ -127,6 +129,7 @@ test(
       job = createScanJob(execution, async () => progress)
       await page.reload()
       await page.getByRole('status').filter({ hasText: '6 of 12 checked' }).waitFor()
+      await page.getByRole('button', { name: 'Change range', exact: true }).click()
       const disabled = await page.getByRole('button', { name: 'Checking…', exact: true }).isDisabled()
       const reloadedRange = [
         await page.getByLabel('From', { exact: true }).inputValue(),
@@ -141,14 +144,17 @@ test(
       await page.unroute('**/outbox/_api/status')
       await reconnecting.waitFor({ state: 'hidden' })
       release()
-      await page.getByRole('status').filter({ hasText: 'The selected range is checked.' }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Checked through Sat 15 Mar, 17:45' }).waitFor()
       await page.getByText('What Sky checked', { exact: false }).click()
       await page.getByText('Jane acknowledged the completed update; no question remains.', { exact: true }).waitFor()
       await page.reload()
-      await page.getByRole('status').filter({ hasText: 'The selected range is checked.' }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Checked through Sat 15 Mar, 17:45' }).waitFor()
+      await page.getByText('What Sky checked', { exact: false }).click()
       await page.getByText('Fable 5.1 · High', { exact: true }).waitFor()
+      await page.getByText('The selected range is checked.', { exact: false }).waitFor()
       if (env.get('SKY_BROWSER_SCREENSHOT'))
         await page.screenshot({ path: env.get('SKY_BROWSER_SCREENSHOT')!, fullPage: true })
+      await page.getByRole('button', { name: 'Change range', exact: true }).click()
       await page
         .getByRole('region', { name: 'Search range' })
         .getByRole('button', { name: 'Today', exact: true })
@@ -196,7 +202,7 @@ test(
       await page.getByRole('button', { name: 'Check now', exact: true }).click()
       await lostAcknowledgment
       await page.getByRole('button', { name: 'Check now', exact: true }).waitFor()
-      await page.getByRole('status').filter({ hasText: 'The selected range is checked.' }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Checked through Sat 15 Mar, 23:59' }).waitFor()
       const savedRange = await store.scanRange('2025-03-15')
       const recoveredRange = [
         await page.getByLabel('From', { exact: true }).inputValue(),
@@ -206,7 +212,7 @@ test(
       const retryResponse = page.waitForResponse((response) => response.url().endsWith('/outbox/_api/scan'))
       await page.getByRole('button', { name: 'Check now', exact: true }).click()
       const retry = await retryResponse
-      await page.getByRole('status').filter({ hasText: 'The selected range is checked.' }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Checked through Sat 15 Mar, 23:59' }).waitFor()
       assert({
         given: 'the server saves a changed range but its acceptance response is lost',
         should: 'recover the saved range revision and allow another check without reloading',

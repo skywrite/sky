@@ -141,7 +141,10 @@ test('a shared draft discussion can migrate Outbox first and keeps editing and n
   )
   try {
     const legacy = new OutboxStore(path.join(f.root, 'outbox'), storage.dir, f.store, drafts)
-    const item = await legacy.put({ ...sampleOutboxItem(), origin: 'followup' }, null)
+    const item = await legacy.put(
+      { ...sampleOutboxItem(), id: '2025-03-15_1200_Project-update', origin: 'followup' },
+      null,
+    )
     const original = Document.fromMarkdown(await readFile(path.join(legacy.dir, 'items', `${item.id}.md`), 'utf8'))
     await drafts.revise(item.draftId!, 1, 'The Atlas update is ready.', 'you')
     const store = new OutboxStore(storage.dir, storage.dir, f.store, drafts, storage.initialize)

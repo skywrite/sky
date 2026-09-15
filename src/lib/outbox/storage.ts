@@ -3,6 +3,7 @@ import { link, lstat, mkdir, open, readFile, readdir, rmdir, unlink } from 'node
 import * as path from 'node:path'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { hash, missing, withLock } from './files.ts'
+import { isOutboxItemId } from './itemId.ts'
 import { OutboxError } from './types.ts'
 
 type StorageConfig = { DIR_BASE: string; DIR_STATE: string }
@@ -75,7 +76,8 @@ async function destination(dir: string, name: string): Promise<Buffer | undefine
 }
 
 function relocated(content: Buffer, name: string, notebook: string, dir: string): Buffer {
-  if (!/^items\/[a-f0-9]{32}\.md$/.test(name)) return content
+  const item = /^items\/([^/]+)\.md$/.exec(name)?.[1]
+  if (!item || !isOutboxItemId(item)) return content
   const text = content.toString('utf8')
   const doc = Document.fromMarkdown(text)
   const id = doc.yaml.draftId

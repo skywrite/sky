@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import process from 'node:process'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { AnalysisCache } from './analysisCache.ts'
-import { atomicWrite, hash, readOptional, withLock } from './files.ts'
+import { atomicWrite, readOptional, withLock } from './files.ts'
+import { newOutboxItemId } from './itemId.ts'
 import { readScanProgress } from './progress.ts'
 import { dayRange, rangeKey, ScanRangeSchema, type ScanRange } from './range.ts'
 import { requestInRange, type RequestAnalyzer } from './requestAnalysis.ts'
@@ -45,8 +47,12 @@ export async function scanOutbox(options: {
   modelProfile?: string
   range?: ScanRange
   analyze?: RequestAnalyzer
+  /** Notebook-local `YYYY-MM-DD HH:MM` that names new items. Defaults to the current local time. */
+  localNow?: string
 }): Promise<ScanReport> {
   const { store, sources, today, now, propose, limit = Infinity, concurrency = 4, model, modelProfile } = options
+  // Read when an item is first written, so a long check names each item by its own minute.
+  const localNow = () => options.localNow ?? new ZonedDateTime().plainDateTime.toString()
   const range = options.range ? ScanRangeSchema.parse(options.range) : dayRange(today)
   await store.initialize()
   const requestAnalysisVersion = await options.analyze?.version()
@@ -88,6 +94,23 @@ export async function scanOutbox(options: {
           .flatMap((item) => item.reviews)
           .sort((a, b) => b.at.localeCompare(a.at))
           .slice(0, 12)
+        // New items are named one at a time so parallel checks never claim the same name.
+        const reserved = new Set<string>()
+        let allocating: Promise<unknown> = Promise.resolve()
+        const allocate = (title: string): Promise<string> => {
+          const next = allocating.then(() =>
+            newOutboxItemId({
+              at: localNow(),
+              title,
+              taken: async (id) => reserved.has(id.toLowerCase()) || store.taken(id),
+            }),
+          )
+          allocating = next.then(
+            (id) => reserved.add(id.toLowerCase()),
+            () => {},
+          )
+          return next
+        }
         const checks = new Map(
           (previous?.range && rangeKey(previous.range) === rangeKey(range) ? previous.checks : []).map((check) => [
             check.key,
@@ -175,8 +198,9 @@ export async function scanOutbox(options: {
           }
           try {
             if (!conversation) throw new Error(candidate.error ?? 'The saved conversation could not be read.')
-            const id = hash(key).slice(0, 32)
-            const current = await store.get(id)
+            // An existing item keeps its id, whatever its shape. A new item is named when first written.
+            const current = await store.byConversation(key)
+            let id = current?.id
             const uncertainTime = refs.some(
               (ref) =>
                 !state.entries?.[ref]?.times.length &&
@@ -408,6 +432,7 @@ export async function scanOutbox(options: {
                       current.revision,
                     )
                   } else if (analysis) {
+                    id = await allocate(proposal.title)
                     await store.put(
                       {
                         id,
@@ -436,6 +461,7 @@ export async function scanOutbox(options: {
                   if (answered) report.answered!++
                   else report.ignored++
                 } else {
+                  id ??= await allocate(proposal.title)
                   await store.put(
                     {
                       id,
@@ -475,7 +501,7 @@ export async function scanOutbox(options: {
               }
             }
             state.handled[key] = conversation.version
-            check.itemRevision = (await store.get(id))?.revision
+            if (id) check.itemRevision = (await store.get(id))?.revision
             const included = new Set(refs)
             state.pending = state.pending.filter((ref) => !included.has(ref))
           } catch (error) {

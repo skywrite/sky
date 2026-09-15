@@ -5,7 +5,6 @@ import { MockLanguageModelV4 } from 'ai/test'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
-import { hash } from './files.ts'
 import { createFollowupPlanner, queueFollowups, reconcileFollowups } from './followups.ts'
 import { OutboxReview } from './review.ts'
 import { SavedMessages } from './sources.ts'
@@ -46,7 +45,7 @@ async function fixture() {
   const conversation = (await sources.conversation(ref))!
   const item = await store.put(
     {
-      id: hash(conversation.key).slice(0, 32),
+      id: '2025-03-15_1200_Reply-to-Jane-about-the-weekly',
       created: NOW,
       updated: NOW,
       status: 'needs_review',

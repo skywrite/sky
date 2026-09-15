@@ -9,6 +9,7 @@ import Document from '#shared/models/Markdown/Document/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { outboxDraftInput } from './draftContext.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from './files.ts'
+import { isOutboxItemId } from './itemId.ts'
 import { dayRange, ScanRangeSchema, type SavedScanRange, type ScanRange } from './range.ts'
 import { requestNeedsReply } from './requestTypes.ts'
 import { draftLink } from './storage.ts'
@@ -37,8 +38,18 @@ export class OutboxStore {
   ) {}
 
   private file(id: string): string {
-    if (!/^[a-f0-9]{32}$/.test(id)) throw new OutboxError('Invalid Outbox item.', 404)
+    if (!isOutboxItemId(id)) throw new OutboxError('Invalid Outbox item.', 404)
     return path.join(this.dir, 'items', `${id}.md`)
+  }
+
+  private async fileNames(): Promise<string[]> {
+    await this.initialize()
+    try {
+      return await readdir(path.join(this.dir, 'items'))
+    } catch (error) {
+      if (missing(error)) return []
+      throw error
+    }
   }
 
   async get(id: string): Promise<OutboxRecord | null> {
@@ -65,20 +76,31 @@ export class OutboxStore {
   }
 
   async list(): Promise<OutboxRecord[]> {
-    await this.initialize()
-    let files: string[]
-    try {
-      files = await readdir(path.join(this.dir, 'items'))
-    } catch (error) {
-      if (missing(error)) return []
-      throw error
-    }
     const items: OutboxRecord[] = []
-    for (const name of files.filter((name) => /^[a-f0-9]{32}\.md$/.test(name))) {
+    for (const name of await this.fileNames()) {
+      // Both file-name shapes are items; anything else in the directory is not.
+      if (!name.endsWith('.md') || !isOutboxItemId(name.slice(0, -3))) continue
       const item = await this.get(name.slice(0, -3))
       if (item) items.push(item)
     }
     return items.sort((a, b) => b.updated.localeCompare(a.updated))
+  }
+
+  /**
+   * The item for a saved conversation, whatever its id shape.
+   * An open item wins over an archived one; otherwise the most recently updated.
+   * A legacy hash-named file is the last resort.
+   */
+  async byConversation(key: string): Promise<OutboxRecord | null> {
+    const matches = (await this.list()).filter((item) => item.conversation.key === key)
+    const found = matches.find((item) => item.status !== 'dismissed') ?? matches[0]
+    return found ?? this.get(hash(key).slice(0, 32))
+  }
+
+  /** A new id must not reuse an existing file name, including on a case-insensitive file system. */
+  async taken(id: string): Promise<boolean> {
+    const wanted = `${id}.md`.toLowerCase()
+    return (await this.fileNames()).some((name) => name.toLowerCase() === wanted)
   }
 
   private async initialDraft(item: OutboxItem, importing: boolean): Promise<WritingDraft> {

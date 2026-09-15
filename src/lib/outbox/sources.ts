@@ -256,8 +256,9 @@ export class SavedMessages {
     const sources = [...docs]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([sourceRef, doc]) => {
-        const from = typeof doc.yaml.from === 'string' ? doc.yaml.from : JSON.stringify(doc.yaml.from ?? '')
-        const to = typeof doc.yaml.to === 'string' ? doc.yaml.to : JSON.stringify(doc.yaml.to ?? '')
+        // A capture without a plain participant yields an empty string, never serialized YAML.
+        const from = typeof doc.yaml.from === 'string' ? doc.yaml.from : ''
+        const to = typeof doc.yaml.to === 'string' ? doc.yaml.to : ''
         const body = doc.markdown.trim()
         const times = messageTimes(doc)
         return {

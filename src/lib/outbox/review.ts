@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { withLock } from './files.ts'
 import { canQueueFollowups, prepareFollowups, reconcileFollowups } from './followups.ts'
+import { isOutboxItemId } from './itemId.ts'
 import { replyDestination } from './replyDestination.ts'
 import type { SavedMessages } from './sources.ts'
 import type { OutboxStore } from './store.ts'
@@ -121,7 +122,7 @@ export class OutboxReview {
 
   /** Runs independently of the native handoff. A failed model call cannot undo an approved draft. */
   async completeFollowups(id: string): Promise<OutboxRecord> {
-    if (!/^[a-f0-9]{32}$/.test(id)) throw new OutboxError('Invalid Outbox item.', 404)
+    if (!isOutboxItemId(id)) throw new OutboxError('Invalid Outbox item.', 404)
     return withLock(
       path.join(this.store.stateDir, `followups-${id}.lock`),
       async () => {
