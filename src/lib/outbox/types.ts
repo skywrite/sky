@@ -19,12 +19,15 @@ export const SourceSchema = z.object({
 export const TargetSchema = z.discriminatedUnion('medium', [
   z.object({ medium: z.literal('Slack'), link: z.string() }),
   z.object({ medium: z.literal('Email'), account: z.string(), thread: z.string() }),
+  // A Beeper chat: the desktop app places the draft, whatever network the chat is on.
+  z.object({ medium: z.literal('Beeper'), account: z.string(), chat: z.string(), group: z.boolean().optional() }),
 ])
 
 export const ConversationSchema = z.object({
   key: z.string(),
   version: z.string(),
-  medium: z.enum(['Slack', 'Email']),
+  /** The app the conversation happened in: Slack, Email, or a chat network Beeper carries. */
+  medium: z.string().min(1),
   sources: z.array(SourceSchema),
   target: TargetSchema.nullable(),
   limitations: z.array(z.string()),

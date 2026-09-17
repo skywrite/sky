@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-14
+updated: 2026-09-16
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -71,7 +71,9 @@ Items distinguish **Draft ready** from **Your decision**. Choosing a response op
 
 Check now returns HTTP 202 after a detached worker is registered in local state. The HTTP request holds automatic service reloads through range saving and worker registration, releasing the hold on both success and failure. The worker owns the manual automation, scan, and completion stamp; the scheduled automation pass also runs outside the service. The browser polls progress, remains usable during the check, and reconnects to the same check after a page reload or service restart. Connection failures retain the last progress and retry automatically. Duplicate clicks and overlapping scheduler runs do not create a second producer. Only the actual worker stopping is reported as interrupted. The reusable [process-job contract](../../jobs/docs/README.md) explains the startup handoff and persisted results; the service never owns a worker cancellation signal. Completion counts remain visible after a reload, with expandable explanations under “What Sky checked.” The same summary is used by the CLI and automation ledger; failed or incomplete work is never described as a complete check. A paused automatic schedule still permits an explicit manual check.
 
-Outbox’s native placement writes use the existing `slack:draft:reply` / `google:email:draft:reply` and their draft-update commands. Placement does not send. Request plans distinguish an answer in the source conversation from a promised message elsewhere. Separate messages, and older promises without an established destination, stay local for copying; refreshing the source cannot turn its thread into their destination. A confirmed native reference is required before a row becomes Ready. An interrupted or ambiguous write becomes `placement_unknown` and is never automatically retried; the user checks the app. A process killed during placement is detected on the next status read. Archive removes a row from Outbox without claiming the native draft was sent or deleting it.
+Beeper Desktop captures are saved messages too. `beeper:inbox:sync` writes one file per chat per day with `chat:` and `account:` ids beside the network's name in `medium:`; discovery admits a saved message by those ids whatever its medium, joins a chat's days by the chat id, and names the desktop app as the destination (`target.medium: 'Beeper'`). The card reads WhatsApp or iMessage; Beeper is the app the draft is ready in. See the [Beeper design](../../beeper/docs/README.md).
+
+Outbox’s native placement writes use the existing `slack:draft:reply` / `google:email:draft:reply` and their draft-update commands; a Beeper chat takes the draft through the desktop app's draft endpoint, which fills only an empty composer, and Open in Beeper brings the app forward on the chat. Placement does not send. Request plans distinguish an answer in the source conversation from a promised message elsewhere. Separate messages, and older promises without an established destination, stay local for copying; refreshing the source cannot turn its thread into their destination. A confirmed native reference is required before a row becomes Ready. An interrupted or ambiguous write becomes `placement_unknown` and is never automatically retried; the user checks the app. A process killed during placement is detected on the next status read. Archive removes a row from Outbox without claiming the native draft was sent or deleting it.
 
 The message scanner consumes saved Slack/email conversations and observes actual replies only after they appear in those captures. Approved replies can also produce the linked follow-ups described below. Chat/voice capture into the same queue remains a subsequent producer. Freshness is checked against saved captures; changes not yet captured by follow sync are outside that guarantee. The owner can use Record that I sent it before their native reply has been captured.
 
@@ -131,6 +133,7 @@ The colocated tests cover strict date scope on every run, legacy checkpoint migr
 
 ## Notes
 
+- [2026-09-16 — Chats from Beeper join the queue](2026-09-16-beeper-conversations.md).
 - [2026-09-14 — Readable ids and merged decisions](2026-09-14-readable-ids-and-merged-decisions.md).
 - [2026-09-08 — Checks survive service restarts](2026-09-08-checks-survive-restarts.md).
 - [2026-09-08 — Fixed search ranges and response memory](2026-09-08-search-ranges-and-responses.md).

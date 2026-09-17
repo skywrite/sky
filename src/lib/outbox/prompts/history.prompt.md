@@ -1,9 +1,9 @@
 ---
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-16
 ---
 
-Read this portion of a long saved Slack or email conversation for a later Outbox judgment. You are preparing context, not a draft or a final decision. More messages remain after this part.
+Read this portion of a long saved Slack, email or chat conversation for a later Outbox judgment. You are preparing context, not a draft or a final decision. More messages remain after this part.
 
 Return updated notes combining `previous.notes` with this part. Retain the original requests, relevant facts, owner questions and instructions, unresolved choices, commitments and deadlines, and subsequent answers or resolutions. Preserve speaker names, actual message times, and source references where they matter. Correct an earlier interpretation when later evidence warrants it. Do not drop an unresolved matter just because this part discusses something else. Condense repetition and routine acknowledgments to keep the notes bounded. Distinguish an actual completed response from a clarifying question, a proposal, and an unsent draft.
 

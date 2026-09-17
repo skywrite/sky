@@ -502,6 +502,13 @@ test({ name: 'settings route - connections ride along when the host has a keycha
         status: () => Promise.resolve({ installed: false }),
         reconnect: () => Promise.resolve({ installed: false }),
       },
+      beeper: {
+        status: () => Promise.resolve({ running: false, connected: false, accounts: [] }),
+        connect: () => Promise.resolve(null),
+        connection: () => null,
+        token: () => Promise.resolve({ ok: false, message: 'no Beeper here' }),
+        disconnect: () => Promise.resolve(),
+      },
     },
   })
   const response = await app.request('http://localhost/settings/_api/connections')

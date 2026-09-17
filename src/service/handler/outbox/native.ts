@@ -5,15 +5,25 @@ import { renderEmailHtml } from '#lib/google/emailHtml.ts'
 import { getDraft, getThread } from '#lib/google/gmail.ts'
 import { OutboxError, type OutboxRecord } from '#lib/outbox/types.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
+import { type BeeperDraftClient, checkBeeperDraft, outboxErrorFromBeeper } from './beeper.ts'
 
 /** Only called after approval. Existing app edits are never silently replaced. */
 export async function checkNativeDraft(
   item: OutboxRecord,
-  options: { workspace: string; secrets: SecretsProvider },
+  options: { workspace: string; secrets: SecretsProvider; beeper: () => Promise<BeeperDraftClient> },
 ): Promise<void> {
   const target = item.conversation.target
   if (!target) throw new OutboxError('No native destination is available.')
   const previousText = item.reviews.at(-1)?.final
+  if (target.medium === 'Beeper') {
+    const client = await options.beeper()
+    try {
+      await checkBeeperDraft(client, target, item)
+    } catch (error) {
+      throw outboxErrorFromBeeper(error)
+    }
+    return
+  }
   if (target.medium === 'Slack') {
     const workspace = options.workspace.replace(/\/$/, '')
     if (!workspace) throw new OutboxError('Connect Slack before placing this draft.')

@@ -9,10 +9,13 @@
  * `sky secrets:list`, `secrets:set` and `secrets:delete` for the same store.
  *
  * Slack's credentials are agent-slack's: the page reports its test and can
- * re-import them from Brave, the way `sky slack:auth` does.
+ * re-import them from Brave, the way `sky slack:auth` does. Beeper Desktop
+ * signs in from here the way `sky beeper:auth` does, or takes a token made
+ * in the app; its grant has its own row and stays out of the keychain list.
  */
 
 import { Hono } from 'hono'
+import { BEEPER_SECRETS_CATEGORY } from '#lib/beeper/secrets.ts'
 import {
   CLIENT_ENTRY_NAME,
   GOOGLE_CLOUD_SETUP_STEPS,
@@ -82,6 +85,28 @@ export type GoogleConnectState =
   | { status: 'done'; email: string }
   | { status: 'failed'; message: string }
 
+/** Beeper Desktop on this Mac, and Sky's grant to it. */
+export type BeeperStatus = {
+  /** The desktop app answers */
+  running: boolean
+  version?: string
+  /** A grant is stored */
+  connected: boolean
+  /** The stored grant no longer works: past its expiry, or refused by Beeper */
+  expired?: boolean
+  expiresAt?: string
+  /** The chat accounts Beeper carries, when it could be asked */
+  accounts: { network: string; status: string }[]
+  /** Why the accounts could not be listed, in plain words */
+  error?: string
+}
+
+/** How a Beeper sign-in started from the page is going. */
+export type BeeperConnectState =
+  | { status: 'waiting' }
+  | { status: 'done'; expiresAt?: string }
+  | { status: 'failed'; message: string }
+
 /** The host behind the routes — production is the keychain and the machine, tests script it. */
 export interface ConnectionsHost {
   /** The keychain — in tests, a store in memory */
@@ -98,6 +123,15 @@ export interface ConnectionsHost {
     status: () => Promise<SlackStatus>
     /** A Brave re-import, then the test again */
     reconnect: () => Promise<SlackStatus>
+  }
+  beeper: {
+    status: () => Promise<BeeperStatus>
+    /** Starts a sign-in: the approval URL for the browser and an id to ask after; null when the app is not running */
+    connect: () => Promise<{ id: string; url: string } | null>
+    connection: (id: string) => BeeperConnectState | null
+    /** Store a token made in Beeper; a refusal names what went wrong */
+    token: (token: string) => Promise<{ ok: true } | { ok: false; message: string }>
+    disconnect: () => Promise<void>
   }
 }
 
@@ -167,7 +201,7 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
 
   const providers = new Map(host.providers().map((provider) => [provider.id, provider.label]))
   const rest = index
-    .filter((e) => e.category !== GOOGLE_SECRETS_CATEGORY)
+    .filter((e) => e.category !== GOOGLE_SECRETS_CATEGORY && e.category !== BEEPER_SECRETS_CATEGORY)
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
   const rows = await Promise.all(
     rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(unavailable), providers)),
@@ -287,6 +321,47 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   app.post('/slack/reconnect', async (c) => {
     try {
       return c.json(await host.slack.reconnect())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+
+  // Beeper: the desktop app's sign-in, run from the page, or a token made in the app.
+  app.get('/beeper', async (c) => {
+    try {
+      return c.json(await host.beeper.status())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/beeper/connect', async (c) => {
+    try {
+      const started = await host.beeper.connect()
+      if (!started) return c.json({ message: 'Open Beeper Desktop first.' }, 409)
+      return c.json(started)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.get('/beeper/connect/:id', (c) => {
+    const state = host.beeper.connection(c.req.param('id'))
+    return state ? c.json(state) : c.json({ message: 'no such sign-in' }, 404)
+  })
+  app.post('/beeper/token', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { token?: unknown } | null
+    const token = typeof body?.token === 'string' ? body.token.trim() : ''
+    if (!token) return c.json({ message: 'Paste the token Beeper made.' }, 400)
+    try {
+      const saved = await host.beeper.token(token)
+      return saved.ok ? c.json({ ok: true }) : c.json({ message: saved.message }, 400)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.delete('/beeper', async (c) => {
+    try {
+      await host.beeper.disconnect()
+      return c.json({ ok: true })
     } catch (err) {
       return c.json(message(err), 500)
     }

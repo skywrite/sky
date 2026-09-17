@@ -167,6 +167,8 @@ sky slack:draft:new <conv> "…"   # draft a message in a DM or channel composer
 sky email:inbox:fetch            # download unsaved email into day files
 sky email:inbox:follow:sync      # create follows for new threads, fetch new messages
 sky telegram:inbox:fetch         # poll a Telegram bot for messages and photos
+sky beeper:auth                  # connect Beeper Desktop: WhatsApp, iMessage, Signal and the rest on this Mac
+sky beeper:inbox:sync            # save new Beeper messages into the day's messages folder
 ```
 
 Follows are the accountability half of communication: a thread you're waiting on gets a

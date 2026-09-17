@@ -7,6 +7,7 @@
  * signs in here the way `sky google:auth` does in the terminal: the consent
  * page opens in a tab, and Sky's service receives the redirect on this
  * machine. Slack is agent-slack's: its test is shown, a re-import offered.
+ * Beeper Desktop approves Sky on its own page, opened from here.
  */
 
 import { Button, PasswordInput, SegmentedControl, TextInput } from '@mantine/core'
@@ -49,6 +50,21 @@ type SlackStatus =
   | { installed: true; ok: false; error: string }
 
 type ConnectState = { status: 'waiting' } | { status: 'done'; email: string } | { status: 'failed'; message: string }
+
+type BeeperStatus = {
+  running: boolean
+  version?: string
+  connected: boolean
+  expired?: boolean
+  expiresAt?: string
+  accounts: { network: string; status: string }[]
+  error?: string
+}
+
+type BeeperConnectState =
+  | { status: 'waiting' }
+  | { status: 'done'; expiresAt?: string }
+  | { status: 'failed'; message: string }
 
 const API = '/settings/_api/connections'
 
@@ -193,6 +209,197 @@ function SlackRow() {
   )
 }
 
+// ── Beeper: the chats on this Mac, through Beeper Desktop ───────────
+
+const BEEPER_CONNECTED = 'Connected. Sky saves new messages every five minutes.'
+
+function useBeeper() {
+  const [status, setStatus] = useState<BeeperStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [warn, setWarn] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
+  const timer = useRef<number | null>(null)
+
+  const stop = useCallback(() => {
+    if (timer.current) window.clearInterval(timer.current)
+    timer.current = null
+  }, [])
+  useEffect(() => stop, [stop])
+
+  const reload = useCallback(async () => {
+    const r = await fetch(`${API}/beeper`).catch(() => null)
+    if (!r?.ok) {
+      setWarn(await refusalOf(r))
+      return
+    }
+    setStatus((await r.json()) as BeeperStatus)
+  }, [])
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const connect = useCallback(async () => {
+    setWarn(null)
+    setHint(null)
+    setBusy(true)
+    // The tab opens on the click itself; after the round trip a browser may refuse to.
+    const tab = window.open('', '_blank')
+    const r = await postJson(`${API}/beeper/connect`, {})
+    const refusal = await refusalOf(r)
+    if (refusal || !r) {
+      tab?.close()
+      setWarn(refusal ?? UNREACHABLE)
+      setBusy(false)
+      return
+    }
+    const started = (await r.json()) as { id: string; url: string }
+    if (tab) tab.location.href = started.url
+    timer.current = window.setInterval(async () => {
+      const res = await fetch(`${API}/beeper/connect/${started.id}`).catch(() => null)
+      if (!res?.ok) return
+      const state = (await res.json()) as BeeperConnectState
+      if (state.status === 'waiting') return
+      stop()
+      setBusy(false)
+      if (state.status === 'done') {
+        setHint(BEEPER_CONNECTED)
+        void reload()
+      } else setWarn(state.message)
+    }, SIGN_IN_POLL_MS)
+  }, [reload, stop])
+
+  const saveToken = useCallback(
+    async (token: string) => {
+      setWarn(null)
+      setHint(null)
+      setBusy(true)
+      const refusal = await refusalOf(await postJson(`${API}/beeper/token`, { token }))
+      setBusy(false)
+      if (refusal) {
+        setWarn(refusal)
+        return false
+      }
+      setHint(BEEPER_CONNECTED)
+      void reload()
+      return true
+    },
+    [reload],
+  )
+
+  const disconnect = useCallback(async () => {
+    setWarn(null)
+    setHint(null)
+    setBusy(true)
+    const refusal = await refusalOf(await fetch(`${API}/beeper`, { method: 'DELETE' }).catch(() => null))
+    setBusy(false)
+    if (refusal) setWarn(refusal)
+    else {
+      setHint('Disconnected. Beeper still lists Sky under Settings → Integrations.')
+      void reload()
+    }
+  }, [reload])
+
+  return { status, busy, warn, hint, connect, saveToken, disconnect }
+}
+
+function BeeperRow() {
+  const { status, busy, warn, hint, connect, saveToken, disconnect } = useBeeper()
+  const [tokenForm, setTokenForm] = useState(false)
+  const [token, setToken] = useState('')
+  const networks = [...new Set(status?.accounts.map((account) => account.network) ?? [])]
+  const live = Boolean(status?.connected && !status?.expired)
+  const sub = !status
+    ? warn
+      ? 'Try again in a moment.'
+      : 'Checking…'
+    : status.expired
+      ? 'The connection ran out. Connect again to keep saving messages.'
+      : status.connected
+        ? networks.length
+          ? networks.join(' · ')
+          : status.running
+            ? 'Connected. Beeper has no chat accounts yet.'
+            : 'Connected. Open Beeper Desktop to keep saving messages.'
+        : status.running
+          ? 'WhatsApp, iMessage, Signal and the other chats Beeper Desktop carries, saved as messages.'
+          : 'Beeper Desktop is not running on this Mac. Open it to connect.'
+  const trouble = warn ?? status?.error ?? null
+
+  return (
+    <>
+      <Row
+        label="Beeper"
+        sub={
+          <>
+            {sub}
+            <div role="status" aria-atomic="true">
+              {hint && <p className="sky-set-success">{hint}</p>}
+            </div>
+            {trouble && (
+              <p className="sky-set-warn" role="alert">
+                {trouble}
+              </p>
+            )}
+          </>
+        }
+      >
+        {status &&
+          (live ? (
+            <span className="sky-set-status">Connected</span>
+          ) : (
+            <span className="sky-set-off">Not connected</span>
+          ))}
+        {status && live && (
+          <Button size="compact-sm" disabled={busy} onClick={() => void disconnect()}>
+            Disconnect
+          </Button>
+        )}
+        {status && !live && status.running && (
+          <Button size="compact-sm" variant="primary" disabled={busy} onClick={() => void connect()}>
+            {busy ? 'Waiting for Beeper…' : status.expired ? 'Connect again' : 'Connect'}
+          </Button>
+        )}
+        {status && !live && !tokenForm && (
+          <Button size="compact-sm" disabled={busy} onClick={() => setTokenForm(true)}>
+            Use a token
+          </Button>
+        )}
+      </Row>
+      {tokenForm && (
+        <div className="sky-set-form">
+          <p className="sky-set-sub">
+            In Beeper Desktop, open Settings → Integrations, press + beside Approved connections, and paste the token it
+            makes here.
+          </p>
+          <div className="sky-set-form-grid">
+            <PasswordInput size="sm" label="Token" value={token} onChange={(e) => setToken(e.currentTarget.value)} />
+          </div>
+          <div className="sky-set-form-foot">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy || !token.trim()}
+              onClick={() =>
+                void saveToken(token.trim()).then((ok) => {
+                  if (ok) {
+                    setToken('')
+                    setTokenForm(false)
+                  }
+                })
+              }
+            >
+              Save to keychain
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => setTokenForm(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── Google: the sign-in, run from here ──────────────────────────────
 
 function useGoogleSignIn(onDone: (email: string) => void) {
@@ -333,6 +540,7 @@ function AccountsBlock({ data, reload }: { data: ConnectionsData; reload: () => 
   return (
     <Block head="Accounts">
       <SlackRow />
+      <BeeperRow />
       {google.accounts.length === 0 && (
         <Row label="Google" sub="Mail, Calendar, Drive and Docs.">
           <span className="sky-set-off">Not connected</span>

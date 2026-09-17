@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-13
+updated: 2026-09-16
 ---
 
 # Settings — the web's settings section
@@ -71,6 +71,11 @@ Pages:
   for storage, references, conflict handling, and runtime behavior.
 - **Connections** — the keychain's page (`connections.ts`, its host in
   `createConnectionsHost.ts`, the pane in `theme/client/settingsConnections.tsx`).
+  Since 2026-09-16 the Accounts block carries a Beeper row: Connect runs
+  the desktop app's own approval page and stores the grant as
+  `beeper/desktop`, a token made in Beeper is accepted instead, and the row
+  lists the networks Beeper carries; its grant stays out of the keychain
+  list below. See `lib/beeper/docs/README.md`.
   Two cards. Accounts: Slack as agent-slack reports it (its test, and a
   Brave re-import when the test fails — `sky slack:auth`'s two moves,
   shared through `commands/all/slack/lib/authStatus.ts`); every Google

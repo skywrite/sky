@@ -36,6 +36,8 @@ const IndexedSource = z.object({
   times: z.array(z.string()),
   identities: z.array(z.string()),
   medium: z.string(),
+  /** Saved from Beeper: the chat network is the medium, the desktop app the destination. */
+  beeper: z.boolean().optional(),
   error: z.boolean().optional(),
   parserVersion: z.number().optional(),
 })
@@ -52,7 +54,15 @@ export const InventorySchema = z.object({
 })
 export type Inventory = z.infer<typeof InventorySchema>
 
-const MESSAGE_PARSER_VERSION = 1
+const MESSAGE_PARSER_VERSION = 2
+
+/** A capture written by the Beeper sync carries its chat and account ids. */
+export function beeperCapture(doc: MessageDocument): { chat: string; account: string; group: boolean } | null {
+  const chat = doc.yaml.chat
+  const account = doc.yaml.account
+  if (typeof chat !== 'string' || !chat || typeof account !== 'string' || !account) return null
+  return { chat, account, group: doc.yaml.group === true }
+}
 
 function messageTimes(doc: MessageDocument): string[] {
   const timestamps =
@@ -72,6 +82,8 @@ function identities(doc: MessageDocument): string[] {
     const link = parseMessageLink(doc.yaml.link)
     if (link) keys.push(`Slack:link:${new URL(doc.yaml.link).origin}:${link.channelId}:${link.rootTs}`)
   }
+  const beeper = beeperCapture(doc)
+  if (beeper) keys.push(`Beeper:chat:${beeper.chat}`)
   return keys
 }
 
@@ -124,6 +136,7 @@ export class SavedMessages {
               times: messageTimes(doc),
               identities: identities(doc),
               medium: doc.medium,
+              ...(beeperCapture(doc) ? { beeper: true } : {}),
               parserVersion: MESSAGE_PARSER_VERSION,
             }
           } catch {
@@ -136,7 +149,7 @@ export class SavedMessages {
           refs.push(ref)
           this.related.set(key, refs)
         }
-        if (!indexed.error && indexed.medium !== 'Slack' && indexed.medium !== 'Email') continue
+        if (!indexed.error && !indexed.beeper && indexed.medium !== 'Slack' && indexed.medium !== 'Email') continue
         if (
           indexed.error ||
           (indexed.times.length
@@ -183,11 +196,12 @@ export class SavedMessages {
 
   async conversation(ref: string, contextRefs: string[] = []): Promise<Conversation | null> {
     const seed = await this.read(ref)
-    if (seed.medium !== 'Slack' && seed.medium !== 'Email') return null
+    const beeper = beeperCapture(seed)
+    if (!beeper && seed.medium !== 'Slack' && seed.medium !== 'Email') return null
     const medium = seed.medium
     const followName = typeof seed.yaml.follow === 'string' ? seed.yaml.follow : ''
     let follow: Follow | undefined
-    if (followName && /^[^/\\.][^/\\]*$/.test(followName)) {
+    if (followName && (medium === 'Slack' || medium === 'Email') && /^[^/\\.][^/\\]*$/.test(followName)) {
       for (const dir of this.followDirs[medium]) {
         const text = await readOptional(path.join(dir, `${followName.replace(/\.yaml$/, '')}.yaml`))
         if (text !== undefined) {
@@ -204,7 +218,15 @@ export class SavedMessages {
     let incomplete = false
     const link = follow?.ref.link ?? (typeof seed.yaml.link === 'string' ? seed.yaml.link : undefined)
     const parsed = link ? parseMessageLink(link) : undefined
-    if (medium === 'Slack' && parsed && link) {
+    if (beeper) {
+      target = {
+        medium: 'Beeper',
+        account: beeper.account,
+        chat: beeper.chat,
+        ...(beeper.group ? { group: true } : {}),
+      }
+      key = `Beeper:${beeper.account}:${beeper.chat}`
+    } else if (medium === 'Slack' && parsed && link) {
       const url = new URL(link)
       const rootTs = follow?.ref.thread_ts ?? parsed.rootTs
       if (url.protocol === 'https:' && url.hostname.endsWith('.slack.com') && /^\d+\.\d+$/.test(rootTs)) {

@@ -2,6 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { reimportSlackFromBrave, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
 import { SLACK_WORKSPACE } from '#config'
 import {
+  BeeperClient,
+  BeeperError,
+  beeperInfo,
+  deleteBeeperGrant,
+  grantExpired,
+  loadBeeperGrant,
+  saveBeeperGrant,
+  startBeeperSignIn,
+} from '#lib/beeper/mod.ts'
+import {
   buildAuthUrl,
   exchangeCode,
   fetchAccountEmail,
@@ -16,7 +26,13 @@ import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS } from '#shared/ai/models.ts'
-import type { ConnectionsHost, GoogleConnectState, SlackStatus } from './connections.ts'
+import type {
+  BeeperConnectState,
+  BeeperStatus,
+  ConnectionsHost,
+  GoogleConnectState,
+  SlackStatus,
+} from './connections.ts'
 import { PROVIDER_LABEL } from './mod.ts'
 
 /** A finished sign-in stays askable this long. */
@@ -98,7 +114,76 @@ async function slackReconnect(): Promise<SlackStatus> {
   return slackStatus()
 }
 
-/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's sign-in. */
+/**
+ * Beeper's sign-in, run from the page the way `sky beeper:auth` runs it from
+ * the terminal: Sky registers itself with the desktop app, the approval page
+ * opens in the browser, and the grant lands in the keychain. A token made in
+ * Beeper's own settings is accepted too.
+ */
+function beeperConnection(secrets: SecretsProvider): ConnectionsHost['beeper'] {
+  const states = new Map<string, BeeperConnectState>()
+  return {
+    async status() {
+      const info = await beeperInfo()
+      const grant = await loadBeeperGrant(secrets)
+      const base: BeeperStatus = {
+        running: Boolean(info),
+        ...(info?.app?.version ? { version: info.app.version } : {}),
+        connected: Boolean(grant),
+        accounts: [],
+      }
+      if (!grant) return base
+      if (grantExpired(grant))
+        return { ...base, expired: true, ...(grant.expiresAt ? { expiresAt: grant.expiresAt } : {}) }
+      const known: BeeperStatus = { ...base, ...(grant.expiresAt ? { expiresAt: grant.expiresAt } : {}) }
+      if (!info) return known
+      try {
+        const accounts = await new BeeperClient(grant.token).accounts()
+        return {
+          ...known,
+          accounts: accounts.map((account) => ({
+            network: account.network?.trim() || account.accountID,
+            status: account.status ?? 'unknown',
+          })),
+        }
+      } catch (error) {
+        if (error instanceof BeeperError && error.kind === 'unauthorized') return { ...known, expired: true }
+        return { ...known, error: error instanceof Error ? error.message : 'Beeper could not list its accounts.' }
+      }
+    },
+    async connect() {
+      if (!(await beeperInfo())) return null
+      const signIn = await startBeeperSignIn()
+      const id = randomUUID()
+      states.set(id, { status: 'waiting' })
+      void (async () => {
+        try {
+          const grant = await signIn.finish()
+          await saveBeeperGrant(secrets, grant)
+          states.set(id, { status: 'done', ...(grant.expiresAt ? { expiresAt: grant.expiresAt } : {}) })
+        } catch (err) {
+          states.set(id, { status: 'failed', message: err instanceof Error ? err.message : String(err) })
+        } finally {
+          setTimeout(() => states.delete(id), CONNECT_KEEP_MS).unref()
+        }
+      })()
+      return { id, url: signIn.url }
+    },
+    connection: (id) => states.get(id) ?? null,
+    async token(token) {
+      try {
+        const info = await new BeeperClient(token).tokenInfo()
+        await saveBeeperGrant(secrets, { token, source: 'pasted', ...(info.scope ? { scope: info.scope } : {}) })
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Beeper did not accept the token.' }
+      }
+    },
+    disconnect: () => deleteBeeperGrant(secrets),
+  }
+}
+
+/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's and Beeper's sign-ins. */
 export function createConnectionsHost(): ConnectionsHost {
   const secrets = new KeychainSecretsProvider()
   return {
@@ -106,5 +191,6 @@ export function createConnectionsHost(): ConnectionsHost {
     providers: () => KNOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABEL[id] ?? id })),
     google: googleSignIn(secrets),
     slack: { status: slackStatus, reconnect: slackReconnect },
+    beeper: beeperConnection(secrets),
   }
 }

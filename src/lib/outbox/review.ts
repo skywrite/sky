@@ -312,7 +312,7 @@ export class OutboxReview {
     let ready: OutboxRecord
     try {
       const native = await this.place(placing)
-      if (!native.id || !native.url) throw new Error('The app did not return a confirmed draft reference.')
+      if (!native.id) throw new Error('The app did not return a confirmed draft reference.')
       ready = await this.store.put({ ...placing, status: 'ready', native, updated: this.now() }, placing.revision)
     } catch (error) {
       // A timeout can happen after an app accepted a draft. Never issue another create automatically.

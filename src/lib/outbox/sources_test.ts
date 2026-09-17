@@ -155,3 +155,69 @@ test('Outbox reads a capture whose participants are not plain text as blank part
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('Outbox admits Beeper captures, joins a chat across days, and gives it the desktop app as destination', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-sources-'))
+  const sources = new SavedMessages(root, { Slack: [], Email: [] })
+  const earlier = '2026-03-10/actions/messages/09-12_whatsapp_Maya_Budget.md'
+  const later = '2026-03-11/actions/messages/08-05_whatsapp_Maya_Photo.md'
+  const group = '2026-03-11/actions/messages/07-55_whatsapp_Atlas-launch-team_Kickoff.md'
+  const other = '2026-03-11/actions/messages/10-00_imessage_Sam_Lunch.md'
+  const write = async (ref: string, text: string) => {
+    const file = path.join(root, resolveTimeRef(ref))
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, text)
+  }
+  try {
+    await write(
+      earlier,
+      '---\nfrom: Maya Okafor\nto: Jane Doe\nwhen: 2026-03-10 09:12\nmedium: WhatsApp\nsummary: Budget\nchat: c1\naccount: whatsapp\n---\n\n## 2026-03-10 09:12 - **Maya Okafor**\n\nCan you approve the pilot budget by Friday?\n',
+    )
+    await write(
+      later,
+      '---\nfrom: Maya Okafor\nto: Jane Doe\nwhen: 2026-03-11 08:05\nmedium: WhatsApp\nsummary: Photo\nchat: c1\naccount: whatsapp\n---\n\n## 2026-03-11 08:05 - **Maya Okafor**\n\nAlso: the photo\n',
+    )
+    await write(
+      group,
+      '---\nfrom: Sam Lee\nto: Atlas launch team\nwhen: 2026-03-11 07:55\nmedium: WhatsApp\nsummary: Kickoff\nchat: c2\naccount: whatsapp\ngroup: true\n---\n\n## 2026-03-11 07:55 - **Sam Lee**\n\nKickoff moved to 3pm\n',
+    )
+    await write(
+      other,
+      '---\nfrom: Sam Lee\nto: Jane Doe\nwhen: 2026-03-11 10:00\nmedium: iMessage\nsummary: Lunch\n---\n\n## 2026-03-11 10:00 - **Sam Lee**\n\nLunch?\n',
+    )
+    const inventory = await sources.discover(null, '2026-03-11')
+    const single = await sources.conversation(later)
+    const groupChat = await sources.conversation(group)
+    assert({
+      given: 'two days of one WhatsApp chat, a group chat, and a hand-written iMessage capture without chat ids',
+      should:
+        'review the Beeper files, join the chat by its id, name Beeper as the destination, and leave the hand capture out',
+      actual: [
+        inventory.pending,
+        inventory.entries?.[later]?.beeper,
+        inventory.entries?.[other]?.beeper,
+        single && [
+          single.key,
+          single.medium,
+          single.target,
+          single.sources.map((source) => source.ref),
+          single.limitations,
+        ],
+        groupChat && [groupChat.key, groupChat.target, groupChat.sources.map((source) => source.to)],
+      ],
+      expected: [
+        [group, later],
+        true,
+        undefined,
+        ['Beeper:whatsapp:c1', 'WhatsApp', { medium: 'Beeper', account: 'whatsapp', chat: 'c1' }, [earlier, later], []],
+        [
+          'Beeper:whatsapp:c2',
+          { medium: 'Beeper', account: 'whatsapp', chat: 'c2', group: true },
+          ['Atlas launch team'],
+        ],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

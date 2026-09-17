@@ -21,6 +21,7 @@ import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { beeperOutboxClient, openBeeperChat, outboxErrorFromBeeper, placeBeeperDraft } from './beeper.ts'
 import type { OutboxReport, OutboxRoutesOptions } from './mod.ts'
 import { checkNativeDraft } from './native.ts'
 import { createScanJob } from './scanJob.ts'
@@ -70,6 +71,14 @@ export function createOutboxHost(
     async (item) => {
       const target = item.conversation.target
       if (!target) throw new OutboxError('No native destination is available.')
+      if (target.medium === 'Beeper') {
+        const client = await beeperOutboxClient(CommandContext.server(config, env).secrets)
+        try {
+          return await placeBeeperDraft(client, target, item.draft, Boolean(item.native))
+        } catch (error) {
+          throw outboxErrorFromBeeper(error)
+        }
+      }
       const commands = service()
       if (target.medium === 'Email') {
         const data = item.native
@@ -97,11 +106,14 @@ export function createOutboxHost(
       return { id: data.draftId ?? '', url: data.url ?? target.link }
     },
     () => new ZonedDateTime().toUTC().normalize().plainDateTime.toString(),
-    (item) =>
-      checkNativeDraft(item, {
+    (item) => {
+      const secrets = CommandContext.server(config, env).secrets
+      return checkNativeDraft(item, {
         workspace: config.SLACK_WORKSPACE ?? '',
-        secrets: CommandContext.server(config, env).secrets,
-      }),
+        secrets,
+        beeper: () => beeperOutboxClient(secrets),
+      })
+    },
     async (input) => {
       const owner = ((await readOptional(config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)
       return runWithUsageSource('outbox:compose', () =>
@@ -235,6 +247,19 @@ export function createOutboxHost(
     get: async (id) => {
       const item = await store.ensureDraft(id)
       return item ? composition.decorate(item) : null
+    },
+    open: async (id) => {
+      const item = await store.get(id)
+      if (!item) throw new OutboxError('This item is no longer in Outbox.', 404)
+      const target = item.conversation.target
+      if (target?.medium !== 'Beeper') throw new OutboxError('This conversation does not open in Beeper.')
+      const client = await beeperOutboxClient(CommandContext.server(config, env).secrets)
+      try {
+        await openBeeperChat(client, target)
+      } catch (error) {
+        throw outboxErrorFromBeeper(error)
+      }
+      return { opened: true }
     },
     compose: (id, revision, draft, instruction, reviewedChanges) =>
       options.composeInProcess

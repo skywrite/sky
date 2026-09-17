@@ -47,15 +47,25 @@ export function outboxDone(item: OutboxRecord): boolean {
   return item.status === 'dismissed' || Boolean(item.delivery) || Boolean(item.responseHistory?.length)
 }
 
-/** The app the reply lives in. */
-export function outboxApp(item: OutboxRecord): 'Slack' | 'Gmail' {
-  return item.conversation.medium === 'Email' ? 'Gmail' : 'Slack'
+/** A conversation Beeper Desktop carries: WhatsApp, iMessage, Signal and the like. */
+export function outboxBeeper(item: OutboxRecord) {
+  const target = item.conversation.target
+  return target?.medium === 'Beeper' ? target : null
 }
 
-/** The channel when the last saved message went to one; else the medium's plain name. */
+/** The app the reply lives in. */
+export function outboxApp(item: OutboxRecord): 'Slack' | 'Gmail' | 'Beeper' {
+  if (item.conversation.medium === 'Email') return 'Gmail'
+  if (item.conversation.medium === 'Slack') return 'Slack'
+  return 'Beeper'
+}
+
+/** The channel or group when the last saved message went to one; else the network's plain name. */
 export function outboxWhere(item: OutboxRecord): string {
   const to = item.conversation.sources.at(-1)?.to ?? ''
   if (to.startsWith('#')) return to
+  const beeper = outboxBeeper(item)
+  if (beeper) return beeper.group ? to || 'group chat' : item.conversation.medium
   return item.conversation.medium === 'Email' ? 'email' : 'direct message'
 }
 
@@ -76,13 +86,14 @@ export type OutboxGlyph = 'channel' | 'direct' | 'email'
 /** The row's glyph: # for a channel, @ for a direct message, an envelope for email. */
 export function outboxGlyph(item: OutboxRecord): OutboxGlyph {
   if (item.conversation.medium === 'Email') return 'email'
+  if (outboxBeeper(item)?.group) return 'channel'
   return outboxWhere(item).startsWith('#') ? 'channel' : 'direct'
 }
 
-/** The conversation in its app: the Slack thread, or the Gmail thread. */
+/** The conversation in its app: the Slack thread, or the Gmail thread. A Beeper chat opens through Sky instead. */
 export function outboxSourceLink(item: OutboxRecord): string | null {
   const target = item.conversation.target
-  if (!target) return null
+  if (!target || target.medium === 'Beeper') return null
   return target.medium === 'Slack'
     ? target.link
     : `https://mail.google.com/mail/u/${encodeURIComponent(target.account)}/#all/${target.thread}`

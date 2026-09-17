@@ -4,7 +4,13 @@ import { createLogin, createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import type { SecretEntry } from '#lib/secrets/types.ts'
 import { assert, test } from '#test'
-import { type ConnectionsData, type ConnectionsHost, createConnectionsRoutes, type SlackStatus } from './connections.ts'
+import {
+  type BeeperStatus,
+  type ConnectionsData,
+  type ConnectionsHost,
+  createConnectionsRoutes,
+  type SlackStatus,
+} from './connections.ts'
 
 // The routes over a store in memory: the keychain is never touched here.
 
@@ -20,6 +26,7 @@ const VALUES = {
   mail: 'pw-mail-secret',
   notion: 'ntn-notion-9c1e',
   pin: '1234',
+  beeper: 'bpr-token-secret-4f2a',
 }
 
 function seeded(): Record<string, SecretEntry> {
@@ -44,6 +51,17 @@ const CONNECTED: SlackStatus = {
 }
 
 const SIGN_IN = { id: 'c1', url: 'https://accounts.google.com/o/oauth2/v2/auth?state=s' }
+
+const BEEPER: BeeperStatus = {
+  running: true,
+  version: '4.3.0',
+  connected: true,
+  accounts: [
+    { network: 'WhatsApp', status: 'connected' },
+    { network: 'Signal', status: 'connected' },
+  ],
+}
+const BEEPER_SIGN_IN = { id: 'b1', url: 'http://127.0.0.1:23373/oauth/authorize?state=s' }
 
 test('connections preserves account presence on denied access and combines recovery requests', async () => {
   const { host } = hostWith()
@@ -130,6 +148,17 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
         slackCalls.push('reconnect')
         return Promise.resolve(CONNECTED)
       },
+    },
+    beeper: {
+      status: () => Promise.resolve(BEEPER),
+      connect: () => Promise.resolve(BEEPER_SIGN_IN),
+      connection: (id) => (id === BEEPER_SIGN_IN.id ? { status: 'waiting' } : null),
+      token: async (token) => {
+        if (token !== VALUES.beeper) return { ok: false, message: 'Beeper did not accept the token.' }
+        await secrets.set('beeper', 'desktop', createSecret(JSON.stringify({ token, source: 'pasted' })))
+        return { ok: true }
+      },
+      disconnect: () => secrets.delete('beeper', 'desktop'),
     },
   }
   const app = createConnectionsRoutes(host)
@@ -333,5 +362,51 @@ test({ name: 'connections route - Slack is asked, and re-imported on request' },
     should: 'pass each to the host and answer what it said',
     actual: [status.status, await status.json(), again.status, slackCalls],
     expected: [200, CONNECTED, 200, ['status', 'reconnect']],
+  })
+})
+
+test('connections - Beeper reports the app, starts its sign-in, takes a token, and disconnects', async () => {
+  const { host } = hostWith()
+  const app = createConnectionsRoutes(host)
+  const headers = { 'Content-Type': 'application/json' }
+  const status = await app.request('/beeper')
+  const started = await app.request('/beeper/connect', { method: 'POST', headers, body: '{}' })
+  const waiting = await app.request('/beeper/connect/b1')
+  const unknown = await app.request('/beeper/connect/nope')
+  const blank = await app.request('/beeper/token', { method: 'POST', headers, body: '{}' })
+  const refused = await app.request('/beeper/token', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token: 'wrong' }),
+  })
+  const saved = await app.request('/beeper/token', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token: VALUES.beeper }),
+  })
+  const listing = await app.request('/')
+  const listed = (await listing.json()) as ConnectionsData
+  const listedText = JSON.stringify(listed)
+  const stored = await host.secrets.get('beeper', 'desktop')
+  const gone = await app.request('/beeper', { method: 'DELETE' })
+  assert({
+    given: 'the Beeper routes over a scripted host',
+    should: 'answer each step, keep the grant out of the keychain list, and forget it on disconnect',
+    actual: [
+      [status.status, await status.json()],
+      [started.status, await started.json()],
+      [waiting.status, await waiting.json(), unknown.status],
+      [blank.status, refused.status, (await refused.json()).message, saved.status],
+      [stored?.type, listed.secrets.some((row) => row.category === 'beeper'), listedText.includes(VALUES.beeper)],
+      [gone.status, await host.secrets.get('beeper', 'desktop')],
+    ],
+    expected: [
+      [200, BEEPER],
+      [200, BEEPER_SIGN_IN],
+      [200, { status: 'waiting' }, 404],
+      [400, 400, 'Beeper did not accept the token.', 200],
+      ['secret', false, false],
+      [200, null],
+    ],
   })
 })

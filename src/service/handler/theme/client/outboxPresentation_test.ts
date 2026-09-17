@@ -1,12 +1,14 @@
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import { assert, test } from '#test'
 import {
+  outboxApp,
   outboxCardSummary,
   outboxDone,
   outboxGlyph,
   outboxHeading,
   outboxNeedsReview,
   outboxSender,
+  outboxSourceLink,
   outboxToken,
   outboxWhere,
   outboxWho,
@@ -184,5 +186,29 @@ test({ name: 'outbox presentation - an older capture with no sender reads as nob
     should: 'show nothing, the name, and nothing',
     actual: [outboxSender({ from: '""' }), outboxSender({ from: 'Jane Doe' }), outboxSender(undefined)],
     expected: ['', 'Jane Doe', ''],
+  })
+})
+
+test('outbox presentation - a Beeper chat reads as its network and opens through Sky', () => {
+  const beeper = (group: boolean, to: string): OutboxRecord['conversation'] => ({
+    ...source('Maya Okafor', to),
+    medium: 'WhatsApp',
+    target: { medium: 'Beeper', account: 'whatsapp', chat: 'c1', ...(group ? { group: true } : {}) },
+  })
+  const direct = record({ conversation: beeper(false, 'Jane Doe') })
+  const groupChat = record({ conversation: beeper(true, 'Atlas launch team') })
+  assert({
+    given: 'a WhatsApp direct chat and a WhatsApp group, both through Beeper',
+    should: 'say the network or the group, use the group glyph, name Beeper as the app, and give no link',
+    actual: [
+      [outboxApp(direct), outboxWhere(direct), outboxWho(direct), outboxGlyph(direct), outboxSourceLink(direct)],
+      [outboxApp(groupChat), outboxWhere(groupChat), outboxGlyph(groupChat)],
+      outboxToken(record({ conversation: beeper(false, 'Jane Doe'), status: 'ready', draft: 'x' })).label,
+    ],
+    expected: [
+      ['Beeper', 'WhatsApp', 'Maya Okafor', 'direct', null],
+      ['Beeper', 'Atlas launch team', 'channel'],
+      'Ready in Beeper',
+    ],
   })
 })

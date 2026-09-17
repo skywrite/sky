@@ -59,6 +59,8 @@ export type OutboxRoutesOptions = {
   get?: (id: string) => Promise<OutboxRecord | null>
   retryFollowups?: (id: string, revision: string) => Promise<OutboxRecord>
   changeDraft?: (id: string, revision: string, mutation: DraftMutation) => Promise<OutboxRecord>
+  /** Bring the conversation's app to the front on this conversation; only Beeper needs Sky's help. */
+  open?: (id: string) => Promise<{ opened: boolean }>
 }
 
 const Revision = z.object({ revision: z.string().min(1) })
@@ -140,6 +142,10 @@ export function createOutboxRoutes(host: OutboxRoutesOptions): Hono {
     if (!host.retryFollowups) return c.json({ message: 'Follow-up drafting is unavailable.' }, 503)
     const data = Revision.parse(await c.req.json())
     return c.json(await host.retryFollowups(c.req.param('id'), data.revision))
+  })
+  app.post('/item/:id/open', async (c) => {
+    if (!host.open) return c.json({ message: 'Opening the app is unavailable.' }, 503)
+    return c.json(await host.open(c.req.param('id')))
   })
   app.post('/item/:id/dismiss', async (c) => {
     const data = Revision.parse(await c.req.json())

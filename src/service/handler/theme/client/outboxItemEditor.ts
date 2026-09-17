@@ -4,7 +4,7 @@ import { replyDestination } from '#lib/outbox/replyDestination.ts'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import type { OutboxReport } from '../../outbox/mod.ts'
 import { type DraftEdits, type Edit, outboxRequest, savedEdit, useOutboxAction, useOutboxItem } from './outboxHooks.ts'
-import { outboxApp } from './outboxPresentation.ts'
+import { outboxApp, outboxBeeper } from './outboxPresentation.ts'
 import type { OpenReplyThread } from './replyThreads.tsx'
 
 /**
@@ -300,6 +300,12 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
     receiveItem(result.item)
     return result.draft
   }
+  /** Beeper has no link Sky can hand the browser; the service asks the desktop app to come forward. */
+  const openApp = () =>
+    act(async () => {
+      if (!item) return
+      await outboxRequest(`/item/${encodeURIComponent(item.id)}/open`, 'POST', {})
+    })
   const copyReply = () => {
     if (!edit) return
     void navigator.clipboard
@@ -363,6 +369,7 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
     blocked,
     canApprove,
     hasDestination: Boolean(item && replyDestination(item)),
+    beeper: Boolean(item && outboxBeeper(item)),
     reviewedChanges,
     setReviewedChanges,
     manualReply,
@@ -377,6 +384,7 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
     save,
     approve,
     dismiss,
+    openApp,
     compose,
     retryFollowups,
     submitSentReport,

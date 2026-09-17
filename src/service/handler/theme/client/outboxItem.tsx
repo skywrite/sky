@@ -141,7 +141,7 @@ export function OutboxItemPage({
   const decision = editor.editable && !item.writingDraft && !hasText && !editor.manualReply
   // A prepared reply can still carry a decision: the questions stay in view above the words.
   const asksAbove = !decision && editor.editable && outboxAsks(editor)
-  const appLink = item.native?.url ?? outboxSourceLink(item)
+  const appLink = item.native?.url || outboxSourceLink(item)
   const hint = item.delivery
     ? 'You recorded this message as sent.'
     : !editor.hasDestination
@@ -219,6 +219,11 @@ export function OutboxItemPage({
         {appLink && (
           <Button component="a" href={appLink} target="_blank" rel="noreferrer">
             Open {editor.nativeApp} ↗
+          </Button>
+        )}
+        {editor.beeper && (
+          <Button disabled={editor.busy} onClick={() => void editor.openApp()}>
+            Open in Beeper
           </Button>
         )}
         {!item.writingDraft && hasText && <Button onClick={editor.copyReply}>Copy reply</Button>}

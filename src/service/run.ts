@@ -197,6 +197,9 @@ export default async function run() {
   // and the tick counter resets with every service restart, so a shorter fuse
   // actually fires on edit-heavy days.
   const EMAIL_SYNC_TICKS = 15
+  // 5 minutes: a steady-state Beeper sync with nothing new is one local chat
+  // search and no AI calls; the desktop app answers from its own database.
+  const BEEPER_SYNC_TICKS = 5
   const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
   let heartbeatRunning = false
   let heartbeatTick = 0
@@ -370,6 +373,30 @@ export default async function run() {
             account: failed.account,
             message: failed.error,
           })
+        }
+      }
+
+      // Beeper: the chats on this Mac. Nothing to do reads as a note, not an
+      // error: no grant stored, or the desktop app closed.
+      if (heartbeatTick % BEEPER_SYNC_TICKS === 0) {
+        const synced = await commandService.run('beeper:inbox:sync', {})
+        if (synced.status !== 'success') {
+          logHeartbeat.error('Beeper sync failed: {message}', { event: 'beeper-sync-failed', message: synced.message })
+        } else if (synced.data && 'unavailable' in synced.data) {
+          tick.set({ beeperSync: synced.data.unavailable })
+        } else if (synced.data) {
+          tick.set({ beeperChats: synced.data.chats, beeperMessages: synced.data.messages })
+          if (synced.data.messages > 0) {
+            logHeartbeat.info('Beeper sync: {messages} message(s) in {chats} chat(s)', {
+              event: 'beeper-synced',
+              messages: synced.data.messages,
+              chats: synced.data.chats,
+              files: synced.data.files,
+            })
+          }
+          for (const note of synced.data.notes) {
+            logHeartbeat.info('Beeper sync: {note}', { event: 'beeper-sync-note', note })
+          }
         }
       }
 

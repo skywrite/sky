@@ -28,7 +28,11 @@ function sha256Buffer(data: Buffer): string {
  * Write a buffer to the attachments directory, deduplicating by SHA256.
  * Returns the final filename or undefined if nothing was written.
  */
-async function writeFileDedup(data: Buffer, attachDir: string, desiredFileName: string): Promise<string | undefined> {
+export async function writeFileDedup(
+  data: Buffer,
+  attachDir: string,
+  desiredFileName: string,
+): Promise<string | undefined> {
   const ext = path.extname(desiredFileName)
   const stem = desiredFileName.slice(0, -ext.length || undefined)
   let targetName = desiredFileName
