@@ -127,3 +127,81 @@ test('beeper client - a draft goes in as JSON and an empty text clears it', asyn
     ],
   })
 })
+
+test('beeper client - nulls read as absent, envelopes without cursors still page, and a bad shape names its field', async () => {
+  const { fetchFn } = fetchWith((call) =>
+    call.url.includes('/v1/chats/search')
+      ? json({
+          items: [
+            {
+              id: 'c1',
+              accountID: 'a',
+              network: null,
+              title: null,
+              type: null,
+              participants: null,
+              draft: { text: null },
+              isMuted: null,
+            },
+          ],
+          hasMore: null,
+          oldestCursor: null,
+          newestCursor: null,
+        })
+      : call.url.includes('/messages')
+        ? json({
+            items: [
+              {
+                id: 'm1',
+                chatID: 'c1',
+                accountID: 'a',
+                senderID: 's',
+                timestamp: '2026-03-10T09:12:00.000Z',
+                sortKey: '1',
+                text: null,
+                senderName: null,
+                attachments: [{ type: null, fileName: null, transcription: null }],
+                mentions: null,
+              },
+            ],
+            hasMore: false,
+            oldestCursor: '0',
+            newestCursor: '1',
+          })
+        : json([{ accountID: 'a', bridge: null, user: null, network: null, status: null }]),
+  )
+  const client = new BeeperClient('t', { fetchFn, baseUrl: 'http://127.0.0.1:1' })
+  const [chats, messages, accounts] = await Promise.all([
+    client.searchChats(),
+    client.messages('c1'),
+    client.accounts(),
+  ])
+  const odd = new BeeperClient('t', {
+    baseUrl: 'http://127.0.0.1:1',
+    fetchFn: (() => Promise.resolve(json({ items: [{ id: 'c2' }] }))) as unknown as typeof fetch,
+  })
+  assert({
+    given: 'answers where Beeper wrote null for what it has no value for, and one missing a required id',
+    should: 'read nulls as absent with the usual defaults, and name the field a required value is missing from',
+    actual: [
+      [
+        chats.items[0].network,
+        chats.items[0].title,
+        chats.items[0].type,
+        chats.items[0].participants,
+        chats.items[0].draft,
+      ],
+      [chats.hasMore, chats.oldestCursor, chats.newestCursor],
+      [messages.items[0].text, messages.items[0].senderName, messages.items[0].attachments?.[0].type],
+      [accounts[0].bridge, accounts[0].user, accounts[0].network],
+      await odd.searchChats().catch((error: unknown) => (error instanceof BeeperError ? error.message : 'other')),
+    ],
+    expected: [
+      ['', '', 'single', undefined, { text: '' }],
+      [false, undefined, undefined],
+      [undefined, undefined, 'unknown'],
+      [undefined, undefined, undefined],
+      'Beeper answered in a shape Sky does not understand (items.0.accountID: Invalid input: expected string, received undefined).',
+    ],
+  })
+})

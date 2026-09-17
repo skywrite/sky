@@ -20,7 +20,7 @@ function clientWith(draft: string | null) {
     network: 'WhatsApp',
     title: 'Maya Okafor',
     type: 'single' as const,
-    draft: text === null ? null : { text },
+    draft: text === null ? undefined : { text },
   })
   const client: BeeperDraftClient = {
     chat: async () => chat(draft),

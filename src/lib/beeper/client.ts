@@ -23,64 +23,66 @@ export class BeeperError extends Error {
   }
 }
 
+/** Beeper writes an absent field as null as readily as it leaves it out. */
+const maybe = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (value === null ? undefined : value), schema.optional())
+const text = (fallback = '') => maybe(z.string()).transform((value) => value ?? fallback)
+
 export const BeeperUserSchema = z.object({
   id: z.string(),
-  username: z.string().optional(),
-  phoneNumber: z.string().optional(),
-  email: z.string().optional(),
-  fullName: z.string().optional(),
-  isSelf: z.boolean().optional(),
+  username: maybe(z.string()),
+  phoneNumber: maybe(z.string()),
+  email: maybe(z.string()),
+  fullName: maybe(z.string()),
+  isSelf: maybe(z.boolean()),
 })
 export type BeeperUser = z.infer<typeof BeeperUserSchema>
 
 export const BeeperAccountSchema = z.object({
   accountID: z.string(),
-  network: z.string().optional(),
-  status: z.string().optional(),
-  statusText: z.string().optional(),
-  user: BeeperUserSchema.optional(),
-  bridge: z.object({ id: z.string(), type: z.string(), provider: z.string().optional() }).optional(),
+  network: maybe(z.string()),
+  status: maybe(z.string()),
+  statusText: maybe(z.string()),
+  user: maybe(BeeperUserSchema),
+  bridge: maybe(z.object({ id: text(), type: text(), provider: maybe(z.string()) })),
 })
 export type BeeperAccount = z.infer<typeof BeeperAccountSchema>
 
 export const BeeperChatSchema = z.object({
   id: z.string(),
   accountID: z.string(),
-  network: z.string().default(''),
-  title: z.string().default(''),
+  network: text(),
+  title: text(),
   type: z.enum(['single', 'group']).catch('single'),
-  participants: z
-    .object({
-      items: z.array(BeeperUserSchema).default([]),
-      hasMore: z.boolean().optional(),
-      total: z.number().optional(),
-    })
-    .optional(),
-  unreadCount: z.number().optional(),
-  lastActivity: z.string().optional(),
-  isArchived: z.boolean().optional(),
-  isMuted: z.boolean().optional(),
-  isLowPriority: z.boolean().optional(),
-  isReadOnly: z.boolean().optional(),
-  draft: z
-    .object({ text: z.string().default('') })
-    .nullable()
-    .optional(),
+  participants: maybe(
+    z.object({
+      items: maybe(z.array(BeeperUserSchema)).transform((value) => value ?? []),
+      hasMore: maybe(z.boolean()),
+      total: maybe(z.number()),
+    }),
+  ),
+  unreadCount: maybe(z.number()),
+  lastActivity: maybe(z.string()),
+  isArchived: maybe(z.boolean()),
+  isMuted: maybe(z.boolean()),
+  isLowPriority: maybe(z.boolean()),
+  isReadOnly: maybe(z.boolean()),
+  draft: maybe(z.object({ text: text() })),
 })
 export type BeeperChat = z.infer<typeof BeeperChatSchema>
 
 export const BeeperAttachmentSchema = z.object({
-  id: z.string().optional(),
-  type: z.string().default('unknown'),
-  srcURL: z.string().optional(),
-  mimeType: z.string().optional(),
-  fileName: z.string().optional(),
-  fileSize: z.number().optional(),
-  isGif: z.boolean().optional(),
-  isSticker: z.boolean().optional(),
-  isVoiceNote: z.boolean().optional(),
-  duration: z.number().optional(),
-  transcription: z.object({ transcription: z.string().optional() }).optional(),
+  id: maybe(z.string()),
+  type: text('unknown'),
+  srcURL: maybe(z.string()),
+  mimeType: maybe(z.string()),
+  fileName: maybe(z.string()),
+  fileSize: maybe(z.number()),
+  isGif: maybe(z.boolean()),
+  isSticker: maybe(z.boolean()),
+  isVoiceNote: maybe(z.boolean()),
+  duration: maybe(z.number()),
+  transcription: maybe(z.object({ transcription: maybe(z.string()) })),
 })
 export type BeeperAttachment = z.infer<typeof BeeperAttachmentSchema>
 
@@ -89,46 +91,42 @@ export const BeeperMessageSchema = z.object({
   chatID: z.string(),
   accountID: z.string(),
   senderID: z.string(),
-  senderName: z.string().optional(),
+  senderName: maybe(z.string()),
   timestamp: z.string(),
   sortKey: z.string(),
-  type: z.string().optional(),
-  text: z.string().optional(),
-  isSender: z.boolean().optional(),
-  isDeleted: z.boolean().optional(),
-  isHidden: z.boolean().optional(),
-  attachments: z.array(BeeperAttachmentSchema).optional(),
-  linkedMessageID: z.string().optional(),
+  type: maybe(z.string()),
+  text: maybe(z.string()),
+  isSender: maybe(z.boolean()),
+  isDeleted: maybe(z.boolean()),
+  isHidden: maybe(z.boolean()),
+  attachments: maybe(z.array(BeeperAttachmentSchema)),
+  linkedMessageID: maybe(z.string()),
 })
 export type BeeperMessage = z.infer<typeof BeeperMessageSchema>
 
 const page = <T extends z.ZodTypeAny>(item: T) =>
   z.object({
-    items: z.array(item),
-    hasMore: z.boolean().default(false),
-    oldestCursor: z.string().optional(),
-    newestCursor: z.string().optional(),
+    items: maybe(z.array(item)).transform((value) => value ?? []),
+    hasMore: maybe(z.boolean()).transform((value) => value ?? false),
+    oldestCursor: maybe(z.string()),
+    newestCursor: maybe(z.string()),
   })
 export const BeeperChatPageSchema = page(BeeperChatSchema)
 export const BeeperMessagePageSchema = page(BeeperMessageSchema)
 export type BeeperPage<T> = { items: T[]; hasMore: boolean; oldestCursor?: string; newestCursor?: string }
 
 export const BeeperInfoSchema = z.object({
-  app: z.object({ version: z.string().optional() }).optional(),
-  server: z
-    .object({
-      status: z.string().optional(),
-      mcp_enabled: z.boolean().optional(),
-      remote_access: z.boolean().optional(),
-    })
-    .optional(),
+  app: maybe(z.object({ version: maybe(z.string()) })),
+  server: maybe(
+    z.object({ status: maybe(z.string()), mcp_enabled: maybe(z.boolean()), remote_access: maybe(z.boolean()) }),
+  ),
 })
 export type BeeperInfo = z.infer<typeof BeeperInfoSchema>
 
 export const BeeperTokenInfoSchema = z.object({
-  scope: z.string().default(''),
-  exp: z.number().optional(),
-  client_id: z.string().optional(),
+  scope: text(),
+  exp: maybe(z.number()),
+  client_id: maybe(z.string()),
 })
 
 export type BeeperQuery = Record<string, string | number | boolean | string[] | undefined>
@@ -208,7 +206,7 @@ export class BeeperClient {
   /** Beeper copies the media to a local file and answers with its path. */
   downloadAsset(url: string): Promise<{ srcURL?: string; error?: string }> {
     return this.request(
-      z.object({ srcURL: z.string().optional(), error: z.string().optional() }),
+      z.object({ srcURL: maybe(z.string()), error: maybe(z.string()) }),
       'POST',
       '/v1/assets/download',
       { json: { url } },
@@ -261,7 +259,11 @@ export class BeeperClient {
       throw new BeeperError(message, 'request', response.status)
     }
     const parsed = schema.safeParse(body)
-    if (!parsed.success) throw new BeeperError('Beeper answered in a shape Sky does not understand.', 'request', 200)
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]
+      const where = issue ? ` (${issue.path.join('.') || 'body'}: ${issue.message})` : ''
+      throw new BeeperError(`Beeper answered in a shape Sky does not understand${where}.`, 'request', 200)
+    }
     return parsed.data
   }
 }
