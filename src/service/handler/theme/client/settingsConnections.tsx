@@ -7,7 +7,9 @@
  * signs in here the way `sky google:auth` does in the terminal: the consent
  * page opens in a tab, and Sky's service receives the redirect on this
  * machine. Slack is agent-slack's: its test is shown, a re-import offered.
- * Beeper Desktop approves Sky on its own page, opened from here.
+ * Beeper Desktop approves Sky on its own page, opened from here. TypeSafe's
+ * key is checked with TypeSafe before it goes in, and the row says whether
+ * TypeSafe still takes it.
  */
 
 import { Button, PasswordInput, SegmentedControl, TextInput } from '@mantine/core'
@@ -65,6 +67,14 @@ type BeeperConnectState =
   | { status: 'waiting' }
   | { status: 'done'; expiresAt?: string }
   | { status: 'failed'; message: string }
+
+type TypeSafeStatus = {
+  connected: boolean
+  tail?: string
+  models: string[]
+  refused?: boolean
+  error?: string
+}
 
 const API = '/settings/_api/connections'
 
@@ -801,6 +811,166 @@ function SecretForm({
   )
 }
 
+// ── TypeSafe: the key for Jev, checked with TypeSafe ────────────────
+
+function useTypeSafe() {
+  const [status, setStatus] = useState<TypeSafeStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [warn, setWarn] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    const r = await fetch(`${API}/typesafe`).catch(() => null)
+    if (!r?.ok) {
+      setWarn(await refusalOf(r))
+      return
+    }
+    setStatus((await r.json()) as TypeSafeStatus)
+  }, [])
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const saveKey = useCallback(
+    async (key: string) => {
+      setWarn(null)
+      setHint(null)
+      setBusy(true)
+      const refusal = await refusalOf(await postJson(`${API}/typesafe/key`, { key }))
+      setBusy(false)
+      if (refusal) {
+        setWarn(refusal)
+        return false
+      }
+      setHint('Saved. TypeSafe accepts the key.')
+      void reload()
+      return true
+    },
+    [reload],
+  )
+
+  const remove = useCallback(async () => {
+    setWarn(null)
+    setHint(null)
+    setBusy(true)
+    const refusal = await refusalOf(await fetch(`${API}/typesafe`, { method: 'DELETE' }).catch(() => null))
+    setBusy(false)
+    if (refusal) setWarn(refusal)
+    else {
+      setHint('Removed from the keychain.')
+      void reload()
+    }
+  }, [reload])
+
+  return { status, busy, warn, hint, saveKey, remove }
+}
+
+function TypeSafeRow({ last }: { last: boolean }) {
+  const { status, busy, warn, hint, saveKey, remove } = useTypeSafe()
+  const [form, setForm] = useState(false)
+  const [key, setKey] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const close = () => {
+    setForm(false)
+    setKey('')
+  }
+  const sub = !status
+    ? warn
+      ? 'Try again in a moment.'
+      : 'Checking…'
+    : !status.connected
+      ? 'For Jev, TypeSafe’s decision model. Keys are made at console.typesafe.ai.'
+      : status.refused
+        ? 'TypeSafe no longer accepts this key. Save a new one.'
+        : status.models.length
+          ? `Models: ${status.models.join(', ')}`
+          : 'Stored.'
+  const trouble = warn ?? (status?.error && !status.refused ? status.error : null)
+
+  return (
+    <>
+      <Row
+        label="TypeSafe API key"
+        sub={
+          <>
+            {sub}
+            <div role="status" aria-atomic="true">
+              {hint && <p className="sky-set-success">{hint}</p>}
+            </div>
+            {trouble && (
+              <p className="sky-set-warn" role="alert">
+                {trouble}
+              </p>
+            )}
+          </>
+        }
+        last={last && !form}
+      >
+        {status?.tail && mono(`•••• ${status.tail}`)}
+        {status &&
+          (!status.connected ? (
+            <span className="sky-set-off">Not set</span>
+          ) : status.refused ? (
+            <span className="sky-set-off">Refused</span>
+          ) : (
+            <span className="sky-set-status">Connected</span>
+          ))}
+        {status && (
+          <Button size="compact-sm" disabled={busy} onClick={() => (form ? close() : setForm(true))}>
+            {status.connected ? 'Change' : 'Add'}
+          </Button>
+        )}
+        {status?.connected &&
+          (confirming ? (
+            <Button
+              size="compact-sm"
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false)
+                void remove()
+              }}
+            >
+              Really remove
+            </Button>
+          ) : (
+            <Button size="compact-sm" disabled={busy} onClick={() => setConfirming(true)}>
+              Remove
+            </Button>
+          ))}
+      </Row>
+      {form && (
+        <div className="sky-set-form">
+          <p className="sky-set-sub">
+            In the TypeSafe console, open Settings → API keys, make a key, and paste it here. Sky asks TypeSafe to
+            confirm it before it goes in your keychain.
+          </p>
+          <div className="sky-set-form-grid">
+            <PasswordInput size="sm" label="API key" value={key} onChange={(e) => setKey(e.currentTarget.value)} />
+          </div>
+          <div className="sky-set-form-foot">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy || !key.trim()}
+              onClick={() =>
+                void saveKey(key.trim()).then((ok) => {
+                  if (ok) close()
+                })
+              }
+            >
+              {busy ? 'Checking with TypeSafe…' : 'Save to keychain'}
+            </Button>
+            <Button size="sm" disabled={busy} onClick={close}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── The keychain: every entry, by name ──────────────────────────────
 
 function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () => void }) {
@@ -823,7 +993,7 @@ function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () =
       head="Keychain"
       note="Everything Sky keeps in your keychain, apart from the Google entries above. Values stay there; a key shows its last four characters so you can tell which one it is."
     >
-      {secrets.length === 0 && editing !== 'new' && <p className="sky-set-sub">Nothing here yet.</p>}
+      <TypeSafeRow last={secrets.length === 0 && editing !== 'new'} />
       {secrets.map((row, index) => {
         const id = `${row.category}/${row.name}`
         const open = editing === id

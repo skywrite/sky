@@ -76,6 +76,12 @@ Pages:
   `beeper/desktop`, a token made in Beeper is accepted instead, and the row
   lists the networks Beeper carries; its grant stays out of the keychain
   list below. See `lib/beeper/docs/README.md`.
+  Since 2026-09-17 the Keychain card opens with a TypeSafe API key row:
+  Add pastes the key, the service asks TypeSafe to list its models with
+  it, and only an accepted key is stored as `typesafe/main`; the row says
+  Connected, Refused (TypeSafe no longer takes the stored key) or Not
+  set, with the models the key may use, and the raw entry stays out of
+  the list below. See `_shared-ts/ai/docs/2026-09-17-typesafe-jev.md`.
   Two cards. Accounts: Slack as agent-slack reports it (its test, and a
   Brave re-import when the test fails — `sky slack:auth`'s two moves,
   shared through `commands/all/slack/lib/authStatus.ts`); every Google
@@ -132,7 +138,11 @@ starts fresh); `DELETE secret/:category/:name` removes one and 404s an
 unknown name; `POST google/client { clientId, clientSecret }` stores the
 OAuth client pair; `POST google/connect` starts a sign-in and answers
 `{ id, url }` (409 without a client); `GET google/connect/:id` answers
-`waiting`, `done` with the email, or `failed` with the reason. Names are
+`waiting`, `done` with the email, or `failed` with the reason. `GET
+typesafe` answers the TypeSafe row (a key stored, its tail, the models it
+may use, or `refused` / `error`); `POST typesafe/key { key }` asks
+TypeSafe first and stores the key only when it is accepted, else 400 with
+the reason; `DELETE typesafe` removes it. Names are
 `SECRET_CATEGORY` / `SECRET_NAME` — letters, digits, dots, dashes, underscores, and
 for names `@` and `+`, since an account email is a name; a blank name
 becomes the filler. Values are never read back whole: `GET connections`
@@ -168,7 +178,7 @@ keychain — the connections tests run over `TestSecretsProvider`.
 | --- | --- |
 | Preferences and app wiring | `~/.sky/config.jsonc` — readable, shareable |
 | Account credentials | the keychain, through `context.secrets` — the Connections page |
-| Provider API keys | the keychain, under the provider's name (Cerebras reads its entry); `src/.env` is still what OpenAI and Anthropic read, and the page does not show those — keychain-first for them is the open rung |
+| Provider API keys | the keychain, under the provider's name (Cerebras and TypeSafe read their entries; TypeSafe's has a row of its own, checked with TypeSafe); `src/.env` is still what OpenAI and Anthropic read, and the page does not show those — keychain-first for them is the open rung |
 
 The config file stays free of secrets. This page never shows a key or
 a credential; Connections shows presence, never values.

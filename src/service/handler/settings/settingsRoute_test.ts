@@ -509,6 +509,11 @@ test({ name: 'settings route - connections ride along when the host has a keycha
         token: () => Promise.resolve({ ok: false, message: 'no Beeper here' }),
         disconnect: () => Promise.resolve(),
       },
+      typesafe: {
+        status: () => Promise.resolve({ connected: false, models: [] }),
+        key: () => Promise.resolve({ ok: false, message: 'no TypeSafe here' }),
+        disconnect: () => Promise.resolve(),
+      },
     },
   })
   const response = await app.request('http://localhost/settings/_api/connections')

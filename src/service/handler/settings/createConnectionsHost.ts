@@ -23,15 +23,24 @@ import {
   startLoopback,
 } from '#lib/google/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import { createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS } from '#shared/ai/models.ts'
-import type {
-  BeeperConnectState,
-  BeeperStatus,
-  ConnectionsHost,
-  GoogleConnectState,
-  SlackStatus,
+import {
+  checkPastedTypeSafeKey,
+  checkTypeSafeKey,
+  createTypeSafeClient,
+  TYPESAFE_SECRET,
+} from '#shared/ai/typesafe/client.ts'
+import {
+  type BeeperConnectState,
+  type BeeperStatus,
+  type ConnectionsHost,
+  type GoogleConnectState,
+  type SlackStatus,
+  tailOf,
+  type TypeSafeStatus,
 } from './connections.ts'
 import { PROVIDER_LABEL } from './mod.ts'
 
@@ -183,7 +192,45 @@ function beeperConnection(secrets: SecretsProvider): ConnectionsHost['beeper'] {
   }
 }
 
-/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's and Beeper's sign-ins. */
+/**
+ * TypeSafe's key, the way `sky secrets:set typesafe main` stores it — except
+ * that the page asks TypeSafe first, so a mistyped key never lands. Every
+ * look at the page asks again with the stored key, so a revoked key reads
+ * as refused instead of failing the first call that needs it.
+ */
+function typesafeConnection(secrets: SecretsProvider): ConnectionsHost['typesafe'] {
+  const { category, name } = TYPESAFE_SECRET
+  return {
+    async status() {
+      const entry = await secrets.get(category, name)
+      const key = entry?.type === 'secret' ? entry.val : entry?.type === 'login' ? entry.pass : ''
+      if (!key) return { connected: false, models: [] }
+      const tail = tailOf(key)
+      const check = await checkTypeSafeKey(createTypeSafeClient({ secrets }))
+      const stored: TypeSafeStatus = {
+        connected: true,
+        ...(tail ? { tail } : {}),
+        models: check.ok ? check.models : [],
+      }
+      if (check.ok) return stored
+      return { ...stored, ...(check.refused ? { refused: true } : {}), error: check.message }
+    },
+    async key(key) {
+      const check = await checkPastedTypeSafeKey(key)
+      if (!check.ok) return { ok: false, message: check.message }
+      const existing = await secrets.get(category, name)
+      await secrets.set(
+        category,
+        name,
+        existing?.type === 'secret' ? updateEntry(existing, { val: key }) : createSecret(key),
+      )
+      return { ok: true }
+    },
+    disconnect: () => secrets.delete(category, name),
+  }
+}
+
+/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's, Beeper's and TypeSafe's keys. */
 export function createConnectionsHost(): ConnectionsHost {
   const secrets = new KeychainSecretsProvider()
   return {
@@ -192,5 +239,6 @@ export function createConnectionsHost(): ConnectionsHost {
     google: googleSignIn(secrets),
     slack: { status: slackStatus, reconnect: slackReconnect },
     beeper: beeperConnection(secrets),
+    typesafe: typesafeConnection(secrets),
   }
 }

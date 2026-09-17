@@ -10,6 +10,7 @@ import {
   type ConnectionsHost,
   createConnectionsRoutes,
   type SlackStatus,
+  type TypeSafeStatus,
 } from './connections.ts'
 
 // The routes over a store in memory: the keychain is never touched here.
@@ -27,6 +28,7 @@ const VALUES = {
   notion: 'ntn-notion-9c1e',
   pin: '1234',
   beeper: 'bpr-token-secret-4f2a',
+  typesafe: 'tsk-typesafe-key-9d2e',
 }
 
 function seeded(): Record<string, SecretEntry> {
@@ -39,6 +41,7 @@ function seeded(): Record<string, SecretEntry> {
     'email/personal': createLogin({ user: 'jane@example.com', pass: VALUES.mail }),
     'notion/main': createSecret(VALUES.notion),
     'pin/main': createSecret(VALUES.pin),
+    'typesafe/main': createSecret(VALUES.typesafe),
   }
 }
 
@@ -62,6 +65,8 @@ const BEEPER: BeeperStatus = {
   ],
 }
 const BEEPER_SIGN_IN = { id: 'b1', url: 'http://127.0.0.1:23373/oauth/authorize?state=s' }
+
+const TYPESAFE: TypeSafeStatus = { connected: true, tail: '9d2e', models: ['jev-1.13.0'] }
 
 test('connections preserves account presence on denied access and combines recovery requests', async () => {
   const { host } = hostWith()
@@ -160,6 +165,15 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
       },
       disconnect: () => secrets.delete('beeper', 'desktop'),
     },
+    typesafe: {
+      status: () => Promise.resolve(TYPESAFE),
+      key: async (key) => {
+        if (key !== VALUES.typesafe) return { ok: false, message: 'TypeSafe refused the key.' }
+        await secrets.set('typesafe', 'main', createSecret(key))
+        return { ok: true }
+      },
+      disconnect: () => secrets.delete('typesafe', 'main'),
+    },
   }
   const app = createConnectionsRoutes(host)
   const withoutClient = () => {
@@ -195,7 +209,7 @@ test({ name: 'connections route - the payload is presence, never a value' }, asy
   assert({
     given: 'the rest of the keychain',
     should:
-      'list every entry but the Google ones — a provider key named after its provider, the filler name never printed, a login with its username, a long key by its tail and a short one without',
+      'list every entry but the Google ones and the TypeSafe key, which has a row of its own — a provider key named after its provider, the filler name never printed, a login with its username, a long key by its tail and a short one without',
     actual: data.secrets,
     expected: [
       { category: 'cerebras', name: 'main', type: 'secret', label: 'Cerebras API key', sub: '', tail: '4f2a' },
@@ -286,7 +300,7 @@ test({ name: 'connections route - set stores a secret or a login, keeping an ent
       noPass.status,
       (await secrets.list()).length,
     ],
-    expected: [400, 400, 400, 400, 400, 8],
+    expected: [400, 400, 400, 400, 400, 9],
   })
   assert({
     given: 'validation failures returned to the keychain form',
@@ -406,6 +420,51 @@ test('connections - Beeper reports the app, starts its sign-in, takes a token, a
       [200, { status: 'waiting' }, 404],
       [400, 400, 'Beeper did not accept the token.', 200],
       ['secret', false, false],
+      [200, null],
+    ],
+  })
+})
+
+test('connections - TypeSafe reports its key, stores one TypeSafe accepts, and forgets it', async () => {
+  const { host, secrets } = hostWith()
+  await secrets.delete('typesafe', 'main')
+  const app = createConnectionsRoutes(host)
+  const headers = { 'Content-Type': 'application/json' }
+  const status = await app.request('/typesafe')
+  const blank = await app.request('/typesafe/key', { method: 'POST', headers, body: '{}' })
+  const refused = await app.request('/typesafe/key', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ key: 'wrong' }),
+  })
+  const saved = await app.request('/typesafe/key', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ key: ` ${VALUES.typesafe} ` }),
+  })
+  const stored = await secrets.get('typesafe', 'main')
+  const listing = await app.request('/')
+  const listed = (await listing.json()) as ConnectionsData
+  const listedText = JSON.stringify(listed)
+  const gone = await app.request('/typesafe', { method: 'DELETE' })
+  assert({
+    given: 'the TypeSafe routes over a scripted host',
+    should:
+      'answer the row, refuse a blank or unaccepted key, store an accepted one trimmed, keep it out of the keychain list and every answer, and forget it on remove',
+    actual: [
+      [status.status, await status.json()],
+      [blank.status, (await blank.json()).message],
+      [refused.status, (await refused.json()).message],
+      [saved.status, stored?.type === 'secret' ? stored.val : null],
+      [listed.secrets.some((row) => row.category === 'typesafe'), listedText.includes(VALUES.typesafe)],
+      [gone.status, await secrets.get('typesafe', 'main')],
+    ],
+    expected: [
+      [200, TYPESAFE],
+      [400, 'Paste the API key from console.typesafe.ai.'],
+      [400, 'TypeSafe refused the key.'],
+      [200, VALUES.typesafe],
+      [false, false],
       [200, null],
     ],
   })

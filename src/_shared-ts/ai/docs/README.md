@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-13
+updated: 2026-09-17
 ---
 
 # Model registry — roles, profiles, providers
@@ -52,13 +52,28 @@ most; a profile with no window declared is not capped.
 - `anthropic` and `openai` read their keys from the environment
   (`src/.env`, loaded by both launchers).
 - `cerebras` (`llm/cerebrasProvider.ts`) reads its key from the OS keychain
-  entry `cerebras/main` on the first request and holds it for the process.
+  entry `cerebras/main` on the first request and holds it for the process
+  (`keychainAuthFetch.ts`, the fetch that signs with a keychain key).
   Store it with `sky secrets:set cerebras main`; no restart needed. It is
   the OpenAI provider pointed at `api.cerebras.ai` through `.chat()`, since
   Cerebras serves chat completions only. Its model is wrapped in
   `llm/singleSystemMessage.ts`: the host takes one system message, first,
   and the cache helpers split instructions into several.
 - `lm-studio` and `ollama` are local and need no key.
+
+## Decisions: TypeSafe's Jev
+
+`typesafe/client.ts` is a different modality and is not in the registry:
+no profile, no role. TypeSafe's Jev answers typed questions about a state
+— pick one of these labels, rate on this rubric, yes or no — with
+calibrated probabilities, and never writes text; a language-model call
+site cannot be pointed at it. Its key is the keychain entry
+`typesafe/main`, stored from Settings → Connections once TypeSafe has
+accepted it, or blind with `sky secrets:set typesafe main`, and read on
+the first request through the same keychain fetch as Cerebras. A caller
+builds its client there and records each request in the usage log under
+provider `typesafe`. Nothing asks it a question yet; see the
+[2026-09-17](2026-09-17-typesafe-jev.md) note.
 
 ## Catalog policy
 
@@ -104,6 +119,10 @@ Tokens only; the invoice prices them.
 
 ## Notes
 
+- [2026-09-17](2026-09-17-typesafe-jev.md) — TypeSafe's Jev joins, key
+  first: a keychain-keyed client, the key checked with TypeSafe and stored
+  from Settings → Connections; the keychain fetch leaves the Cerebras
+  provider for both hosts to share.
 - [2026-09-05](2026-09-05-usage-meter.md) — every model call records its
   token counts; every chat turn shows its own; `sky ai:usage` rolls up.
 - [2026-09-03](2026-09-03-cache-tail-every-step.md) — the cache tail moves

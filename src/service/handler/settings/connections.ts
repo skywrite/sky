@@ -12,6 +12,8 @@
  * re-import them from Brave, the way `sky slack:auth` does. Beeper Desktop
  * signs in from here the way `sky beeper:auth` does, or takes a token made
  * in the app; its grant has its own row and stays out of the keychain list.
+ * TypeSafe's key has a row of its own too: it is stored once TypeSafe has
+ * accepted it, and the row says whether TypeSafe still does.
  */
 
 import { Hono } from 'hono'
@@ -29,6 +31,7 @@ import { KeychainAccessError } from '#lib/secrets/keychainProtocol.ts'
 import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from '#lib/secrets/types.ts'
+import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
 import { secretFieldError, type SecretField } from './secretValidation.ts'
 
 export { SECRET_CATEGORY, SECRET_NAME } from './secretValidation.ts'
@@ -107,6 +110,20 @@ export type BeeperConnectState =
   | { status: 'done'; expiresAt?: string }
   | { status: 'failed'; message: string }
 
+/** TypeSafe's key on this machine, and whether TypeSafe takes it. */
+export type TypeSafeStatus = {
+  /** A key is stored */
+  connected: boolean
+  /** The stored key's last four characters, when it is long enough that they give nothing away */
+  tail?: string
+  /** The models the key may use, when TypeSafe could be asked */
+  models: string[]
+  /** TypeSafe turned the stored key away: mistyped, or revoked since */
+  refused?: boolean
+  /** Why the models could not be listed, in plain words */
+  error?: string
+}
+
 /** The host behind the routes — production is the keychain and the machine, tests script it. */
 export interface ConnectionsHost {
   /** The keychain — in tests, a store in memory */
@@ -131,6 +148,12 @@ export interface ConnectionsHost {
     connection: (id: string) => BeeperConnectState | null
     /** Store a token made in Beeper; a refusal names what went wrong */
     token: (token: string) => Promise<{ ok: true } | { ok: false; message: string }>
+    disconnect: () => Promise<void>
+  }
+  typesafe: {
+    status: () => Promise<TypeSafeStatus>
+    /** Check a pasted key with TypeSafe, then store it; a refusal names what went wrong */
+    key: (key: string) => Promise<{ ok: true } | { ok: false; message: string }>
     disconnect: () => Promise<void>
   }
 }
@@ -201,7 +224,12 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
 
   const providers = new Map(host.providers().map((provider) => [provider.id, provider.label]))
   const rest = index
-    .filter((e) => e.category !== GOOGLE_SECRETS_CATEGORY && e.category !== BEEPER_SECRETS_CATEGORY)
+    .filter(
+      (e) =>
+        e.category !== GOOGLE_SECRETS_CATEGORY &&
+        e.category !== BEEPER_SECRETS_CATEGORY &&
+        e.category !== TYPESAFE_SECRET.category,
+    )
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
   const rows = await Promise.all(
     rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(unavailable), providers)),
@@ -361,6 +389,34 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   app.delete('/beeper', async (c) => {
     try {
       await host.beeper.disconnect()
+      return c.json({ ok: true })
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+
+  // TypeSafe: the key for Jev, checked with TypeSafe before it is stored.
+  app.get('/typesafe', async (c) => {
+    try {
+      return c.json(await host.typesafe.status())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/typesafe/key', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { key?: unknown } | null
+    const key = typeof body?.key === 'string' ? body.key.trim() : ''
+    if (!key) return c.json({ message: 'Paste the API key from console.typesafe.ai.' }, 400)
+    try {
+      const saved = await host.typesafe.key(key)
+      return saved.ok ? c.json({ ok: true }) : c.json({ message: saved.message }, 400)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.delete('/typesafe', async (c) => {
+    try {
+      await host.typesafe.disconnect()
       return c.json({ ok: true })
     } catch (err) {
       return c.json(message(err), 500)
