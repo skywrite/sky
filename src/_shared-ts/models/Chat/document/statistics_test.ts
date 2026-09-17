@@ -28,7 +28,7 @@ test('thread statistics retain nested agent usage once and round-trip with conti
   }
   const entries: ContextTurnLog[] = [
     { turn: 4, queries: [], usage: mainUsage, timing, tools: [{ tool: 'writing_agent', outcome: 'ok' }] },
-    { turn: 5, queries: [], model: 'test/legacy', usage: { ...NO_USAGE, input: 10, output: 5 } },
+    { turn: 5, queries: [], settings: { model: 'test/legacy' }, usage: { ...NO_USAGE, input: 10, output: 5 } },
   ]
   const statistics = chatStatistics(entries, 4)
   const serialized = serializeContextLog(entries, {

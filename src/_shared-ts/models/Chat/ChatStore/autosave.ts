@@ -102,8 +102,6 @@ export interface ChatAutosaveInput {
   resume: ResumeSession | null
   /** Session start: stamps created: for a chat that has no file yet */
   startTime: PlainDateTime
-  provider: string
-  model: string
   /** url → title for external artifacts the session's tools touched */
   externalFiles?: ReadonlyMap<string, string>
   /** Files the session's tools copied into the day's attachments */
@@ -134,8 +132,6 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     // Turn stamps are notebook datetimes (`YYYY-MM-DD HH:MM`), so the
     // latest one's date is the last day this chat moved.
     updated: input.turns.at(-1)?.when?.slice(0, 10) ?? input.startTime.plainDate.ymd,
-    provider: input.provider,
-    model: input.model,
     rel: mergeRel(priorRel, artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
     tags: priorTags,
     attachments: mergeAttachments(input.resume?.attachments, input.attachments),

@@ -755,6 +755,34 @@ test('ChatContext.recordTurnTools', async () => {
 })
 
 // ---------------------------------------------------------------------------
+// recordTurnSettings
+// ---------------------------------------------------------------------------
+
+test('ChatContext.recordTurnSettings', async () => {
+  const { context } = makeContext({ maxTokens: 0 })
+  await context.firstTurn('who is Jane?')
+  context.recordTurnSettings({ model: 'test-model', preset: 'deep-work', effort: 'medium' })
+  context.continueAfter(2)
+  context.recordTurnSettings({ model: 'test-model' })
+
+  assert({
+    given: 'a closed turn with a log entry, then a turn that logged nothing of its own',
+    should: 'stamp the settings and the zero budget on the entry, and open an entry for the turn without one',
+    actual: context.log.map((e) => [
+      e.turn,
+      e.settings?.model,
+      e.settings?.preset ?? null,
+      e.settings?.effort ?? null,
+      e.settings?.contextTokens,
+    ]),
+    expected: [
+      [1, 'test-model', 'deep-work', 'medium', 0],
+      [2, 'test-model', null, null, 0],
+    ],
+  })
+})
+
+// ---------------------------------------------------------------------------
 // restore
 // ---------------------------------------------------------------------------
 

@@ -213,8 +213,6 @@ export interface SaveChatInput {
   startTime: PlainDateTime
   /** Session end: stamps updated: and any recovery copy */
   endTime: PlainDateTime
-  provider: string
-  model: string
   /** url → title for external artifacts the session's tools touched */
   externalFiles?: ReadonlyMap<string, string>
   /** Files the session's tools copied into the day's attachments */
@@ -396,8 +394,6 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     messages: turns,
     created: resume?.created ?? startTime.plainDate.ymd,
     updated: endTime.plainDate.ymd,
-    provider: input.provider,
-    model: input.model,
     // Artifact links ride alongside whichever rel won (hand-written,
     // resumed, or auto) — a session that touched a Google file always
     // records it, deduped against entries already carrying the URL.

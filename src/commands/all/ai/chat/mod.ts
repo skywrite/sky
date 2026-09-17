@@ -523,7 +523,6 @@ export default class AiChatTask extends Command {
       resume: resumeSession,
       model: reasoning,
       profile: {
-        provider: reasoningProfile.provider,
         model: reasoningProfile.model,
         preset: reasoningProfileName,
         effort: args.effort && args.effort !== 'default' ? args.effort : (presetEffort(reasoningProfile) ?? undefined),

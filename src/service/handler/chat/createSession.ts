@@ -261,7 +261,6 @@ export function createChatSettingsHost(): ChatSettingsHost {
       return {
         model: resolveProfile(profile, { effort }),
         profile: {
-          provider: profile.provider,
           model: profile.model,
           preset: name,
           effort: effort === 'default' ? (presetEffort(profile) ?? undefined) : effort,
@@ -327,7 +326,6 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       parent: restore?.resume ? null : (restore?.parent ?? null),
       model: resolveProfile(profile, { effort: prefs.effort }),
       profile: {
-        provider: profile.provider,
         model: profile.model,
         preset: profileName,
         effort: prefs.effort && prefs.effort !== 'default' ? prefs.effort : (presetEffort(profile) ?? undefined),
@@ -431,10 +429,13 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           const { approvals, parent } = loaded
           const recovery = loaded.recovery
           const host = recovery?.host
+          // The budget the last turn ran under; for a log older than turn settings, the last assembly's ceiling.
           const budget =
             recovery?.contextTokens ??
+            state.contextLog.findLast((entry) => entry.settings?.contextTokens !== undefined)?.settings
+              ?.contextTokens ??
             state.contextLog.findLast((entry) => entry.stats?.budget !== undefined)?.stats?.budget
-          const priorModel = state.contextLog.findLast((entry) => entry.model)?.model
+          const priorModel = state.contextLog.findLast((entry) => entry.settings)?.settings?.model
           const profile =
             typeof host?.profile === 'string'
               ? host.profile

@@ -22,7 +22,7 @@ export function fileChatHost(root: string, snapshots: ThreadRestore[] = []) {
       defaultModel: 'test',
       defaultContextTokens: 0,
       choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
-      resolve: () => ({ model: {} as ResolvedModel, profile: { provider: 'test', model: 'test' } }),
+      resolve: () => ({ model: {} as ResolvedModel, profile: { model: 'test' } }),
     },
     endDefaults: {
       autoTag: false,
@@ -45,7 +45,7 @@ export function fileChatHost(root: string, snapshots: ThreadRestore[] = []) {
         restore: restore?.state,
         attachments: restore?.attachments,
         model: {} as ResolvedModel,
-        profile: { provider: 'test', model: 'test' },
+        profile: { model: 'test' },
         producers: {
           produceInitialQuery: async () => ({ ok: true, value: { paths: [] } }),
           evolveQueries: async () => ({ ok: true, value: { queries: [], changed: false } }),

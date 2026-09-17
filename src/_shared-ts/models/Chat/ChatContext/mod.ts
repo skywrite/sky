@@ -715,11 +715,25 @@ export default class ChatContext {
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
   }
 
-  /** The model that answered the turn, on its log entry — a thread may switch models between turns. */
-  recordTurnModel(model: string, preset?: string, effort?: Effort): void {
-    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
-    if (entry) Object.assign(entry, { model, preset, effort })
-    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], model, preset, effort })
+  /**
+   * The settings the turn runs under, on its log entry — the model, preset,
+   * and effort the host set, and the reading budget in force. Stamped before
+   * the model runs, so a turn that fails, or a snapshot taken while the
+   * answer is running, still says what it ran under; a thread may change
+   * any of them between turns.
+   */
+  recordTurnSettings(profile: { model: string; preset?: string; effort?: Effort }): void {
+    let entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (!entry) {
+      entry = { turn: this.turnNumber, queries: [...this.queries] }
+      this.contextLog.push(entry)
+    }
+    entry.settings = {
+      model: profile.model,
+      ...(profile.preset !== undefined ? { preset: profile.preset } : {}),
+      ...(profile.effort !== undefined ? { effort: profile.effort } : {}),
+      contextTokens: this.maxTokens,
+    }
   }
 
   /** Every turn keeps an entry, even when no context changed and no tool ran. */

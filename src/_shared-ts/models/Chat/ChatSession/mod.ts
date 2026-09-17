@@ -20,7 +20,7 @@ import type { UserContent } from 'ai'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
-import type { ContextTurnLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import type { ContextTurnLog, TurnSettings } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -122,6 +122,9 @@ export type ToolFactory = (
   hooks: ToolHooks,
 ) => Promise<{ tools: Record<string, unknown>; toolApproval: ToolApprovalConfig; instructions?: string }>
 
+/** The model a host sets for the session — what each turn's `settings` record, less the budget the context owns. */
+export type ModelProfile = Omit<TurnSettings, 'contextTokens'>
+
 export interface ChatSessionOptions {
   today: PlainDate
   /** Session start: names the file and keys the day-file entry at save time */
@@ -155,7 +158,7 @@ export interface ChatSessionOptions {
   /** Spread into every model invocation */
   model: ResolvedModel
   /** What the transcript records as provider and model */
-  profile: { provider: string; model: string; preset?: string; effort?: Effort }
+  profile: ModelProfile
   producers: ContextProducers
   ambient: AmbientContext
   /** Rendered once per session, concurrently with the baseline gather */
@@ -235,7 +238,7 @@ export default class ChatSession {
   private systemPrompt = ''
   private contextPrompt = ''
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
-  private profile: { provider: string; model: string; preset?: string; effort?: Effort }
+  private profile: ModelProfile
   /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
   private resumeSession: ResumeSession | null
   /** A title pinned before the save: a branch names its family on the parent so the folder is known. */
@@ -512,15 +515,16 @@ export default class ChatSession {
   }
 
   /** The provider and model answering from now on. */
-  get modelProfile(): { provider: string; model: string; preset?: string; effort?: Effort } {
+  get modelProfile(): ModelProfile {
     return this.profile
   }
 
   /**
-   * Think with another model from the next turn on. The transcript records
-   * one model — the one answering when it is saved.
+   * Think with another model from the next turn on. The frontmatter records
+   * one model — the one set when the transcript is saved; each turn's log
+   * entry records the one it ran on.
    */
-  setModel(model: ResolvedModel, profile: { provider: string; model: string; preset?: string; effort?: Effort }): void {
+  setModel(model: ResolvedModel, profile: ModelProfile): void {
     this.engine.setModel(model)
     this.profile = profile
   }
@@ -635,6 +639,10 @@ export default class ChatSession {
       this.emit({ type: 'context-rebuilt', report: context.rebuilt })
     }
     if (context.errors.length > 0) this.emit({ type: 'context-errors', errors: context.errors })
+    // The turn's settings go on its log entry now, before the reply: a turn
+    // that fails, or a snapshot taken while the answer is running, still
+    // says which model, effort, and reading budget it ran under.
+    this.context.recordTurnSettings(this.profile)
 
     // The user's actual message, never the context. A resumed transcript
     // can end mid-exchange on a user message; merge into it so roles keep
@@ -698,11 +706,9 @@ export default class ChatSession {
         tools,
         toolApproval,
       })
-      // Attach tool records to this turn's log entry — creating one when
-      // the turn changed no context and so recorded nothing else.
+      // Tool records and usage join the turn's entry, beside its settings.
       this.context.recordTurnTools(result.toolRecords)
       this.context.recordTurnUsage(result.usage)
-      this.context.recordTurnModel(this.profile.model, this.profile.preset, this.profile.effort)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const text = withChatImages(result.text, replyImages)
@@ -811,8 +817,6 @@ export default class ChatSession {
       day: this.opts.today,
       startTime: this.opts.startTime,
       endTime: await this.now(),
-      provider: this.profile.provider,
-      model: this.profile.model,
       externalFiles: this.externalFiles,
       attachments: [...this.attachments.values()],
       approvals: this.opts.approvals?.(),
@@ -849,8 +853,6 @@ export default class ChatSession {
         resume: this.resumeSession,
         parent: this.parent,
         startTime: this.opts.startTime,
-        provider: this.profile.provider,
-        model: this.profile.model,
         externalFiles: this.externalFiles,
         attachments: [...this.attachments.values()],
         approvals: this.opts.approvals?.(),

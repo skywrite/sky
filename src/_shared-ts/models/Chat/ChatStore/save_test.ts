@@ -63,8 +63,6 @@ async function saveNew(over: Partial<Parameters<typeof saveChat>[0]> = {}) {
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher(),
     ...over,
   })
@@ -100,13 +98,12 @@ test('saveChat - a new chat files under its day and reparses whole', async () =>
   const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
   assert({
     given: 'the transcript written to disk',
-    should: 'reparse to the frontmatter and conversation it was given',
+    should: 'reparse to the frontmatter and conversation it was given, with no model in the header',
     actual: {
       created: doc.yaml['created'],
       updated: doc.yaml['updated'],
       turns: doc.yaml['turns'],
-      provider: doc.provider,
-      model: doc.model,
+      namesAModel: 'model' in doc.yaml || 'provider' in doc.yaml,
       summary: doc.summary,
       conversation: doc.conversation.map((m) => m.content),
     },
@@ -114,8 +111,7 @@ test('saveChat - a new chat files under its day and reparses whole', async () =>
       created: '2026-01-27',
       updated: '2026-01-27',
       turns: 1,
-      provider: 'claude',
-      model: 'claude-opus-4-6',
+      namesAModel: false,
       summary: 'Atlas Launch Planning',
       conversation: TURNS.map((m) => m.content),
     },
@@ -231,8 +227,6 @@ test('saveChat - a resume adds newly referenced documents despite existing rel',
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     autoRel: true,
     enricher: {
       ...neverCalled,
@@ -291,8 +285,6 @@ test('saveChat - new place subjects append on resume and respect disabled auto-r
       day: DAY,
       startTime: START,
       endTime: END,
-      provider: 'claude',
-      model: 'claude-opus-4-6',
       autoRel,
       enricher: {
         ...neverCalled,
@@ -344,8 +336,6 @@ test('saveChat - files read into the session are recorded as attachments, and a 
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     attachments: [{ file: '2026-01-28_Chat_Atlas-Term-Sheet.pdf' }, { file: '2026-01-27_Chat_Atlas-MSA.pdf' }],
     enricher: neverCalled,
   })
@@ -376,8 +366,6 @@ test('saveChat - resuming writes back to the same file, keeping created and grow
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: neverCalled,
   })
 
@@ -424,8 +412,6 @@ test('saveChat - a resume fills only the fields the file is missing', async () =
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     autoTag: true,
     autoRel: true,
     enricher: {
@@ -465,8 +451,6 @@ test('saveChat - a resume refuses to overwrite malformed frontmatter and parks t
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     recoveryDir,
     enricher: neverCalled,
   })
@@ -511,8 +495,6 @@ test('saveChat - a candidate that lost earlier history fails the self-check', as
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     recoveryDir: path.join(timeDir, 'recovery'),
     enricher: neverCalled,
   })
@@ -544,8 +526,6 @@ test('saveChat - day-file logging is skipped on resume, never duplicated', async
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     logToDay: { category: 'Professional' },
     enricher: neverCalled,
   })
@@ -604,8 +584,6 @@ test('saveChat - memory ops apply, report their outcomes, and land in the contex
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     memoryDir,
     enricher: stubEnricher({
       distillMemories: async (transcript, memories) => {
@@ -724,8 +702,6 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     people: true,
     personIO,
     enricher: stubEnricher({
@@ -818,8 +794,6 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher(),
   })
 
@@ -838,8 +812,6 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     memoryDir,
     enricher: stubEnricher({
       distillMemories: async () => [
@@ -918,8 +890,6 @@ test('saveChat - a resumed sealed chat does not grow a second seal', async () =>
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher(),
   })
 
@@ -976,8 +946,6 @@ test('saveChat - a branch files beside its parent, holding only its own turns an
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher({
       summarize: async (transcript) => (transcript.includes('week.') ? 'WRONG' : 'Board Prep Instead'),
     }),
@@ -1038,8 +1006,6 @@ test('saveChat - a resumed branch writes back its own turns only, with its paren
     day: DAY,
     startTime: new PlainDateTime('2026-01-27 09:40'),
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher({ summarize: async () => 'Board Prep Instead' }),
   })
   const resume = await loadResumeSession(branch.path, { baseDir: path.dirname(timeDir) })
@@ -1055,8 +1021,6 @@ test('saveChat - a resumed branch writes back its own turns only, with its paren
     day: DAY,
     startTime: new PlainDateTime('2026-01-27 09:40'),
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: neverCalled,
   })
   const doc = ChatDocument.fromMarkdown(await readTextFile(again.path))
@@ -1103,8 +1067,6 @@ test('saveChat - a branch whose parent was never kept files whole, as a chat of 
     day: DAY,
     startTime: START,
     endTime: END,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     enricher: stubEnricher({ summarize: async () => 'Board Prep Instead' }),
   })
   const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))

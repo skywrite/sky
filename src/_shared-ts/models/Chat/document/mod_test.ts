@@ -20,8 +20,6 @@ interface MetadataFixture {
   file: string
   description: string
   expectedSummary: string
-  expectedProvider: string
-  expectedModel: string
   expectedTurnCount: number
 }
 
@@ -30,16 +28,12 @@ const metadataFixtures: MetadataFixture[] = [
     file: 'simple-two-turns.md',
     description: 'simple two-turn chat',
     expectedSummary: 'Exploring the Future of Payments',
-    expectedProvider: 'claude',
-    expectedModel: 'claude-opus-4-6',
     expectedTurnCount: 2,
   },
   {
     file: 'multi-turn-with-subheadings.md',
     description: 'multi-turn with subheadings',
     expectedSummary: 'MCP vs x402 Analysis',
-    expectedProvider: 'openai',
-    expectedModel: 'gpt-5.2',
     expectedTurnCount: 4,
   },
 ]
@@ -52,18 +46,6 @@ metadataFixtures.forEach((fixture) => {
       should: 'return correct summary',
       actual: doc.summary,
       expected: fixture.expectedSummary,
-    })
-    assert({
-      given: fixture.description,
-      should: 'return correct provider',
-      actual: doc.provider,
-      expected: fixture.expectedProvider,
-    })
-    assert({
-      given: fixture.description,
-      should: 'return correct model',
-      actual: doc.model,
-      expected: fixture.expectedModel,
     })
     assert({
       given: fixture.description,
@@ -178,8 +160,6 @@ test('ChatDocument.create - produces valid document', () => {
     ],
     created: '2026-02-10',
     updated: '2026-02-10',
-    provider: 'claude',
-    model: 'claude-opus-4-6',
   })
 
   assert({
@@ -187,13 +167,6 @@ test('ChatDocument.create - produces valid document', () => {
     should: 'have correct summary',
     actual: doc.summary,
     expected: 'Test Chat',
-  })
-
-  assert({
-    given: 'created ChatDocument',
-    should: 'have correct provider',
-    actual: doc.provider,
-    expected: 'claude',
   })
 
   assert({
@@ -231,8 +204,6 @@ test('ChatDocument.create - roundtrip preserves data', () => {
     ],
     created: '2026-02-10',
     updated: '2026-02-10',
-    provider: 'openai',
-    model: 'gpt-5.2',
     tags: ['Tech/AI'],
   })
 
@@ -243,20 +214,6 @@ test('ChatDocument.create - roundtrip preserves data', () => {
     should: 'return correct summary',
     actual: reparsed.summary,
     expected: 'Roundtrip Test',
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'return correct provider',
-    actual: reparsed.provider,
-    expected: 'openai',
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'return correct model',
-    actual: reparsed.model,
-    expected: 'gpt-5.2',
   })
 
   assert({
@@ -458,8 +415,6 @@ test('ChatDocument - turn stamps round-trip through headings', () => {
     ],
     created: '2026-02-08',
     updated: '2026-02-08',
-    provider: 'claude',
-    model: 'claude-opus-4-6',
   })
 
   const markdown = doc.toMarkdown()
@@ -622,8 +577,6 @@ test('ChatDocument - the legacy AI Assistant label still reads as the assistant 
     messages: doc.conversation,
     created: '2026-02-08',
     updated: '2026-02-08',
-    provider: 'claude',
-    model: 'claude-opus-4-6',
   }).toMarkdown()
   assert({
     given: 'the conversation rebuilt for save',
@@ -720,8 +673,6 @@ test('ChatDocument.create - approvals round-trip and default to empty', () => {
     ],
     created: '2026-09-01',
     updated: '2026-09-01',
-    provider: 'claude',
-    model: 'claude-opus-5',
     approvals: ['google_agent:f123abc'],
   })
 
@@ -739,8 +690,6 @@ test('ChatDocument.create - approvals round-trip and default to empty', () => {
     messages: [{ role: 'user', content: 'hi' }],
     created: '2026-09-01',
     updated: '2026-09-01',
-    provider: 'claude',
-    model: 'claude-opus-5',
   })
 
   assert({

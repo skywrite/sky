@@ -132,8 +132,6 @@ function buildCandidate(
     messages,
     created: '2026-03-05',
     updated: '2026-03-06',
-    provider: 'claude',
-    model: 'claude-opus-4-6',
   })
   return doc.toMarkdown() + serializeContextLog(contextLog)
 }

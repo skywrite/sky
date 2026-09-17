@@ -42,20 +42,29 @@ test('contextLog - timing is an optional v2 field and round-trips beside older e
     span.finish()
     const entries: ContextTurnLog[] = [
       { turn: 1, queries: [] },
-      { turn: 2, queries: [], timing: timingDetail(span), model: 'test-model', preset: 'deep-work', effort: 'medium' },
+      {
+        turn: 2,
+        queries: [],
+        timing: timingDetail(span),
+        settings: { model: 'test-model', preset: 'deep-work', effort: 'medium', contextTokens: 0 },
+      },
     ]
     const markdown = 'A mock transcript.\n' + serializeContextLog(entries)
     const parsed = splitContextLog(markdown)
     assert({
-      given: 'an old untimed turn followed by a timed turn whose metadata contains a comment terminator',
-      should: 'retain both entries and the exact serialized bytes within version 2',
+      given:
+        'an old untimed turn followed by a timed turn, on a closed notebook, whose metadata contains a comment terminator',
+      should: 'retain both entries, the zero budget, and the exact serialized bytes within version 2',
       actual: {
         entries: parsed.entries,
         roundTrip: parsed.body + serializeContextLog(parsed.entries) === markdown,
         version: markdown.includes('"version": 2'),
         escaped: !markdown.includes('mock-->lookup'),
+        closed: markdown.includes(
+          '"settings": {"model":"test-model","preset":"deep-work","effort":"medium","contextTokens":0}',
+        ),
       },
-      expected: { entries, roundTrip: true, version: true, escaped: true },
+      expected: { entries, roundTrip: true, version: true, escaped: true, closed: true },
     })
   })
 })

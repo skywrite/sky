@@ -114,8 +114,6 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  * ---
  * created: 2026-02-08
  * summary: Topic Summary
- * provider: claude
- * model: claude-opus-4-6
  * turns: 4
  * ---
  *
@@ -134,12 +132,19 @@ function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: str
  * transcripts from before turn stamps have bare `## Jane` / `## Sky`
  * headings, and early stamped ones carry a trailing `(2026-02-08 14:32)`
  * on a plain name instead.
+ *
+ * The header names no model: a chat may switch models between turns, and
+ * each turn's context-log entry records the `settings` it ran under.
+ * Transcripts written before 2026-09-17 carry `provider:` and `model:`
+ * lines (the model set when the file was saved); they are read as any
+ * other key and never written again.
  */
 export default class ChatDocument extends SectionDocument {
   static override yamlKeyOrder = [
     'created',
     'updated',
     'summary',
+    // Older transcripts only — kept in place when such a file is rewritten, never written anew.
     'provider',
     'model',
     'turns',
@@ -153,16 +158,6 @@ export default class ChatDocument extends SectionDocument {
   /** Summary from YAML frontmatter */
   get summary(): string {
     return (this.yaml['summary'] as string) ?? ''
-  }
-
-  /** AI provider from YAML (e.g. "claude", "openai") */
-  get provider(): string {
-    return (this.yaml['provider'] as string) ?? ''
-  }
-
-  /** Model name from YAML (e.g. "claude-opus-4-6") */
-  get model(): string {
-    return (this.yaml['model'] as string) ?? ''
   }
 
   /** Number of turns from YAML */
@@ -249,8 +244,6 @@ export default class ChatDocument extends SectionDocument {
     messages: ConversationMessage[]
     created: string
     updated: string
-    provider: string
-    model: string
     rel?: string[]
     tags?: string[]
     /** Files in the day's attachments this chat read; the key is absent when there are none */
@@ -265,8 +258,6 @@ export default class ChatDocument extends SectionDocument {
       created: input.created,
       updated: input.updated,
       summary: input.summary,
-      provider: input.provider,
-      model: input.model,
       turns: turnCount,
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
       tags: input.tags && input.tags.length > 0 ? input.tags.join('; ') : null,

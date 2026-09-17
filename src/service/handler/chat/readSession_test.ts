@@ -22,8 +22,6 @@ test('readSession restores a complete snapshot off the server thread', async () 
       contextLog: [{ turn: 1, queries: [] }],
       resume: null,
       startTime: new PlainDateTime('2026-01-27 09:30'),
-      provider: 'sample',
-      model: 'sample-model',
       recovery: { version: 1, modelMessages: [{ role: 'user', content: 'Sample request' }], host: { saves: false } },
     })
     const options = { baseDir: dir, snapshot: true }

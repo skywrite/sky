@@ -36,7 +36,7 @@ export function imageChatHost(root: string) {
       restore: restore?.state,
       attachments: restore?.attachments,
       model: {} as ResolvedModel,
-      profile: { provider: 'test', model: 'test' },
+      profile: { model: 'test' },
       producers: {
         produceInitialQuery: async () => ({ ok: true, value: { paths: [] } }),
         evolveQueries: async () => ({ ok: true, value: { queries: [], changed: false } }),

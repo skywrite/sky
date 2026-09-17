@@ -22,7 +22,13 @@ import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ApprovalDecision } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
-import type { ChatMessageFiles, ChatSessionEvent, EndOptions, TurnReport } from '#shared/models/Chat/ChatSession/mod.ts'
+import type {
+  ChatMessageFiles,
+  ChatSessionEvent,
+  EndOptions,
+  ModelProfile,
+  TurnReport,
+} from '#shared/models/Chat/ChatSession/mod.ts'
 import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
@@ -224,7 +230,7 @@ export interface ChatSettingsHost {
     effort?: EffortOverride,
   ): {
     model: ResolvedModel
-    profile: { provider: string; model: string; preset?: string; effort?: Effort }
+    profile: ModelProfile
     contextWindow?: number
   }
   /**
@@ -725,13 +731,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               const at = entry.turn * 2 - 1
               if (at < 0 || at >= session.turns.length) continue
               if (entry.usage) {
-                const model =
-                  (entry.model && options.settings?.profileFor?.(entry.model, thread.profile)) || thread.profile
+                const ran = entry.settings
+                const model = (ran && options.settings?.profileFor?.(ran.model, thread.profile)) || thread.profile
                 thread.usage.set(at, {
                   ...entry.usage,
-                  model: entry.preset ?? model,
-                  modelLabel: entry.model ? prettyModel(entry.model) : undefined,
-                  effort: entry.effort,
+                  model: ran?.preset ?? model,
+                  modelLabel: ran ? prettyModel(ran.model) : undefined,
+                  effort: ran?.effort,
                 })
               }
               if (entry.timing) thread.timings.set(at, timingLine(entry.timing))

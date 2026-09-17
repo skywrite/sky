@@ -30,7 +30,13 @@
  * doc records — recorded because they are tunable and a logged score is
  * only interpretable against the parameters that produced it, and the
  * memory distiller added `memory` on entries (the session's ai/memory ops)
- * and the person-facts distiller added `people` (the session's profile ops).
+ * and the person-facts distiller added `people` (the session's profile ops),
+ * and every entry carries `settings` — the model, preset, effort, and
+ * reading budget the turn ran under, one object stamped before the model
+ * runs, so a failed turn, or a snapshot taken while the answer is running,
+ * still says what it ran under. (Logs written before 2026-09-17 carried
+ * `model`, `preset`, and `effort` flat on the entry; every one on disk was
+ * rewritten into `settings`, so the reader knows one shape.)
  * Optional fields never bump the version: the reader tolerates their
  * absence, and a bump would orphan resume for every transcript already on
  * disk.
@@ -117,6 +123,20 @@ export interface TurnStats {
   reused?: boolean
 }
 
+/**
+ * What a turn ran under. Stamped on its log entry before the reply, so a
+ * turn that fails keeps it — a thread may change any of it between turns.
+ */
+export interface TurnSettings {
+  /** The provider's model id; the frontmatter's `model:` names the one set when the file was saved */
+  model: string
+  /** The preset the model was chosen by, and its effective effort — independent of later edits to the preset */
+  preset?: string
+  effort?: Effort
+  /** The reading budget, 0 = notebook closed. `stats.budget` is the assembler's ceiling and is absent when no assembly ran. */
+  contextTokens?: number
+}
+
 export interface ContextTurnLog {
   turn: number
   queries: string[]
@@ -147,11 +167,8 @@ export interface ContextTurnLog {
   usage?: TokenUsage
   /** Prompt-to-result elapsed time and individual calls; independent of transcript minute stamps. */
   timing?: TimingDetail
-  /** The model that answered this turn (the provider's id, as the frontmatter's `model:` names the last one) — a thread may switch between turns */
-  model?: string
-  /** The preset and effective effort used for this reply, independent of later edits. */
-  preset?: string
-  effort?: Effort
+  /** The model, preset, effort, and reading budget this turn ran under */
+  settings?: TurnSettings
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -178,9 +195,7 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
-    if (entry.model) fields.push(`      "model": ${JSON.stringify(entry.model)}`)
-    if (entry.preset) fields.push(`      "preset": ${JSON.stringify(entry.preset)}`)
-    if (entry.effort) fields.push(`      "effort": ${JSON.stringify(entry.effort)}`)
+    if (entry.settings) fields.push(`      "settings": ${JSON.stringify(entry.settings)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

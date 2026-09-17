@@ -36,7 +36,7 @@ export function chatStatistics(entries: ContextTurnLog[], messages: number): Cha
       }
     } else if (entry.usage) {
       result.usage = addUsage(result.usage, entry.usage)
-      const name = entry.model ?? 'unknown'
+      const name = entry.settings?.model ?? 'unknown'
       const prior = result.models[name] ?? { calls: 0, ms: 0, usage: { ...NO_USAGE } }
       result.models[name] = { ...prior, usage: addUsage(prior.usage, entry.usage) }
     }

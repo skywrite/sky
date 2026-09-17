@@ -98,7 +98,7 @@ const settingsHost: ChatSettingsHost = {
   choices: () => CHOICES,
   resolve: (name) => {
     if (!CHOICES.some((c) => c.name === name)) throw new Error(`Unknown model profile: "${name}"`)
-    return { model: {} as ResolvedModel, profile: { provider: 'test', model: name } }
+    return { model: {} as ResolvedModel, profile: { model: name } }
   },
   // The test profiles are named after their models, so a logged model is its own profile.
   profileFor: (model) => (CHOICES.some((c) => c.name === model) ? model : undefined),
@@ -114,7 +114,7 @@ const smallWindowHost: ChatSettingsHost = {
   ],
   resolve: (name) => {
     if (name === 'test-small') {
-      return { model: {} as ResolvedModel, profile: { provider: 'test', model: name }, contextWindow: SMALL_WINDOW }
+      return { model: {} as ResolvedModel, profile: { model: name }, contextWindow: SMALL_WINDOW }
     }
     return settingsHost.resolve(name)
   },
@@ -152,7 +152,7 @@ async function testHost(
         restore: restore?.resume ? undefined : restore?.state,
         parent: restore?.resume ? null : (restore?.parent ?? null),
         model: {} as ResolvedModel,
-        profile: { provider: 'claude', model: prefs.profile ?? 'claude-opus-4-6' },
+        profile: { model: prefs.profile ?? 'claude-opus-4-6' },
         producers: {
           produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap], query: over.initialQuery })),
           evolveQueries: () => Promise.resolve(ok({ queries: [] as string[], changed: false })),
@@ -232,7 +232,7 @@ test('chat effort overrides apply to one thread, reset on model changes, and kee
       if (effort === 'max') throw new Error('Unsupported effort')
       return {
         ...settingsHost.resolve(name),
-        profile: { provider: 'test', model: name, preset: name, effort: effort === 'default' ? 'high' : effort },
+        profile: { model: name, preset: name, effort: effort === 'default' ? 'high' : effort },
       }
     },
   }
@@ -2077,7 +2077,7 @@ test({ name: 'chat route - the threads the last run left behind come back from t
                 queries: [],
                 usage: { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0 } as never,
                 timing: { total: 4200 } as never,
-                model: 'test-quick',
+                settings: { model: 'test-quick' },
               },
             ],
           },

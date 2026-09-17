@@ -32,7 +32,7 @@ test(
             defaultModel: 'test',
             defaultContextTokens: 0,
             choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
-            resolve: () => ({ model: {} as ResolvedModel, profile: { provider: 'test', model: 'test' } }),
+            resolve: () => ({ model: {} as ResolvedModel, profile: { model: 'test' } }),
           },
           createSession: async (_id, onEvent) =>
             new ChatSession({
@@ -44,7 +44,7 @@ test(
               contextTokens: 0,
               resume: null,
               model: {} as ResolvedModel,
-              profile: { provider: 'test', model: 'test' },
+              profile: { model: 'test' },
               ambient: { today: { date: '2026-01-27', dayOfWeek: 'Tuesday' }, health: [], prices: [] },
               producers: {
                 produceInitialQuery: async () => ({ ok: true, value: { paths: [] } }),

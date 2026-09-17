@@ -55,7 +55,7 @@ export function replyThreadTestHost(
       choices: () => [{ name: MODEL, label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
       resolve: (name) => {
         if (name !== MODEL) throw new Error('Unknown test model')
-        return { model: {} as ResolvedModel, profile: { provider: 'test', model: name } }
+        return { model: {} as ResolvedModel, profile: { model: name } }
       },
       profileFor: () => MODEL,
     },
@@ -107,7 +107,7 @@ export function replyThreadTestHost(
         parent: restore?.resume ? null : restore?.parent,
         attachments: restore?.attachments,
         model: {} as ResolvedModel,
-        profile: { provider: 'test', model: MODEL },
+        profile: { model: MODEL },
         producers: {
           produceInitialQuery: async () => ({ ok: true, value: { paths: [] } }),
           evolveQueries: async () => ({ ok: true, value: { queries: [], changed: false } }),

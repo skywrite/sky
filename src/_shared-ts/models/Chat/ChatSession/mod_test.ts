@@ -85,7 +85,7 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
     resume: null,
     // The scripted invoker never touches the model config.
     model: {} as ResolvedModel,
-    profile: { provider: 'claude', model: 'claude-opus-4-6' },
+    profile: { model: 'claude-opus-4-6' },
     producers: {
       produceInitialQuery: () => {
         producerCalls.initial++
@@ -483,6 +483,12 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     actual: failed.state.contextLog.at(-1)?.timing?.outcome,
     expected: 'error',
   })
+  assert({
+    given: "the failed turn's log entry",
+    should: 'still say which model and reading budget the turn ran under',
+    actual: [failed.state.contextLog.at(-1)?.settings?.model, failed.state.contextLog.at(-1)?.settings?.contextTokens],
+    expected: ['claude-opus-4-6', 300_000],
+  })
 })
 
 test('ChatSession keeps generated images through recovery, filing, branching, and later replies', async () => {
@@ -769,20 +775,61 @@ test('ChatSession.fileNow - a parent with no file gets one and goes on talking i
   })
 })
 
-test('ChatSession - each turn logs the model that answered it', async () => {
+test('ChatSession - each turn logs the model, effort, and reading budget it ran under', async () => {
   const s = await makeSession()
   await s.session.start()
   await s.session.send('What should I focus on?')
-  s.session.setModel({} as ResolvedModel, { provider: 'claude', model: 'claude-haiku-4-5' })
+  s.session.setModel({} as ResolvedModel, {
+    model: 'claude-haiku-4-5',
+    preset: 'quick',
+    effort: 'low',
+  })
+  s.session.setContextTokens(5000)
   await s.session.send('And after that?')
   assert({
-    given: 'two turns, the second on another model',
-    should: "name each turn's model on its log entry",
-    actual: s.session.contextLog.filter((e) => e.model).map((e) => [e.turn, e.model]),
+    given: 'two turns, the second after the model, its effort, and the budget changed',
+    should: "stamp each turn's own settings on its log entry",
+    actual: s.session.contextLog.map((e) => [
+      e.turn,
+      e.settings?.model,
+      e.settings?.preset ?? null,
+      e.settings?.effort ?? null,
+      e.settings?.contextTokens,
+    ]),
     expected: [
-      [1, 'claude-opus-4-6'],
-      [2, 'claude-haiku-4-5'],
+      [1, 'claude-opus-4-6', null, null, 300_000],
+      [2, 'claude-haiku-4-5', 'quick', 'low', 5000],
     ],
+  })
+})
+
+test('ChatSession - the snapshot written before the reply carries the settings of the turn in flight', async () => {
+  let autosave = ''
+  let seen: [number, string, string, string, number] | undefined
+  const { session, tmp } = await makeSession({
+    invokeModel: async ({ sink }) => {
+      // The host snapshots the message before the answer; read it as the model would run.
+      const entry = (await loadResumeSession(autosave)).state.contextLog.at(-1)
+      const ran = entry!.settings!
+      seen = [entry!.turn, ran.model, ran.preset!, ran.effort!, ran.contextTokens!]
+      sink.write('Focus on the demo.')
+      return { text: '', content: [], steps: [], responseMessages: [] }
+    },
+  })
+  autosave = path.join(tmp, 'autosave.md')
+  session.snapshotOnSend = true
+  await session.start()
+  session.setModel({} as ResolvedModel, {
+    model: 'claude-haiku-4-5',
+    preset: 'quick',
+    effort: 'low',
+  })
+  await session.send('What should I focus on?')
+  assert({
+    given: 'a host that snapshots the message before the answer',
+    should: 'find the model, preset, effort, and budget of the turn in flight on its entry',
+    actual: seen,
+    expected: [1, 'claude-haiku-4-5', 'quick', 'low', 300_000],
   })
 })
 

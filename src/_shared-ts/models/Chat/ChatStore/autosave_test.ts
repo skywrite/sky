@@ -41,8 +41,6 @@ function autosaveInput(over: Partial<Parameters<typeof writeChatAutosave>[1]> = 
     contextLog: LOG,
     resume: null,
     startTime: START,
-    provider: 'claude',
-    model: 'claude-opus-4-6',
     ...over,
   }
 }
@@ -148,8 +146,6 @@ test('loadResumeSession still reads legacy recovery metadata from YAML', async (
     messages: TURNS,
     created: '2026-01-27',
     updated: '2026-01-27',
-    provider: 'sample',
-    model: 'sample-model',
   })
   doc.yaml['recovery'] = recovery
   const original = doc.toMarkdown() + serializeContextLog(LOG)

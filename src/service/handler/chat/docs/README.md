@@ -245,9 +245,15 @@ a person can see and touch:
   only in effort share one model choice, while custom named presets stay
   distinct. A chat's effort is `default` (inherit its preset) or an explicit
   supported level; changing models resets the override. Recovery, saved
-  reopen, branches, and reply threads preserve the chat's override. Turn
-  logs record the actual model, preset, and effective effort so editing a
-  preset cannot rewrite reply provenance.
+  reopen, branches, and reply threads preserve the chat's override. Every
+  turn's log entry carries one `settings` object — the model, preset,
+  effective effort, and reading budget it ran under — stamped before the
+  reply, so a failed turn, and the snapshot written while the answer runs,
+  keep it; editing a preset cannot rewrite reply provenance, and a chat
+  whose settings changed along the way reads turn by turn. Logs written
+  before the object were rewritten into it. The file's YAML header names
+  no provider or model any more; the per-turn record is the only place
+  the model lives ([2026-09-16](2026-09-16-every-turn-keeps-its-settings.md)).
   Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. A model whose host
   serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
   request) ends the slider at the last stop that fits, 50k there; the
@@ -528,6 +534,19 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-17 — session tests: a turn after the model, effort, and reading
+  budget changed logs each in its own `settings`; a failed turn's entry
+  still names its model and budget; the snapshot written before the reply
+  carries the settings of the turn in flight; the serializer keeps a zero
+  budget; the context stamps a closed turn's entry and opens one for a turn
+  that logged nothing; a restored snapshot's replies read model and effort
+  from `settings`. All chat suites green (337 tests). On disk: 58 files,
+  232 turns rewritten from loose fields into `settings`; every other line
+  byte-identical to its backup; the live service restored all threads
+  from the rewritten snapshots and shows their per-reply model and effort.
+  Header: a saved transcript reparses with no `model` or `provider` key
+  (store test); the session profile carries no provider at all.
 
 - 2026-09-13 — route test: ending a thread tuned before its first message
   drops the tuning and answers nothing saved; an unknown id still refuses.
