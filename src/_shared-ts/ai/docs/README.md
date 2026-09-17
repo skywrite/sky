@@ -71,8 +71,9 @@ site cannot be pointed at it. Its key is the keychain entry
 `typesafe/main`, stored from Settings → Connections once TypeSafe has
 accepted it, or blind with `sky secrets:set typesafe main`, and read on
 the first request through the same keychain fetch as Cerebras. A caller
-builds its client there and records each request in the usage log under
-provider `typesafe`. Nothing asks it a question yet; see the
+builds its client there and asks through `typesafe/systemOne.ts`, which
+records each request in the usage log under provider `typesafe`. The
+first caller is the web chat's experimental preflight; see the
 [2026-09-17](2026-09-17-typesafe-jev.md) note.
 
 ## Catalog policy

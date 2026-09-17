@@ -35,6 +35,7 @@ import { ancestorsOf } from '../ChatStore/mod.ts'
 import {
   type ContextDocRecord,
   type ContextTurnLog,
+  type PreflightVerdict,
   type ToolCallRecord,
   type TurnStats,
 } from '../document/ContextLog/mod.ts'
@@ -699,6 +700,33 @@ export default class ChatContext {
       stats: { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: 0 },
     })
     return { errors: [] }
+  }
+
+  /**
+   * A turn the preflight judged needs nothing new from the notebook: no
+   * query, no rebuild. Before any assembly, nothing is read at all; after
+   * one, the last assembly stays as the model saw it — a follow-up keeps
+   * what the conversation was about — and the log records the reuse with
+   * the verdict behind it.
+   */
+  skippedTurn(preflight: PreflightVerdict): TurnContextReport {
+    this.turnNumber++
+    this.turnErrors = []
+    this.turnTruncations = []
+    let stats: TurnStats = { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: this.maxTokens }
+    if (this.lastStats) {
+      const { truncated: _truncated, ...carried } = this.lastStats
+      stats = { ...carried, reused: true }
+    }
+    this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], stats, preflight })
+    return { errors: [] }
+  }
+
+  /** The preflight's verdict on this turn's message, on its log entry — a turn that read still says what the judge thought. */
+  recordPreflight(preflight: PreflightVerdict): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.preflight = preflight
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], preflight })
   }
 
   /** Persist timing on this turn, never on an entry inherited from a resumed session. */

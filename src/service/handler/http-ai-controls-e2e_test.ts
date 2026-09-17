@@ -35,6 +35,7 @@ test(
       slack: {},
       web: { theme: 'light' },
       voice: {},
+      experimental: {},
       ai: { models: { strong: '', fast: '', transcription: '' }, profiles: {}, roles: {} },
       server: { port: 0 },
       nbfs: { layout: 'YYYY/W##/MM-DD' },

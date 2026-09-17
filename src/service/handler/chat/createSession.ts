@@ -31,6 +31,7 @@ import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.
 import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
 import { createWritingDrafts } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
@@ -44,9 +45,12 @@ import {
   resolveProfile,
   roleProfile,
 } from '#shared/ai/models.ts'
+import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type * as ConfigModule from '#shared/config.ts'
+import { readSkyConfigFile } from '#shared/config/loader.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
+import { contextPreflight, type Preflight } from '#shared/models/Chat/ChatContext/preflight.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
 import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
@@ -75,6 +79,22 @@ import { restoreToolRuns } from './toolRuns.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
 const WEB_CHAT = { days: 7, contextTokens: 300_000 }
+
+/**
+ * The experimental preflight, when the switch is on: Jev judges whether a
+ * message needs the notebook before the turn reads it. The switch is read
+ * fresh per message, so flipping it on the Experimental page applies to
+ * the next one; the client is built once per thread, keyed from the
+ * keychain on its first request.
+ */
+function contextPreflightFor(secrets: SecretsProvider): Preflight {
+  let judge: Preflight | undefined
+  return (message, recent) => {
+    if (readSkyConfigFile()?.parsed.experimental?.contextPreflight !== true) return Promise.resolve(null)
+    judge ??= contextPreflight(createTypeSafeClient({ secrets }))
+    return judge(message, recent)
+  }
+}
 const logRecovery = logger('chat.recovery')
 
 /** The terminal's bullet on a progress line; the page draws its own marks. */
@@ -319,6 +339,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
       contextTokens: fitBudget(prefs.contextTokens ?? WEB_CHAT.contextTokens, profile.contextWindow),
+      preflight: contextPreflightFor(context.secrets),
       resume: restore?.resume ?? null,
       // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
       restore: restore?.resume ? undefined : restore?.state,

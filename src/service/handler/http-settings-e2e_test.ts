@@ -33,6 +33,7 @@ test(
     )
     const settings: SettingsData = {
       theme: 'light',
+      experimental: { contextPreflight: false },
       textSize: 'default',
       voice: { current: 'marin', researcherCurrent: 'ash', groups: { male: ['ash'], female: ['marin'] } },
       models: [{ role: 'reasoning', label: 'Thinking', value: 'Sample model', profile: 'sample' }],

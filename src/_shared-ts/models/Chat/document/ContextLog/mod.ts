@@ -137,6 +137,22 @@ export interface TurnSettings {
   contextTokens?: number
 }
 
+/**
+ * What the preflight found, when the host ran one: the chance the message
+ * needed the notebook, and whether the turn read nothing new on the
+ * strength of it. Absent when no preflight ran.
+ */
+export interface PreflightVerdict {
+  /** Probability, 0 to 1, that answering needed the person's notebook */
+  needsNotebook: number
+  /** The turn read nothing new: the probability fell under the line */
+  skipped: boolean
+  /** The model that judged */
+  model: string
+  /** How long the judgment took, in milliseconds */
+  ms: number
+}
+
 export interface ContextTurnLog {
   turn: number
   queries: string[]
@@ -169,6 +185,8 @@ export interface ContextTurnLog {
   timing?: TimingDetail
   /** The model, preset, effort, and reading budget this turn ran under */
   settings?: TurnSettings
+  /** The preflight's verdict on the message, when the host ran one */
+  preflight?: PreflightVerdict
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -196,6 +214,7 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     if (entry.settings) fields.push(`      "settings": ${JSON.stringify(entry.settings)}`)
+    if (entry.preflight) fields.push(`      "preflight": ${JSON.stringify(entry.preflight)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

@@ -979,6 +979,9 @@ export function useChat(id: string) {
             case 'context-gathering':
               dispatch({ id, type: 'gather', text: 'finding what matters for this' })
               break
+            case 'context-skipped':
+              dispatch({ id, type: 'gather', text: 'answering without reading your notebook' })
+              break
             case 'context-queries':
               dispatch({ id, type: 'queries', turn: d.turn as number, queries: d.queries as string[] })
               break

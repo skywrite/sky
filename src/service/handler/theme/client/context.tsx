@@ -43,11 +43,14 @@ export interface ToolCall {
   tokens?: number
 }
 
+/** A probability as the page says it: 0.04 → 4%. */
+const percent = (p: number) => `${Math.round(p * 100)}%`
+
 /** One turn of the story — mirrors handler/chat/timeline.ts. */
 export interface TimelineEntry {
   turn: number
   when: string | null
-  kind: 'seed' | 'grew' | 'same' | 'closed' | 'failed'
+  kind: 'seed' | 'grew' | 'same' | 'closed' | 'skipped' | 'failed'
   searches: number
   queries?: string[]
   stats?: TurnStats
@@ -56,6 +59,8 @@ export interface TimelineEntry {
   pushedOut: ContextDoc[]
   tools: ToolCall[]
   errors: string[]
+  /** The preflight's verdict on the message, when one ran */
+  preflight?: { needsNotebook: number; skipped: boolean; model: string; ms: number }
 }
 
 export interface ThreadContext {
@@ -197,6 +202,13 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
       tone = 'quiet'
       line = 'Nothing read'
       break
+    case 'skipped':
+      title = 'Skipped reading'
+      tone = 'quiet'
+      line = entry.preflight
+        ? `Judged to need nothing from your notebook · ${percent(entry.preflight.needsNotebook)} chance it did`
+        : 'Nothing new read'
+      break
     case 'failed':
       title = "Couldn't gather"
       tone = 'failed'
@@ -205,6 +217,10 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
   const searches =
     entry.searches > 0 && entry.kind !== 'seed'
       ? `${entry.searches} new search${entry.searches === 1 ? '' : 'es'}`
+      : null
+  const judged =
+    entry.preflight && !entry.preflight.skipped
+      ? `Judged to need your notebook · ${percent(entry.preflight.needsNotebook)} chance`
       : null
 
   return (
@@ -220,6 +236,7 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
         </div>
         {line && <div className="sky-tl-txt">{line}</div>}
         {searches && <div className="sky-tl-sub">{searches}</div>}
+        {judged && <div className="sky-tl-sub">{judged}</div>}
         <GraphQLQueries queries={entry.queries ?? []} />
         {entry.errors.map((error, i) => (
           <div key={i} className="sky-tl-fate">

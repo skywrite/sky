@@ -23,6 +23,7 @@ function configWith(overrides: Partial<SkyConfig> = {}): SkyConfig {
     slack: { workspace: 'https://atlas.slack.com' },
     web: {},
     voice: {},
+    experimental: {},
     ai: {
       models: {
         strong: 'anthropic/claude-sonnet-5',

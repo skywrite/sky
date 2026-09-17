@@ -15,12 +15,13 @@ import { createPromptCatalog } from '#shared/prompts/load.ts'
 import { createAboutMeHost } from './createAboutMeHost.ts'
 import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
-  type ModelRow,
-  PROVIDER_LABEL,
+  BOOLEAN_KEYS,
   choiceLabel,
-  type RevealTarget,
+  PROVIDER_LABEL,
   ROLE_LABEL,
   SETTABLE_KEYS,
+  type ModelRow,
+  type RevealTarget,
   type SettingsRoutesOptions,
 } from './mod.ts'
 
@@ -96,7 +97,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
     },
     about: aboutBuild,
     write: (key, value) => {
-      setConfigValue([...SETTABLE_KEYS[key]], value)
+      setConfigValue([...SETTABLE_KEYS[key]], BOOLEAN_KEYS.has(key) ? value === 'true' : value)
       return Promise.resolve()
     },
     connections: createConnectionsHost(),

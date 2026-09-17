@@ -95,6 +95,7 @@ const CONFIG: SkyConfig = {
   slack: {},
   web: {},
   voice: {},
+  experimental: {},
   ai: {
     models: {
       strong: 'anthropic/claude-sonnet-5',
@@ -557,6 +558,36 @@ test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone
       'Claude Opus 5',
       'GPT 5.5 · xhigh',
       'GPT 5.5 · mine',
+    ],
+  })
+})
+
+test({ name: 'settings route - the Experimental switch is read as a value and written as one' }, async () => {
+  const config = structuredClone(CONFIG)
+  config.experimental.contextPreflight = true
+  const { host } = hostWith(config)
+  const written: Array<[string, string]> = []
+  host.write = async (key, value) => {
+    written.push([key, value])
+  }
+  const app = await appWith(host)
+  const data = (await (await app.request('/settings/_api/settings')).json()) as SettingsData
+  const off = await post(app, '/settings/_api/set', { key: 'experimental.contextPreflight', value: 'false' })
+  const on = await post(app, '/settings/_api/set', { key: 'experimental.contextPreflight', value: 'true' })
+  const maybe = await post(app, '/settings/_api/set', { key: 'experimental.contextPreflight', value: 'maybe' })
+  assert({
+    given: 'the preflight switch on in the file, then off, on, and a word that is neither',
+    should: 'report it on, accept the two words, refuse the third, and hand the host the words to keep as values',
+    actual: [data.experimental, off.status, on.status, maybe.status, written],
+    expected: [
+      { contextPreflight: true },
+      200,
+      200,
+      400,
+      [
+        ['experimental.contextPreflight', 'false'],
+        ['experimental.contextPreflight', 'true'],
+      ],
     ],
   })
 })

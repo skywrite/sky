@@ -20,7 +20,7 @@ import type { UserContent } from 'ai'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
-import type { ContextTurnLog, TurnSettings } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import type { ContextTurnLog, PreflightVerdict, TurnSettings } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
 import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -42,6 +42,7 @@ import ChatContext, {
   type SeedReport,
   type TurnContextReport,
 } from '../ChatContext/mod.ts'
+import type { Preflight } from '../ChatContext/preflight.ts'
 import ChatEngine, {
   type ApprovalHandler,
   type ChatEngineEvent,
@@ -66,6 +67,13 @@ import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
 const CLOSED_ACTIVITY =
   '(Not read. The notebook is closed for this thread: the person set the reading budget to nothing. Answer from the conversation and your tools, and never describe the notebook as empty or missing.)'
 
+/**
+ * The activity block of a turn the preflight skipped before anything was
+ * assembled: the notebook is open, it just was not read for this message.
+ */
+const SKIPPED_ACTIVITY =
+  '(Not read for this message: a quick check judged it needs nothing from the notebook. The notebook is open, and a later message can read it. Answer from the conversation and your tools, never describe the notebook as empty or missing, and say so if the answer would need the notebook after all.)'
+
 export interface ChatMessageFiles {
   content: Exclude<UserContent, string>
   attachments: Attachment[]
@@ -85,6 +93,8 @@ export type ChatSessionEvent =
   | ContextProgressEvent
   | SaveProgress
   | { type: 'context-gathering' }
+  /** The preflight judged the message needs nothing from the notebook; nothing new is read this turn. */
+  | { type: 'context-skipped'; preflight: PreflightVerdict }
   | { type: 'context-rebuilt'; report: RebuildReport }
   | { type: 'context-errors'; errors: string[] }
   /** Once per session, the first time the tool set is built. */
@@ -136,6 +146,12 @@ export interface ChatSessionOptions {
   /** Notebook time root — a new chat files under its day directory */
   timeDir: string
   contextTokens?: number
+  /**
+   * The host's preflight, run before each turn's reading: a quick judge of
+   * whether the message needs the notebook. A skip verdict reads nothing
+   * new; null means no preflight ran. A throw reads as usual and is logged.
+   */
+  preflight?: Preflight
   summaryBaseline?: boolean
   /** The transcript being continued, or null for a new chat */
   resume: ResumeSession | null
@@ -603,6 +619,31 @@ export default class ChatSession {
     }
   }
 
+  /** An assembly the model has seen: a rebuild this session, or a restored one. Closed and skipped turns are not. */
+  private hasAssembly(): boolean {
+    return this.context.log.some((entry) => (entry.stats?.budget ?? 0) > 0 && !entry.preflight?.skipped)
+  }
+
+  /**
+   * The preflight's verdict for a message, or null: no preflight, a closed
+   * notebook, an aborted turn, or a check that failed — which is logged and
+   * reads as usual, since the check is a saving, never a gate.
+   */
+  private async preflightOf(userMessage: string, abortSignal?: AbortSignal): Promise<PreflightVerdict | null> {
+    if (!this.opts.preflight || abortSignal?.aborted || this.context.budget === 0) return null
+    try {
+      return await this.opts.preflight(userMessage, this.turns.slice(-6))
+    } catch (error) {
+      await this.logError({
+        source: 'ai:chat',
+        stage: 'context:preflight',
+        message: error instanceof Error ? error.message : String(error),
+        question: userMessage,
+      })
+      return null
+    }
+  }
+
   private async sendTimed(
     userMessage: string,
     files?: ChatMessageFiles,
@@ -620,12 +661,23 @@ export default class ChatSession {
       this.firstTurnPending = true
     }
 
+    // The host's preflight, when it runs one: a quick judge reads the message
+    // first, and a message that needs nothing from the notebook is answered
+    // without reading it.
+    const preflight = await this.preflightOf(userMessage, abortSignal)
+
     // Spoken exchanges also occupy turn numbers, although they did not run this context pipeline.
     this.context.continueAfter(Math.floor(this.turns.length / 2))
     let context: TurnContextReport
     if (abortSignal?.aborted) {
       this.context.continueAfter(Math.floor(this.turns.length / 2) + 1)
       context = { errors: [] }
+    } else if (preflight?.skipped) {
+      // Nothing read for this message. The first gathering turn, when it has
+      // not run yet, waits for a message that needs it.
+      if (!this.hasAssembly()) this.contextPrompt = buildContextPrompt(this.opts.ambient, SKIPPED_ACTIVITY)
+      context = this.context.skippedTurn(preflight)
+      this.emit({ type: 'context-skipped', preflight })
     } else if (this.firstTurnPending) {
       this.firstTurnPending = false
       // A closed notebook gathers nothing — no gathering to announce.
@@ -643,6 +695,7 @@ export default class ChatSession {
     // that fails, or a snapshot taken while the answer is running, still
     // says which model, effort, and reading budget it ran under.
     this.context.recordTurnSettings(this.profile)
+    if (preflight) this.context.recordPreflight(preflight)
 
     // The user's actual message, never the context. A resumed transcript
     // can end mid-exchange on a user message; merge into it so roles keep

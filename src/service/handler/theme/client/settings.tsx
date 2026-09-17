@@ -81,6 +81,8 @@ export interface SettingsData {
   }
   about: { version: string | null; date: string | null }
   advanced: ConfigView
+  /** The Experimental page's switches */
+  experimental: { contextPreflight: boolean }
 }
 
 // ── Talking to the service ──────────────────────────────────────────
@@ -389,6 +391,35 @@ function AppearancePane({ data, change }: { data: SettingsData; change: ReturnTy
   )
 }
 
+/** Features still taking shape. Each row is one switch, in plain words, with what it costs to try. */
+function ExperimentalPane({ data, change }: { data: SettingsData; change: ReturnType<typeof useSettings>['change'] }) {
+  const on = data.experimental.contextPreflight
+  return (
+    <Block>
+      <Row
+        label="Jev preflight for notebook context"
+        sub="Before a chat reads your notebook, Jev checks whether the message needs it. When Jev is confident it does not, the reply skips the reading. Needs your TypeSafe API key, under Connections. Each turn’s context story shows what Jev judged."
+        last
+      >
+        <SegmentedControl
+          value={on ? 'on' : 'off'}
+          onChange={(value) => {
+            const contextPreflight = value === 'on'
+            change('experimental.contextPreflight', String(contextPreflight), (current) => ({
+              ...current,
+              experimental: { ...current.experimental, contextPreflight },
+            }))
+          }}
+          data={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+        />
+      </Row>
+    </Block>
+  )
+}
+
 function VoicePane({ data, change }: { data: SettingsData; change: ReturnType<typeof useSettings>['change'] }) {
   const { playing, error, audioRef, hear, stop } = useHear()
   const { devices, chosen, choose } = useDevices()
@@ -662,9 +693,11 @@ export function SettingsMain({
           {note && <div className="sky-condensed">— {note} —</div>}
           {section === 'about-me' ? (
             <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
-          ) : section === 'experimental' ? null : (
+          ) : (
             data &&
-            (section === 'appearance' ? (
+            (section === 'experimental' ? (
+              <ExperimentalPane data={data} change={change} />
+            ) : section === 'appearance' ? (
               <AppearancePane data={data} change={change} />
             ) : section === 'voice' ? (
               <VoicePane data={data} change={change} />

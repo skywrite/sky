@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
@@ -440,6 +441,84 @@ test('ChatSession - a zero budget reads nothing, and a budget after it gathers a
         [2, 0, false],
         [3, 5000, true],
       ],
+    },
+  })
+})
+
+test('ChatSession - a preflight that judges a message needs no notebook reads nothing new, and a failed one reads as usual', async () => {
+  const verdicts: Array<PreflightVerdict | Error> = [
+    { needsNotebook: 0.04, skipped: true, model: 'jev-test', ms: 90 },
+    { needsNotebook: 0.9, skipped: false, model: 'jev-test', ms: 80 },
+    { needsNotebook: 0.1, skipped: true, model: 'jev-test', ms: 70 },
+    new Error('TypeSafe could not be reached.'),
+  ]
+  const asked: string[] = []
+  const instructions: string[] = []
+  const { session, events, errors, producerCalls } = await makeSession({
+    invokeModel: (args) => {
+      instructions.push(args.instructions.map((m) => String(m.content)).join('\n'))
+      args.sink.write('Ok.')
+      return Promise.resolve({ text: '', content: [], steps: [], responseMessages: [] })
+    },
+    preflight: (message) => {
+      asked.push(message)
+      const verdict = verdicts.shift()!
+      return verdict instanceof Error ? Promise.reject(verdict) : Promise.resolve(verdict)
+    },
+  })
+  await session.start()
+  await session.send('Write a haiku about rain.')
+  const first = events.length
+  await session.send('What should I focus on?')
+  const second = events.length
+  await session.send('Make it shorter.')
+  const third = events.length
+  await session.send('And after that?')
+  const log = session.contextLog.map((e) => [
+    e.turn,
+    e.preflight ? [e.preflight.needsNotebook, e.preflight.skipped] : null,
+    e.stats?.kept,
+    e.stats?.reused ?? false,
+    e.universe !== undefined,
+  ])
+  assert({
+    given: 'a skip, a read, a skip, and a check that failed, in that order',
+    should:
+      'read nothing on the first turn and tell the model so; gather on the second; reuse the second assembly on the third with no producer call; read as usual on the fourth and log the failed check',
+    actual: {
+      asked,
+      events: [
+        types(events.slice(0, first)),
+        types(events.slice(first, second)),
+        types(events.slice(second, third)),
+        types(events.slice(third)),
+      ],
+      producerCalls,
+      log,
+      firstPromptSaidWhy: instructions[0]?.includes('a quick check judged it needs nothing from the notebook') ?? false,
+      secondPromptReadTheNotebook: instructions[1]?.includes('a quick check judged') ?? true,
+      thirdKeptTheAssembly: instructions[2] === instructions[1],
+      failedCheck: errors.map((e) => [e.stage, e.message]),
+    },
+    expected: {
+      asked: ['Write a haiku about rain.', 'What should I focus on?', 'Make it shorter.', 'And after that?'],
+      events: [
+        ['context-skipped', 'tools', 'model-start', 'text-delta', 'turn-complete'],
+        ['context-gathering', 'context-rebuilt', 'model-start', 'text-delta', 'turn-complete'],
+        ['context-skipped', 'model-start', 'text-delta', 'turn-complete'],
+        ['model-start', 'text-delta', 'turn-complete'],
+      ],
+      producerCalls: { initial: 1, evolve: 1 },
+      log: [
+        [1, [0.04, true], 0, false, false],
+        [2, [0.9, false], 3, false, true],
+        [3, [0.1, true], 3, true, false],
+        [4, null, 3, true, false],
+      ],
+      firstPromptSaidWhy: true,
+      secondPromptReadTheNotebook: false,
+      thirdKeptTheAssembly: true,
+      failedCheck: [['context:preflight', 'TypeSafe could not be reached.']],
     },
   })
 })

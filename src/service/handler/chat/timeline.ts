@@ -12,6 +12,7 @@
 import type {
   ContextDocRecord,
   ContextTurnLog,
+  PreflightVerdict,
   ToolCallRecord,
   TurnStats,
 } from '#shared/models/Chat/document/ContextLog/mod.ts'
@@ -20,10 +21,11 @@ import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 /**
  * What a turn did to the context: `seed` gathered the baseline, `grew`
  * ran new queries and reassembled, `same` reused the last assembly,
- * `closed` read nothing under a zero budget, and `failed` recorded errors
- * and no assembly.
+ * `closed` read nothing under a zero budget, `skipped` read nothing new
+ * because the preflight judged the message needs no notebook, and
+ * `failed` recorded errors and no assembly.
  */
-export type TimelineKind = 'seed' | 'grew' | 'same' | 'closed' | 'failed'
+export type TimelineKind = 'seed' | 'grew' | 'same' | 'closed' | 'skipped' | 'failed'
 
 export interface TimelineEntry {
   turn: number
@@ -43,6 +45,8 @@ export interface TimelineEntry {
   pushedOut: ContextDocRecord[]
   tools: ToolCallRecord[]
   errors: string[]
+  /** The preflight's verdict on the message, when one ran */
+  preflight?: PreflightVerdict
 }
 
 /** A cut the budget made — not the person's own exclusion, not a scorer verdict. */
@@ -51,6 +55,7 @@ function byBudget(rec: ContextDocRecord): boolean {
 }
 
 function kindOf(entry: ContextTurnLog): TimelineKind {
+  if (entry.preflight?.skipped) return 'skipped'
   if (entry.stats?.budget === 0) return 'closed'
   if (entry.universe) return 'seed'
   if (entry.stats?.reused) return 'same'
@@ -99,6 +104,7 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
       errors: entry.errors ?? [],
     }
     if (entry.stats) item.stats = entry.stats
+    if (entry.preflight) item.preflight = entry.preflight
     if (kind === 'seed') item.found = entry.universe?.length ?? 0
     out.push(item)
   }

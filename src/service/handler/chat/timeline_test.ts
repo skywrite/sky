@@ -150,3 +150,37 @@ test({ name: 'timeline - a closed turn reads nothing; the seed can follow it' },
     expected: { closed: ['closed', '09:12', 0, 0], seed: ['seed', '09:14', 4] },
   })
 })
+
+test({ name: 'timeline - a skipped turn carries its verdict and changes nothing' }, () => {
+  const log: ContextTurnLog[] = [
+    {
+      turn: 1,
+      queries: ['{ q1 }'],
+      stats: { kept: 2, pruned: 0, excluded: 0, docTokens: 50, budget: 100 },
+      universe: [
+        { path: 'time/day.md', tokens: 30, score: 9 },
+        { path: 'goals/2026.md', tokens: 20, pinned: true },
+      ],
+      preflight: { needsNotebook: 0.88, skipped: false, model: 'jev-test', ms: 80 },
+    },
+    {
+      turn: 2,
+      queries: ['{ q1 }'],
+      stats: { kept: 2, pruned: 0, excluded: 0, docTokens: 50, budget: 100, reused: true },
+      preflight: { needsNotebook: 0.03, skipped: true, model: 'jev-test', ms: 70 },
+    },
+  ]
+  const [read, skipped] = timelineOf(log, TURNS)
+  assert({
+    given: 'a seed turn the preflight let read, then a turn it skipped',
+    should: 'keep the seed as a seed with its verdict, and mark the skipped turn with nothing added or pushed out',
+    actual: [
+      [read.kind, read.preflight?.skipped, read.found],
+      [skipped.kind, skipped.preflight, skipped.searches, skipped.added, skipped.pushedOut, skipped.queries],
+    ],
+    expected: [
+      ['seed', false, 2],
+      ['skipped', { needsNotebook: 0.03, skipped: true, model: 'jev-test', ms: 70 }, 0, [], [], ['{ q1 }']],
+    ],
+  })
+})

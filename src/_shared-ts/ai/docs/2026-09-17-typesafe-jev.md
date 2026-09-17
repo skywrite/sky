@@ -52,10 +52,12 @@ question needs; confidence gates what an answer is allowed to do.
   `typesafe` and the model TypeSafe answered with, the way every
   language-model call is recorded, so `sky ai:usage` shows Jev beside
   the others.
-- Nothing asks Jev a question yet. The first caller gets its own note.
-  The proposed one is a pre-screen on the outbox scan, run in shadow
-  beside the model's judgment and only logged, until its agreement rate
-  is known.
+- The first caller is the web chat's preflight — does this message need
+  the notebook? — behind the Experimental switch; `typesafe/systemOne.ts`
+  is the ask that records the request. See the
+  [chat note](../../../service/handler/chat/docs/2026-09-17-ask-first-whether-a-message-needs-the-notebook.md).
+  A pre-screen on the outbox scan, run in shadow beside the model's
+  judgment, is the proposed second.
 
 ## Verified
 

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-13
+updated: 2026-09-17
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -501,6 +501,18 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   (`needsApprovalFor`) — `google_agent` runs create-only missions without
   asking on every surface ([2026-09-03](2026-09-03-the-go-you-already-gave.md)).
 
+### Ask first whether a message needs the notebook (experimental)
+
+With the Experimental switch "Jev preflight for notebook context" on, a
+web chat turn asks TypeSafe's Jev
+whether the message needs the notebook before reading it
+(`_shared-ts/models/Chat/ChatContext/preflight.ts`). A skipped turn reads
+nothing new: the first turn tells the model nothing was read for this
+message, a later one keeps the last assembly and runs no query. The
+verdict is logged on every turn it ran. The check is a saving, never a
+gate: a failed check reads as usual. See
+[2026-09-17](2026-09-17-ask-first-whether-a-message-needs-the-notebook.md).
+
 ## The rules it lives by
 
 - A change mid-turn is refused (409): the model is read when a turn
@@ -534,6 +546,11 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   removing the copy.
 
 ## Verified
+
+- 2026-09-17 — the preflight: a skip, a read, a skip, and a failed check
+  in one session test; the timeline, log, and settings-route tests beside
+  it. Live: a haiku request skipped at 1% in 422 ms; a calendar question
+  read at 98%.
 
 - 2026-09-17 — session tests: a turn after the model, effort, and reading
   budget changed logs each in its own `settings`; a failed turn's entry

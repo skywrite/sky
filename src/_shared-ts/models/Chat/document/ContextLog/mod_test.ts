@@ -462,3 +462,27 @@ test('serializeContextLog - a memory entry round-trips', () => {
     expected: { body: 'Chat body.\n', parsed: entries, oneLine: true },
   })
 })
+
+test('contextLog - a preflight verdict round-trips on its turn', () => {
+  const entries: ContextTurnLog[] = [
+    {
+      turn: 1,
+      queries: [],
+      stats: { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: 300000 },
+      settings: { model: 'test-model', contextTokens: 300000 },
+      preflight: { needsNotebook: 0.04, skipped: true, model: 'jev-1.13.0', ms: 92 },
+    },
+  ]
+  const markdown = 'A mock transcript.\n' + serializeContextLog(entries)
+  const parsed = splitContextLog(markdown)
+  assert({
+    given: 'a turn the preflight skipped',
+    should: 'serialize the verdict on one line after the settings and read it back',
+    actual: {
+      entries: parsed.entries,
+      line: markdown.includes('"preflight": {"needsNotebook":0.04,"skipped":true,"model":"jev-1.13.0","ms":92}'),
+      roundTrip: parsed.body + serializeContextLog(parsed.entries) === markdown,
+    },
+    expected: { entries, line: true, roundTrip: true },
+  })
+})

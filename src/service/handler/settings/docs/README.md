@@ -106,8 +106,12 @@ Pages:
   every key, its value, and its provenance (file / default /
   `env · SKY_DIR`). `ENV_OVERRIDES` is shared with the loader so the
   two cannot drift. Plus "Open config file".
-- **Experimental** — `/settings/experimental`: an empty page, reserved
-  on 2026-09-17 for features still taking shape. Nothing is on it yet.
+- **Experimental** — `/settings/experimental`: features still taking
+  shape, one switch each. Since 2026-09-17: "Jev preflight for notebook
+  context" — `experimental.contextPreflight`, off by default;
+  on, a web chat turn asks TypeSafe's Jev before reading the notebook and
+  skips the reading when the message needs none. See the
+  [chat note](../../chat/docs/2026-09-17-ask-first-whether-a-message-needs-the-notebook.md).
 - **About** — the build (git, cached per process) and the service.
 
 Connections was deferred by ruling on 2026-08-31 and built on
@@ -117,7 +121,8 @@ Connections was deferred by ruling on 2026-08-31 and built on
 
 `POST /settings/_api/set { key, value }` — only keys in
 `SETTABLE_KEYS`, each validated (themes, sizes, the host's voices,
-detected editors). Writes go through `setConfigValue`
+detected editors, on/off for the Experimental switches, which
+`BOOLEAN_KEYS` writes as true/false rather than as words). Writes go through `setConfigValue`
 (`_shared-ts/config/write.ts`): jsonc-parser edits the text, so the
 comments `sky init` wrote survive; the write is atomic. The client
 applies changes optimistically and falls back to a reload on refusal.

@@ -88,6 +88,7 @@ function defaults(): SkyConfig {
     slack: {},
     web: {},
     voice: {},
+    experimental: {},
     ai: {
       models: {
         strong: 'anthropic/claude-sonnet-5',
@@ -139,6 +140,9 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     }
     if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
     if (parsed.voice?.researcherVoice) config.voice.researcherVoice = parsed.voice.researcherVoice
+    if (typeof parsed.experimental?.contextPreflight === 'boolean') {
+      config.experimental.contextPreflight = parsed.experimental.contextPreflight
+    }
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.ai?.roles) config.ai.roles = parsed.ai.roles

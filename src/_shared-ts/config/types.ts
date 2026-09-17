@@ -39,6 +39,11 @@ export interface SkyConfig {
     /** The separate notebook researcher's voice on Talk; unset means ash. */
     researcherVoice?: string
   }
+  /** Features still taking shape — the Experimental page's switches. */
+  experimental: {
+    /** Before a web chat reads the notebook, TypeSafe's Jev judges whether the message needs it. */
+    contextPreflight?: boolean
+  }
   ai: {
     models: {
       strong: string
