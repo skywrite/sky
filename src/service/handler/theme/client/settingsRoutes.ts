@@ -53,6 +53,12 @@ export const SETTINGS_PAGES = {
     group: null,
     description: 'Inspect your configuration and where each setting comes from.',
   },
+  experimental: {
+    label: 'Experimental',
+    href: '/settings/experimental',
+    group: null,
+    description: 'Features still taking shape. Try them early, and expect them to change.',
+  },
   about: {
     label: 'About Sky',
     href: '/settings/about',

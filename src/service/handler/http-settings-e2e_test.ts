@@ -178,6 +178,7 @@ test(
         ['/settings/connections', 'Connections'],
         ['/settings/notebook', 'Notebook'],
         ['/settings/advanced', 'Advanced'],
+        ['/settings/experimental', 'Experimental'],
         ['/settings/about', 'About Sky'],
       ]) {
         await page.goto(`${base}${route}`)

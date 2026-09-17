@@ -77,6 +77,7 @@ export function SettingsNav({ section, navigate }: { section: SettingsSection; n
       </div>
       <div className="sky-settings-footer">
         {page('advanced')}
+        {page('experimental')}
         {page('about')}
       </div>
     </div>

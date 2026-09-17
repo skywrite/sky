@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # Settings — the web's settings section
@@ -17,7 +17,7 @@ file tree), plain words, no plumbing keys. The design boards live in
 the "Sky Settings" canvas artifact.
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Voice, Prompts); Connections; Notebook; Advanced; About Sky.
+AI (Models, Voice, Prompts); Connections; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
 prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
@@ -100,6 +100,8 @@ Pages:
   every key, its value, and its provenance (file / default /
   `env · SKY_DIR`). `ENV_OVERRIDES` is shared with the loader so the
   two cannot drift. Plus "Open config file".
+- **Experimental** — `/settings/experimental`: an empty page, reserved
+  on 2026-09-17 for features still taking shape. Nothing is on it yet.
 - **About** — the build (git, cached per process) and the service.
 
 Connections was deferred by ruling on 2026-08-31 and built on

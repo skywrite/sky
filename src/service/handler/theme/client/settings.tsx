@@ -7,7 +7,8 @@
  * theme and text size to this page, the voice to the next call. The
  * Advanced pane keeps the whole file readable — every key, its value,
  * and where it came from. Connections is the keychain's page — accounts
- * and keys, presence only — in settingsConnections.tsx.
+ * and keys, presence only — in settingsConnections.tsx. Experimental is
+ * an empty pane, reserved: nothing is on it yet.
  */
 
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
@@ -661,7 +662,7 @@ export function SettingsMain({
           {note && <div className="sky-condensed">— {note} —</div>}
           {section === 'about-me' ? (
             <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
-          ) : (
+          ) : section === 'experimental' ? null : (
             data &&
             (section === 'appearance' ? (
               <AppearancePane data={data} change={change} />
