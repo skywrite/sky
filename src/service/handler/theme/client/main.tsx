@@ -213,6 +213,7 @@ function Canvas() {
     if (!anchor?.href || anchor.target === '_blank' || anchor.hasAttribute('download')) return
     const url = new URL(anchor.href)
     if (url.origin !== location.origin) return
+    if (url.hash && url.pathname === location.pathname && url.search === location.search) return
     if (!url.pathname.startsWith('/explorer/') && filesRouteOf(url.pathname) === null) return
     event.preventDefault()
     navigate(url.pathname)
