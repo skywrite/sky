@@ -96,6 +96,7 @@ export async function distillMemories(input: DistillInput, role: Role = 'balance
         '- Assessments of other people: strengths, failure modes, how to handle someone. Person facts are distilled separately into their profiles.',
         "- Designs, plans, decisions, or ideas worked out in one conversation. The notebook's capture flows own those.",
         '- Events, meetings, tasks, and anything else the notebook records.',
+        '- Revisions to writing in the owner’s name, and lessons about that writing voice. The dedicated me/voice/ writer owns those examples and rules. Preferences about how the assistant answers the user still belong in memory.',
         '',
         'Kinds — each has exactly one meaning:',
         '- preference: how the user wants answers or behavior — format, tone, what to lead with, what never to do.',
