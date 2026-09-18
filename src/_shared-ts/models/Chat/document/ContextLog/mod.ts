@@ -147,6 +147,8 @@ export interface PreflightVerdict {
   needsNotebook: number
   /** The turn read nothing new: the probability fell under the line */
   skipped: boolean
+  /** Which question was judged: `needs_notebook` before any reading, `needs_more` after one. Absent on the first day's logs. */
+  question?: string
   /** The model that judged */
   model: string
   /** How long the judgment took, in milliseconds */

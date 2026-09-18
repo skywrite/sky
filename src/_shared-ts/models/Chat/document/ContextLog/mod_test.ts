@@ -470,7 +470,7 @@ test('contextLog - a preflight verdict round-trips on its turn', () => {
       queries: [],
       stats: { kept: 0, pruned: 0, excluded: 0, docTokens: 0, budget: 300000 },
       settings: { model: 'test-model', contextTokens: 300000 },
-      preflight: { needsNotebook: 0.04, skipped: true, model: 'jev-1.13.0', ms: 92 },
+      preflight: { needsNotebook: 0.04, skipped: true, question: 'needs_notebook', model: 'jev-1.13.0', ms: 92 },
     },
   ]
   const markdown = 'A mock transcript.\n' + serializeContextLog(entries)
@@ -480,7 +480,9 @@ test('contextLog - a preflight verdict round-trips on its turn', () => {
     should: 'serialize the verdict on one line after the settings and read it back',
     actual: {
       entries: parsed.entries,
-      line: markdown.includes('"preflight": {"needsNotebook":0.04,"skipped":true,"model":"jev-1.13.0","ms":92}'),
+      line: markdown.includes(
+        '"preflight": {"needsNotebook":0.04,"skipped":true,"question":"needs_notebook","model":"jev-1.13.0","ms":92}',
+      ),
       roundTrip: parsed.body + serializeContextLog(parsed.entries) === markdown,
     },
     expected: { entries, line: true, roundTrip: true },

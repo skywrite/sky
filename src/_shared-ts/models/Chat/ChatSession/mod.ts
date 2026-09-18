@@ -632,7 +632,7 @@ export default class ChatSession {
   private async preflightOf(userMessage: string, abortSignal?: AbortSignal): Promise<PreflightVerdict | null> {
     if (!this.opts.preflight || abortSignal?.aborted || this.context.budget === 0) return null
     try {
-      return await this.opts.preflight(userMessage, this.turns.slice(-6))
+      return await this.opts.preflight(userMessage, this.turns.slice(-6), { assembled: this.hasAssembly() })
     } catch (error) {
       await this.logError({
         source: 'ai:chat',

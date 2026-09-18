@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-17
+updated: 2026-09-18
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -504,13 +504,15 @@ turns ago is not pushed out again; a broken turn keeps its errors.
 ### Ask first whether a message needs the notebook (experimental)
 
 With the Experimental switch "Jev preflight for notebook context" on, a
-web chat turn asks TypeSafe's Jev
-whether the message needs the notebook before reading it
-(`_shared-ts/models/Chat/ChatContext/preflight.ts`). A skipped turn reads
-nothing new: the first turn tells the model nothing was read for this
-message, a later one keeps the last assembly and runs no query. The
-verdict is logged on every turn it ran. The check is a saving, never a
-gate: a failed check reads as usual. See
+web chat turn asks TypeSafe's Jev before reading the notebook
+(`_shared-ts/models/Chat/ChatContext/preflight.ts`): before anything has
+been read, whether the message needs the notebook at all; after a
+reading, whether it needs anything more than the conversation already
+has. A skipped turn reads nothing new: the first turn tells the model
+nothing was read for this message, a later one keeps the last assembly
+and runs no query. The verdict, and which question it answered, is
+logged on every turn it ran. The check is a saving, never a gate: a
+failed check reads as usual. See
 [2026-09-17](2026-09-17-ask-first-whether-a-message-needs-the-notebook.md).
 
 ## The rules it lives by
@@ -547,6 +549,8 @@ gate: a failed check reads as usual. See
 
 ## Verified
 
+- 2026-09-18 — the preflight's second question for follow-ups, after a
+  day of verdicts showed the first one reading nearly everything.
 - 2026-09-17 — the preflight: a skip, a read, a skip, and a failed check
   in one session test; the timeline, log, and settings-route tests beside
   it. Live: a haiku request skipped at 1% in 422 ms; a calendar question

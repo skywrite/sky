@@ -1,6 +1,6 @@
 ---
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-18
 ---
 
 # Ask first whether a message needs the notebook
@@ -23,11 +23,14 @@ switch, and it is the first thing in Sky that asks TypeSafe's Jev.
   the turn reads as usual.
 - `ChatContext/preflight.ts` — the check. Jev gets the message and the
   last four turns, each trimmed to four hundred characters, and one
-  yes/no question: does answering this need the person's own notebook?
-  The answer is a probability. Under `SKIP_BELOW` (0.2) the turn skips
-  the reading; at or over it, the turn reads as it always has. The line
-  sits low on purpose: a wrong skip answers without the notebook, a wrong
-  read costs what every turn costs today.
+  yes/no question. Before anything has been read: does answering this
+  need the person's own notebook at all? After a reading, when the model
+  still holds what it read: does this need anything more from the
+  notebook than the conversation already has? The answer is a
+  probability. Under `SKIP_BELOW` (0.2) the turn skips the reading; at or
+  over it, the turn reads as it always has. The line sits low on purpose:
+  a wrong skip answers without the notebook, a wrong read costs what
+  every turn costs today. The verdict records which question was asked.
 - `ChatSession`: the host passes a `preflight`; the session runs it
   before the reading, after the stamp. A skipped first turn tells the
   model outright that nothing was read for this message and why, never
@@ -42,6 +45,21 @@ switch, and it is the first thing in Sky that asks TypeSafe's Jev.
   judge gave, and a turn that read shows its chance under the entry.
   Every check is one line in the usage log under provider `typesafe`.
 
+## The first day, and the second question
+
+The first day ran one question for every turn — does answering this need
+the notebook at all — whose criteria said a follow-up continuing
+notebook work still needs it. In a thread about the person's people and
+messages that is nearly always a yes: of 36 verdicts on 2026-09-17, four
+skipped and 32 read, with 22 judged between 20 and 50 percent — "yep,
+draft it" at 57, "spell it out" at 46, "send to slack" at 38. The
+question was wrong for follow-ups. A skipped later turn keeps the last
+assembly anyway, so from 2026-09-18 a turn after a reading is asked
+whether it needs anything more from the notebook, with confirm, draft,
+send, edit, and explain named as no, and a new person, record, message,
+or a look at the notebook named as yes. The first turn keeps the
+original question, and each verdict says which one it answered.
+
 ## Rules
 
 - The check is a saving, never a gate. Anything that goes wrong reads.
@@ -51,6 +69,17 @@ switch, and it is the first thing in Sky that asks TypeSafe's Jev.
   it.
 
 ## Verified
+
+- 2026-09-18 — the second question: `preflight_test.ts` asks the
+  needs-notebook question with nothing assembled and the needs-more
+  question after a reading, and the verdict names the question;
+  `ChatSession/mod_test.ts` tells the judge an assembly exists only
+  from the turn after the first reading; the log round-trips the
+  question. Live (a temporary Haiku thread): "What is on my calendar
+  this week?" read at 98%; "Make that shorter." skipped at 7% in 1.5 s
+  with the assembly kept; "Yep, draft a short note about it for me."
+  skipped at 16%; "Did anyone message me about the first one?" read at
+  85% and grew the context. The follow-up checks took about 145 ms.
 
 - Unit: `ChatSession/mod_test.ts` — a skip, a read, a skip, and a failed
   check in one thread: nothing read and the model told why; the gather

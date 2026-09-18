@@ -89,10 +89,10 @@ const WEB_CHAT = { days: 7, contextTokens: 300_000 }
  */
 function contextPreflightFor(secrets: SecretsProvider): Preflight {
   let judge: Preflight | undefined
-  return (message, recent) => {
+  return (message, recent, state) => {
     if (readSkyConfigFile()?.parsed.experimental?.contextPreflight !== true) return Promise.resolve(null)
     judge ??= contextPreflight(createTypeSafeClient({ secrets }))
-    return judge(message, recent)
+    return judge(message, recent, state)
   }
 }
 const logRecovery = logger('chat.recovery')

@@ -453,6 +453,7 @@ test('ChatSession - a preflight that judges a message needs no notebook reads no
     new Error('TypeSafe could not be reached.'),
   ]
   const asked: string[] = []
+  const assembled: boolean[] = []
   const instructions: string[] = []
   const { session, events, errors, producerCalls } = await makeSession({
     invokeModel: (args) => {
@@ -460,8 +461,9 @@ test('ChatSession - a preflight that judges a message needs no notebook reads no
       args.sink.write('Ok.')
       return Promise.resolve({ text: '', content: [], steps: [], responseMessages: [] })
     },
-    preflight: (message) => {
+    preflight: (message, _recent, state) => {
       asked.push(message)
+      assembled.push(state.assembled)
       const verdict = verdicts.shift()!
       return verdict instanceof Error ? Promise.reject(verdict) : Promise.resolve(verdict)
     },
@@ -484,9 +486,10 @@ test('ChatSession - a preflight that judges a message needs no notebook reads no
   assert({
     given: 'a skip, a read, a skip, and a check that failed, in that order',
     should:
-      'read nothing on the first turn and tell the model so; gather on the second; reuse the second assembly on the third with no producer call; read as usual on the fourth and log the failed check',
+      'read nothing on the first turn and tell the model so; gather on the second; reuse the second assembly on the third with no producer call; read as usual on the fourth and log the failed check; tell the judge an assembly exists only from the third turn on',
     actual: {
       asked,
+      assembled,
       events: [
         types(events.slice(0, first)),
         types(events.slice(first, second)),
@@ -502,6 +505,7 @@ test('ChatSession - a preflight that judges a message needs no notebook reads no
     },
     expected: {
       asked: ['Write a haiku about rain.', 'What should I focus on?', 'Make it shorter.', 'And after that?'],
+      assembled: [false, false, true, true],
       events: [
         ['context-skipped', 'tools', 'model-start', 'text-delta', 'turn-complete'],
         ['context-gathering', 'context-rebuilt', 'model-start', 'text-delta', 'turn-complete'],

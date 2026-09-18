@@ -35,7 +35,7 @@ const RECENT: ConversationMessage[] = [
 
 test('the preflight sends the message with the recent turns trimmed, and reads a low probability as a skip', async () => {
   const low = judge(0.04)
-  const verdict = await low.preflight('Make that shorter.', RECENT)
+  const verdict = await low.preflight('Make that shorter.', RECENT, { assembled: false })
   const state = low.bodies[0]?.state as { message: string; recent_turns: { who: string; said: string }[] }
   assert({
     given: 'a message with four recent turns, one of them long, and a judge at 4%',
@@ -53,7 +53,7 @@ test('the preflight sends the message with the recent turns trimmed, and reads a
       who: ['person', 'sky', 'person', 'sky'],
       trimmed: [34, 400, 23, 17],
       question: ['needs_notebook'],
-      verdict: { needsNotebook: 0.04, skipped: true, model: 'jev-1.13.0', ms: 45 },
+      verdict: { needsNotebook: 0.04, skipped: true, question: 'needs_notebook', model: 'jev-1.13.0', ms: 45 },
       recorded: [['typesafe', 'jev-1.13.0', 80]],
     },
   })
@@ -66,9 +66,32 @@ test('the preflight reads anything at or over the line as a turn that reads', as
     given: 'judges at 91% and exactly on the line',
     should: 'read in both cases',
     actual: [
-      (await sure.preflight('What is on my calendar?', []))?.skipped,
-      (await edge.preflight('Hmm.', []))?.skipped,
+      (await sure.preflight('What is on my calendar?', [], { assembled: false }))?.skipped,
+      (await edge.preflight('Hmm.', [], { assembled: true }))?.skipped,
     ],
     expected: [false, false],
+  })
+})
+
+test('after a reading, the preflight asks whether the message needs anything more', async () => {
+  const before = judge(0.5)
+  const after = judge(0.07)
+  await before.preflight('What did the Atlas meeting decide?', [], { assembled: false })
+  const verdict = await after.preflight('Yep, draft it.', RECENT, { assembled: true })
+  const questionOf = (body: Record<string, unknown> | undefined) => {
+    const questions = (body?.questions ?? {}) as Record<string, { instructions: string }>
+    const [name] = Object.keys(questions)
+    return [name, questions[name]?.instructions.includes('anything more from the notebook')]
+  }
+  assert({
+    given: 'a first turn with nothing assembled, then a follow-up after the notebook was read',
+    should:
+      'ask whether the notebook is needed at all, then whether anything more is needed, and say which on the verdict',
+    actual: [questionOf(before.bodies[0]), questionOf(after.bodies[0]), verdict],
+    expected: [
+      ['needs_notebook', false],
+      ['needs_more', true],
+      { needsNotebook: 0.07, skipped: true, question: 'needs_more', model: 'jev-1.13.0', ms: 45 },
+    ],
   })
 })
