@@ -25,6 +25,11 @@
   cursor: pointer;
   opacity: 0;
 }
+/* Mantine's rem minimum would outgrow the box and drop the icon below its neighbors. */
+.sky-item-help {
+  min-width: 0;
+  min-height: 0;
+}
 .sky-item-help:not(:disabled):hover {
   color: var(--sky-accent);
   background: var(--sky-accent-soft);
