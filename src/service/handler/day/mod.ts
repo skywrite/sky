@@ -108,13 +108,15 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
       ownerNames: options.ownerNames ?? (await loadOwnerNames(options.aboutMePath)),
     }),
   ])
-  const chats = saved.map((c) => ({
-    path: path.relative(options.markdownBaseDir, c.path),
-    time: c.time,
-    summary: c.summary,
-    exchanges: c.exchanges,
-    parent: c.parent,
-  }))
+  const chats = saved
+    .filter((c) => c.parent?.kind !== 'thread')
+    .map((c) => ({
+      path: path.relative(options.markdownBaseDir, c.path),
+      time: c.time,
+      summary: c.summary,
+      exchanges: c.exchanges,
+      parent: c.parent,
+    }))
 
   if (options.workstreams) {
     for (const key of ['mostImportant', 'commitments', 'todos', 'reminders', 'done'] as const) {
