@@ -19,7 +19,7 @@ import { OutboxMain } from './outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outboxRoutes.ts'
 import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
-import { SettingsMain, useAppearanceBoot } from './settings.tsx'
+import { SettingsMain, useSettingsBoot } from './settings.tsx'
 import { useAboutMeDraftGuard } from './settingsAboutMe.tsx'
 import { SettingsNav } from './settingsNav.tsx'
 import { usePromptDraftGuard } from './settingsPrompts.tsx'
@@ -30,6 +30,7 @@ import { StreaksMain } from './streaks.tsx'
 import { skyTheme } from './theme.ts'
 import { TrackingMain } from './tracking.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week.tsx'
+import { WorkstreamsMain } from './workstreams.tsx'
 
 /**
  * The web app's client: React and Mantine on the sky theme, bundled by Bun on
@@ -73,8 +74,7 @@ function useRoute(): [{ path: string; search: string }, (to: string) => void] {
 function Canvas() {
   const [{ path, search }, go] = useRoute()
   const [menu, setMenu] = useState(false)
-  // The saved appearance — theme and text size — lands once, at start.
-  useAppearanceBoot()
+  const workstreamsEnabled = useSettingsBoot()
   usePromptDraftGuard()
   useAboutMeDraftGuard()
   // On a phone the sidebar is a drawer; any navigation closes it.
@@ -106,6 +106,8 @@ function Canvas() {
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
   const isSearch = path === '/search'
+  const isWorkstreams = path === '/workstreams' || path.startsWith('/workstreams/')
+  const workstreamId = path.startsWith('/workstreams/') ? decodeURIComponent(path.slice('/workstreams/'.length)) : null
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const threads = useThreads()
@@ -156,6 +158,7 @@ function Canvas() {
     !isTracking &&
     !isStreaks &&
     !isSearch &&
+    !isWorkstreams &&
     !isWeek &&
     filesRoute === null &&
     explorerFile === null
@@ -362,6 +365,18 @@ function Canvas() {
                 <SidebarIcon name="outbox" />
                 <span>Outbox</span>
               </button>
+              {workstreamsEnabled && (
+                <button
+                  type="button"
+                  className="sky-thread sky-side-primary"
+                  data-active={isWorkstreams}
+                  aria-current={isWorkstreams ? 'page' : undefined}
+                  onClick={() => navigate('/workstreams')}
+                >
+                  <SidebarIcon name="workstreams" />
+                  <span>Workstreams</span>
+                </button>
+              )}
             </>
           )}
         </div>
@@ -398,6 +413,8 @@ function Canvas() {
           <TrackingMain path={path} navigate={navigate} />
         ) : isStreaks ? (
           <StreaksMain path={path} search={search} onNavigate={navigate} />
+        ) : isWorkstreams ? (
+          <WorkstreamsMain id={workstreamId} navigate={navigate} />
         ) : isNewAutomation ? (
           <NewAutomation
             back={{ label: 'Automations', onClick: () => navigate('/automations') }}

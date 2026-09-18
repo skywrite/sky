@@ -1,5 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { workstreamOutboxContext } from '#lib/workstreams/outbox.ts'
+import { createWorkstreamStorage } from '#lib/workstreams/storage.ts'
+import { WorkstreamStore } from '#lib/workstreams/store.ts'
+import { ActivitySchema } from '#lib/workstreams/types.ts'
 import { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { currentDraftVersion } from '#lib/writingVoice/draftTypes.ts'
 import { failure, sampleOutboxItem, voiceFixture } from '#lib/writingVoice/testHelpers.ts'
@@ -173,6 +177,51 @@ test('draft discussions use configured follows and reject new messages or change
         (await f.outbox.get(item.id))?.delivery,
       ],
       expected: [2, true, 2, true, 'I will wait for the updated specification.', undefined],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('draft discussions check linked work before saving an AI revision', async () => {
+  const f = await fixture((root) => createOutboxDraftGuard(configFor(root)))
+  try {
+    const storage = createWorkstreamStorage(configFor(f.root))
+    const workstreams = new WorkstreamStore(
+      storage.dir,
+      storage.stateDir,
+      f.root,
+      undefined,
+      storage.contentRoot,
+      storage.initialize,
+    )
+    const work = await workstreams.create(
+      {
+        title: 'Atlas launch',
+        outcome: 'Approve the API',
+        activities: [ActivitySchema.parse({ id: 'review', title: 'Request review' })],
+      },
+      '2025-03-15 12:00:00',
+    )
+    const links = await workstreamOutboxContext(workstreams, [
+      {
+        workstreamId: work.id,
+        activityId: 'review',
+        decisionIds: [],
+        title: work.title,
+        context: '',
+        contextVersion: '',
+      },
+    ])
+    const item = await f.outbox.put({ ...f.seed, workstreams: links }, null)
+    await f.drafts.beforeChange(item.writingDraft!, 'sky')
+    await workstreams.put({ ...work, outcome: 'Review the revised API before approval' }, work.revision)
+    const result = await failure(f.drafts.revise(item.draftId!, 1, 'A proposal based on the old outcome.', 'sky'))
+    assert({
+      given: 'linked work changes after opening a draft discussion',
+      should: 'refuse to save an AI revision based on the obsolete context',
+      actual: [result.includes('linked work changed'), (await f.outbox.get(item.id))?.draft],
+      expected: [true, item.draft],
     })
   } finally {
     await f.clean()

@@ -97,7 +97,7 @@ import { OutboxReview } from ${moduleUrl('./review.ts')}
 export default async (input) => {
   const root = process.env.SKY_COMPOSE_TEST_ROOT
   const store = new OutboxStore(process.env.SKY_COMPOSE_TEST_STATE, process.env.SKY_COMPOSE_TEST_STATE)
-  const review = new OutboxReview(store, new SavedMessages(process.env.SKY_DIR, { Slack: [], Email: [] }), async () => { throw new Error('Unexpected native write') }, () => ${JSON.stringify(NOW)}, undefined, async ({ draft, instruction }) => {
+  const review = new OutboxReview(store, new SavedMessages(process.env.SKY_DIR, { Slack: [], Email: [] }), async () => { throw new Error('Unexpected native write') }, () => ${JSON.stringify(NOW)}, undefined, undefined, async ({ draft, instruction }) => {
     await appendFile(root + '/executions', 'started\\n')
     await writeFile(root + '/started', JSON.stringify({ draft, instruction, saved: (await store.get(input.id)).draft }))
     while (!(await access(root + '/release').then(() => true, () => false))) await delay(20)

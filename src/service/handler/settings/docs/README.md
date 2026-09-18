@@ -27,7 +27,7 @@ Pages:
 
 - **Appearance** — theme (System / Light / Dark) and text size. Saved
   to `web.theme` / `web.textSize`; applied on the spot, and at app
-  start by `useAppearanceBoot`. The sidebar's quick toggle writes the
+  start by `useSettingsBoot`. The sidebar's quick toggle writes the
   same key. Text size is a page zoom.
 - **Me → About me** — `/settings/me`: a name, freeform profile, and optional
   website/profile links. Saves use the existing `journal/about-me.md`, preserving
@@ -112,6 +112,10 @@ Pages:
   on, a web chat turn asks TypeSafe's Jev before reading the notebook and
   skips the reading when the message needs none. See the
   [chat note](../../chat/docs/2026-09-17-ask-first-whether-a-message-needs-the-notebook.md).
+  "Workstreams" — `experimental.workstreams`, off by default — shows the
+  Workstreams sidebar entry on desktop and mobile. A successful save updates
+  navigation immediately; the saved choice is loaded again when the app opens.
+  This controls navigation visibility, leaving workstream data and direct links intact.
 - **About** — the build (git, cached per process) and the service.
 
 Connections was deferred by ruling on 2026-08-31 and built on

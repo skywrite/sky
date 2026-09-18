@@ -152,6 +152,44 @@ test('runDueAutomations - a second pass finds nothing owed', async () => {
   }
 })
 
+test('runDueAutomations - managed workstream charters keep their existing schedule, pause and ledger identity', async () => {
+  const { root, dir, statePath } = await makeDirs({ 'ordinary.md': PAUSED })
+  const managed = path.join(root, 'managed-automations')
+  await mkdir(managed)
+  const file = path.join(managed, 'review-work.md')
+  await writeFile(file, EVERY_5M.replace('google:email:inbox:fetch', 'workstreams:scan'))
+  try {
+    const first = recorder()
+    const options = { dir, additionalDirs: [managed], statePath, systemNow: mondayMorning(), invoke: first.invoke }
+    const initial = await runDueAutomations(options)
+    const again = await runDueAutomations({ ...options, systemNow: mondayMorning('09:37') })
+    await writeFile(
+      file,
+      EVERY_5M.replace('google:email:inbox:fetch', 'workstreams:scan').replace(
+        'every: 5m',
+        'every: 5m\nstatus: paused',
+      ),
+    )
+    const paused = await runDueAutomations({ ...options, systemNow: mondayMorning('09:45') })
+    assert({
+      given: 'an active workstream job outside the notebook, retried before cadence and later paused',
+      should: 'run once under its unchanged identity and respect both cadence and pause',
+      actual: [initial.ran.map((run) => run.name), again.notDue, paused.stoodDown, first.calls.map((call) => call.run)],
+      expected: [
+        ['review-work'],
+        ['review-work'],
+        [
+          { name: 'ordinary', reason: 'paused' },
+          { name: 'review-work', reason: 'paused' },
+        ],
+        ['workstreams:scan'],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('runDueAutomations - grouped commands share one firing, history and pause control', async () => {
   const { root, dir, statePath } = await makeDirs({ 'morning-recaps.md': RECAPS })
   try {

@@ -50,6 +50,7 @@ import type { TrackingRoutesOptions } from './handler/tracking/mod.ts'
 import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import type { WeekCommands } from './handler/week/mod.ts'
+import type { WorkstreamsRoutesOptions } from './handler/workstreams/mod.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
 import { createScanners } from './scanner/scan.ts'
 import { scanDirectories, scanFiles } from './scanner/walkDirs.ts'
@@ -93,6 +94,7 @@ export interface ServerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -265,6 +267,7 @@ export function createServer(options: ServerOptions): Server {
       meetings: options.meetings,
       automations,
       outbox: options.outbox,
+      workstreams: options.workstreams,
       tracking: options.tracking,
       streaks: options.streaks,
       week,

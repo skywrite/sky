@@ -259,7 +259,7 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean }
 }
 
 /** The host behind the routes — production reads the machine, tests script it. */
@@ -312,12 +312,16 @@ export const SETTABLE_KEYS = {
   'ai.roles.vision': ['ai', 'roles', 'vision'],
   editor: ['editor'],
   'experimental.contextPreflight': ['experimental', 'contextPreflight'],
+  'experimental.workstreams': ['experimental', 'workstreams'],
 } as const
 
 export type SettableKey = keyof typeof SETTABLE_KEYS
 
 /** Keys written as true/false, not text — the page sends the words, the file keeps the value. */
-export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>(['experimental.contextPreflight'])
+export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
+  'experimental.contextPreflight',
+  'experimental.workstreams',
+])
 
 /** The valid values for one settable key, against the live host. null = fine. */
 async function refuse(host: SettingsHost, key: SettableKey, value: string): Promise<string | null> {
@@ -346,6 +350,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
         ? null
         : 'Choose an available preset.'
     case 'experimental.contextPreflight':
+    case 'experimental.workstreams':
       return value === 'true' || value === 'false' ? null : 'on is true, off is false'
   }
 }
@@ -373,7 +378,10 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     },
     about,
     advanced: describeConfig(snapshot),
-    experimental: { contextPreflight: config.experimental.contextPreflight === true },
+    experimental: {
+      contextPreflight: config.experimental.contextPreflight === true,
+      workstreams: config.experimental.workstreams === true,
+    },
   }
 }
 

@@ -1,0 +1,62 @@
+.sky-workstreams-deleted-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sky-dialog-gap);
+  color: var(--sky-text-2);
+}
+.sky-workstreams-deleted-dialog p {
+  margin: 0;
+  line-height: 1.6;
+}
+.sky-workstreams-deleted-dialog .sky-workstreams-deleted-consequence {
+  color: var(--sky-text-2);
+  font-size: 0.85rem;
+}
+.sky-workstreams-deleted-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-workstreams-deleted-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.sky-workstreams-deleted-row > span {
+  overflow-wrap: anywhere;
+}
+.sky-workstreams-deleted-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-workstreams-deleted-actions > button {
+  min-height: 44px;
+}
+.sky-workstreams-delete-notice {
+  flex-wrap: wrap;
+}
+.sky-workstreams-delete-notice > span {
+  flex: 1 1 200px;
+}
+.sky-workstreams-delete-notice > button {
+  min-height: 44px;
+}
+.sky-workstreams-notice-dismissable {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sky-workstreams-notice-dismissable > span {
+  flex: 1;
+}
+@media (max-width: 600px) {
+  .sky-workstreams .sky-workstreams-delete-notice {
+    padding: 10px 16px;
+    gap: 4px;
+  }
+  .sky-workstreams-delete-notice > span {
+    flex-basis: 100%;
+  }
+}

@@ -89,6 +89,7 @@ test(
         }
       },
       undefined,
+      undefined,
       async ({ reply }) => {
         planned.push(reply)
         if (planned.length === 1) {

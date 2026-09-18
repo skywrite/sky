@@ -7,8 +7,8 @@
  * theme and text size to this page, the voice to the next call. The
  * Advanced pane keeps the whole file readable — every key, its value,
  * and where it came from. Connections is the keychain's page — accounts
- * and keys, presence only — in settingsConnections.tsx. Experimental is
- * an empty pane, reserved: nothing is on it yet.
+ * and keys, presence only — in settingsConnections.tsx. Experimental
+ * holds opt-in features still taking shape.
  */
 
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
@@ -82,10 +82,17 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean }
 }
 
 // ── Talking to the service ──────────────────────────────────────────
+
+const SETTING_CHANGED = 'sky:setting-changed'
+type SettingChange = { key: string; value: string }
+
+function notifySettingChange(key: string, value: string): void {
+  window.dispatchEvent(new CustomEvent<SettingChange>(SETTING_CHANGED, { detail: { key, value } }))
+}
 
 /** One preference into the file. Resolves to null, or to what went wrong. */
 export async function saveSetting(key: string, value: string): Promise<string | null> {
@@ -94,7 +101,9 @@ export async function saveSetting(key: string, value: string): Promise<string | 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key, value }),
   }).catch(() => null)
-  return refusalOf(r)
+  const refusal = await refusalOf(r)
+  if (!refusal) notifySettingChange(key, value)
+  return refusal
 }
 
 function reveal(target: 'dir' | 'userDataDir' | 'config'): void {
@@ -111,25 +120,38 @@ export function applyTextSize(size: TextSize): void {
 }
 
 /**
- * The saved appearance applied on any page, once, at app start: the theme
- * (config outranks the browser's remembered toggle) and the text size.
+ * Apply saved appearance at app start and keep the sidebar's opt-in
+ * Workstreams entry in sync with successful settings writes.
  */
-export function useAppearanceBoot(): void {
+export function useSettingsBoot(): boolean {
   const { setColorScheme } = useMantineColorScheme()
+  const [workstreamsEnabled, setWorkstreamsEnabled] = useState(false)
   useEffect(() => {
     let alive = true
+    let workstreamsChanged = false
+    const onChange = (event: Event) => {
+      const { key, value } = (event as CustomEvent<SettingChange>).detail
+      if (key !== 'experimental.workstreams') return
+      workstreamsChanged = true
+      setWorkstreamsEnabled(value === 'true')
+    }
+    window.addEventListener(SETTING_CHANGED, onChange)
     fetch('/settings/_api/settings')
       .then((r) => (r.ok ? (r.json() as Promise<SettingsData>) : null))
       .then((data) => {
         if (!alive || !data) return
         setColorScheme(data.theme === 'system' ? 'auto' : data.theme)
         applyTextSize(data.textSize)
+        // A slow boot response must not undo a preference just saved in Settings.
+        if (!workstreamsChanged) setWorkstreamsEnabled(data.experimental?.workstreams === true)
       })
       .catch(() => {})
     return () => {
       alive = false
+      window.removeEventListener(SETTING_CHANGED, onChange)
     }
   }, [setColorScheme])
+  return workstreamsEnabled
 }
 
 function useSettings() {
@@ -140,7 +162,9 @@ function useSettings() {
     return fetch('/settings/_api/settings')
       .then(async (r) => {
         if (r.ok) {
-          setData((await r.json()) as SettingsData)
+          const saved = (await r.json()) as SettingsData
+          setData(saved)
+          notifySettingChange('experimental.workstreams', String(saved.experimental?.workstreams === true))
           setNote(null)
         } else {
           const body = (await r.json().catch(() => ({}))) as { message?: string }
@@ -399,7 +423,6 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
       <Row
         label="Jev preflight for notebook context"
         sub="Before a chat reads your notebook, Jev checks whether the message needs it. When Jev is confident it does not, the reply skips the reading. Needs your TypeSafe API key, under Connections. Each turn’s context story shows what Jev judged."
-        last
       >
         <SegmentedControl
           value={on ? 'on' : 'off'}
@@ -408,6 +431,23 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
             change('experimental.contextPreflight', String(contextPreflight), (current) => ({
               ...current,
               experimental: { ...current.experimental, contextPreflight },
+            }))
+          }}
+          data={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+        />
+      </Row>
+      <Row label="Workstreams" sub="Show Workstreams in the sidebar to organize ongoing work with Sky." last>
+        <SegmentedControl
+          aria-label="Workstreams"
+          value={data.experimental.workstreams === true ? 'on' : 'off'}
+          onChange={(value) => {
+            const workstreams = value === 'on'
+            change('experimental.workstreams', String(workstreams), (current) => ({
+              ...current,
+              experimental: { ...current.experimental, workstreams },
             }))
           }}
           data={[

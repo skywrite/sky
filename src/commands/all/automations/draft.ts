@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_AUTOMATIONS } from '#config'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
@@ -115,7 +115,9 @@ export default class AutomationsDraftTask extends Command {
       })
       .join('\n')
 
-    const { byName } = await loadAutomationDir(DIR_AUTOMATIONS)
+    const { byName } = await loadAutomationDir(context.config.DIR_AUTOMATIONS, [
+      workstreamStoragePaths(context.config).automationsDir,
+    ])
     const existingNames = new Set(byName.keys())
 
     let current: string | undefined

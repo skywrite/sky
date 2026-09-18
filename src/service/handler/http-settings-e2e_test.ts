@@ -13,7 +13,7 @@ import type { SettingsData } from './settings/mod.ts'
 
 test(
   {
-    name: 'Settings groups, profile learning, saved drafts, and legacy links work on desktop and mobile',
+    name: 'Settings groups, profile learning, saved drafts, experimental navigation, and legacy links work on desktop and mobile',
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
     timeout: 60000,
   },
@@ -33,7 +33,7 @@ test(
     )
     const settings: SettingsData = {
       theme: 'light',
-      experimental: { contextPreflight: false },
+      experimental: { contextPreflight: false, workstreams: false },
       textSize: 'default',
       voice: { current: 'marin', researcherCurrent: 'ash', groups: { male: ['ash'], female: ['marin'] } },
       models: [{ role: 'reasoning', label: 'Thinking', value: 'Sample model', profile: 'sample' }],
@@ -53,12 +53,19 @@ test(
       advanced: { path: '/Config/config.jsonc', exists: true, version: 1, sections: [] },
     }
     const app = new Hono()
+    let refuseWorkstreamSave = false
+    let persistBeforeRefusal = false
     app.route('/settings/_api/about-me', createAboutMeRoutes(host))
     app.get('/settings/_api/settings', (c) => c.json(settings))
     app.post('/settings/_api/set', async (c) => {
       const input = await c.req.json()
       if (input.key === 'web.theme') settings.theme = input.value
       if (input.key === 'web.textSize') settings.textSize = input.value
+      if (input.key === 'experimental.workstreams') {
+        if (persistBeforeRefusal) settings.experimental.workstreams = input.value === true || input.value === 'true'
+        if (refuseWorkstreamSave) return c.json({ message: 'This setting could not be saved.' }, 503)
+        settings.experimental.workstreams = input.value === true || input.value === 'true'
+      }
       return c.json({ ok: true })
     })
     app.get('/settings/_api/writing-voice', (c) =>
@@ -89,6 +96,23 @@ test(
       page.on('pageerror', (error) => errors.push(error.message))
       const base = `http://127.0.0.1:${address.port}`
       const nav = page.locator('.sky-settings-nav')
+      const sidebar = page.locator('.sky-side')
+      const workstreams = sidebar.getByRole('button', { name: 'Workstreams', exact: true })
+      const returnToday = () =>
+        page.locator('.sky-main > .sky-head').getByRole('button', { name: '‹ Today', exact: true }).click()
+      const setWorkstreams = async (enabled: boolean) => {
+        const saved = page.waitForResponse(
+          (response) =>
+            response.url().endsWith('/settings/_api/set') &&
+            response.request().method() === 'POST' &&
+            response.request().postDataJSON().key === 'experimental.workstreams',
+        )
+        await page
+          .locator('[aria-label="Workstreams"]')
+          .getByText(enabled ? 'On' : 'Off', { exact: true })
+          .click()
+        return (await saved).status()
+      }
       const screenshots = env.get('SKY_SETTINGS_SCREENSHOTS')
       const capture = async (name: string) => {
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${name}.png`), fullPage: true })
@@ -185,6 +209,97 @@ test(
         await page.goto(`${base}${route}`)
         await page.getByRole('heading', { name: title, exact: true }).waitFor()
       }
+      await returnToday()
+      assert({
+        given: 'the ordinary sidebar with experimental Workstreams off by default',
+        should: 'omit the Workstreams entry',
+        actual: await workstreams.count(),
+        expected: 0,
+      })
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await page
+        .getByText('Show Workstreams in the sidebar to organize ongoing work with Sky.', { exact: true })
+        .waitFor()
+      await page.evaluate(() => {
+        document.documentElement.dataset.settingsSession = 'same-document'
+      })
+      const enabled = await setWorkstreams(true)
+      await capture('experimental-workstreams-desktop')
+      await returnToday()
+      await workstreams.waitFor({ state: 'visible' })
+      assert({
+        given: 'Workstreams is enabled from Settings and the owner returns to Today',
+        should: 'show the sidebar entry immediately without a document reload',
+        actual: [
+          enabled,
+          settings.experimental.workstreams,
+          await page.locator('html').getAttribute('data-settings-session'),
+        ],
+        expected: [200, true, 'same-document'],
+      })
+      await page.reload()
+      await workstreams.waitFor({ state: 'visible' })
+      assert({
+        given: 'a reload after enabling Workstreams',
+        should: 'restore the saved sidebar preference',
+        actual: [await workstreams.count(), settings.experimental.workstreams],
+        expected: [1, true],
+      })
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      refuseWorkstreamSave = true
+      const refused = await setWorkstreams(false)
+      await page.waitForFunction(
+        () => document.querySelector<HTMLInputElement>('[aria-label="Workstreams"] input[value="on"]')?.checked,
+      )
+      await returnToday()
+      await workstreams.waitFor({ state: 'visible' })
+      assert({
+        given: 'the service refuses a Workstreams setting change',
+        should: 'restore the switch and keep the previously saved sidebar entry',
+        actual: [refused, settings.experimental.workstreams, await workstreams.count()],
+        expected: [503, true, 1],
+      })
+      refuseWorkstreamSave = false
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await setWorkstreams(false)
+      await returnToday()
+      await workstreams.waitFor({ state: 'detached' })
+      assert({
+        given: 'Workstreams is switched off again',
+        should: 'remove only its optional sidebar entry',
+        actual: [
+          settings.experimental.workstreams,
+          await workstreams.count(),
+          await sidebar.getByRole('button', { name: 'Today', exact: true }).isVisible(),
+        ],
+        expected: [false, 0, true],
+      })
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      refuseWorkstreamSave = true
+      persistBeforeRefusal = true
+      const lostResponse = await setWorkstreams(true)
+      await page.waitForFunction(
+        () => document.querySelector<HTMLInputElement>('[aria-label="Workstreams"] input[value="on"]')?.checked,
+      )
+      await returnToday()
+      await workstreams.waitFor({ state: 'visible' })
+      assert({
+        given: 'the service saves Workstreams but its success response is lost',
+        should: 'recover the saved value and update the sidebar from the settings reload',
+        actual: [lostResponse, settings.experimental.workstreams, await workstreams.count()],
+        expected: [503, true, 1],
+      })
+      refuseWorkstreamSave = false
+      persistBeforeRefusal = false
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await setWorkstreams(false)
+      await returnToday()
+      await workstreams.waitFor({ state: 'detached' })
       settings.theme = 'dark'
       await page.goto(`${base}/settings/me/writing-style`)
       await page.getByLabel('Your writing rules', { exact: true }).waitFor()
@@ -207,6 +322,45 @@ test(
           errors,
         ],
         expected: [false, true, []],
+      })
+      await returnToday()
+      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      assert({
+        given: 'the mobile navigation drawer with Workstreams off',
+        should: 'use the same saved visibility preference',
+        actual: await workstreams.count(),
+        expected: 0,
+      })
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await setWorkstreams(true)
+      await capture('experimental-workstreams-mobile')
+      await returnToday()
+      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      await workstreams.waitFor({ state: 'visible' })
+      assert({
+        given: 'Workstreams is enabled from mobile Settings',
+        should: 'show one usable entry in the navigation drawer',
+        actual: [await workstreams.count(), await workstreams.isVisible()],
+        expected: [1, true],
+      })
+      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
+      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await setWorkstreams(false)
+      await returnToday()
+      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      assert({
+        given: 'Workstreams is disabled again on mobile',
+        should: 'hide the entry without overflow or browser errors',
+        actual: [
+          await workstreams.count(),
+          settings.experimental.workstreams,
+          await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+          errors,
+        ],
+        expected: [0, false, false, []],
       })
     } finally {
       await browser?.close()

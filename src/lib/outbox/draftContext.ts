@@ -1,4 +1,7 @@
 import * as path from 'node:path'
+import { workstreamOutboxContext } from '#lib/workstreams/outbox.ts'
+import { createWorkstreamStorage } from '#lib/workstreams/storage.ts'
+import { WorkstreamStore } from '#lib/workstreams/store.ts'
 import type { WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import { WritingVoiceError, type VoiceDraftInput } from '#lib/writingVoice/types.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
@@ -6,15 +9,24 @@ import { readOptional } from './files.ts'
 import { outboxDraftItemId } from './itemId.ts'
 import { createSavedMessages, type SavedMessages, type SavedMessagesConfig } from './sources.ts'
 import { createOutboxStorage } from './storage.ts'
-import { ItemSchema, type OutboxItem } from './types.ts'
+import { ItemSchema, type OutboxItem, type WorkstreamLink } from './types.ts'
 
 export function createOutboxDraftGuard(config: SavedMessagesConfig & { DIR_STATE: string }) {
   const storage = createOutboxStorage(config)
   const sources = createSavedMessages(config)
+  const workstreamStorage = createWorkstreamStorage(config)
+  const workstreams = new WorkstreamStore(
+    workstreamStorage.dir,
+    workstreamStorage.stateDir,
+    config.DIR_BASE,
+    undefined,
+    workstreamStorage.contentRoot,
+    workstreamStorage.initialize,
+  )
   return async (draft: WritingDraft, author: 'sky' | 'you') => {
     if (!outboxDraftItemId(draft.source)) return
     await storage.initialize()
-    await checkOutboxDraft(storage.dir, draft, author, sources)
+    await checkOutboxDraft(storage.dir, draft, author, sources, (links) => workstreamOutboxContext(workstreams, links))
   }
 }
 
@@ -26,6 +38,7 @@ export function outboxDraftInput(item: OutboxItem): VoiceDraftInput {
     context: JSON.stringify({
       situation: item.situation,
       conversation: item.conversation,
+      workstreams: item.workstreams,
       followupOf: item.followupOf,
     }).slice(0, 40_000),
     instruction: item.replyDirections?.at(-1)?.text ?? '',
@@ -38,6 +51,7 @@ export async function checkOutboxDraft(
   draft: WritingDraft,
   author: 'sky' | 'you',
   sources: SavedMessages,
+  currentContext?: (links: WorkstreamLink[]) => Promise<WorkstreamLink[]>,
 ): Promise<void> {
   const id = outboxDraftItemId(draft.source)
   if (!id) return
@@ -60,5 +74,11 @@ export async function checkOutboxDraft(
         'New messages arrived. Review the updated conversation in Outbox before revising.',
         409,
       )
+  }
+  if (author === 'sky' && item.workstreams?.length) {
+    if (!currentContext) throw new WritingVoiceError('The linked work could not be checked. Open Outbox first.', 409)
+    const links = await currentContext(item.workstreams)
+    if (links.some((link, index) => link.contextVersion !== item.workstreams![index]?.contextVersion))
+      throw new WritingVoiceError('The linked work changed. Review its updated context in Outbox before revising.', 409)
   }
 }

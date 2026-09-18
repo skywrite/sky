@@ -26,6 +26,9 @@ web app's page and builds its client.
 - `http.ts`, one level up, mounts the shell at `/`, at a day's date, and at
   the page paths. `/_assets/:name` serves the bundle.
 
+The Map/Timeline surface and its persistent work, Sky, Today, and Outbox contracts
+are described in the [workstream design](../../../../../docs/topics/workstreams/README.md).
+
 ## Stylesheet ownership
 
 `client/shell.css` is the CSS entrypoint imported by `main.tsx`, after

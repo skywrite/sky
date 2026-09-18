@@ -1,0 +1,151 @@
+.sky-workstreams-relationship-graph {
+  z-index: 1;
+}
+.sky-workstreams-world > .sky-workstreams-card,
+.sky-workstreams-world > .sky-workstreams-lane {
+  z-index: 2;
+  transition: opacity 160ms ease;
+}
+.sky-workstreams-world > .sky-workstreams-lane[data-dragging='true'] {
+  z-index: 3;
+}
+.sky-workstreams-card[data-muted='true'],
+.sky-workstreams-lane[data-muted='true'] {
+  opacity: 0.42;
+}
+.sky-workstreams-card[data-muted='true']:hover,
+.sky-workstreams-card[data-muted='true']:focus-within,
+.sky-workstreams-lane[data-muted='true']:hover,
+.sky-workstreams-lane[data-muted='true']:focus-within,
+.sky-workstreams-canvas[data-linking='true'] .sky-workstreams-card,
+.sky-workstreams-canvas[data-linking='true'] .sky-workstreams-lane {
+  opacity: 1;
+}
+.sky-workstreams-card[data-drop-target='true'],
+.sky-workstreams-lane[data-drop-target='true'] .sky-workstreams-lane-label {
+  border-color: var(--sky-accent);
+  box-shadow: 0 0 0 3px var(--sky-accent-soft);
+}
+.sky-workstreams-relationship {
+  color: var(--sky-dim);
+  opacity: 0.64;
+}
+.sky-workstreams-relationship[data-kind='prerequisite'],
+.sky-workstreams-relationship[data-focused='true'],
+.sky-workstreams-relationship[data-preview='true'] {
+  color: var(--sky-accent);
+  opacity: 1;
+}
+.sky-workstreams-relationship[data-muted='true'] {
+  opacity: 0.18;
+}
+.sky-workstreams-relationship-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5px;
+  pointer-events: none;
+}
+.sky-workstreams-relationship[data-kind='related'] .sky-workstreams-relationship-line {
+  stroke-dasharray: 4 6;
+}
+.sky-workstreams-relationship[data-preview='true'] .sky-workstreams-relationship-line {
+  stroke-dasharray: 2 5;
+}
+.sky-workstreams-relationship-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18px;
+  pointer-events: stroke;
+  cursor: pointer;
+  outline: none;
+}
+.sky-workstreams-relationship:has(.sky-workstreams-relationship-hit:hover),
+.sky-workstreams-relationship:focus-within {
+  opacity: 1;
+  color: var(--sky-accent);
+}
+.sky-workstreams-relationship:focus-within .sky-workstreams-relationship-line,
+.sky-workstreams-relationship:has(.sky-workstreams-relationship-hit:hover) .sky-workstreams-relationship-line {
+  stroke-width: 2.5px;
+}
+.sky-workstreams-relationship-label {
+  display: none;
+  cursor: pointer;
+  pointer-events: none;
+}
+.sky-workstreams-relationship-label rect {
+  fill: var(--sky-card);
+  stroke: var(--sky-border-soft);
+  stroke-width: 1px;
+}
+.sky-workstreams-relationship-label text {
+  fill: currentColor;
+  font-size: 12px;
+  font-weight: 550;
+}
+.sky-workstreams-relationship[data-focused='true'] .sky-workstreams-relationship-label,
+.sky-workstreams-relationship[data-preview='true'] .sky-workstreams-relationship-label,
+.sky-workstreams-relationship:hover .sky-workstreams-relationship-label,
+.sky-workstreams-relationship:focus-within .sky-workstreams-relationship-label {
+  display: block;
+  pointer-events: all;
+}
+.sky-workstreams-connector {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 50%;
+  background: var(--sky-card);
+  color: var(--sky-accent);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  opacity: 0;
+  cursor: crosshair;
+  transform-origin: center;
+  z-index: 3;
+}
+.sky-workstreams-card:hover > .sky-workstreams-connector,
+.sky-workstreams-card:focus-within > .sky-workstreams-connector,
+.sky-workstreams-card[data-selected='true'] > .sky-workstreams-connector,
+.sky-workstreams-lane-label:hover > .sky-workstreams-connector,
+.sky-workstreams-lane-label:focus-within > .sky-workstreams-connector,
+.sky-workstreams-lane-label[data-selected='true'] > .sky-workstreams-connector {
+  opacity: 1;
+}
+.sky-workstreams-relationship-graph > .sky-workstreams-link-preview {
+  fill: none;
+  stroke: var(--sky-accent);
+  stroke-width: 2px;
+  stroke-dasharray: 5 5;
+  opacity: 1;
+}
+.sky-workstreams-link-hint {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 24px;
+  background: var(--sky-card);
+  color: var(--sky-text-2);
+  box-shadow: var(--sky-card-shadow);
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 4;
+}
+@media (pointer: coarse), (max-width: 900px) {
+  .sky-workstreams-connector {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-workstreams-world > .sky-workstreams-card,
+  .sky-workstreams-world > .sky-workstreams-lane {
+    transition: none;
+  }
+}

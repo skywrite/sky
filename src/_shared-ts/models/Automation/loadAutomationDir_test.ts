@@ -114,3 +114,50 @@ test('loadAutomationDir - a missing directory means nothing is declared yet', as
     expected: { size: 0, errors: 0 },
   })
 })
+
+test('loadAutomationDir - managed charters join notebook jobs and a missing notebook directory is harmless', async () => {
+  const dir = await makeDir({ 'ordinary.md': VALID })
+  const managed = await makeDir({ 'review-work.md': ALSO_VALID })
+  try {
+    const combined = await loadAutomationDir(dir, [managed, managed])
+    const standalone = await loadAutomationDir(path.join(dir, 'absent'), [managed])
+    assert({
+      given: 'one notebook job and one paused managed charter, with the managed root repeated',
+      should: 'discover each identity once and preserve the actual source path and pause',
+      actual: [
+        [...combined.byName.keys()].sort(),
+        combined.byName.get('review-work')?.path,
+        combined.byName.get('review-work')?.automation.status,
+        combined.errors.length,
+        [...standalone.byName.keys()],
+      ],
+      expected: [['ordinary', 'review-work'], path.join(managed, 'review-work.md'), 'paused', 0, ['review-work']],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+    await rm(managed, { recursive: true, force: true })
+  }
+})
+
+test('loadAutomationDir - conflicting names in notebook and managed state never silently replace a pause', async () => {
+  const dir = await makeDir({ 'review-work.md': ALSO_VALID, 'ordinary.md': VALID })
+  const managed = await makeDir({ 'review-work.md': VALID })
+  const another = await makeDir({ 'review-work.md': VALID })
+  try {
+    const { byName, errors } = await loadAutomationDir(dir, [managed, another])
+    assert({
+      given: 'a paused charter and two conflicting active copies sharing its ledger identity',
+      should: 'omit the ambiguous job, report every conflicting file, and retain other jobs',
+      actual: [
+        [...byName.keys()],
+        errors.map((error) => error.path).sort(),
+        errors.every((error) => error.error.includes('More than one automation')),
+      ],
+      expected: [['ordinary'], [dir, managed, another].map((root) => path.join(root, 'review-work.md')).sort(), true],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+    await rm(managed, { recursive: true, force: true })
+    await rm(another, { recursive: true, force: true })
+  }
+})

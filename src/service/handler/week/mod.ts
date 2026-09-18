@@ -14,10 +14,13 @@
 
 import * as path from 'node:path'
 import { type Context, Hono } from 'hono'
+import { OutboxError } from '#lib/outbox/types.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { dayFile, fetchNowSync, readDay, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { hold } from '../../activity.ts'
 import isDay from '../day/isDay.ts'
+import { captureWeekGoal, WeekCaptureError } from './capture.ts'
 import { type CheckinGoal, parseCheckins, statusesFor, type WeekCheckins } from './checkins.ts'
 import { parseWeekPlan, type PlanGoal, type WeekPlan } from './plan.ts'
 import {
@@ -50,6 +53,8 @@ export interface WeekRoutesOptions {
   now?: () => ZonedDateTime
   /** Without a host the start, end and create routes are not served */
   commands?: WeekCommands
+  /** Local retry receipts and locks for direct captures; outside the synced notebook by default. */
+  captureStateDir?: string
 }
 
 export type DayState =
@@ -291,6 +296,33 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
   }
 
   app.get('/', async (c) => c.json(await buildWeekView(options)))
+
+  app.post('/capture', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const origin = c.req.header('origin')
+    if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('sec-fetch-site') === 'cross-site')
+      return c.json({ error: 'Open Sky to add this to your week.' }, 403)
+    if (!c.req.header('content-type')?.startsWith('application/json'))
+      return c.json({ error: 'Expected a JSON request.' }, 415)
+    const release = hold('adding to the week plan')
+    try {
+      const clock = readClock(options)
+      return c.json(
+        await captureWeekGoal(
+          { ...options, stateDir: options.captureStateDir },
+          clock.thisWeek,
+          clock.calendarDay,
+          await bodyOf(c),
+        ),
+      )
+    } catch (error) {
+      if (error instanceof WeekCaptureError || error instanceof OutboxError)
+        return c.json({ error: error.message }, error.status)
+      throw error
+    } finally {
+      release()
+    }
+  })
 
   app.get('/:id', async (c) => {
     const week = weekOf(c)

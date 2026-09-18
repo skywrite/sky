@@ -46,7 +46,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 /**
  * Rewrites a draft and nothing else: drafts.update stores content, and
- * no send primitive exists in the Gmail lib.
+ * this command never calls a send endpoint.
  */
 @AIChatTool({ needsApproval: true })
 export default class GoogleEmailDraftUpdateTask extends Command {

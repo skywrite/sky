@@ -1,10 +1,10 @@
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
 import { commandOutcome } from '#lib/automations/commandOutcome.ts'
 import { executeAutomationCommands } from '#lib/automations/execute.ts'
 import { invokeAutomation } from '#lib/automations/invoke.ts'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import AutomationStateStore, { type RunOutcome } from '#shared/models/Automation/state.ts'
 import { dueFiring, resolveNow } from '#shared/models/Automation/trigger.ts'
@@ -54,8 +54,11 @@ export default class AutomationsRunTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
     const { name, stamp } = args
+    const { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } = context.config
 
-    const { byName, errors } = await loadAutomationDir(DIR_AUTOMATIONS)
+    const { byName, errors } = await loadAutomationDir(DIR_AUTOMATIONS, [
+      workstreamStoragePaths(context.config).automationsDir,
+    ])
 
     const found = byName.get(name)
     if (!found) {

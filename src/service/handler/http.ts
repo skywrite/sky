@@ -56,6 +56,8 @@ import {
 } from './vocabulary/mod.ts'
 import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
 import { createWeekRoutes, type WeekCommands } from './week/mod.ts'
+import { createWorkstreamFileRoutes } from './workstreams/files.ts'
+import { createWorkstreamRoutes, type WorkstreamsRoutesOptions } from './workstreams/mod.ts'
 
 /**
  * Options for creating the HTTP app.
@@ -85,6 +87,7 @@ export interface HttpHandlerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -160,10 +163,19 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
           people: markdownStore?.people,
           scores: store,
         }),
+        workstreams: options.workstreams?.store,
       }),
     )
     // The week the days live in: its days, its plan, what waits for the next one. The page itself is /week, below.
-    app.route('/week/_api', createWeekRoutes({ markdownBaseDir, timeDir: chat.timeDir, commands: week }))
+    app.route(
+      '/week/_api',
+      createWeekRoutes({
+        markdownBaseDir,
+        timeDir: chat.timeDir,
+        commands: week,
+        captureStateDir: path.join(userDataDir, 'week-capture'),
+      }),
+    )
   }
 
   // Voice over the web: the browser holds the call; the service mints its
@@ -193,6 +205,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     app.route('/automations/_api', createAutomationRoutes(automations))
   }
   if (options.outbox) app.route('/outbox/_api', createOutboxRoutes(options.outbox))
+  if (options.workstreams) {
+    app.route('/workstreams/_api', createWorkstreamRoutes(options.workstreams))
+    app.route('/', createWorkstreamFileRoutes(options.workstreams.store, contentTypeOf, keep, userDataDir))
+  }
   if (options.tracking) app.route('/tracking/_api', createTrackingRoutes(options.tracking))
   if (options.streaks) app.route('/streaks/_api', createStreaksRoutes(options.streaks))
 
@@ -608,6 +624,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     c.req.path.startsWith('/tracking/_api/')
       ? c.json({ message: 'Tracking is unavailable.' }, 404)
       : c.html(renderAppHtml('sky · tracking')),
+  )
+  app.get('/workstreams', (c) => c.html(renderAppHtml('sky')))
+  app.get('/workstreams/*', (c) =>
+    c.req.path.startsWith('/workstreams/_api/') ? c.json({ message: 'Not found.' }, 404) : c.html(renderAppHtml('sky')),
   )
   app.get('/automations/*', (c) => {
     // A data path with no automations host stays a 404, not a page.

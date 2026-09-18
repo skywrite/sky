@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } from '#config'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
 import type { AutomationCommandStep } from '#shared/models/Automation/mod.ts'
 import AutomationStateStore, { type AutomationRun } from '#shared/models/Automation/state.ts'
@@ -30,6 +30,8 @@ type StatusRow = {
   brief: string
   /** The charter's path relative to the automations directory */
   file: string
+  /** Managed charters live in machine state rather than the notebook. */
+  managed?: boolean
   /** Recent runs, newest first, from the bounded ledger */
   runs: AutomationRun[]
 }
@@ -61,7 +63,7 @@ export default class AutomationsStatusTask extends Command {
     name: 'automations:status',
     description: 'Show declared automations: their trigger, last run and whether anything is due.',
     descriptionLong: [
-      'Reads the charters in the notebook automations/ folder and the run-state',
+      'Reads notebook and managed system charters alongside the run-state',
       'kept outside it, then reports what each one is waiting for. Charters that',
       'cannot be read are listed with the reason, since a charter that never',
       'fires looks exactly like one that had nothing to do.',
@@ -72,8 +74,10 @@ export default class AutomationsStatusTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
+    const { DIR_AUTOMATIONS, FILE_AUTOMATIONS_STATE } = context.config
+    const managedDir = workstreamStoragePaths(context.config).automationsDir
 
-    const { byName, errors } = await loadAutomationDir(DIR_AUTOMATIONS)
+    const { byName, errors } = await loadAutomationDir(DIR_AUTOMATIONS, [managedDir])
     const state = await AutomationStateStore.load(FILE_AUTOMATIONS_STATE)
     const systemNow = new ZonedDateTime()
     const today = systemNow.normalize().plainDateTime.plainDate
@@ -83,6 +87,8 @@ export default class AutomationsStatusTask extends Command {
       const { trigger } = automation
       const runnable = automation.isRunnable(today)
       const now = resolveNow(trigger, systemNow)
+      const relative = path.relative(managedDir, charterPath)
+      const managed = relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
       const row: StatusRow = {
         name,
         kind: automation.kind,
@@ -94,7 +100,8 @@ export default class AutomationsStatusTask extends Command {
         due: runnable && dueFiring(trigger, { now, lastRun: state.lastRunFor(name, trigger) }) !== null,
         unknownKeys: automation.unknownKeys,
         brief: automation.brief,
-        file: path.relative(DIR_AUTOMATIONS, charterPath),
+        file: path.relative(managed ? managedDir : DIR_AUTOMATIONS, charterPath),
+        ...(managed ? { managed: true } : {}),
         runs: state.runsFor(name),
       }
       const last = state.last(name)

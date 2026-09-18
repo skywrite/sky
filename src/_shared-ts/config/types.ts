@@ -41,6 +41,8 @@ export interface SkyConfig {
   }
   /** Features still taking shape — the Experimental page's switches. */
   experimental: {
+    /** Show Workstreams in the app sidebar; hidden unless explicitly enabled. */
+    workstreams?: boolean
     /** Before a web chat reads the notebook, TypeSafe's Jev judges whether the message needs it. */
     contextPreflight?: boolean
   }

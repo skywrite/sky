@@ -1,0 +1,235 @@
+.sky-workstream-capture-flow {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  touch-action: pan-y pinch-zoom;
+}
+.sky-workstream-capture-flow,
+.sky-workstream-capture-question,
+.sky-workstream-capture-edit,
+.sky-workstream-capture-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.sky-workstream-capture-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.sky-workstream-capture-progress button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 40px;
+  color: var(--sky-text-2);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sky-workstream-capture-progress button[aria-current='step'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+  font-weight: 600;
+}
+.sky-workstream-capture-progress button:disabled {
+  color: var(--sky-dim);
+  cursor: default;
+}
+.sky-workstream-capture-progress button:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: -2px;
+}
+.sky-workstream-capture-flow p,
+.sky-workstream-capture-flow h3 {
+  margin: 0;
+}
+.sky-workstream-capture-outcome {
+  font-size: 21px;
+  line-height: 1.4;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sky-workstream-capture-understanding,
+.sky-workstream-capture-intent {
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sky-workstream-capture-intent {
+  max-height: 20dvh;
+  overflow: auto;
+}
+.sky-workstream-capture-question h3 {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.sky-workstream-capture-question {
+  margin-top: 4px;
+}
+.sky-workstream-capture-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sky-workstream-capture-choices > button {
+  height: auto;
+  min-height: 48px;
+  background: var(--sky-side);
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+}
+.sky-workstream-capture-choices > button[aria-pressed='true'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+  border-color: var(--sky-accent);
+}
+.sky-workstream-capture-choices .mantine-Button-inner,
+.sky-workstream-capture-choices .mantine-Button-label {
+  width: 100%;
+  justify-content: space-between;
+}
+.sky-workstream-capture-actions,
+.sky-workstream-capture-refine,
+.sky-workstream-capture-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.sky-workstream-capture-actions {
+  justify-content: flex-end;
+}
+.sky-workstream-capture-refine {
+  justify-content: space-between;
+}
+.sky-workstream-capture-refine > button,
+.sky-workstream-capture-suggestions > button {
+  font-size: 15px;
+}
+.sky-workstream-capture-sources {
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-workstream-capture-sources summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.sky-workstream-capture-sources a {
+  display: block;
+  padding-block: 6px;
+  color: var(--sky-accent);
+  overflow-wrap: anywhere;
+}
+.sky-workstream-capture-hint,
+.sky-workstream-capture-sources p {
+  color: var(--sky-dim);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.sky-workstream-capture-sources[open] > p {
+  margin-block: 12px;
+  color: var(--sky-text-2);
+  font-size: 16px;
+}
+.sky-workstream-capture-review {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sky-workstream-capture-review-label,
+.sky-workstream-capture-review-timing,
+.sky-workstream-capture-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sky-workstream-capture-review-label > span,
+.sky-workstream-capture-review-timing > span,
+.sky-workstream-capture-suggestion > span {
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-workstream-capture-review-label > button {
+  font-size: 14px;
+}
+.sky-workstream-capture-review-label + .sky-workstream-capture-outcome {
+  margin-top: -12px;
+}
+.sky-workstream-capture-sharpen {
+  align-self: flex-start;
+  margin-top: -12px;
+}
+.sky-workstream-capture-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  background: var(--sky-side);
+  border-radius: 14px;
+  line-height: 1.5;
+}
+.sky-workstream-capture-suggestion p {
+  overflow-wrap: anywhere;
+}
+.sky-workstream-capture-navigation {
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.sky-workstream-capture-navigation .sky-workstream-capture-actions {
+  margin-left: auto;
+}
+.sky-workstream-capture-swipe-hint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-workstream-capture-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+}
+.sky-workstream-capture-status > :first-child {
+  flex-shrink: 0;
+}
+.sky-workstream-capture-reading > button {
+  align-self: flex-end;
+}
+.sky-workstream-capture-error {
+  color: var(--sky-text-2);
+  line-height: 1.5;
+}
+.sky-workstream-capture-error .sky-workstream-capture-actions {
+  margin-top: 16px;
+}
+@media (max-width: 900px) {
+  .sky-workstream-capture-flow button {
+    min-height: 44px;
+  }
+  .sky-workstream-capture-flow textarea {
+    font-size: 16px;
+  }
+}
+@media (max-height: 600px) {
+  .sky-workstream-capture-reading {
+    gap: 12px;
+  }
+  .sky-workstream-capture-intent {
+    max-height: 48px;
+  }
+}

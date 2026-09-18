@@ -36,6 +36,7 @@ export interface DayItem {
   /** The item exactly as stored, strike marks included — the write-back address */
   raw: string
   revision?: string
+  workstream?: { id: string; activityId: string; kind: string; error?: string }
 }
 
 /** A document filed under the day, as a row. */

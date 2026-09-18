@@ -70,7 +70,7 @@ parent frame. A separate branch copies the records instead. Each new model turn
 receives the current text, including direct edits; model revisions check the
 version again after generation, refusing to overwrite intervening edits.
 Outbox's Ask Sky action opens a persistent draft discussion referencing this same
-record. Saved conversation context is checked before and after an AI
+record. Linked source and workstream context is checked before and after an AI
 revision, using the same follow directories as Outbox. A context-only update also
 invalidates an in-flight proposal, even when its text revision has not changed.
 

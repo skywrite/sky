@@ -79,6 +79,7 @@ export interface DayItem {
   /** The item exactly as stored — the write-back address */
   raw: string
   revision?: string
+  workstream?: { id: string; activityId: string; kind: string; error?: string }
 }
 
 export interface DayDocRow {
@@ -183,6 +184,7 @@ const NO_TIME = 100000
 
 /** Stable across the strike itself — the raw gains `~~` when checked, the key must not. */
 function itemKey(item: DayItem): string {
+  if (item.workstream) return `${item.workstream.id}:${item.workstream.activityId}`
   return `${item.list}\u0000${item.raw.replace(/~~/g, '').trim()}`
 }
 
@@ -482,7 +484,7 @@ export function Block({
 /** Markdown URLs encode filenames and carry fragments separately from the Explorer file path. */
 function itemHref(item: DayItem, at: string): string {
   const link = item.link?.path ?? ''
-  if (/^https?:\/\//i.test(link)) return link
+  if (item.workstream || /^https?:\/\//i.test(link)) return link
   const [, encoded, suffix] = /^([^?#]*)(.*)$/.exec(link)!
   let file = encoded
   try {
@@ -532,7 +534,7 @@ function PlanRow({
   const active = editor.draft?.item.list === item.list && editor.draft.item.raw === item.raw
   const inline = active && editor.draft?.mode === 'inline'
   const locked = Boolean(editor.draft) || editor.busy || organize.busy || organizing
-  const editable = !readOnly && !phase && !organizing && !organize.busy
+  const editable = !readOnly && !phase && !item.workstream && !organizing && !organize.busy
   const late = tone === 'late' && !struck
   const personal = chip && item.category === 'Personal'
   const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
@@ -603,7 +605,13 @@ function PlanRow({
             aria-checked={organize.selected.has(dayItemKey(item))}
             aria-label={`Select ${item.text}`}
             disabled={organize.busy || !organize.canMove(item)}
-            title={!item.revision ? 'Open the day file to organize this item' : undefined}
+            title={
+              item.workstream
+                ? 'Schedule this activity from its workstream'
+                : !item.revision
+                  ? 'Open the day file to organize this item'
+                  : undefined
+            }
             onClick={() => organize.toggle(item)}
           >
             <span className="sky-check-box" data-on={organize.selected.has(dayItemKey(item))}>
@@ -616,10 +624,19 @@ function PlanRow({
           <button
             type="button"
             className="sky-check"
-            aria-label={struck ? 'Mark not done' : 'Mark done'}
+            aria-label={struck ? 'Mark not done' : item.workstream?.kind === 'decision' ? 'Open decision' : 'Mark done'}
             aria-pressed={struck}
-            disabled={Boolean(phase) || locked}
-            onClick={() => onCheck(item)}
+            disabled={Boolean(phase) || Boolean(item.workstream?.error) || locked}
+            onClick={() => {
+              if (
+                !struck &&
+                item.workstream &&
+                ['decision', 'subworkstream'].includes(item.workstream.kind) &&
+                item.link
+              )
+                window.location.assign(item.link.path)
+              else onCheck(item)
+            }}
           >
             <span className="sky-check-box" data-on={struck}>
               {struck && <Tick />}
@@ -673,6 +690,7 @@ function PlanRow({
                 }}
               >
                 {item.link && !organizing ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+                {item.workstream?.error && <span className="sky-pchip">{item.workstream.error}</span>}
               </span>
             )}
             {!readOnly && !inline && !organizing && (
@@ -687,9 +705,13 @@ function PlanRow({
                   className="sky-item-details"
                   data-item={JSON.stringify([item.list, item.raw.split(/\r?\n/)[0]])}
                   aria-label="Item details"
-                  title="Item details"
+                  title={item.workstream ? 'Open activity details' : 'Item details'}
                   disabled={Boolean(phase) || editor.busy || (locked && !active)}
-                  onClick={() => editor.begin(item, 'details')}
+                  onClick={() =>
+                    item.workstream && item.link
+                      ? window.location.assign(item.link.path)
+                      : editor.begin(item, 'details')
+                  }
                 >
                   <ItemDetailsIcon />
                 </button>

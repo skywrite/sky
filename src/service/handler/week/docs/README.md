@@ -43,6 +43,11 @@ Sunday's End is one step back.
   on track, at risk, no motion, dropped — matched by the words the two
   share, since the entry compresses each goal to a phrase; a goal the entry
   never named gets no chip. A week without a plan says so.
+  A short intention captured for this week goes straight into `## Goals`
+  under `### To do`, without needing a workstream or a category decision.
+  Capture creates a minimal plan when one is missing and preserves an
+  existing plan. Retry receipts keep the original target week; an invisible
+  per-capture marker in the plan prevents duplicates after an interrupted save.
 - **Check-in.** The latest entry of `checkins.md`: the grade and its
   verdict line, the suggested edits, and the way into the file.
 - **For next week**, **Scheduled**, **Next** — on a week still ahead only.
@@ -91,6 +96,7 @@ All under `/week/_api`, mounted when the service has a notebook.
 | --- | --- |
 | `GET /` | This week's view |
 | `GET /:id` | The week's view, `2026-W36` |
+| `POST /capture` | `{text, requestId}` → a goal in the current calendar week's plan; answers `{id, path}` |
 | `POST /:id/create` | week:new for the week; answers the view |
 | `POST /:id/day/:ymd/start` | day:start for the day; answers the view |
 | `POST /:id/day/:ymd/end` | day:end for the day; answers the view |

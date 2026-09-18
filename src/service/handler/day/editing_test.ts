@@ -211,7 +211,7 @@ test('day edit converts types and categories, carries notes, sorts times and und
   })
 })
 
-test('day edits reject stale, ambiguous, malformed and ended requests without writes', async () => {
+test('day edits reject stale, ambiguous, malformed, ended and linked-activity requests without writes', async () => {
   await withDay(async ({ post, read, write, app }) => {
     for (const [input, status] of [
       [edit('Missing task', 'New text'), 409],
@@ -219,6 +219,8 @@ test('day edits reject stale, ambiguous, malformed and ended requests without wr
       [edit('Review the budget', '~~Completed by text~~'), 400],
       [edit('Review the budget', 'New text', { kind: 'commitments', time: '28:99' }), 400],
       [edit('Review the budget', 'New text', { category: 'Personal\n## Injected' }), 400],
+      [edit('Review the budget', '[Task](/workstreams/mock?activity=task)'), 400],
+      [edit('[Task](/workstreams/mock?activity=task)', 'New text', { list: 'Workstream Todos' }), 409],
     ] as const) {
       const response = await post('edit', input)
       assert({

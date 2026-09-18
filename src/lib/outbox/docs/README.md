@@ -7,6 +7,8 @@ updated: 2026-09-16
 
 Slack message timestamps use the shared [Slack conversation parser](../../../_shared-ts/models/Message/slack/docs/README.md).
 
+The connection from objectives and workstreams into Outbox review and back to recorded work is implemented by `lib/workstreams/outbox.ts` and described in the [workstream design](../../../../docs/topics/workstreams/README.md). The scanner continues to discover saved conversations; workstream execution can also prepare a local communication in the same Outbox.
+
 Outbox is the first **system automation**. `sky outbox:setup` installs an ordinary charter in `automations/outbox.md`: `kind: system`, `run: outbox:scan`, `every: 5m`. The existing automation scheduler supplies cadence, quiet hours, pausing, and run history. Setup is idempotent and preserves an existing charter's status and schedule. Slack follow checks and Gmail follow sync remain in the service heartbeat; they are not migrated by this feature. `kind` is a designation, not a second scheduler or a new privilege.
 
 The worker checks a chosen **date and time range** in saved Slack and email messages. The browser's From/Through controls use minute precision, including both endpoint minutes in the wall-clock timestamps of the notebook messages. Check now saves that exact range in the Outbox state directory's `search.md`; it survives reloads and midnight until explicitly changed. Today fills a new full-day range. Until a range is chosen, the default is the owner's current local day. Scheduled and manual checks read the same saved selection. Revision checks prevent another browser tab from silently replacing it.
@@ -67,13 +69,13 @@ The status report carries `done` beside the open `items`: archived, sent, or ans
 
 Items distinguish **Draft ready** from **Your decision**. Choosing a response option or entering a few words asks Sky to compose the reply locally. Once a draft exists, the shared chat editor supplies **Edit**, **Ask Sky to revise**, **Copy**, **Undo**, and version history. Ask Sky opens a discussion focused on the same record. Legacy inline editors retain **Revise with Sky**, **Shorter**, and **Warmer** until adoption. A missing fact remains an explicit question instead of a placeholder or invented answer. Generated text stays in review until the ordinary explicit native-draft approval.
 
-`POST /item/:id/compose` saves the working draft and owner direction under the submitted revision before source checks or model work. `prepareCompose` performs this durable save; a detached worker runs `composePrepared` against its resulting revision. The request returns HTTP 202 after worker registration and releases its short restart hold. Per-item local job state transitions from `running` to `complete` or `failed`; status reads reconnect after a service restart. Job feedback is associated with the saved direction's wording, timestamp, and source version. Terminal feedback also requires the same draft, so a later human edit or a new request in the same conversation does not inherit an old result. Source freshness is checked before and after writing. A failed model call or freshness check retains the submitted text and direction; a retry uses the saved revision. It never calls provider draft APIs. A newer edit wins a race, new context invalidates an obsolete result, and generated text based on owner direction is retained by subsequent scans. Recent owner directions retain their date and source version, so answering a follow-up does not discard an earlier choice. Browser direction text stays with an unfinished edit, and a late response for an item cannot replace another item's open editor.
+`POST /item/:id/compose` saves the working draft and owner direction under the submitted revision before source checks or model work. `prepareCompose` performs this durable save; a detached worker runs `composePrepared` against its resulting revision. The request returns HTTP 202 after worker registration and releases its short restart hold. Per-item local job state transitions from `running` to `complete` or `failed`; status reads reconnect after a service restart. Job feedback is associated with the saved direction's wording, timestamp, and source version. Terminal feedback also requires the same draft, so a later human edit or a new request in the same conversation does not inherit an old result. Source/workstream freshness is checked before and after writing. A failed model call or freshness check retains the submitted text and direction; a retry uses the saved revision. It never calls provider draft APIs. A newer edit wins a race, new context invalidates an obsolete result, and generated text based on owner direction is retained by subsequent scans. Recent owner directions retain their date and source version, so answering a follow-up does not discard an earlier choice. Browser direction text stays with an unfinished edit, and a late response for an item cannot replace another item's open editor.
 
 Check now returns HTTP 202 after a detached worker is registered in local state. The HTTP request holds automatic service reloads through range saving and worker registration, releasing the hold on both success and failure. The worker owns the manual automation, scan, and completion stamp; the scheduled automation pass also runs outside the service. The browser polls progress, remains usable during the check, and reconnects to the same check after a page reload or service restart. Connection failures retain the last progress and retry automatically. Duplicate clicks and overlapping scheduler runs do not create a second producer. Only the actual worker stopping is reported as interrupted. The reusable [process-job contract](../../jobs/docs/README.md) explains the startup handoff and persisted results; the service never owns a worker cancellation signal. Completion counts remain visible after a reload, with expandable explanations under “What Sky checked.” The same summary is used by the CLI and automation ledger; failed or incomplete work is never described as a complete check. A paused automatic schedule still permits an explicit manual check.
 
 Beeper Desktop captures are saved messages too. `beeper:inbox:sync` writes one file per chat per day with `chat:` and `account:` ids beside the network's name in `medium:`; discovery admits a saved message by those ids whatever its medium, joins a chat's days by the chat id, and names the desktop app as the destination (`target.medium: 'Beeper'`). The card reads WhatsApp or iMessage; Beeper is the app the draft is ready in. See the [Beeper design](../../beeper/docs/README.md).
 
-Outbox’s native placement writes use the existing `slack:draft:reply` / `google:email:draft:reply` and their draft-update commands; a Beeper chat takes the draft through the desktop app's draft endpoint, which fills only an empty composer, and Open in Beeper brings the app forward on the chat. Placement does not send. Request plans distinguish an answer in the source conversation from a promised message elsewhere. Separate messages, and older promises without an established destination, stay local for copying; refreshing the source cannot turn its thread into their destination. A confirmed native reference is required before a row becomes Ready. An interrupted or ambiguous write becomes `placement_unknown` and is never automatically retried; the user checks the app. A process killed during placement is detected on the next status read. Archive removes a row from Outbox without claiming the native draft was sent or deleting it.
+Outbox’s native placement writes use the existing `slack:draft:reply` / `google:email:draft:reply` and their draft-update commands; a Beeper chat takes the draft through the desktop app's draft endpoint, which fills only an empty composer, and Open in Beeper brings the app forward on the chat. Placement does not send. Request plans distinguish an answer in the source conversation from a promised message elsewhere. Separate messages, and older promises without an established destination, stay local for copying; refreshing the source cannot turn its thread into their destination. Workstream reports can separately use the explicitly authorized [report delivery boundary](../../../lib/workstreams/delivery.ts), which records a provider receipt and then archives the linked review item. A confirmed native reference is required before a row becomes Ready. An interrupted or ambiguous write becomes `placement_unknown` and is never automatically retried; the user checks the app. A process killed during placement is detected on the next status read. Archive removes a row from Outbox without claiming the native draft was sent or deleting it.
 
 The message scanner consumes saved Slack/email conversations and observes actual replies only after they appear in those captures. Approved replies can also produce the linked follow-ups described below. Chat/voice capture into the same queue remains a subsequent producer. Freshness is checked against saved captures; changes not yet captured by follow sync are outside that guarantee. The owner can use Record that I sent it before their native reply has been captured.
 
@@ -126,6 +128,40 @@ native placement and follow-up preparation, including after reload. Follow-up
 metadata changes do not make an unchanged ready draft look like an editor conflict.
 When follow-ups arrive, the confirmation names their recipients and the linked
 buttons open the new items.
+
+## Workstream communications
+
+A workstream producer supplies a stable intent ID, an activity reference, and the
+draft, up to 40,000 characters so a complete prepared report can be reviewed.
+Repeated preparation reuses the existing intent and repairs an interrupted
+backlink. A pending reply in the same captured conversation is reused; its edited
+text and native draft remain intact. Attaching different context marks the
+existing draft for review. Without a verified saved conversation, the draft stays
+local with a stated recipient and copy action; an arbitrary address does not
+invent a native reply destination.
+
+Each link snapshots the relevant outcome, activity, canonical decisions, and
+selected source hashes. The service refreshes changed context while retaining the
+draft. Approval rechecks that context and the saved conversation before native
+placement. A missing decision or source prevents approval until repaired. Sky's
+producer additionally checks the original workstream, permission, and selected
+source revisions under the workstream writer lock before queuing its local effect.
+
+`Record that I sent it` records explicit owner evidence and archives the review
+item without sending anything. The activity then waits for a result. A separately
+recorded response must reference new or changed captured content from the same
+conversation, and the owner supplies its meaning and whether it satisfies the
+requested result. The original request snapshot is retained even when the scanner
+refreshes the current conversation. Native readiness, owner-reported sending,
+and assessed responses remain distinct; none closes the whole workstream.
+
+Workstream details and Sky's review derive communication status from the existing
+Outbox item. The observation checks its latest saved conversation and includes
+bounded recent messages with a stable version, so a captured response can wake a
+review without waiting for a new periodic deadline. This read does not mutate the
+review item or expose its draft, learning examples, or communication preferences.
+It names capture errors and truncation; it cannot observe uncaptured account
+activity or infer sending from native draft readiness.
 
 ## Verification
 

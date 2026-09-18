@@ -43,7 +43,7 @@ async function fixture() {
   await write('Did the update arrive?')
   await scanOutbox({ store, sources, today: TODAY, now: NOW, propose: async () => proposal })
   const item = (await store.list())[0]
-  const review = (compose: ComposeReply) =>
+  const review = (compose: ComposeReply, context?: OutboxReview['currentContext']) =>
     new OutboxReview(
       store,
       sources,
@@ -52,6 +52,7 @@ async function fixture() {
       },
       () => NOW,
       undefined,
+      context,
       compose,
     )
   return { store, item, write, review, clean: () => rm(root, { recursive: true, force: true }) }
@@ -168,6 +169,46 @@ test('Revision saves the owner input even when source freshness prevents model w
       should: 'allow revision with the saved working text',
       actual: [retried.draft, calls],
       expected: [proposal.draft, 1],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Revision saves owner input before checking changed workstream context', async () => {
+  const f = await fixture()
+  try {
+    const item = await f.store.put(
+      {
+        ...f.item,
+        workstreams: [
+          { workstreamId: 'atlas', title: 'Atlas', context: 'Original scope', contextVersion: 'v1', decisionIds: [] },
+        ],
+      },
+      f.item.revision,
+    )
+    let calls = 0
+    const review = f.review(
+      async () => {
+        calls++
+        return proposal
+      },
+      async (links) => links.map((link) => ({ ...link, context: 'Updated scope', contextVersion: 'v2' })),
+    )
+    const error = await errorOf(() => review.compose(item.id, item.revision, 'My scope reply.', 'Use fewer words.'))
+    const saved = (await f.store.get(item.id))!
+    assert({
+      given: 'linked work changed before a revision request',
+      should: 'retain the draft and direction while marking the context for review',
+      actual: [
+        error.status,
+        calls,
+        saved.draft,
+        saved.replyDirections?.at(-1)?.text,
+        saved.stale,
+        saved.workstreams?.[0].contextVersion,
+      ],
+      expected: [409, 0, 'My scope reply.', 'Use fewer words.', true, 'v2'],
     })
   } finally {
     await f.clean()

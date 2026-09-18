@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
+import { workstreamDayReference } from '#lib/workstreams/day.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { editPlanItem, ItemEditError, replaceEditedBlock } from './editingText.ts'
 import { editableRow } from './editingText.ts'
@@ -71,6 +72,8 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
       return c.json({ error: 'Expected an item, its text and a request ID.' }, 400)
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
+    if (workstreamDayReference(body.raw))
+      throw new ItemEditError('Edit this activity in its workstream to keep its details in sync.')
     const fields = fieldsOf(body, body.list, body.raw)
     if (body.date !== undefined && typeof body.date !== 'string')
       throw new ItemEditError('Choose a destination date.', 400)
@@ -107,6 +110,8 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
     const result = editPlanItem(day.content, body.list, body.raw, fields)
     if (typeof body.revision === 'string')
       checkedBlock(day.content, day.file, { list: body.list, raw: body.raw, revision: body.revision })
+    if (workstreamDayReference(result.after.raw))
+      throw new ItemEditError('Add linked activities from their workstream.', 400)
     if (DayDocument.isItemDone(result.after.raw) !== DayDocument.isItemDone(body.raw.split(/\r?\n/)[0]))
       throw new ItemEditError('Use the checkbox to change completion. Keep completion marks out of the text.', 400)
     await write(day.file, day.content, result.content)

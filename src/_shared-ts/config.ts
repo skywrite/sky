@@ -1,5 +1,6 @@
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { loadSkyConfig } from './config/loader.ts'
 import type { AiProfileConfig } from './config/types.ts'
 
@@ -61,6 +62,7 @@ export const DIR_AI_MEMORY = path.join(DIR_AI, 'memory')
 
 // Charters for work the system does on its owner's behalf, one file each
 export const DIR_AUTOMATIONS = path.join(DIR_BASE, 'automations')
+export const DIR_WORKSTREAMS = workstreamStoragePaths({ DIR_BASE, DIR_STATE }).dir
 
 export const DIR_DATA = path.join(DIR_BASE, 'data')
 export const DIR_DATA_ASSETS = path.join(DIR_DATA, 'assets')

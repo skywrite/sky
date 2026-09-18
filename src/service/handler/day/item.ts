@@ -11,9 +11,11 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { Hono, type MiddlewareHandler } from 'hono'
 import { hash, withLock } from '#lib/outbox/files.ts'
+import { updateWorkstreamDay, workstreamDayRemoval } from '#lib/workstreams/day.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { createEditingRoutes } from './editing.ts'
+import isDay from './isDay.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList } from './order.ts'
 import { createDayOrganizer } from './organizing.ts'
@@ -40,9 +42,14 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
       return c.json({ error: 'Open the day from the Sky app.' }, 403)
     if (!c.req.header('Content-Type')?.startsWith('application/json'))
       return c.json({ error: 'Expected a JSON request.' }, 400)
+    const ymd = c.req.param('ymd') ?? ''
     const stateDir = options.stateDir ?? path.join(tmpdir(), `sky-day-${hash(options.timeDir)}`)
     // Next lists are shared across days; keep these locks outside the synced notebook.
-    await withLock(path.join(stateDir, 'planning.lock'), next)
+    await withLock(path.join(stateDir, 'planning.lock'), async () => {
+      if (options.workstreams && isDay(ymd))
+        return withLock(path.join(options.workstreams.stateDir, `day-${ymd}.lock`), next)
+      await next()
+    })
   }
   app.use('*', guard)
 
@@ -55,6 +62,15 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     if (day instanceof Response) return day
     const result = DayDocument.toggleItem(day.content, body.list, body.raw, body.done)
     if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
+    if (options.workstreams)
+      await updateWorkstreamDay(
+        { store: options.workstreams, timeDir: options.timeDir },
+        {
+          day: day.ymd,
+          raw: body.raw,
+          action: body.done ? 'done' : 'reopen',
+        },
+      )
     const content = orderPlanList(result.kind === 'written' ? result.content : day.content, body.list)
     if (content !== day.content) await writeTextFile(day.file, content)
     return c.json(await options.view(day.ymd))
@@ -68,7 +84,21 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.deleteItem(day.content, body.list, body.raw)
-    if (result.kind === 'missing') return c.json({ error: 'no such item — the day changed under the view' }, 404)
+    if (result.kind === 'missing') {
+      const removed = options.workstreams ? await workstreamDayRemoval(options.workstreams, day.ymd, body.raw) : null
+      if (removed) return c.json({ at: removed.at, view: await options.view(day.ymd) })
+      return c.json({ error: 'no such item — the day changed under the view' }, 404)
+    }
+    if (options.workstreams)
+      await updateWorkstreamDay(
+        { store: options.workstreams, timeDir: options.timeDir },
+        {
+          day: day.ymd,
+          raw: body.raw,
+          action: 'remove',
+          at: result.at,
+        },
+      )
     await writeTextFile(day.file, result.content)
     return c.json({ at: result.at, view: await options.view(day.ymd) })
   })
@@ -83,6 +113,15 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     if (day instanceof Response) return day
     const result = DayDocument.restoreItem(day.content, body.list, body.raw, body.at)
     if (result.kind === 'missing') return c.json({ error: 'no such list — the day changed under the view' }, 404)
+    if (options.workstreams)
+      await updateWorkstreamDay(
+        { store: options.workstreams, timeDir: options.timeDir },
+        {
+          day: day.ymd,
+          raw: body.raw,
+          action: 'restore',
+        },
+      )
     const content = orderPlanList(result.kind === 'written' ? result.content : day.content, body.list)
     if (content !== day.content) await writeTextFile(day.file, content)
     return c.json(await options.view(day.ymd))

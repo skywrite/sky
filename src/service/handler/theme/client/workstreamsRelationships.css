@@ -1,0 +1,33 @@
+.sky-workstream-relationship-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.sky-workstream-relationship-source {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sky-workstream-relationship-source > span {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-workstream-relationship-source > strong {
+  font-size: 21px;
+  line-height: 1.35;
+}
+.sky-workstream-relationship-suggestion {
+  border-radius: 12px;
+  background: var(--sky-accent-soft);
+  padding: 16px;
+}
+.sky-workstream-relationship-suggestion p,
+.sky-workstream-relationship-explanation {
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+.sky-workstream-relationship-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

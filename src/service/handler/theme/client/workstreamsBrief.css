@@ -1,0 +1,210 @@
+.sky-workstream-brief-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sky-workstream-brief-tab-list {
+  flex: none;
+  margin: 0 28px 10px;
+  gap: 18px;
+  border-color: var(--sky-border-soft);
+}
+
+.sky-workstream-brief-tab-list [role='tab'] {
+  min-height: 44px;
+  padding: 10px 2px 12px;
+  font-size: 15px;
+  font-weight: 560;
+  color: var(--sky-dim);
+}
+
+.sky-workstream-brief-tab-list [role='tab'][data-active] {
+  color: var(--sky-text);
+  border-color: var(--sky-accent);
+}
+
+.sky-workstream-tab-count {
+  font-size: 12px;
+  color: var(--sky-dim);
+  margin-left: 3px;
+}
+
+.sky-workstream-brief .sky-workstream-outcome {
+  padding-top: 4px;
+  padding-bottom: 14px;
+}
+
+.sky-workstream-brief-outcome-text > p {
+  font-size: 20px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--sky-text);
+}
+
+.sky-workstream-brief-outcome-text > button {
+  padding-left: 0;
+  margin-top: 4px;
+}
+
+.sky-workstream-brief .sky-workstream-section {
+  margin: 18px 0;
+}
+
+.sky-workstream-brief-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sky-workstream-brief-prose > button {
+  padding-left: 0;
+  margin-top: 5px;
+}
+
+.sky-workstream-brief .sky-workstream-brief-next > h3 {
+  margin-bottom: 0;
+}
+
+.sky-workstream-brief-next > .sky-workstream-activity + h3 {
+  margin-top: 20px;
+}
+
+.sky-workstream-brief-next > button {
+  padding-left: 0;
+  margin-top: 10px;
+}
+
+.sky-workstream-brief .sky-workstream-brief-sky {
+  padding: 18px 0;
+  margin: 18px 0 0;
+  background: none;
+  border-radius: 0;
+  border-top: 1px solid var(--sky-border-soft);
+  border-bottom: 1px solid var(--sky-border-soft);
+  gap: 14px;
+}
+
+.sky-workstream-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sky-workstream-brief-activity .sky-workstream-activity-title {
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.sky-workstream-activity-symbol {
+  width: 22px;
+  flex: none;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--sky-accent);
+}
+
+.sky-workstream-brief-activity-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 7px 0 0 33px;
+}
+
+.sky-workstream-brief-activity-action > span {
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-workstream-brief-activity[data-expanded='true'] {
+  margin: 8px -12px;
+  padding: 16px 12px;
+  border-radius: 12px;
+  background: var(--sky-side);
+  border-bottom-color: transparent;
+}
+
+.sky-workstream-brief-activity .sky-workstream-activity-foot {
+  margin-bottom: 8px;
+}
+
+.sky-workstream-brief-activity [id^='activity-detail-'] > button {
+  margin-left: 29px;
+}
+
+.sky-workstream-brief-view-intro {
+  padding-top: 10px;
+}
+
+.sky-workstream-brief-view-intro h3 {
+  font-size: 20px;
+  font-weight: 580;
+  letter-spacing: -0.025em;
+  margin: 0 0 8px;
+}
+
+.sky-workstream-brief-view-intro p {
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.sky-workstream-brief .sky-workstream-related {
+  padding: 13px 0;
+}
+
+.sky-workstream-brief .sky-workstream-suggestion {
+  padding: 16px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  border-radius: 0;
+}
+
+.sky-workstream-brief .sky-workstream-footer {
+  margin-top: 26px;
+}
+
+@media (max-width: 1400px) {
+  .sky-workstream-brief-tab-list {
+    margin-right: 22px;
+    margin-left: 22px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sky-workstream-brief-tab-list {
+    margin-right: 20px;
+    margin-left: 20px;
+    gap: 24px;
+  }
+
+  .sky-workstream-brief-activity-action button,
+  .sky-workstream-brief-activity .sky-workstream-activity-foot button,
+  .sky-workstream-brief-actions button {
+    min-height: 40px;
+  }
+}
+.sky-workstream-brief .sky-workstream-detail-header {
+  padding-top: 20px;
+  padding-bottom: 10px;
+}
+
+.sky-workstream-brief .sky-workstream-header-actions {
+  flex: none;
+}
+
+.sky-workstream-brief .sky-workstream-detail-header h2 {
+  font-size: 25px;
+  margin-top: 0;
+}
+
+.sky-workstream-brief .sky-workstream-detail-header .sky-workstreams-eyebrow {
+  display: none;
+}

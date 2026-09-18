@@ -21,7 +21,7 @@ type Drag = {
 }
 const allItems = (day: DayData | null) =>
   day ? [...day.record.mostImportant, ...day.record.commitments, ...day.record.todos, ...day.record.reminders] : []
-const canMove = (item: DayItem) => Boolean(item.revision)
+const canMove = (item: DayItem) => Boolean(item.revision && !item.workstream)
 
 export function useDayOrganizing(
   day: DayData | null,
@@ -408,7 +408,11 @@ export function DayOrganizingHint() {
   if (!organize.active) return null
   return (
     <div className="sky-organize-hint">
-      <span>Select items to move, or drag to reorder.</span>
+      <span>
+        {organize.eligible.length
+          ? 'Select items to move, or drag to reorder.'
+          : 'Drag to reorder. Schedule linked activities from their workstream.'}
+      </span>
       {organize.eligible.length > 0 && (
         <Button variant="primary-quiet" disabled={organize.busy} onClick={organize.selectAll}>
           {organize.eligible.slice(0, 100).every((item) => organize.selected.has(dayItemKey(item)))

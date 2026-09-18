@@ -54,6 +54,7 @@ export interface AutomationRow {
   unknownKeys: string[]
   /** The charter's path relative to the automations directory */
   file: string
+  managed?: boolean
   /** Recent runs, newest first */
   runs: AutomationLastRun[]
   lastRun?: AutomationLastRun
@@ -374,7 +375,7 @@ function Foot({ report }: { report: AutomationsReport }) {
   return (
     <div className="sky-auto-foot">
       <span>During quiet hours (22:00–04:00) sky may sleep — anything due then runs when it wakes.</span>
-      <span>Each automation is a file in {shortDir} — edit one there and this page follows.</span>
+      <span>Automations are editable files in {shortDir}; managed workstream charters live in Sky’s data state.</span>
     </div>
   )
 }
@@ -1107,8 +1108,17 @@ export function AutomationDetail({ name, back }: { name: string; back: { label: 
 
               <div className="sky-auto-foot">
                 <span>
-                  a file: automations/{row.file} · <a href={fileHref(`automations/${row.file}`)}>View file</a> — edit it
-                  by hand any time; this page reads whatever the file says
+                  a file: {row.managed ? 'state/' : ''}automations/{row.file} ·{' '}
+                  <a
+                    href={
+                      row.managed
+                        ? `/automations/_api/automation/${encodeURIComponent(row.name)}/file`
+                        : fileHref(`automations/${row.file}`)
+                    }
+                  >
+                    View file
+                  </a>{' '}
+                  — edit it by hand any time; this page reads whatever the file says
                 </span>
               </div>
             </>

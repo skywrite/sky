@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import type { Context } from 'hono'
+import type { WorkstreamStore } from '#lib/workstreams/store.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
@@ -13,6 +14,7 @@ export interface ItemRoutesOptions {
   timeDir: string
   /** The view to answer with once the file is written */
   view: (ymd: string) => Promise<DayView>
+  workstreams?: WorkstreamStore
   markdownBaseDir: string
   stateDir?: string
   today: () => PlainDate

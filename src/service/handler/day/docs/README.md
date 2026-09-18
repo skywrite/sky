@@ -5,6 +5,8 @@ updated: 2026-09-13
 
 # The day's items, the day's rail, and the day's files
 
+Stable activity references and two-way updates with ongoing work are implemented by `lib/workstreams/day.ts`; the complete model is described in the [workstream design](../../../../../docs/topics/workstreams/README.md).
+
 Design notes for `src/service/handler/day/` and the page that drives it,
 `theme/client/day.tsx` with `dayRail.tsx`.
 
@@ -44,7 +46,7 @@ reference definitions stay in the file. The day label reads only the first line,
 while `raw` retains attached notes. Destination bullet markers must match to
 avoid accidentally splitting one Markdown list into two. Edit retries use an
 operation ID; Undo preserves unrelated later changes and refuses to overwrite
-changed task blocks.
+changed task blocks. Linked workstream activities open their canonical details.
 
 **Organize** combines manual ordering and selection across the plan lists. A row
 selects for moving; its grip reorders within the same Markdown list and category.
@@ -67,14 +69,17 @@ future-day template without starting it, writes that destination first, and then
 removes the source blocks. It resolves references and rebases relative links,
 including links in notes. A revision covers both the block and its resolved
 references, so a stale selection cannot move newly changed notes or links.
-Duplicate destinations and ended days reject the entire batch.
+Duplicate destinations and ended days reject the entire batch. Linked workstream
+activities retain their canonical scheduling flow instead of bypassing their
+participation history through a raw Markdown move.
 
 Moves, reorders and editor saves with a changed date share operation IDs and Undo.
 An unchanged pair of files restores exactly; an untouched destination created by
 the move can be removed. With later edits, Undo reverses only the affected blocks
 and refuses changed blocks, references or ordering preferences. Destination-first
 writes and rollback of only the operation's own bytes avoid losing source items
-when a multi-file write fails. These operations use the shared planning lock.
+when a multi-file write fails. These operations use the shared planning lock and,
+when workstreams are enabled, each affected day's projection lock.
 
 A move can create a partial week. `week:new` and the week's **Create remaining
 days** action therefore fill missing canonical day files without overwriting
@@ -140,7 +145,18 @@ attachments can still be opened and added.
 
 A miss — the day changed under the page — is a 404 and writes nothing.
 
-Day item requests check their origin and serialize app writes.
+Workstream activities planned for a day appear as ordinary markdown links under
+`Workstream Todos`, addressed by stable workstream and activity IDs. The current
+open day projects the canonical activity's title and state; ended and past days retain their
+recorded participation snapshot. A checkbox writes the canonical result before
+the day projection. Repeated planning repairs an interrupted projection without
+adding another task. Removing the row detaches its daily placement and keeps the
+underlying activity; Undo reattaches it. Decisions open their canonical resolution
+instead of treating a checkbox as a business decision. Promoted activities open
+their sub-workstream. Broken references remain visible with a repair message.
+
+Day item requests check their origin and serialize app writes with workstream
+planning. Ordinary unlinked rows retain the raw-text operations described above.
 The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 

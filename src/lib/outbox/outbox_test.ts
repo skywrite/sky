@@ -1069,6 +1069,7 @@ test('Outbox composes from an owner decision without any native write and protec
       },
       () => NOW,
       undefined,
+      undefined,
       async ({ instruction, draft }) => {
         received = [instruction, draft]
         return { ...proposal, draft: 'Let’s start with the smaller pilot.', questions: [], replyOptions: [] }
@@ -1111,6 +1112,7 @@ test('Outbox preserves a newer human edit when reply composition finishes later'
       },
       () => NOW,
       undefined,
+      undefined,
       async () => {
         const current = (await f.store.get(item.id))!
         await f.store.put({ ...current, draft: 'My newer edit.', edited: true }, current.revision)
@@ -1143,6 +1145,7 @@ test('Outbox rejects a reply based on messages that change during composition', 
       },
       () => NOW,
       undefined,
+      undefined,
       async () => {
         await f.write(TODAY_REF, 'The request changed.', { follow: null })
         return { ...proposal, draft: 'An obsolete reply.' }
@@ -1174,6 +1177,7 @@ test('Outbox retains earlier owner answers when a reply needs one more detail', 
         throw new Error('No native writes')
       },
       () => NOW,
+      undefined,
       undefined,
       async ({ item, instruction }) => {
         previous = (item.replyDirections ?? []).map((direction) => direction.text)

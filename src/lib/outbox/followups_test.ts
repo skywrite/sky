@@ -77,6 +77,7 @@ async function fixture() {
       () => NOW,
       undefined,
       undefined,
+      undefined,
       prepare,
     )
   return {
@@ -284,6 +285,7 @@ test('A follow-up can be revised locally with its own recipient and approved par
         throw new Error('Revision must not place a draft')
       },
       () => NOW,
+      undefined,
       undefined,
       async (input) => {
         context = [input.item.recipient, input.item.followupOf?.reply, input.draft, input.instruction]

@@ -8,6 +8,9 @@
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { OutboxError } from '#lib/outbox/types.ts'
+import { resolveWorkstreamDayItems } from '#lib/workstreams/day.ts'
+import type { WorkstreamStore } from '#lib/workstreams/store.ts'
+import { WorkstreamError } from '#lib/workstreams/types.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -35,6 +38,7 @@ export interface DayRoutesOptions {
   files?: DayFilesOptions
   /** The day's calendar schedule for the rail; without it the schedule route stays off */
   schedule?: ScheduleHost
+  workstreams?: WorkstreamStore
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
 }
@@ -112,12 +116,28 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     parent: c.parent,
   }))
 
+  if (options.workstreams) {
+    for (const key of ['mostImportant', 'commitments', 'todos', 'reminders', 'done'] as const) {
+      record[key] = await resolveWorkstreamDayItems(
+        options.workstreams,
+        day.ymd,
+        record.ended ? null : today.ymd,
+        record[key],
+      )
+    }
+  }
+
   return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section: null, chats, record }
 }
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
   const app = new Hono()
-  app.onError((error, c) => c.json({ error: error.message }, error instanceof OutboxError ? error.status : 500))
+  app.onError((error, c) =>
+    c.json(
+      { error: error.message },
+      error instanceof WorkstreamError || error instanceof OutboxError ? error.status : 500,
+    ),
+  )
   app.get('/', async (c) => c.json(await buildDayView(options)))
   app.get('/:ymd', async (c) => {
     const ymd = c.req.param('ymd')
@@ -134,6 +154,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       writePlanning: options.writePlanning,
       today: options.today ?? (() => fetchNowSync().plainDateTime.plainDate),
       view: (ymd) => buildDayView(options, ymd),
+      workstreams: options.workstreams,
     }),
   )
   // The day's files: listed, served, kept from a drop, put back, removed.

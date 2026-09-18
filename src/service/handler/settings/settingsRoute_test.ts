@@ -5,6 +5,7 @@ import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import {
+  BOOLEAN_KEYS,
   choiceLabel,
   type ConfigSnapshot,
   type ProfileInput,
@@ -580,13 +581,61 @@ test({ name: 'settings route - the Experimental switch is read as a value and wr
     should: 'report it on, accept the two words, refuse the third, and hand the host the words to keep as values',
     actual: [data.experimental, off.status, on.status, maybe.status, written],
     expected: [
-      { contextPreflight: true },
+      { contextPreflight: true, workstreams: false },
       200,
       200,
       400,
       [
         ['experimental.contextPreflight', 'false'],
         ['experimental.contextPreflight', 'true'],
+      ],
+    ],
+  })
+})
+
+test('settings route - Workstreams defaults off and changes independently of notebook preflight', async () => {
+  const config = structuredClone(CONFIG)
+  config.experimental.contextPreflight = true
+  const { host } = hostWith(config)
+  const written: Array<[SettableKey, string]> = []
+  host.write = async (key, value) => {
+    written.push([key, value])
+    if (key === 'experimental.workstreams') config.experimental.workstreams = value === 'true'
+  }
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).experimental
+  const initial = await read()
+  const on = await post(app, '/settings/_api/set', { key: 'experimental.workstreams', value: 'true' })
+  const enabled = await read()
+  const invalid = await post(app, '/settings/_api/set', { key: 'experimental.workstreams', value: 'yes' })
+  const malformed = await post(app, '/settings/_api/set', { key: 'experimental.workstreams', value: true })
+  const off = await post(app, '/settings/_api/set', { key: 'experimental.workstreams', value: 'false' })
+  assert({
+    given: 'a missing Workstreams preference with preflight enabled, then valid and invalid switch changes',
+    should: 'remain off until enabled, persist through the boolean settings path, and retain the independent flag',
+    actual: [
+      initial,
+      on.status,
+      enabled,
+      invalid.status,
+      malformed.status,
+      off.status,
+      await read(),
+      BOOLEAN_KEYS.has('experimental.workstreams'),
+      written,
+    ],
+    expected: [
+      { contextPreflight: true, workstreams: false },
+      200,
+      { contextPreflight: true, workstreams: true },
+      400,
+      400,
+      200,
+      { contextPreflight: true, workstreams: false },
+      true,
+      [
+        ['experimental.workstreams', 'true'],
+        ['experimental.workstreams', 'false'],
       ],
     ],
   })

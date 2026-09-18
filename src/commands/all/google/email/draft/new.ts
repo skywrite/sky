@@ -31,9 +31,8 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 }
 
 /**
- * Creates a draft and nothing else: the Gmail lib has no send primitive, so
- * the only way this message leaves the account is the user pressing Send in
- * Gmail after reading it there.
+ * Creates a draft and nothing else: this command never calls a send endpoint.
+ * The user reviews and sends the stored draft from Gmail.
  */
 @AIChatTool({ needsApproval: true })
 export default class GoogleEmailDraftNewTask extends Command {
@@ -46,7 +45,7 @@ export default class GoogleEmailDraftNewTask extends Command {
       'from google:auth (requires the Gmail scope), then opens the draft in the',
       'browser. The body is markdown rendered to HTML, so the draft opens in',
       "Gmail's normal rich compose and paragraphs flow to the reader's width.",
-      'Nothing is sent, ever: sending is a separate Gmail endpoint the code',
+      'Nothing is sent, ever: sending is a separate Gmail endpoint this command',
       'does not call — finish and send from Gmail. Recipients and subject are',
       'optional; add them in Gmail if omitted. Use google:email:draft:reply',
       'to reply within an existing thread.',

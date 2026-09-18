@@ -24,6 +24,7 @@ import { createStreaksHost } from './handler/streaks/createStreaksHost.ts'
 import { createTrackingHost } from './handler/tracking/createTrackingHost.ts'
 import { createVoiceHost } from './handler/voice/createVoiceHost.ts'
 import { createWeekHost } from './handler/week/createWeekHost.ts'
+import { createWorkstreamsHost } from './handler/workstreams/createWorkstreamsHost.ts'
 import * as jsend from './jsend.ts'
 import MarkdownWatcher from './MarkdownWatcher/mod.ts'
 import { createReloadGate } from './reload.ts'
@@ -167,6 +168,7 @@ const server = createServer({
   meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),
   outbox: createOutboxHost(config, env.toObject()),
+  workstreams: createWorkstreamsHost(config),
   tracking: createTrackingHost(config),
   streaks: createStreaksHost(config),
   week: createWeekHost(config, env.toObject()),

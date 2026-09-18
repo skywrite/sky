@@ -47,9 +47,8 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 }
 
 /**
- * Creates a reply draft and nothing else: the Gmail lib has no send
- * primitive, so the only way this message leaves the account is the user
- * pressing Send in Gmail after reading it there.
+ * Creates a reply draft and nothing else: this command never calls a send
+ * endpoint. The user reviews and sends the stored reply from Gmail.
  */
 @AIChatTool({ needsApproval: true })
 export default class GoogleEmailDraftReplyTask extends Command {

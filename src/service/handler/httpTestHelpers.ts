@@ -14,6 +14,7 @@ import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { StreaksRoutesOptions } from './streaks/mod.ts'
 import type { TrackingRoutesOptions } from './tracking/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
+import type { WorkstreamsRoutesOptions } from './workstreams/mod.ts'
 
 function createTestYoga(): YogaServerInstance<object, object> {
   return {
@@ -35,6 +36,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     automations?: AutomationsRoutesOptions
+    workstreams?: WorkstreamsRoutesOptions
     tracking?: TrackingRoutesOptions
     streaks?: StreaksRoutesOptions
     outbox?: OutboxRoutesOptions
@@ -57,6 +59,7 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     automations: options.automations,
+    workstreams: options.workstreams,
     tracking: options.tracking,
     streaks: options.streaks,
     outbox: options.outbox,

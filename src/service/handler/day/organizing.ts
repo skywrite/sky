@@ -2,7 +2,8 @@ import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono, type Context } from 'hono'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
-import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
+import { atomicWrite, readOptional, withLock } from '#lib/outbox/files.ts'
+import { workstreamDayReference } from '#lib/workstreams/day.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -127,6 +128,8 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       item: operation.moved?.[0]?.after,
     })
   }
+  const lockedTarget = <T>(ymd: string, run: () => Promise<T>): Promise<T> =>
+    options.workstreams ? withLock(path.join(options.workstreams.stateDir, `day-${ymd}.lock`), run) : run()
   routes.onError((error, c) => c.json({ error: error.message }, error instanceof ItemEditError ? error.status : 500))
 
   const move = async (
@@ -142,51 +145,61 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
     if (day instanceof Response) return day
     const request = JSON.stringify(input)
     if (previous(input.requestId, day.ymd, request)) return response(c, input.requestId)
-    const file = path.join(options.timeDir, dayFile(new PlainDate(input.date)))
-    const before = await readOptional(file)
-    const destination = before ?? DayDocument.createFutureDay(new PlainDate(input.date)).toMarkdown()
-    if (dayEnd(DayDocument.fromMarkdown(destination)).ended)
-      throw new ItemEditError('The destination day has ended. Choose another date.')
-    // Sort by source position, so selection order never changes the order of moved tasks.
-    const rows = selected
-      .map((address) => {
-        return { address, row: checkedBlock(day.content, day.file, address) }
+    return lockedTarget(input.date, async () => {
+      const file = path.join(options.timeDir, dayFile(new PlainDate(input.date)))
+      const before = await readOptional(file)
+      const destination = before ?? DayDocument.createFutureDay(new PlainDate(input.date)).toMarkdown()
+      if (dayEnd(DayDocument.fromMarkdown(destination)).ended)
+        throw new ItemEditError('The destination day has ended. Choose another date.')
+      // Sort by source position, so selection order never changes the order of moved tasks.
+      const rows = selected
+        .map((address) => {
+          if (workstreamDayReference(address.raw))
+            throw new ItemEditError('Schedule linked activities from their workstream.')
+          return { address, row: checkedBlock(day.content, day.file, address) }
+        })
+        .sort((a, b) => a.row.from - b.row.from)
+      let source = day.content
+      let target = destination
+      const moved: MovedBlock[] = []
+      for (const { address, row } of rows) {
+        const edited = input.edit ? editPlanItem(day.content, address.list, address.raw, input.edit).after : null
+        if (
+          edited &&
+          (workstreamDayReference(edited.raw) || DayDocument.isItemDone(edited.raw) !== DayDocument.isItemDone(row.raw))
+        )
+          throw new ItemEditError(
+            'Use the checkbox for completion and add linked activities from their workstream.',
+            400,
+          )
+        const list = edited?.list ?? address.list
+        const block = moveItemMarkdown(edited?.block ?? row.block, day.content, day.file, file)
+        target = insertBlock(target, list, block)
+        source = removeBlock(source, address.list, address.raw)
+        const raw = blockRaw(block)
+        moved.push({
+          before: { list: address.list, raw: row.raw, block: row.block, index: row.index },
+          after: { list, raw, block: editableRow(target, list, raw).block },
+        })
+      }
+      for (const list of new Set(moved.map((item) => item.after.list))) target = orderPlanList(target, list)
+      const changes = [
+        { file, before, after: target },
+        { file: day.file, before: day.content, after: source },
+      ]
+      // Keep a destination copy before removing anything from the source.
+      await writeChanges(changes, options.writePlanning)
+      const when = input.date === new PlainDate(today).addDays(1).ymd ? 'tomorrow' : input.date
+      remember(input.requestId, {
+        day: day.ymd,
+        request,
+        changes,
+        moved,
+        target: input.date,
+        message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} moved to ${when}`,
       })
-      .sort((a, b) => a.row.from - b.row.from)
-    let source = day.content
-    let target = destination
-    const moved: MovedBlock[] = []
-    for (const { address, row } of rows) {
-      const edited = input.edit ? editPlanItem(day.content, address.list, address.raw, input.edit).after : null
-      if (edited && DayDocument.isItemDone(edited.raw) !== DayDocument.isItemDone(row.raw))
-        throw new ItemEditError('Use the checkbox to change completion. Keep completion marks out of the text.', 400)
-      const list = edited?.list ?? address.list
-      const block = moveItemMarkdown(edited?.block ?? row.block, day.content, day.file, file)
-      target = insertBlock(target, list, block)
-      source = removeBlock(source, address.list, address.raw)
-      const raw = blockRaw(block)
-      moved.push({
-        before: { list: address.list, raw: row.raw, block: row.block, index: row.index },
-        after: { list, raw, block: editableRow(target, list, raw).block },
-      })
-    }
-    for (const list of new Set(moved.map((item) => item.after.list))) target = orderPlanList(target, list)
-    const changes = [
-      { file, before, after: target },
-      { file: day.file, before: day.content, after: source },
-    ]
-    // Keep a destination copy before removing anything from the source.
-    await writeChanges(changes, options.writePlanning)
-    const when = input.date === new PlainDate(today).addDays(1).ymd ? 'tomorrow' : input.date
-    remember(input.requestId, {
-      day: day.ymd,
-      request,
-      changes,
-      moved,
-      target: input.date,
-      message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} moved to ${when}`,
+      return response(c, input.requestId)
     })
-    return response(c, input.requestId)
   }
 
   routes.post('/:ymd/item/organize/move', async (c) => {
@@ -324,7 +337,7 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       operation.undone = true
       return c.json(await options.view(day.ymd))
     }
-    return undo()
+    return operation.target ? lockedTarget(operation.target, undo) : undo()
   })
   return { routes, move }
 }

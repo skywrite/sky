@@ -12,6 +12,7 @@ import {
   type ComposeReply,
   type OutboxRecord,
   type PrepareFollowups,
+  type WorkstreamLink,
 } from './types.ts'
 
 export type PlaceDraft = (item: OutboxRecord) => Promise<{ id: string; url: string }>
@@ -23,12 +24,24 @@ export class OutboxReview {
     readonly place: PlaceDraft,
     readonly now: () => string,
     readonly beforePlace: (item: OutboxRecord) => Promise<void> = async () => {},
+    readonly currentContext?: (links: WorkstreamLink[]) => Promise<WorkstreamLink[]>,
     readonly composeReply?: ComposeReply,
     readonly planFollowups?: PrepareFollowups,
   ) {}
 
+  private async contextFresh(item: OutboxRecord): Promise<void> {
+    if (!item.workstreams?.length) return
+    if (!this.currentContext) throw new OutboxError('Workstream context could not be checked. Reload first.', 409)
+    const links = await this.currentContext(item.workstreams)
+    if (links.some((link, index) => link.contextVersion !== item.workstreams![index]?.contextVersion)) {
+      await this.store.put({ ...item, workstreams: links, stale: true, updated: this.now() }, item.revision)
+      throw new OutboxError('The linked work changed. Reload and review the updated context before approving.', 409)
+    }
+  }
+
   private async conversation(item: OutboxRecord) {
-    if (item.origin === 'followup' && !item.conversation.sources.length) return item.conversation
+    if ((item.origin === 'workstream' || item.origin === 'followup') && !item.conversation.sources.length)
+      return item.conversation
     return this.sources.current(item.conversation)
   }
 
@@ -218,6 +231,7 @@ export class OutboxReview {
     if (!instruction.trim() || saved.replyDirections?.at(-1)?.text !== instruction.trim())
       throw new OutboxError('The saved revision direction changed. Reload before asking Sky to draft.', 409)
     if (!this.composeReply) throw new OutboxError('Reply writing is unavailable.', 503)
+    await this.contextFresh(saved)
     const latest = await this.conversation(saved)
     if (latest.version !== saved.conversation.version) {
       await this.store.put({ ...saved, conversation: latest, stale: true, updated: this.now() }, saved.revision)
@@ -245,6 +259,7 @@ export class OutboxReview {
       await this.store.put({ ...saved, conversation: current, stale: true, updated: this.now() }, saved.revision)
       throw new OutboxError('New messages arrived while Sky was writing. Review them and try again.', 409)
     }
+    await this.contextFresh(saved)
     return this.store.put(
       {
         ...saved,
@@ -267,6 +282,7 @@ export class OutboxReview {
     const text = draft.trim()
     if (!text || text.length > MAX_OUTBOX_DRAFT_CHARS)
       throw new OutboxError('Provide the reply you want to approve (under 40,000 characters).')
+    await this.contextFresh(item)
     const latest = await this.conversation(item)
     if (latest.version !== item.conversation.version) {
       await this.store.put({ ...item, conversation: latest, stale: true, updated: this.now() }, revision)
@@ -284,6 +300,7 @@ export class OutboxReview {
     if ((await this.conversation({ ...item, conversation: latest })).version !== latest.version) {
       throw new OutboxError('New messages arrived during review. Reload the conversation first.', 409)
     }
+    await this.contextFresh(item)
     const now = this.now()
     const placing = await this.store.put(
       {

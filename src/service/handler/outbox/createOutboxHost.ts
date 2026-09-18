@@ -16,6 +16,8 @@ import { OutboxReview } from '#lib/outbox/review.ts'
 import { createOutboxRuntime } from '#lib/outbox/runtime.ts'
 import { createReplyComposer } from '#lib/outbox/triage.ts'
 import { OutboxError, type OutboxRecord } from '#lib/outbox/types.ts'
+import { createWorkstreamOutbox } from '#lib/workstreams/outbox.ts'
+import { createWorkstreamsRuntime } from '#lib/workstreams/runtime.ts'
 import { captureOutboxRevision } from '#lib/writingVoice/outbox.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
@@ -54,6 +56,13 @@ export function createOutboxHost(
       }
     }
   }
+  const { store: workstreams } = createWorkstreamsRuntime(config)
+  const bridge = createWorkstreamOutbox({
+    store,
+    sources,
+    workstreams,
+    now: () => new ZonedDateTime().toUTC().normalize().plainDateTime.toString(),
+  })
   const service = () => new CommandService(CommandContext.server(config, env))
   const automation = async () => {
     const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
@@ -114,6 +123,7 @@ export function createOutboxHost(
         beeper: () => beeperOutboxClient(secrets),
       })
     },
+    bridge.currentContext,
     async (input) => {
       const owner = ((await readOptional(config.FILE_ABOUT_ME)) ?? '').slice(0, 16_000)
       return runWithUsageSource('outbox:compose', () =>
@@ -177,6 +187,28 @@ export function createOutboxHost(
             },
             item.revision,
           )
+        }
+      }
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (!item.workstreams?.length || !['needs_review', 'ready'].includes(item.status)) continue
+        try {
+          const links = await bridge.currentContext(item.workstreams)
+          if (
+            item.contextError ||
+            links.some((link, index) => link.contextVersion !== item.workstreams![index]?.contextVersion)
+          ) {
+            items[i] = await store.put(
+              { ...item, workstreams: links, contextError: undefined, stale: true },
+              item.revision,
+            )
+          }
+        } catch (error) {
+          if (error instanceof OutboxError && error.status === 409 && error.message.includes('decision changed'))
+            continue
+          const contextError = error instanceof Error ? error.message : 'Linked work could not be checked.'
+          if (item.contextError !== contextError)
+            items[i] = await store.put({ ...item, stale: true, contextError }, item.revision)
         }
       }
       for (const item of items) {
@@ -268,7 +300,11 @@ export function createOutboxHost(
     reportSent: async (id, revision, evidence) => {
       const before = await store.get(id)
       const item = await review.reportSent(id, revision, evidence)
-      return learnRevision(before, item, true)
+      return learnRevision(
+        before,
+        item.workstreams?.length ? await bridge.reportSent(id, item.revision, evidence) : item,
+        true,
+      )
     },
   }
 }

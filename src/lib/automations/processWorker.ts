@@ -1,6 +1,7 @@
 import process from 'node:process'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
 import { configureLogging } from '#shared/log.ts'
@@ -22,6 +23,7 @@ export default async function runAutomationPass(input: AutomationPassInput) {
   const service = new CommandService(context)
   return runDueAutomations({
     dir: config.DIR_AUTOMATIONS,
+    additionalDirs: [workstreamStoragePaths(config).automationsDir],
     statePath: config.FILE_AUTOMATIONS_STATE,
     systemNow,
     timeoutMs: null,

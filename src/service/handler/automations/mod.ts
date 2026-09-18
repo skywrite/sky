@@ -49,6 +49,7 @@ export interface AutomationRow {
   unknownKeys: string[]
   /** The charter's path relative to the automations directory */
   file: string
+  managed?: boolean
   /** Recent runs, newest first, from the bounded ledger */
   runs: AutomationLastRun[]
   lastRun?: AutomationLastRun
@@ -93,6 +94,8 @@ export interface AutomationsRoutesOptions {
   preview: (setup: AutomationSetup) => Promise<DraftReport>
   /** The report, built fresh — production runs automations:status, tests script it */
   status: () => Promise<AutomationsReport>
+  /** Reads a discovered charter by identity, including managed files outside the notebook. */
+  readCharter?: (name: string) => Promise<string | null>
   /** Flip a charter's status: line; false when no charter has that name */
   setStatus: (name: string, status: 'active' | 'paused') => Promise<boolean>
   /**
@@ -115,6 +118,15 @@ export interface AutomationsRoutesOptions {
 
 export function createAutomationRoutes(options: AutomationsRoutesOptions): Hono {
   const app = new Hono()
+
+  app.get('/automation/:name/file', async (c) => {
+    try {
+      const contents = await options.readCharter?.(c.req.param('name'))
+      return contents == null ? c.json({ message: 'The automation no longer exists.' }, 404) : c.text(contents)
+    } catch {
+      return c.json({ message: 'The automation file could not be read.' }, 500)
+    }
+  })
 
   app.get('/commands', async (c) => {
     try {

@@ -111,6 +111,7 @@ test(
       },
       () => NOW,
       undefined,
+      undefined,
       createReplyComposer('I am Alex Example.', () => ({ model })),
     )
     const job = createScanJob(

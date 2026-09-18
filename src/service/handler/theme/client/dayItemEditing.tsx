@@ -245,7 +245,7 @@ export function DayItemEditing({
     today: day?.today.ymd ?? ymd,
     dismissUndo: () => setUndo(null),
     begin: (item, mode, selection) => {
-      if (pending.current || readOnly || (draft && keyOf(draft.item) !== keyOf(item))) return
+      if (pending.current || readOnly || item.workstream || (draft && keyOf(draft.item) !== keyOf(item))) return
       dismissOtherUndo()
       setUndo(null)
       setError(null)

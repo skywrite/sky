@@ -2,6 +2,8 @@ import * as path from 'node:path'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
+import { withLock } from '#lib/outbox/files.ts'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { exists, outputFile, readTextFile, rename } from '#shared/fs/mod.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
@@ -30,18 +32,22 @@ export function createAutomationsHost(
   env: Record<string, string>,
 ): AutomationsRoutesOptions {
   const service = () => new CommandService(CommandContext.server(config, env))
+  const { automationsDir: managedDir, stateDir } = workstreamStoragePaths(config)
+  const load = () => loadAutomationDir(config.DIR_AUTOMATIONS, [managedDir])
+  // Migration and charter edits must agree on the current file before a rename can publish a late notebook copy.
+  const write = <T>(action: () => Promise<T>) => withLock(path.join(stateDir, 'storage.lock'), action)
 
   return {
     commands: async () => automationCommands(await getManifest()),
 
     configuration: async (name) => {
-      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
+      const { byName } = await load()
       const entry = byName.get(name)
       return entry ? setupFromCharter(name, await readTextFile(entry.path)) : null
     },
 
     preview: async (setup) => {
-      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
+      const { byName } = await load()
       const entry = setup.revise ? byName.get(setup.revise) : undefined
       const draft = configureAutomation(setup, {
         commands: automationCommands(await getManifest()),
@@ -69,19 +75,26 @@ export function createAutomationsHost(
       return { ...result.data, dir: config.DIR_AUTOMATIONS }
     },
 
-    setStatus: async (name, status): Promise<boolean> => {
-      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
+    readCharter: async (name) => {
+      const { byName } = await load()
       const entry = byName.get(name)
-      if (!entry) return false
-
-      const updated = setAutomationStatus(await readTextFile(entry.path), status)
-      // Through a temporary file, as the state store writes: the charter is
-      // the person's file, and a torn write would lose their words.
-      const temp = `${entry.path}.tmp`
-      await outputFile(temp, updated)
-      await rename(temp, entry.path)
-      return true
+      return entry ? readTextFile(entry.path) : null
     },
+
+    setStatus: (name, status) =>
+      write(async (): Promise<boolean> => {
+        const { byName } = await load()
+        const entry = byName.get(name)
+        if (!entry) return false
+
+        const updated = setAutomationStatus(await readTextFile(entry.path), status)
+        // Through a temporary file, as the state store writes: the charter is
+        // the person's file, and a torn write would lose their words.
+        const temp = `${entry.path}.tmp`
+        await outputFile(temp, updated)
+        await rename(temp, entry.path)
+        return true
+      }),
 
     runNow: async (name): Promise<RunNowReport | null> => {
       const result = await service().run('automations:run', { name, stamp: false })
@@ -100,39 +113,46 @@ export function createAutomationsHost(
       return result.data
     },
 
-    create: async (name, contents): Promise<CreateOutcome> => {
-      try {
-        Automation.fromMarkdown(contents, name)
-      } catch (err) {
-        return { kind: 'invalid', message: err instanceof Error ? err.message : String(err) }
-      }
-      if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-        return { kind: 'invalid', message: `name "${name}" is not kebab-case` }
-      }
-      const file = path.join(config.DIR_AUTOMATIONS, `${name}.md`)
-      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
-      if (byName.has(name) || (await exists(file))) return { kind: 'exists' }
+    create: (name, contents) =>
+      write(async (): Promise<CreateOutcome> => {
+        let automation: Automation
+        try {
+          automation = Automation.fromMarkdown(contents, name)
+        } catch (err) {
+          return { kind: 'invalid', message: err instanceof Error ? err.message : String(err) }
+        }
+        if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+          return { kind: 'invalid', message: `name "${name}" is not kebab-case` }
+        }
+        const file = path.join(
+          automation.run === 'workstreams:scan' ? managedDir : config.DIR_AUTOMATIONS,
+          `${name}.md`,
+        )
+        const { byName, errors } = await load()
+        if (byName.has(name) || (await exists(file))) return { kind: 'exists' }
+        if (errors.some((error) => path.basename(error.path, '.md') === name)) return { kind: 'exists' }
 
-      const temp = `${file}.tmp`
-      await outputFile(temp, contents)
-      await rename(temp, file)
-      return { kind: 'created' }
-    },
+        const temp = `${file}.tmp`
+        await outputFile(temp, contents)
+        await rename(temp, file)
+        return { kind: 'created' }
+      }),
 
-    save: async (name, contents): Promise<SaveOutcome> => {
-      const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS)
-      const entry = byName.get(name)
-      if (!entry) return { kind: 'missing' }
-      try {
-        Automation.fromMarkdown(contents, name)
-      } catch (err) {
-        return { kind: 'invalid', message: err instanceof Error ? err.message : String(err) }
-      }
+    save: (name, contents) =>
+      write(async (): Promise<SaveOutcome> => {
+        const { byName } = await load()
+        const entry = byName.get(name)
+        if (!entry) return { kind: 'missing' }
+        try {
+          Automation.fromMarkdown(contents, name)
+        } catch (err) {
+          return { kind: 'invalid', message: err instanceof Error ? err.message : String(err) }
+        }
 
-      const temp = `${entry.path}.tmp`
-      await outputFile(temp, contents)
-      await rename(temp, entry.path)
-      return { kind: 'saved' }
-    },
+        const temp = `${entry.path}.tmp`
+        await outputFile(temp, contents)
+        await rename(temp, entry.path)
+        return { kind: 'saved' }
+      }),
   }
 }

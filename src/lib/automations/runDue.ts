@@ -95,6 +95,8 @@ function frameOf(trigger: { kind: string; zone?: string }): string {
 export type RunDueOptions = {
   /** Directory of charter markdown files */
   dir: string
+  /** Additional managed charter directories; names share the same ledger and must be unique. */
+  additionalDirs?: string[]
   /** Where run-state is kept — outside the notebook */
   statePath: string
   /** The instant this pass runs at */
@@ -107,7 +109,7 @@ export type RunDueOptions = {
 export default async function runDueAutomations(options: RunDueOptions): Promise<PassSummary> {
   const { dir, statePath, systemNow, invoke, timeoutMs = DEFAULT_TIMEOUT_MS } = options
 
-  const { byName, errors } = await loadAutomationDir(dir)
+  const { byName, errors } = await loadAutomationDir(dir, options.additionalDirs)
   const state = await AutomationStateStore.load(statePath)
 
   // The absolute stamp is the same for every charter in the pass; each
