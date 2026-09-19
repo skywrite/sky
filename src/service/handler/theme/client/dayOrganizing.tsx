@@ -1,6 +1,14 @@
 import './dayOrganizing.css'
 import { Button, NativeSelect } from '@mantine/core'
-import { createContext, type PointerEvent as ReactPointerEvent, useContext, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  type PointerEvent as ReactPointerEvent,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
@@ -8,6 +16,8 @@ import { DayCalendarIcon, DayDatePicker } from './dayDatePicker.tsx'
 import { useItemEditing } from './dayItemEditing.tsx'
 
 type Result = { view: DayData; undo: string; message: string; date?: string }
+/** A place the lifted row can land: how far its slot sits from home, and the rows that make room. */
+type Landing = { offset: number; neighbor: string | null; after: boolean; first: number; last: number; by: number }
 type Drag = {
   item: DayItem
   x: number
@@ -15,10 +25,19 @@ type Drag = {
   startX: number
   startY: number
   active: boolean
-  target: DayItem | null
-  after: boolean
   scroll: HTMLElement | null
+  /** The list's scroll position when the row lifted; the landings are measured against it. */
+  scrolled: number
+  /** Every row of the card, top to bottom, as it stood when the row lifted. */
+  rows: string[]
+  from: number
+  landings: Landing[]
+  landing: Landing
 }
+/** The row in hand, and how far each row of its card stands from home while it is out. */
+type Sorting = { key: string; shifts: Map<string, number> }
+const HOME: Landing = { offset: 0, neighbor: null, after: false, first: 0, last: -1, by: 0 }
+const LANDING_MS = 180
 const allItems = (day: DayData | null) =>
   day ? [...day.record.mostImportant, ...day.record.commitments, ...day.record.todos, ...day.record.reminders] : []
 const canMove = (item: DayItem) => Boolean(item.revision && !item.workstream)
@@ -42,19 +61,32 @@ export function useDayOrganizing(
   const [error, setError] = useState<string | null>(null)
   const [undo, setUndo] = useState<Omit<Result, 'view'> | null>(null)
   const [datePicker, setDatePicker] = useState(false)
-  const [drop, setDrop] = useState<{ key: string; after: boolean } | null>(null)
-  const [dragging, setDragging] = useState<string | null>(null)
+  const [sorting, setSorting] = useState<Sorting | null>(null)
   const drag = useRef<Drag | null>(null)
+  /** The copy of the row that travels with the pointer. It outlives the drag until the row has landed. */
+  const lift = useRef<HTMLElement | null>(null)
+  const landed = useRef<Promise<void>>(Promise.resolve())
   const frame = useRef(0)
   const requestId = useRef<{ payload: string; id: string } | null>(null)
   const focusAfterSave = useRef<string | null>(null)
   const items = allItems(day)
-  const cancelDrag = () => {
+  const endDrag = () => {
     drag.current = null
     cancelAnimationFrame(frame.current)
-    setDragging(null)
-    setDrop(null)
+    delete document.documentElement.dataset.skySorting
   }
+  const cancelDrag = () => {
+    endDrag()
+    lift.current?.remove()
+    lift.current = null
+    setSorting(null)
+  }
+  // The copy leaves in the same paint that puts the row back, so the row is never seen twice or not at all.
+  useLayoutEffect(() => {
+    if (sorting) return
+    lift.current?.remove()
+    lift.current = null
+  }, [sorting])
   useEffect(() => {
     setActive(false)
     setSelected(new Map())
@@ -66,8 +98,9 @@ export function useDayOrganizing(
     requestId.current = null
     cancelDrag()
     return () => {
-      drag.current = null
-      cancelAnimationFrame(frame.current)
+      endDrag()
+      lift.current?.remove()
+      lift.current = null
     }
   }, [scope])
   useEffect(() => {
@@ -97,9 +130,14 @@ export function useDayOrganizing(
       body: JSON.stringify(input),
     })
     const body = (await response.json()) as T & { error?: string; view?: DayData }
+    // A dropped row finishes landing before the saved list takes its place.
+    await landed.current
     if (current.current !== scope) throw new Error('The selected day changed.')
     if (!response.ok) {
-      if (body.view) applyView(body.view)
+      if (body.view) {
+        applyView(body.view)
+        setSorting(null)
+      }
       throw new Error(body.error ?? 'Could not save this change. Try again.')
     }
     return body
@@ -115,6 +153,7 @@ export function useDayOrganizing(
       const result = await request<Result>(route, { ...(input as object), requestId: requestId.current.id })
       requestId.current = null
       applyView(result.view)
+      setSorting(null)
       dismissOtherUndo()
       setUndo(result)
       if (route === 'reorder' && focusAfterSave.current) {
@@ -159,56 +198,166 @@ export function useDayOrganizing(
     }
   }
   const address = ({ list, raw, revision }: DayItem) => ({ list, raw, revision })
-  const reorder = (item: DayItem, neighbor: DayItem, after: boolean) => {
+  /** `keys`: the arrow keys moved the row, so its grip keeps the focus; a dropped row shows no focus ring. */
+  const reorder = (item: DayItem, neighbor: DayItem, after: boolean, keys = false) => {
     if (item.list !== neighbor.list || dayItemKey(item) === dayItemKey(neighbor)) return
     const rows = items.filter((row) => row.list === item.list)
     const ordered = rows.filter((row) => dayItemKey(row) !== dayItemKey(item))
     ordered.splice(ordered.findIndex((row) => dayItemKey(row) === dayItemKey(neighbor)) + (after ? 1 : 0), 0, item)
     if (ordered.every((row, index) => dayItemKey(row) === dayItemKey(rows[index]))) return
-    focusAfterSave.current = dayItemKey(item)
-    void save('reorder', { list: item.list, items: ordered.map(address) })
+    focusAfterSave.current = keys ? dayItemKey(item) : null
+    return save('reorder', { list: item.list, items: ordered.map(address) })
   }
   const canReorder = (item: DayItem) =>
     enabled &&
     !busy &&
     Boolean(item.revision) &&
     (!/commitments$/i.test(item.list) || day?.record.commitmentsOrder === 'manual')
-  const point = () => {
-    const state = drag.current
-    if (!state?.active) return
-    const row = document
-      .elementsFromPoint(state.x, state.y)
-      .map((node) => node.closest<HTMLElement>('[data-organize-key]'))
-      .find(
-        (node) =>
-          node && node.dataset.organizeKey !== dayItemKey(state.item) && node.dataset.organizeList === state.item.list,
+  const shifts = (state: Drag) =>
+    new Map(
+      state.rows.map((key, index) => [
+        key,
+        index === state.from
+          ? state.landing.offset
+          : index >= state.landing.first && index <= state.landing.last
+            ? state.landing.by
+            : 0,
+      ]),
+    )
+  /**
+   * Lifts the row: a copy of the whole row, text and all, goes under the pointer, and the row
+   * itself stays behind as the slot. The landings are measured once, from the list at rest, so
+   * rows sliding out of the way never move the ground the pointer is read against.
+   */
+  const raise = (state: Drag, grip: HTMLElement) => {
+    const row = grip.closest<HTMLElement>('[data-organize-key]')
+    if (!row?.parentElement) return false
+    const nodes = [...row.parentElement.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')]
+    const boxes = nodes.map((node) => node.getBoundingClientRect())
+    const from = nodes.indexOf(row)
+    const home = boxes[from]
+    // Taking the row out closes the list by its height and the gap to the row beside it.
+    const pitch =
+      from + 1 < nodes.length && row.nextElementSibling === nodes[from + 1]
+        ? boxes[from + 1].top - home.top
+        : from > 0 && row.previousElementSibling === nodes[from - 1]
+          ? home.bottom - boxes[from - 1].bottom
+          : home.height
+    state.rows = nodes.map((node) => node.dataset.organizeKey!)
+    state.from = from
+    state.scrolled = state.scroll?.scrollTop ?? 0
+    state.landings = [HOME]
+    nodes.forEach((node, index) => {
+      if (index === from || node.dataset.organizeList !== state.item.list) return
+      state.landings.push(
+        index < from
+          ? {
+              offset: boxes[index].top - home.top,
+              neighbor: state.rows[index],
+              after: false,
+              first: index,
+              last: from - 1,
+              by: pitch,
+            }
+          : {
+              offset: boxes[index].bottom - home.bottom,
+              neighbor: state.rows[index],
+              after: true,
+              first: from + 1,
+              last: index,
+              by: -pitch,
+            },
       )
-    if (row) {
-      state.target = items.find((item) => dayItemKey(item) === row.dataset.organizeKey) ?? null
-      const bounds = row.getBoundingClientRect()
-      state.after = state.y > bounds.top + bounds.height / 2
-      setDrop({ key: row.dataset.organizeKey!, after: state.after })
-    } else {
-      state.target = null
-      setDrop(null)
+    })
+    // A bare row gets a margin of paper around it; an Organize row already carries its own.
+    const halo = parseFloat(getComputedStyle(row).paddingLeft) ? { x: 0, y: 0 } : { x: 10, y: 2 }
+    const copy = row.cloneNode(true) as HTMLElement
+    copy.removeAttribute('data-organize-key')
+    copy.removeAttribute('data-organize-list')
+    for (const node of copy.querySelectorAll('[id]')) node.removeAttribute('id')
+    const held = document.createElement('div')
+    held.className = 'sky-sort-lift'
+    held.inert = true
+    held.setAttribute('aria-hidden', 'true')
+    held.style.left = `${home.left - halo.x}px`
+    held.style.top = `${home.top - halo.y}px`
+    held.style.width = `${home.width + halo.x * 2}px`
+    held.style.padding = `${halo.y}px ${halo.x}px`
+    held.style.transformOrigin = `${state.startX - home.left + halo.x}px ${state.startY - home.top + halo.y}px`
+    // The copy is cut from the paper the row lay on, a card's tint or the page, so it lands without a seam.
+    for (let node: HTMLElement | null = row.parentElement; node; node = node.parentElement) {
+      const paper = getComputedStyle(node).backgroundColor
+      if (paper === 'rgba(0, 0, 0, 0)') continue
+      held.style.backgroundImage = `linear-gradient(${paper}, ${paper})`
+      break
     }
+    held.append(copy)
+    document.body.append(held)
+    // The copy paints once where the row lies, so the lift is seen leaving the page.
+    held.getBoundingClientRect()
+    held.dataset.held = 'true'
+    lift.current = held
+    document.documentElement.dataset.skySorting = 'true'
+    return true
+  }
+  /** Keeps the copy under the pointer and opens the slot nearest to it. */
+  const follow = () => {
+    const state = drag.current
+    if (!state?.active || !lift.current) return
+    lift.current.style.translate = `0 ${state.y - state.startY}px`
+    const travel = state.y - state.startY + (state.scroll?.scrollTop ?? 0) - state.scrolled
+    const landing = state.landings.reduce((best, next) =>
+      Math.abs(next.offset - travel) < Math.abs(best.offset - travel) ? next : best,
+    )
+    if (landing === state.landing) return
+    state.landing = landing
+    setSorting({ key: dayItemKey(state.item), shifts: shifts(state) })
   }
   const scrollDrag = () => {
     const state = drag.current
     if (!state?.active) return
     if (state.scroll) {
       const bounds = state.scroll.getBoundingClientRect()
-      const speed = state.y < bounds.top + 48 ? -10 : state.y > bounds.bottom - 48 ? 10 : 0
+      // A row picked up beside an edge stays put until the pointer heads for that edge.
+      const speed =
+        state.y < bounds.top + 48 && state.y < state.startY
+          ? -10
+          : state.y > bounds.bottom - 48 && state.y > state.startY
+            ? 10
+            : 0
       if (speed) {
         state.scroll.scrollTop += speed
-        point()
+        follow()
       }
     }
     frame.current = requestAnimationFrame(scrollDrag)
   }
+  /** Lets go: the copy glides into its slot, or home when the drag is called off, and then the list is saved. */
+  const release = (keep: boolean) => {
+    const state = drag.current
+    endDrag()
+    if (!state?.active) return
+    if (!keep && state.landing !== HOME) {
+      state.landing = HOME
+      setSorting({ key: dayItemKey(state.item), shifts: shifts(state) })
+    }
+    const held = lift.current
+    if (held) {
+      held.dataset.held = 'false'
+      held.style.translate = `0 ${state.landing.offset - (state.scroll?.scrollTop ?? 0) + state.scrolled}px`
+    }
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    landed.current = new Promise((resolve) => setTimeout(resolve, still ? 0 : LANDING_MS))
+    const neighbor = items.find((row) => dayItemKey(row) === state.landing.neighbor)
+    // A save that never started, or failed, still puts the row back. A newer drag is left alone.
+    void Promise.all([landed.current, neighbor && reorder(state.item, neighbor, state.landing.after)]).finally(() => {
+      if (lift.current === held) setSorting(null)
+    })
+  }
   const gripHandlers = (item: DayItem) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
-      if (!canReorder(item) || event.button !== 0) return
+      // A row still landing keeps the floor until it is down.
+      if (!canReorder(item) || event.button !== 0 || lift.current) return
       event.preventDefault()
       event.stopPropagation()
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -219,9 +368,12 @@ export function useDayOrganizing(
         startX: event.clientX,
         startY: event.clientY,
         active: false,
-        target: null,
-        after: false,
         scroll: event.currentTarget.closest('.sky-scroll'),
+        scrolled: 0,
+        rows: [],
+        from: 0,
+        landings: [HOME],
+        landing: HOME,
       }
     },
     onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -230,21 +382,29 @@ export function useDayOrganizing(
       state.x = event.clientX
       state.y = event.clientY
       if (!state.active && Math.hypot(state.x - state.startX, state.y - state.startY) > 5) {
+        if (!raise(state, event.currentTarget)) return endDrag()
         state.active = true
-        setDragging(dayItemKey(item))
+        setSorting({ key: dayItemKey(item), shifts: shifts(state) })
         frame.current = requestAnimationFrame(scrollDrag)
       }
-      if (state.active) point()
+      if (state.active) follow()
     },
     onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
       event.stopPropagation()
-      const state = drag.current
-      if (state?.active && state.target) reorder(state.item, state.target, state.after)
-      cancelDrag()
+      release(true)
     },
-    onPointerCancel: cancelDrag,
-    onLostPointerCapture: cancelDrag,
+    onPointerCancel: () => release(false),
+    onLostPointerCapture: () => release(false),
   })
+  // Escape puts the row back where it was.
+  useEffect(() => {
+    if (!sorting) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') release(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sorting])
   const toggle = (item: DayItem) => {
     if (!active || busy || !canMove(item)) return
     setSelected((previous) => {
@@ -270,8 +430,7 @@ export function useDayOrganizing(
     busy,
     error,
     undo,
-    dragging,
-    drop,
+    sorting,
     canMove,
     canReorder,
     toggle,
@@ -327,7 +486,7 @@ export function useDayOrganizing(
       const at = nodes.findIndex((node) => node.dataset.organizeKey === dayItemKey(item))
       const key = nodes[at + direction]?.dataset.organizeKey
       const neighbor = items.find((row) => dayItemKey(row) === key)
-      if (neighbor) reorder(item, neighbor, direction === 1)
+      if (neighbor) void reorder(item, neighbor, direction === 1, true)
     },
     refresh: async () => {
       if (busy) return

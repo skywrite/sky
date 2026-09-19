@@ -113,26 +113,91 @@
   outline: 2px solid var(--sky-action-focus);
   outline-offset: -2px;
 }
-.sky-prow[data-sorting='true'] {
-  opacity: 0.45;
+/* Sorting: the row in hand travels as a whole copy; its slot and the rows stepping aside show where it lands. */
+.sky-prow[data-sort] {
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
-.sky-prow[data-drop] {
+.sky-prow[data-sort='slot'] {
   overflow: visible;
+  background: transparent;
+  border-color: transparent;
 }
-.sky-prow[data-drop]::after {
+.sky-prow[data-sort='slot'] > .sky-irow-front {
+  opacity: 0;
+}
+.sky-prow[data-sort='slot']::before {
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--sky-action-primary);
+  inset: -2px -10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sky-text) 5%, transparent);
   content: '';
-  z-index: 2;
 }
-.sky-prow[data-drop='before']::after {
-  top: -3px;
+.sky-prow[data-sort='slot'][data-organizing='true']::before {
+  inset: -1px;
 }
-.sky-prow[data-drop='after']::after {
-  bottom: -3px;
+/* The copy is cut from the paper it lay on, so it lands without a seam. */
+.sky-sort-lift {
+  position: fixed;
+  z-index: 900;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background-color: var(--sky-bg);
+  box-shadow:
+    0 0 0 1px transparent,
+    0 0 0 transparent,
+    0 0 0 transparent;
+  pointer-events: none;
+  transition:
+    scale 0.16s ease-out,
+    box-shadow 0.16s ease-out;
+}
+.sky-sort-lift[data-held='true'] {
+  scale: 1.012;
+  box-shadow:
+    0 0 0 1px rgba(28, 35, 43, 0.06),
+    0 2px 5px rgba(28, 35, 43, 0.06),
+    0 16px 40px rgba(28, 35, 43, 0.16);
+}
+.sky-sort-lift[data-held='false'] {
+  transition:
+    translate 0.18s cubic-bezier(0.2, 0, 0, 1),
+    scale 0.18s ease-out,
+    box-shadow 0.18s ease-out;
+}
+[data-mantine-color-scheme='dark'] .sky-sort-lift[data-held='true'] {
+  box-shadow:
+    0 0 0 1px var(--sky-border-soft),
+    0 2px 5px rgba(0, 0, 0, 0.3),
+    0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.sky-sort-lift > .sky-prow {
+  margin: 0 !important;
+}
+.sky-sort-lift .sky-item-grip {
+  opacity: 1 !important;
+  transition:
+    color 0.18s ease-out,
+    background 0.18s ease-out;
+}
+.sky-sort-lift[data-held='true'] .sky-item-grip {
+  color: var(--sky-text);
+  background: var(--sky-s2);
+}
+html[data-sky-sorting],
+html[data-sky-sorting] * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-prow[data-sort],
+  .sky-sort-lift,
+  .sky-sort-lift[data-held='false'],
+  .sky-sort-lift .sky-item-grip {
+    transition: none;
+  }
+  .sky-sort-lift[data-held='true'] {
+    scale: none;
+  }
 }
 .sky-organize-bar {
   flex: none;

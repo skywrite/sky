@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-13
+updated: 2026-09-18
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -54,6 +54,14 @@ Desktop grips also appear on hover or keyboard focus outside Organize. Touch
 grips appear only in Organize so normal scrolling, text editing and swipe deletion
 retain their gestures. Grip arrow keys offer the same ordering without dragging.
 Selection circles replace completion controls while organizing.
+
+A dragged row travels whole. The grip lifts a copy of the entire row, with its
+control, its time and its text as wrapped, and the copy stays under the pointer
+or the finger. The row itself waits in the list as an empty slot. Rows step
+aside as the copy passes, so the slot always shows where the row will land.
+On release the copy glides into the slot, and then the saved list takes its
+place. Escape, or a cancelled touch, puts the row back and saves nothing.
+See [2026-09-18 — a dragged row travels whole](2026-09-18-a-dragged-row-travels-whole.md).
 
 Order is the order of complete Markdown blocks, never a separate collection of
 task IDs. The day frontmatter's `manual-order` list names headings whose explicit

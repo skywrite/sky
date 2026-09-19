@@ -539,6 +539,8 @@ function PlanRow({
   const personal = chip && item.category === 'Personal'
   const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
   const swipe = useSwipeToDelete(() => onDelete(item))
+  // While a row of this card is lifted: how far this row stands aside, or, for the row itself, where its slot waits.
+  const shift = organize.sorting?.shifts.get(dayItemKey(item))
   // A row whose write did not land stands where it was — slid back if it had gone.
   useEffect(() => {
     if (!phase || readOnly || locked) swipe.close()
@@ -553,8 +555,8 @@ function PlanRow({
       data-organize-list={item.list}
       data-organizing={organizing || undefined}
       data-selected={(organizing && organize.selected.has(dayItemKey(item))) || undefined}
-      data-sorting={organize.dragging === dayItemKey(item) || undefined}
-      data-drop={organize.drop?.key === dayItemKey(item) ? (organize.drop.after ? 'after' : 'before') : undefined}
+      data-sort={shift === undefined ? undefined : organize.sorting?.key === dayItemKey(item) ? 'slot' : 'row'}
+      style={shift ? { transform: `translateY(${shift}px)` } : undefined}
       ref={swipe.ref}
       onClick={(event) => {
         if (organizing && !(event.target as HTMLElement).closest('button')) {

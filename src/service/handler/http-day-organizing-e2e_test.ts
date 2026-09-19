@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import type { Page } from 'playwright'
+import type { Page, Request } from 'playwright'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -39,10 +39,27 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
   await row.scrollIntoViewIfNeeded()
   const from = (await row.locator('.sky-item-grip').boundingBox())!
   const to = (await target.boundingBox())!
+  const width = (await row.boundingBox())!.width
   const x = from.x + from.width / 2,
     start = from.y + from.height / 2,
     end = to.y + to.height - 4
   const saved = page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder'))
+  // The row in hand: a copy of the whole row rides under the pointer while its slot waits in the list.
+  const inHand = async () => {
+    const lift = page.locator('.sky-sort-lift')
+    const box = (await lift.boundingBox())!
+    assert({
+      given: `${touch ? 'touch' : 'mouse'} dragging a row`,
+      should: 'carry the whole row, text and all, under the pointer',
+      actual: {
+        text: (await lift.innerText()).includes(text),
+        underPointer: box.y <= end && end <= box.y + box.height,
+        wholeRow: box.width >= width,
+        slots: await page.locator('.sky-prow[data-sort="slot"]').count(),
+      },
+      expected: { text: true, underPointer: true, wholeRow: true, slots: 1 },
+    })
+  }
   if (touch) {
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: start }] })
@@ -51,12 +68,14 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
         type: 'touchMove',
         touchPoints: [{ x, y: start + ((end - start) * step) / 10 }],
       })
+    await inHand()
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     await cdp.detach()
   } else {
     await page.mouse.move(x, start)
     await page.mouse.down()
     await page.mouse.move(x, end, { steps: 10 })
+    await inHand()
     await page.mouse.up()
   }
   const response = await saved
@@ -65,6 +84,48 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
     should: 'save the reordered list',
     actual: response.status(),
     expected: 200,
+  })
+  await page.locator('.sky-sort-lift').waitFor({ state: 'detached' })
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert({
+    given: 'a dropped row',
+    should: 'leave no copy, no row standing aside, and no focus ring on its grip',
+    actual: {
+      rowsAside: await page.locator('.sky-prow[data-sort]').count(),
+      gripFocused: await page.evaluate(() => document.activeElement?.hasAttribute('data-sort-grip') ?? false),
+    },
+    expected: { rowsAside: 0, gripFocused: false },
+  })
+}
+
+/** Escape during a drag puts the row back: nothing is saved and nothing is left floating. */
+async function escapeDrag(page: Page, text: string, targetText: string, file: string) {
+  const before = await readFile(file, 'utf8')
+  const requests: string[] = []
+  const watch = (request: Request) => {
+    if (request.url().includes('/item/organize/')) requests.push(request.url())
+  }
+  page.on('request', watch)
+  const row = page.locator('.sky-prow').filter({ hasText: text })
+  const from = (await row.locator('.sky-item-grip').boundingBox())!
+  const to = (await page.locator('.sky-prow').filter({ hasText: targetText }).boundingBox())!
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2, to.y + to.height - 4, { steps: 10 })
+  await page.locator('.sky-sort-lift').waitFor()
+  await page.keyboard.press('Escape')
+  await page.locator('.sky-sort-lift').waitFor({ state: 'detached' })
+  await page.mouse.up()
+  page.off('request', watch)
+  assert({
+    given: 'Escape during a drag',
+    should: 'put the row back and save nothing',
+    actual: {
+      requests,
+      rowsAside: await page.locator('.sky-prow[data-sort]').count(),
+      unchanged: (await readFile(file, 'utf8')) === before,
+    },
+    expected: { requests: [], rowsAside: 0, unchanged: true },
   })
 }
 
@@ -93,6 +154,7 @@ test(
             await writeFile(file, CONTENT)
             await page.goto(`${origin}/${DAY.ymd}`)
             await page.getByRole('button', { name: 'Organize', exact: true }).click()
+            if (!mobile) await escapeDrag(page, 'Review the Atlas proposal', 'Outline the next release', file)
             await dragRow(page, 'Review the Atlas proposal', 'Outline the next release', mobile)
             const savedOrder = await readFile(file, 'utf8')
             assert({
@@ -121,6 +183,10 @@ test(
             const keyboardSave = page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder'))
             await keyboardGrip.press('ArrowUp')
             await keyboardSave
+            // The arrow keys keep their grip, so the next press moves the same row again.
+            await page.waitForFunction(
+              () => document.activeElement?.getAttribute('aria-label') === 'Reorder Review the Atlas proposal',
+            )
             await page.getByRole('combobox', { name: 'Commitment order', exact: true }).selectOption('manual')
             await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
             await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
