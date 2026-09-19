@@ -193,6 +193,9 @@ the labels and `aria-current` identify each destination and its selected state.
 
 ## Sidebar utilities
 
+A faint one-pixel border separates the shared sidebar from the page on every
+screen. It uses `--sky-border-soft` in both themes and on the mobile drawer.
+
 Voice lives in the chat composer, immediately after Send; its conversation
 handoff and lifecycle are described in the [chat design](../../chat/docs/README.md#voice-in-the-conversation).
 The main sidebar has no Talk destination.
