@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-05
+updated: 2026-09-20
 ---
 
 # Notebook time and the notebook filesystem
@@ -85,17 +85,16 @@ exactly the form the day file's Complete list links with:
 Relative links mean a day directory is self-contained. Move it, archive it, hand it to
 someone — the links still resolve.
 
-## Weeks are created ahead of time
+## Days are created as needed
 
-`sky week:new` materializes an entire week at once: seven `day.md` files pre-built with
-their empty section skeletons and the current active streaks already stamped.
+`sky day:start` creates its target day when missing. Task moves can prepare a
+single future day without starting it, and `sky week:plan` can save a weekly
+plan before any day files exist. See the
+[day-file lifecycle](../src/commands/all/day/docs/README.md#day-files-are-created-as-needed).
+
 Tracking records live in annual `data/tracking/<year>/<slug>.csv` files, created
 on first capture. See the [tracking design notes](../src/commands/all/track/docs/README.md)
-for migrating legacy weekly CSVs. It refuses to run if the week directory
-already exists — pass an explicit date to target a specific week.
-
-Pre-creating matters because it means you can write into a future day — move a todo to next
-Thursday, schedule a reminder — without anything having to invent a directory first.
+for migrating legacy weekly CSVs.
 
 ## Attachments are filed differently — on purpose
 

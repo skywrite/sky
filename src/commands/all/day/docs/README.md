@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-19
+updated: 2026-09-20
 ---
 
 # Day commands
@@ -8,6 +8,24 @@ updated: 2026-09-19
 Design notes for `src/commands/all/day/`. The carry-over of unfinished items
 and the meeting check are written up so far. Extend this file as other parts
 of the group need a mental model.
+
+## Day files are created as needed
+
+`day:start` ensures only its target day's file exists before running startup
+commands. `lib/nbfs/ensureDay` creates the normal unstarted template at its
+canonical path, creates parent directories, and preserves an existing file
+byte for byte. Atomic publication also prevents concurrent creators from
+overwriting a plan or producing `day-2.md`.
+
+CLI task moves and reminder copies use the same helper when they have work
+to carry. A prepared day is still unstarted: only `day:start` sets its start
+time and reconciles active streaks. Moving a task must not run startup routines.
+The web's destination-first moves use the same atomic publication primitive.
+
+A week is a calendar range with optional documents, not a batch of files to
+create. `week:plan` writes `week.md` and creates its directory as needed;
+it works before any of the week's days exist. There is no `week:new` command.
+Scheduled items continue to enter their day through the day-start flow.
 
 ## The meeting check
 
@@ -80,13 +98,17 @@ Todos and commitments share one shape:
    `Professional Commitments` both feed `Professional Incomplete`: that section
    is the day's record of "planned, didn't happen", and `summary:day` reads it.
    `--clean-only` drops the items instead of recording them.
-2. **Move** (`*:move-future`). Checks the target day first, runs the sweep on
+2. **Move** (`*:move-future`). Ensures the target day exists, runs the sweep on
    the source day, then appends the swept items to the same list on the
    target day. The order matters: the sweep writes the source, so a target
    failure after it would leave the items under `Incomplete` with nothing
    moved, and a rerun would find nothing left to move. `--no-incomplete`
    passes `--clean-only` through, so the source keeps no record.
    `*:move-next` is `move-future` with `new = old + 1`.
+
+An empty move or reminder copy creates no destination. Failure to create a
+destination leaves the source untouched. Reminder moves save the destination
+before removing the source items.
 
 `day:end` runs `day:todo:incomplete` by default (`commands.day.end` in config).
 Add `day:commitments:incomplete` there to sweep both lists at close.

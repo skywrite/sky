@@ -3,12 +3,12 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { Arg, Command, CommandResult, isFailOrError } from '#commands/mod.ts'
+import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_TIME } from '#config'
 import exists from '#shared/fs/exists.ts'
-import { fetchNow, weekDir } from '#shared/nbfs/mod.ts'
-import { PlainDateTime, Week } from '#universal/dates/nbdt/mod.ts'
+import { outputFile } from '#shared/fs/mod.ts'
+import { weekDir } from '#shared/nbfs/mod.ts'
+import { Week } from '#universal/dates/nbdt/mod.ts'
 import { draftWeekMarkdown, type InterviewAnswers, type LaterItems, type RefineAnswer } from './lib/draftWeek.ts'
 import { gatherPlanContext } from './lib/planContext.ts'
 import { generateRefineQuestions } from './lib/refineQuestions.ts'
@@ -29,14 +29,20 @@ type Params = InferParams<typeof params>
 export default class WeekPlanTask extends Command {
   static override description: CommandDescription = {
     name: 'week:plan',
-    description: 'Plan a week: interview + notebook context draft week.md, scaffold days if needed, open it.',
+    description: 'Plan a week: interview + notebook context draft week.md, then open it.',
     params,
   }
 
-  async run({ context, args, tasks }: CommandArgs<Params>): Promise<CommandResult> {
-    const { output } = context
+  async run({ context, args }: CommandArgs<Params>): Promise<CommandResult> {
+    const { output, config } = context
+    const { DIR_TIME } = config
 
-    const now = await fetchNow()
+    let now = context.systemNow
+    try {
+      now = context.notebookNow
+    } catch {
+      // Planning also works before the notebook's first day has been started.
+    }
     const today = now.plainDateTime.plainDate
     const current = Week.of(now)
 
@@ -56,12 +62,6 @@ export default class WeekPlanTask extends Command {
 
     const wd = path.join(DIR_TIME, weekDir(week.startInYear))
     const weekMdPath = path.join(wd, 'week.md')
-
-    if (!(await exists(wd))) {
-      output.log(`Week directory missing — running week:new for ${week.toString()}`)
-      const result = await tasks.run('week:new', { when: new PlainDateTime(week.startInYear) })
-      if (isFailOrError(result)) return result
-    }
 
     // week.md is the user's pen after the draft — an existing one is opened, never redrafted
     if (await exists(weekMdPath)) {
@@ -134,7 +134,7 @@ export default class WeekPlanTask extends Command {
     })
     if (!drafted) output.log('AI draft unavailable — writing the plain template instead.')
 
-    await writeFile(weekMdPath, drafted?.file ?? renderWeekMarkdown(week, today.ymd, priorities))
+    await outputFile(weekMdPath, drafted?.file ?? renderWeekMarkdown(week, today.ymd, priorities))
     output.log(`Created ${weekMdPath}`)
 
     if (drafted) {

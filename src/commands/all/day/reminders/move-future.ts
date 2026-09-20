@@ -1,6 +1,7 @@
 import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { ensureDay } from '#lib/nbfs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
@@ -35,11 +36,11 @@ export default class DayReminderMoveFutureTask extends Command {
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult> {
-    const { output } = context
+    const { output, config } = context
     const { old: oldDate, new: newDate } = args
 
-    const dayDoc = await readDay(oldDate)
-    const nextDayDoc = await readDay(newDate)
+    const dayDoc = await readDay(oldDate, config.DIR_TIME)
+    if (oldDate.ymd === newDate.ymd) return CommandResult.success()
 
     const listDayReminders = dayDoc.lists.find((list) => list.title === 'Reminders')
     if (!listDayReminders) {
@@ -54,6 +55,9 @@ export default class DayReminderMoveFutureTask extends Command {
       output.log('No incomplete reminders to move')
       return CommandResult.success()
     }
+
+    await ensureDay(newDate, config.DIR_TIME)
+    const nextDayDoc = await readDay(newDate, config.DIR_TIME)
 
     // Extract links referenced by the moved items
     const movedLinks = new Map<string, Link>()
@@ -106,8 +110,9 @@ export default class DayReminderMoveFutureTask extends Command {
       newDayDoc = newDayDoc.updateLinks(neededLinks)
     }
 
-    await writeDay(newDayDoc)
-    await writeDay(newNextDayDoc)
+    // Save the destination before removing the source items.
+    await writeDay(newNextDayDoc, config.DIR_TIME)
+    await writeDay(newDayDoc, config.DIR_TIME)
 
     output.log(`\n  Moved ${listDayNotDone.size} reminders.\n`)
     return CommandResult.success()

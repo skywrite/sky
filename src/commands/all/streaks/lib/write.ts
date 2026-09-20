@@ -98,7 +98,7 @@ export async function writeStreak(
   await outputFile(file, markdown)
 
   // Stamp the start day's file so the item shows up immediately — its day
-  // file may already exist even for a future start (week:new runs ahead)
+  // file may already exist even for a future start (a task move can prepare it)
   let stamped = false
   let stampWarning: string | undefined
   try {

@@ -35,10 +35,10 @@ export default class DayTodoIncompleteTask extends Command {
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output } = context
+    const { output, config } = context
     const { category, day, dryRun, cleanOnly } = args
 
-    const dayDoc = await readDay(day)
+    const dayDoc = await readDay(day, config.DIR_TIME)
 
     const listDayTodos = dayDoc.lists.find((list) => list.title === category)
     if (!listDayTodos) return CommandResult.error(`Cannot find ${day.ymd} ${category}.`)
@@ -69,7 +69,7 @@ export default class DayTodoIncompleteTask extends Command {
       newDayDoc = newDayDoc.addList(listDayNotDone.update({ title: incompleteTitle }))
     }
 
-    await writeDay(newDayDoc)
+    await writeDay(newDayDoc, config.DIR_TIME)
 
     if (cleanOnly) {
       output.log(`\n  Cleaned ${listDayNotDone.size} incomplete items from ${category}.\n`)

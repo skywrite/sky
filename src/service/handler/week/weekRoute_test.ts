@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { dayFile, weekDir } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate, PlainDateTime, type Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { buildWeekView, createWeekRoutes, type WeekCommands, type WeekView } from './mod.ts'
 
 /** Friday morning, 06:52 — the notebook still on Thursday, its clock past 24:00. */
@@ -460,57 +460,51 @@ test({ name: 'week route - a backlog line moves into the queue' }, async () => {
   })
 })
 
-test(
-  { name: 'week route - start, end and create run the host and answer the fresh view; a failure is reported' },
-  async () => {
-    const { base, timeDir } = await weekNotebook()
-    const calls: string[] = []
-    const commands: WeekCommands = {
-      startDay: async (day: PlainDate) => {
-        calls.push(`start ${day.ymd}`)
-      },
-      endDay: async (day: PlainDate) => {
-        calls.push(`end ${day.ymd}`)
-        if (day.ymd === '2026-09-01') throw new Error('day:end did not finish')
-      },
-      createWeek: async (week: Week) => {
-        calls.push(`create ${week.toString()}`)
-      },
-    }
-    const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW, commands })
-    const bare = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })
+test({ name: 'week route - start and end run the host; bulk week creation is unavailable' }, async () => {
+  const { base, timeDir } = await weekNotebook()
+  const calls: string[] = []
+  const commands: WeekCommands = {
+    startDay: async (day: PlainDate) => {
+      calls.push(`start ${day.ymd}`)
+    },
+    endDay: async (day: PlainDate) => {
+      calls.push(`end ${day.ymd}`)
+      if (day.ymd === '2026-09-01') throw new Error('day:end did not finish')
+    },
+  }
+  const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW, commands })
+  const bare = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })
 
-    const started = await post(app, '/2026-W36/day/2026-09-04/start')
-    const ended = await post(app, '/2026-W36/day/2026-09-02/end')
-    const failed = await post(app, '/2026-W36/day/2026-09-01/end')
-    const created = await post(app, '/2026-W37/create')
-    const notADay = await post(app, '/2026-W36/day/tomorrow/start')
-    const notAWeek = await post(app, '/week-36/create')
-    const noHost = await post(bare, '/2026-W36/day/2026-09-04/start')
+  const started = await post(app, '/2026-W36/day/2026-09-04/start')
+  const ended = await post(app, '/2026-W36/day/2026-09-02/end')
+  const failed = await post(app, '/2026-W36/day/2026-09-01/end')
+  const removed = await app.request('/2026-W37/create', { method: 'POST' })
+  const notADay = await post(app, '/2026-W36/day/tomorrow/start')
+  const notAWeek = await post(app, '/week-36/day/2026-09-04/start')
+  const noHost = await post(bare, '/2026-W36/day/2026-09-04/start')
 
-    assert({
-      given: 'the four commands through scripted hosts, one of them failing, and requests with no host or bad names',
-      should: 'run each once with its day or week, answer the view on success, and say what went wrong otherwise',
-      actual: {
-        calls,
-        statuses: [
-          started.status,
-          ended.status,
-          failed.status,
-          created.status,
-          notADay.status,
-          notAWeek.status,
-          noHost.status,
-        ],
-        failure: failed.error,
-        viewId: created.view?.id,
-      },
-      expected: {
-        calls: ['start 2026-09-04', 'end 2026-09-02', 'end 2026-09-01', 'create 2026-W37'],
-        statuses: [200, 200, 502, 200, 404, 404, 501],
-        failure: 'day:end did not finish',
-        viewId: '2026-W37',
-      },
-    })
-  },
-)
+  assert({
+    given: 'start/end hosts, a failing end, the retired create route, and requests with no host or bad names',
+    should: 'run each day command once, reject bulk creation, and report failures',
+    actual: {
+      calls,
+      statuses: [
+        started.status,
+        ended.status,
+        failed.status,
+        removed.status,
+        notADay.status,
+        notAWeek.status,
+        noHost.status,
+      ],
+      failure: failed.error,
+      viewId: started.view?.id,
+    },
+    expected: {
+      calls: ['start 2026-09-04', 'end 2026-09-02', 'end 2026-09-01'],
+      statuses: [200, 200, 502, 404, 404, 404, 501],
+      failure: 'day:end did not finish',
+      viewId: '2026-W36',
+    },
+  })
+})

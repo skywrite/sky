@@ -1,13 +1,13 @@
 ---
 created: 2026-09-04
-updated: 2026-09-12
+updated: 2026-09-20
 ---
 
 # The week page
 
 Design notes for `src/service/handler/week/` and the page that drives it,
 `theme/client/week.tsx`. The week is the notebook's unit of planning: the
-week directory, the seven day files, `week.md`, `checkins.md`. This page
+week directory, day files created as needed, `week.md`, `checkins.md`. This page
 shows it, and moves the two things a week needs moving: a day that is
 waiting to start, and what is waiting for the week after.
 
@@ -55,8 +55,8 @@ Sunday's End is one step back.
 
 ## Next week
 
-A week that has not begun has no plan and usually no files, but things are
-already waiting for it, in the standing files at the top of `time/`:
+A future week can have a plan before any day files exist. Things may also
+be waiting for it in the standing files at the top of `time/`:
 
 - `next-professional.md` and `next-personal.md` hold `## Week-Next`, the
   queue week:plan appends deferrals to and reads back when it drafts, then
@@ -77,11 +77,9 @@ list it leaves empty leaves with it. Nothing else empties the queue —
 week:plan reads it and drafts from it. Planning itself stays in the terminal
 for now (`sky week:plan 37`); the page says so in one line.
 
-`Create the week` runs week:new for missing day files; a partial week offers
-**Create remaining days**. Existing days remain intact. Day start also fills the
-week when its target day is missing. Future item moves can create a partial week;
-their creation and preservation contract is described in the
-[day design](../../day/docs/README.md#the-days-items).
+Day start and task moves create individual days when needed. `week:plan`
+creates its own directory without preparing the days. The lifecycle is
+described in the [day commands](../../../../commands/all/day/docs/README.md#day-files-are-created-as-needed).
 
 ## Weekly check-ins
 
@@ -97,7 +95,6 @@ All under `/week/_api`, mounted when the service has a notebook.
 | `GET /` | This week's view |
 | `GET /:id` | The week's view, `2026-W36` |
 | `POST /capture` | `{text, requestId}` → a goal in the current calendar week's plan; answers `{id, path}` |
-| `POST /:id/create` | week:new for the week; answers the view |
 | `POST /:id/day/:ymd/start` | day:start for the day; answers the view |
 | `POST /:id/day/:ymd/end` | day:end for the day; answers the view |
 | `POST /:id/queue` | `{text, category, day?}` → Week-Next, or the schedule file under the day |
@@ -105,7 +102,7 @@ All under `/week/_api`, mounted when the service has a notebook.
 | `POST /:id/queue/promote` | `{file, list, raw}` → the line moves from its list into Week-Next |
 
 A command that fails answers 502 with its message; without a command host
-the three command routes answer 501. `mod.ts` holds the view and the
+the two command routes answer 501. `mod.ts` holds the view and the
 routes, `plan.ts` and `checkins.ts` the two file readers, `queue.ts` the
 standing files, `createWeekHost.ts` the in-process command runs. Tests run
 against a temp notebook with a scripted clock and scripted commands.

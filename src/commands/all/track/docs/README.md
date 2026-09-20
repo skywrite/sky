@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-08
+updated: 2026-09-20
 ---
 
 # Tracking commands
@@ -30,7 +30,6 @@ Prose-ish values (`range`, `word`, `text`) are quoted, numbers and times
 bare, trailing empty fields dropped. Always append; multiplicity is a
 query-time concern. Helpers: `lib/records.ts`.
 
-`week:new` creates day files; it no longer copies weekly tracking templates.
 Capture creates a record file with its header on the first entry. Health
 summaries and checkins read annual records filtered to their date range,
 including both years at New Year. They fall back to legacy weekly files

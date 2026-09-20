@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-20
 ---
 
 # nbfs commands
@@ -59,5 +59,5 @@ Checks worth running on the copy before a live run: the plan's counts; a
 content checksum multiset before and after (identical); every `day.md` at
 its planned path; no directories left in the old shape; `git add -A`
 showing renames only; a second `nbfs:migrate` reporting nothing to do;
-`util:now` and `week:new --when <next Monday>` working; and a full store
+`util:now` and `day:start` working; and a full store
 build classifying every time document.

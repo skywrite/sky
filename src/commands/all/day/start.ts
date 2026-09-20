@@ -1,59 +1,33 @@
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DAY_START_COMMANDS, PORT_SERVER } from '#config'
-import { dayFileExists } from '#lib/nbfs/mod.ts'
+import { ensureDay, withDayWrite } from '#lib/nbfs/mod.ts'
 import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
-interface UpdateStartOptions {
-  tz?: string
-  day?: PlainDate
-}
-
-async function updateStartField(opts: UpdateStartOptions = {}): Promise<PlainDate> {
-  const { tz, day } = opts
-
-  let targetDay: PlainDate
-  let startedZdt: ZonedDateTime | undefined
+async function updateStartField(targetDay: PlainDate, tz: string | undefined, timeDir: string): Promise<void> {
+  let dayModel = await readDay(targetDay, timeDir)
 
   if (tz) {
-    // Convert current system time to the specified timezone
-    const nowInTargetTz = ZonedDateTime.now().inTimeZone(tz)
-    startedZdt = nowInTargetTz
-
-    // Use explicitly specified date, or derive from the converted time
-    targetDay = day ?? new PlainDate(nowInTargetTz.date)
-  } else {
-    // No timezone specified, use system date
-    targetDay = day ?? new PlainDate()
-  }
-
-  let dayModel = await readDay(targetDay)
-
-  if (tz && startedZdt) {
-    dayModel = dayModel.setStarted(startedZdt).setTimezone(tz).updateYaml({ ended: null })
+    dayModel = dayModel.setStarted(ZonedDateTime.now().inTimeZone(tz)).setTimezone(tz).updateYaml({ ended: null })
   } else {
     dayModel = dayModel.setStarted().updateYaml({ ended: null })
   }
 
-  await writeDay(dayModel)
-
-  return targetDay
+  await writeDay(dayModel, timeDir)
 }
 
 /**
- * Reconcile the day's Streaks list with the active rules: add streaks created
- * since the week was stamped and refresh count decorations on unstruck items.
+ * Stamp active streaks when the day starts, including on a day prepared by a task move.
  */
-async function reconcileStreaks(targetDay: PlainDate) {
-  const active = (await loadStreaks('active')).map((loaded) => loaded.streak)
+async function reconcileStreaks(targetDay: PlainDate, timeDir: string, streaksDir: string) {
+  const active = (await loadStreaks('active', streaksDir)).map((loaded) => loaded.streak)
   if (active.length === 0) return
 
   const counts = await computeStreakCounts(active, targetDay)
-  const dayModel = await readDay(targetDay)
+  const dayModel = await readDay(targetDay, timeDir)
   const stamped = stampStreaksList(dayModel, active, targetDay, counts)
-  if (stamped !== dayModel) await writeDay(stamped)
+  if (stamped !== dayModel) await writeDay(stamped, timeDir)
 }
 
 const params = {
@@ -79,26 +53,23 @@ export default class DayStartTask extends Command {
   }
 
   async run(commandArgs: CommandArgs<Params>): Promise<CommandResult> {
-    const { tasks, args } = commandArgs
+    const { tasks, args, context } = commandArgs
+    const { config } = context
     const { journal, tz, day, skipLocation } = args
 
     // Wake the heartbeat in case it's sleeping (best-effort)
-    fetch(`http://localhost:${PORT_SERVER}/heartbeat/wake`, { method: 'POST' }).catch(() => {})
+    fetch(`http://localhost:${config.PORT_SERVER}/heartbeat/wake`, { method: 'POST' }).catch(() => {})
+
+    const targetDate = day ?? (tz ? new PlainDate(ZonedDateTime.now().inTimeZone(tz).date) : new PlainDate())
 
     // Yesterday's meetings, checked before today starts: amending is cheapest now
-    await tasks.run('day:meeting:check', { day: (day ?? new PlainDate()).addDays(-1) })
+    await tasks.run('day:meeting:check', { day: targetDate.addDays(-1) })
 
-    // A fresh notebook has no week directories yet — create the target week
-    // so the day file exists before anything below reads or updates it
-    const targetDate = day ?? (tz ? new PlainDate(ZonedDateTime.now().inTimeZone(tz).date) : new PlainDate())
-    if (!(await dayFileExists(targetDate))) {
-      const weekResult = await tasks.run('week:new', { when: new PlainDateTime(targetDate) })
-      if (!weekResult.ok) return weekResult
-    }
+    await ensureDay(targetDate, config.DIR_TIME)
 
     // Run configurable startup commands in parallel (day.start in config)
     const startResults = await Promise.allSettled(
-      DAY_START_COMMANDS.map((cmd) =>
+      config.DAY_START_COMMANDS.map((cmd) =>
         tasks.run(cmd).catch((err: Error) => {
           // Command may not exist (e.g., moved to sky-extras without commandDirs configured)
           console.warn(`  [day:start] ${cmd}: ${err.message}`)
@@ -114,14 +85,16 @@ export default class DayStartTask extends Command {
     }
 
     // These tasks modify the Day file, so run them sequentially
-    const targetDay = await updateStartField({ tz, day })
+    await withDayWrite(config, targetDate.ymd, async () => {
+      await updateStartField(targetDate, tz, config.DIR_TIME)
 
-    // Streaks are best-effort: a missing streaks/ dir or day file must not fail the start
-    try {
-      await reconcileStreaks(targetDay)
-    } catch (err) {
-      console.warn(`  [day:start] streaks: ${(err as Error).message}`)
-    }
+      // Streaks are best-effort: a missing streaks/ dir must not fail the start
+      try {
+        await reconcileStreaks(targetDate, config.DIR_TIME, config.DIR_STREAKS)
+      } catch (err) {
+        console.warn(`  [day:start] streaks: ${(err as Error).message}`)
+      }
+    })
 
     // Set location on day document
     if (tasks && !skipLocation) {

@@ -586,9 +586,7 @@ export default class StreaksNewTask extends Command {
     if (written.stamped) {
       output.log(colors.gray(`Stamped "${title}" into the ${startDay.ymd} Streaks list`))
     } else if (written.stampWarning) {
-      output.log(
-        colors.yellow(`Note: no day file for ${startDay.ymd} yet - the item appears via week:new or day:start`),
-      )
+      output.log(colors.yellow(`Note: no day file for ${startDay.ymd} yet - the item appears via day:start`))
     }
 
     if (written.dayItemWarning) {

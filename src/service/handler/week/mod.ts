@@ -40,8 +40,6 @@ export interface WeekCommands {
   startDay: (day: PlainDate) => Promise<void>
   /** day:end for a day that was never ended */
   endDay: (day: PlainDate) => Promise<void>
-  /** week:new for a week whose files do not exist yet */
-  createWeek: (week: Week) => Promise<void>
 }
 
 export interface WeekRoutesOptions {
@@ -51,7 +49,7 @@ export interface WeekRoutesOptions {
   timeDir: string
   /** The notebook clock — production reads the last started day; tests script it */
   now?: () => ZonedDateTime
-  /** Without a host the start, end and create routes are not served */
+  /** Without a host the start and end routes are not served */
   commands?: WeekCommands
   /** Local retry receipts and locks for direct captures; outside the synced notebook by default. */
   captureStateDir?: string
@@ -328,13 +326,6 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     const week = weekOf(c)
     if (week instanceof Response) return week
     return c.json(await buildWeekView(options, week.toString()))
-  })
-
-  // The week's files, for a week that has none yet — the Sunday or Monday step, as a button.
-  app.post('/:id/create', async (c) => {
-    const week = weekOf(c)
-    if (week instanceof Response) return week
-    return command(c, week, (commands) => commands.createWeek(week))
   })
 
   // The day waiting to begin, and a day that was never ended.

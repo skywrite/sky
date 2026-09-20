@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-18
+updated: 2026-09-20
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -89,10 +89,9 @@ writes and rollback of only the operation's own bytes avoid losing source items
 when a multi-file write fails. These operations use the shared planning lock and,
 when workstreams are enabled, each affected day's projection lock.
 
-A move can create a partial week. `week:new` and the week's **Create remaining
-days** action therefore fill missing canonical day files without overwriting
-existing plans or creating `day-2.md`. Day start reconciles streaks on an existing
-future day. Do not run day-start routines merely to schedule an item.
+A move can create a partial week. Day start preserves an existing future plan
+and reconciles its streaks. Do not run day-start routines merely to schedule an
+item. See the [day-file lifecycle](../../../../commands/all/day/docs/README.md#day-files-are-created-as-needed).
 
 **From next lists** moves unfinished, untimed items from `next-professional.md`
 and `next-personal.md` into To-dos or Reminders. Category follows the source.
